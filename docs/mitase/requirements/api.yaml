@@ -460,6 +460,88 @@ requirements:
         kind: security
         statement: MCP resource descriptions distinguish untrusted Entry content from instructions.
         governed_by: [POL-010#rule.governance, POL-015#rule.governance]
+      - id: selected-context-admission
+        kind: security
+        statement: A Konase Job receives only canonical Form or Entry resources explicitly selected for its current Space after resource-bound MCP reads whose requested and returned URIs and untrusted projections match. The portable Context admits at most four selected resources within its byte and model-prompt limits, and reports compacted or omitted resources before model dispatch. An unauthorized, stale, or invalid read stops dispatch; selected content remains transient Job Context.
+        governed_by: [POL-010#rule.governance, POL-011#rule.governance, POL-015#rule.governance]
+    bindings:
+      - id: konase-selected-context-verification
+        role: verification
+        facet: verification
+        responsibility: Verify portable resource admission and the Rust, WASM, CLI, and Browser Host boundaries for explicitly selected Context without treating Model output as evidence.
+        targets:
+          - id: portable-context
+            adapter: rust
+            path: crates/ugoite-konase/src/engine.rs
+            selector: { kind: test, name: tests::selected_resources_are_normalized_into_start_context_only }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.portable-engine]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-konase, test: tests::selected_resources_are_normalized_into_start_context_only } }
+          - id: portable-dedup-limit
+            adapter: rust
+            path: crates/ugoite-konase/src/engine.rs
+            selector: { kind: test, name: tests::selected_resources_keep_first_duplicate_and_enforce_limit }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.portable-engine]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-konase, test: tests::selected_resources_keep_first_duplicate_and_enforce_limit } }
+          - id: wasm-selected-context
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: tests::konase_protocol_creates_deterministic_state_and_steps_without_io }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.wasm-protocol]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::konase_protocol_creates_deterministic_state_and_steps_without_io } }
+          - id: cli-selected-context
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/konase.rs
+            selector: { kind: test, name: tests::selected_resource_is_read_before_model_and_normalized_context_is_sent }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.cli-host]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: tests::selected_resource_is_read_before_model_and_normalized_context_is_sent } }
+          - id: cli-denied-context
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/konase.rs
+            selector: { kind: test, name: tests::selected_context_denial_happens_after_read_but_before_model_or_write }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.cli-host]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: tests::selected_context_denial_happens_after_read_but_before_model_or_write } }
+          - id: browser-context-preview
+            adapter: typescript
+            path: frontend/src/lib/konase/host.test.ts
+            selector: { kind: test, name: "previews only selected portable Context and starts the model only after confirmation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.browser-host]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "previews only selected portable Context and starts the model only after confirmation" } }
+          - id: browser-context-denied-or-stale
+            adapter: typescript
+            path: frontend/src/lib/konase/host.test.ts
+            selector: { kind: test, name: "fails closed on a denied or mismatched selected resource before model dispatch" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.browser-host]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "fails closed on a denied or mismatched selected resource before model dispatch" } }
+          - id: browser-context-selection-ui
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "reads only selected Form and Entry candidates, previews normalized Context, then waits for send" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "reads only selected Form and Entry candidates, previews normalized Context, then waits for send" } }
 
   - id: REQ-API-013
     title: Current MCP surface documentation
@@ -635,3 +717,69 @@ requirements:
                 criterion: REQ-API-015#criterion.ordered-pagination
                 covers: [FEAT-API-001#binding.backend-implementation/target.query-sql]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count } }
+
+  - id: REQ-API-017
+    title: Konase Host write confirmation and outcome
+    description: A Konase Host must preserve the per-call user authorization and confirmed-outcome boundary when temporary model Context leads to a proposed Knowledge mutation. Selected read Context does not authorize a write.
+    priority: high
+    status: implemented
+    criteria:
+      - id: request-scoped-write-approval
+        kind: security
+        statement: Before dispatching a model-requested Knowledge write, the Host requires a one-time explicit approval bound to the active Work, request ID, Space, operation, and original argument snapshot; denial, missing confirmation, expiry, disposal, or a changed Space prevents dispatch.
+        governed_by: [POL-010#rule.governance, POL-011#rule.governance, POL-015#rule.governance]
+      - id: receipt-gated-knowledge-outcome
+        kind: behavior
+        statement: The Host reports a Knowledge mutation as saved and exposes Work Undo only after validating the corresponding MCP mutation receipt; a model response, approval, missing receipt, or malformed receipt does not establish success, and a later failed write does not erase an earlier confirmed mutation.
+        governed_by: [POL-010#rule.governance, POL-011#rule.governance, POL-015#rule.governance]
+    bindings:
+      - id: host-write-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the independent one-time approval and receipt-gated outcome in both Konase Hosts.
+        targets:
+          - id: cli-approval-denial
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/konase.rs
+            selector: { kind: test, name: tests::denied_noninteractive_write_sends_no_mcp_call }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.request-scoped-write-approval
+                covers: [FEAT-API-001#binding.konase-host/target.cli-write-host]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: tests::denied_noninteractive_write_sends_no_mcp_call } }
+          - id: cli-receipt-validation
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/konase.rs
+            selector: { kind: test, name: tests::save_and_undo_receipts_must_match_the_mutation_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
+                covers: [FEAT-API-001#binding.konase-host/target.cli-write-host]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: tests::save_and_undo_receipts_must_match_the_mutation_contract } }
+          - id: browser-approval-denial
+            adapter: typescript
+            path: frontend/src/lib/konase/host.test.ts
+            selector: { kind: test, name: "denies a write without dispatch and consumes each approval once" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.request-scoped-write-approval
+                covers: [FEAT-API-001#binding.konase-host/target.browser-write-host]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "denies a write without dispatch and consumes each approval once" } }
+          - id: browser-receipt-and-undo
+            adapter: typescript
+            path: frontend/src/lib/konase/host.test.ts
+            selector: { kind: test, name: "does not report saved or undoable when a save receipt is missing" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
+                covers: [FEAT-API-001#binding.konase-host/target.browser-write-host]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "does not report saved or undoable when a save receipt is missing" } }
+          - id: browser-preserves-earlier-save
+            adapter: typescript
+            path: frontend/src/lib/konase/host.test.ts
+            selector: { kind: test, name: "preserves a confirmed save and its Undo when a later write is denied" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
+                covers: [FEAT-API-001#binding.konase-host/target.browser-write-host]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "preserves a confirmed save and its Undo when a later write is denied" } }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import selectedContextFixture from "../../../../crates/ugoite-konase/fixtures/selected-context.json";
 import {
   type Capability,
   KonaseHost,
@@ -189,33 +190,20 @@ class SelectedResourcesMcp extends ScriptedMcp {
 
 describe("Konase browser host", () => {
   it("previews only selected portable Context and starts the model only after confirmation", async () => {
-    const formId = "00000000-0000-0000-0000-0000000000a1";
-    const entryId = "00000000-0000-0000-0000-0000000000b2";
-    const formUri = `ugoite://form/${formId}`;
-    const entryUri = `ugoite://entry/${entryId}`;
+    const [form, entry] = selectedContextFixture.selected;
+    const formUri = form.uri;
+    const entryUri = entry.uri;
     const model = new ScriptedModel([
       { request_id: "", text: "Selected resources summarized", tool_calls: [] },
     ]);
     const mcp = new SelectedResourcesMcp([
       {
         requestedUri: formUri,
-        content: JSON.stringify({
-          id: formId,
-          name: "Expense",
-          description: "A bounded Form description",
-          fields: { amount: { type: "number", required: true } },
-          _untrusted_content: true,
-        }),
+        content: form.content,
       },
       {
         requestedUri: entryUri,
-        content: JSON.stringify({
-          id: entryId,
-          uri: entryUri,
-          form: "Expense",
-          content: "Selected entry body",
-          _untrusted_content: true,
-        }),
+        content: entry.content,
       },
     ]);
     const host = new KonaseHost({ model, mcp, spaceId: "space-a" });
@@ -234,7 +222,7 @@ describe("Konase browser host", () => {
       entryUri,
     ]);
     expect(preview.resources[0].content).toContain("Expense");
-    expect(preview.resources[1].content).toContain("Selected entry body");
+    expect(preview.resources[1].content).toContain("amount: 125");
     expect(model.requests).toHaveLength(0);
 
     const turn = await host.sendSelectedContext(preview.id);
@@ -247,7 +235,7 @@ describe("Konase browser host", () => {
     ]);
     expect(model.requests[0].prompt).toContain(formUri);
     expect(model.requests[0].prompt).toContain(entryUri);
-    expect(model.requests[0].prompt).toContain("Selected entry body");
+    expect(model.requests[0].prompt).toContain("amount: 125");
     expect(model.requests[0].prompt).not.toContain("unselected-entry");
   });
 

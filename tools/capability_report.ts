@@ -437,22 +437,122 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
     ],
     availability: "unresolved",
     reason:
-      "Receipt, ACL, conflict, append-only Restore and Undo outcomes must be evaluated by each Host. MCP save/delete are not portable REST operations.",
-    follow_up_issue: "#3124",
+      "Selected Context and receipt-gated Host outcomes have focused evidence; broader revoked-authorization and later-failure recovery compositions remain tracked separately. MCP save/delete are not portable REST operations.",
+    follow_up_issue: "#3157",
+  },
+  {
+    id: "konase-selected-context",
+    label: "Konase explicitly selected Context",
+    host_resource: ["ugoite://form/{id}", "ugoite://entry/{id}"],
+    requirement_criterion_refs: [
+      "REQ-API-012#criterion.selected-context-admission",
+    ],
+    feature_binding_refs: [
+      "FEAT-API-001#binding.konase-host/target.portable-engine",
+      "FEAT-API-001#binding.konase-host/target.wasm-protocol",
+      "FEAT-API-001#binding.konase-host/target.cli-host",
+      "FEAT-API-001#binding.konase-host/target.browser-host",
+      "FEAT-API-001#binding.konase-host/target.browser-panel",
+    ],
+    artifact_paths: [
+      "crates/ugoite-konase/src/engine.rs",
+      "crates/ugoite-konase/src/context.rs",
+      "crates/ugoite-konase/fixtures/selected-context.json",
+      "crates/ugoite-wasm/src/lib.rs",
+      "crates/ugoite-cli/src/commands/konase.rs",
+      "frontend/src/lib/konase/host.ts",
+      "frontend/src/components/konase/KonasePanel.tsx",
+    ],
+    surface_expectations: [
+      {
+        surface: "Portable Rust",
+        expected: "required",
+        evidence_paths: ["crates/ugoite-konase/src/engine.rs"],
+      },
+      {
+        surface: "WASM",
+        expected: "required",
+        evidence_paths: ["crates/ugoite-wasm/src/lib.rs"],
+      },
+      {
+        surface: "CLI Host",
+        expected: "required",
+        evidence_paths: ["crates/ugoite-cli/src/commands/konase.rs"],
+      },
+      {
+        surface: "Browser Host",
+        expected: "required",
+        evidence_paths: [
+          "frontend/src/lib/konase/host.ts",
+          "frontend/src/components/konase/KonasePanel.tsx",
+        ],
+      },
+    ],
+    verification_claim_refs: [
+      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/portable-context",
+      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/wasm-selected-context",
+      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/cli-selected-context",
+      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/browser-context-preview",
+      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/browser-context-denied-or-stale",
+      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/browser-context-selection-ui",
+    ],
+    test_selectors: [
+      {
+        path: "crates/ugoite-konase/src/engine.rs",
+        selector: "selected_resources_are_normalized_into_start_context_only",
+      },
+      {
+        path: "crates/ugoite-konase/src/engine.rs",
+        selector: "selected_resources_keep_first_duplicate_and_enforce_limit",
+      },
+      {
+        path: "crates/ugoite-wasm/src/lib.rs",
+        selector:
+          "konase_protocol_creates_deterministic_state_and_steps_without_io",
+      },
+      {
+        path: "crates/ugoite-cli/src/commands/konase.rs",
+        selector:
+          "selected_resource_is_read_before_model_and_normalized_context_is_sent",
+      },
+      {
+        path: "frontend/src/lib/konase/host.test.ts",
+        selector:
+          "previews only selected portable Context and starts the model only after confirmation",
+      },
+      {
+        path: "frontend/src/lib/konase/host.test.ts",
+        selector:
+          "fails closed on a denied or mismatched selected resource before model dispatch",
+      },
+      {
+        path: "frontend/src/components/konase/KonasePanel.test.tsx",
+        selector:
+          "reads only selected Form and Entry candidates, previews normalized Context, then waits for send",
+      },
+    ],
+    availability: "existing",
+    reason:
+      "Rust, WASM, CLI, and Browser Host tests consume the same explicit Form and Entry fixture; the projection locates claims and selectors but does not assert execution or authorization.",
+    follow_up_issue: null,
   },
   {
     id: "konase-host-confirmation",
     label: "Konase Host / confirmation",
     host_resource: ["AskConfirmation", "ugoite.save", "ugoite.delete"],
     requirement_criterion_refs: [
-      "REQ-JOURNEY-001#criterion.entry-create",
-      "REQ-API-002#criterion.entry-lifecycle",
+      "REQ-API-017#criterion.request-scoped-write-approval",
+      "REQ-API-017#criterion.receipt-gated-knowledge-outcome",
     ],
-    feature_binding_refs: [],
+    feature_binding_refs: [
+      "FEAT-API-001#binding.konase-host/target.cli-write-host",
+      "FEAT-API-001#binding.konase-host/target.browser-write-host",
+    ],
     artifact_paths: [
       "crates/ugoite-konase/src/lib.rs",
       "crates/ugoite-cli/src/commands/konase.rs",
-      "crates/ugoite-cli/src/http.rs",
+      "frontend/src/lib/konase/host.ts",
+      "frontend/src/components/konase/KonasePanel.tsx",
       "docs/architecture/boundaries/konase.md",
     ],
     surface_expectations: [
@@ -464,14 +564,51 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
           "crates/ugoite-konase/src/lib.rs",
         ],
       },
-      { surface: "Browser Host", expected: "required", evidence_paths: [] },
+      {
+        surface: "Browser Host",
+        expected: "required",
+        evidence_paths: [
+          "frontend/src/lib/konase/host.ts",
+          "frontend/src/components/konase/KonasePanel.tsx",
+        ],
+      },
     ],
-    verification_claim_refs: [],
-    test_selectors: [],
-    availability: "existing-needs-surface-work",
+    verification_claim_refs: [
+      "docs/mitase/requirements/api.yaml#REQ-API-017/binding.host-write-verification/cli-approval-denial",
+      "docs/mitase/requirements/api.yaml#REQ-API-017/binding.host-write-verification/cli-receipt-validation",
+      "docs/mitase/requirements/api.yaml#REQ-API-017/binding.host-write-verification/browser-approval-denial",
+      "docs/mitase/requirements/api.yaml#REQ-API-017/binding.host-write-verification/browser-receipt-and-undo",
+      "docs/mitase/requirements/api.yaml#REQ-API-017/binding.host-write-verification/browser-preserves-earlier-save",
+    ],
+    test_selectors: [
+      {
+        path: "crates/ugoite-cli/src/commands/konase.rs",
+        selector: "denied_noninteractive_write_sends_no_mcp_call",
+      },
+      {
+        path: "crates/ugoite-cli/src/commands/konase.rs",
+        selector: "save_and_undo_receipts_must_match_the_mutation_contract",
+      },
+      {
+        path: "frontend/src/lib/konase/host.test.ts",
+        selector:
+          "denies a write without dispatch and consumes each approval once",
+      },
+      {
+        path: "frontend/src/lib/konase/host.test.ts",
+        selector:
+          "does not report saved or undoable when a save receipt is missing",
+      },
+      {
+        path: "frontend/src/lib/konase/host.test.ts",
+        selector:
+          "preserves a confirmed save and its Undo when a later write is denied",
+      },
+    ],
+    availability: "existing",
     reason:
-      "Engine confirmation types do not establish a working Host approval UX. CLI work is tracked separately; Browser Host remains follow-up.",
-    follow_up_issue: "#3124",
+      "Both Hosts implement request-scoped approval and receipt-gated Knowledge outcomes; broader later-failure and authorization-revocation compositions remain tracked independently.",
+    follow_up_issue: null,
   },
   {
     id: "portable-frontend-protocol",

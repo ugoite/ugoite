@@ -68,6 +68,10 @@ inventory:
         - frontend/src/lib/virtual-rows.test.ts
         - frontend/src/lib/ugoite-client/protocol.ts
         - frontend/src/lib/ugoite-client/protocol.test.ts
+        - frontend/src/lib/konase/host.ts
+        - frontend/src/lib/konase/host.test.ts
+        - frontend/src/components/konase/KonasePanel.tsx
+        - frontend/src/components/konase/KonasePanel.test.tsx
         - frontend/src/lib/space-api.ts
         - frontend/src/lib/preferences-api.ts
         - frontend/src/lib/sql-api.ts
@@ -328,7 +332,15 @@ inventory:
         - crates/ugoite-identity/src/node_identity.rs
         - crates/ugoite-iceberg/src/form.rs
         - crates/ugoite-iceberg/src/search.rs
+        - crates/ugoite-konase/src/engine.rs
+        - crates/ugoite-konase/src/context.rs
         - crates/ugoite-konase/src/agent_runtime.rs
+        - crates/ugoite-wasm/src/lib.rs
+        - crates/ugoite-cli/src/commands/konase.rs
+        - frontend/src/lib/konase/host.ts
+        - frontend/src/lib/konase/host.test.ts
+        - frontend/src/components/konase/KonasePanel.tsx
+        - frontend/src/components/konase/KonasePanel.test.tsx
         - frontend/src/lib/entry-query.ts
         - frontend/src/components/SpaceShell.tsx
         - frontend/src/components/GlobalShell.tsx
@@ -367,25 +379,77 @@ verification:
   runners:
     cargo-test-integration:
       executable: cargo
-      arguments: [test, -p, "{package}", --test, "{harness}", "{test}", --, --exact]
+      arguments: [
+        test,
+        -p,
+        "{package}",
+        --test,
+        "{harness}",
+        "{test}",
+        --,
+        --exact,
+      ]
     cargo-test-unit:
       executable: cargo
       arguments: [test, -p, "{package}", "{test}", --, --exact]
     frontend-vitest:
       executable: deno
-      arguments: [task, --cwd, frontend, test, "src/components/EntryBrowser.test.tsx", --testNamePattern, "{test}"]
+      arguments: [
+        task,
+        --cwd,
+        frontend,
+        test,
+        "src/components/EntryBrowser.test.tsx",
+        --testNamePattern,
+        "{test}",
+      ]
     frontend-vitest-file:
       executable: deno
-      arguments: [task, --cwd, frontend, test, "{file}", --testNamePattern, "{test}"]
+      arguments: [
+        task,
+        --cwd,
+        frontend,
+        test,
+        "{file}",
+        --testNamePattern,
+        "{test}",
+      ]
     e2e-playwright:
       executable: deno
-      arguments: [run, --node-modules-dir=none, -A, npm:@playwright/test@^1.60.0, test, --config, e2e/playwright.config.ts, "{file}", --grep, "{test}"]
+      arguments: [
+        run,
+        --node-modules-dir=none,
+        -A,
+        npm:@playwright/test@^1.60.0,
+        test,
+        --config,
+        e2e/playwright.config.ts,
+        "{file}",
+        --grep,
+        "{test}",
+      ]
     docsite-vitest:
       executable: deno
-      arguments: [task, --cwd, docsite, test, src/ssot.test.ts, --testNamePattern, "{test}"]
+      arguments: [
+        task,
+        --cwd,
+        docsite,
+        test,
+        src/ssot.test.ts,
+        --testNamePattern,
+        "{test}",
+      ]
     docsite-vitest-file:
       executable: deno
-      arguments: [task, --cwd, docsite, test, "{file}", --testNamePattern, "{test}"]
+      arguments: [
+        task,
+        --cwd,
+        docsite,
+        test,
+        "{file}",
+        --testNamePattern,
+        "{test}",
+      ]
     deno-test-file:
       executable: deno
       arguments: [test, -A, --filter, "{test}", "{file}"]

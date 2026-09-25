@@ -1861,20 +1861,6 @@ mod tests {
         }
     }
 
-    fn selected_entry_resource(id: &str, content: &str) -> ResourceContent {
-        ResourceContent {
-            uri: format!("ugoite://entry/{id}"),
-            content: json!({
-                "id":id,
-                "uri":format!("ugoite://entry/{id}"),
-                "form":"Expense",
-                "content":content,
-                "_untrusted_content":true
-            })
-            .to_string(),
-        }
-    }
-
     #[test]
     fn selected_uri_validation_deduplicates_in_selection_order_and_caps_count() {
         let uri = "ugoite://form/00000000-0000-0000-0000-0000000000a1".to_owned();
@@ -1903,16 +1889,21 @@ mod tests {
 
     #[tokio::test]
     async fn selected_resource_is_read_before_model_and_normalized_context_is_sent() {
-        let form = selected_form_resource();
-        let entry = selected_entry_resource("00000000-0000-0000-0000-0000000000b1", "amount: 125");
-        let selected_uris = vec![form.uri.clone(), entry.uri.clone()];
-        let unselected_id = "00000000-0000-0000-0000-0000000000b2";
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../ugoite-konase/fixtures/selected-context.json"
+        ))
+        .unwrap();
+        let selected_resources: Vec<ResourceContent> =
+            serde_json::from_value(fixture["selected"].clone()).unwrap();
+        let selected_uris = selected_resources
+            .iter()
+            .map(|resource| resource.uri.clone())
+            .collect::<Vec<_>>();
+        let unselected: ResourceContent =
+            serde_json::from_value(fixture["unselected"].clone()).unwrap();
+        let unselected_id = unselected.uri.rsplit('/').next().unwrap().to_owned();
         let mut mcp = SelectedResourceMcp {
-            resources: vec![
-                form,
-                entry,
-                selected_entry_resource(unselected_id, "UNSELECTED_PRIVATE_VALUE"),
-            ],
+            resources: [selected_resources, vec![unselected]].concat(),
             operations: vec![],
         };
         let mut model = CapturingModel { requests: vec![] };
@@ -1939,10 +1930,10 @@ mod tests {
         assert!(model.requests[0]
             .prompt
             .contains("00000000-0000-0000-0000-0000000000b1"));
-        assert!(!model.requests[0].prompt.contains(unselected_id));
+        assert!(!model.requests[0].prompt.contains(&unselected_id));
         assert!(!model.requests[0]
             .prompt
-            .contains("UNSELECTED_PRIVATE_VALUE"));
+            .contains("PRIVATE UNSELECTED VALUE"));
     }
 
     #[tokio::test]
