@@ -89,9 +89,11 @@ by the published `v0.1.0` GitHub Release. Later pre-1.0 releases use
 `release:prepare compatible|breaking`, which compares the prepared version with
 the latest stable tag before updating projections. A compatible change advances
 the patch; a breaking change advances the minor. Preparation never creates a
-tag, release, or registry artifact. The current published compatible patch is
-`0.1.1`; candidate creation and promotion remain separate operator-controlled
-workflows for future releases. Stable publication requires a non-empty,
+tag, release, or registry artifact. The current published stable release is
+`0.2.0`; its scope is recorded in
+[`docs/version/releases/v0.2.0.md`](../../version/releases/v0.2.0.md). Candidate
+creation and promotion remain separate operator-controlled workflows for
+future releases. Stable publication requires a non-empty,
 versioned manual note at `docs/version/releases/v<version>.md`; the note is
 validated at candidate preflight and read from the exact candidate source when
 published.

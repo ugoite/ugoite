@@ -1,16 +1,17 @@
 version: "0.2"
-status: planned
+status: completed
 title: "Product UX Release"
 summary: >
-  Sole active v0.2 authority: Product UX. Make the frozen v0.1 Foundation
-  completable, discoverable, and consistent across surfaces through completion,
-  discoverability, cross-surface consistency, validation clarity, recovery, and
-  documentation correctness. Knowledge-to-tools remains a North Star, not a
-  shipped v0.2 acceptance claim. The former View and AI milestone authorities
-  are obsolete and are no longer active v0.2 scope.
+  Sole active v0.2 authority: Product UX; published as v0.2.0. The release ships Form-first Browser navigation,
+  structured Entries, canonical EntryQuery, Saved SQL, stateless SQL, and CLI
+  Context / Receipt workflows. Product UX acceptance criteria without direct
+  evidence remain unverified follow-up work; publication does not imply every
+  criterion was completed. Knowledge-to-tools remains a North Star, not a
+  shipped acceptance claim. The former View and AI milestone authorities are
+  obsolete and are no longer active v0.2 scope.
 milestones:
   - id: product-ux
-    status: planned
+    status: completed
     source:
       - docs/version/v0.2/product-ux.yaml
     phases:

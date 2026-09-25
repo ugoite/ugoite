@@ -1,36 +1,44 @@
 id: product-ux
 version: "0.2"
-status: planned
+status: completed
 title: "Product UX: Make the Foundation Usable"
 goal: >
   Make existing durable Knowledge capabilities completable and usable without
   changing v0.1 ownership, authority, history, or adapter boundaries. Success is
   judged through completion, discoverability, cross-surface consistency,
   validation clarity, recovery, and documentation correctness.
-  Knowledge-to-tools remains a North Star, not a shipped v0.2 acceptance claim.
+  v0.2.0 is published with Form-first Browser navigation, structured Entries,
+  canonical EntryQuery, Saved SQL, stateless SQL, and CLI Context / Receipt
+  workflows. The published release note and current code establish those shipped
+  capabilities. Broader Product UX acceptance criteria below remain unverified
+  where the repository does not provide direct evidence; they are follow-up
+  work, not implied complete by publication. Knowledge-to-tools remains a North
+  Star, not a shipped acceptance claim.
 phases:
   - id: design
     status: planned
     tasks:
-      - description: "Define completion outcomes for existing Entry, Form, Asset, search, and SQL journeys"
+      - description: "Unverified follow-up: define completion outcomes for existing Entry, Form, Asset, search, and SQL journeys"
         done: false
-      - description: "Define the discoverability and cross-surface consistency contract for browser, core CLI, and remote CLI"
+      - description: "Unverified follow-up: define the discoverability and cross-surface consistency contract for browser, core CLI, and remote CLI"
         done: false
-      - description: "Define the validation-clarity, recovery-completion, and documentation-correctness acceptance bar"
+      - description: "Unverified follow-up: define the validation-clarity, recovery-completion, and documentation-correctness acceptance bar"
         done: false
   - id: implementation
     status: planned
     tasks:
-      - description: "Make existing journeys completable and discoverable without new authority or storage semantics"
+      - description: "Shipped in v0.2.0: Form-first Browser navigation; structured Entry authoring and reads; canonical EntryQuery across Browser, local CLI, and remote API; Saved SQL lifecycle and stateless SQL query; CLI Context selection and durable mutation Receipt output"
+        done: true
+      - description: "Unverified follow-up: make existing journeys completable and discoverable without new authority or storage semantics"
         done: false
-      - description: "Align cross-surface behavior and validation presentation while keeping business rules in the shared Rust boundary"
+      - description: "Unverified follow-up: align cross-surface behavior and validation presentation while keeping business rules in the shared Rust boundary"
         done: false
-      - description: "Complete recovery flows to a user-visible done state and keep docs aligned with implementation"
+      - description: "Unverified follow-up: complete recovery flows to a user-visible done state and keep docs aligned with implementation"
         done: false
   - id: testing
     status: planned
     tasks:
-      - description: "Cover Product UX outcomes with focused regression tests on existing surfaces"
+      - description: "Unverified follow-up: cover Product UX outcomes with focused regression tests on existing surfaces"
         done: false
-      - description: "Keep the diagnostic corpus informational in 0.1.x; gate promotion remains separate v0.2 work"
+      - description: "Unverified follow-up: keep the diagnostic corpus informational in 0.1.x; gate promotion remains separate v0.2 work"
         done: false

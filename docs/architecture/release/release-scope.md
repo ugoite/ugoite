@@ -4,7 +4,7 @@ sidebar:
   order: 2
 ---
 
-This page records the capability boundary of the current release so packaging,
+This page records the capability boundary of published v0.2.0 so packaging,
 support, and product claims stay aligned with the implementation.
 
 ## Included
@@ -12,7 +12,11 @@ support, and product claims stay aligned with the implementation.
 - local CLI core mode over operator-owned Spaces;
 - Rust REST server with entries, forms, assets, preferences, search, saved SQL,
   and stateless read-only SQL query;
-- server-backed browser application;
+- Form-first, server-backed browser application with structured Entry authoring
+  and reads;
+- canonical EntryQuery search and filtering across Browser, local CLI, and
+  remote API;
+- CLI Context selection and durable mutation Receipt output;
 - single non-root container image and Helm chart;
 - MCP v1 search/save/delete facade with lazy Entry, history, schema, and Form
   resources;
@@ -34,7 +38,7 @@ support, and product claims stay aligned with the implementation.
 - read-only, authorization-checked Node and Space audit-event listing is
   exposed; audit-event mutation/CRUD remains unavailable;
 - browser-local persistence, offline-first editing, and sync are not
-  implemented;
+  implemented; the current browser still requires the Rust server;
 - portable View/Application Definitions, Knowledge-to-tools renderers, and
   general application-builder behavior are not implemented. v0.1 freezes their
   authority boundary but does not ship a View DSL, low-code editor, arbitrary

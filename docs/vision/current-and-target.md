@@ -11,13 +11,22 @@ Not-promised work is named so it cannot be mistaken for a roadmap commitment.
 
 ## Current
 
-The v0.1 release establishes the authority boundary for operator-owned Spaces:
+The v0.2.0 release builds on the v0.1 authority boundary for operator-owned
+Spaces:
 
 - CLI core mode directly opens a local workspace and is the minimal local-first
   path.
 - The Rust server exposes authenticated REST, the small authenticated MCP
   semantic facade, and static browser hosting.
-- The browser is server-backed and requires the Rust server. Passkey/WebAuthn
+- The browser is server-backed and requires the Rust server. Form-first
+  navigation centers work on Forms and their Entries. Entry authoring and reads
+  use structured fields, and search and filtering share the canonical
+  EntryQuery contract across Browser, local CLI, and remote API. Saved SQL has a
+  Browser and CLI lifecycle with stateless query execution.
+- CLI Context selects a connection and Space consistently; mutation output
+  provides durable Receipts. Shared Rust behavior keeps local and remote
+  operations aligned.
+- Passkey/WebAuthn
   login, opaque sessions, owner-approved Space access recovery, Remote CLI
   device credentials, recovery-code plus recovery-only TOTP Account
   Self-Recovery, Space membership and ACL enforcement, authenticated MCP access,
@@ -32,14 +41,16 @@ TOTP is recovery-only and is not a normal login method.
 
 ## Next
 
-The next direction is v0.2 Product UX: make the frozen v0.1 Foundation
-completable, discoverable, and consistent across surfaces through completion,
-discoverability, cross-surface consistency, validation clarity, recovery, and
-documentation correctness.
+The next direction is v0.3 Product UX follow-up: resolve the unverified
+completion, discoverability, cross-surface consistency, validation clarity,
+recovery, and documentation-correctness criteria recorded in the
+[v0.2 Product UX tracker](../version/v0.2/product-ux.yaml). This work continues
+from the shipped v0.2.0 capabilities; the unresolved criteria are not claimed
+as complete.
 
-Knowledge-to-tools remains a North Star during v0.2, not a shipped acceptance
-claim. Former View and AI milestone authorities are obsolete and are no longer
-active v0.2 scope.
+Knowledge-to-tools remains a North Star, not a shipped acceptance claim.
+Former View and AI milestone authorities are obsolete and are no longer active
+release scope.
 
 ## North Star
 
