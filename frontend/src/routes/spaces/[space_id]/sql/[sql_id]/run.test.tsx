@@ -117,6 +117,21 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     }, expect.any(AbortSignal));
   });
 
+  it("keeps duplicate SQL column names attached to their original positions", async () => {
+    queryMock.mockReset().mockResolvedValueOnce({
+      columns: ["same", "same"],
+      rows: [["left", "right"]],
+      has_more: false,
+    });
+    render(() => <SpaceSqlRunRoute />);
+
+    expect(await screen.findAllByRole("columnheader", { name: "same" }))
+      .toHaveLength(2);
+    expect(screen.getByText("left")).toBeInTheDocument();
+    expect(screen.getByText("right")).toBeInTheDocument();
+    expect(countMock).not.toHaveBeenCalled();
+  });
+
   it("does not count while loading a page and only counts on explicit action", async () => {
     render(() => <SpaceSqlRunRoute />);
     await screen.findByRole("columnheader", { name: "value" });

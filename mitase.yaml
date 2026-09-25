@@ -62,6 +62,10 @@ inventory:
         - frontend/src/lib/form-api.ts
         - frontend/src/components/EntryBrowser.tsx
         - frontend/src/components/EntryBrowser.test.tsx
+        - frontend/src/components/PagedResultTable.tsx
+        - frontend/src/components/PagedResultTable.test.tsx
+        - frontend/src/lib/virtual-rows.ts
+        - frontend/src/lib/virtual-rows.test.ts
         - frontend/src/lib/ugoite-client/protocol.ts
         - frontend/src/lib/ugoite-client/protocol.test.ts
         - frontend/src/lib/space-api.ts
@@ -143,6 +147,9 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/sql/new.tsx
         - frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.tsx
+        - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx
+        - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
+        - e2e/qry02-visible-rows.test.ts
         - frontend/src/routes/spaces/[space_id]/settings.tsx
         - frontend/src/routes/spaces/[space_id]/sql.tsx
         - frontend/src/routes/spaces/[space_id]/test-connection.tsx
@@ -282,6 +289,7 @@ inventory:
         - docs/spec/ui/pages/space-settings.yaml
         - docs/spec/ui/pages/space-sql-detail.yaml
         - docs/spec/ui/pages/space-sql.yaml
+        - docs/spec/ui/pages/space-sql-results.yaml
         - docs/spec/ui/pages/space-test-connection.yaml
         - docs/spec/ui/components/space-shell.yaml
         - docs/spec/ui/ux-route-inventory.md

@@ -124,6 +124,28 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-native-table-and-actions
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.virtual-row-accessibility
+          - id: paged-result-table
+            adapter: typescript
+            path: frontend/src/components/PagedResultTable.tsx
+            selector: { kind: symbol, name: PagedResultTable }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.page-scoped-visible-rows
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-native-table-and-actions
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.virtual-row-accessibility
+          - id: virtual-row-range
+            adapter: typescript
+            path: frontend/src/lib/virtual-rows.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.page-scoped-visible-rows
           - id: entry-query-controller
             adapter: typescript
             path: frontend/src/lib/entry-query.ts

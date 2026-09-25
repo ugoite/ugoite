@@ -18,7 +18,14 @@ components:
     - id: sql-results-table
       type: query-results
       source: sql.query
-      description: Renders arbitrary SQL columns and rows without creating persistent execution state.
+      component: PagedResultTable
+      description: Renders the current SQL page with a native table; pages over 100 rows virtualize the visible rows without creating persistent execution state.
+      rendering:
+        mode: page-scoped-visible-rows
+        fast_path_limit: 100
+        virtual_row_height_px: 48
+        overscan_rows_each_side: 6
+        scroll_state: transient-ui-only
     - id: sql-results-pagination
       type: button
       title: Previous and Next

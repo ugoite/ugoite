@@ -13,7 +13,7 @@ import type {
 import { formatDateLabel } from "~/lib/date-format";
 import { formatValueForDisplay } from "~/lib/display-value";
 import { t } from "~/lib/i18n";
-import { LocalBusyIndicator } from "./LocalBusyIndicator";
+import { PagedResultTable, type ResultColumn } from "./PagedResultTable";
 
 export type EntryBrowserMode = "browse" | "select_one";
 
@@ -259,6 +259,17 @@ export function EntryBrowser(props: EntryBrowserProps) {
     }
     return previewColumns();
   };
+
+  const tableColumns = createMemo((): ResultColumn<EntryQueryResult>[] =>
+    visibleColumns().map((column) => ({
+      key: column.key,
+      label: column.label,
+      cell: (row) => {
+        const value = cellText(row, column);
+        return <span title={value}>{value}</span>;
+      },
+    }))
+  );
 
   const cellText = (row: EntryQueryResult, column: VisibleColumn): string => {
     if (column.kind === "preview") return row.preview?.trim() || "—";
@@ -527,117 +538,57 @@ export function EntryBrowser(props: EntryBrowserProps) {
         </details>
       </div>
 
-      <Show when={loadingState()}>
-        <LocalBusyIndicator label={t("entryBrowser.loading")} />
-      </Show>
-      <Show when={errorState()}>
-        <p class="ui-text-danger" role="alert">
-          {String(errorState())}
-        </p>
-        <button
-          type="button"
-          class="ui-button ui-button-secondary"
-          disabled={loadingState()}
-          onClick={() => void props.controller.retry()}
-        >
-          {t("common.retry")}
-        </button>
-      </Show>
-      <Show when={!loadingState() && rowsState().length === 0 && !errorState()}>
-        <p class="ui-muted">{t("entryBrowser.empty")}</p>
-      </Show>
-
-      <Show when={rowsState().length > 0}>
-        <div class="entry-browser-table-scroll">
-          <table class="entry-browser-table">
-            <thead>
-              <tr>
-                <For each={visibleColumns()}>
-                  {(column) => (
-                    <th scope="col" class="entry-browser-header-cell">
-                      {column.label}
-                    </th>
-                  )}
-                </For>
-                <Show when={mode() === "select_one"}>
-                  <th scope="col" class="entry-browser-header-cell">
-                    <span class="ui-sr-only">
-                      {t("entryBrowser.confirm")}
-                    </span>
-                  </th>
-                </Show>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={rowsState()}>
-                {(row) => (
-                  <tr
-                    class="entry-browser-row"
-                    data-entry-id={row.id}
-                  >
-                    <For each={visibleColumns()}>
-                      {(column, columnIndex) => (
-                        <td
-                          class="entry-browser-cell"
-                          data-column-key={column.key}
-                        >
-                          <Show
-                            when={columnIndex() === 0}
-                            fallback={cellText(row, column)}
-                          >
-                            <button
-                              type="button"
-                              class="entry-browser-primary"
-                              disabled={loadingState()}
-                              onClick={() => props.onSelect?.(row)}
-                            >
-                              {cellText(row, column)}
-                            </button>
-                          </Show>
-                        </td>
-                      )}
-                    </For>
-                    <Show when={mode() === "select_one"}>
-                      <td class="entry-browser-cell">
-                        <button
-                          type="button"
-                          class="ui-button ui-button-secondary"
-                          disabled={loadingState()}
-                          onClick={() => props.onSelect?.(row)}
-                        >
-                          {t("entryBrowser.confirm")}
-                        </button>
-                      </td>
-                    </Show>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-        </div>
-      </Show>
-
-      <nav
-        class="entry-browser-pagination"
-        aria-label={t("entryBrowser.pagination")}
-      >
-        <button
-          type="button"
-          class="ui-button ui-button-secondary"
-          disabled={!canGoPreviousState() || loadingState()}
-          onClick={() => void props.controller.previous()}
-        >
-          {t("common.previous")}
-        </button>
-        <button
-          type="button"
-          class="ui-button ui-button-secondary"
-          disabled={!hasMoreState() || loadingState()}
-          onClick={() => void props.controller.next()}
-        >
-          {t("common.next")}
-        </button>
-      </nav>
+      <PagedResultTable
+        columns={tableColumns()}
+        rows={rowsState()}
+        rowKey={(row) => row.id}
+        pageIdentity={JSON.stringify({
+          cursor: props.controller.currentStart(),
+          projection: projectionState(),
+        })}
+        loading={loadingState()}
+        loadingLabel={t("entryBrowser.loading")}
+        error={errorState() ? String(errorState()) : null}
+        emptyLabel={t("entryBrowser.empty")}
+        retryLabel={t("common.retry")}
+        onRetry={() => void props.controller.retry()}
+        canPrevious={canGoPreviousState()}
+        canNext={hasMoreState()}
+        previousLabel={t("common.previous")}
+        nextLabel={t("common.next")}
+        onPrevious={() => void props.controller.previous()}
+        onNext={() => void props.controller.next()}
+        renderPrimaryAction={(row) => (
+          <button
+            type="button"
+            class="entry-browser-primary"
+            title={cellText(row, visibleColumns()[0])}
+            disabled={loadingState()}
+            onClick={() => props.onSelect?.(row)}
+          >
+            {cellText(row, visibleColumns()[0])}
+          </button>
+        )}
+        renderTrailingAction={mode() === "select_one"
+          ? (row) => (
+            <button
+              type="button"
+              class="ui-button ui-button-secondary"
+              disabled={loadingState()}
+              onClick={() => props.onSelect?.(row)}
+            >
+              {t("entryBrowser.confirm")}
+            </button>
+          )
+          : undefined}
+        trailingActionLabel={t("entryBrowser.confirm")}
+        entryDataId={(row) => row.id}
+        paginationLabel={t("entryBrowser.pagination")}
+        classNames={{
+          table: "entry-browser-table",
+          scroll: "entry-browser-table-scroll",
+        }}
+      />
     </section>
   );
 }

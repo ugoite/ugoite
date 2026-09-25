@@ -2218,3 +2218,95 @@ requirements:
                 criterion: REQ-FE-057#criterion.chat-flow
                 covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-057: skipping an optional chat field clears its draft answer" } }
+  - id: REQ-FE-068
+    title: Paged Result Table Rendering
+    description: EntryBrowser and Saved SQL render their already-fetched page through a shared native table, virtualizing large pages only inside the visible scroll region.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: page-scoped-visible-rows
+        kind: behavior
+        statement: Pages above 100 rows render only the visible rows with six rows of overscan in both directions, while pages of 100 rows or fewer remain on the simple rendering path; virtualization never changes the page request or represents a server total.
+        governed_by: [POL-006#rule.governance]
+      - id: shared-native-table-and-actions
+        kind: behavior
+        statement: EntryBrowser and Saved SQL share native table rendering, page feedback, paging callbacks, and display-only row actions while keeping query, SQL, count, continuation, and selection ownership in their existing screen controllers.
+        governed_by: [POL-006#rule.governance]
+      - id: virtual-row-accessibility
+        kind: behavior
+        statement: Virtualized pages retain native table headers and cells, page-local row count and indices, hidden spacer rows, and keyboard focus movement to offscreen Entry actions.
+        governed_by: [POL-006#rule.governance]
+    bindings:
+      - id: paged-result-table-verification
+        role: verification
+        facet: verification
+        responsibility: Verify visible-range rendering, native table coordinates, and keyboard focus using deterministic component tests and a real browser.
+        targets:
+          - id: shared-table-behavior
+            adapter: typescript
+            path: frontend/src/components/PagedResultTable.test.tsx
+            selector: { kind: test, name: "renders only viewport rows and exposes page-local table coordinates" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.page-scoped-visible-rows
+                covers: [FEAT-SRCH-001#binding.frontend/target.paged-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/PagedResultTable.test.tsx, test: "renders only viewport rows and exposes page-local table coordinates" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.virtual-row-accessibility
+                covers: [FEAT-SRCH-001#binding.frontend/target.paged-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/PagedResultTable.test.tsx, test: "renders only viewport rows and exposes page-local table coordinates" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-native-table-and-actions
+                covers: [FEAT-SRCH-001#binding.frontend/target.paged-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/PagedResultTable.test.tsx, test: "renders only viewport rows and exposes page-local table coordinates" } }
+          - id: row-range-calculation
+            adapter: typescript
+            path: frontend/src/lib/virtual-rows.test.ts
+            selector: { kind: test, name: "includes six rows of overscan around a 480px viewport" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.page-scoped-visible-rows
+                covers: [FEAT-SRCH-001#binding.frontend/target.virtual-row-range]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/virtual-rows.test.ts, test: "includes six rows of overscan around a 480px viewport" } }
+          - id: entry-keyboard-navigation
+            adapter: typescript
+            path: frontend/src/components/PagedResultTable.test.tsx
+            selector: { kind: test, name: "moves keyboard focus to an offscreen row after rendering it" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.virtual-row-accessibility
+                covers: [FEAT-SRCH-001#binding.frontend/target.paged-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/PagedResultTable.test.tsx, test: "moves keyboard focus to an offscreen row after rendering it" } }
+          - id: browser-visible-window
+            adapter: typescript
+            path: e2e/qry02-visible-rows.test.ts
+            selector: { kind: test, name: "keeps a 1,000-entry page viewport-sized and keyboard navigable" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.page-scoped-visible-rows
+                covers: [FEAT-SRCH-001#binding.frontend/target.paged-result-table]
+                runner: { runner: e2e-playwright, arguments: { file: qry02-visible-rows.test.ts, test: "keeps a 1,000-entry page viewport-sized and keyboard navigable" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.virtual-row-accessibility
+                covers:
+                  - FEAT-SRCH-001#binding.frontend/target.paged-result-table
+                  - FEAT-SRCH-001#binding.frontend/target.entry-browser
+                runner: { runner: e2e-playwright, arguments: { file: qry02-visible-rows.test.ts, test: "keeps a 1,000-entry page viewport-sized and keyboard navigable" } }
+          - id: entry-browser-selection
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "keeps selection separate from server mutation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-native-table-and-actions
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "keeps selection separate from server mutation" } }
+          - id: sql-result-table
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
+            selector: { kind: test, name: "renders arbitrary SQL rows and keeps pagination client-held" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-native-table-and-actions
+                covers: [FEAT-FE-007#binding.frontend/target.sql-run-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "renders arbitrary SQL rows and keeps pagination client-held" } }

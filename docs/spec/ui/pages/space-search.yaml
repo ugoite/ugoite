@@ -24,9 +24,15 @@ components:
       result_surface:
         id: keyword-result-list
         type: query-results
-        component: EntryBrowser
+        component: EntryBrowser and PagedResultTable
         controller: EntryQueryController
         selection_target: space-entry-detail
+        rendering:
+          mode: page-scoped-visible-rows
+          fast_path_limit: 100
+          virtual_row_height_px: 48
+          overscan_rows_each_side: 6
+          scroll_state: transient-ui-only
     - id: power-user-query-button
       type: button
       label: open-sql-editor

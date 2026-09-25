@@ -357,6 +357,10 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 description = "Run the merge-gated mobile browser visual regression suite"
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:mobile-ui"
 
+[tasks."test:e2e:qry02"]
+description = "Run the browser-visible-row acceptance test"
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:qry02"
+
 [tasks."test:e2e:owner-recovery"]
 description = "Run the required owner-approved Space access recovery E2E"
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:owner-recovery"
@@ -496,6 +500,7 @@ run = [
   { task = "test:docsite:e2e:navigation" },
   { task = "test:e2e:smoke-and-asset-owned" },
   { task = "test:e2e:mobile-ui" },
+  { task = "test:e2e:qry02" },
   { task = "test:e2e:owner-recovery" },
   { task = "version:check" },
 ]
