@@ -32,7 +32,7 @@
 use anyhow::{Context, Result};
 use opendal::Operator;
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 use crate::audit;
@@ -481,6 +481,55 @@ impl UgoiteService {
         Ok(delivered)
     }
 
+    async fn reconcile_entry_revision_rows(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        mut revisions: Vec<crate::entry::RevisionRow>,
+        space_uid: Uuid,
+    ) -> Result<()> {
+        revisions.sort_by(|left, right| {
+            left.timestamp
+                .partial_cmp(&right.timestamp)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| left.revision_id.cmp(&right.revision_id))
+        });
+        let created_version = revisions
+            .iter()
+            .map(|revision| revision.entry_version)
+            .min();
+        for (index, revision) in revisions.iter().enumerate() {
+            let is_first = match (Some(revision.entry_version), created_version) {
+                (Some(version), Some(created)) => version == created,
+                _ => index == 0,
+            };
+            let action = if revision.operation == "delete" {
+                ENTRY_DELETED_ACTION
+            } else if is_first {
+                ENTRY_CREATED_ACTION
+            } else {
+                ENTRY_UPDATED_ACTION
+            };
+            let committed_actor = if revision.updated_by.trim().is_empty() {
+                revision.author.as_str()
+            } else {
+                revision.updated_by.as_str()
+            };
+            let (subject, actor) = committed_actor_attribution(Some(committed_actor), &space_uid);
+            let event = entry_mutation_event(
+                &space_uid,
+                action,
+                entry_id,
+                &revision.revision_id,
+                Some(&revision.change_id),
+                &subject,
+                actor.as_deref(),
+            );
+            deliver_mutation_audit_event(self.operator(), space_id, &event).await?;
+        }
+        Ok(())
+    }
+
     /// Re-derives the expected audit events for `sql_id` from committed
     /// truth (saved-SQL revision rows, including tombstones) and delivers
     /// every missing one idempotently.
@@ -566,11 +615,15 @@ impl UgoiteService {
     /// Returns the number of targets converged.
     pub async fn reconcile_space_audit(&self, space_id: &str) -> Result<usize> {
         let workspace = self.workspace_path(space_id);
+        // `space_uid` verifies uniqueness against every discoverable Space.
+        // Validate once per sweep, then reuse the immutable identity for each
+        // target instead of re-listing every Space for every Entry.
+        let space_uid = self.space_uid(space_id).await?;
         // Enumerate from revision rows (never the Current view) so
         // tombstoned entries are included: their delete evidence may be the
         // very gap being closed. Enumeration is read-only and unbounded by
         // row caps; a corrupt Form fails the sweep instead of being skipped.
-        let mut entry_ids = BTreeSet::new();
+        let mut entry_revisions = BTreeMap::new();
         let form_names = match crate::entry::list_form_names(self.operator(), &workspace).await {
             Ok(names) => names,
             // No committed Forms yet means no committed revisions to
@@ -587,19 +640,28 @@ impl UgoiteService {
             if form_name.eq_ignore_ascii_case(crate::saved_sql::SQL_FORM_NAME_FOR_AUDIT) {
                 continue;
             }
-            let ids = crate::entry::list_form_entry_ids_for_audit(
-                self.operator(),
-                &workspace,
-                &form_name,
-            )
-            .await
-            .with_context(|| format!("enumerate audit targets for Form {form_name}"))?;
-            entry_ids.extend(ids);
+            let revisions =
+                crate::entry::form_revision_rows_for_audit(self.operator(), &workspace, &form_name)
+                    .await
+                    .with_context(|| format!("enumerate audit targets for Form {form_name}"))?;
+            let mut form_entry_revisions = BTreeMap::new();
+            for revision in revisions {
+                form_entry_revisions
+                    .entry(revision.entry_id.clone())
+                    .or_insert_with(Vec::new)
+                    .push(revision);
+            }
+            for (entry_id, revisions) in form_entry_revisions {
+                // Match per-Entry history lookup, which resolves a duplicate
+                // ID from the first Form in list order rather than combining
+                // revisions from distinct Forms.
+                entry_revisions.entry(entry_id).or_insert(revisions);
+            }
         }
         let sql_ids = crate::saved_sql::list_sql_ids_for_audit(self.operator(), &workspace).await?;
         let mut converged = 0;
-        for entry_id in entry_ids {
-            self.reconcile_entry_audit(space_id, &entry_id, &[], "")
+        for (entry_id, revisions) in entry_revisions {
+            self.reconcile_entry_revision_rows(space_id, &entry_id, revisions, space_uid)
                 .await
                 .with_context(|| format!("reconcile audit for Entry {entry_id}"))?;
             converged += 1;
