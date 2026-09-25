@@ -6409,7 +6409,7 @@ dependencies = [
 
 [[package]]
 name = "ugoite-api-client"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -6418,7 +6418,7 @@ dependencies = [
 
 [[package]]
 name = "ugoite-cli"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "anstyle",
  "anyhow",
@@ -6451,7 +6451,7 @@ dependencies = [
 
 [[package]]
 name = "ugoite-core"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -6467,7 +6467,7 @@ dependencies = [
 
 [[package]]
 name = "ugoite-domain"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -6481,7 +6481,7 @@ dependencies = [
 
 [[package]]
 name = "ugoite-iceberg"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -6523,7 +6523,7 @@ dependencies = [
 
 [[package]]
 name = "ugoite-identity"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
@@ -6551,7 +6551,7 @@ dependencies = [
 
 [[package]]
 name = "ugoite-konase"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -6559,7 +6559,7 @@ dependencies = [
 
 [[package]]
 name = "ugoite-konase-rig"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "rig-agent",
  "serde_json",
@@ -6568,7 +6568,7 @@ dependencies = [
 
 [[package]]
 name = "ugoite-server"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -6603,7 +6603,7 @@ dependencies = [
 
 [[package]]
 name = "ugoite-storage"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6624,7 +6624,7 @@ dependencies = [
 
 [[package]]
 name = "ugoite-wasm"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "ugoite-api-client",
@@ -7386,7 +7386,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "opendal",
