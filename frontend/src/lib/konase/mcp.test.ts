@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BrowserMcpHost } from "./mcp";
+import { BrowserMcpHost, validateMutationResult } from "./mcp";
 
 const MCP_VERSION = "2026-07-28";
 
@@ -157,11 +157,20 @@ describe("BrowserMcpHost", () => {
       },
       {
         content: [{ type: "text", text: "saved" }],
-        structuredContent: { status: "created", id: "entry-2" },
+        structuredContent: {
+          status: "created",
+          id: "entry-2",
+          uri: "ugoite://entry/entry-2",
+          _untrusted_content: true,
+        },
       },
       {
         content: [{ type: "text", text: "undone" }],
-        structuredContent: { run_id: workId, reverted_change_count: 1 },
+        structuredContent: {
+          run_id: workId,
+          reverted_change_count: 1,
+          _untrusted_content: true,
+        },
       },
     ]);
     const host = new BrowserMcpHost({
@@ -195,6 +204,12 @@ describe("BrowserMcpHost", () => {
     );
 
     expect(save.success).toBe(true);
+    expect(save.structured_content).toEqual({
+      status: "created",
+      id: "entry-2",
+      uri: "ugoite://entry/entry-2",
+      _untrusted_content: true,
+    });
     expect(undo.success).toBe(true);
     expect(calls).toHaveLength(5);
 
@@ -252,5 +267,46 @@ describe("BrowserMcpHost", () => {
     expect(calls[4].body.params._meta).toMatchObject(
       calls[3].body.params._meta,
     );
+  });
+
+  it("treats the known save and undo effects as writes when annotations are missing", async () => {
+    const { fetcher } = scriptedRpc([{
+      tools: [
+        {
+          name: "ugoite.save",
+          inputSchema: { type: "object" },
+        },
+        {
+          name: "ugoite.undo",
+          inputSchema: { type: "object" },
+        },
+        {
+          name: "ugoite.search",
+          inputSchema: { type: "object" },
+          annotations: { readOnlyHint: false },
+        },
+      ],
+    }]);
+    const host = new BrowserMcpHost({ accessToken: "test-token", fetcher });
+
+    await expect(host.capabilities()).resolves.toEqual([
+      expect.objectContaining({ name: "ugoite.save", effect: "write" }),
+      expect.objectContaining({ name: "ugoite.undo", effect: "write" }),
+      expect.objectContaining({ name: "ugoite.search", effect: "write" }),
+      expect.objectContaining({ name: "resources/read", effect: "read" }),
+    ]);
+  });
+
+  it("rejects malformed successful mutation receipts", () => {
+    const request = mcpRequest("save-1", "ugoite.save", { fields: {} });
+    expect(() =>
+      validateMutationResult(request, "work-1", {
+        request_id: "save-1",
+        operation: "ugoite.save",
+        success: true,
+        resources: [],
+        resource_contents: [],
+      })
+    ).toThrow(/receipt/);
   });
 });

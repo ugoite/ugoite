@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { KonaseHost, type Capability } from "./host";
+import {
+  type Capability,
+  KonaseHost,
+  KonaseWorkFailure,
+  type WritePreview,
+} from "./host";
 import type { McpHost, McpRequest, McpResult } from "./mcp";
 import type { ModelHost, ModelRequest, ModelResult } from "./model";
 
@@ -19,8 +24,13 @@ class ScriptedModel implements ModelHost {
 class ScriptedMcp implements McpHost {
   readonly operations: string[] = [];
   readonly calls: Array<{ operation: string; workId: string }> = [];
+  readonly requests: McpRequest[] = [];
 
-  constructor(private readonly failSave = false) {}
+  constructor(
+    private readonly failSave = false,
+    private readonly omitSaveReceipt = false,
+    private readonly searchEffect: Capability["effect"] = "read",
+  ) {}
 
   async capabilities(): Promise<Capability[]> {
     return [
@@ -32,7 +42,7 @@ class ScriptedMcp implements McpHost {
           properties: { q: { type: "string" } },
           required: ["q"],
         },
-        effect: "read",
+        effect: this.searchEffect,
       },
       {
         name: "resources/read",
@@ -71,6 +81,7 @@ class ScriptedMcp implements McpHost {
   async callMcp(request: McpRequest, workId: string): Promise<McpResult> {
     this.operations.push(request.operation);
     this.calls.push({ operation: request.operation, workId });
+    this.requests.push(structuredClone(request));
     const search = request.operation === "ugoite.search";
     const success = !(this.failSave && request.operation === "ugoite.save");
     return {
@@ -93,6 +104,20 @@ class ScriptedMcp implements McpHost {
       resource_contents: search
         ? []
         : [{ uri: "ugoite://entry/1", content: "WebAssembly memo body" }],
+      structured_content: request.operation === "ugoite.save"
+        ? this.omitSaveReceipt ? undefined : {
+          id: "entry-1",
+          uri: "ugoite://entry/entry-1",
+          status: "created",
+          _untrusted_content: true,
+        }
+        : request.operation === "ugoite.undo"
+        ? {
+          run_id: workId,
+          reverted_change_count: 1,
+          _untrusted_content: true,
+        }
+        : undefined,
       error: success ? undefined : "save failed",
     };
   }
@@ -125,6 +150,7 @@ describe("Konase browser host", () => {
     const host = new KonaseHost({
       model,
       mcp,
+      spaceId: "space-a",
       onProgress: (event) => {
         progress.push(
           event.kind === "mcp"
@@ -175,16 +201,25 @@ describe("Konase browser host", () => {
         tool_calls: [{
           id: "save-call",
           name: "ugoite.save",
-          arguments: { content: "---\nform: Entry\n---\n# Saved" },
+          arguments: {
+            form: "Entry",
+            fields: { title: "Saved" },
+          },
         }],
       },
       { request_id: "", text: "Entry saved", tool_calls: [] },
     ]);
     const mcp = new ScriptedMcp();
     const progress: string[] = [];
+    const previews: WritePreview[] = [];
     const host = new KonaseHost({
       model,
       mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: (preview) => {
+        previews.push(preview);
+        host.resolveConfirmation(preview.requestId, true);
+      },
       onProgress: (event) => progress.push(event.kind),
     });
 
@@ -193,6 +228,7 @@ describe("Konase browser host", () => {
 
     expect(turn.undoAvailable).toBe(true);
     expect(turn.knowledge).toBe("saved");
+    expect(previews[0].action).toBe("create");
     expect(undo.success).toBe(true);
     expect(mcp.calls).toEqual([
       { operation: "ugoite.save", workId: turn.workId },
@@ -208,7 +244,10 @@ describe("Konase browser host", () => {
         tool_calls: [{
           id: "save-call",
           name: "ugoite.save",
-          arguments: { content: "---\nform: Entry\n---\n# Failed" },
+          arguments: {
+            form: "Entry",
+            fields: { title: "Failed" },
+          },
         }],
       },
       { request_id: "", text: "Save attempted", tool_calls: [] },
@@ -216,11 +255,360 @@ describe("Konase browser host", () => {
     const host = new KonaseHost({
       model,
       mcp: new ScriptedMcp(true),
+      spaceId: "space-a",
+      onConfirmationRequired: (preview) => {
+        queueMicrotask(() => host.resolveConfirmation(preview.requestId, true));
+      },
     });
 
     const turn = await host.submit("Save this Entry");
 
     expect(turn.knowledge).toBe("write_failed");
     expect(turn.undoAvailable).toBe(false);
+  });
+
+  it("shows a safe per-call preview and dispatches the original arguments only after approval", async () => {
+    const argumentsValue = {
+      form: "Note",
+      fields: { title: "private note body", api_token: "secret-token-value" },
+      tags: ["work"],
+      extra_attributes: { source: "Konase" },
+    };
+    const model = new ScriptedModel([
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "save-call",
+          name: "ugoite.save",
+          arguments: argumentsValue,
+        }],
+      },
+      { request_id: "", text: "Entry saved", tool_calls: [] },
+    ]);
+    const mcp = new ScriptedMcp();
+    let resolvePreview!: (preview: WritePreview) => void;
+    const previewReady = new Promise<WritePreview>((resolve) => {
+      resolvePreview = resolve;
+    });
+    const host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: resolvePreview,
+    });
+
+    const turnPromise = host.submit("Save the note");
+    const preview = await previewReady;
+    expect(mcp.calls).toHaveLength(0);
+    expect(preview).toMatchObject({
+      workId: expect.stringMatching(/^work-/),
+      spaceId: "space-a",
+      operation: "ugoite.save",
+      action: "create",
+      form: "Note",
+    });
+    expect(preview.summary).toContain("title: text (17 chars)");
+    expect(preview.summary).toContain("api_token: [hidden]");
+    expect(preview.summary).not.toContain("private note body");
+    expect(preview.summary).not.toContain("secret-token-value");
+
+    expect(host.resolveConfirmation(preview.requestId, true)).toBe(true);
+    const turn = await turnPromise;
+    expect(turn.knowledge).toBe("saved");
+    expect(turn.undoAvailable).toBe(true);
+    expect(mcp.calls).toHaveLength(1);
+    expect(mcp.requests[0]).toEqual({
+      request_id: preview.requestId,
+      server: "ugoite",
+      operation: "ugoite.save",
+      arguments: argumentsValue,
+      effect: "write",
+    });
+    expect(host.resolveConfirmation(preview.requestId, true)).toBe(false);
+  });
+
+  it("denies a write without dispatch and consumes each approval once", async () => {
+    const model = new ScriptedModel([
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "save-call",
+          name: "ugoite.save",
+          arguments: { form: "Note", fields: { title: "x" } },
+        }],
+      },
+      { request_id: "", text: "Entry saved", tool_calls: [] },
+    ]);
+    const mcp = new ScriptedMcp();
+    let resolvePreview!: (preview: WritePreview) => void;
+    const previewReady = new Promise<WritePreview>((resolve) => {
+      resolvePreview = resolve;
+    });
+    const host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: resolvePreview,
+    });
+
+    const turnPromise = host.submit("Save the note");
+    const preview = await previewReady;
+    expect(mcp.calls).toHaveLength(0);
+    expect(host.resolveConfirmation("stale-request", true)).toBe(false);
+    expect(host.resolveConfirmation(preview.requestId, false)).toBe(true);
+    await expect(turnPromise).rejects.toThrow(/not approved/);
+    expect(host.resolveConfirmation(preview.requestId, true)).toBe(false);
+    expect(mcp.calls).toHaveLength(0);
+  });
+
+  it("denies a write when no confirmation UI is registered", async () => {
+    const model = new ScriptedModel([{
+      request_id: "",
+      tool_calls: [{
+        id: "save-call",
+        name: "ugoite.save",
+        arguments: { form: "Note", fields: { title: "x" } },
+      }],
+    }]);
+    const mcp = new ScriptedMcp();
+    const host = new KonaseHost({ model, mcp, spaceId: "space-a" });
+
+    await expect(host.submit("Save the note")).rejects.toThrow(/not approved/);
+    expect(mcp.calls).toHaveLength(0);
+  });
+
+  it("cancels a pending approval on disposal and ignores a late approve", async () => {
+    const model = new ScriptedModel([
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "save-call",
+          name: "ugoite.save",
+          arguments: { form: "Note", fields: { title: "x" } },
+        }],
+      },
+    ]);
+    const mcp = new ScriptedMcp();
+    let resolvePreview!: (preview: WritePreview) => void;
+    const previewReady = new Promise<WritePreview>((resolve) => {
+      resolvePreview = resolve;
+    });
+    const host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: resolvePreview,
+    });
+    const turnPromise = host.submit("Save the note");
+    const preview = await previewReady;
+
+    host.dispose();
+    await expect(turnPromise).rejects.toThrow();
+    expect(host.resolveConfirmation(preview.requestId, true)).toBe(false);
+    expect(mcp.calls).toHaveLength(0);
+  });
+
+  it("fails closed for an unlisted model-requested capability", async () => {
+    const model = new ScriptedModel([{
+      request_id: "",
+      tool_calls: [{ id: "other", name: "ugoite.unknown", arguments: {} }],
+    }]);
+    const mcp = new ScriptedMcp();
+    const host = new KonaseHost({ model, mcp, spaceId: "space-a" });
+
+    await expect(host.submit("Run an unknown tool")).rejects.toThrow(
+      /unlisted/,
+    );
+    expect(mcp.calls).toHaveLength(0);
+  });
+
+  it("fails closed when tools/list does not declare search read-only", async () => {
+    const model = new ScriptedModel([{
+      request_id: "",
+      tool_calls: [{
+        id: "search",
+        name: "ugoite.search",
+        arguments: { q: "x" },
+      }],
+    }]);
+    const mcp = new ScriptedMcp(false, false, "write");
+    const host = new KonaseHost({ model, mcp, spaceId: "space-a" });
+
+    await expect(host.submit("Search")).rejects.toThrow(/not read-only/);
+    expect(mcp.calls).toHaveLength(0);
+  });
+
+  it("updates with an independently approved complete field-map replacement", async () => {
+    const argumentsValue = {
+      id: "entry-7",
+      form: "Note",
+      fields: { title: "Replacement title" },
+    };
+    const model = new ScriptedModel([
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "update-call",
+          name: "ugoite.save",
+          arguments: argumentsValue,
+        }],
+      },
+      { request_id: "", text: "Entry updated", tool_calls: [] },
+    ]);
+    const mcp = new ScriptedMcp();
+    const previews: WritePreview[] = [];
+    const host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: (preview) => {
+        previews.push(preview);
+        host.resolveConfirmation(preview.requestId, true);
+      },
+    });
+
+    const turn = await host.submit("Update this Entry");
+
+    expect(previews[0]).toMatchObject({
+      workId: turn.workId,
+      action: "update",
+      form: "Note",
+      entryId: "entry-7",
+    });
+    expect(previews[0].summary).toContain(
+      "replace the complete structured field map",
+    );
+    expect(mcp.requests[0].arguments).toEqual(argumentsValue);
+  });
+
+  it("preserves a confirmed save and its Undo when a later write is denied", async () => {
+    const model = new ScriptedModel([
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "save-a",
+          name: "ugoite.save",
+          arguments: { form: "Note", fields: { title: "A" } },
+        }],
+      },
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "save-b",
+          name: "ugoite.save",
+          arguments: { form: "Note", fields: { title: "B" } },
+        }],
+      },
+      { request_id: "", text: "Done", tool_calls: [] },
+    ]);
+    const mcp = new ScriptedMcp();
+    let resolveSecondPreview!: (preview: WritePreview) => void;
+    const secondPreviewReady = new Promise<WritePreview>((resolve) => {
+      resolveSecondPreview = resolve;
+    });
+    let confirmationCount = 0;
+    const host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: (preview) => {
+        confirmationCount += 1;
+        if (confirmationCount === 1) {
+          host.resolveConfirmation(preview.requestId, true);
+        } else {
+          resolveSecondPreview(preview);
+        }
+      },
+    });
+    const turnPromise = host.submit("Save two notes");
+    const secondPreview = await secondPreviewReady;
+    expect(mcp.calls.filter((call) => call.operation === "ugoite.save"))
+      .toHaveLength(1);
+    expect(mcp.calls[0].workId).toBe(secondPreview.workId);
+    expect(host.resolveConfirmation(secondPreview.requestId, false)).toBe(true);
+    const failure = await turnPromise.catch((cause) => cause);
+    expect(failure).toBeInstanceOf(KonaseWorkFailure);
+    expect(failure).toMatchObject({
+      partial: {
+        workId: secondPreview.workId,
+        knowledge: "saved",
+        undoAvailable: true,
+      },
+      reason: expect.objectContaining({
+        message: "Konase write was not approved",
+      }),
+    });
+    expect(mcp.calls.filter((call) => call.operation === "ugoite.save"))
+      .toHaveLength(1);
+  });
+
+  it("does not report saved or undoable when a save receipt is missing", async () => {
+    const model = new ScriptedModel([
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "save-call",
+          name: "ugoite.save",
+          arguments: { form: "Note", fields: { title: "x" } },
+        }],
+      },
+      { request_id: "", text: "Save attempted", tool_calls: [] },
+    ]);
+    const mcp = new ScriptedMcp(false, true);
+    const host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: (preview) => {
+        host.resolveConfirmation(preview.requestId, true);
+      },
+    });
+
+    await expect(host.submit("Save the note")).rejects.toThrow(/confirm/);
+    expect(mcp.calls.filter((call) => call.operation === "ugoite.save"))
+      .toHaveLength(1);
+  });
+
+  it("requires separate approval for model Undo and clears Undo availability", async () => {
+    const model = new ScriptedModel([
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "save-call",
+          name: "ugoite.save",
+          arguments: { form: "Note", fields: { title: "x" } },
+        }],
+      },
+      {
+        request_id: "",
+        tool_calls: [{ id: "undo-call", name: "ugoite.undo", arguments: {} }],
+      },
+      { request_id: "", text: "Change undone", tool_calls: [] },
+    ]);
+    const mcp = new ScriptedMcp();
+    const previews: WritePreview[] = [];
+    const host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: (preview) => {
+        previews.push(preview);
+        host.resolveConfirmation(preview.requestId, true);
+      },
+    });
+
+    const turn = await host.submit("Save then undo");
+    expect(previews.map((preview) => preview.operation)).toEqual([
+      "ugoite.save",
+      "ugoite.undo",
+    ]);
+    expect(previews[1].workId).toBe(turn.workId);
+    expect(previews[1].summary).toContain(turn.workId);
+    expect(turn.knowledge).toBe("unchanged");
+    expect(turn.undoAvailable).toBe(false);
+    expect(mcp.calls.map((call) => call.operation)).toEqual([
+      "ugoite.save",
+      "ugoite.undo",
+    ]);
   });
 });

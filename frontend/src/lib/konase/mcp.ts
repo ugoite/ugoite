@@ -21,6 +21,7 @@ export type McpResult = {
   observation?: Observation;
   resources: ResourceReference[];
   resource_contents: ResourceContent[];
+  structured_content?: unknown;
   error?: string;
 };
 
@@ -115,6 +116,7 @@ export class BrowserMcpHost implements McpHost {
         success,
         resources: [],
         resource_contents: [],
+        structured_content: response.structuredContent,
         error: success ? undefined : content,
       };
     }
@@ -153,7 +155,8 @@ export class BrowserMcpHost implements McpHost {
           ? value.description
           : "",
         input_schema: value.inputSchema,
-        effect: effectFromAnnotations(value.annotations),
+        effect: canonicalEffect(value.name) ??
+          effectFromAnnotations(value.annotations),
       }];
     });
     capabilities.push({
@@ -212,12 +215,67 @@ export class BrowserMcpHost implements McpHost {
 const matchesCapability = (name: string) =>
   name === "ugoite.search" || name === "ugoite.save" || name === "ugoite.undo";
 
-const effectFromAnnotations = (value: unknown): CapabilityEffect | undefined => {
+const effectFromAnnotations = (
+  value: unknown,
+): CapabilityEffect | undefined => {
   if (!isRecord(value)) return undefined;
   if (value.readOnlyHint === true) return "read";
   if (value.readOnlyHint === false) return "write";
   return undefined;
 };
+
+const canonicalEffect = (name: string): CapabilityEffect | undefined => {
+  switch (name) {
+    case "resources/read":
+      return "read";
+    case "ugoite.save":
+    case "ugoite.undo":
+      return "write";
+    default:
+      return undefined;
+  }
+};
+
+/** Confirms that a successful write produced the canonical MCP receipt. */
+export function validateMutationResult(
+  request: McpRequest,
+  workId: string,
+  result: McpResult,
+): McpResult {
+  if (
+    result.request_id !== request.request_id ||
+    result.operation !== request.operation
+  ) {
+    throw new Error("MCP result did not match the pending request");
+  }
+  if (!result.success) return result;
+  if (request.operation === "ugoite.save") {
+    if (!validSaveReceipt(result.structured_content)) {
+      throw new Error("MCP save receipt could not be verified");
+    }
+  } else if (request.operation === "ugoite.undo") {
+    if (!validUndoReceipt(result.structured_content, workId)) {
+      throw new Error("MCP undo receipt could not be verified");
+    }
+  }
+  return result;
+}
+
+function validSaveReceipt(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false;
+  const id = value.id;
+  return typeof id === "string" && id.length > 0 &&
+    value.uri === `ugoite://entry/${id}` &&
+    (value.status === "created" || value.status === "updated") &&
+    value._untrusted_content === true;
+}
+
+function validUndoReceipt(value: unknown, workId: string): boolean {
+  return isRecord(value) && value.run_id === workId &&
+    Number.isSafeInteger(value.reverted_change_count) &&
+    (value.reverted_change_count as number) >= 0 &&
+    value._untrusted_content === true;
+}
 
 const resourcesReadSchema = (): Record<string, unknown> => ({
   type: "object",

@@ -102,17 +102,31 @@ reported as `saved` only after the MCP mutation receipt passes validation.
 Approving a write does not change MCP credentials, Space scope, ACL, or server
 validation.
 
-The browser Host and Konase UI now provide the same one-Job path. The panel
-starts a browser-approved MCP device credential for the current Space, checks
-the returned Space UID, and resolves the MCP endpoint from protected-resource
+The browser Host and Konase UI provide the same one-Job path. The panel starts
+a browser-approved MCP device credential for the current Space, checks the
+returned Space UID, and resolves the MCP endpoint from protected-resource
 metadata. The credential, model key, and browser signing key stay in page
-memory only. Space navigation invalidates the panel lifetime token, so late
-Work results, errors, progress, and undo completions are discarded by the
-browser adapter instead of mutating the newly rendered Space. Cancellation is
-not required for this boundary. The Host executes model/MCP effects and uses
-the existing `ugoite/runId` metadata for Work-scoped writes and undo. It maps
-MCP `readOnlyHint` annotations and reports the same observed Knowledge outcome
-as the CLI. It does not persist chat history or browser-local Space data. Agent Plugins, native MCP
-abstractions, and other provider frameworks remain outside this MVP. They must
-implement the contracts above without leaking provider/framework types into
-the Konase or Ugoite public/domain contracts.
+memory only.
+
+Before a model-requested `ugoite.save` or `ugoite.undo`, the browser Host retains
+the original MCP request and presents a bounded preview derived from its
+arguments. Field values are summarized by type and length; sensitive values are
+hidden. Approval applies once to that Work, request ID, Space, operation, and
+argument snapshot. The Host checks that snapshot immediately before MCP
+dispatch. Missing callbacks, denial, expiry, Space navigation, panel unmount,
+or Host disposal fail closed. A mutation already sent to MCP cannot be recalled,
+but its response is not applied to a newly rendered Space.
+
+The browser Host treats known save and undo operations as writes even when MCP
+omits their read-only annotations. Search is read-only only when tools/list
+declares it read-only; unsupported or unknown effects fail closed. It uses the
+existing `ugoite/runId` metadata for Work-scoped writes and undo, and reports
+`saved` or enables Work Undo only after validating the canonical MCP mutation
+receipt. A lost or malformed receipt is not retried or reported as a confirmed
+save. The user-operated Undo button remains a direct, explicit Work-scoped
+Undo. Space navigation and unmount invalidate pending confirmation and discard
+late Work results, errors, progress, and undo completions. The browser does not
+persist chat history or Space data. Agent Plugins, native MCP abstractions, and
+other provider frameworks remain outside this MVP. They must implement the
+contracts above without leaking provider/framework types into the Konase or
+Ugoite public/domain contracts.
