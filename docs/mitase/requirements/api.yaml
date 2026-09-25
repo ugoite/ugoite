@@ -545,6 +545,74 @@ requirements:
                 criterion: REQ-API-015#criterion.canonical-sql-count
                 covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_cli_sql_query_and_count_use_stateless_local_contract } }
+  - id: REQ-API-016
+    title: Bounded stateless SQL export
+    description: The CLI can stream a complete, explicitly bounded multi-page SQL result as NDJSON through the existing stateless SQL query operation in local and remote mode.
+    priority: high
+    status: implemented
+    criteria:
+      - id: bounded-complete-export
+        kind: behavior
+        statement: '`ugoite sql export` requires a positive maximum row count, limits every request to the remaining budget, and succeeds only when the result is complete.'
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: stateless-query-only
+        kind: behavior
+        statement: Export repeats the canonical SqlQueryRequest/SqlQueryPage route and does not issue a count request, retain continuation state, or create Knowledge.'
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: partial-output-is-failure
+        kind: quality
+        statement: 'A later page, authorization, transport, output, or row-limit failure is nonzero; file output is not published and streamed stdout reports its completed row count.'
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: local-remote-parity
+        kind: quality
+        statement: Local and remote export use the same canonical page request and response DTOs, preserving shared authorization and continuation semantics.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: cli-export-verification
+        role: verification
+        facet: verification
+        responsibility: Verify complete local NDJSON export, bounded incomplete failure, and remote continuation routing through the canonical SQL page operation.
+        targets:
+          - id: local-complete
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_sql_stateless_cli.rs
+            selector: { kind: test, name: cli_sql_export_writes_complete_ndjson_atomically }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-016#criterion.bounded-complete-export
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_sql_stateless_cli, test: cli_sql_export_writes_complete_ndjson_atomically } }
+          - id: local-limit-failure
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_sql_stateless_cli.rs
+            selector: { kind: test, name: cli_sql_export_max_rows_does_not_publish_partial_file }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-016#criterion.partial-output-is-failure
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_sql_stateless_cli, test: cli_sql_export_max_rows_does_not_publish_partial_file } }
+          - id: remote-continuation
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_sql_export_reuses_stateless_route_and_continuation }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-016#criterion.stateless-query-only
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_export_reuses_stateless_route_and_continuation } }
+              - kind: verifies
+                criterion: REQ-API-016#criterion.local-remote-parity
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_export_reuses_stateless_route_and_continuation } }
+          - id: remote-failure
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_sql_export_discards_file_after_remote_failure_without_leaking_token }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-016#criterion.partial-output-is-failure
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_export_discards_file_after_remote_failure_without_leaking_token } }
       - id: backend-verification
         role: verification
         facet: verification

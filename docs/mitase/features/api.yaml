@@ -377,6 +377,14 @@ features:
                 criterion: REQ-API-015#criterion.canonical-sql-count
               - kind: satisfies
                 criterion: REQ-API-015#criterion.local-remote-parity
+              - kind: satisfies
+                criterion: REQ-API-016#criterion.bounded-complete-export
+              - kind: satisfies
+                criterion: REQ-API-016#criterion.stateless-query-only
+              - kind: satisfies
+                criterion: REQ-API-016#criterion.partial-output-is-failure
+              - kind: satisfies
+                criterion: REQ-API-016#criterion.local-remote-parity
           - id: entry-query-command
             adapter: rust
             path: crates/ugoite-cli/src/commands/entry_query.rs

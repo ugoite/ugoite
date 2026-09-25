@@ -6,6 +6,10 @@ use crate::output::{
 };
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
 use ugoite_core::sql_query::{SqlQueryCountRequest, SqlQueryPage, SqlQueryRequest};
 use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::{
@@ -47,9 +51,182 @@ pub enum SqlSubCmd {
         #[arg(long = "param-type", value_name = "NAME=TYPE")]
         parameter_types: Vec<String>,
     },
+    /// Export a complete bounded SQL result as NDJSON
+    #[command(
+        long_about = "Export a complete SQL result as one JSON object per line. --max-rows is required. Without --output, rows stream to stdout; a failure can leave partial stdout, so use pipefail and check the exit status."
+    )]
+    Export {
+        #[arg(value_name = "SQL_OR_FILE")]
+        sql_text: String,
+        #[arg(long = "param", value_name = "NAME=VALUE")]
+        parameters: Vec<String>,
+        #[arg(long = "param-type", value_name = "NAME=TYPE")]
+        parameter_types: Vec<String>,
+        #[arg(long, required = true)]
+        max_rows: usize,
+        #[arg(long, default_value_t = 100)]
+        page_size: usize,
+        #[arg(long, value_name = "PATH")]
+        output: Option<PathBuf>,
+    },
     /// Manage durable saved SQL queries
     #[command(subcommand)]
     Saved(SavedSqlSubCmd),
+}
+
+const MAX_SQL_EXPORT_ROWS: usize = 1_000_000;
+
+enum ExportSink {
+    Stdout(std::io::Stdout),
+    File {
+        writer: BufWriter<File>,
+        path: PathBuf,
+        temp: tempfile::NamedTempFile,
+    },
+}
+
+impl ExportSink {
+    fn new(path: Option<PathBuf>) -> Result<Self> {
+        match path {
+            None => Ok(Self::Stdout(std::io::stdout())),
+            Some(path) => {
+                let directory = path
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or(Path::new("."));
+                let temp = tempfile::Builder::new()
+                    .prefix(".ugoite-export-")
+                    .tempfile_in(directory)
+                    .with_context(|| {
+                        format!(
+                            "failed to create export temporary file beside {}",
+                            path.display()
+                        )
+                    })?;
+                let writer = BufWriter::new(temp.reopen()?);
+                Ok(Self::File { writer, path, temp })
+            }
+        }
+    }
+
+    fn write_row(&mut self, row: &serde_json::Value) -> Result<()> {
+        let writer: &mut dyn Write = match self {
+            Self::Stdout(writer) => writer,
+            Self::File { writer, .. } => writer,
+        };
+        serde_json::to_writer(&mut *writer, row)?;
+        writer.write_all(b"\n")?;
+        Ok(())
+    }
+
+    fn finish(self) -> Result<Option<PathBuf>> {
+        match self {
+            Self::Stdout(mut writer) => {
+                writer.flush()?;
+                Ok(None)
+            }
+            Self::File {
+                mut writer,
+                path,
+                temp,
+            } => {
+                writer.flush()?;
+                writer.get_ref().sync_all()?;
+                drop(writer);
+                temp.persist_noclobber(&path).map_err(|error| {
+                    anyhow::anyhow!(
+                        "failed to safely finalize export at {}: {}",
+                        path.display(),
+                        error.error
+                    )
+                })?;
+                let parent = path
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or(Path::new("."));
+                if let Ok(directory) = File::open(parent) {
+                    let _ = directory.sync_all();
+                }
+                Ok(Some(path.clone()))
+            }
+        }
+    }
+}
+
+async fn export_sql(
+    target: &SpaceTarget,
+    mut request: SqlQueryRequest,
+    max_rows: usize,
+    sink: &mut ExportSink,
+    rows_exported: &mut usize,
+) -> Result<usize> {
+    let mut pages_fetched = 0usize;
+    let mut expected_columns: Option<Vec<String>> = None;
+    let mut seen_tokens = HashSet::new();
+    let mut interrupt = Box::pin(tokio::signal::ctrl_c());
+    loop {
+        let requested_limit = request.limit;
+        let page = tokio::select! {
+            result = &mut interrupt => {
+                result?;
+                anyhow::bail!("sql export interrupted")
+            }
+            result = query_sql_page(target, request.clone()) => result?,
+        };
+        pages_fetched += 1;
+        if page.rows.len() > requested_limit {
+            anyhow::bail!(
+                "sql export received {} rows for a requested page size of {}",
+                page.rows.len(),
+                requested_limit
+            );
+        }
+        if page.has_more != page.next.is_some() {
+            anyhow::bail!("sql export received inconsistent continuation metadata");
+        }
+        if expected_columns
+            .as_ref()
+            .is_some_and(|columns| columns != &page.columns)
+        {
+            anyhow::bail!("sql export received different columns between pages");
+        }
+        expected_columns.get_or_insert_with(|| page.columns.clone());
+        if page.has_more && page.rows.is_empty() {
+            anyhow::bail!("sql export cannot continue after an empty page");
+        }
+        if page
+            .next
+            .as_ref()
+            .is_some_and(|token| seen_tokens.contains(token))
+        {
+            anyhow::bail!("sql export received a repeated continuation token");
+        }
+        for row in &page.rows {
+            sink.write_row(row)?;
+            *rows_exported += 1;
+        }
+        if *rows_exported == max_rows && page.has_more {
+            return Err(UsageError(format!(
+                "sql export is incomplete: --max-rows reached after {rows_exported} rows"
+            ))
+            .into());
+        }
+        if !page.has_more {
+            break;
+        }
+        let next = page.next.expect("continuation metadata checked");
+        seen_tokens.insert(next.clone());
+        request.continuation = Some(next);
+        request.limit = (max_rows - *rows_exported).min(request.limit);
+    }
+    tokio::select! {
+        result = &mut interrupt => {
+            result?;
+            anyhow::bail!("sql export interrupted")
+        }
+        _ = tokio::task::yield_now() => {}
+    }
+    Ok(pages_fetched)
 }
 
 #[derive(Subcommand)]
@@ -346,6 +523,57 @@ pub async fn run(
             )
             .await?;
             print_json(&result);
+        }
+        SqlSubCmd::Export {
+            sql_text,
+            parameters,
+            parameter_types,
+            max_rows,
+            page_size,
+            output,
+        } => {
+            if max_rows == 0 || max_rows > MAX_SQL_EXPORT_ROWS {
+                return Err(UsageError(format!(
+                    "--max-rows must be between 1 and {MAX_SQL_EXPORT_ROWS}"
+                ))
+                .into());
+            }
+            if page_size == 0 || page_size > ugoite_core::sql_query::MAX_SQL_PAGE_LIMIT {
+                return Err(UsageError(format!(
+                    "--page-size must be between 1 and {}",
+                    ugoite_core::sql_query::MAX_SQL_PAGE_LIMIT
+                ))
+                .into());
+            }
+            let sql = sql_text_from_argument(&sql_text)?;
+            let (parameters, parameter_types) = parse_sql_bindings(&parameters, &parameter_types)?;
+            let target = resolve_command_target(explicit_config, context_override, "sql export")?;
+            let mut sink = ExportSink::new(output)?;
+            let request = SqlQueryRequest {
+                sql,
+                parameters,
+                parameter_types,
+                limit: page_size.min(max_rows),
+                continuation: None,
+            };
+            let mut rows_exported = 0usize;
+            let pages = export_sql(&target, request, max_rows, &mut sink, &mut rows_exported)
+                .await
+                .map_err(|source| crate::output::ExportProgressError {
+                    rows_exported,
+                    source,
+                })?;
+            let output_path =
+                sink.finish()
+                    .map_err(|source| crate::output::ExportProgressError {
+                        rows_exported,
+                        source,
+                    })?;
+            if let Some(path) = output_path {
+                print_json(
+                    &serde_json::json!({"path": path, "rows_exported": rows_exported, "pages_fetched": pages}),
+                );
+            }
         }
         SqlSubCmd::Saved(SavedSqlSubCmd::List) => {
             let target =

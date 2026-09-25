@@ -12,6 +12,12 @@ The page request contains `sql`, `parameters`, optional `parameter_types`, and
 `next` continuation. Count is an explicit operation and is never performed as
 part of page retrieval.
 
+The CLI's bounded `sql export` command repeats the page operation and streams
+the complete result as NDJSON under a required row limit. It adds no REST
+operation, query session, or saved result; file output is committed only after
+the final page succeeds. Stdout may contain a partial stream on failure and
+must be accepted only after a zero exit status.
+
 The first page captures the current `PublicationRef`. A continuation resolves
 that same immutable publication and rechecks current authorization on every
 request. It carries SQL and parameter fingerprints, a page offset, and a
