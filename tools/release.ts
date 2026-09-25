@@ -464,8 +464,15 @@ async function verifyCandidateCliArchive(
     }
     const create = JSON.parse(
       (await run(binary, ["space", "create", "smoke"], workspace)).stdout,
-    ) as { created?: boolean; slug?: string; id?: string };
-    if (create.created !== true || create.slug !== "smoke" || !create.id) {
+    ) as {
+      context?: { created?: boolean };
+      space?: { slug?: string; space_uid?: string };
+    };
+    const createdSpaceUid = create.space?.space_uid;
+    if (
+      create.context?.created !== true || create.space?.slug !== "smoke" ||
+      !createdSpaceUid
+    ) {
       throw new Error(
         `candidate CLI Space create returned ${JSON.stringify(create)}`,
       );
@@ -473,7 +480,7 @@ async function verifyCandidateCliArchive(
     const listAfter = JSON.parse(
       (await run(binary, ["space", "list"], workspace)).stdout,
     ) as unknown;
-    if (!Array.isArray(listAfter) || !listAfter.includes(create.id)) {
+    if (!Array.isArray(listAfter) || !listAfter.includes(createdSpaceUid)) {
       throw new Error(
         "candidate CLI Space list did not contain the created Space",
       );

@@ -180,6 +180,27 @@ Deno.test("REQ-OPS-044: repository-native release tasks and split workflows are 
     true,
   );
   assertEquals(
+    candidateCliSmoke.includes("context?: { created?: boolean }"),
+    true,
+  );
+  assertEquals(
+    candidateCliSmoke.includes("space?: { slug?: string; space_uid?: string }"),
+    true,
+  );
+  assertEquals(
+    candidateCliSmoke.includes("create.context?.created !== true"),
+    true,
+  );
+  assertEquals(
+    candidateCliSmoke.includes('create.space?.slug !== "smoke"'),
+    true,
+  );
+  assertEquals(candidateCliSmoke.includes("create.space?.space_uid"), true);
+  assertEquals(
+    candidateCliSmoke.includes("listAfter.includes(createdSpaceUid)"),
+    true,
+  );
+  assertEquals(
     distributionVerifier.includes("tools/distribution.ts"),
     true,
   );
