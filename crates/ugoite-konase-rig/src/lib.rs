@@ -28,6 +28,10 @@ enum PendingStep {
         call_id: String,
         name: String,
     },
+    Confirmation {
+        request: McpRequest,
+        call_id: String,
+    },
 }
 
 #[derive(Debug)]
@@ -79,18 +83,39 @@ impl RigAgentRuntime {
         if let Some(call) = self.queued_tools.pop_front() {
             self.mcp_sequence = self.mcp_sequence.saturating_add(1);
             let request_id = format!("{}:mcp:{}", self.active_job_id()?, self.mcp_sequence);
-            self.pending = Some(PendingStep::Tool {
-                request_id: request_id.clone(),
-                call_id: call.call_id,
-                name: call.name.clone(),
-            });
-            return Ok(AgentAction::CallMcp(McpRequest {
+            let mut request = McpRequest {
                 request_id,
                 server: "ugoite".into(),
-                operation: call.name,
+                operation: call.name.clone(),
                 arguments: call.arguments,
                 effect: call.effect,
-            }));
+            };
+            let effect = effective_effect(&request)?;
+            request.effect = Some(effect);
+            match effect {
+                ugoite_konase::CapabilityEffect::Read => {
+                    self.pending = Some(PendingStep::Tool {
+                        request_id: request.request_id.clone(),
+                        call_id: call.call_id,
+                        name: call.name,
+                    });
+                    return Ok(AgentAction::CallMcp(request));
+                }
+                ugoite_konase::CapabilityEffect::Write => {
+                    let reason = write_summary(&request)?;
+                    self.pending = Some(PendingStep::Confirmation {
+                        request: request.clone(),
+                        call_id: call.call_id,
+                    });
+                    return Ok(AgentAction::AskConfirmation(
+                        ugoite_konase::ConfirmationRequest {
+                            request_id: request.request_id,
+                            operation: request.operation,
+                            reason,
+                        },
+                    ));
+                }
+            }
         }
 
         let step = self
@@ -237,6 +262,35 @@ impl RigAgentRuntime {
         self.next_action()
     }
 
+    fn confirmation_completed(
+        &mut self,
+        result: ugoite_konase::ConfirmationResult,
+    ) -> Result<AgentAction, AgentRuntimeError> {
+        let Some(PendingStep::Confirmation { request, call_id }) = self.pending.take() else {
+            return Err(Self::error(
+                "unexpected_confirmation",
+                "no write confirmation is pending",
+            ));
+        };
+        if request.request_id != result.request_id {
+            self.pending = Some(PendingStep::Confirmation { request, call_id });
+            return Err(Self::error(
+                "unexpected_confirmation",
+                "confirmation does not match the pending write",
+            ));
+        }
+        if !result.approved {
+            self.clear();
+            return Err(Self::error("write_denied", "Konase write was denied"));
+        }
+        self.pending = Some(PendingStep::Tool {
+            request_id: request.request_id.clone(),
+            call_id,
+            name: request.operation.clone(),
+        });
+        Ok(AgentAction::CallMcp(request))
+    }
+
     fn validate_tool_call(
         &self,
         call: rig_agent::agent::run::PendingToolCall,
@@ -334,15 +388,167 @@ impl AgentRuntime for RigAgentRuntime {
         match input {
             AgentRuntimeInput::ModelCompleted(result) => self.model_completed(result),
             AgentRuntimeInput::McpCompleted(result) => self.mcp_completed(result),
-            AgentRuntimeInput::ConfirmationCompleted(_) => Err(Self::error(
-                "unsupported_confirmation",
-                "Rig adapter does not emit confirmation actions yet",
-            )),
+            AgentRuntimeInput::ConfirmationCompleted(result) => self.confirmation_completed(result),
             AgentRuntimeInput::HostFailed(error) => {
                 self.clear();
                 Err(Self::error(error.kind.as_str(), error.message))
             }
         }
+    }
+}
+
+fn effective_effect(
+    request: &McpRequest,
+) -> Result<ugoite_konase::CapabilityEffect, AgentRuntimeError> {
+    use ugoite_konase::CapabilityEffect::{Read, Write};
+    match request.operation.as_str() {
+        "ugoite.save" | "ugoite.undo" => Ok(Write),
+        _ => match request.effect {
+            Some(Read) => Ok(Read),
+            Some(Write) => Err(AgentRuntimeError::new(
+                "unsupported_write",
+                format!(
+                    "write capability {} cannot be safely previewed",
+                    request.operation
+                ),
+            )),
+            None => Err(AgentRuntimeError::new(
+                "unknown_effect",
+                format!(
+                    "capability {} has no trusted effect metadata",
+                    request.operation
+                ),
+            )),
+        },
+    }
+}
+
+fn write_summary(request: &McpRequest) -> Result<String, AgentRuntimeError> {
+    const MAX_SUMMARY_CHARS: usize = 1200;
+    if request.operation == "ugoite.undo" {
+        return Ok("Undo all changes made by this Konase Work in the authorized Space.".into());
+    }
+    if request.operation != "ugoite.save" {
+        return Err(AgentRuntimeError::new(
+            "unsupported_write",
+            "write preview is unavailable",
+        ));
+    }
+    let id = request
+        .arguments
+        .get("id")
+        .and_then(serde_json::Value::as_str);
+    let form = request
+        .arguments
+        .get("form")
+        .and_then(serde_json::Value::as_str);
+    let fields = request
+        .arguments
+        .get("fields")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| {
+            AgentRuntimeError::new("invalid_write_preview", "save fields must be an object")
+        })?;
+    if id.is_some_and(str::is_empty) || form.is_some_and(str::is_empty) {
+        return Err(AgentRuntimeError::new(
+            "invalid_write_preview",
+            "save target contains an empty identifier",
+        ));
+    }
+    if id.is_none() && form.is_none() {
+        return Err(AgentRuntimeError::new(
+            "invalid_write_preview",
+            "new save has no Form target",
+        ));
+    }
+    let mut parts = vec![format!(
+        "{} in the authorized Space; Form {}{}.",
+        if id.is_some() { "Update" } else { "Create" },
+        form.map(safe_preview_label)
+            .as_deref()
+            .unwrap_or("from the existing Entry"),
+        id.map(|value| format!("; Entry {}", safe_preview_label(value)))
+            .unwrap_or_default()
+    )];
+    let field_summary = fields
+        .iter()
+        .map(|(name, value)| {
+            if is_sensitive_field(name) {
+                format!("{}: [hidden]", safe_preview_label(name))
+            } else {
+                format!("{}: {}", safe_preview_label(name), value_summary(value))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    parts.push(format!(
+        "Fields ({}): {field_summary}.",
+        if id.is_some() {
+            "replace the complete structured field map"
+        } else {
+            "new Entry values"
+        }
+    ));
+    if let Some(tags) = request
+        .arguments
+        .get("tags")
+        .and_then(serde_json::Value::as_array)
+    {
+        if !tags.is_empty() {
+            parts.push(format!("Tags: {} tag(s).", tags.len()));
+        }
+    }
+    if let Some(extra) = request
+        .arguments
+        .get("extra_attributes")
+        .and_then(serde_json::Value::as_object)
+    {
+        if !extra.is_empty() {
+            parts.push("Extra attributes: present.".into());
+        }
+    }
+    let summary = parts.join(" ");
+    if summary.chars().count() <= MAX_SUMMARY_CHARS {
+        return Ok(summary);
+    }
+    let mut clipped = summary
+        .chars()
+        .take(MAX_SUMMARY_CHARS - 20)
+        .collect::<String>();
+    clipped.push_str("… [omitted]");
+    Ok(clipped)
+}
+
+fn safe_preview_label(value: &str) -> String {
+    value
+        .chars()
+        .take(96)
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect()
+}
+
+fn is_sensitive_field(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    [
+        "api_key",
+        "api key",
+        "token",
+        "credential",
+        "password",
+        "secret",
+    ]
+    .iter()
+    .any(|needle| name.contains(needle))
+}
+
+fn value_summary(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "empty".into(),
+        serde_json::Value::Bool(_) => "boolean".into(),
+        serde_json::Value::Number(_) => "number".into(),
+        serde_json::Value::String(value) => format!("text ({} chars)", value.chars().count()),
+        serde_json::Value::Array(values) => format!("list ({} items)", values.len()),
+        serde_json::Value::Object(values) => format!("object ({} fields)", values.len()),
     }
 }
 
@@ -441,6 +647,17 @@ mod tests {
         }
     }
 
+    fn context_with_writes() -> ContextCapsule {
+        let mut context = context();
+        context.available_capabilities.push(Capability {
+            name: "ugoite.save".into(),
+            description: "Save a structured Entry".into(),
+            input_schema: Some(serde_json::json!({"type":"object"})),
+            effect: None,
+        });
+        context
+    }
+
     #[test]
     fn capability_schema_reaches_model_request_unchanged() {
         let mut runtime = RigAgentRuntime::default();
@@ -482,6 +699,110 @@ mod tests {
         assert_eq!(request.operation, "ugoite.search");
         assert_eq!(request.effect, Some(CapabilityEffect::Read));
         assert_eq!(request.arguments["query"], "WebAssembly");
+    }
+
+    #[test]
+    fn each_queued_save_requires_a_distinct_confirmation_and_keeps_its_arguments() {
+        let mut runtime = RigAgentRuntime::default();
+        let AgentAction::CallModel(model) = runtime.start(job(), context_with_writes()).unwrap()
+        else {
+            panic!("expected initial model call");
+        };
+        let save_a = serde_json::json!({"form":"Note", "fields":{"title":"Private title", "api_token":"credential-value"}});
+        let save_b = serde_json::json!({"id":"entry-b", "fields":{"title":"B"}});
+        let AgentAction::AskConfirmation(confirmation_a) = runtime
+            .resume(AgentRuntimeInput::ModelCompleted(ModelResult {
+                request_id: model.request_id,
+                text: None,
+                tool_calls: vec![
+                    ugoite_konase::ModelToolCall {
+                        id: "a".into(),
+                        name: "ugoite.save".into(),
+                        arguments: save_a.clone(),
+                    },
+                    ugoite_konase::ModelToolCall {
+                        id: "b".into(),
+                        name: "ugoite.save".into(),
+                        arguments: save_b.clone(),
+                    },
+                ],
+            }))
+            .unwrap()
+        else {
+            panic!("expected first write confirmation");
+        };
+        assert!(confirmation_a.reason.contains("Form Note"));
+        assert!(confirmation_a.reason.contains("title: text (13 chars)"));
+        assert!(confirmation_a.reason.contains("api_token: [hidden]"));
+        assert!(!confirmation_a.reason.contains("Private title"));
+        assert!(!confirmation_a.reason.contains("credential-value"));
+        assert!(!confirmation_a
+            .reason
+            .contains("replace the complete structured field map"));
+        let AgentAction::CallMcp(first) = runtime
+            .resume(AgentRuntimeInput::ConfirmationCompleted(
+                ugoite_konase::ConfirmationResult {
+                    request_id: confirmation_a.request_id.clone(),
+                    approved: true,
+                },
+            ))
+            .unwrap()
+        else {
+            panic!("approved save should produce the held MCP request")
+        };
+        assert_eq!(
+            serde_json::Value::Object(first.arguments.clone().into_iter().collect()),
+            save_a
+        );
+        let AgentAction::AskConfirmation(confirmation_b) = runtime
+            .resume(AgentRuntimeInput::McpCompleted(McpResult {
+                request_id: first.request_id,
+                operation: first.operation,
+                success: true,
+                observation: None,
+                resources: vec![],
+                resource_contents: vec![],
+                error: None,
+            }))
+            .unwrap()
+        else {
+            panic!("second write needs a new confirmation")
+        };
+        assert_ne!(confirmation_a.request_id, confirmation_b.request_id);
+        assert!(confirmation_b.reason.contains("Entry entry-b"));
+        assert!(confirmation_b
+            .reason
+            .contains("replace the complete structured field map"));
+        assert!(runtime
+            .resume(AgentRuntimeInput::ConfirmationCompleted(
+                ugoite_konase::ConfirmationResult {
+                    request_id: confirmation_b.request_id,
+                    approved: false
+                }
+            ))
+            .is_err());
+        assert!(runtime.run.is_none());
+    }
+
+    #[test]
+    fn write_effect_without_safe_preview_is_rejected() {
+        let request = McpRequest {
+            request_id: "id".into(),
+            server: "ugoite".into(),
+            operation: "other.write".into(),
+            arguments: BTreeMap::new(),
+            effect: Some(CapabilityEffect::Write),
+        };
+        assert_eq!(
+            effective_effect(&request).unwrap_err().kind,
+            "unsupported_write"
+        );
+        let mut unknown = request;
+        unknown.effect = None;
+        assert_eq!(
+            effective_effect(&unknown).unwrap_err().kind,
+            "unknown_effect"
+        );
     }
 
     #[test]
