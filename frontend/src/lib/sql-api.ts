@@ -72,22 +72,26 @@ export const sqlApi = {
   async query(
     spaceId: string,
     request: SqlQueryRequest,
+    signal?: AbortSignal,
   ): Promise<SqlQueryPage> {
     return await protocolFetch<SqlQueryPage>(
       "sql.query",
       { space_id: spaceId },
       request,
+      { signal },
     );
   },
 
   async count(
     spaceId: string,
     request: SqlQueryCountRequest,
+    signal?: AbortSignal,
   ): Promise<number> {
     const payload = await protocolFetch<{ count: number }>(
       "sql.query.count",
       { space_id: spaceId },
       request,
+      { signal },
     );
     return payload.count;
   },

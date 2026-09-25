@@ -1137,6 +1137,31 @@ describe("error paths", () => {
     );
   });
 
+  it("entryApi.count forwards cancellation to the browser fetch", async () => {
+    let observedSignal: AbortSignal | undefined;
+    server.use(
+      http.post(
+        testApiUrl("/spaces/ws-search-cancel/entries/query/count"),
+        async ({ request }) => {
+          observedSignal = request.signal;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return HttpResponse.json({ count: 1 });
+        },
+      ),
+    );
+    const controller = new AbortController();
+    const count = entryApi.count("ws-search-cancel", {
+      query: { scope: { kind: "all" }, filters: [], sort: [] },
+    }, controller.signal);
+    for (let attempt = 0; !observedSignal && attempt < 20; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(observedSignal).toBeDefined();
+    controller.abort();
+    await expect(count).rejects.toMatchObject({ name: "AbortError" });
+    expect(observedSignal?.aborted).toBe(true);
+  });
+
   it("spaceApi.create uses fallback message when error response has no detail", async () => {
     server.use(
       http.post(

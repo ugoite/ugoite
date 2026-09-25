@@ -46,22 +46,29 @@ const currentRevisionIdFromError = (
 
 /** Entry API client backed by the shared Rust/WASM protocol. */
 export const entryApi = {
-  async query(spaceId: string, request: EntryPageRequest): Promise<EntryPage> {
+  async query(
+    spaceId: string,
+    request: EntryPageRequest,
+    signal?: AbortSignal,
+  ): Promise<EntryPage> {
     return await protocolFetch<EntryPage>(
       "entry.query",
       { space_id: spaceId },
       request,
+      { signal },
     );
   },
 
   async count(
     spaceId: string,
     request: EntryCountRequest,
+    signal?: AbortSignal,
   ): Promise<EntryCount> {
     return await protocolFetch<EntryCount>(
       "entry.query.count",
       { space_id: spaceId },
       request,
+      { signal },
     );
   },
 

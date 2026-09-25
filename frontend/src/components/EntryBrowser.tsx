@@ -534,6 +534,14 @@ export function EntryBrowser(props: EntryBrowserProps) {
         <p class="ui-text-danger" role="alert">
           {String(errorState())}
         </p>
+        <button
+          type="button"
+          class="ui-button ui-button-secondary"
+          disabled={loadingState()}
+          onClick={() => void props.controller.refresh()}
+        >
+          {t("common.retry")}
+        </button>
       </Show>
       <Show when={!loadingState() && rowsState().length === 0 && !errorState()}>
         <p class="ui-muted">{t("entryBrowser.empty")}</p>

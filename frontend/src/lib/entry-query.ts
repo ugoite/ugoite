@@ -1,4 +1,10 @@
-import { type Accessor, createSignal, untrack } from "solid-js";
+import {
+  type Accessor,
+  createEffect,
+  createSignal,
+  onCleanup,
+  untrack,
+} from "solid-js";
 import { entryApi } from "~/lib/ugoite-client";
 
 /** Logical EntryQuery types mirrored from ugoite-core's serde contract. */
@@ -134,9 +140,14 @@ export type EntryQueryController = ReturnType<
   typeof createEntryQueryController
 >;
 
+const isAbortError = (error: unknown): boolean =>
+  !!error && typeof error === "object" &&
+  (error as { name?: unknown }).name === "AbortError";
+
 type QueryPage = (
   spaceId: string,
   request: EntryPageRequest,
+  signal: AbortSignal,
 ) => Promise<EntryPage>;
 
 /**
@@ -168,27 +179,68 @@ export function createEntryQueryController(
     undefined,
   ]);
   let requestGeneration = 0;
+  let activeController: AbortController | undefined;
+  let activeRequestKey = "";
+  let hasRequested = false;
+
+  const cancel = () => {
+    requestGeneration += 1;
+    activeController?.abort();
+    activeController = undefined;
+    activeRequestKey = "";
+    hasRequested = false;
+    setLoading(false);
+  };
+
+  let previousSpaceId = untrack(spaceId);
+  createEffect(() => {
+    const currentSpaceId = spaceId();
+    if (currentSpaceId === previousSpaceId) return;
+    previousSpaceId = currentSpaceId;
+    setRows([]);
+    setError(null);
+    setHasMore(false);
+    setNextCursor(undefined);
+    setCurrentStart(undefined);
+    setCursorStack([undefined]);
+    if (hasRequested) void loadAt(undefined, [undefined]);
+  });
+
+  onCleanup(cancel);
 
   const loadAt = async (
     after: string | undefined,
     nextStack: (string | undefined)[],
+    clearRows = after === undefined && nextStack.length === 1,
   ) => {
+    hasRequested = true;
+    const requestSpaceId = untrack(spaceId);
+    const requestKey = JSON.stringify({
+      spaceId: requestSpaceId,
+      query: untrack(query),
+      projection: untrack(projection),
+      after,
+    });
+    if (activeController && activeRequestKey === requestKey) return;
     const generation = ++requestGeneration;
-    const freshChain = after === undefined && nextStack.length === 1;
+    activeController?.abort();
+    const controller = new AbortController();
+    activeController = controller;
+    activeRequestKey = requestKey;
     setLoading(true);
     setError(null);
-    if (freshChain) {
+    if (clearRows) {
       setRows([]);
       setHasMore(false);
       setNextCursor(undefined);
     }
     try {
-      const page = await queryPage(untrack(spaceId), {
+      const page = await queryPage(requestSpaceId, {
         query: untrack(query),
         projection: untrack(projection),
         limit: pageSize,
         ...(after ? { after } : {}),
-      });
+      }, controller.signal);
       if (generation !== requestGeneration) return;
       setRows(page.rows);
       setHasMore(page.has_more);
@@ -196,9 +248,18 @@ export function createEntryQueryController(
       setCurrentStart(after);
       setCursorStack(nextStack);
     } catch (cause) {
-      if (generation === requestGeneration) setError(cause);
+      if (
+        generation === requestGeneration && !controller.signal.aborted &&
+        !isAbortError(cause)
+      ) {
+        setError(cause);
+      }
     } finally {
-      if (generation === requestGeneration) setLoading(false);
+      if (generation === requestGeneration) {
+        if (activeController === controller) activeController = undefined;
+        if (activeRequestKey === requestKey) activeRequestKey = "";
+        setLoading(false);
+      }
     }
   };
 
@@ -209,6 +270,11 @@ export function createEntryQueryController(
     const next = updater(current);
     if (JSON.stringify(current) === JSON.stringify(next)) return;
     setQuery(next);
+    setRows([]);
+    setHasMore(false);
+    setNextCursor(undefined);
+    setCurrentStart(undefined);
+    setCursorStack([undefined]);
     void loadAt(undefined, [undefined]);
   };
 
@@ -253,7 +319,7 @@ export function createEntryQueryController(
   };
 
   const refresh = async () =>
-    await loadAt(untrack(currentStart), untrack(cursorStack));
+    await loadAt(untrack(currentStart), untrack(cursorStack), false);
 
   const invalidate = async () => await load();
 
@@ -267,6 +333,13 @@ export function createEntryQueryController(
       JSON.stringify(untrack(projection)) !== JSON.stringify(nextProjection);
     if (queryChanged) setQuery(nextQuery);
     if (projectionChanged) setProjection(nextProjection);
+    if (queryChanged) {
+      setRows([]);
+      setHasMore(false);
+      setNextCursor(undefined);
+      setCurrentStart(undefined);
+      setCursorStack([undefined]);
+    }
     await loadAt(undefined, [undefined]);
   };
 
@@ -292,5 +365,6 @@ export function createEntryQueryController(
     setScope,
     setProjection: changeProjection,
     configure,
+    cancel,
   };
 }
