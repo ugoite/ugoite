@@ -410,8 +410,14 @@ export class KonaseHost {
           throw cause;
         }
       } else if (action.kind === "ask_confirmation") {
-        const wasApproved = await this.requestApproval(
+        const preview = await this.resolveWritePreview(
+          action.request,
           action.preview,
+          workId,
+          generation,
+        );
+        const wasApproved = await this.requestApproval(
+          preview,
           generation,
         );
         const approved = wasApproved && this.isCurrent(generation);
@@ -467,6 +473,67 @@ export class KonaseHost {
         };
       }
     }
+  }
+
+  private async resolveWritePreview(
+    request: McpRequest,
+    preview: WritePreview,
+    workId: string,
+    generation: number,
+  ): Promise<WritePreview> {
+    if (
+      request.operation !== "ugoite.save" ||
+      typeof request.arguments.id !== "string" ||
+      request.arguments.form !== undefined
+    ) {
+      return preview;
+    }
+
+    const uri = `ugoite://entry/${request.arguments.id}/schema`;
+    const read: McpRequest = {
+      request_id: `${request.request_id}:schema`,
+      server: "ugoite",
+      operation: "resources/read",
+      arguments: { uri },
+      effect: "read",
+    };
+    this.assertCurrent(generation);
+    this.emitProgress({ kind: "mcp", operation: "resources/read" });
+    const result = await this.mcp.callMcp(read, workId);
+    this.assertCurrent(generation);
+    if (
+      result.request_id !== read.request_id ||
+      result.operation !== "resources/read" || !result.success ||
+      result.resource_contents.length !== 1 ||
+      result.resource_contents[0].uri !== uri
+    ) {
+      throw new Error("Existing Entry Form could not be safely resolved");
+    }
+
+    let projection: unknown;
+    try {
+      projection = JSON.parse(result.resource_contents[0].content);
+    } catch {
+      throw new Error("Existing Entry Form could not be safely resolved");
+    }
+    if (
+      !isRecord(projection) || projection._untrusted_content !== true ||
+      typeof projection.id !== "string" || !projection.id.trim() ||
+      typeof projection.name !== "string" || !projection.name.trim() ||
+      !isRecord(projection.fields)
+    ) {
+      throw new Error("Existing Entry Form could not be safely resolved");
+    }
+
+    const formName = safePreviewLabel(projection.name);
+    return {
+      ...preview,
+      form: formName,
+      summary: preview.summary.replace(
+        "Form from existing Entry",
+        `Form ${formName}`,
+      ),
+    };
   }
 
   private async requestApproval(

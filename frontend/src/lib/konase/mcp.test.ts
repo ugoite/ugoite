@@ -269,6 +269,33 @@ describe("BrowserMcpHost", () => {
     );
   });
 
+  it("rejects resource reads without exactly one matching text projection", async () => {
+    const uri = "ugoite://entry/entry-7/schema";
+    const malformedResponses = [
+      { contents: [] },
+      {
+        contents: [
+          { type: "text", uri, text: "{}" },
+          { type: "text", uri, text: "{}" },
+        ],
+      },
+      { contents: [{ type: "text", uri: "ugoite://entry/other", text: "{}" }] },
+      { contents: [{ type: "image", uri, data: "eA==" }] },
+    ];
+
+    for (const response of malformedResponses) {
+      const { fetcher } = scriptedRpc([response]);
+      const host = new BrowserMcpHost({
+        accessToken: "test-token",
+        fetcher,
+      });
+      await expect(host.callMcp(
+        mcpRequest("schema-1", "resources/read", { uri }),
+        "work-1",
+      )).rejects.toThrow(/resources\/read returned/);
+    }
+  });
+
   it("treats the known save and undo effects as writes when annotations are missing", async () => {
     const { fetcher } = scriptedRpc([{
       tools: [

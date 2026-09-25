@@ -79,19 +79,24 @@ export class BrowserMcpHost implements McpHost {
       const contents = Array.isArray(response.contents)
         ? response.contents
         : [];
+      if (contents.length !== 1) {
+        throw new Error("resources/read returned an unexpected content count");
+      }
+      const content = contents[0];
+      if (
+        !isRecord(content) || content.type !== "text" ||
+        content.uri !== uri || typeof content.text !== "string"
+      ) {
+        throw new Error(
+          "resources/read returned an invalid resource projection",
+        );
+      }
       return {
         request_id: request.request_id,
         operation: request.operation,
         success: true,
         resources: [],
-        resource_contents: contents.flatMap((value) => {
-          if (!isRecord(value) || value.type !== "text") return [];
-          const contentUri = value.uri;
-          const text = value.text;
-          return typeof contentUri === "string" && typeof text === "string"
-            ? [{ uri: contentUri, content: text }]
-            : [];
-        }),
+        resource_contents: [{ uri, content: content.text }],
       };
     }
 
