@@ -1,6 +1,6 @@
 id: product-ux
 version: "0.2"
-status: completed
+status: in_progress
 title: "Product UX: Make the Foundation Usable"
 goal: >
   Make existing durable Knowledge capabilities completable and usable without
@@ -25,7 +25,7 @@ phases:
       - description: "Unverified follow-up: define the validation-clarity, recovery-completion, and documentation-correctness acceptance bar"
         done: false
   - id: implementation
-    status: planned
+    status: in_progress
     tasks:
       - description: "Shipped in v0.2.0: Form-first Browser navigation; structured Entry authoring and reads; canonical EntryQuery across Browser, local CLI, and remote API; Saved SQL lifecycle and stateless SQL query; CLI Context selection and durable mutation Receipt output"
         done: true
