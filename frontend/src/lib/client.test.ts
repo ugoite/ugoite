@@ -1123,6 +1123,33 @@ describe("error paths", () => {
     );
   });
 
+  it("entryApi.query forwards cancellation to the browser fetch", async () => {
+    let observedSignal: AbortSignal | undefined;
+    server.use(
+      http.post(
+        testApiUrl("/spaces/ws-search-cancel/entries/query"),
+        async ({ request }) => {
+          observedSignal = request.signal;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return HttpResponse.json({ rows: [], has_more: false });
+        },
+      ),
+    );
+    const controller = new AbortController();
+    const page = entryApi.query("ws-search-cancel", {
+      query: { scope: { kind: "all" }, filters: [], sort: [] },
+      projection: { kind: "preview" },
+      limit: 50,
+    }, controller.signal);
+    for (let attempt = 0; !observedSignal && attempt < 20; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(observedSignal).toBeDefined();
+    controller.abort();
+    await expect(page).rejects.toMatchObject({ name: "AbortError" });
+    expect(observedSignal?.aborted).toBe(true);
+  });
+
   it("entryApi.count throws on failure", async () => {
     server.use(
       http.post(
