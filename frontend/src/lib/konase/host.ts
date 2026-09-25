@@ -63,7 +63,38 @@ type ContextCapsule = {
   expected_response_schema?: Record<string, unknown>;
 };
 
-type JobRequest = { job: JobSpec; context: ContextCapsule };
+type ResourceAdmission = {
+  uri: string;
+  status: "included" | "truncated" | "omitted";
+  reason?:
+    | "projection_compacted"
+    | "context_byte_budget"
+    | "model_prompt_character_limit";
+};
+
+type JobRequest = {
+  job: JobSpec;
+  context: ContextCapsule;
+  resource_admission: ResourceAdmission[];
+};
+
+export type SelectedContextPreview = {
+  id: string;
+  spaceId: string;
+  selectedUris: string[];
+  resources: ResourceContent[];
+  admission: ResourceAdmission[];
+};
+
+type PreparedContext = {
+  preview: SelectedContextPreview;
+  prompt: string;
+  generation: number;
+  state: KonaseState;
+  start: JobRequest;
+  workId: string;
+  jobId: string;
+};
 
 type AgentAction =
   | { kind: "call_model"; request: ModelRequest }
@@ -104,6 +135,7 @@ type UserRequest = {
   goal: string;
   available_capabilities: Capability[];
   safety_hints: string[];
+  selected_resource_contents: ResourceContent[];
 };
 
 export type KonaseProtocol = {
@@ -201,6 +233,9 @@ export class KonaseHost {
   private disposed = false;
   private generation = 0;
   private partialWork?: KonasePartialWork;
+  private preparingContext = false;
+  private contextPreviewGeneration = 0;
+  private preparedContext?: PreparedContext;
   private pendingConfirmation?: {
     requestId: string;
     resolve: (approved: boolean) => void;
@@ -233,6 +268,7 @@ export class KonaseHost {
 
   cancelPending(): void {
     this.generation += 1;
+    this.invalidateContextPreview();
     const pending = this.pendingConfirmation;
     if (!pending) return;
     clearTimeout(pending.timer);
@@ -254,8 +290,11 @@ export class KonaseHost {
 
   async submit(prompt: string): Promise<KonaseTurn> {
     if (!prompt.trim()) throw new Error("Konase prompt must not be empty");
-    if (this.running) throw new Error("Konase is already running a Work");
+    if (this.running || this.preparingContext) {
+      throw new Error("Konase is already preparing or running a Work");
+    }
     if (this.disposed) throw new Error("Konase Host has been disposed");
+    this.invalidateContextPreview();
     this.running = true;
     try {
       return await this.run(prompt);
@@ -267,6 +306,129 @@ export class KonaseHost {
     } finally {
       this.running = false;
     }
+  }
+
+  /** Reads and normalizes only explicitly selected resources without starting the model. */
+  async previewSelectedContext(
+    prompt: string,
+    selectedUris: string[],
+  ): Promise<SelectedContextPreview> {
+    if (!prompt.trim()) throw new Error("Konase prompt must not be empty");
+    if (this.running || this.preparingContext) {
+      throw new Error("Konase is already preparing or running a Work");
+    }
+    if (this.disposed) throw new Error("Konase Host has been disposed");
+    if (selectedUris.length === 0) {
+      throw new Error("Select at least one Form or Entry resource");
+    }
+    if (selectedUris.length > 4) {
+      throw new Error("Konase accepts at most four selected resources");
+    }
+    const uniqueUris = [...new Set(selectedUris)];
+    for (const uri of uniqueUris) validateSelectedResourceUri(uri);
+
+    this.preparingContext = true;
+    const generation = this.generation;
+    const previewGeneration = ++this.contextPreviewGeneration;
+    this.preparedContext = undefined;
+    const workId = `work-${newId()}`;
+    const jobId = `job-${newId()}`;
+    try {
+      const selectedResourceContents = await this.readSelectedResources(
+        uniqueUris,
+        workId,
+        generation,
+        previewGeneration,
+      );
+      const { state, start } = await this.prepareJob(
+        prompt,
+        workId,
+        jobId,
+        selectedResourceContents,
+        generation,
+        previewGeneration,
+      );
+      const preview: SelectedContextPreview = {
+        id: `context-${newId()}`,
+        spaceId: this.spaceId,
+        selectedUris: uniqueUris,
+        resources: start.context.selected_resource_contents,
+        admission: start.resource_admission,
+      };
+      this.preparedContext = {
+        preview,
+        prompt,
+        generation,
+        state,
+        start,
+        workId,
+        jobId,
+      };
+      return preview;
+    } finally {
+      this.preparingContext = false;
+    }
+  }
+
+  /** Starts the model only for the still-current preview the user confirmed. */
+  async sendSelectedContext(previewId: string): Promise<KonaseTurn> {
+    if (this.running || this.preparingContext) {
+      throw new Error("Konase is already preparing or running a Work");
+    }
+    if (this.disposed) throw new Error("Konase Host has been disposed");
+    const prepared = this.preparedContext;
+    if (
+      !prepared || prepared.preview.id !== previewId ||
+      prepared.preview.spaceId !== this.spaceId ||
+      !this.isCurrent(prepared.generation)
+    ) {
+      throw new Error("Selected Context preview is no longer current");
+    }
+    this.preparedContext = undefined;
+    this.running = true;
+    try {
+      const previewGeneration = this.contextPreviewGeneration;
+      const selectedResourceContents = await this.readSelectedResources(
+        prepared.preview.selectedUris,
+        prepared.workId,
+        prepared.generation,
+        previewGeneration,
+      );
+      const refreshed = await this.prepareJob(
+        prepared.prompt,
+        prepared.workId,
+        prepared.jobId,
+        selectedResourceContents,
+        prepared.generation,
+        previewGeneration,
+      );
+      if (
+        JSON.stringify(refreshed.start.context) !==
+          JSON.stringify(prepared.start.context) ||
+        JSON.stringify(refreshed.start.resource_admission) !==
+          JSON.stringify(prepared.start.resource_admission)
+      ) {
+        throw new Error(
+          "Selected resources or authorization changed since preview; review a fresh Context preview before sending",
+        );
+      }
+      return await this.runPrepared({ ...prepared, ...refreshed });
+    } catch (cause) {
+      if (
+        this.partialWork?.workId === prepared.workId &&
+        this.partialWork.undoAvailable
+      ) {
+        throw new KonaseWorkFailure(cause, this.partialWork);
+      }
+      throw cause;
+    } finally {
+      this.running = false;
+    }
+  }
+
+  invalidateContextPreview(): void {
+    this.contextPreviewGeneration += 1;
+    this.preparedContext = undefined;
   }
 
   async undo(workId: string): Promise<McpResult> {
@@ -313,7 +475,7 @@ export class KonaseHost {
     };
     const capabilities = await this.mcp.capabilities();
     this.assertCurrent(generation);
-    let state = await this.protocol.newState();
+    const state = await this.protocol.newState();
     const result = await this.protocol.step(state, {
       user_submitted: {
         work_id: workId,
@@ -323,11 +485,46 @@ export class KonaseHost {
         safety_hints: [
           "Use Ugoite MCP for requested reads and writes; the Host binds writes to this Work and supports undo",
         ],
+        selected_resource_contents: [],
       } satisfies UserRequest,
     });
-    state = requireState(result);
+    const normalizedState = requireState(result);
     const start = result.effects.find(isStartJob)?.start_job;
     if (!start) throw new Error("Konase did not start a Job");
+    return await this.runPrepared({
+      preview: {
+        id: "",
+        spaceId: this.spaceId,
+        selectedUris: [],
+        resources: [],
+        admission: [],
+      },
+      prompt,
+      generation,
+      state: normalizedState,
+      start,
+      workId,
+      jobId,
+    });
+  }
+
+  private async runPrepared(prepared: {
+    preview: SelectedContextPreview;
+    prompt: string;
+    generation: number;
+    state: KonaseState;
+    start: JobRequest;
+    workId: string;
+    jobId: string;
+  }): Promise<KonaseTurn> {
+    const { generation, workId, jobId, start } = prepared;
+    this.partialWork = {
+      workId,
+      jobId,
+      knowledge: "unchanged",
+      undoAvailable: false,
+    };
+    let state = prepared.state;
 
     const runtime = new BrowserAgentRuntime(this.spaceId);
     let action = runtime.start(start.job, start.context, workId);
@@ -337,15 +534,16 @@ export class KonaseHost {
     while (true) {
       if (action.kind === "call_model") {
         this.emitProgress({ kind: "model" });
+        const modelRequest = action.request;
         try {
-          const response = await this.model.callModel(action.request);
+          const response = await this.model.callModel(modelRequest);
           this.assertCurrent(generation);
           action = runtime.resumeModel(response);
         } catch (cause) {
           if (this.isCurrent(generation)) {
             await this.hostFailed(
               state,
-              action.request.request_id,
+              modelRequest.request_id,
               "model_request_failed",
               cause,
             );
@@ -354,31 +552,32 @@ export class KonaseHost {
         }
       } else if (action.kind === "call_mcp") {
         this.assertCurrent(generation);
+        const mcpRequest = action.request;
         let dispatchStarted = false;
         let receiptValidated = false;
         try {
           runtime.authorizeDispatch(
-            action.request,
+            mcpRequest,
             workId,
             this.spaceId,
             generation,
           );
           this.emitProgress({
             kind: "mcp",
-            operation: action.request.operation,
+            operation: mcpRequest.operation,
           });
           dispatchStarted = true;
-          const rawResult = await this.mcp.callMcp(action.request, workId);
+          const rawResult = await this.mcp.callMcp(mcpRequest, workId);
           const mcpResult = validateMutationResult(
-            action.request,
+            mcpRequest,
             workId,
             rawResult,
           );
           receiptValidated = true;
           this.assertCurrent(generation);
-          undoAvailable = action.request.operation === "ugoite.save"
+          undoAvailable = mcpRequest.operation === "ugoite.save"
             ? mcpResult.success || undoAvailable
-            : action.request.operation === "ugoite.undo" && mcpResult.success
+            : mcpRequest.operation === "ugoite.undo" && mcpResult.success
             ? false
             : undoAvailable;
           const mcpStep = await this.protocol.step(state, {
@@ -396,14 +595,14 @@ export class KonaseHost {
           if (this.isCurrent(generation)) {
             await this.hostFailed(
               state,
-              action.request.request_id,
+              mcpRequest.request_id,
               "mcp_request_failed",
               cause,
             );
           }
           if (
             dispatchStarted && !receiptValidated &&
-            action.request.effect === "write"
+            mcpRequest.effect === "write"
           ) {
             throw new KonaseMutationUnconfirmedError();
           }
@@ -473,6 +672,71 @@ export class KonaseHost {
         };
       }
     }
+  }
+
+  private assertContextPreviewCurrent(
+    generation: number,
+    previewGeneration: number,
+  ): void {
+    this.assertCurrent(generation);
+    if (previewGeneration !== this.contextPreviewGeneration) {
+      throw new Error("Selected Context preview was invalidated");
+    }
+  }
+
+  private async readSelectedResources(
+    uris: string[],
+    workId: string,
+    generation: number,
+    previewGeneration: number,
+  ): Promise<ResourceContent[]> {
+    const selected: ResourceContent[] = [];
+    for (const uri of uris) {
+      const request: McpRequest = {
+        request_id: `selected-resource-${newId()}`,
+        server: "ugoite",
+        operation: "resources/read",
+        arguments: { uri },
+        effect: "read",
+      };
+      this.assertContextPreviewCurrent(generation, previewGeneration);
+      this.emitProgress({ kind: "mcp", operation: "resources/read" });
+      const result = await this.mcp.callMcp(request, workId);
+      this.assertContextPreviewCurrent(generation, previewGeneration);
+      selected.push(validateSelectedResourceResult(request, uri, result));
+    }
+    return selected;
+  }
+
+  private async prepareJob(
+    prompt: string,
+    workId: string,
+    jobId: string,
+    selectedResourceContents: ResourceContent[],
+    generation: number,
+    previewGeneration: number,
+  ): Promise<{ state: KonaseState; start: JobRequest }> {
+    const capabilities = await this.mcp.capabilities();
+    this.assertContextPreviewCurrent(generation, previewGeneration);
+    const state = await this.protocol.newState();
+    this.assertContextPreviewCurrent(generation, previewGeneration);
+    const result = await this.protocol.step(state, {
+      user_submitted: {
+        work_id: workId,
+        job_id: jobId,
+        goal: prompt,
+        available_capabilities: capabilities,
+        safety_hints: [
+          "Use Ugoite MCP for requested reads and writes; the Host binds writes to this Work and supports undo",
+        ],
+        selected_resource_contents: selectedResourceContents,
+      } satisfies UserRequest,
+    });
+    this.assertContextPreviewCurrent(generation, previewGeneration);
+    const normalizedState = requireState(result);
+    const start = result.effects.find(isStartJob)?.start_job;
+    if (!start) throw new Error("Konase did not prepare a Job Context");
+    return { state: normalizedState, start };
   }
 
   private async resolveWritePreview(
@@ -850,6 +1114,57 @@ const requireState = (result: StepResult): KonaseState => {
   if (result.error) throw new Error(result.error.message);
   return result.state;
 };
+
+function validateSelectedResourceUri(uri: string): { id: string; kind: "form" | "entry" } {
+  const match = /^ugoite:\/\/(form|entry)\/([^/?#%]+)$/.exec(uri);
+  if (!match || !match[2].trim() || match[2] !== match[2].trim()) {
+    throw new Error("Selected resource URI must be a canonical Form or Entry URI");
+  }
+  return { kind: match[1] as "form" | "entry", id: match[2] };
+}
+
+function validateSelectedResourceResult(
+  request: McpRequest,
+  uri: string,
+  result: McpResult,
+): ResourceContent {
+  if (
+    result.request_id !== request.request_id ||
+    result.operation !== "resources/read" || !result.success ||
+    result.resource_contents.length !== 1 ||
+    result.resource_contents[0].uri !== uri
+  ) {
+    throw new Error("Selected MCP resource read was denied or returned an invalid result");
+  }
+  const resource = result.resource_contents[0];
+  let projection: unknown;
+  try {
+    projection = JSON.parse(resource.content);
+  } catch {
+    throw new Error("Selected MCP resource projection is not valid JSON");
+  }
+  const parsedUri = validateSelectedResourceUri(uri);
+  if (
+    !isRecord(projection) || projection._untrusted_content !== true ||
+    projection.id !== parsedUri.id
+  ) {
+    throw new Error("Selected MCP resource projection did not match its URI");
+  }
+  if (parsedUri.kind === "form") {
+    if (
+      typeof projection.name !== "string" || !projection.name.trim() ||
+      !isRecord(projection.fields)
+    ) {
+      throw new Error("Selected MCP Form projection is incomplete");
+    }
+  } else if (
+    projection.uri !== uri || typeof projection.form !== "string" ||
+    typeof projection.content !== "string"
+  ) {
+    throw new Error("Selected MCP Entry projection is incomplete");
+  }
+  return resource;
+}
 
 const newId = (): string => globalThis.crypto.randomUUID();
 
