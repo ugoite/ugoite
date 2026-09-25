@@ -446,9 +446,6 @@ async function verifyCandidateCliArchive(
   const workspace = await Deno.makeTempDir({
     prefix: "ugoite-candidate-space-",
   });
-  const configPath = pathJoin(workspace, "cli-config.json");
-  const previousConfigPath = Deno.env.get("UGOITE_CLI_CONFIG_PATH");
-  Deno.env.set("UGOITE_CLI_CONFIG_PATH", configPath);
   try {
     await run("tar", ["-xzf", archivePath, "-C", tempDir]);
     const binary = pathJoin(tempDir, "ugoite");
@@ -458,16 +455,15 @@ async function verifyCandidateCliArchive(
         `candidate CLI reported ${versionOutput.stdout}, expected ${candidate.manifest.version}`,
       );
     }
-    const spaceRoot = pathJoin(workspace, "spaces");
+    await run(binary, ["config", "init", "--local"], workspace);
     const listBefore = JSON.parse(
-      (await run(binary, ["space", "list", workspace])).stdout,
+      (await run(binary, ["space", "list"], workspace)).stdout,
     ) as unknown;
     if (!Array.isArray(listBefore) || listBefore.length !== 0) {
       throw new Error("candidate CLI initial Space list was not empty");
     }
     const create = JSON.parse(
-      (await run(binary, ["space", "create", pathJoin(spaceRoot, "smoke")]))
-        .stdout,
+      (await run(binary, ["space", "create", "smoke"], workspace)).stdout,
     ) as { created?: boolean; slug?: string; id?: string };
     if (create.created !== true || create.slug !== "smoke" || !create.id) {
       throw new Error(
@@ -475,7 +471,7 @@ async function verifyCandidateCliArchive(
       );
     }
     const listAfter = JSON.parse(
-      (await run(binary, ["space", "list", workspace])).stdout,
+      (await run(binary, ["space", "list"], workspace)).stdout,
     ) as unknown;
     if (!Array.isArray(listAfter) || !listAfter.includes(create.id)) {
       throw new Error(
@@ -483,9 +479,6 @@ async function verifyCandidateCliArchive(
       );
     }
   } finally {
-    if (previousConfigPath === undefined) {
-      Deno.env.delete("UGOITE_CLI_CONFIG_PATH");
-    } else Deno.env.set("UGOITE_CLI_CONFIG_PATH", previousConfigPath);
     await Deno.remove(tempDir, { recursive: true }).catch(() => {});
     await Deno.remove(workspace, { recursive: true }).catch(() => {});
   }

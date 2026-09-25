@@ -163,6 +163,22 @@ Deno.test("REQ-OPS-044: repository-native release tasks and split workflows are 
     ),
     true,
   );
+  const candidateCliSmoke = releaseTool.slice(
+    releaseTool.indexOf("async function verifyCandidateCliArchive("),
+    releaseTool.indexOf("async function verifyCandidateCliArchives("),
+  );
+  assertEquals(
+    candidateCliSmoke.includes('["config", "init", "--local"]'),
+    true,
+  );
+  assertEquals(
+    candidateCliSmoke.includes('["space", "list", workspace]'),
+    false,
+  );
+  assertEquals(
+    candidateCliSmoke.includes('["space", "create", "smoke"]'),
+    true,
+  );
   assertEquals(
     distributionVerifier.includes("tools/distribution.ts"),
     true,
