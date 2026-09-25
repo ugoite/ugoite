@@ -3,7 +3,9 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
+import { KonaseWorkFailure } from "~/lib/konase/host";
 import { KonasePanel } from "./KonasePanel";
+import type { WritePreview } from "~/lib/konase/host";
 import type { BrowserMcpAuthorizationOptions } from "~/lib/konase/browser-mcp-auth";
 
 type FakeTurn = {
@@ -15,6 +17,7 @@ type FakeTurn = {
 
 type FakeProgress =
   | { kind: "model" }
+  | { kind: "mcp"; operation: string }
   | { kind: "complete"; summary: string }
   | { kind: "knowledge"; outcome: FakeTurn["knowledge"] }
   | { kind: "undo" };
@@ -29,8 +32,16 @@ type FakeKonaseHost = {
   submitDeferreds: Array<Deferred<FakeTurn>>;
   undoDeferreds: Array<Deferred<{ success: boolean }>>;
   listeners: Array<(progress: FakeProgress) => void>;
+  pendingConfirmation?: WritePreview;
+  cancelledConfirmations: string[];
+  resolvedConfirmations: Array<{ requestId: string; approved: boolean }>;
+  disposed: boolean;
   submit(prompt: string): Promise<FakeTurn>;
   undo(workId: string): Promise<{ success: boolean }>;
+  resolveConfirmation(requestId: string, approved: boolean): boolean;
+  cancelPending(): void;
+  dispose(): void;
+  requestConfirmation(preview: WritePreview): void;
   subscribeProgress(listener: (progress: FakeProgress) => void): () => void;
   emitProgress(progress: FakeProgress): void;
 };
@@ -56,12 +67,41 @@ const { getSpaceMock, authorizeMock, hostInstances, createDeferred } = vi
   });
 
 vi.mock("~/lib/konase/host", () => ({
+  KonaseWriteDeniedError: class extends Error {},
+  KonaseMutationUnconfirmedError: class extends Error {},
+  KonaseWorkFailure: class extends Error {
+    constructor(
+      readonly reason: unknown,
+      readonly partial: {
+        workId: string;
+        jobId: string;
+        knowledge: FakeTurn["knowledge"];
+        undoAvailable: boolean;
+      },
+    ) {
+      super(reason instanceof Error ? reason.message : "Work failed");
+    }
+  },
   KonaseHost: class {
     readonly submitDeferreds: Array<Deferred<FakeTurn>> = [];
     readonly undoDeferreds: Array<Deferred<{ success: boolean }>> = [];
     readonly listeners: Array<(progress: FakeProgress) => void> = [];
+    pendingConfirmation?: WritePreview;
+    readonly cancelledConfirmations: string[] = [];
+    readonly resolvedConfirmations: Array<{
+      requestId: string;
+      approved: boolean;
+    }> = [];
+    disposed = false;
+    private readonly onConfirmationRequired?: (preview: WritePreview) => void;
+    private readonly onConfirmationCancelled?: (requestId: string) => void;
 
-    constructor(_options: unknown) {
+    constructor(options: {
+      onConfirmationRequired?: (preview: WritePreview) => void;
+      onConfirmationCancelled?: (requestId: string) => void;
+    }) {
+      this.onConfirmationRequired = options.onConfirmationRequired;
+      this.onConfirmationCancelled = options.onConfirmationCancelled;
       hostInstances.push(this);
     }
 
@@ -75,6 +115,32 @@ vi.mock("~/lib/konase/host", () => ({
       const deferred = createDeferred<{ success: boolean }>();
       this.undoDeferreds.push(deferred);
       return deferred.promise;
+    }
+
+    resolveConfirmation(requestId: string, approved: boolean): boolean {
+      if (this.pendingConfirmation?.requestId !== requestId) return false;
+      this.pendingConfirmation = undefined;
+      this.resolvedConfirmations.push({ requestId, approved });
+      return true;
+    }
+
+    cancelPending(): void {
+      const requestId = this.pendingConfirmation?.requestId;
+      if (requestId) {
+        this.pendingConfirmation = undefined;
+        this.cancelledConfirmations.push(requestId);
+        this.onConfirmationCancelled?.(requestId);
+      }
+    }
+
+    dispose(): void {
+      this.cancelPending();
+      this.disposed = true;
+    }
+
+    requestConfirmation(preview: WritePreview): void {
+      this.pendingConfirmation = preview;
+      this.onConfirmationRequired?.(preview);
     }
 
     subscribeProgress(listener: (progress: FakeProgress) => void): () => void {
@@ -126,6 +192,17 @@ const fakeTurn = (summary: string): FakeTurn => ({
   workId: `work-${summary}`,
   undoAvailable: true,
   knowledge: "saved",
+});
+
+const fakeWritePreview = (): WritePreview => ({
+  requestId: "job-1:mcp:1",
+  workId: "work-1",
+  spaceId: "space-a",
+  operation: "ugoite.save",
+  action: "create",
+  form: "Note",
+  summary:
+    "Create in Space space-a; Form Note. Fields (new Entry values): title: text (17 chars).",
 });
 
 describe("KonasePanel Space authority", () => {
@@ -237,7 +314,8 @@ describe("KonasePanel Space authority", () => {
     await waitFor(() =>
       expect(screen.getByText("Knowledge: unchanged")).toBeInTheDocument()
     );
-    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Undo" })).not
+      .toBeInTheDocument();
   });
 
   it("does not bind a credential if the Space changes during approval", async () => {
@@ -456,5 +534,129 @@ describe("KonasePanel Space authority", () => {
       expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument()
     );
     expect(screen.queryByText("Undone")).not.toBeInTheDocument();
+  });
+
+  it("shows an accessible write approval preview and does not mark MCP start as success", async () => {
+    mockConnection();
+    render(() => <KonasePanel spaceId="space-a" />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    const host = hostInstances[0];
+
+    host.requestConfirmation(fakeWritePreview());
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Approve this write?" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("space-a / Note")).toBeInTheDocument();
+    expect(screen.getByText(/Fields \(new Entry values\)/))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve write" }));
+    expect(host.resolvedConfirmations).toEqual([{
+      requestId: "job-1:mcp:1",
+      approved: true,
+    }]);
+
+    host.emitProgress({ kind: "mcp", operation: "ugoite.save" });
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(screen.getByText("MCP request started: ugoite.save"))
+      .toBeInTheDocument();
+    expect(screen.getByText("MCP request started: ugoite.save").textContent)
+      .not.toContain("✓");
+  });
+
+  it("denies a pending write explicitly", async () => {
+    mockConnection();
+    render(() => <KonasePanel spaceId="space-a" />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    const host = hostInstances[0];
+    host.requestConfirmation(fakeWritePreview());
+
+    fireEvent.click(screen.getByRole("button", { name: "Deny write" }));
+
+    expect(host.resolvedConfirmations).toEqual([{
+      requestId: "job-1:mcp:1",
+      approved: false,
+    }]);
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps Undo available after a confirmed save followed by a denied write", async () => {
+    mockConnection();
+    render(() => <KonasePanel spaceId="space-a" />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    const host = hostInstances[0];
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Save two notes" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(host.submitDeferreds).toHaveLength(1));
+    host.submitDeferreds[0].reject(
+      new KonaseWorkFailure(new Error("Konase write was not approved"), {
+        workId: "work-a",
+        jobId: "job-a",
+        knowledge: "saved",
+        undoAvailable: true,
+      }),
+    );
+
+    expect(await screen.findByText("Work stopped after a confirmed save."))
+      .toBeInTheDocument();
+    expect(screen.getByText("Knowledge: saved")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+
+  it("cancels and disposes the old Host before switching Spaces with approval open", async () => {
+    mockConnection();
+    const [spaceId, setSpaceId] = createSignal("space-a");
+    render(() => (
+      <>
+        <KonasePanel spaceId={spaceId()} />
+        <button type="button" onClick={() => setSpaceId("space-b")}>
+          Switch Space
+        </button>
+      </>
+    ));
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    const oldHost = hostInstances[0];
+    oldHost.requestConfirmation(fakeWritePreview());
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch Space" }));
+
+    await waitFor(() => expect(oldHost.disposed).toBe(true));
+    expect(oldHost.cancelledConfirmations).toEqual(["job-1:mcp:1"]);
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("cancels and disposes a pending approval on unmount", async () => {
+    mockConnection();
+    const view = render(() => <KonasePanel spaceId="space-a" />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    const host = hostInstances[0];
+    host.requestConfirmation(fakeWritePreview());
+
+    view.unmount();
+
+    expect(host.cancelledConfirmations).toEqual(["job-1:mcp:1"]);
+    expect(host.disposed).toBe(true);
   });
 });

@@ -5,8 +5,12 @@ import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import {
   KonaseHost,
+  KonaseMutationUnconfirmedError,
   type KonaseProgress,
   type KonaseTurn,
+  KonaseWorkFailure,
+  KonaseWriteDeniedError,
+  type WritePreview,
 } from "~/lib/konase/host";
 import { authorizeBrowserMcp } from "~/lib/konase/browser-mcp-auth";
 import { BrowserMcpHost } from "~/lib/konase/mcp";
@@ -35,6 +39,10 @@ export function KonasePanel(props: KonasePanelProps) {
   const [running, setRunning] = createSignal(false);
   const [undoing, setUndoing] = createSignal(false);
   const [steps, setSteps] = createSignal<string[]>([]);
+  const [confirmation, setConfirmation] = createSignal<WritePreview>();
+  const [confirmationSubmitting, setConfirmationSubmitting] = createSignal(
+    false,
+  );
   const [turn, setTurn] = createSignal<KonaseTurn>();
   const [undone, setUndone] = createSignal(false);
   const [error, setError] = createSignal<string>();
@@ -51,6 +59,10 @@ export function KonasePanel(props: KonasePanelProps) {
   createEffect(() => {
     const currentSpaceId = props.spaceId;
     if (lifetime.spaceId !== currentSpaceId) {
+      configuredHost()?.cancelPending();
+      configuredHost()?.dispose();
+      setConfirmation(undefined);
+      setConfirmationSubmitting(false);
       lifetime = {
         generation: lifetime.generation + 1,
         spaceId: currentSpaceId,
@@ -78,10 +90,23 @@ export function KonasePanel(props: KonasePanelProps) {
     unsubscribe?.();
     unsubscribe = host.subscribeProgress((progress) => {
       if (!isCurrentLifetime(hostLifetime)) return;
+      if (
+        progress.kind === "mcp" &&
+        confirmation()?.operation === progress.operation &&
+        confirmationSubmitting()
+      ) {
+        setConfirmation(undefined);
+        setConfirmationSubmitting(false);
+      }
       setSteps((current) => [...current, progressLabel(progress)]);
     });
   };
-  onCleanup(() => unsubscribe?.());
+  onCleanup(() => {
+    configuredHost()?.cancelPending();
+    configuredHost()?.dispose();
+    setConfirmation(undefined);
+    unsubscribe?.();
+  });
 
   const configure = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -117,6 +142,24 @@ export function KonasePanel(props: KonasePanelProps) {
       const host = new KonaseHost({
         model: new OpenAiModelHost({ apiKey: modelApiKey() }),
         mcp: new BrowserMcpHost(credential),
+        spaceId: requestedSpaceId,
+        onConfirmationRequired: (preview) => {
+          if (!isCurrentLifetime(configureLifetime)) {
+            host.resolveConfirmation(preview.requestId, false);
+            return;
+          }
+          setConfirmationSubmitting(false);
+          setConfirmation(preview);
+        },
+        onConfirmationCancelled: (requestId) => {
+          if (
+            isCurrentLifetime(configureLifetime) &&
+            confirmation()?.requestId === requestId
+          ) {
+            setConfirmation(undefined);
+            setConfirmationSubmitting(false);
+          }
+        },
       });
       setConfiguredHost(host);
       setConfiguredSpaceId(requestedSpaceId);
@@ -155,9 +198,19 @@ export function KonasePanel(props: KonasePanelProps) {
       setPrompt("");
     } catch (cause) {
       if (isCurrentLifetime(submitLifetime)) {
-        setError(
-          formatUserFacingError(cause, "konase.error"),
-        );
+        if (cause instanceof KonaseWorkFailure) {
+          setTurn({
+            outcome: {
+              job_id: cause.partial.jobId,
+              summary: t("konase.partialWork"),
+              meaningful: false,
+            },
+            workId: cause.partial.workId,
+            undoAvailable: cause.partial.undoAvailable,
+            knowledge: cause.partial.knowledge,
+          });
+        }
+        setError(konaseErrorMessage(cause));
       }
     } finally {
       if (isCurrentLifetime(submitLifetime)) setRunning(false);
@@ -175,14 +228,41 @@ export function KonasePanel(props: KonasePanelProps) {
     const undoLifetime = captureLifetime();
     try {
       await host.undo(current.workId);
-      if (isCurrentLifetime(undoLifetime)) setUndone(true);
+      if (isCurrentLifetime(undoLifetime)) {
+        setUndone(true);
+        setTurn((turn) =>
+          turn
+            ? { ...turn, undoAvailable: false, knowledge: "unchanged" }
+            : turn
+        );
+      }
     } catch (cause) {
       if (isCurrentLifetime(undoLifetime)) {
-        setError(formatUserFacingError(cause, "konase.error"));
+        setError(konaseErrorMessage(cause));
       }
     } finally {
       if (isCurrentLifetime(undoLifetime)) setUndoing(false);
     }
+  };
+
+  const approve = () => {
+    const pending = confirmation();
+    const host = activeHost();
+    if (!pending || !host || confirmationSubmitting()) return;
+    setConfirmationSubmitting(true);
+    if (!host.resolveConfirmation(pending.requestId, true)) {
+      setConfirmation(undefined);
+      setConfirmationSubmitting(false);
+    }
+  };
+
+  const deny = () => {
+    const pending = confirmation();
+    const host = activeHost();
+    if (!pending || !host || confirmationSubmitting()) return;
+    setConfirmation(undefined);
+    setConfirmationSubmitting(false);
+    host.resolveConfirmation(pending.requestId, false);
   };
 
   return (
@@ -257,8 +337,71 @@ export function KonasePanel(props: KonasePanelProps) {
 
       <Show when={steps().length > 0}>
         <ol class="ui-stack-sm" aria-label={t("konase.title")}>
-          <For each={steps()}>{(step) => <li>✓ {step}</li>}</For>
+          <For each={steps()}>{(step) => <li>{step}</li>}</For>
         </ol>
+      </Show>
+      <Show when={confirmation()}>
+        {(preview) => (
+          <section
+            class="ui-card ui-stack-sm"
+            aria-labelledby="konase-write-confirmation-title"
+            aria-describedby="konase-write-confirmation-summary"
+            role="alertdialog"
+            aria-modal="true"
+          >
+            <h3 id="konase-write-confirmation-title">
+              {t("konase.writeApprovalTitle")}
+            </h3>
+            <p>
+              {preview().action === "undo"
+                ? t("konase.undo")
+                : t(`konase.${preview().action}`)}
+            </p>
+            <dl class="ui-stack-sm">
+              <div>
+                <dt>{t("konase.approvalTarget")}</dt>
+                <dd>
+                  {preview().spaceId}
+                  {preview().form ? ` / ${preview().form}` : ""}
+                  {preview().entryId ? ` / ${preview().entryId}` : ""}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("konase.approvalDetails")}</dt>
+                <dd id="konase-write-confirmation-summary">
+                  {preview().summary}
+                </dd>
+              </div>
+            </dl>
+            <Show when={confirmationSubmitting()}>
+              <p role="status">{t("konase.saving")}</p>
+            </Show>
+            <div class="ui-inline-actions">
+              <button
+                class="btn primary"
+                type="button"
+                aria-label={t("konase.approveWrite")}
+                disabled={confirmationSubmitting()}
+                aria-busy={confirmationSubmitting() || undefined}
+                onClick={approve}
+              >
+                <Show when={confirmationSubmitting()}>
+                  <ButtonSpinner />
+                </Show>
+                {t("konase.approveWrite")}
+              </button>
+              <button
+                class="btn"
+                type="button"
+                aria-label={t("konase.denyWrite")}
+                disabled={confirmationSubmitting()}
+                onClick={deny}
+              >
+                {t("konase.denyWrite")}
+              </button>
+            </div>
+          </section>
+        )}
       </Show>
       <Show when={error()}>
         <p class="ui-alert ui-alert-error" role="alert">{error()}</p>
@@ -301,7 +444,7 @@ const progressLabel = (progress: KonaseProgress): string => {
     case "model":
       return t("konase.model");
     case "mcp":
-      return t("konase.mcp", { operation: progress.operation });
+      return t("konase.mcpStarted", { operation: progress.operation });
     case "complete":
       return t("konase.complete");
     case "knowledge":
@@ -322,4 +465,15 @@ const knowledgeLabel = (outcome: KonaseTurn["knowledge"]): string => {
     case "write_failed":
       return t("konase.knowledgeWriteFailed");
   }
+};
+
+const konaseErrorMessage = (cause: unknown): string => {
+  if (cause instanceof KonaseWorkFailure) {
+    return konaseErrorMessage(cause.reason);
+  }
+  if (cause instanceof KonaseWriteDeniedError) return t("konase.writeDenied");
+  if (cause instanceof KonaseMutationUnconfirmedError) {
+    return t("konase.unconfirmed");
+  }
+  return formatUserFacingError(cause, "konase.error");
 };
