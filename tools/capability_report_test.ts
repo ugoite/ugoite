@@ -153,6 +153,14 @@ Deno.test("v0.3 preflight rows resolve real authorities and static artifacts", a
     for (const ref of row.feature_binding_refs) {
       assertEquals(markdown.includes(ref), true, `${row.id} missing ${ref}`);
     }
+    for (const observation of row.surface_observations) {
+      const provenance = observation.evidence.join(", ") || "none located";
+      assertEquals(
+        markdown.includes(`Static source paths: ${provenance}`),
+        true,
+        `${row.id}/${observation.surface} is missing Markdown provenance`,
+      );
+    }
     if (row.follow_up_issue) {
       assertEquals(markdown.includes(row.follow_up_issue), true, row.id);
     }

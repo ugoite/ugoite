@@ -1217,6 +1217,11 @@ export function renderPreflightMarkdown(report: PreflightReport): string {
           observation.observed === null ? "unresolved" : "source located"
         }${observation.reason ? ` — ${observation.reason}` : ""}`,
       );
+      lines.push(
+        `  Static source paths: ${
+          observation.evidence.join(", ") || "none located"
+        }`,
+      );
     }
     if (row.follow_up_issue) lines.push(`- Follow-up: ${row.follow_up_issue}`);
     lines.push("");
