@@ -363,6 +363,13 @@ features:
                 criterion: REQ-FE-063#criterion.starter-query
               - kind: satisfies
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
+          - id: sql-run-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx
+            selector: { kind: symbol, name: SpaceSqlRunRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-native-table-and-actions
 
   - id: FEAT-FE-009
     title: Auth-aware global navigation

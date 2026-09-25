@@ -3259,6 +3259,67 @@ a.tool {
   max-width: 100%;
 }
 
+.paged-result-scroll-virtual {
+  max-height: 480px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.paged-result-table-element {
+  width: 100%;
+  min-width: 36rem;
+  border-collapse: collapse;
+}
+
+.entry-browser-table th,
+.entry-browser-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.entry-browser-table th {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.entry-browser-table .paged-result-cell {
+  max-width: 24rem;
+}
+
+.paged-result-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paged-result-scroll-virtual .paged-result-cell {
+  box-sizing: border-box;
+  height: 48px;
+  max-height: 48px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.paged-result-spacer,
+.paged-result-spacer td {
+  padding: 0;
+  border: 0;
+  line-height: 0;
+}
+
+.paged-result-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
 .entry-browser-table {
   width: 100%;
   min-width: 36rem;
@@ -3303,6 +3364,10 @@ a.tool {
 }
 
 .entry-browser-row:hover {
+  background: var(--soft2);
+}
+
+.entry-browser-table tbody tr:not(.paged-result-spacer):hover {
   background: var(--soft2);
 }
 

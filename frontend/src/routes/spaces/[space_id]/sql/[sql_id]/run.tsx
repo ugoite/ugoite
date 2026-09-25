@@ -3,12 +3,14 @@ import {
   createEffect,
   createMemo,
   createSignal,
-  For,
   onCleanup,
   Show,
 } from "solid-js";
 import { BackLink } from "~/components/BackLink";
-import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import {
+  PagedResultTable,
+  type ResultColumn,
+} from "~/components/PagedResultTable";
 import { sqlApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
@@ -282,6 +284,15 @@ export default function SpaceSqlRunRoute() {
   };
 
   const resultError = () => entry.error || pageError();
+  const resultColumns = (): ResultColumn<unknown>[] =>
+    (visiblePage()?.columns ?? []).map((column, index) => ({
+      key: `column-${index}`,
+      label: column,
+      cell: (row) => {
+        const value = formatCell(rowCell(row, column, index));
+        return <span title={value}>{value}</span>;
+      },
+    }));
 
   return (
     <>
@@ -306,24 +317,6 @@ export default function SpaceSqlRunRoute() {
         class="settingsMain surface"
         aria-busy={entry.loading || pageLoading() || undefined}
       >
-        <Show when={entry.loading || pageLoading()}>
-          <LocalBusyIndicator label={t("sqlPage.loadingResults")} />
-        </Show>
-        <Show when={pageError() && !entry.error}>
-          <button
-            type="button"
-            class="ui-button ui-button-secondary mt-4"
-            disabled={pageLoading()}
-            onClick={() => setPageRetry((value) => value + 1)}
-          >
-            {t("common.retry")}
-          </button>
-        </Show>
-        <Show when={resultError()}>
-          <p class="text-sm ui-text-danger">
-            {formatUserFacingError(resultError(), "sqlPage.failedQuery")}
-          </p>
-        </Show>
         <Show when={visiblePage()}>
           {(result) => (
             <>
@@ -359,41 +352,6 @@ export default function SpaceSqlRunRoute() {
                   </button>
                 </div>
               </div>
-
-              <Show
-                when={result().rows.length > 0}
-                fallback={
-                  <p class="mt-4 text-sm ui-muted">{t("sqlPage.noResults")}</p>
-                }
-              >
-                <div class="ui-table-wrapper mt-4 overflow-x-auto">
-                  <table class="ui-table">
-                    <thead class="ui-table-head">
-                      <tr>
-                        <For each={result().columns}>
-                          {(column) => <th scope="col">{column}</th>}
-                        </For>
-                      </tr>
-                    </thead>
-                    <tbody class="ui-table-body">
-                      <For each={result().rows}>
-                        {(row) => (
-                          <tr>
-                            <For each={result().columns}>
-                              {(column, index) => (
-                                <td>
-                                  {formatCell(rowCell(row, column, index()))}
-                                </td>
-                              )}
-                            </For>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
-                </div>
-              </Show>
-
               <Show
                 when={countError() &&
                   countResultIdentity() === makeQueryIdentity(
@@ -404,29 +362,41 @@ export default function SpaceSqlRunRoute() {
               >
                 <p class="mt-4 text-sm ui-text-danger">{countError()}</p>
               </Show>
-              <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
-                <button
-                  type="button"
-                  class="ui-button ui-button-secondary"
-                  disabled={continuationStack().length === 0 || pageLoading() ||
-                    !!pageError()}
-                  onClick={handlePrevious}
-                >
-                  {t("common.previous")}
-                </button>
-                <button
-                  type="button"
-                  class="ui-button ui-button-secondary"
-                  disabled={!result().has_more || !result().next ||
-                    pageLoading() || !!pageError()}
-                  onClick={handleNext}
-                >
-                  {t("common.next")}
-                </button>
-              </div>
             </>
           )}
         </Show>
+        <PagedResultTable
+          columns={resultColumns()}
+          rows={visiblePage()?.rows ?? []}
+          rowKey={(_row, index) =>
+            `${visiblePage()?.pageIdentity ?? ""}:${index}`}
+          pageIdentity={visiblePage()?.pageIdentity ?? makeQueryIdentity(
+            spaceId(),
+            sqlId(),
+            request(),
+          )}
+          loading={entry.loading || pageLoading()}
+          loadingLabel={t("sqlPage.loadingResults")}
+          error={resultError()
+            ? formatUserFacingError(resultError(), "sqlPage.failedQuery")
+            : null}
+          emptyLabel={t("sqlPage.noResults")}
+          retryLabel={t("common.retry")}
+          onRetry={pageError() && !entry.error
+            ? () => setPageRetry((value) => value + 1)
+            : undefined}
+          canPrevious={continuationStack().length > 0}
+          canNext={!!visiblePage()?.has_more && !!visiblePage()?.next}
+          previousLabel={t("common.previous")}
+          nextLabel={t("common.next")}
+          onPrevious={handlePrevious}
+          onNext={handleNext}
+          paginationLabel={t("sqlPage.results")}
+          classNames={{
+            table: "ui-table",
+            scroll: "ui-table-wrapper mt-4 overflow-x-auto",
+          }}
+        />
         <Show when={entry.error && !pageError()}>
           <button
             type="button"

@@ -4,7 +4,7 @@
 #
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
 #   test-type: "smoke", "asset-owned", "smoke-and-asset-owned",
-#     "owner-recovery", "mobile-ui", "entries", "screenshot", or "full"
+#     "owner-recovery", "mobile-ui", "qry02", "entries", "screenshot", or "full"
 #
 # Environment variables:
 #   E2E_TEST_TIMEOUT_MS: per-test timeout passed to `playwright test --timeout`
@@ -310,6 +310,9 @@ case "$TEST_TYPE" in
   mobile-ui)
     run_e2e_task mobile-ui "$base_report_file"
     ;;
+  qry02)
+    run_e2e_task qry02 "$base_report_file"
+    ;;
   screenshot)
     run_e2e_task screenshot "$base_report_file"
     ;;
@@ -318,7 +321,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|entries|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|qry02|entries|screenshot|full]"
     exit 1
     ;;
 esac
