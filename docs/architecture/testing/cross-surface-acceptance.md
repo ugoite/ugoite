@@ -50,7 +50,12 @@ business semantics.
   `UgoiteService` methods.
 - Verification: exact e2e test names plus exact Mitase `verifies` claims.
 
-Run `deno run -A tools/capability_report.ts --markdown` (or `--json`).
+Run `deno run -A tools/capability_report.ts --markdown` (or `--json`). The
+separate v0.3 planning inventory is generated with
+`deno run -A tools/capability_report.ts --scope v0.3-preflight --markdown`
+(or `--json`). It locates declared source and evidence references; it does not
+execute tests, prove authorization, or turn source presence into a passed
+verification claim.
 The report is informational in 0.1.x: gaps are diagnosed, not build
 failures.
 
@@ -85,7 +90,12 @@ verified, so missing reachability remains distinct from missing evidence.
 - C6: stable executed corpus qualifies release-candidate creation via
   `qualifyAcceptanceCorpus` in `tools/release.ts`. The Playwright journey
   stays on the `full` E2E lane until the v0.2 closure.
-- C7 (v0.2, planned): promote unexplained major gaps to release blockers.
+- C7 was planned for v0.2 but was not completed before v0.2.0 publication.
+  Issue [#2563](https://github.com/ugoite/ugoite/issues/2563) remains the
+  independent acceptance-gate implementation follow-up; the horizon wording is
+  tracked by [#3123](https://github.com/ugoite/ugoite/issues/3123). The v0.3
+  preflight documents major gaps and their owners but does not activate a
+  release-blocking gate or decide its acceptance policy.
 
 Mitase never executes tests; it declares which exact implementation and
 verification targets prove a criterion, and the runner proves they pass.

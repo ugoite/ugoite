@@ -1,11 +1,16 @@
 import { assertEquals } from "@std/assert/equals";
 import {
+  buildPreflightReport,
   buildReport,
   CAPABILITY_STATES,
   classify,
   JOURNEY_CAPABILITIES,
   JOURNEY_ID,
+  PREFLIGHT_EVIDENCE_STATUS,
+  PREFLIGHT_ROWS,
+  PREFLIGHT_SCOPE,
   renderMarkdown,
+  renderPreflightMarkdown,
   rustManifestOperations,
   SERVICE_METHOD_OPERATIONS,
   typescriptManifestOperations,
@@ -24,6 +29,74 @@ Deno.test("capability projection tracks the portable operation manifests", async
   const tsOperations = typescriptManifestOperations(tsSource);
   assertEquals(rustOperations.length, 65);
   assertEquals(tsOperations, rustOperations);
+});
+
+Deno.test("v0.3 preflight rows resolve real authorities and static artifacts", async () => {
+  const report = await buildPreflightReport();
+  assertEquals(report.scope, PREFLIGHT_SCOPE);
+  assertEquals(report.generated_projection, true);
+  assertEquals(report.authority, "not-authority");
+  assertEquals(report.evidence_limit, "static-evidence-not-executed-proof");
+  assertEquals(report.manifestsMatch, true);
+  assertEquals(
+    report.rows.map((row) => row.id),
+    PREFLIGHT_ROWS.map((row) => row.id),
+  );
+  for (const row of report.rows) {
+    assertEquals(row.requirement_criterion_refs.length > 0, true, row.id);
+    assertEquals(
+      row.requirement_criterion_refs.every((ref) =>
+        PREFLIGHT_ROWS.some((seed) =>
+          seed.id === row.id && seed.requirement_criterion_refs.includes(ref)
+        )
+      ),
+      true,
+      `${row.id} has an undeclared criterion reference`,
+    );
+    assertEquals(
+      (PREFLIGHT_EVIDENCE_STATUS as readonly string[]).includes(
+        row.evidence_status,
+      ),
+      true,
+      `${row.id} has an unknown evidence status`,
+    );
+    assertEquals(row.evidence_status === "executed-and-passed", false);
+    assertEquals(
+      new Set(row.operations ?? []).size,
+      (row.operations ?? []).length,
+      `${row.id} has duplicate operations`,
+    );
+    assertEquals(
+      row.evidence_status,
+      row.test_selectors.length > 0 ? "source-located" : "not-run",
+      `${row.id} must not promote missing selectors or unrun tests`,
+    );
+    assertEquals(
+      row.surface_observations.some((item) =>
+        item.expected === "not-required" && !item.reason?.trim()
+      ),
+      false,
+      `${row.id} has an unsupported not-required surface`,
+    );
+    assertEquals(row.reason.includes("Projection issues:"), false, row.id);
+  }
+  const markdown = renderPreflightMarkdown(report);
+  assertEquals(markdown.includes("static evidence, not executed proof"), true);
+  for (const row of report.rows) {
+    assertEquals(markdown.includes(`| ${row.id} |`), true);
+    assertEquals(markdown.includes(row.availability), true, row.id);
+    assertEquals(markdown.includes(row.evidence_status), true);
+    assertEquals(markdown.includes(row.reason), true, row.id);
+    for (const ref of row.requirement_criterion_refs) {
+      assertEquals(markdown.includes(ref), true, `${row.id} missing ${ref}`);
+    }
+    for (const ref of row.feature_binding_refs) {
+      assertEquals(markdown.includes(ref), true, `${row.id} missing ${ref}`);
+    }
+    if (row.follow_up_issue) {
+      assertEquals(markdown.includes(row.follow_up_issue), true, row.id);
+    }
+  }
 });
 
 // The seed covers the whole Golden journey and only journey checkpoints.

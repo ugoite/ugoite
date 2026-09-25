@@ -41,12 +41,17 @@ TOTP is recovery-only and is not a normal login method.
 
 ## Next
 
-The next direction is v0.3 Product UX follow-up: resolve the unverified
+The v0.2.0 release left Product UX acceptance criteria unverified. Their
 completion, discoverability, cross-surface consistency, validation clarity,
-recovery, and documentation-correctness criteria recorded in the
-[v0.2 Product UX tracker](https://github.com/ugoite/ugoite/blob/main/docs/version/v0.2/product-ux.yaml). This work continues
-from the shipped v0.2.0 capabilities; the unresolved criteria are not claimed
-as complete.
+recovery, testing, and documentation follow-ups remain independently tracked in
+the [v0.2 Product UX tracker](../version/v0.2/product-ux.yaml); publication did
+not complete those criteria.
+
+The v0.3 direction is **Authority → Experience → Work**: map what existing
+Space-owned Knowledge can do and where each behavior is specified, implemented,
+and verified before designing owned Experiences. The [v0.3 preflight](../architecture/release/v0.3-preflight.md)
+records that evidence and its gaps. It does not move Application Definitions,
+renderers, or execution behavior into Current.
 
 Knowledge-to-tools remains a North Star, not a shipped acceptance claim.
 Former View and AI milestone authorities are obsolete and are no longer active
