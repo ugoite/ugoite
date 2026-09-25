@@ -1779,20 +1779,6 @@ mod tests {
         }
     }
 
-    fn selected_form() -> ResourceContent {
-        ResourceContent {
-            uri: "ugoite://form/00000000-0000-0000-0000-0000000000a1".into(),
-            content: serde_json::json!({
-                "id": "00000000-0000-0000-0000-0000000000a1",
-                "name": "Expense",
-                "description": "Travel costs",
-                "fields": {"amount": {"type": "number", "required": true}},
-                "_untrusted_content": true
-            })
-            .to_string(),
-        }
-    }
-
     fn selected_entry(id: &str, body: &str) -> ResourceContent {
         ResourceContent {
             uri: format!("ugoite://entry/{id}"),
@@ -1805,6 +1791,12 @@ mod tests {
             })
             .to_string(),
         }
+    }
+
+    fn selected_context_fixture() -> Vec<ResourceContent> {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../fixtures/selected-context.json")).unwrap();
+        serde_json::from_value(fixture["selected"].clone()).unwrap()
     }
 
     #[test]
@@ -1829,10 +1821,7 @@ mod tests {
     #[test]
     fn selected_resources_are_normalized_into_start_context_only() {
         let mut request = request();
-        request.selected_resource_contents = vec![
-            selected_form(),
-            selected_entry("00000000-0000-0000-0000-0000000000b2", "receipt details"),
-        ];
+        request.selected_resource_contents = selected_context_fixture();
         let result = step(KonaseState::default(), KonaseEvent::UserSubmitted(request));
         assert!(result.error.is_none(), "{:?}", result.error);
         let Some(KonaseEffect::StartJob(job)) = result.effects.first() else {
@@ -1846,16 +1835,19 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 "ugoite://form/00000000-0000-0000-0000-0000000000a1",
-                "ugoite://entry/00000000-0000-0000-0000-0000000000b2"
+                "ugoite://entry/00000000-0000-0000-0000-0000000000b1"
             ]
         );
         assert_eq!(job.resource_admission.len(), 2);
         assert!(job.context.selected_resource_contents[0]
             .content
             .contains("\"_untrusted_content\":true"));
+        assert!(job.context.selected_resource_contents[1]
+            .content
+            .contains("amount: 125"));
         assert!(!serde_json::to_string(&result.state)
             .unwrap()
-            .contains("receipt details"));
+            .contains("amount: 125"));
     }
 
     #[test]

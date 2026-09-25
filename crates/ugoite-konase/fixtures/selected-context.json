@@ -1,0 +1,17 @@
+{
+  "space_id": "space-expense",
+  "selected": [
+    {
+      "uri": "ugoite://form/00000000-0000-0000-0000-0000000000a1",
+      "content": "{\"id\":\"00000000-0000-0000-0000-0000000000a1\",\"name\":\"Expense\",\"description\":\"Travel costs\",\"fields\":{\"amount\":{\"type\":\"number\",\"required\":true}},\"_untrusted_content\":true}"
+    },
+    {
+      "uri": "ugoite://entry/00000000-0000-0000-0000-0000000000b1",
+      "content": "{\"id\":\"00000000-0000-0000-0000-0000000000b1\",\"uri\":\"ugoite://entry/00000000-0000-0000-0000-0000000000b1\",\"form\":\"Expense\",\"content\":\"amount: 125\",\"_untrusted_content\":true}"
+    }
+  ],
+  "unselected": {
+    "uri": "ugoite://entry/00000000-0000-0000-0000-0000000000b2",
+    "content": "{\"id\":\"00000000-0000-0000-0000-0000000000b2\",\"uri\":\"ugoite://entry/00000000-0000-0000-0000-0000000000b2\",\"form\":\"Expense\",\"content\":\"PRIVATE UNSELECTED VALUE\",\"_untrusted_content\":true}"
+  }
+}

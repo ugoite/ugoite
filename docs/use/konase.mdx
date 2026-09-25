@@ -28,6 +28,21 @@ the requested URI and has a valid Form or Entry projection before starting the
 model. If a read is denied, expires, or returns invalid data, the Job stops
 before the model is called.
 
+## Select resources in the Browser
+
+Open Konase from the current Space. Choose Forms from that Space's list, or
+search its paged Entry results, then select up to four resources. The panel
+reads only those selections through the current Space's MCP credential and
+shows the normalized Context preview. Confirm **Send this Context** only after
+checking which resources were included, shortened, or omitted. Changing Space,
+the prompt, or the selection invalidates the preview and requires a fresh read
+and confirmation.
+
+The REST-backed candidates help you find an object; they do not authorize its
+contents. Konase verifies each selected resource through MCP before sending it
+to the model. An unreadable or stale selection stops the Job before model
+dispatch.
+
 ## Review before sending
 
 The CLI writes a preview to stderr showing the normalized Context, whether each

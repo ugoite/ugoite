@@ -396,6 +396,64 @@ features:
                 criterion: REQ-ENTRY-012#criterion.typed-options
               - kind: satisfies
                 criterion: REQ-ENTRY-012#criterion.human-machine-output
+      - id: konase-host
+        role: implementation
+        facet: client-host
+        responsibility: Connect the shipped resource-backed Konase Context flow to the MCP resource trust boundary. These host bindings do not add an MCP operation or move Knowledge ownership into Konase.
+        targets:
+          - id: portable-engine
+            adapter: rust
+            path: crates/ugoite-konase/src/engine.rs
+            selector: { kind: symbol, name: step }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-012#criterion.selected-context-admission
+          - id: wasm-protocol
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: invoke_konase }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-012#criterion.selected-context-admission
+          - id: cli-host
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/konase.rs
+            selector: { kind: symbol, name: run_turn_with_selected_context }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-012#criterion.selected-context-admission
+          - id: cli-write-host
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/konase.rs
+            selector: { kind: symbol, name: run_turn }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-017#criterion.request-scoped-write-approval
+              - kind: satisfies
+                criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
+          - id: browser-host
+            adapter: typescript
+            path: frontend/src/lib/konase/host.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-012#criterion.selected-context-admission
+          - id: browser-write-host
+            adapter: typescript
+            path: frontend/src/lib/konase/host.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-017#criterion.request-scoped-write-approval
+              - kind: satisfies
+                criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
+          - id: browser-panel
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-012#criterion.selected-context-admission
       - id: contract
         role: contract-source
         facet: api

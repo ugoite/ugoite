@@ -36,6 +36,31 @@ Business rules (validation, error classification, concurrency, history)
 live in the shared Rust boundary. Fixtures supply values and observe
 canonical representations; they never re-implement validation.
 
+## Konase selected Context
+
+`JOURNEY-KONASE-CONTEXT-001` is an acceptance journey for disposable Work
+Context, not another Knowledge persistence journey. The shared portable Konase
+engine defines the normalized `StartJob.context`; CLI and Browser Hosts acquire
+only the explicitly selected Form or Entry resources with the current Space's
+MCP credential and show the actual normalized Context before sending it to a
+model. Browser REST Form lists and paged EntryQuery results are candidate
+pickers, not authorization evidence. The selected resource is reread through
+MCP. Denied, mismatched, invalid, or stale reads stop before model dispatch.
+
+| Journey | Observable result | Evidence artifacts |
+| --- | --- | --- |
+| Explain the selected Form and Entry | Only those two URIs appear in the bounded portable Context, with untrusted-content framing; an unselected private Entry is absent. The shared `crates/ugoite-konase/fixtures/selected-context.json` input is consumed by the Rust portable, CLI, and Browser Host tests. | `crates/ugoite-konase/src/engine.rs`; `crates/ugoite-cli/src/commands/konase.rs`; `frontend/src/lib/konase/host.test.ts` |
+| Read selection cannot be authorized or is stale | The Host stops before model dispatch when an MCP read is denied or mismatched; Space generation checks discard late Browser results. | `crates/ugoite-cli/src/commands/konase.rs`; `frontend/src/lib/konase/host.test.ts`; `frontend/src/components/konase/KonasePanel.test.tsx` |
+| Start the existing Job without selected Context | The existing no-selection path starts one Job with an empty `selected_resource_contents` list. | `crates/ugoite-konase/src/engine.rs`; `crates/ugoite-wasm/src/lib.rs`; `frontend/src/lib/konase/host.test.ts` |
+| A model proposes a Knowledge write | The separate KON-01 approval and validated mutation receipt remain required; only a confirmed receipt enables Work-scoped Undo. | `crates/ugoite-cli/src/commands/konase.rs`; `frontend/src/lib/konase/host.test.ts`; `crates/ugoite-server/src/lib.rs` |
+
+These fixtures verify the portable resource projection and Host boundaries;
+they do not golden-test model prose. Maximum resource count and byte/character
+budgets remain owned by the portable Context implementation. Static references
+to these selectors are declared in Mitase under `REQ-API-012`; the
+`v0.3-preflight` capability report remains a static locator and does not claim
+that tests ran or that the resource was authorized.
+
 Entry creation uses the identity returned in its mutation receipt for later
 operations. Form save and `sql saved` are CLI input models for the same durable
 Form and Saved SQL outcomes; their command spelling does not define separate

@@ -60,6 +60,16 @@ resources with the byte or model-prompt limit that applied. The normalized
 Context and the Rig initial prompt are both bounded before a host can call a
 model; selected data is not copied into persistent Konase state.
 
+The CLI accepts repeated canonical `--resource` URIs. The Browser offers Form
+and paged EntryQuery candidates for the current Space. In both hosts, candidate
+discovery does not authorize Context: each selected URI is read with the
+current Space's resource-bound MCP credential, checked against its projection,
+and passed through portable `konase.step`. The preview describes the actual
+normalized Context and its admission result before a separate user action sends
+it to the model. The Browser rereads and compares the selected Context at send
+time; stale Space generations and changed or denied resources stop dispatch.
+An empty selection retains the existing one-Job path.
+
 ## Durability boundary
 
 Konase state, agent memory, raw model context, pending effects, and execution

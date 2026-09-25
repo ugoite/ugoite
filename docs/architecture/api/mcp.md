@@ -62,6 +62,19 @@ four templates. Search and resource results label user-controlled material as
 `_untrusted_content: true`, sanitize it, and warn clients never to treat it as
 instructions. They never expose storage layout or revision internals.
 
+Konase does not enumerate the Space through MCP. Its CLI accepts only
+user-supplied canonical Form or Entry URIs. The Browser uses the current Space's
+Form list and paged EntryQuery results as selection candidates, then reads only
+explicitly selected URIs through that Space's MCP credential. Candidate-list
+access does not substitute for the authorized resource read. Hosts validate that
+each read returns the requested URI and expected untrusted projection before
+portable Context normalization; a denied, stale, or invalid read stops before
+model dispatch. The bounded normalized Context is previewed before sending and
+is disposable Work data, not durable Knowledge. Selected resources do not
+implicitly include related Entries or history. Write confirmation remains a
+separate action and continues to require a validated mutation receipt before
+Konase reports a save.
+
 ## Authentication
 
 The protected resource is exactly `{issuer}/mcp`. Protected-resource metadata is
