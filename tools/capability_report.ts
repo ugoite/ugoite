@@ -118,6 +118,7 @@ export interface PreflightRowSeed {
   surface_expectations: Array<{
     surface: string;
     expected: "required" | "not-required";
+    evidence_paths: string[];
     reason?: string;
   }>;
   verification_claim_refs: string[];
@@ -170,9 +171,27 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       "crates/ugoite-server/src/lib.rs",
     ],
     surface_expectations: [
-      { surface: "Browser", expected: "required" },
-      { surface: "CLI core", expected: "required" },
-      { surface: "CLI remote", expected: "required" },
+      {
+        surface: "Browser",
+        expected: "required",
+        evidence_paths: ["frontend/src/lib/entry-query.ts"],
+      },
+      {
+        surface: "CLI core",
+        expected: "required",
+        evidence_paths: [
+          "crates/ugoite-cli/src/commands/entry_query.rs",
+          "crates/ugoite-core/src/entry_query.rs",
+        ],
+      },
+      {
+        surface: "CLI remote",
+        expected: "required",
+        evidence_paths: [
+          "crates/ugoite-cli/src/commands/entry_query.rs",
+          "crates/ugoite-cli/src/http.rs",
+        ],
+      },
     ],
     verification_claim_refs: [
       "docs/mitase/requirements/search.yaml#REQ-SRCH-006/binding.entry-query-verification/page-case",
@@ -210,9 +229,27 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       "crates/ugoite-cli/tests/test_cli_endpoint_routing.rs",
     ],
     surface_expectations: [
-      { surface: "Browser", expected: "required" },
-      { surface: "CLI core", expected: "required" },
-      { surface: "CLI remote", expected: "required" },
+      {
+        surface: "Browser",
+        expected: "required",
+        evidence_paths: ["frontend/src/lib/sql-api.ts"],
+      },
+      {
+        surface: "CLI core",
+        expected: "required",
+        evidence_paths: [
+          "crates/ugoite-cli/src/commands/sql.rs",
+          "crates/ugoite-core/src/sql_query.rs",
+        ],
+      },
+      {
+        surface: "CLI remote",
+        expected: "required",
+        evidence_paths: [
+          "crates/ugoite-cli/src/commands/sql.rs",
+          "crates/ugoite-cli/src/http.rs",
+        ],
+      },
     ],
     verification_claim_refs: [
       "docs/mitase/requirements/api.yaml#REQ-API-015/binding.cli-verification/remote-page",
@@ -257,12 +294,31 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       "e2e/forms.test.ts",
     ],
     surface_expectations: [
-      { surface: "Browser", expected: "required" },
-      { surface: "CLI core", expected: "required" },
-      { surface: "CLI remote", expected: "required" },
+      {
+        surface: "Browser",
+        expected: "required",
+        evidence_paths: ["frontend/src/lib/form-api.ts"],
+      },
+      {
+        surface: "CLI core",
+        expected: "required",
+        evidence_paths: [
+          "crates/ugoite-cli/src/commands/form.rs",
+          "crates/ugoite-core/src/lib.rs",
+        ],
+      },
+      {
+        surface: "CLI remote",
+        expected: "required",
+        evidence_paths: [
+          "crates/ugoite-cli/src/commands/form.rs",
+          "crates/ugoite-cli/src/http.rs",
+        ],
+      },
       {
         surface: "MCP resource read",
         expected: "not-required",
+        evidence_paths: ["crates/ugoite-server/src/mcp.rs"],
         reason:
           "The MCP Form resource is a read-only facade; it does not perform REST/CLI Form upsert.",
       },
@@ -308,11 +364,33 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       "e2e/knowledge-journey.test.ts",
     ],
     surface_expectations: [
-      { surface: "Browser", expected: "required" },
-      { surface: "CLI core", expected: "required" },
-      { surface: "CLI remote", expected: "required" },
-      { surface: "MCP semantic facade", expected: "required" },
-      { surface: "Konase Host", expected: "required" },
+      {
+        surface: "Browser",
+        expected: "required",
+        evidence_paths: ["frontend/src/lib/entry-api.ts"],
+      },
+      {
+        surface: "CLI core",
+        expected: "required",
+        evidence_paths: [
+          "crates/ugoite-cli/src/commands/entry.rs",
+          "crates/ugoite-core/src/lib.rs",
+        ],
+      },
+      {
+        surface: "CLI remote",
+        expected: "required",
+        evidence_paths: [
+          "crates/ugoite-cli/src/commands/entry.rs",
+          "crates/ugoite-cli/src/http.rs",
+        ],
+      },
+      {
+        surface: "MCP semantic facade",
+        expected: "required",
+        evidence_paths: ["crates/ugoite-server/src/mcp.rs"],
+      },
+      { surface: "Konase Host", expected: "required", evidence_paths: [] },
     ],
     verification_claim_refs: [
       "docs/mitase/requirements/journey.yaml#REQ-JOURNEY-001/binding.journey-frontend-verification/entry-create-case",
@@ -351,8 +429,15 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       "docs/architecture/boundaries/konase.md",
     ],
     surface_expectations: [
-      { surface: "CLI Host", expected: "required" },
-      { surface: "Browser Host", expected: "required" },
+      {
+        surface: "CLI Host",
+        expected: "required",
+        evidence_paths: [
+          "crates/ugoite-cli/src/commands/konase.rs",
+          "crates/ugoite-konase/src/lib.rs",
+        ],
+      },
+      { surface: "Browser Host", expected: "required", evidence_paths: [] },
     ],
     verification_claim_refs: [],
     test_selectors: [],
@@ -379,9 +464,24 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       "crates/ugoite-server/src/openapi.json",
     ],
     surface_expectations: [
-      { surface: "Browser", expected: "required" },
-      { surface: "WASM", expected: "required" },
-      { surface: "CLI remote", expected: "required" },
+      {
+        surface: "Browser",
+        expected: "required",
+        evidence_paths: ["frontend/src/lib/ugoite-client/protocol.ts"],
+      },
+      {
+        surface: "WASM",
+        expected: "required",
+        evidence_paths: ["crates/ugoite-wasm/src/lib.rs"],
+      },
+      {
+        surface: "CLI remote",
+        expected: "required",
+        evidence_paths: [
+          "crates/ugoite-cli/src/http.rs",
+          "crates/ugoite-api-client/src/lib.rs",
+        ],
+      },
     ],
     verification_claim_refs: [],
     test_selectors: [
@@ -771,20 +871,106 @@ export async function buildReport(): Promise<CapabilityReport> {
   };
 }
 
-/** Resolve a Mitase verification target by source path, requirement, binding, and target IDs. */
-function verificationClaimRefLocated(
+function yamlItemBlock(
+  source: string,
+  id: string,
+  indent: number,
+): string | undefined {
+  const lines = source.split("\n");
+  const prefix = `${" ".repeat(indent)}- id: `;
+  const start = lines.findIndex((line) => line === `${prefix}${id}`);
+  if (start < 0) return undefined;
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index++) {
+    if (lines[index].startsWith(prefix)) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).join("\n");
+}
+
+export function resolveRequirementCriterionRef(
   ref: string,
   sources: Map<string, string>,
+): boolean {
+  const match = ref.match(/^(REQ-[A-Z0-9-]+)#criterion\.([a-z0-9-]+)$/);
+  if (!match) return false;
+  for (const [path, source] of sources) {
+    if (!path.startsWith("docs/mitase/requirements/")) continue;
+    const requirement = yamlItemBlock(source, match[1], 2);
+    if (requirement && yamlItemBlock(requirement, match[2], 6)) return true;
+  }
+  return false;
+}
+
+export function resolveFeatureBindingRef(
+  ref: string,
+  sources: Map<string, string>,
+): boolean {
+  const match = ref.match(
+    /^(FEAT-[A-Z0-9-]+)#binding\.([a-z0-9-]+)\/target\.([a-z0-9-]+)$/,
+  );
+  if (!match) return false;
+  for (const [path, source] of sources) {
+    if (!path.startsWith("docs/mitase/features/")) continue;
+    const feature = yamlItemBlock(source, match[1], 2);
+    const binding = feature && yamlItemBlock(feature, match[2], 6);
+    if (binding && yamlItemBlock(binding, match[3], 10)) return true;
+  }
+  return false;
+}
+
+export function resolveVerificationClaimRef(
+  ref: string,
+  sources: Map<string, string>,
+  expectedCriteria?: string[],
 ): boolean {
   const [path, fragment] = ref.split("#", 2);
   const match = fragment?.match(
     /^(REQ-[A-Z0-9-]+)\/binding\.([a-z0-9-]+)\/([a-z0-9-]+)$/,
   );
   const source = path ? sources.get(path) : undefined;
-  if (!source || !match) return false;
-  return [`id: ${match[1]}`, `id: ${match[2]}`, `id: ${match[3]}`].every(
-    (marker) => source.includes(marker),
-  );
+  if (!source || !match || !path.startsWith("docs/mitase/requirements/")) {
+    return false;
+  }
+  const requirement = yamlItemBlock(source, match[1], 2);
+  const binding = requirement && yamlItemBlock(requirement, match[2], 6);
+  const target = binding && yamlItemBlock(binding, match[3], 10);
+  return (target?.includes("kind: verifies") ?? false) &&
+    (!expectedCriteria ||
+      expectedCriteria.some((criterion) =>
+        target?.includes(`criterion: ${criterion}`)
+      ));
+}
+
+export function validatePreflightSeedShape(
+  seed: PreflightRowSeed,
+  knownOperations: readonly string[],
+): string[] {
+  const errors: string[] = [];
+  const operations = seed.operations ?? [];
+  if (new Set(operations).size !== operations.length) {
+    errors.push("duplicate operation in row");
+  }
+  for (const operation of operations) {
+    if (!knownOperations.includes(operation)) {
+      errors.push(`unknown operation: ${operation}`);
+    }
+  }
+  if (
+    seed.surface_expectations.some((item) =>
+      item.expected === "not-required" &&
+      (!item.reason?.trim() || item.evidence_paths.length === 0)
+    )
+  ) {
+    errors.push("not-required surface lacks evidence or a reason");
+  }
+  return errors;
+}
+
+export function selectorLocated(source: string, selector: string): boolean {
+  return selector.trim().length > 0 && source.includes(selector);
 }
 
 export async function buildPreflightReport(): Promise<PreflightReport> {
@@ -809,7 +995,6 @@ export async function buildPreflightReport(): Promise<PreflightReport> {
   for (const path of mitaseFiles) {
     mitaseSources.set(repoRelative(path), await Deno.readTextFile(path));
   }
-  const allMitase = [...mitaseSources.values()].join("\n");
   const rows: PreflightRow[] = [];
 
   for (const seed of PREFLIGHT_ROWS) {
@@ -817,36 +1002,26 @@ export async function buildPreflightReport(): Promise<PreflightReport> {
     const operationNames = seed.id === "portable-frontend-protocol"
       ? rustOperations
       : seed.operations ?? [];
-    if (new Set(operationNames).size !== operationNames.length) {
-      rowErrors.push("duplicate operation in row");
-    }
-    for (const operation of operationNames) {
-      if (!rustSet.has(operation)) {
-        rowErrors.push(`unknown operation: ${operation}`);
-      }
-    }
+    rowErrors.push(...validatePreflightSeedShape(seed, rustOperations));
     if (
-      seed.requirement_criterion_refs.some((ref) => !allMitase.includes(ref))
-    ) {
-      rowErrors.push("unresolved Requirement/Criterion reference");
-    }
-    if (seed.feature_binding_refs.some((ref) => !allMitase.includes(ref))) {
-      rowErrors.push("unresolved Feature/Artifact Binding reference");
-    }
+      seed.requirement_criterion_refs.some((ref) =>
+        !resolveRequirementCriterionRef(ref, mitaseSources)
+      )
+    ) rowErrors.push("unresolved Requirement/Criterion reference");
+    if (
+      seed.feature_binding_refs.some((ref) =>
+        !resolveFeatureBindingRef(ref, mitaseSources)
+      )
+    ) rowErrors.push("unresolved Feature/Artifact Binding reference");
     if (
       seed.verification_claim_refs.some((ref) =>
-        !verificationClaimRefLocated(ref, mitaseSources)
+        !resolveVerificationClaimRef(
+          ref,
+          mitaseSources,
+          seed.requirement_criterion_refs,
+        )
       )
-    ) {
-      rowErrors.push("unresolved Verification Claim reference");
-    }
-    if (
-      seed.surface_expectations.some((item) =>
-        item.expected === "not-required" && !item.reason?.trim()
-      )
-    ) {
-      rowErrors.push("not-required surface has no evidence-backed reason");
-    }
+    ) rowErrors.push("unresolved Verification Claim reference");
 
     const artifactFound: string[] = [];
     const artifactMissing: string[] = [];
@@ -863,15 +1038,20 @@ export async function buildPreflightReport(): Promise<PreflightReport> {
     for (const { path, selector } of seed.test_selectors) {
       try {
         const source = await readUnderRoot(path);
-        (source.includes(selector) ? selectorFound : selectorMissing).push(
-          `${path} :: ${selector}`,
-        );
+        (selectorLocated(source, selector) ? selectorFound : selectorMissing)
+          .push(
+            `${path} :: ${selector}`,
+          );
       } catch {
         selectorMissing.push(`${path} :: ${selector}`);
       }
     }
     const claimFound = seed.verification_claim_refs.filter((ref) =>
-      verificationClaimRefLocated(ref, mitaseSources)
+      resolveVerificationClaimRef(
+        ref,
+        mitaseSources,
+        seed.requirement_criterion_refs,
+      )
     );
     const hasDeclaredEvidence = claimFound.length > 0 ||
       seed.test_selectors.length > 0;
@@ -887,25 +1067,16 @@ export async function buildPreflightReport(): Promise<PreflightReport> {
       : "declared";
     const surface_observations: PreflightSurfaceObservation[] = seed
       .surface_expectations.map((expectation) => {
-        const marker = expectation.surface.toLowerCase();
-        const evidence = artifactFound.filter((path) => {
-          if (marker.includes("browser") || marker.includes("frontend")) {
-            return path.startsWith("frontend/");
-          }
-          if (marker.includes("cli")) {
-            return path.startsWith("crates/ugoite-cli/");
-          }
-          if (marker.includes("mcp")) return path.includes("mcp.rs");
-          if (marker.includes("konase")) {
-            return path.includes("konase") || path.includes("konase.md");
-          }
-          if (marker.includes("wasm")) return path.includes("ugoite-wasm");
-          return false;
-        });
+        const evidence = expectation.evidence_paths.filter((path) =>
+          artifactFound.includes(path)
+        );
         return {
           surface: expectation.surface,
           expected: expectation.expected,
-          observed: evidence.length > 0 ? true : null,
+          observed: expectation.evidence_paths.length > 0 &&
+              evidence.length === expectation.evidence_paths.length
+            ? true
+            : null,
           evidence,
           ...(expectation.reason ? { reason: expectation.reason } : {}),
         };

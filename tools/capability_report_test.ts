@@ -11,9 +11,14 @@ import {
   PREFLIGHT_SCOPE,
   renderMarkdown,
   renderPreflightMarkdown,
+  resolveFeatureBindingRef,
+  resolveRequirementCriterionRef,
+  resolveVerificationClaimRef,
   rustManifestOperations,
+  selectorLocated,
   SERVICE_METHOD_OPERATIONS,
   typescriptManifestOperations,
+  validatePreflightSeedShape,
 } from "./capability_report.ts";
 
 // The projection inventory must track the portable operation manifests
@@ -38,6 +43,35 @@ Deno.test("v0.3 preflight rows resolve real authorities and static artifacts", a
   assertEquals(report.authority, "not-authority");
   assertEquals(report.evidence_limit, "static-evidence-not-executed-proof");
   assertEquals(report.manifestsMatch, true);
+  const mitaseSources = new Map<string, string>();
+  for (
+    const path of [
+      "docs/mitase/requirements/search.yaml",
+      "docs/mitase/requirements/api.yaml",
+      "docs/mitase/requirements/forms.yaml",
+      "docs/mitase/requirements/journey.yaml",
+      "docs/mitase/requirements/frontend.yaml",
+      "docs/mitase/features/api.yaml",
+      "docs/mitase/features/journey.yaml",
+    ]
+  ) {
+    mitaseSources.set(path, await Deno.readTextFile(path));
+  }
+  for (const row of report.rows) {
+    for (const ref of row.requirement_criterion_refs) {
+      assertEquals(
+        resolveRequirementCriterionRef(ref, mitaseSources),
+        true,
+        ref,
+      );
+    }
+    for (const ref of row.feature_binding_refs) {
+      assertEquals(resolveFeatureBindingRef(ref, mitaseSources), true, ref);
+    }
+    for (const ref of row.verification_claim_refs) {
+      assertEquals(resolveVerificationClaimRef(ref, mitaseSources), true, ref);
+    }
+  }
   assertEquals(
     report.rows.map((row) => row.id),
     PREFLIGHT_ROWS.map((row) => row.id),
@@ -78,6 +112,32 @@ Deno.test("v0.3 preflight rows resolve real authorities and static artifacts", a
       false,
       `${row.id} has an unsupported not-required surface`,
     );
+    for (const observation of row.surface_observations) {
+      if (observation.observed) {
+        assertEquals(observation.evidence.length > 0, true, row.id);
+        assertEquals(
+          observation.evidence.every((path) =>
+            row.artifact_paths.includes(path)
+          ),
+          true,
+          `${row.id} has an unregistered surface evidence path`,
+        );
+      }
+    }
+    const cliCoreObservation = row.surface_observations.find((item) =>
+      item.surface === "CLI core"
+    );
+    const cliRemoteObservation = row.surface_observations.find((item) =>
+      item.surface === "CLI remote"
+    );
+    if (cliCoreObservation && cliRemoteObservation) {
+      assertEquals(
+        cliCoreObservation.evidence.join(";") ===
+          cliRemoteObservation.evidence.join(";"),
+        false,
+        `${row.id} reuses identical core and remote evidence`,
+      );
+    }
     assertEquals(row.reason.includes("Projection issues:"), false, row.id);
   }
   const markdown = renderPreflightMarkdown(report);
@@ -97,6 +157,88 @@ Deno.test("v0.3 preflight rows resolve real authorities and static artifacts", a
       assertEquals(markdown.includes(row.follow_up_issue), true, row.id);
     }
   }
+});
+
+Deno.test("preflight rejects malformed references, selectors, duplicates, and exceptions", async () => {
+  const requirementSource = await Deno.readTextFile(
+    "docs/mitase/requirements/search.yaml",
+  );
+  const featureSource = await Deno.readTextFile(
+    "docs/mitase/features/journey.yaml",
+  );
+  const claimSource = await Deno.readTextFile(
+    "docs/mitase/requirements/journey.yaml",
+  );
+  const sources = new Map([
+    ["docs/mitase/requirements/search.yaml", requirementSource],
+    ["docs/mitase/features/journey.yaml", featureSource],
+    ["docs/mitase/requirements/journey.yaml", claimSource],
+  ]);
+  assertEquals(
+    resolveRequirementCriterionRef(
+      "REQ-SRCH-006#criterion.not-a-criterion",
+      sources,
+    ),
+    false,
+  );
+  assertEquals(
+    resolveFeatureBindingRef(
+      "FEAT-JOURNEY-001#binding.frontend/target.not-a-target",
+      sources,
+    ),
+    false,
+  );
+  assertEquals(
+    resolveVerificationClaimRef(
+      "docs/mitase/requirements/journey.yaml#REQ-JOURNEY-001/binding.journey-frontend-verification/not-a-target",
+      sources,
+    ),
+    false,
+  );
+  assertEquals(
+    resolveVerificationClaimRef(
+      "docs/mitase/requirements/journey.yaml#REQ-JOURNEY-001/binding.journey-frontend-verification/form-case",
+      sources,
+      ["REQ-JOURNEY-001#criterion.entry-create"],
+    ),
+    false,
+  );
+  assertEquals(selectorLocated("test('present')", "missing"), false);
+
+  const duplicate = {
+    ...PREFLIGHT_ROWS[0],
+    operations: ["entry.query", "entry.query"],
+  };
+  assertEquals(
+    validatePreflightSeedShape(duplicate, ["entry.query"]).includes(
+      "duplicate operation in row",
+    ),
+    true,
+  );
+  const unknownOperation = {
+    ...PREFLIGHT_ROWS[0],
+    operations: ["entry.not-real"],
+  };
+  assertEquals(
+    validatePreflightSeedShape(unknownOperation, []).includes(
+      "unknown operation: entry.not-real",
+    ),
+    true,
+  );
+  const unsupportedException = {
+    ...PREFLIGHT_ROWS[2],
+    surface_expectations: PREFLIGHT_ROWS[2].surface_expectations.map((item) =>
+      item.expected === "not-required"
+        ? { ...item, reason: "", evidence_paths: [] }
+        : item
+    ),
+  };
+  assertEquals(
+    validatePreflightSeedShape(unsupportedException, []).includes(
+      "not-required surface lacks evidence or a reason",
+    ),
+    true,
+  );
 });
 
 // The seed covers the whole Golden journey and only journey checkpoints.
