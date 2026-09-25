@@ -8,6 +8,7 @@ import {
   KonaseMutationUnconfirmedError,
   type KonaseProgress,
   type KonaseTurn,
+  type SelectedContextPreview,
   KonaseWorkFailure,
   KonaseWriteDeniedError,
   type WritePreview,
@@ -15,7 +16,9 @@ import {
 import { authorizeBrowserMcp } from "~/lib/konase/browser-mcp-auth";
 import { BrowserMcpHost } from "~/lib/konase/mcp";
 import { OpenAiModelHost } from "~/lib/konase/model";
-import { spaceApi } from "~/lib/ugoite-client";
+import { entryApi, formApi, spaceApi } from "~/lib/ugoite-client";
+import type { EntryPage, EntryQuery, EntryQueryResult } from "~/lib/entry-query";
+import type { Form } from "~/lib/types";
 
 type KonasePanelProps = {
   spaceId: string;
@@ -44,8 +47,21 @@ export function KonasePanel(props: KonasePanelProps) {
     false,
   );
   const [turn, setTurn] = createSignal<KonaseTurn>();
+  const [selectedUris, setSelectedUris] = createSignal<string[]>([]);
+  const [forms, setForms] = createSignal<Form[]>([]);
+  const [formsLoading, setFormsLoading] = createSignal(false);
+  const [entryText, setEntryText] = createSignal("");
+  const [entryRows, setEntryRows] = createSignal<EntryQueryResult[]>([]);
+  const [entryPage, setEntryPage] = createSignal<EntryPage>();
+  const [entrySearchLoading, setEntrySearchLoading] = createSignal(false);
+  const [entryCursorPath, setEntryCursorPath] = createSignal<(string | undefined)[]>([
+    undefined,
+  ]);
+  const [contextPreview, setContextPreview] = createSignal<SelectedContextPreview>();
   const [undone, setUndone] = createSignal(false);
   const [error, setError] = createSignal<string>();
+  let entrySearchGeneration = 0;
+  let entrySearchController: AbortController | undefined;
   let unsubscribe: (() => void) | undefined;
   let pendingSpaceId: string | undefined;
   let lifetime: PanelLifetime = { generation: 0, spaceId: props.spaceId };
@@ -80,6 +96,18 @@ export function KonasePanel(props: KonasePanelProps) {
       setRunning(false);
       setUndoing(false);
       setTurn(undefined);
+      setSelectedUris([]);
+      setForms([]);
+      setFormsLoading(false);
+      setEntryRows([]);
+      setEntryPage(undefined);
+      setEntryText("");
+      setEntryCursorPath([undefined]);
+      setEntrySearchLoading(false);
+      setContextPreview(undefined);
+      entrySearchController?.abort();
+      entrySearchController = undefined;
+      entrySearchGeneration += 1;
       setUndone(false);
       setSteps([]);
       setError(undefined);
@@ -105,6 +133,9 @@ export function KonasePanel(props: KonasePanelProps) {
     configuredHost()?.cancelPending();
     configuredHost()?.dispose();
     setConfirmation(undefined);
+    setContextPreview(undefined);
+    entrySearchController?.abort();
+    entrySearchGeneration += 1;
     unsubscribe?.();
   });
 
@@ -164,6 +195,7 @@ export function KonasePanel(props: KonasePanelProps) {
       setConfiguredHost(host);
       setConfiguredSpaceId(requestedSpaceId);
       subscribe(host, configureLifetime);
+      void loadFormCandidates(requestedSpaceId, configureLifetime);
     } catch (cause) {
       if (isCurrentLifetime(configureLifetime)) {
         setError(formatUserFacingError(cause, "konase.error"));
@@ -192,6 +224,22 @@ export function KonasePanel(props: KonasePanelProps) {
     setRunning(true);
     const submitLifetime = captureLifetime();
     try {
+      if (selectedUris().length > 0) {
+        setContextPreview(undefined);
+        const selectionSnapshot = [...selectedUris()];
+        const preview = await host.previewSelectedContext(value, selectionSnapshot);
+        if (
+          !isCurrentLifetime(submitLifetime) ||
+          prompt().trim() !== value ||
+          JSON.stringify(selectedUris()) !== JSON.stringify(selectionSnapshot)
+        ) {
+          host.invalidateContextPreview();
+          return;
+        }
+        setContextPreview(preview);
+        return;
+      }
+      setContextPreview(undefined);
       const result = await host.submit(value);
       if (!isCurrentLifetime(submitLifetime)) return;
       setTurn(result);
@@ -214,6 +262,150 @@ export function KonasePanel(props: KonasePanelProps) {
       }
     } finally {
       if (isCurrentLifetime(submitLifetime)) setRunning(false);
+    }
+  };
+
+  const loadFormCandidates = async (
+    spaceId: string,
+    hostLifetime: PanelLifetime,
+  ) => {
+    setFormsLoading(true);
+    try {
+      const candidates = await formApi.list(spaceId);
+      if (isCurrentLifetime(hostLifetime)) setForms(candidates);
+    } catch (cause) {
+      if (isCurrentLifetime(hostLifetime)) {
+        setError(formatUserFacingError(cause, "konase.candidateError"));
+      }
+    } finally {
+      if (isCurrentLifetime(hostLifetime)) setFormsLoading(false);
+    }
+  };
+
+  const searchEntries = async (
+    after: string | undefined = undefined,
+    nextPath?: (string | undefined)[],
+  ) => {
+    const spaceId = props.spaceId;
+    const hostLifetime = captureLifetime();
+    if (!activeHost()) return;
+    const generation = ++entrySearchGeneration;
+    entrySearchController?.abort();
+    const controller = new AbortController();
+    entrySearchController = controller;
+    setEntrySearchLoading(true);
+    setError(undefined);
+    if (after === undefined) {
+      setEntryRows([]);
+      setEntryPage(undefined);
+    }
+    const text = entryText().trim();
+    const query: EntryQuery = {
+      scope: { kind: "all" },
+      ...(text ? { text } : {}),
+      filters: [],
+      sort: [],
+    };
+    try {
+      const page = await entryApi.query(spaceId, {
+        query,
+        projection: { kind: "preview" },
+        limit: 20,
+        ...(after ? { after } : {}),
+      }, controller.signal);
+      if (
+        generation !== entrySearchGeneration || controller.signal.aborted ||
+        !isCurrentLifetime(hostLifetime)
+      ) return;
+      setEntryRows(page.rows);
+      setEntryPage(page);
+      if (nextPath) setEntryCursorPath(nextPath);
+    } catch (cause) {
+      if (
+        generation === entrySearchGeneration && !controller.signal.aborted &&
+        isCurrentLifetime(hostLifetime)
+      ) {
+        setError(formatUserFacingError(cause, "konase.candidateError"));
+      }
+    } finally {
+      if (generation === entrySearchGeneration) {
+        if (entrySearchController === controller) entrySearchController = undefined;
+        setEntrySearchLoading(false);
+      }
+    }
+  };
+
+  const toggleResource = (uri: string, checked: boolean) => {
+    const current = selectedUris();
+    if (checked && current.includes(uri)) return;
+    if (checked && current.length >= 4) return;
+    activeHost()?.invalidateContextPreview();
+    setContextPreview(undefined);
+    setSelectedUris((value) => checked
+      ? [...value, uri]
+      : value.filter((selected) => selected !== uri));
+  };
+
+  const editEntryText = (value: string) => {
+    setEntryText(value);
+    entrySearchGeneration += 1;
+    entrySearchController?.abort();
+    entrySearchController = undefined;
+    setEntrySearchLoading(false);
+    setEntryRows([]);
+    setEntryPage(undefined);
+    setEntryCursorPath([undefined]);
+  };
+
+  const editPrompt = (value: string) => {
+    if (contextPreview()) {
+      activeHost()?.invalidateContextPreview();
+      setContextPreview(undefined);
+    }
+    setPrompt(value);
+  };
+
+  const cancelContextPreview = () => {
+    activeHost()?.invalidateContextPreview();
+    setContextPreview(undefined);
+  };
+
+  const sendContextPreview = async () => {
+    const host = activeHost();
+    const preview = contextPreview();
+    if (!host || !preview || running()) return;
+    setError(undefined);
+    setTurn(undefined);
+    setUndone(false);
+    setSteps([]);
+    setRunning(true);
+    const previewLifetime = captureLifetime();
+    try {
+      const result = await host.sendSelectedContext(preview.id);
+      if (!isCurrentLifetime(previewLifetime)) return;
+      setTurn(result);
+      setPrompt("");
+      setSelectedUris([]);
+      setContextPreview(undefined);
+    } catch (cause) {
+      if (isCurrentLifetime(previewLifetime)) {
+        if (cause instanceof KonaseWorkFailure) {
+          setTurn({
+            outcome: {
+              job_id: cause.partial.jobId,
+              summary: t("konase.partialWork"),
+              meaningful: false,
+            },
+            workId: cause.partial.workId,
+            undoAvailable: cause.partial.undoAvailable,
+            knowledge: cause.partial.knowledge,
+          });
+        }
+        setError(konaseErrorMessage(cause));
+        setContextPreview(undefined);
+      }
+    } finally {
+      if (isCurrentLifetime(previewLifetime)) setRunning(false);
     }
   };
 
@@ -308,6 +500,128 @@ export function KonasePanel(props: KonasePanelProps) {
           </form>
         }
       >
+        <section class="ui-stack-sm" aria-labelledby="konase-resource-selection-title">
+          <h3 id="konase-resource-selection-title">
+            {t("konase.resourceSelection")}
+          </h3>
+          <p class="ui-muted" role="status" aria-live="polite">
+            {t("konase.resourceSelectionCount", { count: selectedUris().length })}
+          </p>
+          <Show when={selectedUris().length > 0}>
+            <ul aria-label={t("konase.selectedResources")}>
+              <For each={selectedUris()}>
+                {(uri) => (
+                  <li>
+                    <span>{uri}</span>
+                    <button
+                      class="btn"
+                      type="button"
+                      disabled={running()}
+                      aria-label={t("konase.removeSelectedResource", { uri })}
+                      onClick={() => toggleResource(uri, false)}
+                    >
+                      {t("konase.removeSelectedResourceButton")}
+                    </button>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+          <fieldset class="ui-stack-sm" disabled={running()}>
+            <legend>{t("konase.formCandidates")}</legend>
+            <Show when={formsLoading()}>
+              <p class="ui-muted" role="status">{t("konase.loadingCandidates")}</p>
+            </Show>
+            <Show when={!formsLoading() && forms().length === 0}>
+              <p class="ui-muted">{t("konase.noFormCandidates")}</p>
+            </Show>
+            <For each={forms()}>
+              {(form) => {
+                const uri = form.id ? `ugoite://form/${form.id}` : "";
+                return (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(uri && selectedUris().includes(uri))}
+                      disabled={!uri || (selectedUris().length >= 4 && !selectedUris().includes(uri))}
+                      onChange={(event) => toggleResource(uri, event.currentTarget.checked)}
+                    />
+                    {form.name} {form.id ? `(${form.id})` : ""}
+                  </label>
+                );
+              }}
+            </For>
+          </fieldset>
+          <form class="ui-inline-actions" onSubmit={(event) => {
+            event.preventDefault();
+            setEntryCursorPath([undefined]);
+            void searchEntries(undefined, [undefined]);
+          }}>
+            <label>
+              {t("konase.entrySearch")}
+              <input
+              type="search"
+              value={entryText()}
+              disabled={running()}
+              onInput={(event) => editEntryText(event.currentTarget.value)}
+            />
+          </label>
+          <button class="btn" type="submit" disabled={running() || entrySearchLoading()}>
+              {t("konase.searchEntries")}
+            </button>
+          </form>
+          <Show when={entrySearchLoading()}>
+            <p class="ui-muted" role="status">{t("konase.loadingCandidates")}</p>
+          </Show>
+          <Show when={entryRows().length > 0}>
+            <fieldset class="ui-stack-sm" disabled={running()}>
+              <legend>{t("konase.entryCandidates")}</legend>
+              <For each={entryRows()}>
+                {(entry) => {
+                  const uri = `ugoite://entry/${entry.id}`;
+                  return (
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={selectedUris().includes(uri)}
+                        disabled={selectedUris().length >= 4 && !selectedUris().includes(uri)}
+                        onChange={(event) => toggleResource(uri, event.currentTarget.checked)}
+                      />
+                      {entry.preview || entry.id} ({entry.id})
+                    </label>
+                  );
+                }}
+              </For>
+            </fieldset>
+          </Show>
+          <div class="ui-inline-actions">
+            <button
+              class="btn"
+              type="button"
+              disabled={running() || entrySearchLoading() || entryCursorPath().length <= 1}
+              onClick={() => {
+                const path = entryCursorPath();
+                const previous = path.slice(0, -1);
+                const after = previous[previous.length - 1];
+                void searchEntries(after, previous);
+              }}
+            >
+              {t("konase.previousEntries")}
+            </button>
+            <button
+              class="btn"
+              type="button"
+              disabled={running() || entrySearchLoading() || !entryPage()?.has_more || !entryPage()?.next}
+              onClick={() => {
+                const cursor = entryPage()?.next;
+                if (!cursor) return;
+                void searchEntries(cursor, [...entryCursorPath(), cursor]);
+              }}
+            >
+              {t("konase.nextEntries")}
+            </button>
+          </div>
+        </section>
         <form class="ui-stack-sm" onSubmit={submit}>
           <label class="ui-sr-only" for="konase-prompt">
             {t("konase.title")}
@@ -318,8 +632,7 @@ export function KonasePanel(props: KonasePanelProps) {
             value={prompt()}
             placeholder={t("konase.promptPlaceholder")}
             disabled={running()}
-            onInput={(event) =>
-              setPrompt(event.currentTarget.value)}
+            onInput={(event) => editPrompt(event.currentTarget.value)}
           />
           <button
             class="btn primary"
@@ -330,9 +643,62 @@ export function KonasePanel(props: KonasePanelProps) {
             <Show when={running()}>
               <ButtonSpinner />
             </Show>
-            {t("konase.submit")}
+            {selectedUris().length > 0
+              ? t("konase.previewContext")
+              : t("konase.submit")}
           </button>
         </form>
+        <Show when={contextPreview()}>
+          {(preview) => (
+            <section
+              class="ui-card ui-stack-sm"
+              aria-labelledby="konase-context-preview-title"
+              aria-describedby="konase-context-preview-description"
+            >
+              <h3 id="konase-context-preview-title">
+                {t("konase.contextPreviewTitle")}
+              </h3>
+              <p id="konase-context-preview-description" class="ui-muted" role="status" aria-live="polite">
+                {t("konase.contextPreviewUntrusted")}
+              </p>
+              <ul class="ui-stack-sm">
+                <For each={preview().admission}>
+                  {(admission) => {
+                    const resource = preview().resources.find((item) => item.uri === admission.uri);
+                    return (
+                      <li>
+                        <p>
+                          <strong>{admission.uri}</strong>: {resourceStatusLabel(admission.status)}
+                          {admission.reason
+                            ? ` — ${resourceReasonLabel(admission.reason)}`
+                            : ""}
+                        </p>
+                        <Show when={resource}>
+                          {(content) => <pre class="ui-scroll-x">{content().content}</pre>}
+                        </Show>
+                      </li>
+                    );
+                  }}
+                </For>
+              </ul>
+              <div class="ui-inline-actions">
+                <button
+                  class="btn primary"
+                  type="button"
+                  disabled={running()}
+                  aria-busy={running() || undefined}
+                  onClick={() => void sendContextPreview()}
+                >
+                  <Show when={running()}><ButtonSpinner /></Show>
+                  {t("konase.sendSelectedContext")}
+                </button>
+                <button class="btn" type="button" disabled={running()} onClick={cancelContextPreview}>
+                  {t("konase.cancelContextPreview")}
+                </button>
+              </div>
+            </section>
+          )}
+        </Show>
       </Show>
 
       <Show when={steps().length > 0}>
@@ -464,6 +830,30 @@ const knowledgeLabel = (outcome: KonaseTurn["knowledge"]): string => {
       return t("konase.knowledgeSaved");
     case "write_failed":
       return t("konase.knowledgeWriteFailed");
+  }
+};
+
+const resourceStatusLabel = (status: SelectedContextPreview["admission"][number]["status"]): string => {
+  switch (status) {
+    case "included":
+      return t("konase.resourceStatus.included");
+    case "truncated":
+      return t("konase.resourceStatus.truncated");
+    case "omitted":
+      return t("konase.resourceStatus.omitted");
+  }
+};
+
+const resourceReasonLabel = (
+  reason: NonNullable<SelectedContextPreview["admission"][number]["reason"]>,
+): string => {
+  switch (reason) {
+    case "projection_compacted":
+      return t("konase.resourceReason.projection_compacted");
+    case "context_byte_budget":
+      return t("konase.resourceReason.context_byte_budget");
+    case "model_prompt_character_limit":
+      return t("konase.resourceReason.model_prompt_character_limit");
   }
 };
 

@@ -146,7 +146,264 @@ class ScriptedMcp implements McpHost {
   }
 }
 
+class SelectedResourcesMcp extends ScriptedMcp {
+  constructor(
+    private readonly selected: Array<{
+      requestedUri: string;
+      returnedUri?: string;
+      content: string | (() => string);
+      success?: boolean | (() => boolean);
+    }>,
+    private readonly readBarrier?: () => Promise<void>,
+  ) {
+    super();
+  }
+
+  override async callMcp(request: McpRequest, workId: string): Promise<McpResult> {
+    const uri = request.arguments.uri;
+    const fixture = request.operation === "resources/read" &&
+        typeof uri === "string"
+      ? this.selected.find((item) => item.requestedUri === uri)
+      : undefined;
+    if (!fixture) return await super.callMcp(request, workId);
+    this.operations.push(request.operation);
+    this.calls.push({ operation: request.operation, workId });
+    this.requests.push(structuredClone(request));
+    await this.readBarrier?.();
+    return {
+      request_id: request.request_id,
+      operation: request.operation,
+      success: typeof fixture.success === "function"
+        ? fixture.success()
+        : fixture.success ?? true,
+      resources: [],
+      resource_contents: [{
+        uri: fixture.returnedUri ?? fixture.requestedUri,
+        content: typeof fixture.content === "function"
+          ? fixture.content()
+          : fixture.content,
+      }],
+    };
+  }
+}
+
 describe("Konase browser host", () => {
+  it("previews only selected portable Context and starts the model only after confirmation", async () => {
+    const formId = "00000000-0000-0000-0000-0000000000a1";
+    const entryId = "00000000-0000-0000-0000-0000000000b2";
+    const formUri = `ugoite://form/${formId}`;
+    const entryUri = `ugoite://entry/${entryId}`;
+    const model = new ScriptedModel([
+      { request_id: "", text: "Selected resources summarized", tool_calls: [] },
+    ]);
+    const mcp = new SelectedResourcesMcp([
+      {
+        requestedUri: formUri,
+        content: JSON.stringify({
+          id: formId,
+          name: "Expense",
+          description: "A bounded Form description",
+          fields: { amount: { type: "number", required: true } },
+          _untrusted_content: true,
+        }),
+      },
+      {
+        requestedUri: entryUri,
+        content: JSON.stringify({
+          id: entryId,
+          uri: entryUri,
+          form: "Expense",
+          content: "Selected entry body",
+          _untrusted_content: true,
+        }),
+      },
+    ]);
+    const host = new KonaseHost({ model, mcp, spaceId: "space-a" });
+
+    const preview = await host.previewSelectedContext(
+      "Explain the selected Form and Entry",
+      [formUri, formUri, entryUri],
+    );
+
+    expect(mcp.requests.map((request) => request.arguments.uri)).toEqual([
+      formUri,
+      entryUri,
+    ]);
+    expect(preview.resources.map((resource) => resource.uri)).toEqual([
+      formUri,
+      entryUri,
+    ]);
+    expect(preview.resources[0].content).toContain("Expense");
+    expect(preview.resources[1].content).toContain("Selected entry body");
+    expect(model.requests).toHaveLength(0);
+
+    const turn = await host.sendSelectedContext(preview.id);
+    expect(turn.outcome.summary).toBe("Selected resources summarized");
+    expect(mcp.requests.map((request) => request.arguments.uri)).toEqual([
+      formUri,
+      entryUri,
+      formUri,
+      entryUri,
+    ]);
+    expect(model.requests[0].prompt).toContain(formUri);
+    expect(model.requests[0].prompt).toContain(entryUri);
+    expect(model.requests[0].prompt).toContain("Selected entry body");
+    expect(model.requests[0].prompt).not.toContain("unselected-entry");
+  });
+
+  it("fails closed on a denied or mismatched selected resource before model dispatch", async () => {
+    const id = "00000000-0000-0000-0000-0000000000c3";
+    const uri = `ugoite://entry/${id}`;
+    const projection = JSON.stringify({
+      id,
+      uri,
+      form: "Note",
+      content: "private selected content",
+      _untrusted_content: true,
+    });
+    for (const fixture of [
+      { requestedUri: uri, content: projection, success: false },
+      {
+        requestedUri: uri,
+        returnedUri: "ugoite://entry/other",
+        content: projection,
+      },
+      { requestedUri: uri, content: "not JSON" },
+      {
+        requestedUri: uri,
+        content: JSON.stringify({
+          id,
+          uri,
+          form: "Note",
+          content: "private selected content",
+          _untrusted_content: false,
+        }),
+      },
+    ]) {
+      const model = new ScriptedModel([]);
+      const host = new KonaseHost({
+        model,
+        mcp: new SelectedResourcesMcp([fixture]),
+        spaceId: "space-a",
+      });
+      await expect(host.previewSelectedContext("Summarize", [uri])).rejects
+        .toThrow();
+      expect(model.requests).toHaveLength(0);
+    }
+  });
+
+  it("drops a selected resource response after its Space generation is invalidated", async () => {
+    const id = "00000000-0000-0000-0000-0000000000d4";
+    const uri = `ugoite://entry/${id}`;
+    let releaseRead!: () => void;
+    const readBarrier = new Promise<void>((resolve) => releaseRead = resolve);
+    const model = new ScriptedModel([]);
+    const host = new KonaseHost({
+      model,
+      mcp: new SelectedResourcesMcp([{
+        requestedUri: uri,
+        content: JSON.stringify({
+          id,
+          uri,
+          form: "Note",
+          content: "stale Space content",
+          _untrusted_content: true,
+        }),
+      }], () => readBarrier),
+      spaceId: "space-a",
+    });
+
+    const preview = host.previewSelectedContext("Summarize", [uri]);
+    await Promise.resolve();
+    await Promise.resolve();
+    host.cancelPending();
+    releaseRead();
+    await expect(preview).rejects.toThrow(/no longer active/i);
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("does not send a prepared Context after its preview is invalidated", async () => {
+    const id = "00000000-0000-0000-0000-0000000000e5";
+    const uri = `ugoite://entry/${id}`;
+    const model = new ScriptedModel([]);
+    const host = new KonaseHost({
+      model,
+      mcp: new SelectedResourcesMcp([{
+        requestedUri: uri,
+        content: JSON.stringify({
+          id,
+          uri,
+          form: "Note",
+          content: "preview only",
+          _untrusted_content: true,
+        }),
+      }]),
+      spaceId: "space-a",
+    });
+    const preview = await host.previewSelectedContext("Summarize", [uri]);
+
+    host.invalidateContextPreview();
+    await expect(host.sendSelectedContext(preview.id)).rejects.toThrow(
+      /no longer current/i,
+    );
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("rechecks MCP authorization before sending a confirmed Context", async () => {
+    const id = "00000000-0000-0000-0000-0000000000f6";
+    const uri = `ugoite://entry/${id}`;
+    let reads = 0;
+    const model = new ScriptedModel([]);
+    const host = new KonaseHost({
+      model,
+      mcp: new SelectedResourcesMcp([{
+        requestedUri: uri,
+        content: JSON.stringify({
+          id,
+          uri,
+          form: "Note",
+          content: "authorized at preview time",
+          _untrusted_content: true,
+        }),
+        success: () => ++reads === 1,
+      }]),
+      spaceId: "space-a",
+    });
+    const preview = await host.previewSelectedContext("Summarize", [uri]);
+
+    await expect(host.sendSelectedContext(preview.id)).rejects.toThrow(/denied/i);
+    expect(reads).toBe(2);
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("requires a fresh preview when selected resource content changes before send", async () => {
+    const id = "00000000-0000-0000-0000-0000000000a7";
+    const uri = `ugoite://entry/${id}`;
+    let reads = 0;
+    const model = new ScriptedModel([]);
+    const host = new KonaseHost({
+      model,
+      mcp: new SelectedResourcesMcp([{
+        requestedUri: uri,
+        content: () => JSON.stringify({
+          id,
+          uri,
+          form: "Note",
+          content: ++reads === 1 ? "preview content" : "changed content",
+          _untrusted_content: true,
+        }),
+      }]),
+      spaceId: "space-a",
+    });
+    const preview = await host.previewSelectedContext("Summarize", [uri]);
+
+    await expect(host.sendSelectedContext(preview.id)).rejects.toThrow(
+      /changed since preview/i,
+    );
+    expect(reads).toBe(2);
+    expect(model.requests).toHaveLength(0);
+  });
+
   it("completes the same search → resource read → answer path as the CLI", async () => {
     const progress: string[] = [];
     const model = new ScriptedModel([

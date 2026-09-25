@@ -4,6 +4,7 @@ import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { KonaseWorkFailure } from "~/lib/konase/host";
+import type { SelectedContextPreview } from "~/lib/konase/host";
 import { KonasePanel } from "./KonasePanel";
 import type { WritePreview } from "~/lib/konase/host";
 import type { BrowserMcpAuthorizationOptions } from "~/lib/konase/browser-mcp-auth";
@@ -30,6 +31,9 @@ type Deferred<T> = {
 
 type FakeKonaseHost = {
   submitDeferreds: Array<Deferred<FakeTurn>>;
+  previewDeferreds: Array<Deferred<SelectedContextPreview>>;
+  sendDeferreds: Array<Deferred<FakeTurn>>;
+  selectedUriCalls: string[][];
   undoDeferreds: Array<Deferred<{ success: boolean }>>;
   listeners: Array<(progress: FakeProgress) => void>;
   pendingConfirmation?: WritePreview;
@@ -37,6 +41,9 @@ type FakeKonaseHost = {
   resolvedConfirmations: Array<{ requestId: string; approved: boolean }>;
   disposed: boolean;
   submit(prompt: string): Promise<FakeTurn>;
+  previewSelectedContext(prompt: string, uris: string[]): Promise<SelectedContextPreview>;
+  sendSelectedContext(previewId: string): Promise<FakeTurn>;
+  invalidateContextPreview(): void;
   undo(workId: string): Promise<{ success: boolean }>;
   resolveConfirmation(requestId: string, approved: boolean): boolean;
   cancelPending(): void;
@@ -46,7 +53,7 @@ type FakeKonaseHost = {
   emitProgress(progress: FakeProgress): void;
 };
 
-const { getSpaceMock, authorizeMock, hostInstances, createDeferred } = vi
+const { getSpaceMock, authorizeMock, listFormsMock, queryEntriesMock, hostInstances, createDeferred } = vi
   .hoisted(() => {
     const createDeferred = <T,>(): Deferred<T> => {
       let resolve!: Deferred<T>["resolve"];
@@ -61,6 +68,8 @@ const { getSpaceMock, authorizeMock, hostInstances, createDeferred } = vi
     return {
       getSpaceMock: vi.fn(),
       authorizeMock: vi.fn(),
+      listFormsMock: vi.fn(),
+      queryEntriesMock: vi.fn(),
       hostInstances: [] as FakeKonaseHost[],
       createDeferred,
     };
@@ -84,6 +93,9 @@ vi.mock("~/lib/konase/host", () => ({
   },
   KonaseHost: class {
     readonly submitDeferreds: Array<Deferred<FakeTurn>> = [];
+    readonly previewDeferreds: Array<Deferred<SelectedContextPreview>> = [];
+    readonly sendDeferreds: Array<Deferred<FakeTurn>> = [];
+    readonly selectedUriCalls: string[][] = [];
     readonly undoDeferreds: Array<Deferred<{ success: boolean }>> = [];
     readonly listeners: Array<(progress: FakeProgress) => void> = [];
     pendingConfirmation?: WritePreview;
@@ -110,6 +122,21 @@ vi.mock("~/lib/konase/host", () => ({
       this.submitDeferreds.push(deferred);
       return deferred.promise;
     }
+
+    previewSelectedContext(_prompt: string, uris: string[]): Promise<SelectedContextPreview> {
+      this.selectedUriCalls.push([...uris]);
+      const deferred = createDeferred<SelectedContextPreview>();
+      this.previewDeferreds.push(deferred);
+      return deferred.promise;
+    }
+
+    sendSelectedContext(_previewId: string): Promise<FakeTurn> {
+      const deferred = createDeferred<FakeTurn>();
+      this.sendDeferreds.push(deferred);
+      return deferred.promise;
+    }
+
+    invalidateContextPreview(): void {}
 
     undo(_workId: string): Promise<{ success: boolean }> {
       const deferred = createDeferred<{ success: boolean }>();
@@ -166,6 +193,8 @@ vi.mock("~/lib/konase/model", () => ({
 
 vi.mock("~/lib/ugoite-client", () => ({
   spaceApi: { get: getSpaceMock },
+  formApi: { list: listFormsMock },
+  entryApi: { query: queryEntriesMock },
 }));
 vi.mock("~/lib/konase/browser-mcp-auth", () => ({
   authorizeBrowserMcp: authorizeMock,
@@ -210,6 +239,10 @@ describe("KonasePanel Space authority", () => {
     setLocale("en");
     getSpaceMock.mockReset();
     authorizeMock.mockReset();
+    listFormsMock.mockReset();
+    queryEntriesMock.mockReset();
+    listFormsMock.mockResolvedValue([]);
+    queryEntriesMock.mockResolvedValue({ rows: [], has_more: false });
     hostInstances.length = 0;
   });
 
@@ -292,6 +325,7 @@ describe("KonasePanel Space authority", () => {
 
   it("shows an unchanged Knowledge outcome when the model only answers", async () => {
     mockConnection();
+    listFormsMock.mockResolvedValue([]);
     render(() => <KonasePanel spaceId="space-a" />);
 
     fireEvent.input(screen.getByLabelText("Model API key"), {
@@ -316,6 +350,136 @@ describe("KonasePanel Space authority", () => {
     );
     expect(screen.queryByRole("button", { name: "Undo" })).not
       .toBeInTheDocument();
+  });
+
+  it("reads only selected Form and Entry candidates, previews normalized Context, then waits for send", async () => {
+    mockConnection();
+    listFormsMock.mockResolvedValue([
+      { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+    ]);
+    queryEntriesMock.mockResolvedValueOnce({
+      rows: [
+        { id: "entry-a", form_id: "form-a", revision_id: "rev-a", created_at_micros: 1, updated_at_micros: 1, preview: "Selected entry" },
+        { id: "entry-unselected", form_id: "form-a", revision_id: "rev-b", created_at_micros: 2, updated_at_micros: 2, preview: "Other entry" },
+      ],
+      has_more: true,
+      next: "page-2",
+    }).mockResolvedValueOnce({
+      rows: [
+        { id: "entry-b", form_id: "form-a", revision_id: "rev-c", created_at_micros: 3, updated_at_micros: 3, preview: "Second page entry" },
+      ],
+      has_more: false,
+    });
+    render(() => <KonasePanel spaceId="space-a" />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    await waitFor(() => expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument());
+    fireEvent.click(screen.getByLabelText("Note (form-a)"));
+    fireEvent.click(screen.getByRole("button", { name: "Search Entries" }));
+    await waitFor(() => expect(screen.getByLabelText("Selected entry (entry-a)")).toBeInTheDocument());
+    expect(queryEntriesMock).toHaveBeenCalledWith(
+      "space-a",
+      expect.objectContaining({
+        projection: { kind: "preview" },
+        limit: 20,
+      }),
+      expect.any(AbortSignal),
+    );
+    fireEvent.click(screen.getByLabelText("Selected entry (entry-a)"));
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(screen.getByLabelText("Second page entry (entry-b)")).toBeInTheDocument());
+    expect(queryEntriesMock).toHaveBeenLastCalledWith(
+      "space-a",
+      expect.objectContaining({ after: "page-2", limit: 20 }),
+      expect.any(AbortSignal),
+    );
+    fireEvent.click(screen.getByLabelText("Second page entry (entry-b)"));
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Explain these resources" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview selected Context" }));
+
+    const host = hostInstances[0];
+    await waitFor(() => expect(host.previewDeferreds).toHaveLength(1));
+    expect(host.selectedUriCalls).toEqual([[
+      "ugoite://form/form-a",
+      "ugoite://entry/entry-a",
+      "ugoite://entry/entry-b",
+    ]]);
+    expect(host.submitDeferreds).toHaveLength(0);
+    host.previewDeferreds[0].resolve({
+      id: "preview-a",
+      spaceId: "space-a",
+      selectedUris: ["ugoite://form/form-a", "ugoite://entry/entry-a", "ugoite://entry/entry-b"],
+      admission: [
+        { uri: "ugoite://form/form-a", status: "included" },
+        { uri: "ugoite://entry/entry-a", status: "truncated", reason: "projection_compacted" },
+        { uri: "ugoite://entry/entry-b", status: "included" },
+      ],
+      resources: [
+        { uri: "ugoite://form/form-a", content: "normalized Form projection" },
+        { uri: "ugoite://entry/entry-a", content: "normalized selected Entry projection" },
+        { uri: "ugoite://entry/entry-b", content: "normalized second page Entry projection" },
+      ],
+    });
+    await waitFor(() => expect(screen.getByText("normalized Form projection")).toBeInTheDocument());
+    expect(screen.queryByText("entry-unselected")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Send this Context" }));
+    await waitFor(() => expect(host.sendDeferreds).toHaveLength(1));
+    expect(host.submitDeferreds).toHaveLength(0);
+    host.sendDeferreds[0].resolve(fakeTurn("Context sent"));
+    await waitFor(() => expect(screen.getByText("Context sent")).toBeInTheDocument());
+  });
+
+  it("drops a late Context preview when the Panel moves to another Space", async () => {
+    mockConnection();
+    listFormsMock.mockResolvedValue([
+      { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+    ]);
+    const [spaceId, setSpaceId] = createSignal("space-a");
+    render(() => (
+      <>
+        <KonasePanel spaceId={spaceId()} />
+        <button type="button" onClick={() => setSpaceId("space-b")}>
+          Switch Space
+        </button>
+      </>
+    ));
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    await waitFor(() => expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument());
+    fireEvent.click(screen.getByLabelText("Note (form-a)"));
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Explain this Form" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview selected Context" }));
+    const oldHost = hostInstances[0];
+    await waitFor(() => expect(oldHost.previewDeferreds).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch Space" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Connect Ugoite MCP" }))
+        .toBeInTheDocument()
+    );
+    oldHost.previewDeferreds[0].resolve({
+      id: "stale-preview",
+      spaceId: "space-a",
+      selectedUris: ["ugoite://form/form-a"],
+      admission: [{ uri: "ugoite://form/form-a", status: "included" }],
+      resources: [{ uri: "ugoite://form/form-a", content: "stale Space data" }],
+    });
+
+    await waitFor(() => expect(screen.queryByText("stale Space data")).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Send this Context" })).not
+      .toBeInTheDocument();
+    expect(oldHost.sendDeferreds).toHaveLength(0);
   });
 
   it("does not bind a credential if the Space changes during approval", async () => {
