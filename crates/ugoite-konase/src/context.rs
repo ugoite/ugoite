@@ -1,15 +1,322 @@
 use crate::{Capability, ContextCapsule, Observation, ResourceContent};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
+use std::collections::HashSet;
 
 const MAX_CONTEXT_SCHEMA_BYTES: usize = 16 * 1024;
 const MAX_CAPABILITY_NAME_CHARS: usize = 256;
+const MAX_SELECTED_RESOURCE_INPUT_BYTES: usize = 128 * 1024;
+const MAX_SELECTED_RESOURCE_CONTENT_CHARS: usize = 1_024;
+
+/// Maximum number of user-selected resources admitted to one Konase Job.
+pub const MAX_SELECTED_RESOURCES: usize = 4;
 
 /// Maximum serialized size of a normalized Context Capsule.
 pub const MAX_CONTEXT_JSON_BYTES: usize = 48 * 1024;
 
 /// Maximum serialized size of the complete normalized capability payload.
 pub const MAX_CONTEXT_CAPABILITY_JSON_BYTES: usize = 24 * 1024;
+
+/// Portable preview information for one unique selected resource.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ResourceAdmission {
+    pub uri: String,
+    pub status: ResourceAdmissionStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<ResourceAdmissionReason>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceAdmissionStatus {
+    Included,
+    Truncated,
+    Omitted,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceAdmissionReason {
+    ProjectionCompacted,
+    ContextByteBudget,
+    ModelPromptCharacterLimit,
+}
+
+/// Validate, de-duplicate, and compact explicit Form and Entry projections.
+/// This is the single portable normalization used before a selected resource
+/// can enter a Context Capsule.
+pub(crate) fn normalize_selected_resource_contents(
+    resources: Vec<ResourceContent>,
+) -> Result<(Vec<ResourceContent>, Vec<ResourceAdmission>), String> {
+    if resources.len() > MAX_SELECTED_RESOURCES {
+        return Err(format!(
+            "selected resource count exceeds the {MAX_SELECTED_RESOURCES}-resource limit"
+        ));
+    }
+    let mut seen = HashSet::new();
+    let mut contents = Vec::new();
+    let mut admissions = Vec::new();
+    for resource in resources {
+        if !seen.insert(resource.uri.clone()) {
+            continue;
+        }
+        let (content, truncated) = compact_resource_projection(&resource)?;
+        admissions.push(ResourceAdmission {
+            uri: resource.uri.clone(),
+            status: if truncated {
+                ResourceAdmissionStatus::Truncated
+            } else {
+                ResourceAdmissionStatus::Included
+            },
+            reason: truncated.then_some(ResourceAdmissionReason::ProjectionCompacted),
+        });
+        contents.push(ResourceContent {
+            uri: resource.uri,
+            content,
+        });
+    }
+    Ok((contents, admissions))
+}
+
+fn compact_resource_projection(resource: &ResourceContent) -> Result<(String, bool), String> {
+    if resource.content.len() > MAX_SELECTED_RESOURCE_INPUT_BYTES {
+        return Err("selected resource projection exceeds its input byte limit".into());
+    }
+    let (kind, resource_id) = parse_selected_resource_uri(&resource.uri)?;
+    let projection: Value = serde_json::from_str(&resource.content)
+        .map_err(|_| "selected resource projection is not valid JSON".to_string())?;
+    let projection = projection
+        .as_object()
+        .ok_or_else(|| "selected resource projection must be a JSON object".to_string())?;
+    if projection.get("_untrusted_content") != Some(&Value::Bool(true)) {
+        return Err("selected resource projection must be marked untrusted".into());
+    }
+    let id = required_string(projection, "id")?;
+    if id != resource_id {
+        return Err("selected resource projection ID does not match its URI".into());
+    }
+
+    match kind {
+        SelectedResourceKind::Form => compact_form_projection(projection, id),
+        SelectedResourceKind::Entry => compact_entry_projection(projection, id, &resource.uri),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SelectedResourceKind {
+    Form,
+    Entry,
+}
+
+fn parse_selected_resource_uri(uri: &str) -> Result<(SelectedResourceKind, &str), String> {
+    let (kind, id) = if let Some(id) = uri.strip_prefix("ugoite://form/") {
+        (SelectedResourceKind::Form, id)
+    } else if let Some(id) = uri.strip_prefix("ugoite://entry/") {
+        (SelectedResourceKind::Entry, id)
+    } else {
+        return Err("selected resource URI must be a canonical Form or Entry URI".into());
+    };
+    if id.is_empty() || id.contains('/') || id.contains(['?', '#', '%']) {
+        return Err("selected resource URI must contain one opaque ID segment".into());
+    }
+    let identifier_kind = match kind {
+        SelectedResourceKind::Form => ugoite_domain::id::IdentifierKind::Form,
+        SelectedResourceKind::Entry => ugoite_domain::id::IdentifierKind::Entry,
+    };
+    ugoite_domain::id::validate_identifier(identifier_kind, id)
+        .map_err(|_| "selected resource URI contains an invalid opaque ID".to_string())?;
+    Ok((kind, id))
+}
+
+fn required_string<'a>(object: &'a Map<String, Value>, key: &str) -> Result<&'a str, String> {
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("selected resource projection requires a non-empty {key}"))
+}
+
+fn compact_form_projection(
+    projection: &Map<String, Value>,
+    id: &str,
+) -> Result<(String, bool), String> {
+    let name = required_string(projection, "name")?;
+    let fields = projection
+        .get("fields")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "selected Form projection requires a fields object".to_string())?;
+    let description = projection.get("description");
+    if description.is_some_and(|value| !value.is_null() && !value.is_string()) {
+        return Err("selected Form projection has an invalid description".into());
+    }
+    let description = description.and_then(Value::as_str);
+    let mut compact_fields = Map::new();
+    let mut omitted = 0usize;
+    for (field_name, field) in fields {
+        let field = field
+            .as_object()
+            .ok_or_else(|| "selected Form fields must be projection objects".to_string())?;
+        let field_type = required_string(field, "type")?;
+        let required = field
+            .get("required")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| "selected Form fields require a boolean required flag".to_string())?;
+        compact_fields.insert(
+            field_name.clone(),
+            serde_json::json!({"type": field_type, "required": required}),
+        );
+        let candidate = form_context_value(
+            id,
+            name,
+            description,
+            compact_fields.clone(),
+            omitted,
+            false,
+            false,
+        );
+        if serialized_chars(&candidate)? > MAX_SELECTED_RESOURCE_CONTENT_CHARS {
+            compact_fields.remove(field_name);
+            omitted = omitted.saturating_add(1);
+        }
+    }
+    let include_description = description.is_some();
+    let mut truncated = omitted > 0;
+    let mut compact = form_context_value(
+        id,
+        name,
+        description,
+        compact_fields.clone(),
+        omitted,
+        include_description,
+        truncated,
+    );
+    while serialized_chars(&compact)? > MAX_SELECTED_RESOURCE_CONTENT_CHARS
+        && !compact_fields.is_empty()
+    {
+        let last = compact_fields
+            .keys()
+            .next_back()
+            .cloned()
+            .expect("not empty");
+        compact_fields.remove(&last);
+        omitted = omitted.saturating_add(1);
+        truncated = true;
+        compact = form_context_value(
+            id,
+            name,
+            description,
+            compact_fields.clone(),
+            omitted,
+            include_description,
+            true,
+        );
+    }
+    if serialized_chars(&compact)? > MAX_SELECTED_RESOURCE_CONTENT_CHARS && include_description {
+        truncated = true;
+        compact = form_context_value(id, name, description, compact_fields, omitted, false, true);
+    }
+    serialize_compact_projection(compact, truncated)
+}
+
+fn form_context_value(
+    id: &str,
+    name: &str,
+    description: Option<&str>,
+    fields: Map<String, Value>,
+    omitted_fields: usize,
+    include_description: bool,
+    include_marker: bool,
+) -> Value {
+    let mut value = serde_json::json!({
+        "id": id,
+        "name": name,
+        "fields": fields,
+        "_untrusted_content": true,
+    });
+    if include_description {
+        value["description"] = Value::String(description.unwrap_or_default().to_string());
+    }
+    if include_marker {
+        value["_ugoite_context"] = serde_json::json!({
+            "truncated": true,
+            "omitted_fields": omitted_fields,
+            "omitted_description": description.is_some() && !include_description,
+        });
+    }
+    value
+}
+
+fn compact_entry_projection(
+    projection: &Map<String, Value>,
+    id: &str,
+    requested_uri: &str,
+) -> Result<(String, bool), String> {
+    let uri = required_string(projection, "uri")?;
+    if uri != requested_uri {
+        return Err("selected Entry projection URI does not match its request".into());
+    }
+    let form = projection.get("form").cloned().unwrap_or(Value::Null);
+    if !form.is_null() && !form.is_string() {
+        return Err("selected Entry projection has an invalid Form reference".into());
+    }
+    let content = projection
+        .get("content")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "selected Entry projection requires content text".to_string())?;
+    let mut low = 0usize;
+    let mut high = content.chars().count();
+    let chars = content.chars().collect::<Vec<_>>();
+    let mut best = None;
+    while low <= high {
+        let middle = low + (high - low) / 2;
+        let candidate_content = chars.iter().take(middle).collect::<String>();
+        let truncated = middle < chars.len();
+        let candidate = entry_context_value(id, &form, &candidate_content, truncated);
+        if serialized_chars(&candidate)? <= MAX_SELECTED_RESOURCE_CONTENT_CHARS {
+            best = Some(candidate);
+            low = middle.saturating_add(1);
+        } else if middle == 0 {
+            break;
+        } else {
+            high = middle - 1;
+        }
+    }
+    let compact = best.ok_or_else(|| {
+        "selected Entry identity cannot fit the compact projection limit".to_string()
+    })?;
+    let truncated = compact
+        .get("_ugoite_context")
+        .and_then(Value::as_object)
+        .is_some_and(|marker| marker.get("truncated") == Some(&Value::Bool(true)));
+    serialize_compact_projection(compact, truncated)
+}
+
+fn entry_context_value(id: &str, form: &Value, content: &str, truncated: bool) -> Value {
+    let mut value = serde_json::json!({
+        "id": id,
+        "form": form,
+        "content": content,
+        "_untrusted_content": true,
+    });
+    if truncated {
+        value["_ugoite_context"] = serde_json::json!({"truncated": true});
+    }
+    value
+}
+
+fn serialized_chars(value: &Value) -> Result<usize, String> {
+    serde_json::to_string(value)
+        .map(|serialized| serialized.chars().count())
+        .map_err(|error| error.to_string())
+}
+
+fn serialize_compact_projection(value: Value, truncated: bool) -> Result<(String, bool), String> {
+    let serialized = serde_json::to_string(&value).map_err(|error| error.to_string())?;
+    if serialized.chars().count() > MAX_SELECTED_RESOURCE_CONTENT_CHARS {
+        return Err("selected resource identity cannot fit the compact projection limit".into());
+    }
+    Ok((serialized, truncated))
+}
 
 /// Explicit limits keep a model context proportional to the current bounded
 /// view, not to the total Work transcript.
@@ -293,6 +600,109 @@ mod tests {
                 uri: format!("ugoite://entry/{id}"),
                 label: None,
             }],
+        }
+    }
+
+    #[test]
+    fn selected_projection_compaction_preserves_valid_unicode_json_and_marker() {
+        let id = "00000000-0000-0000-0000-0000000000a1";
+        let form_fields = (0..80)
+            .map(|index| {
+                (
+                    format!("field_{index}_長い名前"),
+                    serde_json::json!({"type":"string", "required": index % 2 == 0}),
+                )
+            })
+            .collect::<Map<_, _>>();
+        let form = ResourceContent {
+            uri: format!("ugoite://form/{id}"),
+            content: serde_json::json!({
+                "id": id,
+                "name": "経費フォーム",
+                "description": "説明🙂".repeat(400),
+                "fields": form_fields,
+                "_untrusted_content": true
+            })
+            .to_string(),
+        };
+        let entry_id = "00000000-0000-0000-0000-0000000000b2";
+        let entry = ResourceContent {
+            uri: format!("ugoite://entry/{entry_id}"),
+            content: serde_json::json!({
+                "id": entry_id,
+                "uri": format!("ugoite://entry/{entry_id}"),
+                "form": "経費フォーム",
+                "content": "明細🙂".repeat(2_000),
+                "_untrusted_content": true
+            })
+            .to_string(),
+        };
+
+        let (normalized, admissions) =
+            normalize_selected_resource_contents(vec![form, entry]).unwrap();
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(admissions.len(), 2);
+        for resource in &normalized {
+            assert!(resource.content.chars().count() <= MAX_SELECTED_RESOURCE_CONTENT_CHARS);
+            let value: Value = serde_json::from_str(&resource.content).unwrap();
+            assert_eq!(value["_untrusted_content"], true);
+            assert_eq!(value["_ugoite_context"]["truncated"], true);
+        }
+        assert_eq!(admissions[0].status, ResourceAdmissionStatus::Truncated);
+        assert_eq!(admissions[1].status, ResourceAdmissionStatus::Truncated);
+    }
+
+    #[test]
+    fn selected_projection_rejects_noncanonical_uri_and_untrusted_mismatch() {
+        let id = "00000000-0000-0000-0000-0000000000b2";
+        let valid = serde_json::json!({
+            "id": id,
+            "uri": format!("ugoite://entry/{id}"),
+            "form": "Note",
+            "content": "body",
+            "_untrusted_content": true
+        })
+        .to_string();
+        for uri in [
+            format!("ugoite://entry/{id}/schema"),
+            format!("ugoite://entry/{id}?history=true"),
+        ] {
+            assert!(normalize_selected_resource_contents(vec![ResourceContent {
+                uri,
+                content: valid.clone(),
+            }])
+            .is_err());
+        }
+        let mut mismarked: Value = serde_json::from_str(&valid).unwrap();
+        mismarked["_untrusted_content"] = Value::Bool(false);
+        assert!(normalize_selected_resource_contents(vec![ResourceContent {
+            uri: format!("ugoite://entry/{id}"),
+            content: mismarked.to_string(),
+        }])
+        .is_err());
+
+        for content in [
+            "not json".to_string(),
+            serde_json::json!({
+                "id": "00000000-0000-0000-0000-0000000000c4",
+                "name": "Note",
+                "fields": {},
+                "_untrusted_content": true
+            })
+            .to_string(),
+            serde_json::json!({
+                "id": "00000000-0000-0000-0000-0000000000c3",
+                "name": "Note",
+                "fields": {"amount": {"type": "number"}},
+                "_untrusted_content": true
+            })
+            .to_string(),
+        ] {
+            assert!(normalize_selected_resource_contents(vec![ResourceContent {
+                uri: "ugoite://form/00000000-0000-0000-0000-0000000000c3".into(),
+                content,
+            }])
+            .is_err());
         }
     }
 

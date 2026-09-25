@@ -9,13 +9,16 @@ mod agent_runtime;
 mod context;
 mod engine;
 
+pub(crate) use context::normalize_selected_resource_contents;
+
 pub use agent_runtime::{
     AgentAction, AgentRuntime, AgentRuntimeError, AgentRuntimeInput, ModelMessage, ModelRequest,
     ModelResult, ModelTool, ModelToolCall,
 };
 pub use context::{
-    ContextBuildRequest, ContextBuilder, ContextLimits, MAX_CONTEXT_CAPABILITY_JSON_BYTES,
-    MAX_CONTEXT_JSON_BYTES,
+    ContextBuildRequest, ContextBuilder, ContextLimits, ResourceAdmission, ResourceAdmissionReason,
+    ResourceAdmissionStatus, MAX_CONTEXT_CAPABILITY_JSON_BYTES, MAX_CONTEXT_JSON_BYTES,
+    MAX_SELECTED_RESOURCES,
 };
 pub use engine::{
     normalize_state, step, AgentProgress, Capability, CapabilityEffect, ConfirmationRequest,
@@ -28,6 +31,7 @@ pub use engine::{
 
 /// Version for portable Konase JSON semantics, independent of Ugoite REST.
 ///
-/// Version 2 adds the observed Knowledge outcome and capability effect
-/// metadata. Pre-v1 internal state is intentionally not migrated.
-pub const KONASE_PROTOCOL_VERSION: u32 = 2;
+/// Version 3 adds explicitly selected resource contents to UserSubmitted and
+/// admission metadata to StartJob. An omitted selection remains empty. Older
+/// internal state is not migrated.
+pub const KONASE_PROTOCOL_VERSION: u32 = 3;
