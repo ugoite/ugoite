@@ -91,7 +91,7 @@ the latest stable tag before updating projections. A compatible change advances
 the patch; a breaking change advances the minor. Preparation never creates a
 tag, release, or registry artifact. The current published stable release is
 `0.2.0`; its scope is recorded in
-[`docs/version/releases/v0.2.0.md`](../../version/releases/v0.2.0.md). Candidate
+[`v0.2.0 release note`](https://github.com/ugoite/ugoite/blob/main/docs/version/releases/v0.2.0.md). Candidate
 creation and promotion remain separate operator-controlled workflows for
 future releases. Stable publication requires a non-empty,
 versioned manual note at `docs/version/releases/v<version>.md`; the note is

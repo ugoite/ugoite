@@ -44,7 +44,7 @@ TOTP is recovery-only and is not a normal login method.
 The next direction is v0.3 Product UX follow-up: resolve the unverified
 completion, discoverability, cross-surface consistency, validation clarity,
 recovery, and documentation-correctness criteria recorded in the
-[v0.2 Product UX tracker](../version/v0.2/product-ux.yaml). This work continues
+[v0.2 Product UX tracker](https://github.com/ugoite/ugoite/blob/main/docs/version/v0.2/product-ux.yaml). This work continues
 from the shipped v0.2.0 capabilities; the unresolved criteria are not claimed
 as complete.
 
