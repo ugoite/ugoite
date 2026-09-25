@@ -34,6 +34,8 @@ class ScriptedMcp implements McpHost {
       success: boolean;
       resource_contents: McpResult["resource_contents"];
     },
+    private readonly schemaReadBarrier?: () => Promise<void>,
+    private readonly onSchemaRead?: () => void,
   ) {}
 
   async capabilities(): Promise<Capability[]> {
@@ -90,6 +92,10 @@ class ScriptedMcp implements McpHost {
     const schemaRead = request.operation === "resources/read" &&
       typeof request.arguments.uri === "string" &&
       request.arguments.uri.endsWith("/schema");
+    if (schemaRead) {
+      this.onSchemaRead?.();
+      await this.schemaReadBarrier?.();
+    }
     const success = !(this.failSave && request.operation === "ugoite.save");
     return {
       request_id: request.request_id,
@@ -532,6 +538,109 @@ describe("Konase browser host", () => {
     expect(approvalCount).toBe(0);
     expect(mcp.operations).toEqual(["resources/read"]);
     expect(model.requests).toHaveLength(1);
+  });
+
+  it("rejects malformed schema projections before approval or save", async () => {
+    const uri = "ugoite://entry/entry-7/schema";
+    const malformedContents = [
+      { uri, content: "{" },
+      {
+        uri,
+        content: JSON.stringify({
+          id: "form-7",
+          name: "Note",
+          _untrusted_content: true,
+        }),
+      },
+      {
+        uri,
+        content: JSON.stringify({
+          id: "form-7",
+          name: "Note",
+          fields: [],
+          _untrusted_content: true,
+        }),
+      },
+      {
+        uri: "ugoite://entry/other/schema",
+        content: JSON.stringify({
+          id: "form-7",
+          name: "Note",
+          fields: {},
+          _untrusted_content: true,
+        }),
+      },
+    ];
+
+    for (const content of malformedContents) {
+      const model = new ScriptedModel([{
+        request_id: "",
+        tool_calls: [{
+          id: "update-call",
+          name: "ugoite.save",
+          arguments: { id: "entry-7", fields: { title: "Replacement" } },
+        }],
+      }]);
+      const mcp = new ScriptedMcp(false, false, "read", {
+        success: true,
+        resource_contents: [content],
+      });
+      let approvalCount = 0;
+      const host = new KonaseHost({
+        model,
+        mcp,
+        spaceId: "space-a",
+        onConfirmationRequired: () => approvalCount++,
+      });
+
+      await expect(host.submit("Update Entry")).rejects.toThrow(
+        /could not be safely resolved/,
+      );
+      expect(approvalCount).toBe(0);
+      expect(mcp.operations).toEqual(["resources/read"]);
+    }
+  });
+
+  it("discards a schema read that returns after the Host is disposed", async () => {
+    let finishRead!: () => void;
+    let markReadStarted!: () => void;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    const readBarrier = new Promise<void>((resolve) => {
+      finishRead = resolve;
+    });
+    const model = new ScriptedModel([{
+      request_id: "",
+      tool_calls: [{
+        id: "update-call",
+        name: "ugoite.save",
+        arguments: { id: "entry-7", fields: { title: "Replacement" } },
+      }],
+    }]);
+    const mcp = new ScriptedMcp(
+      false,
+      false,
+      "read",
+      undefined,
+      () => readBarrier,
+      markReadStarted,
+    );
+    let approvalCount = 0;
+    const host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: () => approvalCount++,
+    });
+    const turn = host.submit("Update Entry");
+
+    await readStarted;
+    host.dispose();
+    finishRead();
+    await expect(turn).rejects.toThrow(/no longer active/);
+    expect(approvalCount).toBe(0);
+    expect(mcp.operations).toEqual(["resources/read"]);
   });
 
   it("preserves a confirmed save and its Undo when a later write is denied", async () => {

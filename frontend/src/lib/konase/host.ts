@@ -519,7 +519,8 @@ export class KonaseHost {
     if (
       !isRecord(projection) || projection._untrusted_content !== true ||
       typeof projection.id !== "string" || !projection.id.trim() ||
-      typeof projection.name !== "string" || !projection.name.trim()
+      typeof projection.name !== "string" || !projection.name.trim() ||
+      !isRecord(projection.fields)
     ) {
       throw new Error("Existing Entry Form could not be safely resolved");
     }
