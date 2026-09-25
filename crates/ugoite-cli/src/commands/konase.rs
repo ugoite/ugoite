@@ -188,6 +188,12 @@ pub struct KonaseCmd {
     /// Run one request and exit instead of reading an interactive stdin loop.
     #[arg(long)]
     pub prompt: Option<String>,
+    /// Read this canonical Form or Entry URI into the next Job's Context. Repeat up to four times.
+    #[arg(long = "resource", value_name = "URI")]
+    pub resources: Vec<String>,
+    /// Explicitly send selected Context in non-interactive mode (does not approve writes).
+    #[arg(long)]
+    pub send_selected_context: bool,
 }
 
 #[async_trait]
@@ -657,6 +663,9 @@ impl McpHost for RmcpMcpHost {
                 .read_resource(ReadResourceRequestParams::new(uri).with_meta(work_meta(work_id)))
                 .await
                 .context("read MCP resource")?;
+            if result.contents.len() != 1 {
+                bail!("MCP resources/read must return exactly one resource content");
+            }
             let resource_contents = result
                 .contents
                 .into_iter()
@@ -668,6 +677,9 @@ impl McpHost for RmcpMcpHost {
                     _ => None,
                 })
                 .collect::<Vec<_>>();
+            if resource_contents.len() != 1 || resource_contents[0].uri != uri {
+                bail!("MCP resources/read returned an invalid or mismatched resource");
+            }
             return Ok(McpResult {
                 request_id: request.request_id,
                 operation: request.operation,
@@ -819,6 +831,138 @@ fn request_confirmation(request: &ugoite_konase::ConfirmationRequest) -> bool {
     confirmation_answer_is_approved(&answer)
 }
 
+trait SelectedContextConfirmation: Sync {
+    fn confirm_selected_context(&self) -> bool;
+}
+
+struct TtySelectedContextConfirmation;
+
+impl SelectedContextConfirmation for TtySelectedContextConfirmation {
+    fn confirm_selected_context(&self) -> bool {
+        if !io::stdin().is_terminal() {
+            return false;
+        }
+        eprint!("Send this selected Context to the model? [y/N] ");
+        let _ = io::stderr().flush();
+        let mut answer = String::new();
+        if io::stdin().read_line(&mut answer).unwrap_or(0) == 0 {
+            return false;
+        }
+        confirmation_answer_is_approved(&answer)
+    }
+}
+
+fn canonical_selected_uris(resources: &[String]) -> Result<Vec<String>> {
+    if resources.len() > ugoite_konase::MAX_SELECTED_RESOURCES {
+        bail!("at most four --resource values may be selected for one Job");
+    }
+    let mut unique = Vec::new();
+    for uri in resources {
+        let (id, kind) = if let Some(id) = uri.strip_prefix("ugoite://form/") {
+            (id, ugoite_domain::id::IdentifierKind::Form)
+        } else if let Some(id) = uri.strip_prefix("ugoite://entry/") {
+            (id, ugoite_domain::id::IdentifierKind::Entry)
+        } else {
+            bail!("--resource must be a canonical Form or Entry URI");
+        };
+        if id.is_empty() || id.contains(['/', '?', '#', '%']) {
+            bail!("--resource must contain one opaque ID segment");
+        }
+        ugoite_domain::id::validate_identifier(kind, id)
+            .map_err(|_| anyhow!("--resource contains an invalid opaque ID"))?;
+        if !unique.contains(uri) {
+            unique.push(uri.clone());
+        }
+    }
+    Ok(unique)
+}
+
+fn validate_selected_context_mode(
+    resources: &[String],
+    interactive: bool,
+    send: bool,
+) -> Result<()> {
+    if !resources.is_empty() && !interactive && !send {
+        bail!("selected Context in non-interactive mode requires --send-selected-context");
+    }
+    if send && resources.is_empty() {
+        bail!("--send-selected-context requires at least one --resource");
+    }
+    Ok(())
+}
+
+async fn read_selected_resources<C: McpHost>(
+    mcp: &mut C,
+    uris: &[String],
+    work_id: &str,
+) -> Result<Vec<ResourceContent>> {
+    let mut selected = Vec::with_capacity(uris.len());
+    for uri in uris {
+        let result = mcp
+            .call_mcp(
+                McpRequest {
+                    request_id: format!("selected-resource-{}", Uuid::now_v7()),
+                    server: "ugoite".into(),
+                    operation: "resources/read".into(),
+                    arguments: [("uri".to_owned(), Value::String(uri.clone()))]
+                        .into_iter()
+                        .collect(),
+                    effect: Some(CapabilityEffect::Read),
+                },
+                work_id,
+            )
+            .await
+            .with_context(|| format!("read selected MCP resource {}", uri.escape_debug()))?;
+        if !result.success || result.resource_contents.len() != 1 {
+            bail!("selected MCP resource read was denied or returned an invalid result");
+        }
+        let content = result.resource_contents.into_iter().next().unwrap();
+        if content.uri != *uri {
+            bail!("selected MCP resource returned a different URI than requested");
+        }
+        selected.push(content);
+    }
+    Ok(selected)
+}
+
+fn show_selected_context_preview(start: &ugoite_konase::JobRequest) {
+    if start.resource_admission.is_empty() {
+        return;
+    }
+    eprintln!("\nSelected Context preview (untrusted Knowledge)");
+    for admission in &start.resource_admission {
+        let uri = admission.uri.escape_debug().to_string();
+        let status = match admission.status {
+            ugoite_konase::ResourceAdmissionStatus::Included => "included",
+            ugoite_konase::ResourceAdmissionStatus::Truncated => "shortened",
+            ugoite_konase::ResourceAdmissionStatus::Omitted => "omitted",
+        };
+        let reason = admission.reason.map_or_else(String::new, |reason| {
+            let label = match reason {
+                ugoite_konase::ResourceAdmissionReason::ProjectionCompacted => {
+                    "projection shortened to fit the per-resource limit"
+                }
+                ugoite_konase::ResourceAdmissionReason::ContextByteBudget => {
+                    "omitted to fit the Context byte limit"
+                }
+                ugoite_konase::ResourceAdmissionReason::ModelPromptCharacterLimit => {
+                    "omitted to fit the model prompt limit"
+                }
+            };
+            format!(" ({label})")
+        });
+        eprintln!("- {uri}: {status}{reason}");
+        if let Some(content) = start
+            .context
+            .selected_resource_contents
+            .iter()
+            .find(|content| content.uri == admission.uri)
+        {
+            eprintln!("  {}", content.content.escape_debug());
+        }
+    }
+}
+
 fn confirmation_answer_is_approved(answer: &str) -> bool {
     matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
@@ -828,6 +972,9 @@ pub async fn run(
     explicit_config: Option<&std::path::Path>,
     context_override: Option<&str>,
 ) -> Result<()> {
+    let selected_uris = canonical_selected_uris(&cmd.resources)?;
+    let interactive = io::stdin().is_terminal();
+    validate_selected_context_mode(&selected_uris, interactive, cmd.send_selected_context)?;
     let interrupts = SignalCoordinator::install()?;
     let target =
         crate::cli_config::resolve_command_target(explicit_config, context_override, "konase")?;
@@ -845,13 +992,19 @@ pub async fn run(
             if prompt.trim().is_empty() {
                 bail!("Konase prompt must not be empty");
             }
-            let result = run_turn_with_interrupts(
+            let result = run_turn_with_selected_context(
                 &mut model,
                 &mut mcp,
-                &prompt,
-                &capabilities,
                 &interrupts,
                 &TtyConfirmation,
+                SelectedTurnOptions {
+                    prompt: &prompt,
+                    capabilities: &capabilities,
+                    selected_uris: &selected_uris,
+                    context_confirmation: interactive.then_some(
+                        &TtySelectedContextConfirmation as &dyn SelectedContextConfirmation,
+                    ),
+                },
             )
             .await?;
             let interrupted = matches!(
@@ -864,7 +1017,6 @@ pub async fn run(
             }
         }
         None => {
-            let interactive = io::stdin().is_terminal();
             if interactive {
                 emit_text("Konase");
             }
@@ -902,13 +1054,19 @@ pub async fn run(
                     continue;
                 }
                 last_work_id = report_turn(
-                    run_turn_with_interrupts(
+                    run_turn_with_selected_context(
                         &mut model,
                         &mut mcp,
-                        prompt,
-                        &capabilities,
                         &interrupts,
                         &TtyConfirmation,
+                        SelectedTurnOptions {
+                            prompt,
+                            capabilities: &capabilities,
+                            selected_uris: &selected_uris,
+                            context_confirmation: interactive.then_some(
+                                &TtySelectedContextConfirmation as &dyn SelectedContextConfirmation,
+                            ),
+                        },
                     )
                     .await?,
                     true,
@@ -962,6 +1120,21 @@ struct TurnFailure {
     work_id: String,
     undo_available: bool,
     knowledge: KnowledgeOutcome,
+}
+
+struct SelectedTurnOptions<'a> {
+    prompt: &'a str,
+    capabilities: &'a [Capability],
+    selected_uris: &'a [String],
+    context_confirmation: Option<&'a dyn SelectedContextConfirmation>,
+}
+
+struct TurnInput<'a> {
+    prompt: &'a str,
+    capabilities: &'a [Capability],
+    selected_resource_contents: &'a [ResourceContent],
+    context_confirmation: Option<&'a dyn SelectedContextConfirmation>,
+    work_id: String,
 }
 
 fn report_turn(result: TurnResult, show_undo_hint: bool) -> Option<String> {
@@ -1037,6 +1210,7 @@ async fn run_turn<M: ModelHost, C: McpHost>(
     .await
 }
 
+#[cfg(test)]
 async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSource + ?Sized>(
     model: &mut M,
     mcp: &mut C,
@@ -1045,7 +1219,81 @@ async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSou
     interrupts: &I,
     confirmations: &dyn ConfirmationSource,
 ) -> Result<TurnResult> {
+    run_turn_with_contents(
+        model,
+        mcp,
+        interrupts,
+        confirmations,
+        TurnInput {
+            prompt,
+            capabilities,
+            selected_resource_contents: &[],
+            context_confirmation: None,
+            work_id: format!("work-{}", Uuid::now_v7()),
+        },
+    )
+    .await
+}
+
+async fn run_turn_with_selected_context<
+    M: ModelHost,
+    C: McpHost,
+    I: ModelInterruptSource + ?Sized,
+>(
+    model: &mut M,
+    mcp: &mut C,
+    interrupts: &I,
+    confirmations: &dyn ConfirmationSource,
+    options: SelectedTurnOptions<'_>,
+) -> Result<TurnResult> {
+    if options.selected_uris.is_empty() {
+        return run_turn_with_contents(
+            model,
+            mcp,
+            interrupts,
+            confirmations,
+            TurnInput {
+                prompt: options.prompt,
+                capabilities: options.capabilities,
+                selected_resource_contents: &[],
+                context_confirmation: options.context_confirmation,
+                work_id: format!("work-{}", Uuid::now_v7()),
+            },
+        )
+        .await;
+    }
     let work_id = format!("work-{}", Uuid::now_v7());
+    let selected = read_selected_resources(mcp, options.selected_uris, &work_id).await?;
+    run_turn_with_contents(
+        model,
+        mcp,
+        interrupts,
+        confirmations,
+        TurnInput {
+            prompt: options.prompt,
+            capabilities: options.capabilities,
+            selected_resource_contents: &selected,
+            context_confirmation: options.context_confirmation,
+            work_id,
+        },
+    )
+    .await
+}
+
+async fn run_turn_with_contents<M: ModelHost, C: McpHost, I: ModelInterruptSource + ?Sized>(
+    model: &mut M,
+    mcp: &mut C,
+    interrupts: &I,
+    confirmations: &dyn ConfirmationSource,
+    input: TurnInput<'_>,
+) -> Result<TurnResult> {
+    let TurnInput {
+        prompt,
+        capabilities,
+        selected_resource_contents,
+        context_confirmation,
+        work_id,
+    } = input;
     let job_id = format!("job-{}", Uuid::now_v7());
     let initial = step(
         Default::default(),
@@ -1057,7 +1305,7 @@ async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSou
             safety_hints: vec![
                 "Use Ugoite MCP for requested reads and writes; the Host binds writes to this Work and supports undo".into(),
             ],
-            selected_resource_contents: Vec::new(),
+            selected_resource_contents: selected_resource_contents.to_vec(),
             expected_response_schema: None,
         }),
     );
@@ -1073,6 +1321,12 @@ async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSou
             _ => None,
         })
         .ok_or_else(|| anyhow!("Konase did not start a Job"))?;
+    show_selected_context_preview(&start);
+    if !start.resource_admission.is_empty()
+        && context_confirmation.is_some_and(|confirmation| !confirmation.confirm_selected_context())
+    {
+        bail!("selected Context was not approved for model submission");
+    }
     let mut runtime = RigAgentRuntime::default();
     let first_action = runtime.start(start.job, start.context)?;
     let start_effect = step(
@@ -1413,6 +1667,67 @@ mod tests {
         fail_undo: bool,
     }
 
+    struct SelectedResourceMcp {
+        resources: Vec<ResourceContent>,
+        operations: Vec<String>,
+    }
+
+    #[async_trait]
+    impl McpHost for SelectedResourceMcp {
+        async fn call_mcp(&mut self, request: McpRequest, _work_id: &str) -> Result<McpResult> {
+            self.operations.push(request.operation.clone());
+            let requested_uri = request.arguments.get("uri").and_then(Value::as_str);
+            let selected = (request.operation == "resources/read")
+                .then(|| {
+                    self.resources
+                        .iter()
+                        .find(|resource| Some(resource.uri.as_str()) == requested_uri)
+                })
+                .flatten();
+            Ok(McpResult {
+                request_id: request.request_id,
+                operation: request.operation,
+                success: selected.is_some(),
+                observation: None,
+                resources: vec![],
+                resource_contents: selected.cloned().into_iter().collect(),
+                error: selected.is_none().then_some("resource read denied".into()),
+            })
+        }
+
+        async fn capabilities(&self) -> Vec<Capability> {
+            vec![]
+        }
+    }
+
+    struct CapturingModel {
+        requests: Vec<ModelRequest>,
+    }
+
+    #[async_trait]
+    impl ModelHost for CapturingModel {
+        async fn call_model(
+            &mut self,
+            request: ModelRequest,
+        ) -> std::result::Result<ModelResult, HostError> {
+            let request_id = request.request_id.clone();
+            self.requests.push(request);
+            Ok(ModelResult {
+                request_id,
+                text: Some("done".into()),
+                tool_calls: vec![],
+            })
+        }
+    }
+
+    struct DenySelectedContext;
+
+    impl SelectedContextConfirmation for DenySelectedContext {
+        fn confirm_selected_context(&self) -> bool {
+            false
+        }
+    }
+
     #[test]
     fn write_tool_requests_keep_model_arguments_and_bind_the_work_id() {
         let mut run_ids = Vec::new();
@@ -1530,6 +1845,159 @@ mod tests {
         for answer in ["", "n", "no", "ok", "true"] {
             assert!(!confirmation_answer_is_approved(answer));
         }
+    }
+
+    fn selected_form_resource() -> ResourceContent {
+        ResourceContent {
+            uri: "ugoite://form/00000000-0000-0000-0000-0000000000a1".into(),
+            content: json!({
+                "id":"00000000-0000-0000-0000-0000000000a1",
+                "name":"Expense",
+                "description":"Expense records",
+                "fields":{"amount":{"type":"number","required":true}},
+                "_untrusted_content":true
+            })
+            .to_string(),
+        }
+    }
+
+    fn selected_entry_resource(id: &str, content: &str) -> ResourceContent {
+        ResourceContent {
+            uri: format!("ugoite://entry/{id}"),
+            content: json!({
+                "id":id,
+                "uri":format!("ugoite://entry/{id}"),
+                "form":"Expense",
+                "content":content,
+                "_untrusted_content":true
+            })
+            .to_string(),
+        }
+    }
+
+    #[test]
+    fn selected_uri_validation_deduplicates_in_selection_order_and_caps_count() {
+        let uri = "ugoite://form/00000000-0000-0000-0000-0000000000a1".to_owned();
+        assert_eq!(
+            canonical_selected_uris(&[uri.clone(), uri.clone()]).unwrap(),
+            [uri]
+        );
+        assert!(canonical_selected_uris(&["ugoite://entry/a/b".into()]).is_err());
+        assert!(canonical_selected_uris(
+            &(0..5)
+                .map(|_| "ugoite://entry/00000000-0000-0000-0000-0000000000b1".to_owned())
+                .collect::<Vec<_>>()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn non_interactive_selected_context_requires_explicit_send_intent() {
+        let selected = vec!["ugoite://form/00000000-0000-0000-0000-0000000000a1".to_owned()];
+        assert!(validate_selected_context_mode(&[], false, false).is_ok());
+        assert!(validate_selected_context_mode(&selected, true, false).is_ok());
+        assert!(validate_selected_context_mode(&selected, false, false).is_err());
+        assert!(validate_selected_context_mode(&selected, false, true).is_ok());
+        assert!(validate_selected_context_mode(&[], false, true).is_err());
+    }
+
+    #[tokio::test]
+    async fn selected_resource_is_read_before_model_and_normalized_context_is_sent() {
+        let form = selected_form_resource();
+        let entry = selected_entry_resource("00000000-0000-0000-0000-0000000000b1", "amount: 125");
+        let selected_uris = vec![form.uri.clone(), entry.uri.clone()];
+        let unselected_id = "00000000-0000-0000-0000-0000000000b2";
+        let mut mcp = SelectedResourceMcp {
+            resources: vec![
+                form,
+                entry,
+                selected_entry_resource(unselected_id, "UNSELECTED_PRIVATE_VALUE"),
+            ],
+            operations: vec![],
+        };
+        let mut model = CapturingModel { requests: vec![] };
+        let result = run_turn_with_selected_context(
+            &mut model,
+            &mut mcp,
+            &NeverModelInterrupt,
+            &ApproveConfirmation,
+            SelectedTurnOptions {
+                prompt: "Explain this Form",
+                capabilities: &[],
+                selected_uris: &selected_uris,
+                context_confirmation: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(matches!(result, TurnResult::Completed(_)));
+        assert_eq!(mcp.operations, ["resources/read", "resources/read"]);
+        assert_eq!(model.requests.len(), 1);
+        assert!(model.requests[0].prompt.contains("Expense"));
+        assert!(model.requests[0].prompt.contains("_untrusted_content"));
+        assert!(model.requests[0].prompt.contains("amount"));
+        assert!(model.requests[0]
+            .prompt
+            .contains("00000000-0000-0000-0000-0000000000b1"));
+        assert!(!model.requests[0].prompt.contains(unselected_id));
+        assert!(!model.requests[0]
+            .prompt
+            .contains("UNSELECTED_PRIVATE_VALUE"));
+    }
+
+    #[tokio::test]
+    async fn selected_context_denial_happens_after_read_but_before_model_or_write() {
+        let resource = selected_form_resource();
+        let uri = resource.uri.clone();
+        let mut mcp = SelectedResourceMcp {
+            resources: vec![resource],
+            operations: vec![],
+        };
+        let mut model = CapturingModel { requests: vec![] };
+        let result = run_turn_with_selected_context(
+            &mut model,
+            &mut mcp,
+            &NeverModelInterrupt,
+            &ApproveConfirmation,
+            SelectedTurnOptions {
+                prompt: "Explain this Form",
+                capabilities: &[],
+                selected_uris: &[uri],
+                context_confirmation: Some(&DenySelectedContext),
+            },
+        )
+        .await;
+        let Err(error) = result else {
+            panic!("selected Context denial must stop before model submission");
+        };
+        assert!(error.to_string().contains("not approved"));
+        assert_eq!(mcp.operations, ["resources/read"]);
+        assert!(model.requests.is_empty());
+    }
+
+    #[tokio::test]
+    async fn denied_or_mismatched_selected_read_stops_before_model_call() {
+        let mut mcp = SelectedResourceMcp {
+            resources: vec![selected_form_resource()],
+            operations: vec![],
+        };
+        let mut model = CapturingModel { requests: vec![] };
+        let result = run_turn_with_selected_context(
+            &mut model,
+            &mut mcp,
+            &NeverModelInterrupt,
+            &ApproveConfirmation,
+            SelectedTurnOptions {
+                prompt: "Explain this Form",
+                capabilities: &[],
+                selected_uris: &["ugoite://entry/00000000-0000-0000-0000-0000000000b1".into()],
+                context_confirmation: None,
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(mcp.operations, ["resources/read"]);
+        assert!(model.requests.is_empty());
     }
 
     #[async_trait]
