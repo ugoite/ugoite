@@ -316,7 +316,7 @@ export function FormTable(props: FormTableProps) {
     { scope: formScope(), filters: [], sort: [] },
     projection(),
     50,
-    (spaceId, request) => entryApi.query(spaceId, request),
+    (spaceId, request, signal) => entryApi.query(spaceId, request, signal),
   );
 
   createEffect(() => {

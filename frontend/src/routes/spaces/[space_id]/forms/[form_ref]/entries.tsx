@@ -81,6 +81,9 @@ export default function SpaceFormEntriesPane() {
     { scope: queryScope(), filters: [], sort: [] },
     fieldProjection(capabilities()),
   );
+  createEffect(() => {
+    if (!selectedForm()?.id) controller.cancel();
+  });
   let lastQueryConfiguration = "";
   createEffect(() => {
     if (ctx.loadingForms()) return;
@@ -134,7 +137,10 @@ export default function SpaceFormEntriesPane() {
             </button>
           </div>
         </Show>
-        <Show when={!isReservedForm() && !isUnknownForm()}>
+        <Show
+          when={!isReservedForm() && !isUnknownForm() &&
+            !!selectedForm()?.id}
+        >
           <EntryBrowser
             controller={controller}
             capabilities={capabilities()}

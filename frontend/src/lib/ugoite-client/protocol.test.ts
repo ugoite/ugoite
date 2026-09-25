@@ -2,8 +2,8 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import {
   buildSpreadsheetCsvRequest,
-  getWasmSupportedOperations,
   encodeSpreadsheetCsv,
+  getWasmSupportedOperations,
   prepareApiRequest,
   protocolFetch,
   protocolFetchResponse,
@@ -29,7 +29,7 @@ describe("portable Ugoite API protocol WASM", () => {
     await expect(
       encodeSpreadsheetCsv([["=SUM(A1:A2)", "a,b", "line\nbreak", "日本語"]]),
     ).resolves.toBe(
-      "\"'=SUM(A1:A2)\",\"a,b\",\"line\nbreak\",\"日本語\"",
+      '"\'=SUM(A1:A2)","a,b","line\nbreak","日本語"',
     );
   });
 
@@ -232,6 +232,57 @@ describe("portable Ugoite API protocol WASM", () => {
         { id: "entry-1" },
       ),
     ).resolves.toEqual({ id: "entry-1", revision_id: "rev-1" });
+  });
+
+  it("short-circuits fetch when a signal is aborted during WASM preparation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      protocolFetch(
+        "space.get",
+        { space_id: "demo" },
+        undefined,
+        { signal: controller.signal },
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("uses an AbortError when an aborted signal has no reason", async () => {
+    const signal = { aborted: true, reason: undefined } as AbortSignal;
+    await expect(
+      protocolFetch(
+        "space.get",
+        { space_id: "demo" },
+        undefined,
+        { signal },
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("passes cancellation through to an in-flight browser fetch", async () => {
+    let observedSignal: AbortSignal | undefined;
+    server.use(
+      http.get(testApiUrl("/spaces/demo"), async ({ request }) => {
+        observedSignal = request.signal;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return HttpResponse.json({ space_uid: "demo", name: "Demo" });
+      }),
+    );
+    const controller = new AbortController();
+    const request = protocolFetch(
+      "space.get",
+      { space_id: "demo" },
+      undefined,
+      { signal: controller.signal },
+    );
+    for (let attempt = 0; !observedSignal && attempt < 20; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(observedSignal).toBeDefined();
+    controller.abort();
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+    expect(observedSignal?.aborted).toBe(true);
   });
 
   it("REQ-API-001: preserves multipart bodies and returns binary responses", async () => {

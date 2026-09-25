@@ -178,6 +178,7 @@ function CanonicalRowReferenceSelect(props: RowReferenceSelectProps) {
   };
 
   const closePicker = () => {
+    controller.cancel();
     setPending(null);
     setOpen(false);
     props.onPendingChange?.(false);
@@ -194,6 +195,7 @@ function CanonicalRowReferenceSelect(props: RowReferenceSelectProps) {
     props.onChange(row.id);
     props.onPendingChange?.(false);
     setPending(null);
+    controller.cancel();
     setOpen(false);
   };
 

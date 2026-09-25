@@ -1103,6 +1103,7 @@ describe("CreateEntryDialog", () => {
           scope: { kind: "form", form_id: "form-project" },
         }),
       }),
+      expect.any(AbortSignal),
     );
   });
 

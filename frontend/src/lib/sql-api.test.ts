@@ -1,5 +1,5 @@
 // REQ-FE-050: SQL query management
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { sqlApi } from "./ugoite-client";
 import { resetMockData, seedSpace } from "~/test/mocks/handlers";
@@ -198,6 +198,50 @@ describe("sqlApi", () => {
       parameters: { status: "open" },
       parameter_types: { status: "string" },
     })).resolves.toBe(2);
+  });
+
+  it("forwards AbortSignal through page and count SQL adapters", async () => {
+    const observedSignals: AbortSignal[] = [];
+    server.use(
+      http.post(
+        testApiUrl("/spaces/sql-ws/sql/query"),
+        async ({ request }) => {
+          observedSignals.push(request.signal);
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return HttpResponse.json({ columns: [], rows: [], has_more: false });
+        },
+      ),
+      http.post(
+        testApiUrl("/spaces/sql-ws/sql/query/count"),
+        async ({ request }) => {
+          observedSignals.push(request.signal);
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return HttpResponse.json({ count: 0 });
+        },
+      ),
+    );
+    const request = {
+      sql: "SELECT value FROM demo",
+      parameters: {},
+      parameter_types: {},
+    };
+    const pageController = new AbortController();
+    const page = sqlApi.query(
+      "sql-ws",
+      { ...request, limit: 100 },
+      pageController.signal,
+    );
+    await vi.waitFor(() => expect(observedSignals).toHaveLength(1));
+    pageController.abort();
+    await expect(page).rejects.toMatchObject({ name: "AbortError" });
+    expect(observedSignals[0].aborted).toBe(true);
+
+    const countController = new AbortController();
+    const count = sqlApi.count("sql-ws", request, countController.signal);
+    await vi.waitFor(() => expect(observedSignals).toHaveLength(2));
+    countController.abort();
+    await expect(count).rejects.toMatchObject({ name: "AbortError" });
+    expect(observedSignals[1].aborted).toBe(true);
   });
 
   it("throws on list failure", async () => {

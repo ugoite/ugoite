@@ -201,7 +201,10 @@ export const validateAssetReference = async (
 /** Exact protocol envelope for one spreadsheet-CSV encode request. */
 export const buildSpreadsheetCsvRequest = (
   rows: readonly (readonly string[])[],
-): { action: "domain.encode_spreadsheet_csv"; value: readonly (readonly string[])[] } => ({
+): {
+  action: "domain.encode_spreadsheet_csv";
+  value: readonly (readonly string[])[];
+} => ({
   action: "domain.encode_spreadsheet_csv",
   value: rows,
 });
@@ -209,7 +212,8 @@ export const buildSpreadsheetCsvRequest = (
 /** Exact byte size of one encode request on the Rust/WASM bridge. */
 export const spreadsheetCsvRequestBytes = (
   rows: readonly (readonly string[])[],
-): number => textEncoder.encode(JSON.stringify(buildSpreadsheetCsvRequest(rows))).length;
+): number =>
+  textEncoder.encode(JSON.stringify(buildSpreadsheetCsvRequest(rows))).length;
 
 /** Encode derived CSV output with the shared spreadsheet-safety rule. */
 export const encodeSpreadsheetCsv = async (
@@ -302,6 +306,12 @@ const executeProtocolRequest = async (
   options: ProtocolFetchOptions,
 ): Promise<Response> => {
   const prepared = await prepareApiRequest(operation, argumentsValue, body);
+  if (options.signal?.aborted) {
+    throw options.signal.reason ?? new DOMException(
+      "The operation was aborted",
+      "AbortError",
+    );
+  }
   const headers = new Headers();
   for (const header of prepared.headers) {
     headers.set(header.name, header.value);

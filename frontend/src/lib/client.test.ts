@@ -1,6 +1,6 @@
 // REQ-API-001: Space CRUD
 // REQ-API-002: Entry CRUD
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { assetApi } from "./ugoite-client";
 import { formApi } from "./ugoite-client";
@@ -1123,6 +1123,30 @@ describe("error paths", () => {
     );
   });
 
+  it("entryApi.query forwards cancellation to the browser fetch", async () => {
+    let observedSignal: AbortSignal | undefined;
+    server.use(
+      http.post(
+        testApiUrl("/spaces/ws-search-cancel/entries/query"),
+        async ({ request }) => {
+          observedSignal = request.signal;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return HttpResponse.json({ rows: [], has_more: false });
+        },
+      ),
+    );
+    const controller = new AbortController();
+    const page = entryApi.query("ws-search-cancel", {
+      query: { scope: { kind: "all" }, filters: [], sort: [] },
+      projection: { kind: "preview" },
+      limit: 50,
+    }, controller.signal);
+    await vi.waitFor(() => expect(observedSignal).toBeDefined());
+    controller.abort();
+    await expect(page).rejects.toMatchObject({ name: "AbortError" });
+    expect(observedSignal?.aborted).toBe(true);
+  });
+
   it("entryApi.count throws on failure", async () => {
     server.use(
       http.post(
@@ -1135,6 +1159,28 @@ describe("error paths", () => {
     })).rejects.toThrow(
       "Failed to count entries",
     );
+  });
+
+  it("entryApi.count forwards cancellation to the browser fetch", async () => {
+    let observedSignal: AbortSignal | undefined;
+    server.use(
+      http.post(
+        testApiUrl("/spaces/ws-search-cancel/entries/query/count"),
+        async ({ request }) => {
+          observedSignal = request.signal;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return HttpResponse.json({ count: 1 });
+        },
+      ),
+    );
+    const controller = new AbortController();
+    const count = entryApi.count("ws-search-cancel", {
+      query: { scope: { kind: "all" }, filters: [], sort: [] },
+    }, controller.signal);
+    await vi.waitFor(() => expect(observedSignal).toBeDefined());
+    controller.abort();
+    await expect(count).rejects.toMatchObject({ name: "AbortError" });
+    expect(observedSignal?.aborted).toBe(true);
   });
 
   it("spaceApi.create uses fallback message when error response has no detail", async () => {
