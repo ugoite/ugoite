@@ -538,7 +538,7 @@ export function EntryBrowser(props: EntryBrowserProps) {
           type="button"
           class="ui-button ui-button-secondary"
           disabled={loadingState()}
-          onClick={() => void props.controller.refresh()}
+          onClick={() => void props.controller.retry()}
         >
           {t("common.retry")}
         </button>

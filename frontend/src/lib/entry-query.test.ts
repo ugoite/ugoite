@@ -128,6 +128,39 @@ describe("EntryQueryController", () => {
     await vi.waitFor(() => expect(controller.loading()).toBe(false));
   });
 
+  it("retries the failed page coordinate without treating the previous page as success", async () => {
+    queryMock
+      .mockResolvedValueOnce({ rows: [row("one")], has_more: true, next: "c1" })
+      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockResolvedValueOnce({ rows: [row("two")], has_more: false });
+
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    await controller.next();
+    expect(controller.rows().map((entry) => entry.id)).toEqual(["one"]);
+    expect(controller.error()).toBeInstanceOf(Error);
+    expect(controller.currentStart()).toBeUndefined();
+
+    await controller.retry();
+
+    expect(queryMock).toHaveBeenLastCalledWith(
+      "space-1",
+      expect.objectContaining({
+        after: "c1",
+      }),
+      expect.any(AbortSignal),
+    );
+    expect(controller.rows().map((entry) => entry.id)).toEqual(["two"]);
+    expect(controller.currentStart()).toBe("c1");
+    expect(controller.error()).toBeNull();
+  });
+
   it("aborts superseded reads and prevents their late results from replacing the current query", async () => {
     let resolveOld:
       | ((page: { rows: ReturnType<typeof row>[]; has_more: boolean }) => void)

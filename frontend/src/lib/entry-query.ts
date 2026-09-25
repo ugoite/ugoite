@@ -182,6 +182,10 @@ export function createEntryQueryController(
   let activeController: AbortController | undefined;
   let activeRequestKey = "";
   let hasRequested = false;
+  let failedRead: {
+    after: string | undefined;
+    cursorStack: (string | undefined)[];
+  } | undefined;
 
   const cancel = () => {
     requestGeneration += 1;
@@ -189,6 +193,7 @@ export function createEntryQueryController(
     activeController = undefined;
     activeRequestKey = "";
     hasRequested = false;
+    failedRead = undefined;
     setLoading(false);
   };
 
@@ -197,6 +202,7 @@ export function createEntryQueryController(
     const currentSpaceId = spaceId();
     if (currentSpaceId === previousSpaceId) return;
     previousSpaceId = currentSpaceId;
+    failedRead = undefined;
     setRows([]);
     setError(null);
     setHasMore(false);
@@ -227,6 +233,7 @@ export function createEntryQueryController(
     const controller = new AbortController();
     activeController = controller;
     activeRequestKey = requestKey;
+    failedRead = undefined;
     setLoading(true);
     setError(null);
     if (clearRows) {
@@ -252,6 +259,7 @@ export function createEntryQueryController(
         generation === requestGeneration && !controller.signal.aborted &&
         !isAbortError(cause)
       ) {
+        failedRead = { after, cursorStack: nextStack };
         setError(cause);
       }
     } finally {
@@ -321,6 +329,12 @@ export function createEntryQueryController(
   const refresh = async () =>
     await loadAt(untrack(currentStart), untrack(cursorStack), false);
 
+  const retry = async () => {
+    const failed = failedRead;
+    if (!failed) return await refresh();
+    await loadAt(failed.after, failed.cursorStack, false);
+  };
+
   const invalidate = async () => await load();
 
   const configure = async (
@@ -356,6 +370,7 @@ export function createEntryQueryController(
     canGoPrevious: () => cursorStack().length > 1,
     load,
     refresh,
+    retry,
     invalidate,
     next,
     previous,
