@@ -185,7 +185,7 @@ async fn run_ctrl_c_signal_loop(coordinator: SignalCoordinator) {
 
 #[derive(Args)]
 pub struct KonaseCmd {
-    /// Run one request and exit instead of reading an interactive stdin loop.
+    /// Run one request and exit instead of reading an interactive stdin loop. A failed Work exits nonzero.
     #[arg(long)]
     pub prompt: Option<String>,
     /// Read this canonical Form or Entry URI into the next Job's Context. Repeat up to four times.
@@ -1007,13 +1007,9 @@ pub async fn run(
                 },
             )
             .await?;
-            let interrupted = matches!(
-                &result,
-                TurnResult::Failed(failure) if failure.error.kind == MODEL_INTERRUPTED_KIND
-            );
-            let _ = report_turn(result, false);
-            if interrupted {
-                bail!("model request interrupted");
+            let report = report_turn(result, false);
+            if report.failed {
+                bail!("Konase Work failed");
             }
         }
         None => {
@@ -1022,6 +1018,7 @@ pub async fn run(
             }
             let mut input = String::new();
             let mut last_work_id: Option<String> = None;
+            let mut failed_work = false;
             loop {
                 if interactive {
                     print!("> ");
@@ -1053,7 +1050,7 @@ pub async fn run(
                     }
                     continue;
                 }
-                last_work_id = report_turn(
+                let report = report_turn(
                     run_turn_with_selected_context(
                         &mut model,
                         &mut mcp,
@@ -1071,6 +1068,13 @@ pub async fn run(
                     .await?,
                     true,
                 );
+                if !interactive {
+                    failed_work |= report.failed;
+                }
+                last_work_id = report.work_id;
+            }
+            if failed_work {
+                bail!("one or more Konase Works failed");
             }
         }
     }
@@ -1137,7 +1141,12 @@ struct TurnInput<'a> {
     work_id: String,
 }
 
-fn report_turn(result: TurnResult, show_undo_hint: bool) -> Option<String> {
+struct TurnReport {
+    work_id: Option<String>,
+    failed: bool,
+}
+
+fn report_turn(result: TurnResult, show_undo_hint: bool) -> TurnReport {
     match result {
         TurnResult::Completed(turn) => {
             let knowledge = knowledge_label(turn.knowledge);
@@ -1153,7 +1162,10 @@ fn report_turn(result: TurnResult, show_undo_hint: bool) -> Option<String> {
             if show_undo_hint && turn.undo_available {
                 emit_text("[u] 取り消す");
             }
-            (show_undo_hint && turn.undo_available).then_some(turn.work_id)
+            TurnReport {
+                work_id: (show_undo_hint && turn.undo_available).then_some(turn.work_id),
+                failed: false,
+            }
         }
         TurnResult::Failed(failure) => {
             if failure.error.kind == MODEL_INTERRUPTED_KIND {
@@ -1170,16 +1182,16 @@ fn report_turn(result: TurnResult, show_undo_hint: bool) -> Option<String> {
                     failure.error.kind, failure.error.message
                 ));
             }
-            let knowledge = knowledge_label(failure.knowledge);
-            emit_success(
-                &serde_json::json!({"knowledge": knowledge}),
-                &Format::Plain,
-                Some(format!("Knowledge: {knowledge}")),
-            );
+            if failure.knowledge == KnowledgeOutcome::Saved {
+                emit_diagnostic("Work failed; an earlier Knowledge save was confirmed.");
+            }
             if show_undo_hint && failure.undo_available {
                 emit_text("[u] 取り消す");
             }
-            (show_undo_hint && failure.undo_available).then_some(failure.work_id)
+            TurnReport {
+                work_id: (show_undo_hint && failure.undo_available).then_some(failure.work_id),
+                failed: true,
+            }
         }
     }
 }
@@ -1845,6 +1857,26 @@ mod tests {
         for answer in ["", "n", "no", "ok", "true"] {
             assert!(!confirmation_answer_is_approved(answer));
         }
+    }
+
+    #[test]
+    fn failed_turn_is_nonzero_while_confirmed_save_and_undo_remain_reportable() {
+        let report = report_turn(
+            TurnResult::Failed(TurnFailure {
+                error: HostError {
+                    kind: "model_timeout".into(),
+                    message: "timed out".into(),
+                    request_id: Some("request-1".into()),
+                },
+                work_id: "work-1".into(),
+                undo_available: true,
+                knowledge: KnowledgeOutcome::Saved,
+            }),
+            true,
+        );
+
+        assert!(report.failed);
+        assert_eq!(report.work_id.as_deref(), Some("work-1"));
     }
 
     fn selected_form_resource() -> ResourceContent {
