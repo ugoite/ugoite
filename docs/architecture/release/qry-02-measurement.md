@@ -2,7 +2,7 @@
 title: "QRY-02 visible-row measurement"
 ---
 
-# QRY-02 visible-row measurement
+This page records the synthetic browser measurement for QRY-02 and the evidence still tracked separately.
 
 ## Synthetic 1,000-row browser fixture
 
