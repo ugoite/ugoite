@@ -44,8 +44,8 @@ TOTP is recovery-only and is not a normal login method.
 The v0.2.0 release left Product UX acceptance criteria unverified. Their
 completion, discoverability, cross-surface consistency, validation clarity,
 recovery, testing, and documentation follow-ups remain independently tracked in
-the [v0.2 Product UX tracker](../version/v0.2/product-ux.yaml); publication did
-not complete those criteria.
+the [v0.2 Product UX tracker](https://github.com/ugoite/ugoite/blob/main/docs/version/v0.2/product-ux.yaml);
+publication did not complete those criteria.
 
 The v0.3 direction is **Authority → Experience → Work**: map what existing
 Space-owned Knowledge can do and where each behavior is specified, implemented,
