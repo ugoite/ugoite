@@ -226,7 +226,7 @@ Deno.test("PR11: migration ledger documents the changed-scope rule", async () =>
 
 Deno.test("PR11: Mitase pin stays on an immutable 0.2.x release", async () => {
   const lock = await Deno.readTextFile("tools/mitase.lock.toml");
-  assert(lock.includes('version = "0.2.0"'), "lock stays on Mitase 0.2.0");
+  assert(lock.includes('version = "0.2.1"'), "lock stays on Mitase 0.2.1");
   for (
     const target of [
       "x86_64-unknown-linux-gnu",

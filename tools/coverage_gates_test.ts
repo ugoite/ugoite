@@ -373,15 +373,17 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
     [
       "name: ci-required",
       "if: ${{ always() }}",
-      "needs: [rust-check, rust-test, web, artifacts]",
+      "needs: [rust-check, rust-test, web, artifacts, pr-context-report]",
       "RUST_CHECK_RESULT: ${{ needs.rust-check.result }}",
       "RUST_TEST_RESULT: ${{ needs.rust-test.result }}",
       "WEB_RESULT: ${{ needs.web.result }}",
       "ARTIFACTS_RESULT: ${{ needs.artifacts.result }}",
+      "PR_CONTEXT_RESULT: ${{ needs.pr-context-report.result }}",
       'test "$RUST_CHECK_RESULT" = success',
       'test "$RUST_TEST_RESULT" = success',
       'test "$WEB_RESULT" = success',
       'test "$ARTIFACTS_RESULT" = success',
+      'test "$PR_CONTEXT_RESULT" = success || test "$PR_CONTEXT_RESULT" = skipped',
     ],
     "required CI aggregator",
   );
