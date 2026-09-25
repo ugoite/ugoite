@@ -481,13 +481,11 @@ impl UgoiteService {
         Ok(delivered)
     }
 
-    async fn reconcile_entry_revision_rows(
-        &self,
-        space_id: &str,
+    fn entry_revision_audit_events(
         entry_id: &str,
         mut revisions: Vec<crate::entry::RevisionRow>,
         space_uid: Uuid,
-    ) -> Result<()> {
+    ) -> Vec<Value> {
         revisions.sort_by(|left, right| {
             left.timestamp
                 .partial_cmp(&right.timestamp)
@@ -498,6 +496,7 @@ impl UgoiteService {
             .iter()
             .map(|revision| revision.entry_version)
             .min();
+        let mut events = Vec::with_capacity(revisions.len());
         for (index, revision) in revisions.iter().enumerate() {
             let is_first = match (Some(revision.entry_version), created_version) {
                 (Some(version), Some(created)) => version == created,
@@ -516,7 +515,7 @@ impl UgoiteService {
                 revision.updated_by.as_str()
             };
             let (subject, actor) = committed_actor_attribution(Some(committed_actor), &space_uid);
-            let event = entry_mutation_event(
+            events.push(entry_mutation_event(
                 &space_uid,
                 action,
                 entry_id,
@@ -524,10 +523,50 @@ impl UgoiteService {
                 Some(&revision.change_id),
                 &subject,
                 actor.as_deref(),
-            );
-            deliver_mutation_audit_event(self.operator(), space_id, &event).await?;
+            ));
         }
-        Ok(())
+        events
+    }
+
+    fn saved_sql_revision_audit_events(
+        sql_id: &str,
+        mut revisions: Vec<crate::entry::RevisionRow>,
+        space_uid: Uuid,
+    ) -> Vec<Value> {
+        revisions.sort_by(|left, right| {
+            (left.entry_version, left.timestamp)
+                .partial_cmp(&(right.entry_version, right.timestamp))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        revisions
+            .iter()
+            .map(|revision| {
+                let action = if revision.operation == "delete" {
+                    SAVED_SQL_DELETED_ACTION
+                } else if revision.parent_revision_id.is_none() {
+                    SAVED_SQL_CREATED_ACTION
+                } else {
+                    SAVED_SQL_UPDATED_ACTION
+                };
+                let committed_actor = if revision.updated_by.trim().is_empty() {
+                    revision.author.as_str()
+                } else {
+                    revision.updated_by.as_str()
+                };
+                let (subject, actor) = match committed_actor.trim() {
+                    "" => audit_attribution(&[], "", &space_uid),
+                    _ => committed_actor_attribution(Some(committed_actor), &space_uid),
+                };
+                saved_sql_mutation_event(
+                    &space_uid,
+                    action,
+                    sql_id,
+                    &revision.revision_id,
+                    &subject,
+                    actor.as_deref(),
+                )
+            })
+            .collect()
     }
 
     /// Re-derives the expected audit events for `sql_id` from committed
@@ -607,12 +646,14 @@ impl UgoiteService {
     /// Crash windows and delivery failures are per-mutation: a sweep must not
     /// stop at the latest revision of one target. Every committed Entry
     /// revision (tombstones included) and every committed saved-SQL row is
-    /// reconciled through the same per-target paths above, so attribution
-    /// always comes from committed metadata, never from the sweep caller
-    /// (empty principals and a blank author fallback force the committed
-    /// authority). Failures propagate instead of hiding as success; existing
-    /// events are never rewritten and Change/revision IDs never change.
-    /// Returns the number of targets converged.
+    /// converted to the same deterministic events as the per-target paths,
+    /// then delivered as one batch so the audit chain is verified and
+    /// rewritten once. Attribution always comes from committed metadata,
+    /// never from the sweep caller (empty principals and a blank author
+    /// fallback force the committed authority). Failures propagate instead
+    /// of hiding as success; existing events are never rewritten and
+    /// Change/revision IDs never change. Returns the number of targets
+    /// converged.
     pub async fn reconcile_space_audit(&self, space_id: &str) -> Result<usize> {
         let workspace = self.workspace_path(space_id);
         // `space_uid` verifies uniqueness against every discoverable Space.
@@ -659,19 +700,40 @@ impl UgoiteService {
             }
         }
         let sql_ids = crate::saved_sql::list_sql_ids_for_audit(self.operator(), &workspace).await?;
-        let mut converged = 0;
+        let converged = entry_revisions.len() + sql_ids.len();
+        let mut audit_events = Vec::new();
         for (entry_id, revisions) in entry_revisions {
-            self.reconcile_entry_revision_rows(space_id, &entry_id, revisions, space_uid)
-                .await
-                .with_context(|| format!("reconcile audit for Entry {entry_id}"))?;
-            converged += 1;
+            audit_events.extend(Self::entry_revision_audit_events(
+                &entry_id, revisions, space_uid,
+            ));
+        }
+        let sql_rows = if sql_ids.is_empty() {
+            Vec::new()
+        } else {
+            crate::entry::form_revision_rows_for_audit(
+                self.operator(),
+                &workspace,
+                crate::saved_sql::SQL_FORM_NAME_FOR_AUDIT,
+            )
+            .await?
+        };
+        let mut sql_revisions = BTreeMap::<String, Vec<crate::entry::RevisionRow>>::new();
+        for revision in sql_rows {
+            sql_revisions
+                .entry(revision.entry_id.clone())
+                .or_default()
+                .push(revision);
         }
         for sql_id in sql_ids {
-            self.reconcile_saved_sql_audit(space_id, &sql_id, &[], "")
-                .await
-                .with_context(|| format!("reconcile audit for saved SQL {sql_id}"))?;
-            converged += 1;
+            if let Some(revisions) = sql_revisions.remove(&sql_id) {
+                audit_events.extend(Self::saved_sql_revision_audit_events(
+                    &sql_id, revisions, space_uid,
+                ));
+            }
         }
+        crate::audit::append_audit_events(self.operator(), space_id, &audit_events)
+            .await
+            .with_context(|| format!("reconcile audit events for Space {space_id}"))?;
         Ok(converged)
     }
 }

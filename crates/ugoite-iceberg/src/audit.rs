@@ -418,6 +418,320 @@ pub async fn append_audit_event(
     Err(last_conflict.unwrap_or_else(|| anyhow!("audit append conflicted after bounded retries")))
 }
 
+/// Appends a group of audit events after reading and verifying the Space's
+/// hash chain once. This is used by recovery sweeps, where each event already
+/// has a stable idempotency key and the complete committed history is known.
+/// Pending event markers are written before the chain update and committed
+/// after it, preserving the single-event crash-recovery protocol.
+pub(crate) async fn append_audit_events(
+    op: &Operator,
+    space_id: &str,
+    payloads: &[Value],
+) -> Result<Vec<Value>> {
+    if payloads.is_empty() {
+        return Ok(Vec::new());
+    }
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    ugoite_storage::verify_publication_mutation_contract(op)
+        .await
+        .map_err(crate::iceberg_store::storage_mutation_unavailable)?;
+    let mut last_conflict = None;
+    for _attempt in 0..3 {
+        match append_audit_events_once(op, space_id, payloads).await {
+            Ok(events) => return Ok(events),
+            Err(error)
+                if {
+                    let message = error.to_string().to_lowercase();
+                    message.contains("precondition")
+                        || message.contains("condition")
+                        || message.contains("already exists")
+                } =>
+            {
+                last_conflict = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(last_conflict.unwrap_or_else(|| anyhow!("audit append conflicted after bounded retries")))
+}
+
+async fn append_audit_events_once(
+    op: &Operator,
+    space_id: &str,
+    payloads: &[Value],
+) -> Result<Vec<Value>> {
+    let safe_space_id = validate_space_id(space_id)?;
+    let lock = space_lock(&safe_space_id).await;
+    let _guard = lock.lock().await;
+    let _local_lock = local_audit_lock(op, &safe_space_id)?;
+
+    let path = audit_file_path(&safe_space_id);
+    let path_exists = op.exists(&path).await?;
+    let capabilities = op.info().capability();
+    let local_process_store = matches!(op.info().scheme(), "memory" | "fs" | "file");
+    if !local_process_store
+        && ((path_exists && !capabilities.write_with_if_match)
+            || (!path_exists && !capabilities.write_with_if_not_exists))
+    {
+        bail!("audit append requires conditional storage capabilities");
+    }
+    let expected_version = if path_exists && capabilities.write_with_if_match {
+        let metadata = op.stat(&path).await?;
+        metadata
+            .etag()
+            .or_else(|| metadata.version())
+            .map(str::to_string)
+    } else {
+        None
+    };
+    let mut events = read_events(op, &safe_space_id).await?;
+    verify_chain(&events)?;
+    let persisted_event_count = events.len();
+    let mut event_indexes = HashMap::with_capacity(events.len() + payloads.len());
+    for (index, event) in events.iter().enumerate() {
+        if let Some(event_id) = event.get("event_id").and_then(Value::as_str) {
+            event_indexes.insert(event_id.to_string(), index);
+        }
+    }
+
+    let mut output = Vec::with_capacity(payloads.len());
+    let mut pending_markers = Vec::with_capacity(payloads.len());
+    let mut appended = false;
+    let mut marker_directory_created = false;
+    for payload in payloads {
+        let payload_obj = payload
+            .as_object()
+            .ok_or_else(|| anyhow!("audit payload must be an object"))?;
+        let action = payload_obj
+            .get("action")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| anyhow!("audit action must not be empty"))?
+            .to_string();
+        let subject_principal_id = payload_obj
+            .get("subject_principal_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| anyhow!("subject_principal_id must not be empty"))?
+            .to_string();
+        let actor_principal_id = payload_obj
+            .get("actor_principal_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let actor_account_id = payload_obj
+            .get("actor_account_id")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let space_uid = payload_obj.get("space_uid").cloned().unwrap_or(Value::Null);
+        let challenge_id = payload_obj
+            .get("challenge_id")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let issuer_principal_id = payload_obj
+            .get("issuer_principal_id")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let issuer_account_id = payload_obj
+            .get("issuer_account_id")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let issuer_credential_id = payload_obj
+            .get("issuer_credential_id")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let subject_account_id = payload_obj
+            .get("subject_account_id")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let metadata = payload_obj
+            .get("metadata")
+            .filter(|value| value.is_object())
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        validate_safe_metadata(&metadata)?;
+        let requested_event_id = payload_obj
+            .get("event_id")
+            .and_then(Value::as_str)
+            .and_then(|value| uuid::Uuid::parse_str(value).ok())
+            .map(|value| value.to_string());
+
+        let mut marker_version = None;
+        if let Some(event_id) = requested_event_id.as_deref() {
+            if let Some((marker, version)) = read_event_marker(op, &safe_space_id, event_id).await?
+            {
+                if marker.get("status").and_then(Value::as_str) == Some("committed") {
+                    let canonical = marker.get("event").unwrap_or(&marker);
+                    if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
+                        bail!("audit event id conflicts with canonical payload");
+                    }
+                    output.push(canonical.clone());
+                    continue;
+                }
+                if marker.get("event_id").is_some() && marker.get("event_hash").is_some() {
+                    if audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)? {
+                        bail!("audit event id conflicts with canonical payload");
+                    }
+                    output.push(marker.get("event").cloned().unwrap_or(marker));
+                    continue;
+                }
+                if marker.get("status").and_then(Value::as_str) == Some("pending")
+                    && audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)?
+                {
+                    bail!("audit event id conflicts with pending payload");
+                }
+                marker_version = version;
+            }
+            if let Some(index) = event_indexes.get(event_id).copied() {
+                let existing = events[index].clone();
+                if audit_event_fingerprint(&existing)? != audit_event_fingerprint(payload)? {
+                    bail!("audit event id conflicts with canonical payload");
+                }
+                // Existing chain entries can repair their event marker
+                // immediately. Entries appended earlier in this batch must
+                // keep the marker pending until the single chain write has
+                // succeeded, or a crash could leave a committed marker for
+                // an event that never became visible in the hash chain.
+                if index < persisted_event_count {
+                    let _ = commit_event_marker(
+                        op,
+                        &safe_space_id,
+                        event_id,
+                        marker_version.as_deref(),
+                        &existing,
+                    )
+                    .await;
+                }
+                output.push(existing);
+                continue;
+            }
+        }
+
+        let event_id = requested_event_id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+        let prev_hash = events
+            .last()
+            .and_then(Value::as_object)
+            .and_then(|item| item.get("event_hash"))
+            .and_then(Value::as_str)
+            .unwrap_or("root")
+            .to_string();
+        let mut event = json!({
+            "event_id": event_id.clone(),
+            "timestamp": now_iso(),
+            "space_id": safe_space_id.clone(),
+            "space_uid": space_uid.clone(),
+            "challenge_id": challenge_id.clone(),
+            "issuer_principal_id": issuer_principal_id.clone(),
+            "issuer_account_id": issuer_account_id.clone(),
+            "issuer_credential_id": issuer_credential_id.clone(),
+            "action": action.clone(),
+            "subject_principal_id": subject_principal_id.clone(),
+            "subject_account_id": subject_account_id.clone(),
+            "actor_principal_id": actor_principal_id.clone(),
+            "actor_account_id": actor_account_id.clone(),
+            "credential_id": payload_obj.get("credential_id").cloned().unwrap_or(Value::Null),
+            "outcome": normalize_outcome(payload_obj.get("outcome").and_then(Value::as_str)),
+            "target_type": payload_obj.get("target_type").cloned().unwrap_or(Value::Null),
+            "target_id": payload_obj.get("target_id").cloned().unwrap_or(Value::Null),
+            "request_method": payload_obj.get("request_method").cloned().unwrap_or(Value::Null),
+            "request_path": payload_obj.get("request_path").cloned().unwrap_or(Value::Null),
+            "request_id": payload_obj.get("request_id").cloned().unwrap_or(Value::Null),
+            "metadata": metadata.clone(),
+            "prev_hash": prev_hash,
+        });
+        let hash = event_hash(&event, event["prev_hash"].as_str().unwrap_or("root"))?;
+        event["event_hash"] = Value::String(hash);
+
+        if !marker_directory_created {
+            op.create_dir(&format!("spaces/{}/audit/event-ids/", safe_space_id))
+                .await?;
+            marker_directory_created = true;
+        }
+        if marker_version.is_none() {
+            marker_version = create_pending_marker(
+                op,
+                &safe_space_id,
+                &event_id,
+                &json!({
+                    "event_id": event_id.clone(),
+                    "action": action.clone(),
+                    "space_uid": space_uid.clone(),
+                    "challenge_id": challenge_id.clone(),
+                    "issuer_principal_id": issuer_principal_id.clone(),
+                    "issuer_account_id": issuer_account_id.clone(),
+                    "issuer_credential_id": issuer_credential_id.clone(),
+                    "subject_principal_id": subject_principal_id.clone(),
+                    "subject_account_id": subject_account_id.clone(),
+                    "actor_principal_id": actor_principal_id.clone(),
+                    "actor_account_id": actor_account_id.clone(),
+                    "credential_id": payload_obj.get("credential_id").cloned().unwrap_or(Value::Null),
+                    "outcome": normalize_outcome(payload_obj.get("outcome").and_then(Value::as_str)),
+                    "target_type": payload_obj.get("target_type").cloned().unwrap_or(Value::Null),
+                    "target_id": payload_obj.get("target_id").cloned().unwrap_or(Value::Null),
+                    "request_method": payload_obj.get("request_method").cloned().unwrap_or(Value::Null),
+                    "request_path": payload_obj.get("request_path").cloned().unwrap_or(Value::Null),
+                    "request_id": payload_obj.get("request_id").cloned().unwrap_or(Value::Null),
+                    "metadata": metadata.clone(),
+                }),
+            ).await?;
+        }
+        if let Some((marker, _)) = read_event_marker(op, &safe_space_id, &event_id).await? {
+            if marker.get("status").and_then(Value::as_str) == Some("committed") {
+                let canonical = marker.get("event").unwrap_or(&marker);
+                if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
+                    bail!("audit event id conflicts with canonical payload");
+                }
+                output.push(canonical.clone());
+                continue;
+            }
+            if audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)? {
+                bail!("audit event id conflicts with pending payload");
+            }
+        }
+        let index = events.len();
+        events.push(event.clone());
+        event_indexes.insert(event_id.clone(), index);
+        pending_markers.push((event_id, marker_version, event.clone()));
+        output.push(event);
+        appended = true;
+    }
+
+    if appended {
+        let retention = normalize_retention_limit(None);
+        if events.len() > retention {
+            let start_index = events.len() - retention;
+            events = events.split_off(start_index);
+            rehash_chain(&mut events)?;
+        }
+        let canonical_by_id: HashMap<&str, &Value> = events
+            .iter()
+            .filter_map(|event| Some((event.get("event_id")?.as_str()?, event)))
+            .collect();
+        for (event_id, _, event) in &mut pending_markers {
+            if let Some(canonical) = canonical_by_id.get(event_id.as_str()) {
+                *event = (*canonical).clone();
+            }
+        }
+        write_events(op, &safe_space_id, &events, expected_version.as_deref()).await?;
+    }
+    for (event_id, marker_version, event) in pending_markers {
+        commit_event_marker(
+            op,
+            &safe_space_id,
+            &event_id,
+            marker_version.as_deref(),
+            &event,
+        )
+        .await?;
+    }
+    Ok(output)
+}
+
 async fn append_audit_event_once(
     op: &Operator,
     space_id: &str,
@@ -917,6 +1231,78 @@ mod tests {
         assert_eq!(
             list_audit_events(&op, "demo", AuditListOptions::default()).await?["total"],
             1
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn audit_recovery_batch_appends_and_replays_idempotently() -> Result<()> {
+        let op = operator_from_uri("memory://audit-recovery-batch")?;
+        let payloads: Vec<Value> = (0..128)
+            .map(|index| {
+                json!({
+                    "event_id": uuid::Uuid::now_v7().to_string(),
+                    "action": "entry.updated",
+                    "space_uid": "01900000-0000-7000-8000-000000000001",
+                    "subject_principal_id": "01900000-0000-7000-8000-000000000001",
+                    "actor_principal_id": "01900000-0000-7000-8000-000000000001",
+                    "target_type": "entry",
+                    "target_id": format!("entry-{index}"),
+                    "metadata": {"revision_id": format!("revision-{index}")}
+                })
+            })
+            .collect();
+
+        // Model a process crash after the pending marker write but before
+        // the audit-chain write; the recovery batch must resume this marker.
+        let pending_event_id = payloads[0]["event_id"].as_str().expect("stable event id");
+        op.create_dir("spaces/demo/audit/event-ids/").await?;
+        create_pending_marker(&op, "demo", pending_event_id, &payloads[0]).await?;
+
+        let appended = append_audit_events(&op, "demo", &payloads).await?;
+        assert_eq!(appended.len(), payloads.len());
+        let (resumed_marker, _) = read_event_marker(&op, "demo", pending_event_id)
+            .await?
+            .expect("resumed batch marker");
+        assert_eq!(resumed_marker["status"], "committed");
+        let replayed = append_audit_events(&op, "demo", &payloads).await?;
+        assert_eq!(replayed, appended);
+        let events = read_events(&op, "demo").await?;
+        verify_chain(&events)?;
+        assert_eq!(events.len(), payloads.len());
+        assert_eq!(
+            list_audit_events(&op, "demo", AuditListOptions::default()).await?["total"],
+            json!(payloads.len())
+        );
+
+        let duplicate_event_id = uuid::Uuid::now_v7().to_string();
+        let duplicate = json!({
+            "event_id": duplicate_event_id,
+            "action": "entry.updated",
+            "space_uid": "01900000-0000-7000-8000-000000000001",
+            "subject_principal_id": "01900000-0000-7000-8000-000000000001",
+            "actor_principal_id": "01900000-0000-7000-8000-000000000001",
+            "target_type": "entry",
+            "target_id": "entry-duplicate",
+            "metadata": {"revision_id": "revision-duplicate"}
+        });
+        let duplicate_result =
+            append_audit_events(&op, "demo", &[duplicate.clone(), duplicate]).await?;
+        assert_eq!(duplicate_result.len(), 2);
+        assert_eq!(duplicate_result[0], duplicate_result[1]);
+        let (duplicate_marker, _) = read_event_marker(
+            &op,
+            "demo",
+            &duplicate_result[0]["event_id"]
+                .as_str()
+                .expect("duplicate event id"),
+        )
+        .await?
+        .expect("committed duplicate marker");
+        assert_eq!(duplicate_marker["status"], "committed");
+        assert_eq!(
+            list_audit_events(&op, "demo", AuditListOptions::default()).await?["total"],
+            json!(payloads.len() + 1)
         );
         Ok(())
     }
