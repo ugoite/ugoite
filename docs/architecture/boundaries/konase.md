@@ -93,6 +93,15 @@ transport, and provider failures are converted into the existing
 Work/Job becomes failed and its pending effect is cleared without discarding
 an already observed Knowledge write or its undo availability.
 
+Before a model-requested `ugoite.save` or `ugoite.undo`, the Rig adapter pauses
+with a one-shot confirmation bound to that exact MCP request. It retains the
+original arguments and emits the same request only after approval; denial
+discards queued tool calls and ends the Job. The CLI asks for explicit `y` or
+`yes` on a terminal and denies when terminal input is unavailable. A save is
+reported as `saved` only after the MCP mutation receipt passes validation.
+Approving a write does not change MCP credentials, Space scope, ACL, or server
+validation.
+
 The browser Host and Konase UI now provide the same one-Job path. The panel
 starts a browser-approved MCP device credential for the current Space, checks
 the returned Space UID, and resolves the MCP endpoint from protected-resource

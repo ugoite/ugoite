@@ -586,7 +586,12 @@ fn progress_event(
             current_job(state, &job_id)?.status = JobStatus::WaitingForHost;
             state.pending_effect = Some(PendingEffect::CallMcp {
                 request_id,
-                effect: request.effect,
+                // Undo is a write operation, but it is not evidence that new
+                // Knowledge was saved. Preserve the existing Knowledge
+                // outcome and the Work's Run Undo semantics.
+                effect: (request.operation != "ugoite.undo")
+                    .then_some(request.effect)
+                    .flatten(),
             });
             effects.push(KonaseEffect::CallMcp(request));
         }
@@ -651,6 +656,8 @@ fn mcp_completed(
     };
     if effect == Some(CapabilityEffect::Write) {
         state.knowledge = state.knowledge.record_write(result.success);
+    } else if result.operation == "ugoite.undo" && result.success {
+        state.knowledge = KnowledgeOutcome::Unchanged;
     }
     if let Some(mut observation) = result.observation {
         observation.resource_references.extend(result.resources);
@@ -692,11 +699,23 @@ fn confirmation_completed(
             ))
         }
     }
-    state
-        .job
-        .as_mut()
-        .expect("waiting_for_host verified")
-        .status = JobStatus::Running;
+    if result.approved {
+        state
+            .job
+            .as_mut()
+            .expect("waiting_for_host verified")
+            .status = JobStatus::Running;
+    } else {
+        state
+            .job
+            .as_mut()
+            .expect("waiting_for_host verified")
+            .status = JobStatus::Failed;
+        let work = state.work.as_mut().expect("active job has a Work");
+        work.status = WorkStatus::Failed;
+        work.last_outcome = None;
+        state.status = SessionStatus::Failed;
+    }
     state.pending_effect = None;
     let output = KonaseOutput::ConfirmationResolved {
         request_id: result.request_id,
@@ -1887,6 +1906,81 @@ mod tests {
             }),
         );
         assert_eq!(failed.state.knowledge, KnowledgeOutcome::WriteFailed);
+    }
+
+    #[test]
+    fn denied_confirmation_fails_the_job_without_changing_knowledge() {
+        let started = step(
+            KonaseState::default(),
+            KonaseEvent::UserSubmitted(request()),
+        );
+        let requested = step(
+            started.state,
+            KonaseEvent::AgentProgress(AgentProgress {
+                job_id: "job-1".into(),
+                strategy_summary: None,
+                observation: None,
+                action: Some(AgentAction::AskConfirmation(ConfirmationRequest {
+                    request_id: "job-1:mcp:1".into(),
+                    operation: "ugoite.save".into(),
+                    reason: "Create a Note".into(),
+                })),
+            }),
+        );
+        assert!(requested.error.is_none());
+        let denied = step(
+            requested.state,
+            KonaseEvent::ConfirmationCompleted(ConfirmationResult {
+                request_id: "job-1:mcp:1".into(),
+                approved: false,
+            }),
+        );
+        assert!(denied.error.is_none());
+        assert_eq!(denied.state.status, SessionStatus::Failed);
+        assert_eq!(denied.state.knowledge, KnowledgeOutcome::Unchanged);
+        assert_eq!(denied.state.work.unwrap().status, WorkStatus::Failed);
+        assert_eq!(denied.state.job.unwrap().status, JobStatus::Failed);
+        assert!(denied.state.pending_effect.is_none());
+    }
+
+    #[test]
+    fn undo_write_receipt_does_not_report_new_knowledge_as_saved() {
+        let started = step(
+            KonaseState::default(),
+            KonaseEvent::UserSubmitted(request()),
+        );
+        let mut started_state = started.state;
+        started_state.knowledge = KnowledgeOutcome::Saved;
+        let requested = step(
+            started_state,
+            KonaseEvent::AgentProgress(AgentProgress {
+                job_id: "job-1".into(),
+                strategy_summary: None,
+                observation: None,
+                action: Some(AgentAction::CallMcp(McpRequest {
+                    request_id: "job-1:mcp:undo".into(),
+                    server: "ugoite".into(),
+                    operation: "ugoite.undo".into(),
+                    arguments: BTreeMap::new(),
+                    effect: Some(CapabilityEffect::Write),
+                })),
+            }),
+        );
+        assert!(requested.error.is_none());
+        let completed = step(
+            requested.state,
+            KonaseEvent::McpCompleted(McpResult {
+                request_id: "job-1:mcp:undo".into(),
+                operation: "ugoite.undo".into(),
+                success: true,
+                observation: None,
+                resources: vec![],
+                resource_contents: vec![],
+                error: None,
+            }),
+        );
+        assert!(completed.error.is_none());
+        assert_eq!(completed.state.knowledge, KnowledgeOutcome::Unchanged);
     }
 
     #[test]

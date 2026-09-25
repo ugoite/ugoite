@@ -37,6 +37,28 @@ trait ModelInterruptSource {
     fn wait_for_model_interrupt(&self) -> ModelInterruptFuture<'_>;
 }
 
+trait ConfirmationSource: Sync {
+    fn confirm(&self, request: &ugoite_konase::ConfirmationRequest) -> bool;
+}
+
+struct TtyConfirmation;
+
+impl ConfirmationSource for TtyConfirmation {
+    fn confirm(&self, request: &ugoite_konase::ConfirmationRequest) -> bool {
+        request_confirmation(request)
+    }
+}
+
+#[cfg(test)]
+struct ApproveConfirmation;
+
+#[cfg(test)]
+impl ConfirmationSource for ApproveConfirmation {
+    fn confirm(&self, _request: &ugoite_konase::ConfirmationRequest) -> bool {
+        true
+    }
+}
+
 #[cfg(test)]
 struct NeverModelInterrupt;
 
@@ -519,21 +541,26 @@ fn work_meta(work_id: &str) -> RequestMetaObject {
 
 fn capability_from_tool(tool: Tool) -> Capability {
     let input_schema = tool.schema_as_json_value();
+    let name = tool.name.into_owned();
     Capability {
-        name: tool.name.into_owned(),
+        name: name.clone(),
         description: tool
             .description
             .map_or_else(String::new, |value| value.into_owned()),
         input_schema: Some(input_schema),
-        effect: tool.annotations.and_then(|annotations| {
-            annotations.read_only_hint.map(|read_only| {
-                if read_only {
-                    CapabilityEffect::Read
-                } else {
-                    CapabilityEffect::Write
-                }
+        effect: if matches!(name.as_str(), "ugoite.save" | "ugoite.undo") {
+            Some(CapabilityEffect::Write)
+        } else {
+            tool.annotations.and_then(|annotations| {
+                annotations.read_only_hint.map(|read_only| {
+                    if read_only {
+                        CapabilityEffect::Read
+                    } else {
+                        CapabilityEffect::Write
+                    }
+                })
             })
-        }),
+        },
     }
 }
 
@@ -668,7 +695,22 @@ impl McpHost for RmcpMcpHost {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
+            let valid_receipt = match operation.as_str() {
+                "ugoite.save" => result
+                    .structured_content
+                    .as_ref()
+                    .is_some_and(valid_save_receipt),
+                "ugoite.undo" => result
+                    .structured_content
+                    .as_ref()
+                    .is_some_and(|value| valid_undo_receipt(value, work_id)),
+                _ => false,
+            };
+            if result.is_error != Some(true) && !valid_receipt {
+                bail!("MCP mutation receipt is missing or invalid; success could not be confirmed");
+            }
             let success = result.is_error != Some(true);
+            let error = if !success { Some(text) } else { None };
             return Ok(McpResult {
                 request_id,
                 operation,
@@ -676,7 +718,7 @@ impl McpHost for RmcpMcpHost {
                 observation: None,
                 resources: vec![],
                 resource_contents: vec![],
-                error: (!success).then_some(text),
+                error,
             });
         }
         if request.operation != "ugoite.search" {
@@ -734,6 +776,53 @@ impl McpHost for RmcpMcpHost {
     }
 }
 
+fn valid_save_receipt(value: &Value) -> bool {
+    let id = value.get("id").and_then(Value::as_str);
+    let uri = value.get("uri").and_then(Value::as_str);
+    id.is_some_and(|id| !id.is_empty())
+        && uri
+            .is_some_and(|uri| Some(uri) == id.map(|id| format!("ugoite://entry/{id}")).as_deref())
+        && matches!(
+            value.get("status").and_then(Value::as_str),
+            Some("created" | "updated")
+        )
+        && value.get("_untrusted_content").and_then(Value::as_bool) == Some(true)
+}
+
+fn valid_undo_receipt(value: &Value, work_id: &str) -> bool {
+    value.get("run_id").and_then(Value::as_str) == Some(work_id)
+        && value
+            .get("reverted_change_count")
+            .and_then(Value::as_u64)
+            .is_some()
+        && value.get("_untrusted_content").and_then(Value::as_bool) == Some(true)
+}
+
+fn requires_approval(request: &McpRequest) -> bool {
+    request.effect == Some(CapabilityEffect::Write)
+        || matches!(request.operation.as_str(), "ugoite.save" | "ugoite.undo")
+}
+
+fn request_confirmation(request: &ugoite_konase::ConfirmationRequest) -> bool {
+    if !io::stdin().is_terminal() {
+        return false;
+    }
+    eprintln!("\nKonase write approval required");
+    eprintln!("Operation: {}", request.operation);
+    eprintln!("{}", request.reason);
+    eprint!("Approve this one write? [y/N] ");
+    let _ = io::stderr().flush();
+    let mut answer = String::new();
+    if io::stdin().read_line(&mut answer).unwrap_or(0) == 0 {
+        return false;
+    }
+    confirmation_answer_is_approved(&answer)
+}
+
+fn confirmation_answer_is_approved(answer: &str) -> bool {
+    matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+}
+
 pub async fn run(
     cmd: KonaseCmd,
     explicit_config: Option<&std::path::Path>,
@@ -756,9 +845,15 @@ pub async fn run(
             if prompt.trim().is_empty() {
                 bail!("Konase prompt must not be empty");
             }
-            let result =
-                run_turn_with_interrupts(&mut model, &mut mcp, &prompt, &capabilities, &interrupts)
-                    .await?;
+            let result = run_turn_with_interrupts(
+                &mut model,
+                &mut mcp,
+                &prompt,
+                &capabilities,
+                &interrupts,
+                &TtyConfirmation,
+            )
+            .await?;
             let interrupted = matches!(
                 &result,
                 TurnResult::Failed(failure) if failure.error.kind == MODEL_INTERRUPTED_KIND
@@ -813,6 +908,7 @@ pub async fn run(
                         prompt,
                         &capabilities,
                         &interrupts,
+                        &TtyConfirmation,
                     )
                     .await?,
                     true,
@@ -889,6 +985,12 @@ fn report_turn(result: TurnResult, show_undo_hint: bool) -> Option<String> {
         TurnResult::Failed(failure) => {
             if failure.error.kind == MODEL_INTERRUPTED_KIND {
                 emit_diagnostic("Model request interrupted.");
+            } else if failure.error.kind == "write_denied" {
+                emit_diagnostic("Write denied; no MCP mutation was sent.");
+            } else if failure.error.kind == "mcp_unconfirmed" {
+                emit_diagnostic(
+                    "MCP mutation outcome is unconfirmed; no automatic retry was attempted.",
+                );
             } else {
                 emit_diagnostic(format!(
                     "Model host failed ({}): {}",
@@ -924,7 +1026,15 @@ async fn run_turn<M: ModelHost, C: McpHost>(
     prompt: &str,
     capabilities: &[Capability],
 ) -> Result<TurnResult> {
-    run_turn_with_interrupts(model, mcp, prompt, capabilities, &NeverModelInterrupt).await
+    run_turn_with_interrupts(
+        model,
+        mcp,
+        prompt,
+        capabilities,
+        &NeverModelInterrupt,
+        &ApproveConfirmation,
+    )
+    .await
 }
 
 async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSource + ?Sized>(
@@ -933,6 +1043,7 @@ async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSou
     prompt: &str,
     capabilities: &[Capability],
     interrupts: &I,
+    confirmations: &dyn ConfirmationSource,
 ) -> Result<TurnResult> {
     let work_id = format!("work-{}", Uuid::now_v7());
     let job_id = format!("job-{}", Uuid::now_v7());
@@ -981,6 +1092,7 @@ async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSou
     state = start_effect.state;
     let mut action = first_action;
     let mut undo_available = false;
+    let mut approved_write: Option<McpRequest> = None;
     loop {
         action = match action {
             AgentAction::CallModel(request) => {
@@ -1011,10 +1123,72 @@ async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSou
             }
             AgentAction::CallMcp(request) => {
                 emit_text(&request.operation);
-                let is_undoable_write = request.effect == Some(CapabilityEffect::Write)
-                    && request.operation == "ugoite.save";
-                let result = mcp.call_mcp(request, &work_id).await?;
-                undo_available |= is_undoable_write && result.success;
+                let requires_approval = requires_approval(&request);
+                if requires_approval {
+                    match approved_write.take() {
+                        Some(approved) if approved == request => {}
+                        _ => {
+                            let request_id = request.request_id.clone();
+                            return finish_failed_turn(
+                                state,
+                                work_id,
+                                undo_available,
+                                HostError {
+                                    kind: "approval_required".into(),
+                                    message: "write dispatch did not match a one-shot approval"
+                                        .into(),
+                                    request_id: Some(request_id.clone()),
+                                },
+                                request_id,
+                            );
+                        }
+                    }
+                } else if request.effect != Some(CapabilityEffect::Read) {
+                    let request_id = request.request_id.clone();
+                    return finish_failed_turn(
+                        state,
+                        work_id,
+                        undo_available,
+                        HostError {
+                            kind: "unknown_effect".into(),
+                            message: "MCP capability effect is unknown; dispatch was denied".into(),
+                            request_id: Some(request_id.clone()),
+                        },
+                        request_id,
+                    );
+                }
+                let operation = request.operation.clone();
+                let is_undoable_write =
+                    request.effect == Some(CapabilityEffect::Write) && operation == "ugoite.save";
+                let request_id = request.request_id.clone();
+                let result = match mcp.call_mcp(request, &work_id).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        if operation == "ugoite.undo" {
+                            undo_available = false;
+                        }
+                        return finish_failed_turn(
+                            state,
+                            work_id,
+                            undo_available,
+                            HostError {
+                                kind: if error.to_string().contains("MCP mutation receipt") {
+                                    "mcp_unconfirmed".into()
+                                } else {
+                                    "mcp_transport_failure".into()
+                                },
+                                message: format!("MCP request failed: {error:#}"),
+                                request_id: Some(request_id.clone()),
+                            },
+                            request_id,
+                        );
+                    }
+                };
+                if is_undoable_write && result.success {
+                    undo_available = true;
+                } else if operation == "ugoite.undo" && result.success {
+                    undo_available = false;
+                }
                 let mcp_effect = step(
                     state,
                     ugoite_konase::KonaseEvent::McpCompleted(result.clone()),
@@ -1045,8 +1219,55 @@ async fn run_turn_with_interrupts<M: ModelHost, C: McpHost, I: ModelInterruptSou
                     knowledge: result.state.knowledge,
                 }));
             }
-            AgentAction::AskConfirmation(_) => {
-                bail!("confirmation is outside the CLI MVP")
+            AgentAction::AskConfirmation(request) => {
+                let approved = confirmations.confirm(&request);
+                let confirmation = ugoite_konase::ConfirmationResult {
+                    request_id: request.request_id.clone(),
+                    approved,
+                };
+                let completion = step(
+                    state,
+                    KonaseEvent::ConfirmationCompleted(confirmation.clone()),
+                );
+                if let Some(error) = completion.error {
+                    bail!("Konase confirmation completion rejected: {}", error.message);
+                }
+                state = completion.state;
+                match runtime.resume(AgentRuntimeInput::ConfirmationCompleted(confirmation)) {
+                    Ok(action) => {
+                        if let AgentAction::CallMcp(request) = &action {
+                            if requires_approval(request) {
+                                approved_write = Some(request.clone());
+                            }
+                        }
+                        action
+                    }
+                    Err(_error) if !approved => {
+                        return Ok(TurnResult::Failed(TurnFailure {
+                            error: HostError {
+                                kind: "write_denied".into(),
+                                message: "Konase write was denied or no interactive approval was available".into(),
+                                request_id: Some(request.request_id),
+                            },
+                            work_id,
+                            undo_available,
+                            knowledge: state.knowledge,
+                        }));
+                    }
+                    Err(error) => {
+                        return finish_failed_turn(
+                            state,
+                            work_id,
+                            undo_available,
+                            HostError {
+                                kind: error.kind,
+                                message: error.message,
+                                request_id: Some(request.request_id.clone()),
+                            },
+                            request.request_id,
+                        );
+                    }
+                }
             }
         };
         let progress = step(
@@ -1167,7 +1388,7 @@ mod tests {
                     tool_calls: vec![ugoite_konase::ModelToolCall {
                         id: "call-save".into(),
                         name: "ugoite.save".into(),
-                        arguments: json!({"content": "---\nform: Entry\n---\n# Saved"}),
+                        arguments: json!({"form": "Entry", "fields": {"title": "Saved"}}),
                     }],
                 });
             }
@@ -1270,6 +1491,44 @@ mod tests {
                 .annotate(rmcp::model::ToolAnnotations::new().read_only(false)),
         );
         assert_eq!(write.effect, Some(CapabilityEffect::Write));
+
+        let unannotated_write = capability_from_tool(Tool::new(
+            "ugoite.save",
+            "Save an entry",
+            serde_json::Map::new(),
+        ));
+        assert_eq!(unannotated_write.effect, Some(CapabilityEffect::Write));
+    }
+
+    #[test]
+    fn save_and_undo_receipts_must_match_the_mutation_contract() {
+        assert!(valid_save_receipt(&json!({
+            "id":"entry-1", "uri":"ugoite://entry/entry-1", "status":"created", "_untrusted_content":true
+        })));
+        for invalid in [
+            json!({"id":"entry-1", "uri":"ugoite://entry/entry-1", "status":"created"}),
+            json!({"id":"entry-1", "uri":"ugoite://entry/entry-1", "status":"deleted", "_untrusted_content":true}),
+            json!({"id":"entry-1", "uri":"https://example.test/entry-1", "status":"updated", "_untrusted_content":true}),
+        ] {
+            assert!(!valid_save_receipt(&invalid));
+        }
+        assert!(valid_undo_receipt(
+            &json!({"run_id":"work-1", "reverted_change_count":1, "_untrusted_content":true}),
+            "work-1"
+        ));
+        assert!(!valid_undo_receipt(
+            &json!({"run_id":"another-work", "reverted_change_count":1, "_untrusted_content":true}),
+            "work-1"
+        ));
+    }
+
+    #[test]
+    fn approval_input_accepts_only_an_explicit_yes() {
+        assert!(confirmation_answer_is_approved("y\n"));
+        assert!(confirmation_answer_is_approved(" YES "));
+        for answer in ["", "n", "no", "ok", "true"] {
+            assert!(!confirmation_answer_is_approved(answer));
+        }
     }
 
     #[async_trait]
@@ -1405,6 +1664,102 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn denied_noninteractive_write_sends_no_mcp_call() {
+        struct DenyConfirmation;
+        impl ConfirmationSource for DenyConfirmation {
+            fn confirm(&self, _request: &ugoite_konase::ConfirmationRequest) -> bool {
+                false
+            }
+        }
+        let mut model = ScriptedModel {
+            responses: vec![Ok(ModelResult {
+                request_id: String::new(),
+                text: None,
+                tool_calls: vec![ugoite_konase::ModelToolCall {
+                    id: "call-save".into(),
+                    name: "ugoite.save".into(),
+                    arguments: json!({"form":"Entry", "fields":{"title":"Private text"}}),
+                }],
+            })],
+        };
+        let mut mcp = ScriptedMcp {
+            operations: vec![],
+            work_ids: vec![],
+            fail_save: false,
+            fail_undo: false,
+        };
+        let capabilities = mcp.capabilities().await;
+        let result = run_turn_with_interrupts(
+            &mut model,
+            &mut mcp,
+            "save this",
+            &capabilities,
+            &NeverModelInterrupt,
+            &DenyConfirmation,
+        )
+        .await
+        .unwrap();
+        let TurnResult::Failed(failure) = result else {
+            panic!("expected denied turn")
+        };
+        assert_eq!(failure.error.kind, "write_denied");
+        assert_eq!(failure.knowledge, KnowledgeOutcome::Unchanged);
+        assert!(!failure.undo_available);
+        assert!(mcp.operations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn later_denial_keeps_the_first_confirmed_save_and_undo() {
+        struct ApproveThenDeny(std::sync::atomic::AtomicUsize);
+        impl ConfirmationSource for ApproveThenDeny {
+            fn confirm(&self, _request: &ugoite_konase::ConfirmationRequest) -> bool {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0
+            }
+        }
+        let mut model = ScriptedModel {
+            responses: vec![Ok(ModelResult {
+                request_id: String::new(),
+                text: None,
+                tool_calls: vec![
+                    ugoite_konase::ModelToolCall {
+                        id: "call-save-a".into(),
+                        name: "ugoite.save".into(),
+                        arguments: json!({"form":"Entry", "fields":{"title":"A"}}),
+                    },
+                    ugoite_konase::ModelToolCall {
+                        id: "call-save-b".into(),
+                        name: "ugoite.save".into(),
+                        arguments: json!({"form":"Entry", "fields":{"title":"B"}}),
+                    },
+                ],
+            })],
+        };
+        let mut mcp = ScriptedMcp {
+            operations: vec![],
+            work_ids: vec![],
+            fail_save: false,
+            fail_undo: false,
+        };
+        let capabilities = mcp.capabilities().await;
+        let result = run_turn_with_interrupts(
+            &mut model,
+            &mut mcp,
+            "save two entries",
+            &capabilities,
+            &NeverModelInterrupt,
+            &ApproveThenDeny(std::sync::atomic::AtomicUsize::new(0)),
+        )
+        .await
+        .unwrap();
+        let TurnResult::Failed(failure) = result else {
+            panic!("expected the second confirmation to stop the Job")
+        };
+        assert_eq!(failure.knowledge, KnowledgeOutcome::Saved);
+        assert!(failure.undo_available);
+        assert_eq!(mcp.operations, ["ugoite.save"]);
+    }
+
+    #[tokio::test]
     async fn signal_coordinator_only_delivers_interrupts_to_a_model_waiter() {
         let coordinator = SignalCoordinator::new();
         let waiter = coordinator.wait_for_model_interrupt();
@@ -1441,6 +1796,7 @@ mod tests {
                 "保存して",
                 &task_capabilities,
                 &task_interrupt,
+                &ApproveConfirmation,
             )
             .await;
             (result, model, mcp)
@@ -1460,11 +1816,16 @@ mod tests {
         assert!(failure.undo_available);
         assert_eq!(mcp.operations, ["ugoite.save"]);
 
-        let TurnResult::Completed(next) =
-            run_turn_with_interrupts(&mut model, &mut mcp, "次の質問", &capabilities, &interrupt)
-                .await
-                .unwrap()
-        else {
+        let TurnResult::Completed(next) = run_turn_with_interrupts(
+            &mut model,
+            &mut mcp,
+            "次の質問",
+            &capabilities,
+            &interrupt,
+            &ApproveConfirmation,
+        )
+        .await
+        .unwrap() else {
             panic!("expected the next prompt to complete");
         };
         assert_eq!(next.outcome.summary, "完了しました。");
@@ -1503,7 +1864,7 @@ mod tests {
                     tool_calls: vec![ugoite_konase::ModelToolCall {
                         id: "call-save".into(),
                         name: "ugoite.save".into(),
-                        arguments: json!({"content": "---\nform: Entry\n---\n# Failed"}),
+                        arguments: json!({"form": "Entry", "fields": {"title": "Failed"}}),
                     }],
                 }),
                 Ok(ModelResult {
@@ -1684,7 +2045,7 @@ mod tests {
                     tool_calls: vec![ugoite_konase::ModelToolCall {
                         id: "call-save".into(),
                         name: "ugoite.save".into(),
-                        arguments: json!({"content": "---\nform: Entry\n---\n# Saved"}),
+                        arguments: json!({"form": "Entry", "fields": {"title": "Saved"}}),
                     }],
                 }),
                 Err(HostError {
@@ -1812,10 +2173,12 @@ mod tests {
             }),
             ("tools/call", "ugoite.save") => json!({
                 "resultType": "complete",
+                "structuredContent": {"id":"entry-1", "uri":"ugoite://entry/entry-1", "status":"updated", "_untrusted_content":true},
                 "content": [{"type": "text", "text": "saved"}]
             }),
             ("tools/call", "ugoite.undo") => json!({
                 "resultType": "complete",
+                "structuredContent": {"run_id":"work-1", "reverted_change_count":1, "_untrusted_content":true},
                 "content": [{"type": "text", "text": "undone"}]
             }),
             ("resources/read", _) => json!({
