@@ -455,7 +455,13 @@ async fn revert_change_appends_a_selective_inverse_without_rewinding_head() -> a
         reverts_change_id: Some("change-target".into()),
         created_at_micros: 3,
     };
-    let receipt = workspace.revert_change("change-target", &command).await?;
+    let receipt = workspace
+        .revert_change(
+            "change-target",
+            &command,
+            &ugoite_domain::integrity::FakeIntegrityProvider,
+        )
+        .await?;
     assert_eq!(receipt.command_id, "change-undo");
     let current = workspace
         .read_revision_view(form.id, RevisionView::Current)
