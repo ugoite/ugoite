@@ -40,6 +40,21 @@ QRY02_VISIBLE_ROWS_MEASUREMENT {"elapsedToFirstRowMs":81.90000009536743,"measure
 QRY02_VISIBLE_ROWS_MEASUREMENT {"elapsedToFirstRowMs":86,"measuredRows":24,"measuredDataRows":22,"usedHeapBytes":10000000,"viewport":{"width":1280,"height":720},"suppliedRows":1000}
 ```
 
-## Remaining evidence
+## Additional acceptance evidence
 
-This is a synthetic browser fixture, not the planned 10,000-entry / two-Space run. No before/after baseline is claimed: QRY-01 measurement evidence in #3134 was not available when this implementation was built. Issue #3147 tracks fixed-seed data generation, canonical Space/Form and SQL capture, a same-environment five-run baseline comparison, real page navigation and Space switching, and durable server/network logs. Manual VoiceOver or NVDA verification is tracked in #3148. The browser's AbortSignal behavior must not be described as SQL-engine cancellation.
+This synthetic fixture remains distinct from the real-data comparison. The
+fixed-seed 6,000/4,000-entry, two-Space comparison and lifecycle observations
+are recorded in
+[`query-surfaces-comparison-2026-09.md`](query-surfaces-comparison-2026-09.md),
+with exact source SHAs and raw trial records. Those samples do not show a
+consistent latency improvement. The completed measurement work is tracked by
+closed issues [#3134](https://github.com/ugoite/ugoite/issues/3134),
+[#3147](https://github.com/ugoite/ugoite/issues/3147), and
+[#3171](https://github.com/ugoite/ugoite/issues/3171).
+
+Manual VoiceOver or NVDA verification remains open in
+[#3148](https://github.com/ugoite/ugoite/issues/3148); this synthetic browser
+test does not satisfy that gate. Browser `AbortSignal` behavior must not be
+described as SQL-engine cancellation. See the
+[v0.2.1 read-surface acceptance index](v0.2.1-read-acceptance.md) for the
+current gate status.

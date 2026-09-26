@@ -2,10 +2,11 @@
 title: "SQL export acceptance: 2026-09"
 ---
 
-This records the local 10,000-row SQL export measurement and the focused CLI
-acceptance tests run for [#3140](https://github.com/ugoite/ugoite/issues/3140).
-It is evidence for local filesystem-backed Core only. The Remote authorization
-revocation acceptance remains open.
+This records the local 10,000-row SQL export measurement and focused CLI
+acceptance tests for [#3140](https://github.com/ugoite/ugoite/issues/3140).
+The local measurement is evidence for filesystem-backed Core only. Live Remote
+authorization revocation is recorded separately in
+[`v0.2.1-remote-export-auth.md`](v0.2.1-remote-export-auth.md).
 
 ## Reproduce
 
@@ -78,6 +79,11 @@ publish or leave a temporary output file. The server-side test helper mutates
 the real Space authorization state; the existing HTTP-denial mock remains a
 separate transport/error projection test.
 
-Credential expiry was not exercised. The local 10,000-row memory/timing
-measurement above is from the earlier recorded source SHA; it remains a single
-local-Core run per page size, not a performance comparison or Remote measure.
+The live Remote test recorded in
+[`v0.2.1-remote-export-auth.md`](v0.2.1-remote-export-auth.md) verifies a real
+membership revocation between pages. Credential expiry was not exercised and
+remains tracked separately in
+[#3186](https://github.com/ugoite/ugoite/issues/3186). The local 10,000-row
+memory/timing measurement above is from the earlier recorded source SHA; it
+remains a single local-Core run per page size, not a performance comparison or
+Remote measure.
