@@ -4,7 +4,7 @@
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -89,6 +89,13 @@ fn spawn_recording_server(
 fn spawn_recording_server_responses(
     responses: Vec<(&'static str, &'static str)>,
 ) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
+    spawn_recording_server_responses_delayed(responses, Duration::ZERO)
+}
+
+fn spawn_recording_server_responses_delayed(
+    responses: Vec<(&'static str, &'static str)>,
+    response_delay: Duration,
+) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let addr = listener.local_addr().unwrap();
@@ -158,11 +165,14 @@ fn spawn_recording_server_responses(
             }
             tx.send(String::from_utf8_lossy(&request).into_owned())
                 .unwrap();
+            if !response_delay.is_zero() {
+                thread::sleep(response_delay);
+            }
             let response = format!(
                 "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
-            stream.write_all(response.as_bytes()).unwrap();
+            let _ = stream.write_all(response.as_bytes());
         }
     });
     (format!("http://{addr}"), rx, handle)
@@ -174,6 +184,14 @@ fn request_json_body(request: &str) -> serde_json::Value {
         .map(|(_, body)| body)
         .expect("request has an HTTP body");
     serde_json::from_str(body).expect("request body is JSON")
+}
+
+fn export_rows_reported(stderr: &[u8]) -> u64 {
+    let error: serde_json::Value =
+        serde_json::from_slice(stderr).expect("machine error output is JSON");
+    error["error"]["detail"]["rows_exported"]
+        .as_u64()
+        .expect("export error reports rows_exported")
 }
 
 #[test]
@@ -476,6 +494,261 @@ fn test_sql_export_reuses_stateless_route_and_continuation() {
     assert_eq!(second_body["limit"], 1);
     assert_eq!(second_body["continuation"], "opaque-1");
     assert_eq!(std::fs::read_to_string(path).unwrap().lines().count(), 3);
+}
+
+#[test]
+fn test_sql_export_rejects_malformed_continuation_and_changed_columns() {
+    let cases = [
+        (
+            "repeated continuation",
+            vec![
+                (
+                    "HTTP/1.1 200 OK",
+                    r#"{"columns":["id"],"rows":[{"id":"a"}],"has_more":true,"next":"repeat"}"#,
+                ),
+                (
+                    "HTTP/1.1 200 OK",
+                    r#"{"columns":["id"],"rows":[{"id":"b"}],"has_more":true,"next":"repeat"}"#,
+                ),
+            ],
+            "repeated continuation",
+            1,
+        ),
+        (
+            "empty page with continuation",
+            vec![(
+                "HTTP/1.1 200 OK",
+                r#"{"columns":["id"],"rows":[],"has_more":true,"next":"empty"}"#,
+            )],
+            "empty page",
+            0,
+        ),
+        (
+            "inconsistent continuation metadata",
+            vec![(
+                "HTTP/1.1 200 OK",
+                r#"{"columns":["id"],"rows":[{"id":"a"}],"has_more":false,"next":"unexpected"}"#,
+            )],
+            "inconsistent continuation metadata",
+            0,
+        ),
+        (
+            "changed columns",
+            vec![
+                (
+                    "HTTP/1.1 200 OK",
+                    r#"{"columns":["id"],"rows":[{"id":"a"}],"has_more":true,"next":"columns"}"#,
+                ),
+                (
+                    "HTTP/1.1 200 OK",
+                    r#"{"columns":["name"],"rows":[{"name":"b"}],"has_more":false,"next":null}"#,
+                ),
+            ],
+            "different columns",
+            1,
+        ),
+    ];
+
+    for (name, responses, expected_error, expected_rows) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config.toml");
+        let (base_url, request_rx, server) = spawn_recording_server_responses(responses);
+        init_config(&config);
+        set_connection(&config, "backend", &base_url);
+        add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+        let path = dir.path().join("invalid.ndjson");
+        let output = run(
+            &config,
+            &[
+                "sql",
+                "export",
+                "SELECT id FROM things ORDER BY id",
+                "--max-rows",
+                "4",
+                "--page-size",
+                "1",
+                "--output",
+                path.to_str().unwrap(),
+            ],
+        );
+        let mut request_count = 0;
+        while request_rx.try_recv().is_ok() {
+            request_count += 1;
+        }
+        assert!(
+            request_count > 0,
+            "{name}: no request reached the fake server: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        server.join().unwrap();
+
+        assert!(!output.status.success(), "{name} must fail");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(expected_error), "{name}: {stderr}");
+        assert_eq!(
+            export_rows_reported(&output.stderr),
+            expected_rows,
+            "{name}: {stderr}"
+        );
+        assert!(!path.exists(), "{name} must not publish partial output");
+        assert!(
+            std::fs::read_dir(dir.path()).unwrap().all(|entry| {
+                !entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".ugoite-export-")
+            }),
+            "{name} must clean temporary files"
+        );
+        assert!(request_count >= 1, "{name} must use stateless SQL query");
+    }
+}
+
+#[test]
+fn test_sql_export_output_finalize_failure_reports_progress_and_cleans_temp() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let (base_url, request_rx, server) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"columns":["id"],"rows":[{"id":"a"},{"id":"b"}],"has_more":false,"next":null}"#,
+    );
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    let path = dir.path().join("output-directory");
+    std::fs::create_dir(&path).unwrap();
+
+    let output = run(
+        &config,
+        &[
+            "sql",
+            "export",
+            "SELECT id FROM things ORDER BY id",
+            "--max-rows",
+            "4",
+            "--page-size",
+            "2",
+            "--output",
+            path.to_str().unwrap(),
+        ],
+    );
+    let _ = request_rx.recv().unwrap();
+    server.join().unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(export_rows_reported(&output.stderr), 2, "{stderr}");
+    assert!(std::fs::read_dir(dir.path()).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".ugoite-export-")
+    }));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_sql_export_ctrl_c_is_nonzero_and_cleans_temporary_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let (base_url, request_rx, server) = spawn_recording_server_responses_delayed(
+        vec![(
+            "HTTP/1.1 200 OK",
+            r#"{"columns":["id"],"rows":[{"id":"a"}],"has_more":false,"next":null}"#,
+        )],
+        Duration::from_secs(2),
+    );
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    let path = dir.path().join("interrupted.ndjson");
+    let child = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "sql",
+            "export",
+            "SELECT id FROM things ORDER BY id",
+            "--max-rows",
+            "1",
+            "--output",
+            path.to_str().unwrap(),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let _ = request_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    let signal = Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .expect("send Ctrl-C to export process");
+    assert!(signal.success(), "kill -INT failed");
+    let output = child.wait_with_output().unwrap();
+    server.join().unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("interrupted"), "{stderr}");
+    assert_eq!(export_rows_reported(&output.stderr), 0, "{stderr}");
+    assert!(!path.exists());
+    assert!(std::fs::read_dir(dir.path()).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".ugoite-export-")
+    }));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_sql_export_broken_stdout_pipe_is_nonzero_and_reports_progress() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let row = serde_json::json!({"id": "x".repeat(128 * 1024)});
+    let body = serde_json::json!({
+        "columns": ["id"],
+        "rows": vec![row; 100],
+        "has_more": false,
+        "next": null,
+    })
+    .to_string();
+    let body: &'static str = Box::leak(body.into_boxed_str());
+    let (base_url, request_rx, server) = spawn_recording_server("HTTP/1.1 200 OK", body);
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    let mut child = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "sql",
+            "export",
+            "SELECT id FROM things ORDER BY id",
+            "--max-rows",
+            "100",
+            "--page-size",
+            "100",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let _ = request_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    let output = child.wait_with_output().unwrap();
+    server.join().unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(export_rows_reported(&output.stderr) <= 100, "{stderr}");
+    assert!(
+        !stderr.contains("next"),
+        "continuation values must not leak: {stderr}"
+    );
 }
 
 #[test]

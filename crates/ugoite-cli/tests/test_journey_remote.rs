@@ -18,10 +18,38 @@ use std::time::Duration;
 use tempfile::tempdir;
 use tokio::net::TcpListener;
 use tokio::process::Command;
+use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use ugoite_cli::cli_config::{ConfigFile, ConnectionConfig, ContextConfig};
 use ugoite_cli::config::AuthSession;
 use ugoite_server::{app, AppState};
+
+#[derive(Default)]
+struct SqlExportGate {
+    enabled: std::sync::atomic::AtomicBool,
+    queries: std::sync::atomic::AtomicUsize,
+    second_page: Notify,
+    resume: Notify,
+}
+
+async fn pause_second_sql_page(
+    axum::extract::State(gate): axum::extract::State<std::sync::Arc<SqlExportGate>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if gate.enabled.load(std::sync::atomic::Ordering::SeqCst)
+        && request.uri().path().ends_with("/sql/query")
+        && request.method() == axum::http::Method::POST
+        && gate
+            .queries
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            == 1
+    {
+        gate.second_page.notify_one();
+        gate.resume.notified().await;
+    }
+    next.run(request).await
+}
 
 struct ServerGuard(JoinHandle<()>);
 
@@ -139,6 +167,9 @@ async fn journey_cli_remote_reaches_durable_outcome() {
 struct RemoteFixture {
     config_path: std::path::PathBuf,
     space_id: String,
+    owner_principal_id: uuid::Uuid,
+    state: AppState,
+    sql_export_gate: std::sync::Arc<SqlExportGate>,
     _config_dir: tempfile::TempDir,
     _server: ServerGuard,
 }
@@ -160,10 +191,19 @@ async fn setup_remote() -> RemoteFixture {
     state.initialize_node().await.expect("initialize server");
     let (key, public_key_jwk) = test_key_and_jwk();
     let access = state_issue_rest_access(&state, public_key_jwk.clone()).await;
-    let _server = ServerGuard(tokio::spawn(async move {
-        axum::serve(listener, app(state))
-            .await
-            .expect("integrated server exited unexpectedly");
+    let sql_export_gate = std::sync::Arc::new(SqlExportGate::default());
+    let _server = ServerGuard(tokio::spawn({
+        let state = state.clone();
+        let gate = sql_export_gate.clone();
+        async move {
+            let router = app(state).layer(axum::middleware::from_fn_with_state(
+                gate,
+                pause_second_sql_page,
+            ));
+            axum::serve(listener, router)
+                .await
+                .expect("integrated server exited unexpectedly");
+        }
     }));
 
     let probe = reqwest::Client::builder()
@@ -238,6 +278,9 @@ async fn setup_remote() -> RemoteFixture {
     RemoteFixture {
         config_path,
         space_id: access.space_uid.to_string(),
+        owner_principal_id: access.principal_id,
+        state,
+        sql_export_gate,
         _config_dir: config_dir,
         _server,
     }
@@ -753,6 +796,225 @@ async fn state_issue_rest_access(
         .issue_test_rest_access(public_key_jwk)
         .await
         .expect("issue test REST credential")
+}
+
+#[tokio::test]
+async fn sql_export_stops_after_real_remote_space_membership_revocation() {
+    let fixture = setup_remote().await;
+    let form_name = "SqlExportRevocationForm";
+    let form_file = fixture
+        .config_path
+        .parent()
+        .expect("owner config parent")
+        .join("sql-export-revocation-form.json");
+    std::fs::write(
+        &form_file,
+        format!(
+            "{{\"name\":\"{form_name}\",\"version\":1,\"template\":\"# {form_name}\\n\",\"fields\":{{\"Body\":{{\"type\":\"string\"}}}}}}"
+        ),
+    )
+    .expect("write export fixture form");
+    let saved = run_cli(
+        &fixture.config_path,
+        &["form", "save", form_file.to_str().unwrap()],
+    )
+    .await;
+    assert!(
+        saved.status.success(),
+        "{}",
+        String::from_utf8_lossy(&saved.stderr)
+    );
+    let form = stdout_json(
+        &run_cli(&fixture.config_path, &["form", "get", form_name]).await,
+        "get SQL export fixture form",
+    );
+    for body in ["first-row", "second-row"] {
+        let created = run_cli(
+            &fixture.config_path,
+            &[
+                "entry",
+                "create",
+                "--form",
+                form_name,
+                "--field",
+                &format!("Body={body}"),
+            ],
+        )
+        .await;
+        assert!(
+            created.status.success(),
+            "{}",
+            String::from_utf8_lossy(&created.stderr)
+        );
+    }
+
+    let owner_config: ConfigFile =
+        toml::from_str(&std::fs::read_to_string(&fixture.config_path).expect("read owner config"))
+            .expect("parse owner config");
+    let remote_url = match owner_config
+        .connections
+        .get("remote-api")
+        .expect("remote connection")
+    {
+        ConnectionConfig::Api { url } => url.clone(),
+        _ => unreachable!(),
+    };
+    let (reader_key, reader_jwk) = test_key_and_jwk();
+    let access = fixture
+        .state
+        .add_test_rest_viewer(
+            fixture.space_id.parse().expect("fixture Space UID"),
+            fixture.owner_principal_id,
+            reader_jwk.clone(),
+        )
+        .await
+        .expect("add real read-only Space member");
+    let reader_dir = fixture._config_dir.path().join("reader-client");
+    std::fs::create_dir_all(reader_dir.join("home/.ugoite")).unwrap();
+    let reader_config = reader_dir.join("config.toml");
+    let mut config = ConfigFile::empty();
+    config.connections.insert(
+        "remote-api".to_string(),
+        ConnectionConfig::Api {
+            url: remote_url.clone(),
+        },
+    );
+    config.contexts.insert(
+        "viewer".to_string(),
+        ContextConfig {
+            connection: "remote-api".to_string(),
+            space_uid: access.space_uid,
+            credential: Some("viewer".to_string()),
+        },
+    );
+    config.current_context = Some("viewer".to_string());
+    std::fs::write(&reader_config, toml::to_string_pretty(&config).unwrap()).unwrap();
+    let session = AuthSession {
+        credential_id: access.credential_id,
+        device_name: "SQL export ACL test".to_string(),
+        public_key_jwk: reader_jwk,
+        private_key_pkcs8: Some(
+            URL_SAFE_NO_PAD.encode(
+                reader_key
+                    .to_pkcs8_der()
+                    .expect("encode viewer key")
+                    .as_bytes(),
+            ),
+        ),
+        access_token: access.access_token,
+        refresh_token: "unused-sql-export-test".to_string(),
+        expires_at: Utc::now().timestamp() + 300,
+        base_url: remote_url,
+        resource: None,
+        space_uid: access.space_uid,
+    };
+    let mut profile = serde_json::to_value(&session).unwrap();
+    profile["connection"] = serde_json::Value::String("remote-api".to_string());
+    std::fs::write(
+        reader_dir.join("home/.ugoite/credentials.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "version": 1,
+            "credentials": {"viewer": profile},
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let relation = format!(
+        "form_{}",
+        form["id"]
+            .as_str()
+            .expect("stable form id")
+            .replace('-', "")
+    );
+    let sql = format!("SELECT _ugoite_id FROM \"{relation}\" ORDER BY _ugoite_id");
+    let output_path = reader_dir.join("revoked.ndjson");
+    fixture
+        .sql_export_gate
+        .enabled
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let child = Command::new(ugoite_bin())
+        .args([
+            "--config",
+            reader_config.to_str().unwrap(),
+            "sql",
+            "export",
+            &sql,
+            "--max-rows",
+            "2",
+            "--page-size",
+            "1",
+            "--output",
+            output_path.to_str().unwrap(),
+        ])
+        .env("HOME", reader_dir.join("home"))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("start remote export CLI");
+
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        fixture.sql_export_gate.second_page.notified(),
+    )
+    .await
+    .expect("wait for second stateless page before ACL check");
+    fixture
+        .state
+        .revoke_test_space_member(
+            access.space_uid,
+            fixture.owner_principal_id,
+            access.principal_id,
+        )
+        .await
+        .expect("revoke real Space membership");
+    fixture.sql_export_gate.resume.notify_one();
+    let output = tokio::time::timeout(Duration::from_secs(30), child.wait_with_output())
+        .await
+        .expect("remote export exits after revoked membership")
+        .expect("wait for export CLI");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let error: serde_json::Value = serde_json::from_slice(&output.stderr)
+        .unwrap_or_else(|_| panic!("remote authorization error is machine JSON: {stderr}"));
+    assert_eq!(
+        error.pointer("/error/code").and_then(|v| v.as_str()),
+        Some("FORBIDDEN")
+    );
+    assert_eq!(
+        error.pointer("/error/kind").and_then(|v| v.as_str()),
+        Some("forbidden")
+    );
+    assert_eq!(
+        error
+            .pointer("/error/detail/rows_exported")
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert!(
+        !stderr.contains("next") && !stderr.contains("v1."),
+        "continuation must not be printed: {stderr}"
+    );
+    assert!(
+        !output_path.exists(),
+        "revoked export must not commit partial output"
+    );
+    assert_eq!(
+        fixture
+            .sql_export_gate
+            .queries
+            .load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "the exporter must stop after the server denies the next page",
+    );
+    assert!(std::fs::read_dir(&reader_dir).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".ugoite-export-")
+    }));
 }
 
 // --- Semantic parity corpus (surface=cli, transport=remote) ---
