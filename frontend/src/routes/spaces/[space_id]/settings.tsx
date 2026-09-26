@@ -10,6 +10,7 @@ import {
 import { UiIcon } from "~/components/UiIcon";
 import { SpaceSettings } from "~/components/SpaceSettings";
 import { SpaceAuditLogViewer } from "~/components/AuditLogViewer";
+import { CredentialSettings } from "~/routes/settings/security";
 import { locale, t, type TranslationKey } from "~/lib/i18n";
 import { setLocalePreference } from "~/lib/preferences-store";
 import { spaceApi } from "~/lib/ugoite-client";

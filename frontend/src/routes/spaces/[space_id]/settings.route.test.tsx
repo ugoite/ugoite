@@ -11,6 +11,7 @@ import SpaceSettingsRoute from "./settings";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { setLocale } from "~/lib/i18n";
 import { spaceApi } from "~/lib/ugoite-client";
+import { authApi } from "~/lib/auth-api";
 
 const searchParams: Record<string, string> = {};
 const setSearchParams = vi.fn();
@@ -40,12 +41,29 @@ vi.mock("~/components/SpaceShell", () => ({
   SpaceShell: (props: { children: unknown }) => <div>{props.children}</div>,
 }));
 
-vi.mock("~/routes/settings/security", () => ({
-  CredentialSettings: () => <div>Credentials route</div>,
-}));
-
 vi.mock("~/components/AuditLogViewer", () => ({
   SpaceAuditLogViewer: () => <div>Audit viewer</div>,
+}));
+
+vi.mock("~/lib/auth-api", () => ({
+  authApi: {
+    listAudit: vi.fn(),
+    listPasskeys: vi.fn(),
+    listSessions: vi.fn(),
+    listDevices: vi.fn(),
+    listOidcProviders: vi.fn(),
+    listOidcLinks: vi.fn(),
+    addPasskey: vi.fn(),
+    revokePasskey: vi.fn(),
+    revokeSession: vi.fn(),
+    revokeDevice: vi.fn(),
+    linkOidc: vi.fn(),
+    unlinkOidc: vi.fn(),
+    addBootstrapPasskey: vi.fn(),
+    startTotpEnrollment: vi.fn(),
+    finishTotpEnrollment: vi.fn(),
+  },
+  oidcIssuerLabel: (issuer: string) => issuer.replace(/^https?:\/\//, ""),
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
@@ -69,6 +87,9 @@ describe("SpaceSettingsRoute", () => {
     setLocale("en");
     for (const key of Object.keys(searchParams)) delete searchParams[key];
     setSearchParams.mockReset();
+    setSearchParams.mockImplementation((params) =>
+      Object.assign(searchParams, params)
+    );
     vi.mocked(spaceApi.get).mockResolvedValue({
       space_uid: "space-1",
       name: "Operations",
@@ -89,8 +110,72 @@ describe("SpaceSettingsRoute", () => {
       offset: 0,
       limit: 25,
     });
+    vi.mocked(authApi.listPasskeys).mockResolvedValue([]);
+    vi.mocked(authApi.listSessions).mockResolvedValue([]);
+    vi.mocked(authApi.listOidcLinks).mockResolvedValue([]);
+    vi.mocked(authApi.listOidcProviders).mockResolvedValue([]);
     vi.mocked(spaceApi.createAgent).mockReset();
   });
+
+  it("renders the shared credential settings and preserves Space context when switching tabs", async () => {
+    searchParams.section = "credentials";
+    searchParams.tab = "sessions";
+    render(() => <SpaceSettingsRoute />);
+
+    expect(await screen.findByRole("heading", { name: "Credentials" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Sessions" }))
+      .toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("tabpanel", { name: "Sessions" }))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Passkeys" }));
+    expect(searchParams.section).toBe("credentials");
+    expect(searchParams.tab).toBe("passkeys");
+    expect(screen.getByRole("tabpanel", { name: "Passkeys" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Storage" }))
+      .toBeInTheDocument();
+  });
+
+  it("renders the credential settings in Japanese", async () => {
+    setLocale("ja");
+    searchParams.section = "credentials";
+    render(() => <SpaceSettingsRoute />);
+
+    expect(await screen.findByRole("heading", { name: "認証情報" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "パスキー" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "セッション" }))
+      .toBeInTheDocument();
+  });
+
+  it.each([401, 403, 500])(
+    "keeps credential API read failure %i local to the credential section",
+    async (status) => {
+      searchParams.section = "credentials";
+      vi.mocked(authApi.listPasskeys).mockRejectedValue(
+        new UgoiteApiError({
+          kind: status === 500 ? "internal" : "forbidden",
+          code: status === 500 ? "INTERNAL_ERROR" : "FORBIDDEN",
+          status,
+          message: status === 500 ? "internal" : "forbidden",
+        }),
+      );
+      render(() => <SpaceSettingsRoute />);
+
+      await waitFor(() =>
+        expect(document.querySelector(".ui-alert-error")?.textContent)
+          .toBeTruthy()
+      );
+      expect(screen.getByRole("button", { name: "Members" }))
+        .toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Credentials" }))
+        .toBeInTheDocument();
+      expect(screen.queryByText(/unexpected error occurred/i)).toBeNull();
+    },
+  );
 
   it("renders the general, language, and storage route surfaces", async () => {
     render(() => <SpaceSettingsRoute />);
