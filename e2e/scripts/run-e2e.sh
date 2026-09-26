@@ -4,7 +4,8 @@
 #
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
 #   test-type: "smoke", "asset-owned", "smoke-and-asset-owned",
-#     "owner-recovery", "mobile-ui", "qry02", "entries", "screenshot", or "full"
+#     "owner-recovery", "mobile-ui", "qry02", "query-measurement",
+#     "entries", "screenshot", or "full"
 #
 # Environment variables:
 #   E2E_TEST_TIMEOUT_MS: per-test timeout passed to `playwright test --timeout`
@@ -34,6 +35,7 @@ export UGOITE_SOURCE_SHA="$CHECKOUT_SOURCE_SHA"
 PROXY_TIMEOUT_MS="${UGOITE_PROXY_TIMEOUT_MS:-30000}"
 ENFORCE_CI_GATES="${E2E_ENFORCE_CI_GATES:-false}"
 FRONTEND_MODE="${E2E_FRONTEND_MODE:-static}"
+STARTUP_TIMEOUT_SECONDS="${UGOITE_E2E_STARTUP_TIMEOUT_SECONDS:-30}"
 
 free_port() {
   deno eval 'const listener = Deno.listen({ hostname: "127.0.0.1", port: 0 }); console.log((listener.addr as Deno.NetAddr).port); listener.close();'
@@ -213,13 +215,16 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "Waiting for backend (${BACKEND_URL})..."
-for i in {1..30}; do
+BACKEND_STARTUP_STARTED_AT=$SECONDS
+for ((i = 1; i <= STARTUP_TIMEOUT_SECONDS; i++)); do
   if curl -s "${BACKEND_URL%/}/health" >/dev/null 2>&1; then
-    echo "✓ Backend is ready!"
+    UGOITE_BACKEND_STARTUP_SECONDS=$((SECONDS - BACKEND_STARTUP_STARTED_AT))
+    export UGOITE_BACKEND_STARTUP_SECONDS
+    echo "✓ Backend is ready after ${UGOITE_BACKEND_STARTUP_SECONDS}s"
     break
   fi
-  if [ "$i" -eq 30 ]; then
-    echo "✗ ERROR: Backend failed to start within 30 seconds"
+  if [ "$i" -eq "$STARTUP_TIMEOUT_SECONDS" ]; then
+    echo "✗ ERROR: Backend failed to start within ${STARTUP_TIMEOUT_SECONDS} seconds"
     exit 1
   fi
   sleep 1
@@ -313,6 +318,9 @@ case "$TEST_TYPE" in
   qry02)
     run_e2e_task qry02 "$base_report_file"
     ;;
+  query-measurement)
+    run_e2e_task query-measurement "$base_report_file"
+    ;;
   screenshot)
     run_e2e_task screenshot "$base_report_file"
     ;;
@@ -321,7 +329,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|qry02|entries|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|qry02|query-measurement|entries|screenshot|full]"
     exit 1
     ;;
 esac

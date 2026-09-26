@@ -37,6 +37,10 @@ run = [
 description = "Seed local sample data with the development helper"
 run = "bash scripts/dev-seed.sh"
 
+[tasks."measure:query-surfaces"]
+description = "Seed two local Spaces and measure EntryQuery and SQL browser reads"
+run = "bash scripts/measure-query-surfaces.sh"
+
 [tasks."devcontainer:ssh"]
 description = "Configure SSH access to the development container"
 run = "bash scripts/devcontainer-ssh setup"
