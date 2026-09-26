@@ -1,19 +1,19 @@
 {
   "schema_version": 1,
-  "source_sha": "daeb69143850326a4f2e7e9a107410c5bba2347b",
-  "date": "2026-09-26T01:16:50.357Z",
+  "source_sha": "6c735e76515151ac8731095f44b04783bbdf189e",
+  "date": "2026-09-26T01:46:01.065Z",
   "dataset": {
     "seed": "renewable-ops; Space A 3134001/6,000 Entries; Space B 3134002/4,000 Entries",
     "spaces": [
       {
         "slug": "query-space-a",
-        "space_uid": "01a0db42-a1e4-725d-ab4c-fa0fb51d6747",
-        "saved_sql_id": "e0cb321f-5681-40cd-877f-6d4ee2b21cba"
+        "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+        "saved_sql_id": "7670fffc-4464-4f85-a45c-e5b9030ce3d9"
       },
       {
         "slug": "query-space-b",
-        "space_uid": "01a0db44-259f-7526-9569-cf4a39c53399",
-        "saved_sql_id": "c9ec4542-1d6e-42e5-91da-edb698ed4209"
+        "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+        "saved_sql_id": "d5f10d61-5c6a-42c3-978d-cffe78c3f3d2"
       }
     ],
     "entry_type_distribution": {
@@ -26,23 +26,23 @@
     "measured_form": "MaintenanceTicket",
     "forms": {
       "query-space-a": {
-        "id": "01a0db42-a263-727e-ac92-136a8b9824e7",
-        "relation": "form_01a0db42a263727eac92136a8b9824e7"
+        "id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
+        "relation": "form_01a0db5dd2a376f9996ed43eaec5c3c8"
       },
       "query-space-b": {
-        "id": "01a0db44-2617-734e-8687-3a8fcc4bdb87",
-        "relation": "form_01a0db442617734e86873a8fcc4bdb87"
+        "id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+        "relation": "form_01a0db5f55ca763191c4cd11a8bfc1c9"
       }
     },
     "sql": {
-      "01a0db42-a1e4-725d-ab4c-fa0fb51d6747": "SELECT _ugoite_id FROM \"form_01a0db42a263727eac92136a8b9824e7\" ORDER BY _ugoite_id",
-      "01a0db44-259f-7526-9569-cf4a39c53399": "SELECT _ugoite_id FROM \"form_01a0db442617734e86873a8fcc4bdb87\" ORDER BY _ugoite_id"
+      "01a0db5d-d226-767a-9f1e-8500956235c3": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id",
+      "01a0db5f-5552-7768-a1cc-a377d3f73f59": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
     },
     "page_size": 100
   },
   "environment": {
     "backend": "Ugoite server under direct-process local E2E",
-    "backend_startup_seconds": 128,
+    "backend_startup_seconds": 126,
     "storage": "local filesystem Space root",
     "network": "browser and server on local loopback; no external network path",
     "viewport": {
@@ -56,22 +56,22 @@
   "summaries": {
     "entry_query_first_visible_row": {
       "trials": 10,
-      "p50Ms": 1853,
-      "p95Ms": 2404
+      "p50Ms": 1848,
+      "p95Ms": 2417
     },
     "sql_first_visible_row": {
       "trials": 10,
-      "p50Ms": 1351,
-      "p95Ms": 1356
+      "p50Ms": 1347,
+      "p95Ms": 1351
     }
   },
   "trials": [
     {
       "surface": "entry-query",
       "space": "query-space-a",
-      "space_uid": "01a0db42-a1e4-725d-ab4c-fa0fb51d6747",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
       "trial": 1,
-      "elapsedToFirstVisibleRowMs": 2404,
+      "elapsedToFirstVisibleRowMs": 2417,
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
       "viewport": {
         "width": 1280,
@@ -81,9 +81,9 @@
       "dataRows": 50,
       "queryEvents": [
         {
-          "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/entries/query",
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
           "method": "POST",
-          "startedAt": 1135,
+          "startedAt": 1124.4000000953674,
           "aborted": false,
           "body": {
             "limit": 50,
@@ -125,13 +125,13 @@
             "query": {
               "filters": [],
               "scope": {
-                "form_id": "01a0db42-a263-727e-ac92-136a8b9824e7",
+                "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
                 "kind": "form"
               },
               "sort": []
             }
           },
-          "endedAt": 1882.4000000953674,
+          "endedAt": 1897.5,
           "status": 200
         }
       ]
@@ -139,9 +139,9 @@
     {
       "surface": "entry-query",
       "space": "query-space-a",
-      "space_uid": "01a0db42-a1e4-725d-ab4c-fa0fb51d6747",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
       "trial": 2,
-      "elapsedToFirstVisibleRowMs": 1859,
+      "elapsedToFirstVisibleRowMs": 1848,
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
       "viewport": {
         "width": 1280,
@@ -151,9 +151,9 @@
       "dataRows": 50,
       "queryEvents": [
         {
-          "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/entries/query",
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
           "method": "POST",
-          "startedAt": 1076.2000000476837,
+          "startedAt": 1078.8999998569489,
           "aborted": false,
           "body": {
             "limit": 50,
@@ -195,13 +195,13 @@
             "query": {
               "filters": [],
               "scope": {
-                "form_id": "01a0db42-a263-727e-ac92-136a8b9824e7",
+                "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
                 "kind": "form"
               },
               "sort": []
             }
           },
-          "endedAt": 1822.4000000953674,
+          "endedAt": 1825.2000000476837,
           "status": 200
         }
       ]
@@ -209,9 +209,9 @@
     {
       "surface": "entry-query",
       "space": "query-space-a",
-      "space_uid": "01a0db42-a1e4-725d-ab4c-fa0fb51d6747",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
       "trial": 3,
-      "elapsedToFirstVisibleRowMs": 2361,
+      "elapsedToFirstVisibleRowMs": 1848,
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
       "viewport": {
         "width": 1280,
@@ -221,9 +221,9 @@
       "dataRows": 50,
       "queryEvents": [
         {
-          "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/entries/query",
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
           "method": "POST",
-          "startedAt": 1088.2999999523163,
+          "startedAt": 1072.4000000953674,
           "aborted": false,
           "body": {
             "limit": 50,
@@ -265,13 +265,13 @@
             "query": {
               "filters": [],
               "scope": {
-                "form_id": "01a0db42-a263-727e-ac92-136a8b9824e7",
+                "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
                 "kind": "form"
               },
               "sort": []
             }
           },
-          "endedAt": 1848.1000001430511,
+          "endedAt": 1827.7000000476837,
           "status": 200
         }
       ]
@@ -279,438 +279,8 @@
     {
       "surface": "entry-query",
       "space": "query-space-a",
-      "space_uid": "01a0db42-a1e4-725d-ab4c-fa0fb51d6747",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
       "trial": 4,
-      "elapsedToFirstVisibleRowMs": 1856,
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
-      "viewport": {
-        "width": 1280,
-        "height": 720
-      },
-      "usedHeapBytes": 10000000,
-      "dataRows": 50,
-      "queryEvents": [
-        {
-          "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/entries/query",
-          "method": "POST",
-          "startedAt": 1083.8000001907349,
-          "aborted": false,
-          "body": {
-            "limit": 50,
-            "projection": {
-              "fields": [
-                {
-                  "kind": "created_at"
-                },
-                {
-                  "kind": "updated_at"
-                },
-                {
-                  "field_id": 100,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 101,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 102,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 103,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 104,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 105,
-                  "kind": "property"
-                }
-              ],
-              "kind": "fields"
-            },
-            "query": {
-              "filters": [],
-              "scope": {
-                "form_id": "01a0db42-a263-727e-ac92-136a8b9824e7",
-                "kind": "form"
-              },
-              "sort": []
-            }
-          },
-          "endedAt": 1835.3000001907349,
-          "status": 200
-        }
-      ]
-    },
-    {
-      "surface": "entry-query",
-      "space": "query-space-a",
-      "space_uid": "01a0db42-a1e4-725d-ab4c-fa0fb51d6747",
-      "trial": 5,
-      "elapsedToFirstVisibleRowMs": 1849,
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
-      "viewport": {
-        "width": 1280,
-        "height": 720
-      },
-      "usedHeapBytes": 10000000,
-      "dataRows": 50,
-      "queryEvents": [
-        {
-          "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/entries/query",
-          "method": "POST",
-          "startedAt": 1078.5,
-          "aborted": false,
-          "body": {
-            "limit": 50,
-            "projection": {
-              "fields": [
-                {
-                  "kind": "created_at"
-                },
-                {
-                  "kind": "updated_at"
-                },
-                {
-                  "field_id": 100,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 101,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 102,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 103,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 104,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 105,
-                  "kind": "property"
-                }
-              ],
-              "kind": "fields"
-            },
-            "query": {
-              "filters": [],
-              "scope": {
-                "form_id": "01a0db42-a263-727e-ac92-136a8b9824e7",
-                "kind": "form"
-              },
-              "sort": []
-            }
-          },
-          "endedAt": 1824.8999998569489,
-          "status": 200
-        }
-      ]
-    },
-    {
-      "surface": "sql-page",
-      "space": "query-space-a",
-      "space_uid": "01a0db42-a1e4-725d-ab4c-fa0fb51d6747",
-      "trial": 1,
-      "elapsedToFirstVisibleRowMs": 1351,
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
-      "viewport": {
-        "width": 1280,
-        "height": 720
-      },
-      "usedHeapBytes": 10000000,
-      "dataRows": 100,
-      "queryEvents": [
-        {
-          "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/sql/query",
-          "method": "POST",
-          "startedAt": 454.2999999523163,
-          "aborted": false,
-          "body": {
-            "limit": 100,
-            "parameter_types": {},
-            "parameters": {},
-            "sql": "SELECT _ugoite_id FROM \"form_01a0db42a263727eac92136a8b9824e7\" ORDER BY _ugoite_id"
-          },
-          "endedAt": 1206.5999999046326,
-          "status": 200
-        }
-      ]
-    },
-    {
-      "surface": "sql-page",
-      "space": "query-space-a",
-      "space_uid": "01a0db42-a1e4-725d-ab4c-fa0fb51d6747",
-      "trial": 2,
-      "elapsedToFirstVisibleRowMs": 1351,
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
-      "viewport": {
-        "width": 1280,
-        "height": 720
-      },
-      "usedHeapBytes": 10000000,
-      "dataRows": 100,
-      "queryEvents": [
-        {
-          "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/sql/query",
-          "method": "POST",
-          "startedAt": 452.5,
-          "aborted": false,
-          "body": {
-            "limit": 100,
-            "parameter_types": {},
-            "parameters": {},
-            "sql": "SELECT _ugoite_id FROM \"form_01a0db42a263727eac92136a8b9824e7\" ORDER BY _ugoite_id"
-          },
-          "endedAt": 1208.9000000953674,
-          "status": 200
-        }
-      ]
-    },
-    {
-      "surface": "sql-page",
-      "space": "query-space-a",
-      "space_uid": "01a0db42-a1e4-725d-ab4c-fa0fb51d6747",
-      "trial": 3,
-      "elapsedToFirstVisibleRowMs": 1352,
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
-      "viewport": {
-        "width": 1280,
-        "height": 720
-      },
-      "usedHeapBytes": 10000000,
-      "dataRows": 100,
-      "queryEvents": [
-        {
-          "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/sql/query",
-          "method": "POST",
-          "startedAt": 452.09999990463257,
-          "aborted": false,
-          "body": {
-            "limit": 100,
-            "parameter_types": {},
-            "parameters": {},
-            "sql": "SELECT _ugoite_id FROM \"form_01a0db42a263727eac92136a8b9824e7\" ORDER BY _ugoite_id"
-          },
-          "endedAt": 1189.6999998092651,
-          "status": 200
-        }
-      ]
-    },
-    {
-      "surface": "sql-page",
-      "space": "query-space-a",
-      "space_uid": "01a0db42-a1e4-725d-ab4c-fa0fb51d6747",
-      "trial": 4,
-      "elapsedToFirstVisibleRowMs": 1356,
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
-      "viewport": {
-        "width": 1280,
-        "height": 720
-      },
-      "usedHeapBytes": 10000000,
-      "dataRows": 100,
-      "queryEvents": [
-        {
-          "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/sql/query",
-          "method": "POST",
-          "startedAt": 453,
-          "aborted": false,
-          "body": {
-            "limit": 100,
-            "parameter_types": {},
-            "parameters": {},
-            "sql": "SELECT _ugoite_id FROM \"form_01a0db42a263727eac92136a8b9824e7\" ORDER BY _ugoite_id"
-          },
-          "endedAt": 1197.4000000953674,
-          "status": 200
-        }
-      ]
-    },
-    {
-      "surface": "sql-page",
-      "space": "query-space-a",
-      "space_uid": "01a0db42-a1e4-725d-ab4c-fa0fb51d6747",
-      "trial": 5,
-      "elapsedToFirstVisibleRowMs": 1350,
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
-      "viewport": {
-        "width": 1280,
-        "height": 720
-      },
-      "usedHeapBytes": 10000000,
-      "dataRows": 100,
-      "queryEvents": [
-        {
-          "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/sql/query",
-          "method": "POST",
-          "startedAt": 448.7999999523163,
-          "aborted": false,
-          "body": {
-            "limit": 100,
-            "parameter_types": {},
-            "parameters": {},
-            "sql": "SELECT _ugoite_id FROM \"form_01a0db42a263727eac92136a8b9824e7\" ORDER BY _ugoite_id"
-          },
-          "endedAt": 1190.2000000476837,
-          "status": 200
-        }
-      ]
-    },
-    {
-      "surface": "entry-query",
-      "space": "query-space-b",
-      "space_uid": "01a0db44-259f-7526-9569-cf4a39c53399",
-      "trial": 1,
-      "elapsedToFirstVisibleRowMs": 1846,
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
-      "viewport": {
-        "width": 1280,
-        "height": 720
-      },
-      "usedHeapBytes": 10000000,
-      "dataRows": 50,
-      "queryEvents": [
-        {
-          "path": "/api/spaces/01a0db44-259f-7526-9569-cf4a39c53399/entries/query",
-          "method": "POST",
-          "startedAt": 1077.1000001430511,
-          "aborted": false,
-          "body": {
-            "limit": 50,
-            "projection": {
-              "fields": [
-                {
-                  "kind": "created_at"
-                },
-                {
-                  "kind": "updated_at"
-                },
-                {
-                  "field_id": 100,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 101,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 102,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 103,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 104,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 105,
-                  "kind": "property"
-                }
-              ],
-              "kind": "fields"
-            },
-            "query": {
-              "filters": [],
-              "scope": {
-                "form_id": "01a0db44-2617-734e-8687-3a8fcc4bdb87",
-                "kind": "form"
-              },
-              "sort": []
-            }
-          },
-          "endedAt": 1820.4000000953674,
-          "status": 200
-        }
-      ]
-    },
-    {
-      "surface": "entry-query",
-      "space": "query-space-b",
-      "space_uid": "01a0db44-259f-7526-9569-cf4a39c53399",
-      "trial": 2,
-      "elapsedToFirstVisibleRowMs": 2360,
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
-      "viewport": {
-        "width": 1280,
-        "height": 720
-      },
-      "usedHeapBytes": 10000000,
-      "dataRows": 50,
-      "queryEvents": [
-        {
-          "path": "/api/spaces/01a0db44-259f-7526-9569-cf4a39c53399/entries/query",
-          "method": "POST",
-          "startedAt": 1080.7999999523163,
-          "aborted": false,
-          "body": {
-            "limit": 50,
-            "projection": {
-              "fields": [
-                {
-                  "kind": "created_at"
-                },
-                {
-                  "kind": "updated_at"
-                },
-                {
-                  "field_id": 100,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 101,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 102,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 103,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 104,
-                  "kind": "property"
-                },
-                {
-                  "field_id": 105,
-                  "kind": "property"
-                }
-              ],
-              "kind": "fields"
-            },
-            "query": {
-              "filters": [],
-              "scope": {
-                "form_id": "01a0db44-2617-734e-8687-3a8fcc4bdb87",
-                "kind": "form"
-              },
-              "sort": []
-            }
-          },
-          "endedAt": 1838.2999999523163,
-          "status": 200
-        }
-      ]
-    },
-    {
-      "surface": "entry-query",
-      "space": "query-space-b",
-      "space_uid": "01a0db44-259f-7526-9569-cf4a39c53399",
-      "trial": 3,
       "elapsedToFirstVisibleRowMs": 1853,
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
       "viewport": {
@@ -721,9 +291,9 @@
       "dataRows": 50,
       "queryEvents": [
         {
-          "path": "/api/spaces/01a0db44-259f-7526-9569-cf4a39c53399/entries/query",
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
           "method": "POST",
-          "startedAt": 1080.7999999523163,
+          "startedAt": 1073,
           "aborted": false,
           "body": {
             "limit": 50,
@@ -765,23 +335,23 @@
             "query": {
               "filters": [],
               "scope": {
-                "form_id": "01a0db44-2617-734e-8687-3a8fcc4bdb87",
+                "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
                 "kind": "form"
               },
               "sort": []
             }
           },
-          "endedAt": 1821.2000000476837,
+          "endedAt": 1832.6999998092651,
           "status": 200
         }
       ]
     },
     {
       "surface": "entry-query",
-      "space": "query-space-b",
-      "space_uid": "01a0db44-259f-7526-9569-cf4a39c53399",
-      "trial": 4,
-      "elapsedToFirstVisibleRowMs": 1839,
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 5,
+      "elapsedToFirstVisibleRowMs": 1844,
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
       "viewport": {
         "width": 1280,
@@ -791,9 +361,9 @@
       "dataRows": 50,
       "queryEvents": [
         {
-          "path": "/api/spaces/01a0db44-259f-7526-9569-cf4a39c53399/entries/query",
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
           "method": "POST",
-          "startedAt": 1067.6000001430511,
+          "startedAt": 1076.2999999523163,
           "aborted": false,
           "body": {
             "limit": 50,
@@ -835,13 +405,163 @@
             "query": {
               "filters": [],
               "scope": {
-                "form_id": "01a0db44-2617-734e-8687-3a8fcc4bdb87",
+                "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
                 "kind": "form"
               },
               "sort": []
             }
           },
-          "endedAt": 1805.3000001907349,
+          "endedAt": 1820.5,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 1,
+      "elapsedToFirstVisibleRowMs": 1348,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/sql/query",
+          "method": "POST",
+          "startedAt": 451.59999990463257,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1191.7999999523163,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 2,
+      "elapsedToFirstVisibleRowMs": 1349,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/sql/query",
+          "method": "POST",
+          "startedAt": 447.39999985694885,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1195.0999999046326,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 3,
+      "elapsedToFirstVisibleRowMs": 1345,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/sql/query",
+          "method": "POST",
+          "startedAt": 500.80000019073486,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1250,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 4,
+      "elapsedToFirstVisibleRowMs": 1347,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/sql/query",
+          "method": "POST",
+          "startedAt": 445.7999999523163,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1189.5999999046326,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 5,
+      "elapsedToFirstVisibleRowMs": 1351,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/sql/query",
+          "method": "POST",
+          "startedAt": 451.59999990463257,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1197.7999999523163,
           "status": 200
         }
       ]
@@ -849,8 +569,8 @@
     {
       "surface": "entry-query",
       "space": "query-space-b",
-      "space_uid": "01a0db44-259f-7526-9569-cf4a39c53399",
-      "trial": 5,
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 1,
       "elapsedToFirstVisibleRowMs": 1843,
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
       "viewport": {
@@ -861,9 +581,9 @@
       "dataRows": 50,
       "queryEvents": [
         {
-          "path": "/api/spaces/01a0db44-259f-7526-9569-cf4a39c53399/entries/query",
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
           "method": "POST",
-          "startedAt": 1066,
+          "startedAt": 1074.3999998569489,
           "aborted": false,
           "body": {
             "limit": 50,
@@ -905,53 +625,303 @@
             "query": {
               "filters": [],
               "scope": {
-                "form_id": "01a0db44-2617-734e-8687-3a8fcc4bdb87",
+                "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
                 "kind": "form"
               },
               "sort": []
             }
           },
-          "endedAt": 1807.0999999046326,
+          "endedAt": 1810.2999999523163,
           "status": 200
         }
       ]
     },
     {
-      "surface": "sql-page",
+      "surface": "entry-query",
       "space": "query-space-b",
-      "space_uid": "01a0db44-259f-7526-9569-cf4a39c53399",
-      "trial": 1,
-      "elapsedToFirstVisibleRowMs": 1339,
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
-      "viewport": {
-        "width": 1280,
-        "height": 720
-      },
-      "usedHeapBytes": 10000000,
-      "dataRows": 100,
-      "queryEvents": [
-        {
-          "path": "/api/spaces/01a0db44-259f-7526-9569-cf4a39c53399/sql/query",
-          "method": "POST",
-          "startedAt": 439.10000014305115,
-          "aborted": false,
-          "body": {
-            "limit": 100,
-            "parameter_types": {},
-            "parameters": {},
-            "sql": "SELECT _ugoite_id FROM \"form_01a0db442617734e86873a8fcc4bdb87\" ORDER BY _ugoite_id"
-          },
-          "endedAt": 1178.9000000953674,
-          "status": 200
-        }
-      ]
-    },
-    {
-      "surface": "sql-page",
-      "space": "query-space-b",
-      "space_uid": "01a0db44-259f-7526-9569-cf4a39c53399",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
       "trial": 2,
-      "elapsedToFirstVisibleRowMs": 1356,
+      "elapsedToFirstVisibleRowMs": 1849,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
+          "method": "POST",
+          "startedAt": 1075.2000000476837,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1820.9000000953674,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 3,
+      "elapsedToFirstVisibleRowMs": 1843,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
+          "method": "POST",
+          "startedAt": 1071.3999998569489,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1804.5,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 4,
+      "elapsedToFirstVisibleRowMs": 1877,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
+          "method": "POST",
+          "startedAt": 1120.8000001907349,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1855.9000000953674,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 5,
+      "elapsedToFirstVisibleRowMs": 1869,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
+          "method": "POST",
+          "startedAt": 1109.2999999523163,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1847.0999999046326,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 1,
+      "elapsedToFirstVisibleRowMs": 1331,
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
       "viewport": {
         "width": 1280,
@@ -961,17 +931,17 @@
       "dataRows": 100,
       "queryEvents": [
         {
-          "path": "/api/spaces/01a0db44-259f-7526-9569-cf4a39c53399/sql/query",
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/sql/query",
           "method": "POST",
-          "startedAt": 444.80000019073486,
+          "startedAt": 480.5,
           "aborted": false,
           "body": {
             "limit": 100,
             "parameter_types": {},
             "parameters": {},
-            "sql": "SELECT _ugoite_id FROM \"form_01a0db442617734e86873a8fcc4bdb87\" ORDER BY _ugoite_id"
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
           },
-          "endedAt": 1202.4000000953674,
+          "endedAt": 1215.1000001430511,
           "status": 200
         }
       ]
@@ -979,7 +949,37 @@
     {
       "surface": "sql-page",
       "space": "query-space-b",
-      "space_uid": "01a0db44-259f-7526-9569-cf4a39c53399",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 2,
+      "elapsedToFirstVisibleRowMs": 1345,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/sql/query",
+          "method": "POST",
+          "startedAt": 455.7000000476837,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1195.3000001907349,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
       "trial": 3,
       "elapsedToFirstVisibleRowMs": 1347,
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
@@ -991,17 +991,17 @@
       "dataRows": 100,
       "queryEvents": [
         {
-          "path": "/api/spaces/01a0db44-259f-7526-9569-cf4a39c53399/sql/query",
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/sql/query",
           "method": "POST",
-          "startedAt": 452.5,
+          "startedAt": 460.40000009536743,
           "aborted": false,
           "body": {
             "limit": 100,
             "parameter_types": {},
             "parameters": {},
-            "sql": "SELECT _ugoite_id FROM \"form_01a0db442617734e86873a8fcc4bdb87\" ORDER BY _ugoite_id"
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
           },
-          "endedAt": 1191.0999999046326,
+          "endedAt": 1192.7999999523163,
           "status": 200
         }
       ]
@@ -1009,9 +1009,9 @@
     {
       "surface": "sql-page",
       "space": "query-space-b",
-      "space_uid": "01a0db44-259f-7526-9569-cf4a39c53399",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
       "trial": 4,
-      "elapsedToFirstVisibleRowMs": 1355,
+      "elapsedToFirstVisibleRowMs": 1347,
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
       "viewport": {
         "width": 1280,
@@ -1021,17 +1021,17 @@
       "dataRows": 100,
       "queryEvents": [
         {
-          "path": "/api/spaces/01a0db44-259f-7526-9569-cf4a39c53399/sql/query",
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/sql/query",
           "method": "POST",
-          "startedAt": 461.59999990463257,
+          "startedAt": 442.10000014305115,
           "aborted": false,
           "body": {
             "limit": 100,
             "parameter_types": {},
             "parameters": {},
-            "sql": "SELECT _ugoite_id FROM \"form_01a0db442617734e86873a8fcc4bdb87\" ORDER BY _ugoite_id"
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
           },
-          "endedAt": 1202.0999999046326,
+          "endedAt": 1175.7999999523163,
           "status": 200
         }
       ]
@@ -1039,9 +1039,9 @@
     {
       "surface": "sql-page",
       "space": "query-space-b",
-      "space_uid": "01a0db44-259f-7526-9569-cf4a39c53399",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
       "trial": 5,
-      "elapsedToFirstVisibleRowMs": 1350,
+      "elapsedToFirstVisibleRowMs": 1351,
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
       "viewport": {
         "width": 1280,
@@ -1051,17 +1051,17 @@
       "dataRows": 100,
       "queryEvents": [
         {
-          "path": "/api/spaces/01a0db44-259f-7526-9569-cf4a39c53399/sql/query",
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/sql/query",
           "method": "POST",
-          "startedAt": 453.5,
+          "startedAt": 444.2999999523163,
           "aborted": false,
           "body": {
             "limit": 100,
             "parameter_types": {},
             "parameters": {},
-            "sql": "SELECT _ugoite_id FROM \"form_01a0db442617734e86873a8fcc4bdb87\" ORDER BY _ugoite_id"
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
           },
-          "endedAt": 1190.4000000953674,
+          "endedAt": 1178.6999998092651,
           "status": 200
         }
       ]
@@ -1090,9 +1090,9 @@
   "lifecycle": {
     "events": [
       {
-        "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/entries/query",
+        "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
         "method": "POST",
-        "startedAt": 1104.9000000953674,
+        "startedAt": 1086.7999999523163,
         "aborted": false,
         "body": {
           "limit": 50,
@@ -1134,19 +1134,19 @@
           "query": {
             "filters": [],
             "scope": {
-              "form_id": "01a0db42-a263-727e-ac92-136a8b9824e7",
+              "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
               "kind": "form"
             },
             "sort": []
           }
         },
-        "endedAt": 1871.2999999523163,
+        "endedAt": 1878.2999999523163,
         "status": 200
       },
       {
-        "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/entries/query",
+        "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
         "method": "POST",
-        "startedAt": 2429.4000000953674,
+        "startedAt": 2418.5999999046326,
         "aborted": true,
         "body": {
           "limit": 50,
@@ -1188,20 +1188,20 @@
           "query": {
             "filters": [],
             "scope": {
-              "form_id": "01a0db42-a263-727e-ac92-136a8b9824e7",
+              "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
               "kind": "form"
             },
             "sort": [],
             "text": "solar"
           }
         },
-        "endedAt": 2438.5,
+        "endedAt": 2432.0999999046326,
         "error": "signal is aborted without reason"
       },
       {
-        "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/entries/query",
+        "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
         "method": "POST",
-        "startedAt": 2439.0999999046326,
+        "startedAt": 2432.4000000953674,
         "aborted": true,
         "body": {
           "limit": 50,
@@ -1243,20 +1243,20 @@
           "query": {
             "filters": [],
             "scope": {
-              "form_id": "01a0db42-a263-727e-ac92-136a8b9824e7",
+              "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
               "kind": "form"
             },
             "sort": [],
             "text": "energy"
           }
         },
-        "endedAt": 2444.5,
+        "endedAt": 2439,
         "error": "signal is aborted without reason"
       },
       {
-        "path": "/api/spaces/01a0db42-a1e4-725d-ab4c-fa0fb51d6747/entries/query",
+        "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
         "method": "POST",
-        "startedAt": 2444.7999999523163,
+        "startedAt": 2439.4000000953674,
         "aborted": true,
         "body": {
           "limit": 50,
@@ -1298,20 +1298,80 @@
           "query": {
             "filters": [],
             "scope": {
-              "form_id": "01a0db42-a263-727e-ac92-136a8b9824e7",
+              "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
               "kind": "form"
             },
             "sort": [],
             "text": "inspection"
           }
         },
-        "endedAt": 2452.7999999523163,
+        "endedAt": 2447.7999999523163,
         "error": "signal is aborted without reason"
+      },
+      {
+        "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
+        "method": "POST",
+        "startedAt": 4855.700000047684,
+        "aborted": false,
+        "body": {
+          "limit": 50,
+          "projection": {
+            "fields": [
+              {
+                "kind": "created_at"
+              },
+              {
+                "kind": "updated_at"
+              },
+              {
+                "field_id": 100,
+                "kind": "property"
+              },
+              {
+                "field_id": 101,
+                "kind": "property"
+              },
+              {
+                "field_id": 102,
+                "kind": "property"
+              },
+              {
+                "field_id": 103,
+                "kind": "property"
+              },
+              {
+                "field_id": 104,
+                "kind": "property"
+              },
+              {
+                "field_id": 105,
+                "kind": "property"
+              }
+            ],
+            "kind": "fields"
+          },
+          "query": {
+            "filters": [],
+            "scope": {
+              "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+              "kind": "form"
+            },
+            "sort": []
+          }
+        },
+        "endedAt": 6024.599999904633,
+        "status": 200
       }
     ],
     "actualAbortCount": 3,
     "residualPendingCount": 0,
-    "visibleDataRows": 0
+    "visibleDataRows": 50,
+    "targetSpaceQueryCount": 1,
+    "targetSpaceQueryPaths": [
+      "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query"
+    ],
+    "rowsBeforeTargetQuery": 0,
+    "rowsWhileTargetQueryPending": 0
   },
   "limitations": [
     "AbortSignal cancellation is measured in the browser fetch layer; it does not establish cancellation of SQL engine work after a server has begun execution.",

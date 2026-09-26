@@ -12,7 +12,7 @@ improvement against an earlier build. The pre-QRY-02 comparison is tracked in
 From the repository root, run:
 
 ```sh
-UGOITE_QUERY_MEASURE_OUTPUT=/tmp/query-surfaces-measurement-daeb6914.json \
+UGOITE_QUERY_MEASURE_OUTPUT=/tmp/query-surfaces-measurement-6c735e76.json \
 UGOITE_SKIP_PLAYWRIGHT_DEPS=1 \
 bash scripts/measure-query-surfaces.sh
 ```
@@ -25,7 +25,7 @@ Entries (`renewable-ops`, seed `3134001`) and Space B with 4,000 Entries (seed
 The query surface measures the `MaintenanceTicket` Form. The generated Space
 UIDs, Form IDs and SQL relation names are saved in the raw report.
 
-The exact checkout measured was `daeb69143850326a4f2e7e9a107410c5bba2347b`.
+The exact checkout measured was `6c735e76515151ac8731095f44b04783bbdf189e`.
 The raw machine-readable output is
 [`query-surfaces-2026-09.json`](measurements/query-surfaces-2026-09.json).
 
@@ -36,8 +36,8 @@ surface total). Results were:
 
 | Surface | Trials | p50 | p95 | Rows rendered per trial |
 | --- | ---: | ---: | ---: | ---: |
-| EntryQuery | 10 | 1,853 ms | 2,404 ms | 50 |
-| Saved SQL first page | 10 | 1,351 ms | 1,356 ms | 100 |
+| EntryQuery | 10 | 1,848 ms | 2,417 ms | 50 |
+| Saved SQL first page | 10 | 1,347 ms | 1,351 ms | 100 |
 
 Both SQL Spaces loaded page one without an automatic count request. Selecting
 Next loaded page two with 100 rows and a continuation token in each Space. The
@@ -45,13 +45,13 @@ browser recorded three aborted EntryQuery fetches during rapid filter changes
 and zero residual pending fetches after the observation interval. After switching
 Spaces, the Forms index had no result rows; the test then opened the same
 EntryQuery in Space B through in-app navigation. While its delayed request was
-pending, the result table had zero rows; after the Space B request completed, the
-table rendered rows. The recorded request path identifies Space B. This checks
-the loading boundary and destination query; it does not compare row contents
-with a pre-switch snapshot. The 400 ms interception delay applied only to
-EntryQuery lifecycle observations, not to performance trials.
+pending, the result table had zero rows; after the single Space B request
+completed, the table rendered 50 rows. The recorded request path identifies
+Space B. This checks the loading boundary and destination query; it does not
+compare row contents with a pre-switch snapshot. The 400 ms interception delay
+applied only to EntryQuery lifecycle observations, not to performance trials.
 
-The local backend startup took 128 seconds for both seeded Spaces. The
+The local backend startup took 126 seconds for both seeded Spaces. The
 measurement does not isolate audit recovery from other server initialization.
 `performance.memory.usedJSHeapSize` reported 10,000,000 bytes in these Chromium
 trials; this is a browser API value, not process RSS. Results include browser
