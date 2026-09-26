@@ -976,6 +976,12 @@ pub struct NodeState {
     pending_totp_enrollments: BTreeMap<Uuid, PendingTotpEnrollment>,
     #[serde(default)]
     pub bindings: Vec<PrincipalBinding>,
+    /// Durable intent for the one-time initial setup to claim already-present
+    /// portable Spaces. This lives in Node control state because ownership
+    /// bindings are Node-local and must resume after a crash between setup
+    /// registration, Space ACL creation, and binding publication.
+    #[serde(default)]
+    pub pending_initial_space_claims: Vec<PendingInitialSpaceClaim>,
     /// Monotonic revision for Node-local Space Principal bindings.
     pub binding_revision: u64,
     #[serde(default)]
@@ -1001,6 +1007,25 @@ pub struct NodeState {
     /// between validating an Owner session and committing the mutation.
     #[serde(default)]
     pub session_revocation_epochs: BTreeMap<Uuid, u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PendingInitialSpaceClaim {
+    pub account_id: Uuid,
+    pub space_id: Option<String>,
+    pub space_uid: Option<Uuid>,
+    pub slug: String,
+    pub principal_id: Uuid,
+    pub create_if_missing: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct InitialSpaceClaim {
+    pub space_id: Option<String>,
+    pub space_uid: Option<Uuid>,
+    pub slug: String,
+    pub principal_id: Uuid,
+    pub create_if_missing: bool,
 }
 
 fn bound_principal_for_account(
@@ -2056,6 +2081,17 @@ impl NodeIdentityService {
         )
     }
 
+    /// Test-only constructor that reuses a cloneable control-store handle to
+    /// model a process restart against the same in-memory Node state.
+    #[doc(hidden)]
+    pub fn new_for_tests_with_control_store(
+        store: OpenDalNodeControlStore,
+        rp_id: impl Into<String>,
+        public_origin: impl Into<String>,
+    ) -> Result<Self> {
+        Self::from_parts(Arc::new(store), Arc::from([0x5a; 32]), rp_id, public_origin)
+    }
+
     /// Test-only persistence hook for exercising the server's recovery audit
     /// reconciler with a durable Node outbox record.
     #[doc(hidden)]
@@ -2066,6 +2102,31 @@ impl NodeIdentityService {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
         state.recovery_audit_outbox.insert(record.event_id, record);
+        self.write_state(&state).await
+    }
+
+    /// Test-only hook that models the durable Node state after setup
+    /// registration but before initial Space claims have completed.
+    #[doc(hidden)]
+    pub async fn seed_test_initial_space_claims(
+        &self,
+        account: HumanAccount,
+        claims: &[InitialSpaceClaim],
+    ) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        state.lifecycle = NodeLifecycle::Active;
+        state.accounts.insert(account.account_id, account.clone());
+        state
+            .pending_initial_space_claims
+            .extend(claims.iter().map(|claim| PendingInitialSpaceClaim {
+                account_id: account.account_id,
+                space_id: claim.space_id.clone(),
+                space_uid: claim.space_uid,
+                slug: claim.slug.clone(),
+                principal_id: claim.principal_id,
+                create_if_missing: claim.create_if_missing,
+            }));
         self.write_state(&state).await
     }
 
@@ -2333,6 +2394,7 @@ impl NodeIdentityService {
             node_recovery_fences: BTreeMap::new(),
             pending_totp_enrollments: BTreeMap::new(),
             bindings: Vec::new(),
+            pending_initial_space_claims: Vec::new(),
             binding_revision: 0,
             device_credentials: BTreeMap::new(),
             device_authorizations: BTreeMap::new(),
@@ -2421,6 +2483,22 @@ impl NodeIdentityService {
         challenge_id: Uuid,
         credential: &RegisterPublicKeyCredential,
     ) -> Result<RegistrationFinish> {
+        self.finish_setup_registration_with_initial_space_claims(
+            setup_secret,
+            challenge_id,
+            credential,
+            &[],
+        )
+        .await
+    }
+
+    pub async fn finish_setup_registration_with_initial_space_claims(
+        &self,
+        setup_secret: &str,
+        challenge_id: Uuid,
+        credential: &RegisterPublicKeyCredential,
+        claims: &[InitialSpaceClaim],
+    ) -> Result<RegistrationFinish> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
         validate_secret(state.setup.as_ref(), setup_secret, "setup secret")?;
@@ -2431,6 +2509,32 @@ impl NodeIdentityService {
         validate_expiry(&challenge.expires_at, "registration challenge")?;
         if !matches!(challenge.purpose, RegistrationPurpose::Setup) {
             bail!("registration challenge has the wrong purpose");
+        }
+        if !state.pending_initial_space_claims.is_empty() {
+            bail!("initial Space claim recovery is already pending");
+        }
+        let mut unique_space_uids = BTreeSet::new();
+        let mut unique_space_ids = BTreeSet::new();
+        let mut unique_slugs = BTreeSet::new();
+        for claim in claims {
+            if claim
+                .space_id
+                .as_deref()
+                .is_some_and(|space_id| space_id.trim().is_empty())
+                || claim.slug.trim().is_empty()
+                || claim.space_uid.is_some() != claim.space_id.is_some()
+                || (claim.create_if_missing && claim.space_uid.is_none())
+                || claim
+                    .space_uid
+                    .is_some_and(|space_uid| !unique_space_uids.insert(space_uid))
+                || claim
+                    .space_id
+                    .as_ref()
+                    .is_some_and(|space_id| !unique_space_ids.insert(space_id.clone()))
+                || !unique_slugs.insert(claim.slug.clone())
+            {
+                bail!("initial Space claim intent is invalid or duplicated");
+            }
         }
         let passkey = self
             .webauthn
@@ -2450,6 +2554,16 @@ impl NodeIdentityService {
             credential_generation: 0,
         };
         state.accounts.insert(account.account_id, account.clone());
+        state
+            .pending_initial_space_claims
+            .extend(claims.iter().map(|claim| PendingInitialSpaceClaim {
+                account_id: account.account_id,
+                space_id: claim.space_id.clone(),
+                space_uid: claim.space_uid,
+                slug: claim.slug.clone(),
+                principal_id: claim.principal_id,
+                create_if_missing: claim.create_if_missing,
+            }));
         let method_id = Uuid::now_v7();
         state.authentication_methods.insert(
             method_id,
@@ -2505,6 +2619,21 @@ impl NodeIdentityService {
             session_id,
             recovery_codes,
         })
+    }
+
+    pub async fn pending_initial_space_claims(&self) -> Result<Vec<PendingInitialSpaceClaim>> {
+        Ok(self.read_state().await?.pending_initial_space_claims)
+    }
+
+    /// Clear the setup claim intent only after every corresponding Space ACL
+    /// and Node binding has been revalidated and committed by the caller.
+    pub async fn complete_initial_space_claims(&self, account_id: Uuid) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        state
+            .pending_initial_space_claims
+            .retain(|claim| claim.account_id != account_id);
+        self.write_state(&state).await
     }
 
     pub async fn start_authentication(&self) -> Result<AuthenticationStart> {

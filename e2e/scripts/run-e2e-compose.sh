@@ -4,7 +4,8 @@
 #
 # Usage: ./e2e/scripts/run-e2e-compose.sh [test-type]
 #   test-type: "smoke", "asset-owned", "smoke-and-asset-owned",
-#     "owner-recovery", "mobile-ui", "qry02", "entries", "screenshot", or "full"
+#     "owner-recovery", "portable-space", "mobile-ui", "qry02",
+#     "entries", "screenshot", or "full"
 #
 # Environment variables:
 #   E2E_BUILD_IMAGES: "true" (default) to build local images before startup;
@@ -124,6 +125,11 @@ ensure_playwright_browsers() {
 
 ensure_playwright_browsers
 
+E2E_COMPOSE_STORAGE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ugoite-compose-e2e.XXXXXX")"
+chmod 0777 "$E2E_COMPOSE_STORAGE_ROOT"
+PORTABLE_CLI_CONFIG=""
+export E2E_COMPOSE_STORAGE_ROOT
+
 # Never clobber a pre-existing dev provenance file: back it up around any dev
 # E2E generation and restore it on exit (mirrors run-e2e.sh dev handling).
 DEV_BUILD_INFO_PATH="$ROOT_DIR/frontend/public/build-info.json"
@@ -143,6 +149,10 @@ cleanup() {
   echo ""
   echo "Stopping services..."
   "${compose_cmd[@]}" down -v 2>/dev/null || true
+  rm -rf "$E2E_COMPOSE_STORAGE_ROOT"
+  if [ -n "$PORTABLE_CLI_CONFIG" ]; then
+    rm -f "$PORTABLE_CLI_CONFIG"
+  fi
   if [ -n "${DEV_BUILD_INFO_BACKUP:-}" ] && [ -f "$DEV_BUILD_INFO_BACKUP" ]; then
     mv "$DEV_BUILD_INFO_BACKUP" "$DEV_BUILD_INFO_PATH"
   fi
@@ -150,13 +160,26 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+if [ "$TEST_TYPE" = "portable-space" ]; then
+  echo "Seeding a CLI-core Space before Node startup..."
+  PORTABLE_CLI_CONFIG="${E2E_COMPOSE_STORAGE_ROOT}.cli-config.toml"
+  bash "$SCRIPT_DIR/seed-portable-space.sh" "$E2E_COMPOSE_STORAGE_ROOT" >/dev/null
+  chmod -R a+rwX "$E2E_COMPOSE_STORAGE_ROOT"
+  export E2E_PORTABLE_PROOF_FILE="$E2E_COMPOSE_STORAGE_ROOT/portable-space-proof.json"
+fi
+
 if [ "$BUILD_IMAGES" = "true" ]; then
   echo "Building services via docker-compose.e2e.yml..."
   "${compose_cmd[@]}" build
 fi
 
 echo "Starting services via docker-compose.e2e.yml..."
-"${compose_cmd[@]}" up -d
+if [ "$TEST_TYPE" = "portable-space" ]; then
+  "${compose_cmd[@]}" up --no-start
+  "${compose_cmd[@]}" start
+else
+  "${compose_cmd[@]}" up -d
+fi
 
 compose_host_port="$("${compose_cmd[@]}" port ugoite 8000 | sed -E 's/.*:([0-9]+)$/\1/')"
 if [ -z "$compose_host_port" ]; then
@@ -349,6 +372,9 @@ case "$TEST_TYPE" in
   owner-recovery)
     run_e2e_task owner-recovery "$base_report_file"
     ;;
+  portable-space)
+    run_e2e_task portable-space "$base_report_file"
+    ;;
   mobile-ui)
     run_e2e_task mobile-ui "$base_report_file"
     ;;
@@ -366,7 +392,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./run-e2e-compose.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|qry02|entries|screenshot|full]"
+    echo "Usage: ./run-e2e-compose.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|portable-space|mobile-ui|qry02|entries|screenshot|full]"
     exit 1
     ;;
 esac

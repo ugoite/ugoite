@@ -13,10 +13,11 @@ identity or the encryption root.
 
 ### Space prefix: portable Knowledge
 
-For every Space, preserve the complete configured prefix: Catalog Head, reachable
-publication chain, Iceberg metadata, manifests, data files, Entries, Forms,
-Assets, saved SQL, and Space authorization state. Use a complete prefix copy or
-the storage backend's native consistent snapshot while writes are stopped.
+For every Space, preserve the complete configured prefix: Catalog Head,
+reachable publication chain, Iceberg metadata, manifests, data files, Entries,
+Forms, Assets, saved SQL, and Space authorization state. Use a complete prefix
+copy or the storage backend's native consistent snapshot while writes are
+stopped.
 
 Do not choose files from an object listing, rebuild Iceberg metadata, or
 reconstruct the Catalog Head. A complete Space prefix is the portable move unit
@@ -26,8 +27,8 @@ and remains authoritative after a move.
 
 The default local layout stores accounts, Passkeys, sessions, credentials, and
 bindings below the node control prefix. If `UGOITE_NODE_CONTROL_URI` points to
-another OpenDAL backend, back up that complete configured prefix separately.
-It is not part of a portable Space move.
+another OpenDAL backend, back up that complete configured prefix separately. It
+is not part of a portable Space move.
 
 ### Node secret: separate encryption root
 
@@ -55,12 +56,25 @@ set only when the node secret is retained too.
 1. Stop writes on the source and destination.
 2. Copy or restore the complete Space prefix without changing object names or
    reconstructing derived files.
-3. Restore the node control store and node secret when restoring the deployment,
-   or perform normal setup when moving only a Space to another node.
-4. Start the destination and run the [health and diagnostics](health-diagnostics.md)
-   checks.
+3. For a CLI-created portable Space moved to a new Node, copy only its
+   `spaces/<SPACE_UID>` prefix; leave the source Node control store and Node
+   secret behind. To restore the original Node instead, restore the complete
+   configured control-store prefix and the same Node secret.
+4. Start the destination. For a moved unclaimed Space, complete the new Node's
+   normal one-time Passkey setup; setup claims the existing Space UID and
+   preserves its Forms, Entries, and append-only history. Before setup,
+   anonymous API access remains denied. Malformed, partially bootstrapped, or
+   owner-backed ACL state is rejected for operator investigation. Then run the
+   [health and diagnostics](health-diagnostics.md) checks.
 5. Verify authentication, Space listing, representative Entry reads and writes,
    history, and restore before deleting the old copy.
+
+Keep the source copy stopped while the destination is in use. Running both
+copies as writable Nodes is not supported. The Space's HMAC key is stored in its
+metadata and travels with the Space prefix. A Space-prefix move does not restore
+Node accounts, Passkeys, sessions, bindings, or other Node control state; a
+complete Node recovery separately requires the configured control-store prefix
+and the same Node secret.
 
 ## Verify recovery
 
@@ -75,10 +89,9 @@ intact.
 Test connectivity with the current binary before pointing a Space at a new
 backend. `space test-connection` takes a storage config JSON document and
 reports whether the backend is reachable; run
-`ugoite space test-connection --help` for the exact JSON shape of the
-installed version. A passing connection test does not validate Space content:
-reopen the Space and complete the verification above before deleting the old
-copy.
+`ugoite space test-connection --help` for the exact JSON shape of the installed
+version. A passing connection test does not validate Space content: reopen the
+Space and complete the verification above before deleting the old copy.
 
 ## What remains durable?
 

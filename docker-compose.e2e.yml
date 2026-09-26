@@ -11,6 +11,8 @@ services:
         published: ${E2E_COMPOSE_PORT:-18000}
         host_ip: 127.0.0.1
         protocol: tcp
+    volumes:
+      - "${E2E_COMPOSE_STORAGE_ROOT:?E2E Compose runner must provide an isolated storage root}:/data"
     environment:
       - UGOITE_ROOT=/data
       - UGOITE_SERVER_ADDRESS=0.0.0.0:8000

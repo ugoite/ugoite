@@ -5,7 +5,7 @@
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
 #   test-type: "smoke", "asset-owned", "smoke-and-asset-owned",
 #     "owner-recovery", "mobile-ui", "qry02", "query-measurement",
-#     "sql-export-remote-auth",
+#     "sql-export-remote-auth", "portable-space",
 #     "entries", "screenshot", or "full"
 #
 # Environment variables:
@@ -123,6 +123,35 @@ else
 fi
 
 mkdir -p "$E2E_STORAGE_ROOT"
+PORTABLE_CLI_CONFIG=""
+BACKEND_PID=""
+FRONTEND_PID=""
+DEV_BUILD_INFO_PATH=""
+DEV_BUILD_INFO_BACKUP=""
+
+cleanup() {
+  echo ""
+  echo "Stopping servers..."
+  if [ -n "$BACKEND_PID" ]; then kill "$BACKEND_PID" 2>/dev/null || true; fi
+  if [ -n "$FRONTEND_PID" ]; then kill "$FRONTEND_PID" 2>/dev/null || true; fi
+  wait "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
+  if [ -n "$DEV_BUILD_INFO_BACKUP" ] && [ -f "$DEV_BUILD_INFO_BACKUP" ]; then
+    mv "$DEV_BUILD_INFO_BACKUP" "$DEV_BUILD_INFO_PATH"
+  elif [ -n "$DEV_BUILD_INFO_PATH" ]; then
+    rm -f "$DEV_BUILD_INFO_PATH"
+  fi
+  echo "Servers stopped."
+  if [ "$CLEANUP_E2E_STORAGE" = true ]; then rm -rf "$E2E_STORAGE_ROOT"; fi
+  if [ -n "$PORTABLE_CLI_CONFIG" ]; then rm -f "$PORTABLE_CLI_CONFIG"; fi
+}
+trap cleanup EXIT INT TERM
+
+if [ "$TEST_TYPE" = "portable-space" ]; then
+  echo "Seeding a CLI-core Space before Node startup..."
+  PORTABLE_CLI_CONFIG="${E2E_STORAGE_ROOT}.cli-config.toml"
+  bash "$SCRIPT_DIR/seed-portable-space.sh" "$E2E_STORAGE_ROOT" >/dev/null
+  export E2E_PORTABLE_PROOF_FILE="$E2E_STORAGE_ROOT/portable-space-proof.json"
+fi
 
 ensure_playwright_browsers() {
   if [ "${UGOITE_SKIP_PLAYWRIGHT_DEPS:-}" = "1" ]; then
@@ -201,28 +230,6 @@ if [ "$FRONTEND_MODE" != "static" ]; then
   fi
   FRONTEND_PID=$!
 fi
-
-cleanup() {
-  echo ""
-  echo "Stopping servers..."
-  if [ -n "${BACKEND_PID:-}" ]; then
-    kill "$BACKEND_PID" 2>/dev/null || true
-  fi
-  if [ -n "${FRONTEND_PID:-}" ]; then
-    kill "$FRONTEND_PID" 2>/dev/null || true
-  fi
-  wait "${BACKEND_PID:-}" "${FRONTEND_PID:-}" 2>/dev/null || true
-  if [ -n "${DEV_BUILD_INFO_BACKUP:-}" ] && [ -f "$DEV_BUILD_INFO_BACKUP" ]; then
-    mv "$DEV_BUILD_INFO_BACKUP" "$DEV_BUILD_INFO_PATH"
-  elif [ -n "$DEV_BUILD_INFO_PATH" ]; then
-    rm -f "$DEV_BUILD_INFO_PATH"
-  fi
-  echo "Servers stopped."
-  if [ "$CLEANUP_E2E_STORAGE" = true ]; then
-    rm -rf "$E2E_STORAGE_ROOT"
-  fi
-}
-trap cleanup EXIT INT TERM
 
 echo "Waiting for backend (${BACKEND_URL})..."
 BACKEND_STARTUP_STARTED_AT=$SECONDS
@@ -334,6 +341,9 @@ case "$TEST_TYPE" in
   sql-export-remote-auth)
     run_e2e_task sql-export-remote-auth "$base_report_file"
     ;;
+  portable-space)
+    run_e2e_task portable-space "$base_report_file"
+    ;;
   screenshot)
     run_e2e_task screenshot "$base_report_file"
     ;;
@@ -342,7 +352,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|qry02|query-measurement|sql-export-remote-auth|entries|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|qry02|query-measurement|sql-export-remote-auth|portable-space|entries|screenshot|full]"
     exit 1
     ;;
 esac
