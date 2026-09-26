@@ -95,6 +95,50 @@ test.describe("responsive login layout", () => {
     );
   }
 
+  test(
+    "one configured OIDC provider follows passkey and precedes recovery",
+    async ({
+      page,
+    }, testInfo) => {
+      await installAuthConfig(page, [
+        {
+          provider_id: "provider-one",
+          issuer: "https://identity.example/tenant",
+          client_id: "client-one",
+        },
+      ]);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto("/login");
+
+      const passkey = page.getByRole("button", {
+        name: "Sign in with a passkey",
+      });
+      const provider = page.getByRole("button", {
+        name: "Continue with identity.example/tenant",
+      });
+      const recovery = page.getByRole("link", { name: "Lost your Passkey?" });
+      await expect(passkey).toBeVisible();
+      await expect(provider).toBeVisible();
+      await expect(recovery).toBeVisible();
+      await expectControlFits(passkey, 390, 48);
+      await expectControlFits(provider, 390, 48);
+      const order = await page.locator(".loginPanel").evaluate((panel) => {
+        const all = [...panel.querySelectorAll("*")];
+        return [
+          panel.querySelector(".btn.primary"),
+          panel.querySelector(".btn.tonal"),
+          panel.querySelector(".loginLink"),
+        ].map((element) => all.indexOf(element as Element));
+      });
+      expect(order[0]).toBeLessThan(order[1]);
+      expect(order[1]).toBeLessThan(order[2]);
+      await page.screenshot({
+        path: testInfo.outputPath("login-oidc-390x844.png"),
+        fullPage: true,
+      });
+    },
+  );
+
   test("long OIDC labels wrap and keep recovery after the providers", async ({
     page,
   }, testInfo) => {
