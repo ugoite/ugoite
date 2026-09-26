@@ -1165,11 +1165,13 @@ impl AppState {
                 SpaceOnboardingState::ClaimedValid { .. } => {
                     claimed_space_ids.push(space_id.clone());
                 }
-                SpaceOnboardingState::PortableUnclaimed { slug, .. } => {
+                SpaceOnboardingState::PortableUnclaimed { .. } => {
                     if first_setup_is_pending {
-                        eprintln!("Portable Space is unclaimed (slug={slug}); the first Node setup will claim it");
+                        eprintln!(
+                            "Portable Space is unclaimed; the first Node setup will claim it"
+                        );
                     } else {
-                        eprintln!("Portable Space is quarantined because this Node is already initialized (slug={slug}); use a fresh Node for first-setup claim");
+                        eprintln!("Portable Space is quarantined because this Node is already initialized; use a fresh Node for first-setup claim");
                     }
                 }
                 SpaceOnboardingState::IncompleteOrPending { uid, slug, reason } => {
