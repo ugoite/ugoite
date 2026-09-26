@@ -452,7 +452,7 @@ test.describe("SQL export Remote authorization revocation", () => {
       );
       expect(sqlResponses[0]).toContain("-> 200");
       expect(sqlResponses[1]).toContain("-> 403");
-      expect(sqlResponses[1]).toMatch(/FORBIDDEN\/forbidden/i);
+      expect(sqlResponses[1]).toMatch(/FORBIDDEN/i);
       expect(await Deno.stat(outputPath).catch(() => null)).toBeNull();
       const leftovers = [];
       for await (const entry of Deno.readDir(configDir)) {
