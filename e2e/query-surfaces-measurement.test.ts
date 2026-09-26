@@ -16,6 +16,7 @@ type QueryEvent = {
   aborted: boolean;
   error?: string;
   body?: unknown;
+  entryIds?: string[];
 };
 
 const MEASUREMENT_SLUGS = ["query-space-a", "query-space-b"] as const;
@@ -136,6 +137,16 @@ test("records real two-Space query surface measurements", async ({ page, request
         const response = await nativeFetch(input, init);
         event.endedAt = performance.now();
         event.status = response.status;
+        if (path.includes("/entries/query") && response.ok) {
+          const result = await response.clone().json() as {
+            rows?: Array<{ id?: unknown }>;
+            entries?: Array<{ id?: unknown }>;
+          };
+          const rows = result.rows ?? result.entries ?? [];
+          event.entryIds = rows.flatMap((row) =>
+            typeof row.id === "string" ? [row.id] : []
+          );
+        }
         return response;
       } catch (error) {
         event.endedAt = performance.now();
@@ -293,6 +304,12 @@ test("records real two-Space query surface measurements", async ({ page, request
       { waitUntil: "domcontentloaded" },
     );
     await expect(rowLocator).toBeVisible();
+    const sourceEntryIds = await page.locator(
+      "tbody tr.paged-result-row[data-entry-id]",
+    ).evaluateAll((rows) =>
+      rows.flatMap((row) => row.getAttribute("data-entry-id") ?? [])
+    );
+    expect(sourceEntryIds.length).toBeGreaterThan(0);
     await page.route("**/entries/query", async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 400));
       try {
@@ -341,8 +358,10 @@ test("records real two-Space query surface measurements", async ({ page, request
     ).count();
     expect(rowsWhileTargetQueryPending).toBe(0);
     await expect(rowLocator).toBeVisible();
+    await page.waitForTimeout(500);
     const lifecycle = await page.evaluate(({
       targetSpaceUid,
+      sourceEntryIds,
       rowsBeforeTargetQuery,
       rowsWhileTargetQueryPending,
     }) => {
@@ -352,12 +371,29 @@ test("records real two-Space query surface measurements", async ({ page, request
       const targetSpaceEvents = events.filter((event) =>
         event.path.includes(`/spaces/${targetSpaceUid}/entries/query`)
       );
+      const visibleEntryIds = Array.from(document.querySelectorAll(
+        "tbody tr.paged-result-row[data-entry-id]",
+      )).flatMap((row) => row.getAttribute("data-entry-id") ?? []);
+      const targetEntryIds = new Set(
+        targetSpaceEvents.flatMap((event) => event.entryIds ?? []),
+      );
       return {
         events,
+        supersededInFlightCount: events.filter((event) => event.aborted).length,
         actualAbortCount: events.filter((event) => event.aborted).length,
+        endedAbortCount: events.filter((event) =>
+          event.aborted && event.endedAt !== undefined
+        ).length,
         residualPendingCount: events.filter((event) =>
           event.endedAt === undefined
         ).length,
+        visibleEntryIds,
+        staleSourceEntryIds: visibleEntryIds.filter((id) =>
+          sourceEntryIds.includes(id)
+        ),
+        unexpectedTargetEntryIds: visibleEntryIds.filter((id) =>
+          !targetEntryIds.has(id)
+        ),
         visibleDataRows: document.querySelectorAll(
           ".paged-result-row",
         ).length,
@@ -368,6 +404,7 @@ test("records real two-Space query surface measurements", async ({ page, request
       };
     }, {
       targetSpaceUid: secondSpace.space_uid,
+      sourceEntryIds,
       rowsBeforeTargetQuery,
       rowsWhileTargetQueryPending,
     });
@@ -381,6 +418,8 @@ test("records real two-Space query surface measurements", async ({ page, request
       ),
     ).toBe(true);
     expect(lifecycle.visibleDataRows).toBeGreaterThan(0);
+    expect(lifecycle.staleSourceEntryIds).toEqual([]);
+    expect(lifecycle.unexpectedTargetEntryIds).toEqual([]);
 
     const outputPath = Deno.env.get("UGOITE_QUERY_MEASURE_OUTPUT");
     if (outputPath) {
