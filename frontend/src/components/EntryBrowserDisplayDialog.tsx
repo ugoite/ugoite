@@ -349,25 +349,25 @@ export function EntryBrowserDisplayDialog(
   });
 
   const handleKeyDown = (event: KeyboardEvent) => {
-    if (!dialog) return;
     if (event.key === "Escape") {
       event.preventDefault();
       props.onClose();
       return;
     }
-    if (event.key !== "Tab") return;
-    const items = [...dialog.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]',
-    )];
-    if (items.length === 0) return;
-    const first = items[0];
-    const last = items.at(-1)!;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
+    if (event.key === "Tab" && dialog) {
+      const items = [...dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]',
+      )];
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   };
 
