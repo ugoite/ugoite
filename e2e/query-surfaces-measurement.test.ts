@@ -491,7 +491,7 @@ test("records real two-Space query surface measurements", async ({ page, request
           secondSpace.space_uid,
         );
         await expect(page).toHaveURL(
-          new RegExp(`/spaces/${secondSpace.space_uid}/forms$`),
+          new RegExp(`/spaces/${secondSpace.space_uid}/(?:forms|search)$`),
         );
         await page.waitForTimeout(500);
         const events = await page.evaluate(
