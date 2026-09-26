@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { getBackendUrl, waitForServers } from "./lib/client.ts";
 import { openIsolatedPasskeyPage } from "./lib/security-context.ts";
 
 type RemoteBarrier = {
