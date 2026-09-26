@@ -1,0 +1,63 @@
+version: "0.2"
+updated: "2026-09-27"
+component_group:
+  id: entry-browser
+  title: Form-scoped Entry Browser
+components:
+  - id: form-entry-table
+    type: server-query-results
+    implementation: frontend/src/components/EntryBrowser.tsx
+    table_implementation: frontend/src/components/PagedResultTable.tsx
+    controller: EntryQueryController
+    scope: selected-form
+    semantics: native-table
+    query_results:
+      pagination: server-keyset
+      count: explicit-only
+      route_change: discard-results-from-previous-form
+    columns:
+      projectable_fields:
+        source: EntryQueryCapabilities.fields where projectable is true
+        order: projection-order
+        maximum: 64
+        preview_mode: supported
+        union_properties_across_forms: false
+      system_timestamps:
+        order: [created_at, updated_at]
+        position: after-form-fields
+        reorderable: false
+        visibility: configurable
+    toolbar:
+      - keyword-search
+      - columns-dialog
+      - filters-dialog
+      - multi-sort-dialog
+    column_dialog:
+      projectable_fields: reorderable-within-form-fields
+      system_timestamps: separate-visibility-controls
+      apply: explicit
+    filters_dialog:
+      fields: EntryQueryCapabilities.fields where filterable is true
+      operators: EntryQueryCapabilities.fields.supported_operators
+      values: validated-by-field-type
+      apply: explicit
+      active_rule_count: applied-filter-count
+    multi_sort_dialog:
+      fields: EntryQueryCapabilities.fields where sortable is true
+      priority: query-rule-order
+      maximum_rules: 8
+      duplicate_fields: disallowed
+      apply: explicit
+    selection:
+      row_click: select-only
+      open_action:
+        position: trailing-sticky-column
+        control: native-button
+        accessible_name: localized-open-entry-name
+        icon_component: RowListChevron
+        keyboard: enter-activates
+    responsive:
+      page_horizontal_overflow: false
+      table_scroll: horizontal-within-table-viewport
+      trailing_action: remains-at-right-edge
+    states: [loading, complete, empty, error-with-retry]

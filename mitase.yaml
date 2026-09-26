@@ -103,6 +103,7 @@ inventory:
         - frontend/src/lib/color-mode.ts
         - frontend/src/lib/color-mode.test.ts
         - frontend/src/spec/ui-pages.test.ts
+        - e2e/entry-browser-ux.test.ts
         - frontend/src/themes/registry.test.ts
         - frontend/src/themes/usage.test.ts
         - frontend/src/routes/index.tsx
@@ -216,6 +217,7 @@ inventory:
         - docs/mitase/features/integrity.yaml
         - docs/mitase/requirements/frontend.yaml
         - docs/mitase/features/frontend.yaml
+        - docs/spec/ui/components/entry-browser.yaml
         - docs/mitase/requirements/e2e.yaml
         - docs/mitase/features/e2e.yaml
         - docs/mitase/requirements/journey.yaml

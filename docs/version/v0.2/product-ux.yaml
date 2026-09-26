@@ -14,6 +14,105 @@ goal: >
   where the repository does not provide direct evidence; they are follow-up
   work, not implied complete by publication. Knowledge-to-tools remains a North
   Star, not a shipped acceptance claim.
+verification_evidence:
+  - id: form-entry-browser-regression
+    scope: >-
+      The Form-scoped Entry table selects rows without opening them, opens the
+      selected Entry through its trailing action, replaces results after
+      switching Forms, and keeps that action available while the table scrolls
+      at the tested mobile widths.
+    classification: implemented-product-evidence
+    source_sha: 3181632474e0448845db22f974386ffe89b436e3
+    command: >-
+      E2E_FRONTEND_MODE=static
+      UGOITE_E2E_BACKEND_BINARY="$PWD/target/rust/debug/ugoite-server"
+      UGOITE_SKIP_PLAYWRIGHT_DEPS=1 bash e2e/scripts/run-e2e.sh mobile-ui
+    prerequisite: The Rust debug server binary was already built in target/rust/debug/ugoite-server.
+    selectors:
+      - file: e2e/entry-browser-ux.test.ts
+        test: "REQ-E2E-003: selects rows and keeps the trailing action usable on mobile"
+      - file: e2e/entry-browser-ux.test.ts
+        test: "REQ-E2E-003: changing Forms does not retain the previous Entry rows"
+    fixture: >-
+      Two uniquely named Forms and one Entry in each, created through the Rust
+      server in the runner's temporary Space storage. Entries are deleted by the
+      test; the temporary storage root is removed when the runner exits.
+    environment: >-
+      Deno 2.8.3, Playwright 1.60.0, macOS ARM64, static frontend served by the
+      Rust server, real server-backed EntryQuery workflow.
+    result: "mobile-ui: 16 passed, 0 failed; both Entry browser cases passed."
+    artifact:
+      name: ugoite-browser-e2e-evidence-36255628469
+      url: https://github.com/ugoite/ugoite/actions/runs/36255628469
+    limitations:
+      - >-
+        This run checks 320px and 390px viewport widths at 800px height; it does
+        not establish acceptance at 768px, 1440px, or 200% zoom.
+      - >-
+        Screen-reader behavior, NVDA/VoiceOver manual review, and the 1k/10k,
+        two-Space performance and cancellation criteria were not measured here.
+      - >-
+        The focused Vitest component tests use mocked route/controller/API
+        dependencies; the Playwright cases above exercise the browser with the
+        Rust server and temporary Space storage. The standalone HTML prototype
+        is not product-test evidence.
+    broader_product_ux_tasks_completed: false
+    cp1_acceptance_tasks_completed: false
+  - id: form-entry-browser-component-tests
+    scope: >-
+      Focused component regressions cover selection versus navigation, timestamp
+      placement, the shared trailing action, keyboard focus, and RowList chevron
+      presentation.
+    classification: mocked-component-tests
+    source_sha: 183f2c79349caee77e4a8023b6288c1389e17c40
+    command: >-
+      deno task --cwd frontend test src/components/EntryBrowser.test.tsx
+      src/components/PagedResultTable.test.tsx src/components/RowList.test.tsx
+    prerequisite: mise run build:wasm
+    selectors:
+      - file: frontend/src/components/EntryBrowser.test.tsx
+        test: "keeps selection separate from server mutation"
+      - file: frontend/src/components/EntryBrowser.test.tsx
+        test: "navigates only from the shared trailing chevron action"
+      - file: frontend/src/components/EntryBrowser.test.tsx
+        test: "keeps timestamp columns after Form fields in stable Created then Updated order"
+      - file: frontend/src/components/EntryBrowser.test.tsx
+        test: "keeps the remaining timestamp column after ordinary columns"
+      - file: frontend/src/components/PagedResultTable.test.tsx
+        test: "supports selectable rows and a native trailing action column"
+      - file: frontend/src/components/PagedResultTable.test.tsx
+        test: "moves arrow-key focus to the trailing action when no primary action exists"
+      - file: frontend/src/components/RowList.test.tsx
+        test: "REQ-UX-LIST-001: activates the full row without a boxed chevron or Open column"
+    fixture: Vitest component fixtures with mocked route, EntryQuery controller, and API dependencies.
+    environment: Deno 2.8.3, Vitest 4.1.8, macOS ARM64.
+    result: "3 files passed; 32 tests passed."
+    artifact: none; the local test runner output is the execution record.
+    limitations:
+      - This mocked component run does not establish server-backed browser behavior.
+      - It does not establish screen-reader or large-result performance acceptance.
+    broader_product_ux_tasks_completed: false
+    cp1_acceptance_tasks_completed: false
+  - id: form-entry-browser-spec-registry
+    scope: >-
+      The canonical Form Entries page references its EntryBrowser component
+      contract, and the UI registry test checks that the referenced query,
+      timestamp, selection, sorting, and responsive behavior stays declared.
+    classification: repository-specification-verification
+    source_sha: 73377ba144dcb334f6b4ab068052a084ab666ac1
+    command: deno task --cwd frontend test src/spec/ui-pages.test.ts
+    prerequisite: mise run build:wasm
+    selectors:
+      - file: frontend/src/spec/ui-pages.test.ts
+        test: "REQ-FE-067: keeps one ordinary Form and Entry workspace"
+    fixture: Canonical page and component YAML files parsed from the repository.
+    environment: Deno 2.8.3, Vitest 4.1.8, macOS ARM64.
+    result: "1 file passed; 8 tests passed."
+    artifact: none; the local test runner output is the execution record.
+    limitations:
+      - This registry test checks declared UI contracts and references; it does not execute the browser or server workflow.
+    broader_product_ux_tasks_completed: false
+    cp1_acceptance_tasks_completed: false
 phases:
   - id: design
     status: planned
@@ -39,6 +138,8 @@ phases:
     status: planned
     tasks:
       - description: "Unverified follow-up: cover Product UX outcomes with focused regression tests on existing surfaces"
+        done: false
+      - description: "Keep manual browser, assistive-technology, and 1k/10k/two-Space acceptance separate from the recorded Entry browser regression evidence"
         done: false
       - description: "Unverified follow-up: keep the diagnostic corpus informational in 0.1.x; gate promotion remains separate v0.2 work"
         done: false

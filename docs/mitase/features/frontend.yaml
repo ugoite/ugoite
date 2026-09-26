@@ -103,6 +103,33 @@ features:
                 criterion: REQ-FE-004#criterion.display
               - kind: satisfies
                 criterion: REQ-FE-067#criterion.form-scoped-entries
+          - id: form-entry-browser
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.tsx
+            selector: { kind: symbol, name: EntryBrowser }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.table-selection-open-action
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.form-switch-results
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.mobile-table-overflow-and-action
+      - id: form-entry-browser-specification
+        role: contract-source
+        facet: frontend
+        responsibility: Define the canonical UI contract for the Form-scoped Entry browser and its native table, selection, trailing action, query controls, and responsive behavior.
+        targets:
+          - id: entry-browser-component-specification
+            adapter: declared
+            path: docs/spec/ui/components/entry-browser.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-067#criterion.table-selection-open-action
+              - kind: evidences
+                anchor: REQ-FE-067#criterion.form-switch-results
+              - kind: evidences
+                anchor: REQ-FE-067#criterion.mobile-table-overflow-and-action
   - id: FEAT-FE-003
     title: Entry detail and Markdown editing
     summary: Connect the Entry detail workspace, Markdown editor, form-aware guidance, conflict handling, and safe preview behavior to exact frontend verification evidence.
