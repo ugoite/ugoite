@@ -329,47 +329,48 @@ test("records real two-Space query surface measurements", async ({ page, request
     const rowsBeforeTargetQuery = await page.locator(
       ".paged-result-row",
     ).count();
-    const switchLifecycle = await page.evaluate(() => {
+    const targetSpaceRequest = page.waitForRequest((request) =>
+      request.url().includes(
+        `/spaces/${secondSpace.space_uid}/entries/query`,
+      )
+    );
+    await page.getByText(SQL_FORM_NAME, { exact: true }).click();
+    await targetSpaceRequest;
+    const rowsWhileTargetQueryPending = await page.locator(
+      ".paged-result-row",
+    ).count();
+    expect(rowsWhileTargetQueryPending).toBe(0);
+    await expect(rowLocator).toBeVisible();
+    const lifecycle = await page.evaluate(({
+      targetSpaceUid,
+      rowsBeforeTargetQuery,
+      rowsWhileTargetQueryPending,
+    }) => {
       const events = (window as Window & {
         __ugoiteQueryEvents?: QueryEvent[];
       }).__ugoiteQueryEvents ?? [];
+      const targetSpaceEvents = events.filter((event) =>
+        event.path.includes(`/spaces/${targetSpaceUid}/entries/query`)
+      );
       return {
         events,
         actualAbortCount: events.filter((event) => event.aborted).length,
         residualPendingCount: events.filter((event) =>
           event.endedAt === undefined
         ).length,
-      };
-    });
-    await page.goto(
-      getFrontendUrl(
-        `/spaces/${secondSpace.space_uid}/forms/${SQL_FORM_NAME}/entries`,
-      ),
-      { waitUntil: "domcontentloaded" },
-    );
-    await expect(rowLocator).toBeVisible();
-    const targetSpaceState = await page.evaluate((targetSpaceUid) => {
-      const events = (window as Window & {
-        __ugoiteQueryEvents?: QueryEvent[];
-      }).__ugoiteQueryEvents ?? [];
-      const targetSpaceQueryEvents = events.filter((event) =>
-        event.path.includes(`/spaces/${targetSpaceUid}/entries/query`)
-      );
-      return {
         visibleDataRows: document.querySelectorAll(
           ".paged-result-row",
         ).length,
-        targetSpaceQueryCount: targetSpaceQueryEvents.length,
-        targetSpaceQueryPaths: targetSpaceQueryEvents.map((event) =>
-          event.path
-        ),
+        targetSpaceQueryCount: targetSpaceEvents.length,
+        targetSpaceQueryPaths: targetSpaceEvents.map((event) => event.path),
+        rowsBeforeTargetQuery,
+        rowsWhileTargetQueryPending,
       };
-    }, secondSpace.space_uid);
-    const lifecycle = {
-      ...switchLifecycle,
-      ...targetSpaceState,
+    }, {
+      targetSpaceUid: secondSpace.space_uid,
       rowsBeforeTargetQuery,
-    };
+      rowsWhileTargetQueryPending,
+    });
     expect(lifecycle.actualAbortCount).toBeGreaterThan(0);
     expect(lifecycle.residualPendingCount).toBe(0);
     expect(rowsBeforeTargetQuery).toBe(0);
