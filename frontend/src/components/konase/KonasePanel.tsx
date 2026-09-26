@@ -526,7 +526,13 @@ export function KonasePanel(props: KonasePanelProps) {
   return (
     <section class="surface ui-stack" aria-labelledby="konase-panel-heading">
       <div class="sectionHead">
-        <h2 id="konase-panel-heading" ref={panelHeading} tabIndex={-1}>
+        <h2
+          id="konase-panel-heading"
+          ref={(element) => {
+            panelHeading = element;
+          }}
+          tabIndex={-1}
+        >
           {t("konase.title")}
         </h2>
       </div>
@@ -545,7 +551,9 @@ export function KonasePanel(props: KonasePanelProps) {
               />
             </label>
             <button
-              ref={connectButton}
+              ref={(element) => {
+                connectButton = element;
+              }}
               class="btn"
               type="submit"
               disabled={connecting() || !modelApiKey().trim()}
@@ -731,7 +739,9 @@ export function KonasePanel(props: KonasePanelProps) {
               editPrompt(event.currentTarget.value)}
           />
           <button
-            ref={contextPreviewTrigger}
+            ref={(element) => {
+              contextPreviewTrigger = element;
+            }}
             class="btn primary"
             type="submit"
             disabled={running() || !prompt().trim()}
@@ -748,13 +758,17 @@ export function KonasePanel(props: KonasePanelProps) {
         <Show when={contextPreview()}>
           {(preview) => (
             <section
-              ref={contextPreviewSection}
+              ref={(element) => {
+                contextPreviewSection = element;
+              }}
               class="ui-card ui-stack-sm"
               aria-labelledby="konase-context-preview-title"
             >
               <h3
                 id="konase-context-preview-title"
-                ref={contextPreviewHeading}
+                ref={(element) => {
+                  contextPreviewHeading = element;
+                }}
                 tabIndex={-1}
                 aria-describedby="konase-context-preview-description"
               >
