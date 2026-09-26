@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { createMemo, createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EntriesRouteContext } from "~/lib/entries-route-context";
@@ -103,7 +103,9 @@ describe("/spaces/:space_id/forms/:form_ref/entries", () => {
 
     expect(screen.getByRole("heading", { name: "Notes" })).toBeInTheDocument();
     const toolbar = screen.getByRole("toolbar", { name: "Entry browser" });
-    expect(toolbar.textContent).toContain("title");
+    fireEvent.click(within(toolbar).getByRole("button", { name: "Columns" }));
+    expect(screen.getByRole("checkbox", { name: "title" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("button", { name: "New Entry" }))
       .toBeInTheDocument();
   });

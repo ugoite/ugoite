@@ -336,7 +336,19 @@ describe("UI spec YAML registry", () => {
         component.id === "form-entry-list"
       ),
     ).toMatchObject({
-      type: "list",
+      type: "query-results",
+      component: "EntryBrowser and PagedResultTable",
+      display_controls: {
+        toolbar: [
+          "keyword-search",
+          "columns-dialog",
+          "filters-dialog",
+          "multi-sort-dialog",
+        ],
+        filters: { apply: "explicit" },
+        sort: { maximum_rules: 8, duplicate_fields: "disallowed" },
+      },
+      selection: { row_click: "select-only", trailing_action: "open-entry" },
     });
     const compat = pages.find(({ spec }) =>
       spec.page?.id === "space-entries-object"
