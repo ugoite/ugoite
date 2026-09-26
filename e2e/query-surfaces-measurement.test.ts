@@ -146,7 +146,15 @@ test("records real two-Space query surface measurements", async ({ page, request
           ? {
             body: (() => {
               try {
-                return JSON.parse(init.body as string);
+                const body = JSON.parse(init.body as string) as unknown;
+                if (
+                  typeof body === "object" && body !== null &&
+                  "continuation" in body &&
+                  typeof body.continuation === "string"
+                ) {
+                  return { ...body, continuation: "[redacted]" };
+                }
+                return body;
               } catch {
                 return undefined;
               }
