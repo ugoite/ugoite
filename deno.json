@@ -6,6 +6,10 @@
     "tools"
   ],
   "nodeModulesDir": "auto",
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1",
+    "sharp": "npm:sharp@0.34.5"
+  },
   "tasks": {
     "dev": "deno run -A tools/dev.ts",
     "check": "deno check tools/**/*.ts e2e/**/*.ts && deno task --cwd frontend check && deno task --cwd docsite check",
@@ -13,6 +17,7 @@
     "frontend:dev": "deno task --cwd frontend dev",
     "frontend:build": "deno task --cwd frontend build",
     "frontend:test": "deno task --cwd frontend test",
+    "brand:icons": "deno run -A frontend/scripts/generate-brand-icons.ts",
     "frontend:coverage": "deno task --cwd frontend coverage",
     "docsite:dev": "deno task --cwd docsite dev",
     "docsite:build": "deno task --cwd docsite build",

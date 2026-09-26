@@ -1,4 +1,5 @@
 import { dirname, join } from "node:path";
+import { brandIconLinksHtml } from "../src/lib/brand-icon-links.ts";
 
 const [manifestPath, outputPath] = Deno.args;
 
@@ -58,7 +59,7 @@ const html = `<!doctype html>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>Ugoite</title>
-		<link rel="icon" href="/favicon.ico">
+		${brandIconLinksHtml().replaceAll("\n", "\n\t\t")}
 ${preloadLinks}
 ${stylesheetLinks}
 		<script src="/_build/ugoite-manifest.js"></script>

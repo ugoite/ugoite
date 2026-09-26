@@ -1,4 +1,6 @@
 import type { ProxyOptions } from "vite";
+import { readFileSync } from "node:fs";
+import { getBrandIconPrecacheEntries } from "./src/lib/brand-icon-precache.ts";
 
 type ProcessLike = {
   env?: Record<string, string | undefined>;
@@ -48,6 +50,17 @@ const useViteProxy = env.VITE_API_PROXY === "true";
 const staticSpa = env.UGOITE_STATIC_SPA === "true";
 
 const sharedDir = new URL("../shared", import.meta.url).pathname;
+const brandIconManifest = JSON.parse(
+  readFileSync(
+    new URL("../docs/brand/assets/manifest.json", import.meta.url),
+    "utf8",
+  ),
+) as {
+  outputs: Array<{ path: string; sha256: string }>;
+};
+const brandIconPrecacheEntries = getBrandIconPrecacheEntries(
+  brandIconManifest.outputs,
+);
 
 const proxyRule: Record<string, ProxyOptions> = {};
 
@@ -78,7 +91,13 @@ export default defineConfig({
       VitePWA({
         registerType: "autoUpdate",
         injectRegister: "auto",
-        includeAssets: ["favicon.ico"],
+        includeAssets: [
+          "favicon.ico",
+          "brand/ugoite-icon-square.svg",
+          "apple-touch-icon.png",
+          "icons/ugoite-192.png",
+          "icons/ugoite-512.png",
+        ],
         manifest: {
           name: "Ugoite",
           short_name: "Ugoite",
@@ -90,14 +109,22 @@ export default defineConfig({
           scope: "/",
           icons: [
             {
-              src: "/favicon.ico",
-              sizes: "64x64 32x32 24x24 16x16",
-              type: "image/x-icon",
+              src: "/icons/ugoite-192.png",
+              sizes: "192x192",
+              type: "image/png",
+              purpose: "any",
+            },
+            {
+              src: "/icons/ugoite-512.png",
+              sizes: "512x512",
+              type: "image/png",
+              purpose: "any",
             },
           ],
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
+          additionalManifestEntries: brandIconPrecacheEntries,
         },
       }),
     ],
