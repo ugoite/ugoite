@@ -1,8 +1,7 @@
 import sharp from "npm:sharp@0.34.5";
 import { createHash } from "node:crypto";
-import { dirname, join, relative } from "node:path";
+import { dirname, relative } from "node:path";
 
-const root = new URL("../../", import.meta.url);
 const frontend = new URL("../", import.meta.url);
 const sourcePath = new URL("public/brand/ugoite-mark.svg", frontend);
 const publicPath = new URL("public/", frontend);
