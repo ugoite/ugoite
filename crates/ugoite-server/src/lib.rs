@@ -576,6 +576,7 @@ pub struct TestMcpAccess {
 pub struct TestRestAccess {
     pub access_token: String,
     pub credential_id: Uuid,
+    pub principal_id: Uuid,
     pub space_uid: Uuid,
 }
 
@@ -797,8 +798,113 @@ impl AppState {
         Ok(TestRestAccess {
             access_token,
             credential_id: credential.credential_id,
+            principal_id,
             space_uid,
         })
+    }
+
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub async fn add_test_rest_viewer(
+        &self,
+        space_uid: Uuid,
+        owner_principal_id: Uuid,
+        public_key_jwk: Value,
+    ) -> anyhow::Result<TestRestAccess> {
+        let principal_id = Uuid::now_v7();
+        let space_id = space_uid.to_string();
+        let authorizer = Authorizer::new(self.service.operator().clone());
+        authorizer
+            .add_human_member(
+                &space_id,
+                owner_principal_id,
+                SpacePrincipal {
+                    principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "SQL export viewer test".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        self.identity
+            .seed_test_recovery_accounts(&[(principal_id, space_uid, principal_id)])
+            .await?;
+
+        let (issuer, node_id) = self.identity.issuer_metadata().await?;
+        let device = self
+            .identity
+            .start_device_authorization(
+                "SQL export viewer test",
+                public_key_jwk.clone(),
+                Some(space_uid),
+                ["read".to_string()].into_iter().collect(),
+                None,
+            )
+            .await?;
+        self.identity
+            .approve_device_authorization(
+                device["user_code"].as_str().ok_or_else(|| {
+                    anyhow::anyhow!("test device authorization omitted user code")
+                })?,
+                principal_id,
+                principal_id,
+                space_uid,
+                ["read".to_string()].into_iter().collect(),
+            )
+            .await?;
+        let (credential, _, _, _) =
+            self.identity
+                .exchange_device_code(device["device_code"].as_str().ok_or_else(|| {
+                    anyhow::anyhow!("test device authorization omitted device code")
+                })?)
+                .await?;
+        let now = Utc::now().timestamp();
+        let claims = AccessTokenClaims {
+            iss: issuer.clone(),
+            node_id,
+            sub: principal_id,
+            principal_type: "human".to_string(),
+            actor_principal_id: None,
+            aud: issuer,
+            space_uid,
+            granted_actions: ["read".to_string()].into_iter().collect(),
+            actor_chain: vec![principal_id],
+            exp: now + 300,
+            iat: now,
+            jti: Uuid::now_v7(),
+            credential_id: credential.credential_id,
+            credential_generation: Some(credential.credential_generation),
+            cnf: Confirmation {
+                jkt: oauth::jwk_thumbprint(&public_key_jwk)?,
+            },
+        };
+        let access_token = self.identity.issue_access_credential(claims).await?;
+        Ok(TestRestAccess {
+            access_token,
+            credential_id: credential.credential_id,
+            principal_id,
+            space_uid,
+        })
+    }
+
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub async fn revoke_test_space_member(
+        &self,
+        space_uid: Uuid,
+        owner_principal_id: Uuid,
+        member_principal_id: Uuid,
+    ) -> anyhow::Result<()> {
+        Authorizer::new(self.service.operator().clone())
+            .revoke_principal(
+                &space_uid.to_string(),
+                owner_principal_id,
+                member_principal_id,
+            )
+            .await?;
+        Ok(())
     }
 
     pub fn from_env() -> anyhow::Result<Self> {

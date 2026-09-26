@@ -114,9 +114,7 @@ impl ExportSink {
             Self::Stdout(writer) => writer,
             Self::File { writer, .. } => writer,
         };
-        serde_json::to_writer(&mut *writer, row)?;
-        writer.write_all(b"\n")?;
-        Ok(())
+        write_export_row(writer, row)
     }
 
     fn finish(self) -> Result<Option<PathBuf>> {
@@ -151,6 +149,12 @@ impl ExportSink {
             }
         }
     }
+}
+
+fn write_export_row(writer: &mut dyn Write, row: &serde_json::Value) -> Result<()> {
+    serde_json::to_writer(&mut *writer, row)?;
+    writer.write_all(b"\n")?;
+    Ok(())
 }
 
 async fn export_sql(
@@ -227,6 +231,36 @@ async fn export_sql(
         _ = tokio::task::yield_now() => {}
     }
     Ok(pages_fetched)
+}
+
+#[cfg(test)]
+mod export_sink_tests {
+    use super::*;
+
+    struct FailsAfter(usize);
+
+    impl Write for FailsAfter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if self.0 == 0 {
+                return Err(std::io::Error::other("simulated output write failure"));
+            }
+            let written = bytes.len().min(self.0);
+            self.0 -= written;
+            Ok(written)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn sql_export_propagates_partial_output_write_failure() {
+        let mut writer = FailsAfter(4);
+        let error = write_export_row(&mut writer, &serde_json::json!({"id": "row"}))
+            .expect_err("a failing output writer must stop export");
+        assert!(error.to_string().contains("simulated output write failure"));
+    }
 }
 
 #[derive(Subcommand)]

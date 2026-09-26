@@ -55,14 +55,29 @@ Command run:
 cargo test --locked -p ugoite-cli --test test_sql_stateless_cli cli_sql_export_ -- --nocapture
 ```
 
-Result: 4 passed. The existing tests cover complete atomic file publication,
-empty output, refusal to overwrite an existing path, and `--max-rows` failure
-with nonzero status, partial stdout accounting, existing destination
-preservation, and temporary file cleanup.
+The original four `cli_sql_export_` tests cover complete atomic file
+publication, empty output, refusal to overwrite an existing path, and
+`--max-rows` failure with nonzero status, partial stdout accounting, existing
+destination preservation, and temporary file cleanup.
 
-This run did not exercise a repeated token, empty page with `has_more`, changed
-columns, Ctrl-C, disk-full, broken pipe, ACL revocation after page one, or
-credential expiry. No Remote credentials were configured in the execution
-environment, so there is no live authorization-change evidence. Mock denial is
-not substituted for that acceptance. Continue #3140 for those missing cases;
-this measurement does not satisfy its full close criteria.
+The #3140 follow-up acceptance was run with:
+
+```sh
+cargo test --locked -p ugoite-cli --lib --test test_cli_endpoint_routing --test test_journey_remote
+```
+
+It covers repeated continuation tokens, empty pages with `has_more`,
+inconsistent `has_more`/`next` metadata, changed columns, Ctrl-C, a broken
+stdout pipe, injected partial writer failure, output finalization failure, and
+real Space membership revocation during a Remote export. The live authorization
+test runs the CLI against the in-process Ugoite server over loopback, removes a
+Viewer membership after page one, and verifies page two returns the existing
+`FORBIDDEN`/`forbidden` classification, reports exactly one exported row,
+does not issue a third request, does not expose a continuation, and does not
+publish or leave a temporary output file. The server-side test helper mutates
+the real Space authorization state; the existing HTTP-denial mock remains a
+separate transport/error projection test.
+
+Credential expiry was not exercised. The local 10,000-row memory/timing
+measurement above is from the earlier recorded source SHA; it remains a single
+local-Core run per page size, not a performance comparison or Remote measure.
