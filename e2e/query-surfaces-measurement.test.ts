@@ -130,7 +130,7 @@ test("records real two-Space query surface measurements", async ({ page, request
       const path = new URL(url, window.location.href).pathname;
       if (
         !path.includes("/entries/query") && !path.includes("/sql/query") &&
-        !path.includes("/sql/count")
+        !path.includes("/sql/query/count")
       ) {
         return nativeFetch(input, init);
       }
@@ -254,7 +254,7 @@ test("records real two-Space query surface measurements", async ({ page, request
         }));
         expect(
           firstPageState.queryEvents.filter((event) =>
-            event.path.includes("/sql/count")
+            event.path.includes("/sql/query/count")
           ),
         ).toHaveLength(0);
         const pageQuery = firstPageState.queryEvents.find((event) =>
@@ -284,7 +284,7 @@ test("records real two-Space query surface measurements", async ({ page, request
       const initialCountRequests = await page.evaluate(() =>
         (window as Window & { __ugoiteQueryEvents?: QueryEvent[] })
           .__ugoiteQueryEvents?.filter((event) =>
-            event.path.includes("/sql/count")
+            event.path.includes("/sql/query/count")
           ).length ?? 0
       );
       await page.getByRole("button", { name: "Next" }).click();
@@ -535,7 +535,7 @@ test("records real two-Space query surface measurements", async ({ page, request
 
       lifecycle.sqlCountIdentityChange = await measureSqlLifecycle(
         `/spaces/${firstSpace.space_uid}/sql/${firstSpace.saved_sql_id}/run`,
-        "/sql/count",
+        "/sql/query/count",
         async () => {
           const countButton = page.getByRole("button", {
             name: "Count rows",
