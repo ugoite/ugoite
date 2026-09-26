@@ -37,6 +37,15 @@ type LifecycleMeasurement = {
   spaceChange?: QueryLifecycleMeasurement;
   sqlPageChange?: QueryLifecycleMeasurement;
   sqlCountIdentityChange?: QueryLifecycleMeasurement;
+  sqlPreviousPage?: QueryLifecycleMeasurement;
+  sqlParameterValueChange?: QueryLifecycleMeasurement;
+  sqlParameterTypeChange?: QueryLifecycleMeasurement;
+  sqlCountRetry?: QueryLifecycleMeasurement & {
+    countRequestCount: number;
+    queryRequestCountBeforeRetry: number;
+    queryRequestCountAfterRetry: number;
+  };
+  sqlRouteDispose?: QueryLifecycleMeasurement;
 };
 type QueryLifecycleMeasurement = {
   supersededInFlightCount: number;
@@ -76,6 +85,7 @@ test("records real two-Space query surface measurements", async ({ page, request
     slug: string;
     space_uid: string;
     saved_sql_id?: string;
+    parameterized_sql_id?: string;
   }> = MEASUREMENT_SLUGS.map((slug) => {
     const space = spaces.find((candidate) =>
       candidate.slug === slug || candidate.name === slug
@@ -119,6 +129,34 @@ test("records real two-Space query surface measurements", async ({ page, request
     const savedSql = await createSqlResponse.json() as { id: string };
     sqlBySpace.set(space.space_uid, sql);
     space.saved_sql_id = savedSql.id;
+
+    if (space === measuredSpaces[0]) {
+      const parameterizedSql =
+        `SELECT CAST($threshold AS BIGINT) AS threshold_value ` +
+        `FROM "${form!.sql_relation}" ` +
+        "ORDER BY _ugoite_id";
+      const createParameterizedSqlResponse = await request.post(
+        getBackendUrl(`/spaces/${space.space_uid}/sql`),
+        {
+          data: {
+            name: `Query measurement ${space.slug} parameters`,
+            kind: "user-query",
+            sql: parameterizedSql,
+            variables: [{
+              name: "threshold",
+              type: "integer",
+              description: "Synthetic lifecycle threshold",
+            }],
+          },
+        },
+      );
+      expect([200, 201]).toContain(createParameterizedSqlResponse.status());
+      const parameterizedSavedSql = await createParameterizedSqlResponse
+        .json() as {
+          id: string;
+        };
+      space.parameterized_sql_id = parameterizedSavedSql.id;
+    }
   }
 
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -370,8 +408,6 @@ test("records real two-Space query surface measurements", async ({ page, request
           // The browser may cancel this deliberately delayed request first.
         }
       });
-      const filter = page.getByText("Filter", { exact: true });
-      await filter.click();
       const searchbox = page.getByRole("searchbox");
       const firstRapidRequest = page.waitForRequest((request) =>
         request.url().includes("/entries/query")
@@ -592,6 +628,257 @@ test("records real two-Space query surface measurements", async ({ page, request
         lifecycle.sqlCountIdentityChange.actualAbortCount,
       );
       expect(lifecycle.sqlCountIdentityChange.residualPendingCount).toBe(0);
+
+      const parameterizedSqlPath =
+        `/spaces/${firstSpace.space_uid}/sql/${firstSpace.parameterized_sql_id}`;
+      const openParameterizedSql = async (threshold: string) => {
+        await page.goto(getFrontendUrl(`${parameterizedSqlPath}/variables`), {
+          waitUntil: "domcontentloaded",
+        });
+        const thresholdInput = page.getByLabel(/threshold/);
+        await expect(thresholdInput).toBeVisible();
+        await thresholdInput.fill(threshold);
+        await page.getByRole("button", { name: "Run" }).click();
+        await expect(page).toHaveURL(
+          new RegExp(`${parameterizedSqlPath}/run$`),
+        );
+        await expect(rowLocator).toBeVisible();
+      };
+      const changeSqlRunState = async (
+        threshold: number | string,
+        type: string,
+      ) => {
+        await page.evaluate(({ threshold, type }) => {
+          const current = history.state as
+            | Record<string, unknown>
+            | null;
+          const next = {
+            ...(current ?? {}),
+            parameters: { threshold },
+            parameterTypes: { threshold: type },
+          };
+          history.replaceState(next, "", location.href);
+          dispatchEvent(new PopStateEvent("popstate", { state: next }));
+        }, { threshold, type });
+      };
+      const resetEvents = async () => {
+        await page.evaluate(() => {
+          (window as Window & { __ugoiteQueryEvents?: QueryEvent[] })
+            .__ugoiteQueryEvents = [];
+        });
+      };
+      const readSqlQueryEvents = async () =>
+        await page.evaluate(() =>
+          ((window as Window & {
+            __ugoiteQueryEvents?: QueryEvent[];
+          }).__ugoiteQueryEvents ?? []).filter((event) =>
+            event.path.endsWith("/sql/query")
+          )
+        );
+
+      await openParameterizedSql("100");
+      await resetEvents();
+      await page.route("**/sql/query", async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        try {
+          await route.continue();
+        } catch {
+          // The browser may cancel this deliberately delayed request first.
+        }
+      });
+      const pendingParameterizedPage = page.waitForRequest((request) =>
+        new URL(request.url()).pathname.endsWith("/sql/query")
+      );
+      await page.getByRole("button", { name: "Next" }).click();
+      await pendingParameterizedPage;
+      const changedValuePage = page.waitForRequest((request) => {
+        if (
+          !new URL(request.url()).pathname.endsWith("/sql/query")
+        ) return false;
+        const body = request.postDataJSON() as {
+          parameters?: Record<string, unknown>;
+        } | null;
+        return body?.parameters?.threshold === 200;
+      });
+      await changeSqlRunState(200, "integer");
+      const changedValueRequest = await changedValuePage;
+      expect(changedValueRequest.postDataJSON()).toMatchObject({
+        parameters: { threshold: 200 },
+        parameter_types: { threshold: "integer" },
+      });
+      await page.waitForFunction(() =>
+        ((window as Window & {
+          __ugoiteQueryEvents?: QueryEvent[];
+        }).__ugoiteQueryEvents ?? []).some((event) =>
+          event.path.endsWith("/sql/query") && event.endedAt !== undefined &&
+          (event.body as { parameters?: Record<string, unknown> } | undefined)
+              ?.parameters?.threshold === 200
+        )
+      );
+      await page.unroute("**/sql/query");
+      lifecycle.sqlParameterValueChange = summarizeLifecycleEvents(
+        await readSqlQueryEvents(),
+      );
+      expect(lifecycle.sqlParameterValueChange.actualAbortCount)
+        .toBeGreaterThan(0);
+      expect(lifecycle.sqlParameterValueChange.endedAbortCount).toBe(
+        lifecycle.sqlParameterValueChange.actualAbortCount,
+      );
+      expect(lifecycle.sqlParameterValueChange.residualPendingCount).toBe(0);
+
+      await openParameterizedSql("200");
+      await resetEvents();
+      await page.route("**/sql/query/count", async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        try {
+          await route.continue();
+        } catch {
+          // The browser may cancel this deliberately delayed request first.
+        }
+      });
+      const pendingParameterizedCount = page.waitForRequest((request) =>
+        new URL(request.url()).pathname.endsWith("/sql/query/count")
+      );
+      await page.getByRole("button", { name: "Count rows" }).click();
+      await pendingParameterizedCount;
+      const changedTypePage = page.waitForRequest((request) => {
+        if (
+          !new URL(request.url()).pathname.endsWith("/sql/query")
+        ) return false;
+        const body = request.postDataJSON() as {
+          parameters?: Record<string, unknown>;
+          parameter_types?: Record<string, string>;
+        } | null;
+        return body?.parameters?.threshold === "200" &&
+          body.parameter_types?.threshold === "string";
+      });
+      await changeSqlRunState("200", "string");
+      const changedTypeRequest = await changedTypePage;
+      expect(changedTypeRequest.postDataJSON()).toMatchObject({
+        parameters: { threshold: "200" },
+        parameter_types: { threshold: "string" },
+      });
+      await page.waitForFunction(() =>
+        ((window as Window & {
+          __ugoiteQueryEvents?: QueryEvent[];
+        }).__ugoiteQueryEvents ?? []).some((event) =>
+          event.path.endsWith("/sql/query") && event.endedAt !== undefined &&
+          (event.body as
+              | { parameter_types?: Record<string, string> }
+              | undefined)
+              ?.parameter_types?.threshold === "string"
+        )
+      );
+      await page.unroute("**/sql/query/count");
+      lifecycle.sqlParameterTypeChange = summarizeLifecycleEvents(
+        await page.evaluate(() =>
+          ((window as Window & {
+            __ugoiteQueryEvents?: QueryEvent[];
+          }).__ugoiteQueryEvents ?? []).filter((event) =>
+            event.path.endsWith("/sql/query/count")
+          )
+        ),
+      );
+      expect(lifecycle.sqlParameterTypeChange.actualAbortCount)
+        .toBeGreaterThan(0);
+      expect(lifecycle.sqlParameterTypeChange.endedAbortCount).toBe(
+        lifecycle.sqlParameterTypeChange.actualAbortCount,
+      );
+      expect(lifecycle.sqlParameterTypeChange.residualPendingCount).toBe(0);
+
+      await openParameterizedSql("100");
+      await resetEvents();
+      const pageOneQueryCountBeforePagination =
+        (await readSqlQueryEvents()).length;
+      await page.getByRole("button", { name: "Next" }).click();
+      await expect(page.getByText("Page 2", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Previous" }).click();
+      await expect(page.getByText("Page 1", { exact: true })).toBeVisible();
+      lifecycle.sqlPreviousPage = summarizeLifecycleEvents(
+        await readSqlQueryEvents(),
+      );
+      expect(lifecycle.sqlPreviousPage.events).toHaveLength(
+        pageOneQueryCountBeforePagination + 2,
+      );
+
+      await openParameterizedSql("100");
+      await resetEvents();
+      const countRouteAttempts: string[] = [];
+      await page.route("**/sql/query/count", async (route) => {
+        countRouteAttempts.push("/sql/query/count");
+        if (countRouteAttempts.length === 1) {
+          await route.abort("failed");
+          return;
+        }
+        await route.continue();
+      });
+      const queryRequestCountBeforeRetry = (await readSqlQueryEvents()).length;
+      expect(
+        await page.evaluate(() =>
+          ((window as Window & {
+            __ugoiteQueryEvents?: QueryEvent[];
+          }).__ugoiteQueryEvents ?? []).filter((event) =>
+            event.path.endsWith("/sql/query/count")
+          ).length
+        ),
+      ).toBe(0);
+      await page.getByRole("button", { name: "Count rows" }).click();
+      await expect(page.getByText(/count query rows/i)).toBeVisible();
+      const queryRequestCountBeforeSuccessfulRetry =
+        (await readSqlQueryEvents()).length;
+      await page.getByRole("button", { name: "Count rows" }).click();
+      await expect(page.getByText(/^\d+ rows$/)).toBeVisible();
+      await page.unroute("**/sql/query/count");
+      const countEvents = await page.evaluate(() =>
+        ((window as Window & {
+          __ugoiteQueryEvents?: QueryEvent[];
+        }).__ugoiteQueryEvents ?? []).filter((event) =>
+          event.path.endsWith("/sql/query/count")
+        )
+      );
+      expect(countRouteAttempts).toHaveLength(2);
+      expect((await readSqlQueryEvents()).length)
+        .toBe(queryRequestCountBeforeSuccessfulRetry);
+      lifecycle.sqlCountRetry = {
+        ...summarizeLifecycleEvents(countEvents),
+        countRequestCount: countEvents.length,
+        queryRequestCountBeforeRetry,
+        queryRequestCountAfterRetry: (await readSqlQueryEvents()).length,
+      };
+      expect(lifecycle.sqlCountRetry.countRequestCount).toBe(2);
+      expect(lifecycle.sqlCountRetry.queryRequestCountAfterRetry).toBe(
+        lifecycle.sqlCountRetry.queryRequestCountBeforeRetry,
+      );
+
+      await openParameterizedSql("100");
+      await resetEvents();
+      await page.route("**/sql/query", async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        try {
+          await route.continue();
+        } catch {
+          // The route may be canceled when the result route is disposed.
+        }
+      });
+      const pendingDisposedPage = page.waitForRequest((request) =>
+        new URL(request.url()).pathname.endsWith("/sql/query")
+      );
+      await page.getByRole("button", { name: "Next" }).click();
+      await pendingDisposedPage;
+      await page.getByRole("link", { name: "Back to Saved SQL" }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`${parameterizedSqlPath}$`),
+      );
+      await page.waitForTimeout(500);
+      await page.unroute("**/sql/query");
+      lifecycle.sqlRouteDispose = summarizeLifecycleEvents(
+        await readSqlQueryEvents(),
+      );
+      expect(lifecycle.sqlRouteDispose.actualAbortCount).toBeGreaterThan(0);
+      expect(lifecycle.sqlRouteDispose.endedAbortCount).toBe(
+        lifecycle.sqlRouteDispose.actualAbortCount,
+      );
+      expect(lifecycle.sqlRouteDispose.residualPendingCount).toBe(0);
     }
 
     const outputPath = Deno.env.get("UGOITE_QUERY_MEASURE_OUTPUT");
@@ -676,11 +963,17 @@ test("records real two-Space query surface measurements", async ({ page, request
     }
   } finally {
     for (const space of measuredSpaces) {
-      const savedSqlId = space.saved_sql_id;
-      if (savedSqlId) {
-        await request.delete(
-          getBackendUrl(`/spaces/${space.space_uid}/sql/${savedSqlId}`),
-        );
+      for (
+        const savedSqlId of [
+          space.saved_sql_id,
+          space.parameterized_sql_id,
+        ]
+      ) {
+        if (savedSqlId) {
+          await request.delete(
+            getBackendUrl(`/spaces/${space.space_uid}/sql/${savedSqlId}`),
+          );
+        }
       }
     }
   }
