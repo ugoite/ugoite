@@ -33,5 +33,8 @@ a product or support claim is safe to make.
   acceptance.
 - [QRY-02 frontend query comparison](query-surfaces-comparison-2026-09.md)
   records same-backend first-row latency, pagination, and cancellation evidence.
+- [v0.2.1 Remote SQL export authorization acceptance](v0.2.1-remote-export-auth.md)
+  records the live membership-revocation gate separately from unverified
+  credential-expiry coverage.
 - [Release notes and historical channel records](changelog.md) define the stable
   manual-note contract and label beta/alpha metadata as historical.
