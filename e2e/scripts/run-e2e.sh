@@ -5,6 +5,7 @@
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
 #   test-type: "smoke", "asset-owned", "smoke-and-asset-owned",
 #     "owner-recovery", "mobile-ui", "qry02", "query-measurement",
+#     "sql-export-remote-auth",
 #     "entries", "screenshot", or "full"
 #
 # Environment variables:
@@ -330,6 +331,9 @@ case "$TEST_TYPE" in
   query-measurement)
     run_e2e_task query-measurement "$base_report_file"
     ;;
+  sql-export-remote-auth)
+    run_e2e_task sql-export-remote-auth "$base_report_file"
+    ;;
   screenshot)
     run_e2e_task screenshot "$base_report_file"
     ;;
@@ -338,7 +342,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|qry02|query-measurement|entries|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|qry02|query-measurement|sql-export-remote-auth|entries|screenshot|full]"
     exit 1
     ;;
 esac
