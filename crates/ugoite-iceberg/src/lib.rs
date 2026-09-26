@@ -1408,7 +1408,15 @@ impl IcebergWorkspace {
                     extension_metadata: current.extension_metadata.clone(),
                 };
                 inverse.entry.integrity =
-                    entry::integrity_for_domain_revision(&form, &inverse, integrity_provider)?;
+                    entry::integrity_for_domain_revision(&form, &inverse, integrity_provider)
+                        .map_err(|error| {
+                            AppError::conflict(
+                                ErrorCode::RevisionConflict,
+                                format!(
+                                    "cannot render inverse revision with the current Form: {error}"
+                                ),
+                            )
+                        })?;
                 inverse.validate_payload(&form).map_err(|error| {
                     AppError::conflict(
                         ErrorCode::RevisionConflict,
