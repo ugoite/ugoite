@@ -454,14 +454,28 @@ verification:
       executable: deno
       arguments: [test, -A, --filter, "{test}", "{file}"]
 review:
+  # These are bounded, path-triggered review prompts. The PR-context report
+  # keeps them separate from direct and reverse Binding context; they provide
+  # reviewer context and do not decide whether a change complies.
   always:
     - id: frontend-review
-      paths: ["frontend/src/**"]
+      paths: ["frontend/**", "docs/spec/ui/**"]
       items: [POL-006, PHIL-INTERACTION-001]
     - id: knowledge-compatibility-review
       paths:
-        - "docs/architecture/release/v0.1-knowledge-compatibility.md"
-        - "docs/architecture/contracts/space-catalog.md"
+        - "crates/ugoite-domain/**"
+        - "crates/ugoite-core/**"
+        - "crates/ugoite-api-client/**"
         - "crates/ugoite-iceberg/**"
+        - "docs/architecture/boundaries/portable-api-client.md"
+        - "docs/architecture/contracts/frontend-backend-interface.md"
+        - "docs/architecture/contracts/space-catalog.md"
+        - "docs/architecture/contracts/space-compatibility.md"
+        - "docs/architecture/contracts/derived-relations.md"
+        - "docs/architecture/data-model/directory-structure.md"
+        - "docs/architecture/data-model/file-schemas.yaml"
+        - "docs/architecture/data-model/overview.md"
+        - "docs/architecture/principles/knowledge-work-experience.md"
+        - "docs/architecture/release/v0.1-knowledge-compatibility.md"
         - "tools/knowledge_compatibility.ts"
-      items: [POL-016, POL-017]
+      items: [PHIL-000, POL-000, POL-016, POL-017]
