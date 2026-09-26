@@ -8,7 +8,8 @@ const MAX_CAPABILITY_NAME_CHARS: usize = 256;
 const MAX_SELECTED_RESOURCE_INPUT_BYTES: usize = 128 * 1024;
 const MAX_SELECTED_RESOURCE_CONTENT_CHARS: usize = 1_024;
 
-/// Maximum number of user-selected resources admitted to one Konase Job.
+/// Maximum number of supplied resource selections admitted to one Konase Job.
+/// Duplicate URIs count toward this limit before normalization de-duplicates them.
 pub const MAX_SELECTED_RESOURCES: usize = 4;
 
 /// Maximum serialized size of a normalized Context Capsule.
@@ -76,6 +77,17 @@ pub(crate) fn normalize_selected_resource_contents(
         });
     }
     Ok((contents, admissions))
+}
+
+pub(crate) fn has_projection_compaction_marker(content: &str) -> bool {
+    let Ok(Value::Object(projection)) = serde_json::from_str(content) else {
+        return false;
+    };
+    projection
+        .get("_ugoite_context")
+        .and_then(Value::as_object)
+        .and_then(|marker| marker.get("truncated"))
+        == Some(&Value::Bool(true))
 }
 
 fn compact_resource_projection(resource: &ResourceContent) -> Result<(String, bool), String> {
@@ -598,6 +610,59 @@ mod tests {
     use super::*;
     use crate::{ObservationKind, ResourceReference};
     use std::collections::BTreeMap;
+
+    fn selected_entry(id: &str, content: &str) -> ResourceContent {
+        ResourceContent {
+            uri: format!("ugoite://entry/{id}"),
+            content: serde_json::json!({
+                "id": id,
+                "uri": format!("ugoite://entry/{id}"),
+                "form": "Note",
+                "content": content,
+                "_untrusted_content": true
+            })
+            .to_string(),
+        }
+    }
+
+    #[test]
+    fn selected_resource_compaction_requires_top_level_true_marker() {
+        assert!(has_projection_compaction_marker(
+            r#"{"_ugoite_context":{"truncated":true}}"#
+        ));
+        assert!(!has_projection_compaction_marker(
+            r#"{"_ugoite_context":{"truncated":false}}"#
+        ));
+        assert!(!has_projection_compaction_marker(
+            r#"{"content":"_ugoite_context"}"#
+        ));
+        assert!(!has_projection_compaction_marker(
+            r#"{"content":"{\"_ugoite_context\":{\"truncated\":true}}"}"#
+        ));
+    }
+
+    #[test]
+    fn selected_resource_limit_counts_supplied_values_before_deduplication() {
+        let resource = selected_entry("00000000-0000-0000-0000-0000000000a1", "body");
+        let four_duplicates = normalize_selected_resource_contents(vec![
+            resource.clone(),
+            resource.clone(),
+            resource.clone(),
+            resource.clone(),
+        ])
+        .unwrap();
+        assert_eq!(four_duplicates.0.len(), 1);
+        assert_eq!(four_duplicates.1.len(), 1);
+
+        assert!(normalize_selected_resource_contents(vec![
+            resource.clone(),
+            resource.clone(),
+            resource.clone(),
+            resource.clone(),
+            resource,
+        ])
+        .is_err());
+    }
 
     fn observation(id: usize) -> Observation {
         Observation {

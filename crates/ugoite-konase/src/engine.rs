@@ -1,6 +1,7 @@
 use crate::{
-    normalize_selected_resource_contents, AgentAction, ContextBuilder, ModelMessage, ModelRequest,
-    ModelTool, ModelToolCall, ResourceAdmission, ResourceAdmissionReason, ResourceAdmissionStatus,
+    has_projection_compaction_marker, normalize_selected_resource_contents, AgentAction,
+    ContextBuilder, ModelMessage, ModelRequest, ModelTool, ModelToolCall, ResourceAdmission,
+    ResourceAdmissionReason, ResourceAdmissionStatus,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -510,7 +511,7 @@ fn submit(
     let mut resource_admission = selected_resource_contents
         .iter()
         .map(|resource| {
-            let truncated = resource.content.contains("\"_ugoite_context\"");
+            let truncated = has_projection_compaction_marker(&resource.content);
             ResourceAdmission {
                 uri: resource.uri.clone(),
                 status: if truncated {
@@ -541,7 +542,7 @@ fn submit(
             && selected_resource_contents
                 .iter()
                 .find(|resource| resource.uri == admission.uri)
-                .is_some_and(|resource| resource.content.contains("\"_ugoite_context\""))
+                .is_some_and(|resource| has_projection_compaction_marker(&resource.content))
         {
             admission.status = ResourceAdmissionStatus::Truncated;
             admission.reason = Some(ResourceAdmissionReason::ProjectionCompacted);
@@ -1851,6 +1852,29 @@ mod tests {
     }
 
     #[test]
+    fn marker_like_entry_content_does_not_claim_projection_compaction() {
+        let mut submitted = request();
+        submitted.selected_resource_contents = vec![selected_entry(
+            "00000000-0000-0000-0000-0000000000b3",
+            "_ugoite_context",
+        )];
+        let result = step(
+            KonaseState::default(),
+            KonaseEvent::UserSubmitted(submitted),
+        );
+        assert!(result.error.is_none(), "{:?}", result.error);
+        let Some(KonaseEffect::StartJob(start)) = result.effects.first() else {
+            panic!("expected StartJob effect");
+        };
+        assert_eq!(start.resource_admission.len(), 1);
+        assert_eq!(
+            start.resource_admission[0].status,
+            ResourceAdmissionStatus::Included
+        );
+        assert_eq!(start.resource_admission[0].reason, None);
+    }
+
+    #[test]
     fn selected_resources_keep_first_duplicate_and_enforce_limit() {
         let first = selected_entry("00000000-0000-0000-0000-0000000000b2", "first");
         let mut submitted = request();
@@ -1867,16 +1891,30 @@ mod tests {
             .content
             .contains("first"));
 
-        let mut request = request();
-        request.selected_resource_contents = (0..5)
-            .map(|index| {
-                selected_entry(
-                    &format!("00000000-0000-0000-0000-0000000000{:02x}", index + 1),
-                    "body",
-                )
-            })
-            .collect();
-        let result = step(KonaseState::default(), KonaseEvent::UserSubmitted(request));
+        let mut four_selections = request();
+        four_selections.selected_resource_contents =
+            vec![first.clone(), first.clone(), first.clone(), first.clone()];
+        let result = step(
+            KonaseState::default(),
+            KonaseEvent::UserSubmitted(four_selections),
+        );
+        let Some(KonaseEffect::StartJob(job)) = result.effects.first() else {
+            panic!("four supplied duplicate selections should be accepted");
+        };
+        assert_eq!(job.context.selected_resource_contents.len(), 1);
+
+        let mut five_selections = request();
+        five_selections.selected_resource_contents = vec![
+            first.clone(),
+            first.clone(),
+            first.clone(),
+            first.clone(),
+            first,
+        ];
+        let result = step(
+            KonaseState::default(),
+            KonaseEvent::UserSubmitted(five_selections),
+        );
         assert_eq!(
             result.error.as_ref().map(|error| error.kind.as_str()),
             Some("invalid_input")

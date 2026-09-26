@@ -613,7 +613,8 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
     use ugoite_konase::{
-        Capability, CapabilityEffect, Observation, ObservationKind, ResourceReference,
+        Capability, CapabilityEffect, Observation, ObservationKind, ResourceContent,
+        ResourceReference,
     };
 
     fn job() -> JobSpec {
@@ -673,6 +674,32 @@ mod tests {
                 "required": ["q"]
             })
         );
+    }
+
+    #[test]
+    fn selected_context_reaches_initial_model_request_within_prompt_limit() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../ugoite-konase/fixtures/selected-context.json"
+        ))
+        .unwrap();
+        let selected: Vec<ResourceContent> =
+            serde_json::from_value(fixture["selected"].clone()).unwrap();
+        let mut context = context();
+        context.work_goal = "w".repeat(1_024);
+        context.job_goal = "j".repeat(1_024);
+        context.selected_resource_contents = selected;
+        let mut job = job();
+        job.goal = "g".repeat(3_500);
+
+        let mut runtime = RigAgentRuntime::default();
+        let AgentAction::CallModel(request) = runtime.start(job, context).unwrap() else {
+            panic!("expected the initial model request");
+        };
+
+        assert!(request.prompt.contains("ugoite://form/"));
+        assert!(request.prompt.contains("Expense"));
+        assert!(request.prompt.contains("amount: 125"));
+        assert!(request.prompt.chars().count() <= 8_192);
     }
 
     #[test]

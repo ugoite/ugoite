@@ -188,7 +188,7 @@ pub struct KonaseCmd {
     /// Run one request and exit instead of reading an interactive stdin loop. A failed Work exits nonzero.
     #[arg(long)]
     pub prompt: Option<String>,
-    /// Read this canonical Form or Entry URI into the next Job's Context. Repeat up to four times.
+    /// Read this canonical Form or Entry URI into the next Job's Context. Supply at most four values; duplicates count toward the limit.
     #[arg(long = "resource", value_name = "URI")]
     pub resources: Vec<String>,
     /// Explicitly send selected Context in non-interactive mode (does not approve writes).
@@ -854,7 +854,7 @@ impl SelectedContextConfirmation for TtySelectedContextConfirmation {
 
 fn canonical_selected_uris(resources: &[String]) -> Result<Vec<String>> {
     if resources.len() > ugoite_konase::MAX_SELECTED_RESOURCES {
-        bail!("at most four --resource values may be selected for one Job");
+        bail!("at most four --resource values may be supplied for one Job; duplicate URIs count toward the limit");
     }
     let mut unique = Vec::new();
     for uri in resources {
@@ -1900,6 +1900,9 @@ mod tests {
             canonical_selected_uris(&[uri.clone(), uri.clone()]).unwrap(),
             [uri]
         );
+        let four_duplicates =
+            vec!["ugoite://form/00000000-0000-0000-0000-0000000000a1".to_owned(); 4];
+        assert_eq!(canonical_selected_uris(&four_duplicates).unwrap().len(), 1);
         assert!(canonical_selected_uris(&["ugoite://entry/a/b".into()]).is_err());
         assert!(canonical_selected_uris(
             &(0..5)
