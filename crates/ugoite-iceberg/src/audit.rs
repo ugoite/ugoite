@@ -1293,7 +1293,7 @@ mod tests {
         let (duplicate_marker, _) = read_event_marker(
             &op,
             "demo",
-            &duplicate_result[0]["event_id"]
+            duplicate_result[0]["event_id"]
                 .as_str()
                 .expect("duplicate event id"),
         )
