@@ -1,0 +1,43 @@
+Source SHA: 5e8a1a17de77976f39bd37095fe6d3ab1602db43
+Command shape: /usr/bin/time -l ugoite sql export query.sql --max-rows 10000 --page-size PAGE_SIZE --output page-PAGE_SIZE.ndjson
+Environment: macOS 26.6.1, arm64
+
+--- page size 100 ---
+       46.73 real        58.28 user         3.60 sys
+           238125056  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               15376  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                  14  voluntary context switches
+              678605  involuntary context switches
+        737384407828  instructions retired
+        241215087722  cycles elapsed
+           165118768  peak memory footprint
+
+--- page size 1000 ---
+        4.83 real         5.89 user         0.37 sys
+           169361408  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               10985  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   9  voluntary context switches
+               67449  involuntary context switches
+         74000786865  instructions retired
+         24329100530  cycles elapsed
+            96240288  peak memory footprint
