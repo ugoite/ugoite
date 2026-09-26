@@ -31,6 +31,8 @@ a product or support claim is safe to make.
 - [v0.2.1 virtual result table AT acceptance](v0.2.1-virtual-table-at.md) tracks
   automated evidence separately from the still-unverified manual screen-reader
   acceptance.
+- [v0.2.1 read-surface acceptance evidence](v0.2.1-read-acceptance.md) indexes
+  the query, virtual table, and SQL export gates without implying a release.
 - [QRY-02 frontend query comparison](query-surfaces-comparison-2026-09.md)
   records same-backend first-row latency, pagination, and cancellation evidence.
 - [v0.2.1 Remote SQL export authorization acceptance](v0.2.1-remote-export-auth.md)
