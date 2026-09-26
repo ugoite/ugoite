@@ -21,6 +21,7 @@ type PageSpec = {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
 const pagesDir = path.join(repoRoot, "docs/spec/ui/pages");
+const componentsDir = path.join(repoRoot, "docs/spec/ui/components");
 const routesDir = path.join(repoRoot, "frontend/src/routes/spaces/[space_id]");
 
 const allowedComponentTypes = new Set([
@@ -331,25 +332,38 @@ describe("UI spec YAML registry", () => {
         component.type === "tab-bar"
       ),
     ).toBe(false);
-    expect(
-      entries?.spec.components?.body?.find((component) =>
-        component.id === "form-entry-list"
-      ),
-    ).toMatchObject({
+    const entryList = entries?.spec.components?.body?.find((component) =>
+      component.id === "form-entry-list"
+    );
+    expect(entryList).toMatchObject({
       type: "query-results",
-      component: "EntryBrowser and PagedResultTable",
-      display_controls: {
-        toolbar: [
-          "keyword-search",
-          "columns-dialog",
-          "filters-dialog",
-          "multi-sort-dialog",
-        ],
-        filters: { apply: "explicit" },
-        sort: { maximum_rules: 8, duplicate_fields: "disallowed" },
-      },
-      selection: { row_click: "select-only", trailing_action: "open-entry" },
+      component: "EntryBrowser",
+      reference: "../components/entry-browser.yaml",
     });
+    const componentPath = path.resolve(
+      path.dirname(entries!.filePath),
+      String(entryList?.reference),
+    );
+    expect(componentPath.startsWith(`${componentsDir}${path.sep}`)).toBe(true);
+    const entryBrowser = parse(readFileSync(componentPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    const table = entryBrowser.components?.find(({ id }) =>
+      id === "form-entry-table"
+    );
+    expect(table).toMatchObject({
+      query_results: {
+        pagination: "server-keyset",
+        count: "explicit-only",
+      },
+      columns: { system_timestamps: { order: ["created_at", "updated_at"] } },
+      selection: { row_click: "select-only", open_action: { control: "native-button" } },
+      responsive: {
+        page_horizontal_overflow: false,
+        trailing_action: "remains-at-right-edge",
+      },
+    });
+    expect(table?.multi_sort_dialog).toMatchObject({ maximum_rules: 8 });
     const compat = pages.find(({ spec }) =>
       spec.page?.id === "space-entries-object"
     );

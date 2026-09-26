@@ -1586,6 +1586,18 @@ requirements:
         kind: behavior
         statement: The Form's Entries workspace shows that Form's Entries through a form-scoped EntryQuery, links back to Forms, keeps New Entry adjacent to the EntryBrowser, and does not expose the browser for an unknown Form.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: table-selection-open-action
+        kind: behavior
+        statement: In the Form-scoped Entry table, clicking a data row selects it without opening the Entry; a dedicated trailing native button opens that row's Entry.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: form-switch-results
+        kind: quality
+        statement: Navigating through the Forms workspace to another Form's Entries replaces the previous Form's rows with results for the selected Form.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: mobile-table-overflow-and-action
+        kind: quality
+        statement: At tested 320px and 390px viewport widths, the Form Entry table scrolls within its own viewport without document horizontal overflow, and the trailing Entry action remains at the table viewport's right edge.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
       - id: dialog-workspace
         kind: quality
         statement: Form creation and editing dialogs retain usable desktop action layout and preserve the explicit Form/Entry workflow.
@@ -1640,6 +1652,28 @@ requirements:
                 criterion: REQ-FE-067#criterion.form-scoped-entries
                 covers: [FEAT-FE-002#binding.frontend/target.form-entries-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "uses Form scope capabilities and keeps create beside the browser" } }
+          - id: entry-browser-mobile-action
+            adapter: typescript
+            path: e2e/entry-browser-ux.test.ts
+            selector: { kind: test, name: "REQ-E2E-003: selects rows and keeps the trailing action usable on mobile" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.table-selection-open-action
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entry-browser-ux.test.ts, test: "REQ-E2E-003: selects rows and keeps the trailing action usable on mobile" } }
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.mobile-table-overflow-and-action
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entry-browser-ux.test.ts, test: "REQ-E2E-003: selects rows and keeps the trailing action usable on mobile" } }
+          - id: entry-browser-form-switch
+            adapter: typescript
+            path: e2e/entry-browser-ux.test.ts
+            selector: { kind: test, name: "REQ-E2E-003: changing Forms does not retain the previous Entry rows" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.form-switch-results
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entry-browser-ux.test.ts, test: "REQ-E2E-003: changing Forms does not retain the previous Entry rows" } }
           - id: dialog-action-layout
             adapter: typescript
             path: frontend/src/components/create-dialogs.test.tsx

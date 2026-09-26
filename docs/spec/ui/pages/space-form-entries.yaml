@@ -1,5 +1,5 @@
 version: "0.2"
-updated: "2026-09-23"
+updated: "2026-09-27"
 page:
   id: space-form-entries
   title: Form Entries
@@ -16,46 +16,12 @@ components:
       description: The selected Form name is the sole page identity; Forms navigation remains owned by the persistent shell.
     - id: form-entry-list
       type: query-results
-      component: EntryBrowser and PagedResultTable
+      component: EntryBrowser
+      reference: ../components/entry-browser.yaml
       controller: EntryQueryController
-      description: The Form's Entries workspace loads current Entries from a form-scoped server query in a native table, offers a compact Entry creation action with a clear accessible name, opens Entry creation with that Form preselected, and hides the browser for unknown or reserved metadata Forms. Clicking a data row selects it; a dedicated trailing action opens the Entry.
-      projection:
-        configurable: true
-        source: EntryQueryCapabilities.fields where projectable is true
-        maximum_fields: 64
-        system_timestamps_at_end:
-          order:
-            - created_at
-            - updated_at
-          reorderable: false
-        preview_mode: supported
-      display_controls:
-        toolbar:
-          - keyword-search
-          - columns-dialog
-          - filters-dialog
-          - multi-sort-dialog
-        filters:
-          source: EntryQueryCapabilities.fields where filterable is true
-          operators: EntryQueryCapabilities.fields.supported_operators
-          values: validated-by-field-type
-          apply: explicit
-          active_rule_count: applied-filter-count
-        sort:
-          source: EntryQueryCapabilities.fields where sortable is true
-          order: query-priority-order
-          maximum_rules: 8
-          duplicate_fields: disallowed
-          apply: explicit
-      selection:
-        row_click: select-only
-        trailing_action: open-entry
-      query_results:
-        pagination: server-keyset
-        count: explicit-only
-      actions:
-        - create-entry
-        - open-entry
+      description: The Form's Entries workspace loads current Entries through a Form-scoped server query. New Entry creation retains the selected Form, and the browser is hidden for unknown or reserved metadata Forms.
+      states: [loading, complete, empty, error-with-retry]
+      actions: [create-entry]
 responsive:
   desktop: horizontally-scrollable-table-with-sticky-trailing-action
   mobile: horizontally-scrollable-table-with-sticky-trailing-action
