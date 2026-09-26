@@ -160,7 +160,10 @@ class SelectedResourcesMcp extends ScriptedMcp {
     super();
   }
 
-  override async callMcp(request: McpRequest, workId: string): Promise<McpResult> {
+  override async callMcp(
+    request: McpRequest,
+    workId: string,
+  ): Promise<McpResult> {
     const uri = request.arguments.uri;
     const fixture = request.operation === "resources/read" &&
         typeof uri === "string"
@@ -239,6 +242,41 @@ describe("Konase browser host", () => {
     expect(model.requests[0].prompt).not.toContain("unselected-entry");
   });
 
+  it("counts supplied duplicate selections before de-duplicating their URIs", async () => {
+    const resource = selectedContextFixture.selected[0];
+    const model = new ScriptedModel([]);
+    const acceptedMcp = new SelectedResourcesMcp([{
+      requestedUri: resource.uri,
+      content: resource.content,
+    }]);
+    const acceptedHost = new KonaseHost({
+      model,
+      mcp: acceptedMcp,
+      spaceId: "space-a",
+    });
+    const preview = await acceptedHost.previewSelectedContext(
+      "Explain this resource",
+      Array(4).fill(resource.uri),
+    );
+
+    expect(preview.selectedUris).toEqual([resource.uri]);
+    expect(acceptedMcp.requests).toHaveLength(1);
+
+    const rejectedMcp = new SelectedResourcesMcp([]);
+    const rejectedHost = new KonaseHost({
+      model: new ScriptedModel([]),
+      mcp: rejectedMcp,
+      spaceId: "space-a",
+    });
+    await expect(
+      rejectedHost.previewSelectedContext(
+        "Explain this resource",
+        Array(5).fill(resource.uri),
+      ),
+    ).rejects.toThrow("duplicate URIs count toward the limit");
+    expect(rejectedMcp.requests).toHaveLength(0);
+  });
+
   it("fails closed on a denied or mismatched selected resource before model dispatch", async () => {
     const id = "00000000-0000-0000-0000-0000000000c3";
     const uri = `ugoite://entry/${id}`;
@@ -249,25 +287,27 @@ describe("Konase browser host", () => {
       content: "private selected content",
       _untrusted_content: true,
     });
-    for (const fixture of [
-      { requestedUri: uri, content: projection, success: false },
-      {
-        requestedUri: uri,
-        returnedUri: "ugoite://entry/other",
-        content: projection,
-      },
-      { requestedUri: uri, content: "not JSON" },
-      {
-        requestedUri: uri,
-        content: JSON.stringify({
-          id,
-          uri,
-          form: "Note",
-          content: "private selected content",
-          _untrusted_content: false,
-        }),
-      },
-    ]) {
+    for (
+      const fixture of [
+        { requestedUri: uri, content: projection, success: false },
+        {
+          requestedUri: uri,
+          returnedUri: "ugoite://entry/other",
+          content: projection,
+        },
+        { requestedUri: uri, content: "not JSON" },
+        {
+          requestedUri: uri,
+          content: JSON.stringify({
+            id,
+            uri,
+            form: "Note",
+            content: "private selected content",
+            _untrusted_content: false,
+          }),
+        },
+      ]
+    ) {
       const model = new ScriptedModel([]);
       const host = new KonaseHost({
         model,
@@ -359,7 +399,9 @@ describe("Konase browser host", () => {
     });
     const preview = await host.previewSelectedContext("Summarize", [uri]);
 
-    await expect(host.sendSelectedContext(preview.id)).rejects.toThrow(/denied/i);
+    await expect(host.sendSelectedContext(preview.id)).rejects.toThrow(
+      /denied/i,
+    );
     expect(reads).toBe(2);
     expect(model.requests).toHaveLength(0);
   });
@@ -373,13 +415,14 @@ describe("Konase browser host", () => {
       model,
       mcp: new SelectedResourcesMcp([{
         requestedUri: uri,
-        content: () => JSON.stringify({
-          id,
-          uri,
-          form: "Note",
-          content: ++reads === 1 ? "preview content" : "changed content",
-          _untrusted_content: true,
-        }),
+        content: () =>
+          JSON.stringify({
+            id,
+            uri,
+            form: "Note",
+            content: ++reads === 1 ? "preview content" : "changed content",
+            _untrusted_content: true,
+          }),
       }]),
       spaceId: "space-a",
     });

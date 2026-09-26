@@ -9,7 +9,7 @@ mod agent_runtime;
 mod context;
 mod engine;
 
-pub(crate) use context::normalize_selected_resource_contents;
+pub(crate) use context::{has_projection_compaction_marker, normalize_selected_resource_contents};
 
 pub use agent_runtime::{
     AgentAction, AgentRuntime, AgentRuntimeError, AgentRuntimeInput, ModelMessage, ModelRequest,

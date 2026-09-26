@@ -52,13 +52,17 @@ protocol version advances when this portable state schema changes; pre-v1
 internal Konase state is rejected rather than migrated.
 
 `UserSubmitted.selected_resource_contents` is empty by default and accepts at
-most four explicit canonical Form or Entry resource projections. Rust validates
-their untrusted JSON projections, keeps the first occurrence of duplicate
-URIs, and compacts large projections into valid JSON with a visible omission
-marker. `StartJob.resource_admission` reports included, compacted, and omitted
-resources with the byte or model-prompt limit that applied. The normalized
-Context and the Rig initial prompt are both bounded before a host can call a
-model; selected data is not copied into persistent Konase state.
+most four supplied selection values containing canonical Form or Entry resource
+projections. The count is checked before URI de-duplication, so duplicate values
+consume selection slots; accepted duplicates retain only their first occurrence.
+Rust validates the untrusted JSON projections and compacts large projections
+into valid JSON with a visible omission marker. `StartJob.resource_admission`
+reports included, compacted, and omitted resources with the byte or model-prompt
+limit that applied. Only a parsed top-level `_ugoite_context.truncated: true`
+marker indicates projection compaction; text inside user-controlled Entry
+content is not admission metadata. The normalized Context and the Rig initial
+prompt are both bounded before a host can call a model; selected data is not
+copied into persistent Konase state.
 
 The CLI accepts repeated canonical `--resource` URIs. The Browser offers Form
 and paged EntryQuery candidates for the current Space. In both hosts, candidate

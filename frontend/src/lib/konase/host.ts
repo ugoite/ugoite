@@ -322,7 +322,9 @@ export class KonaseHost {
       throw new Error("Select at least one Form or Entry resource");
     }
     if (selectedUris.length > 4) {
-      throw new Error("Konase accepts at most four selected resources");
+      throw new Error(
+        "Konase accepts at most four selection values; duplicate URIs count toward the limit",
+      );
     }
     const uniqueUris = [...new Set(selectedUris)];
     for (const uri of uniqueUris) validateSelectedResourceUri(uri);
@@ -1115,10 +1117,14 @@ const requireState = (result: StepResult): KonaseState => {
   return result.state;
 };
 
-function validateSelectedResourceUri(uri: string): { id: string; kind: "form" | "entry" } {
+function validateSelectedResourceUri(
+  uri: string,
+): { id: string; kind: "form" | "entry" } {
   const match = /^ugoite:\/\/(form|entry)\/([^/?#%]+)$/.exec(uri);
   if (!match || !match[2].trim() || match[2] !== match[2].trim()) {
-    throw new Error("Selected resource URI must be a canonical Form or Entry URI");
+    throw new Error(
+      "Selected resource URI must be a canonical Form or Entry URI",
+    );
   }
   return { kind: match[1] as "form" | "entry", id: match[2] };
 }
@@ -1134,7 +1140,9 @@ function validateSelectedResourceResult(
     result.resource_contents.length !== 1 ||
     result.resource_contents[0].uri !== uri
   ) {
-    throw new Error("Selected MCP resource read was denied or returned an invalid result");
+    throw new Error(
+      "Selected MCP resource read was denied or returned an invalid result",
+    );
   }
   const resource = result.resource_contents[0];
   let projection: unknown;
