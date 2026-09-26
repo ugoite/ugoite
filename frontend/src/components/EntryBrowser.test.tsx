@@ -558,6 +558,51 @@ describe("EntryBrowser", () => {
       .toBeInTheDocument();
   });
 
+  it("preserves untouched timezone-aware filter precision on Apply", async () => {
+    queryMock.mockResolvedValue({ rows: [], has_more: false });
+    const timestamp = "2026-09-25T01:02:03.123456789+09:00";
+    const capabilities: EntryQueryCapabilities = {
+      ...systemEntryCapabilities({ kind: "form", form_id: "form-1" }),
+      fields: [
+        ...systemEntryCapabilities({ kind: "form", form_id: "form-1" })
+          .fields,
+        {
+          field: { kind: "property", field_id: 9 },
+          name: "Occurred at",
+          field_type: "timestamp_tz_ns",
+          filterable: true,
+          sortable: true,
+          projectable: true,
+          supported_operators: ["equals"],
+        },
+      ],
+    };
+    const initialFilter = {
+      field: { kind: "property" as const, field_id: 9 },
+      operator: "equals" as const,
+      value: timestamp,
+    };
+    const controller = createEntryQueryController(
+      () => "space-1",
+      {
+        scope: { kind: "form", form_id: "form-1" },
+        filters: [initialFilter],
+        sort: [],
+      },
+      undefined,
+      50,
+      queryMock,
+    );
+    render(() => (
+      <EntryBrowser controller={controller} capabilities={capabilities} />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(controller.query().filters).toEqual([initialFilter]);
+  });
+
   it("keeps column reordering in a draft until Apply and fixes timestamps at the end", async () => {
     queryMock.mockResolvedValue({ rows: [], has_more: false });
     const capabilities: EntryQueryCapabilities = {
@@ -599,6 +644,11 @@ describe("EntryBrowser", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Columns" }));
     fireEvent.click(screen.getByRole("button", { name: "Move down Status" }));
+    const orderedOptions = Array.from(
+      document.querySelectorAll(".entry-browser-column-row label"),
+      (label) => label.textContent?.trim(),
+    );
+    expect(orderedOptions.slice(0, 2)).toEqual(["Owner", "Status"]);
     expect(controller.projection().kind).toBe("fields");
     if (controller.projection().kind === "fields") {
       expect(controller.projection().fields[0]).toEqual({

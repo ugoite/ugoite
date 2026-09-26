@@ -37,6 +37,8 @@ const fieldKey = (field: EntryFieldRef): string => JSON.stringify(field);
 
 interface FilterDraft extends EntryFilter {
   draftId: number;
+  sourceValue: unknown;
+  valueDirty: boolean;
 }
 
 const pad2 = (value: number): string => String(value).padStart(2, "0");
@@ -136,6 +138,8 @@ export function EntryBrowserDisplayDialog(
     props.filters.map((filter, draftId) => ({
       ...filter,
       draftId,
+      sourceValue: filter.value,
+      valueDirty: false,
       value: filterValueText(
         props.fields.find((field) =>
           fieldKey(field.field) === fieldKey(filter.field)
@@ -161,8 +165,9 @@ export function EntryBrowserDisplayDialog(
       const capability = filterCapability(filter);
       return !!capability?.filterable &&
         capability.supported_operators.includes(filter.operator) &&
-        parseFilterValue(capability.field_type, String(filter.value ?? ""))
-          .valid;
+          (!filter.valueDirty ||
+            parseFilterValue(capability.field_type, String(filter.value ?? ""))
+              .valid);
     });
   const sortDraftValid = () =>
     sort().length <= MAX_ENTRY_SORTS &&
@@ -188,6 +193,23 @@ export function EntryBrowserDisplayDialog(
       setSelectedFields(next);
       setProjectionKind("fields");
     }
+  };
+  const regularColumnOptions = () => {
+    const projectable = props.fields.filter((field) =>
+      field.projectable && field.field.kind !== "created_at" &&
+      field.field.kind !== "updated_at"
+    );
+    const selected = selectedFields().flatMap((field) => {
+      const capability = projectable.find((item) =>
+        fieldKey(item.field) === fieldKey(field)
+      );
+      return capability ? [capability] : [];
+    });
+    const selectedKeys = new Set(selected.map((field) => fieldKey(field.field)));
+    return [
+      ...selected,
+      ...projectable.filter((field) => !selectedKeys.has(fieldKey(field.field))),
+    ];
   };
   const moveField = (index: number, offset: -1 | 1) => {
     const next = [...selectedFields()];
@@ -228,10 +250,16 @@ export function EntryBrowserDisplayDialog(
       field: available.field,
       operator,
       value: available.field_type === "boolean" ? "true" : "",
+      sourceValue: undefined,
+      valueDirty: true,
     });
   };
   const updateFilter = (index: number, next: EntryFilter) =>
     setFilters(index, {
+      sourceValue: filters[index].sourceValue,
+      valueDirty: filters[index].valueDirty ||
+        fieldKey(next.field) !== fieldKey(filters[index].field) ||
+        next.value !== filters[index].value,
       field: next.field,
       operator: next.operator,
       value: next.value,
@@ -283,10 +311,12 @@ export function EntryBrowserDisplayDialog(
           return {
             field: filter.field,
             operator: filter.operator,
-            value: parseFilterValue(
-              capability.field_type,
-              String(filter.value ?? ""),
-            ).value,
+            value: filter.valueDirty
+              ? parseFilterValue(
+                capability.field_type,
+                String(filter.value ?? ""),
+              ).value
+              : filter.sourceValue,
           };
         }),
       });
@@ -390,10 +420,7 @@ export function EntryBrowserDisplayDialog(
               </label>
               <p class="ui-muted">{t("entryBrowser.fields")}</p>
               <For
-                each={props.fields.filter((field) =>
-                  field.projectable && field.field.kind !== "created_at" &&
-                  field.field.kind !== "updated_at"
-                )}
+                each={regularColumnOptions()}
               >
                 {(capability) => {
                   const index = () =>
