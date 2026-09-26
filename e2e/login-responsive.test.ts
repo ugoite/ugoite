@@ -1,12 +1,12 @@
-import {
-  expect,
-  type Locator,
-  type Page,
-  test,
-  type TestInfo,
-} from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 
 const emptyStorageState = { cookies: [], origins: [] };
+const screenshotDir = path.resolve(
+  process.cwd(),
+  "../target/e2e/login-responsive",
+);
 const viewports = [
   { width: 320, height: 568 },
   { width: 360, height: 800 },
@@ -21,12 +21,15 @@ const viewports = [
 test.describe("responsive login layout", () => {
   test.use({ storageState: emptyStorageState });
 
+  test.beforeAll(async () => {
+    await fs.rm(screenshotDir, { recursive: true, force: true });
+    await fs.mkdir(screenshotDir, { recursive: true });
+  });
+
   for (const viewport of viewports) {
     test(
       `Passkey-only login stays reachable at ${viewport.width}x${viewport.height}`,
-      async ({
-        page,
-      }, testInfo) => {
+      async ({ page }) => {
         await installAuthConfig(page, []);
         await page.setViewportSize(viewport);
         await page.goto("/login?next=%2Fspaces%2Fdemo%2Fdashboard");
@@ -86,7 +89,8 @@ test.describe("responsive login layout", () => {
         );
         expect(documentWidth).toBeLessThanOrEqual(viewport.width + 1);
         await page.screenshot({
-          path: testInfo.outputPath(
+          path: path.join(
+            screenshotDir,
             `login-${viewport.width}x${viewport.height}.png`,
           ),
           fullPage: true,
@@ -97,9 +101,7 @@ test.describe("responsive login layout", () => {
 
   test(
     "one configured OIDC provider follows passkey and precedes recovery",
-    async ({
-      page,
-    }, testInfo) => {
+    async ({ page }) => {
       await installAuthConfig(page, [
         {
           provider_id: "provider-one",
@@ -133,15 +135,13 @@ test.describe("responsive login layout", () => {
       expect(order[0]).toBeLessThan(order[1]);
       expect(order[1]).toBeLessThan(order[2]);
       await page.screenshot({
-        path: testInfo.outputPath("login-oidc-390x844.png"),
+        path: path.join(screenshotDir, "login-oidc-390x844.png"),
         fullPage: true,
       });
     },
   );
 
-  test("long OIDC labels wrap and keep recovery after the providers", async ({
-    page,
-  }, testInfo) => {
+  test("long OIDC labels wrap and keep recovery after the providers", async ({ page }) => {
     await installAuthConfig(page, [
       {
         provider_id: "provider-a",
@@ -189,7 +189,7 @@ test.describe("responsive login layout", () => {
     )
       .toBe(true);
     await page.screenshot({
-      path: testInfo.outputPath("login-oidc-320x568.png"),
+      path: path.join(screenshotDir, "login-oidc-320x568.png"),
       fullPage: true,
     });
   });
