@@ -33,6 +33,8 @@ type LifecycleMeasurement = {
   rowsBeforeTargetQuery: number;
   rowsWhileTargetQueryPending: number;
   instrumentOnly?: boolean;
+  rapidSearchChanges?: QueryLifecycleMeasurement;
+  spaceChange?: QueryLifecycleMeasurement;
   sqlPageChange?: QueryLifecycleMeasurement;
   sqlCountIdentityChange?: QueryLifecycleMeasurement;
 };
@@ -473,6 +475,48 @@ test("records real two-Space query surface measurements", async ({ page, request
       expect(lifecycle.staleSourceEntryIds).toEqual([]);
       expect(lifecycle.unexpectedTargetEntryIds).toEqual([]);
 
+      const summarizeLifecycleEvents = (
+        events: QueryEvent[],
+      ): QueryLifecycleMeasurement => {
+        const abortedEvents = events.filter((event) => event.aborted);
+        return {
+          supersededInFlightCount: abortedEvents.length,
+          actualAbortCount: abortedEvents.length,
+          endedAbortCount: abortedEvents.filter((event) =>
+            event.endedAt !== undefined
+          ).length,
+          residualPendingCount: events.filter((event) =>
+            event.endedAt === undefined
+          ).length,
+          events,
+        };
+      };
+      const queryText = (event: QueryEvent): string | undefined => {
+        const body = event.body as { query?: { text?: unknown } } | undefined;
+        return typeof body?.query?.text === "string"
+          ? body.query.text
+          : undefined;
+      };
+      const entryEvents = lifecycle.events ?? [];
+      lifecycle.rapidSearchChanges = summarizeLifecycleEvents(
+        entryEvents.filter((event) =>
+          ["solar", "energy"].includes(queryText(event) ?? "")
+        ),
+      );
+      lifecycle.spaceChange = summarizeLifecycleEvents(
+        entryEvents.filter((event) =>
+          queryText(event) === "inspection" &&
+          event.path.includes(`/spaces/${firstSpace.space_uid}/`)
+        ),
+      );
+      expect(lifecycle.rapidSearchChanges.actualAbortCount).toBeGreaterThan(0);
+      expect(lifecycle.rapidSearchChanges.residualPendingCount).toBe(0);
+      expect(lifecycle.spaceChange.actualAbortCount).toBeGreaterThan(0);
+      expect(lifecycle.spaceChange.endedAbortCount).toBe(
+        lifecycle.spaceChange.actualAbortCount,
+      );
+      expect(lifecycle.spaceChange.residualPendingCount).toBe(0);
+
       const measureSqlLifecycle = async (
         path: string,
         requestPath: string,
@@ -512,18 +556,7 @@ test("records real two-Space query surface measurements", async ({ page, request
             ),
           requestPath,
         );
-        const abortedEvents = events.filter((event) => event.aborted);
-        return {
-          supersededInFlightCount: abortedEvents.length,
-          actualAbortCount: abortedEvents.length,
-          endedAbortCount: abortedEvents.filter((event) =>
-            event.endedAt !== undefined
-          ).length,
-          residualPendingCount: events.filter((event) =>
-            event.endedAt === undefined
-          ).length,
-          events,
-        };
+        return summarizeLifecycleEvents(events);
       };
 
       lifecycle.sqlPageChange = await measureSqlLifecycle(
