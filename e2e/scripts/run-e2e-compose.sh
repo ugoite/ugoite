@@ -149,6 +149,17 @@ cleanup() {
   echo ""
   echo "Stopping services..."
   "${compose_cmd[@]}" down -v 2>/dev/null || true
+  if [ -d "$E2E_COMPOSE_STORAGE_ROOT" ]; then
+    # The runtime image writes Knowledge as its non-root `ugoite` user. Give
+    # the host runner ownership before removing the bind-mounted temp tree.
+    # This keeps cleanup strict without making the fixture world-writable.
+    docker run --rm \
+      --user 0:0 \
+      --volume "$E2E_COMPOSE_STORAGE_ROOT:/data" \
+      --entrypoint /bin/sh \
+      "${UGOITE_IMAGE_TAG:-ugoite:e2e}" \
+      -c "chown -R $(id -u):$(id -g) /data"
+  fi
   rm -rf "$E2E_COMPOSE_STORAGE_ROOT"
   if [ -n "$PORTABLE_CLI_CONFIG" ]; then
     rm -f "$PORTABLE_CLI_CONFIG"
