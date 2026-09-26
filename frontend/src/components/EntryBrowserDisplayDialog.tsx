@@ -165,9 +165,9 @@ export function EntryBrowserDisplayDialog(
       const capability = filterCapability(filter);
       return !!capability?.filterable &&
         capability.supported_operators.includes(filter.operator) &&
-          (!filter.valueDirty ||
-            parseFilterValue(capability.field_type, String(filter.value ?? ""))
-              .valid);
+        (!filter.valueDirty ||
+          parseFilterValue(capability.field_type, String(filter.value ?? ""))
+            .valid);
     });
   const sortDraftValid = () =>
     sort().length <= MAX_ENTRY_SORTS &&
@@ -205,10 +205,14 @@ export function EntryBrowserDisplayDialog(
       );
       return capability ? [capability] : [];
     });
-    const selectedKeys = new Set(selected.map((field) => fieldKey(field.field)));
+    const selectedKeys = new Set(
+      selected.map((field) => fieldKey(field.field)),
+    );
     return [
       ...selected,
-      ...projectable.filter((field) => !selectedKeys.has(fieldKey(field.field))),
+      ...projectable.filter((field) =>
+        !selectedKeys.has(fieldKey(field.field))
+      ),
     ];
   };
   const moveField = (index: number, offset: -1 | 1) => {
@@ -345,11 +349,13 @@ export function EntryBrowserDisplayDialog(
   });
 
   const handleKeyDown = (event: KeyboardEvent) => {
+    if (!dialog) return;
     if (event.key === "Escape") {
       event.preventDefault();
       props.onClose();
+      return;
     }
-    if (event.key !== "Tab" || !dialog) return;
+    if (event.key !== "Tab") return;
     const items = [...dialog.querySelectorAll<HTMLElement>(
       'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]',
     )];
