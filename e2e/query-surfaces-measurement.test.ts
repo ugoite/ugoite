@@ -16,6 +16,34 @@ type QueryEvent = {
   aborted: boolean;
   error?: string;
   body?: unknown;
+  entryIds?: string[];
+};
+type LifecycleMeasurement = {
+  events?: QueryEvent[];
+  supersededInFlightCount: number;
+  actualAbortCount: number;
+  endedAbortCount: number;
+  residualPendingCount: number;
+  visibleEntryIds: string[];
+  staleSourceEntryIds: string[];
+  unexpectedTargetEntryIds: string[];
+  visibleDataRows: number;
+  targetSpaceQueryCount: number;
+  targetSpaceQueryPaths: string[];
+  rowsBeforeTargetQuery: number;
+  rowsWhileTargetQueryPending: number;
+  instrumentOnly?: boolean;
+  rapidSearchChanges?: QueryLifecycleMeasurement;
+  spaceChange?: QueryLifecycleMeasurement;
+  sqlPageChange?: QueryLifecycleMeasurement;
+  sqlCountIdentityChange?: QueryLifecycleMeasurement;
+};
+type QueryLifecycleMeasurement = {
+  supersededInFlightCount: number;
+  actualAbortCount: number;
+  endedAbortCount: number;
+  residualPendingCount: number;
+  events: QueryEvent[];
 };
 
 const MEASUREMENT_SLUGS = ["query-space-a", "query-space-b"] as const;
@@ -104,7 +132,7 @@ test("records real two-Space query surface measurements", async ({ page, request
       const path = new URL(url, window.location.href).pathname;
       if (
         !path.includes("/entries/query") && !path.includes("/sql/query") &&
-        !path.includes("/sql/count")
+        !path.includes("/sql/query/count")
       ) {
         return nativeFetch(input, init);
       }
@@ -120,7 +148,15 @@ test("records real two-Space query surface measurements", async ({ page, request
           ? {
             body: (() => {
               try {
-                return JSON.parse(init.body as string);
+                const body = JSON.parse(init.body as string) as unknown;
+                if (
+                  typeof body === "object" && body !== null &&
+                  "continuation" in body &&
+                  typeof body.continuation === "string"
+                ) {
+                  return { ...body, continuation: "[redacted]" };
+                }
+                return body;
               } catch {
                 return undefined;
               }
@@ -136,6 +172,16 @@ test("records real two-Space query surface measurements", async ({ page, request
         const response = await nativeFetch(input, init);
         event.endedAt = performance.now();
         event.status = response.status;
+        if (path.includes("/entries/query") && response.ok) {
+          const result = await response.clone().json() as {
+            rows?: Array<{ id?: unknown }>;
+            entries?: Array<{ id?: unknown }>;
+          };
+          const rows = result.rows ?? result.entries ?? [];
+          event.entryIds = rows.flatMap((row) =>
+            typeof row.id === "string" ? [row.id] : []
+          );
+        }
         return response;
       } catch (error) {
         event.endedAt = performance.now();
@@ -147,7 +193,7 @@ test("records real two-Space query surface measurements", async ({ page, request
 
   const trials: Array<Record<string, unknown>> = [];
   const sqlPagination: Array<Record<string, unknown>> = [];
-  const rowLocator = page.locator("tbody tr.paged-result-row").first();
+  const rowLocator = page.locator("tbody tr").first();
 
   try {
     for (const space of measuredSpaces) {
@@ -170,7 +216,7 @@ test("records real two-Space query surface measurements", async ({ page, request
             memory?: { usedJSHeapSize?: number };
           }).memory?.usedJSHeapSize ?? null,
           dataRows: document.querySelectorAll(
-            "tbody tr.paged-result-row",
+            "tbody tr",
           ).length,
           queryEvents: (window as Window & {
             __ugoiteQueryEvents?: QueryEvent[];
@@ -210,7 +256,7 @@ test("records real two-Space query surface measurements", async ({ page, request
             memory?: { usedJSHeapSize?: number };
           }).memory?.usedJSHeapSize ?? null,
           dataRows: document.querySelectorAll(
-            "tbody tr.paged-result-row",
+            "tbody tr",
           ).length,
           queryEvents: (window as Window & {
             __ugoiteQueryEvents?: QueryEvent[];
@@ -218,7 +264,7 @@ test("records real two-Space query surface measurements", async ({ page, request
         }));
         expect(
           firstPageState.queryEvents.filter((event) =>
-            event.path.includes("/sql/count")
+            event.path.includes("/sql/query/count")
           ),
         ).toHaveLength(0);
         const pageQuery = firstPageState.queryEvents.find((event) =>
@@ -248,7 +294,7 @@ test("records real two-Space query surface measurements", async ({ page, request
       const initialCountRequests = await page.evaluate(() =>
         (window as Window & { __ugoiteQueryEvents?: QueryEvent[] })
           .__ugoiteQueryEvents?.filter((event) =>
-            event.path.includes("/sql/count")
+            event.path.includes("/sql/query/count")
           ).length ?? 0
       );
       await page.getByRole("button", { name: "Next" }).click();
@@ -258,7 +304,7 @@ test("records real two-Space query surface measurements", async ({ page, request
           __ugoiteQueryEvents?: QueryEvent[];
         }).__ugoiteQueryEvents ?? [],
         dataRows: document.querySelectorAll(
-          "tbody tr.paged-result-row",
+          "tbody tr:not(.paged-result-spacer)",
         ).length,
       }));
       expect(
@@ -293,94 +339,260 @@ test("records real two-Space query surface measurements", async ({ page, request
       { waitUntil: "domcontentloaded" },
     );
     await expect(rowLocator).toBeVisible();
-    await page.route("**/entries/query", async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      try {
-        await route.continue();
-      } catch {
-        // The browser may cancel this deliberately delayed request first.
-      }
-    });
-    const filter = page.getByText("Filter", { exact: true });
-    await filter.click();
-    const searchbox = page.getByRole("searchbox");
-    const firstRapidRequest = page.waitForRequest((request) =>
-      request.url().includes("/entries/query")
-    );
-    await searchbox.fill("solar");
-    await firstRapidRequest;
-    const secondRapidRequest = page.waitForRequest((request) =>
-      request.url().includes("/entries/query")
-    );
-    await searchbox.fill("energy");
-    await secondRapidRequest;
-    const switchingRequest = page.waitForRequest((request) =>
-      request.url().includes("/entries/query")
-    );
-    await searchbox.fill("inspection");
-    await switchingRequest;
-    await page.getByLabel("Space", { exact: true }).selectOption(
-      secondSpace.space_uid,
-    );
-    await expect(page).toHaveURL(
-      new RegExp(`/spaces/${secondSpace.space_uid}/forms$`),
-    );
-    await page.waitForTimeout(500);
-    const rowsBeforeTargetQuery = await page.locator(
-      ".paged-result-row",
-    ).count();
-    const targetSpaceRequest = page.waitForRequest((request) =>
-      request.url().includes(
-        `/spaces/${secondSpace.space_uid}/entries/query`,
-      )
-    );
-    await page.getByText(SQL_FORM_NAME, { exact: true }).click();
-    await targetSpaceRequest;
-    const rowsWhileTargetQueryPending = await page.locator(
-      ".paged-result-row",
-    ).count();
-    expect(rowsWhileTargetQueryPending).toBe(0);
-    await expect(rowLocator).toBeVisible();
-    const lifecycle = await page.evaluate(({
-      targetSpaceUid,
-      rowsBeforeTargetQuery,
-      rowsWhileTargetQueryPending,
-    }) => {
-      const events = (window as Window & {
-        __ugoiteQueryEvents?: QueryEvent[];
-      }).__ugoiteQueryEvents ?? [];
-      const targetSpaceEvents = events.filter((event) =>
-        event.path.includes(`/spaces/${targetSpaceUid}/entries/query`)
+    let lifecycle: LifecycleMeasurement = {
+      events: [],
+      instrumentOnly: true,
+      supersededInFlightCount: 0,
+      actualAbortCount: 0,
+      endedAbortCount: 0,
+      residualPendingCount: 0,
+      visibleEntryIds: [],
+      staleSourceEntryIds: [],
+      unexpectedTargetEntryIds: [],
+      visibleDataRows: 0,
+      targetSpaceQueryCount: 0,
+      targetSpaceQueryPaths: [],
+      rowsBeforeTargetQuery: 0,
+      rowsWhileTargetQueryPending: 0,
+    };
+    if (Deno.env.get("UGOITE_QUERY_MEASURE_BASELINE") !== "true") {
+      const sourceEntryIds = await page.locator(
+        "tbody tr[data-entry-id]",
+      ).evaluateAll((rows) =>
+        rows.flatMap((row) => row.getAttribute("data-entry-id") ?? [])
       );
-      return {
-        events,
-        actualAbortCount: events.filter((event) => event.aborted).length,
-        residualPendingCount: events.filter((event) =>
-          event.endedAt === undefined
-        ).length,
-        visibleDataRows: document.querySelectorAll(
-          ".paged-result-row",
-        ).length,
-        targetSpaceQueryCount: targetSpaceEvents.length,
-        targetSpaceQueryPaths: targetSpaceEvents.map((event) => event.path),
+      expect(sourceEntryIds.length).toBeGreaterThan(0);
+      await page.route("**/entries/query", async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        try {
+          await route.continue();
+        } catch {
+          // The browser may cancel this deliberately delayed request first.
+        }
+      });
+      const filter = page.getByText("Filter", { exact: true });
+      await filter.click();
+      const searchbox = page.getByRole("searchbox");
+      const firstRapidRequest = page.waitForRequest((request) =>
+        request.url().includes("/entries/query")
+      );
+      await searchbox.fill("solar");
+      await firstRapidRequest;
+      const secondRapidRequest = page.waitForRequest((request) =>
+        request.url().includes("/entries/query")
+      );
+      await searchbox.fill("energy");
+      await secondRapidRequest;
+      const switchingRequest = page.waitForRequest((request) =>
+        request.url().includes("/entries/query")
+      );
+      await searchbox.fill("inspection");
+      await switchingRequest;
+      await page.getByLabel("Space", { exact: true }).selectOption(
+        secondSpace.space_uid,
+      );
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${secondSpace.space_uid}/forms$`),
+      );
+      await page.waitForTimeout(500);
+      const rowsBeforeTargetQuery = await page.locator(
+        "tbody tr",
+      ).count();
+      const targetSpaceRequest = page.waitForRequest((request) =>
+        request.url().includes(
+          `/spaces/${secondSpace.space_uid}/entries/query`,
+        )
+      );
+      await page.getByText(SQL_FORM_NAME, { exact: true }).click();
+      await targetSpaceRequest;
+      const rowsWhileTargetQueryPending = await page.locator(
+        "tbody tr",
+      ).count();
+      expect(rowsWhileTargetQueryPending).toBe(0);
+      await expect(rowLocator).toBeVisible();
+      await page.waitForTimeout(500);
+      lifecycle = await page.evaluate(({
+        targetSpaceUid,
+        sourceEntryIds,
         rowsBeforeTargetQuery,
         rowsWhileTargetQueryPending,
+      }) => {
+        const events = (window as Window & {
+          __ugoiteQueryEvents?: QueryEvent[];
+        }).__ugoiteQueryEvents ?? [];
+        const targetSpaceEvents = events.filter((event) =>
+          event.path.includes(`/spaces/${targetSpaceUid}/entries/query`)
+        );
+        const visibleEntryIds = Array.from(document.querySelectorAll(
+          "tbody tr[data-entry-id]",
+        )).flatMap((row) => row.getAttribute("data-entry-id") ?? []);
+        const targetEntryIds = new Set(
+          targetSpaceEvents.flatMap((event) => event.entryIds ?? []),
+        );
+        return {
+          events,
+          supersededInFlightCount: events.filter((event) =>
+            event.aborted
+          ).length,
+          actualAbortCount: events.filter((event) => event.aborted).length,
+          endedAbortCount: events.filter((event) =>
+            event.aborted && event.endedAt !== undefined
+          ).length,
+          residualPendingCount: events.filter((event) =>
+            event.endedAt === undefined
+          ).length,
+          visibleEntryIds,
+          staleSourceEntryIds: visibleEntryIds.filter((id) =>
+            sourceEntryIds.includes(id)
+          ),
+          unexpectedTargetEntryIds: visibleEntryIds.filter((id) =>
+            !targetEntryIds.has(id)
+          ),
+          visibleDataRows: document.querySelectorAll(
+            "tbody tr",
+          ).length,
+          targetSpaceQueryCount: targetSpaceEvents.length,
+          targetSpaceQueryPaths: targetSpaceEvents.map((event) => event.path),
+          rowsBeforeTargetQuery,
+          rowsWhileTargetQueryPending,
+        };
+      }, {
+        targetSpaceUid: secondSpace.space_uid,
+        sourceEntryIds,
+        rowsBeforeTargetQuery,
+        rowsWhileTargetQueryPending,
+      });
+      expect(lifecycle.actualAbortCount).toBeGreaterThan(0);
+      expect(lifecycle.residualPendingCount).toBe(0);
+      expect(rowsBeforeTargetQuery).toBe(0);
+      expect(lifecycle.targetSpaceQueryCount).toBeGreaterThan(0);
+      expect(
+        lifecycle.targetSpaceQueryPaths.every((path) =>
+          path.includes(`/spaces/${secondSpace.space_uid}/`)
+        ),
+      ).toBe(true);
+      expect(lifecycle.visibleDataRows).toBeGreaterThan(0);
+      expect(lifecycle.staleSourceEntryIds).toEqual([]);
+      expect(lifecycle.unexpectedTargetEntryIds).toEqual([]);
+
+      const summarizeLifecycleEvents = (
+        events: QueryEvent[],
+      ): QueryLifecycleMeasurement => {
+        const abortedEvents = events.filter((event) => event.aborted);
+        return {
+          supersededInFlightCount: abortedEvents.length,
+          actualAbortCount: abortedEvents.length,
+          endedAbortCount: abortedEvents.filter((event) =>
+            event.endedAt !== undefined
+          ).length,
+          residualPendingCount: events.filter((event) =>
+            event.endedAt === undefined
+          ).length,
+          events,
+        };
       };
-    }, {
-      targetSpaceUid: secondSpace.space_uid,
-      rowsBeforeTargetQuery,
-      rowsWhileTargetQueryPending,
-    });
-    expect(lifecycle.actualAbortCount).toBeGreaterThan(0);
-    expect(lifecycle.residualPendingCount).toBe(0);
-    expect(rowsBeforeTargetQuery).toBe(0);
-    expect(lifecycle.targetSpaceQueryCount).toBeGreaterThan(0);
-    expect(
-      lifecycle.targetSpaceQueryPaths.every((path) =>
-        path.includes(`/spaces/${secondSpace.space_uid}/`)
-      ),
-    ).toBe(true);
-    expect(lifecycle.visibleDataRows).toBeGreaterThan(0);
+      const queryText = (event: QueryEvent): string | undefined => {
+        const body = event.body as { query?: { text?: unknown } } | undefined;
+        return typeof body?.query?.text === "string"
+          ? body.query.text
+          : undefined;
+      };
+      const entryEvents = lifecycle.events ?? [];
+      lifecycle.rapidSearchChanges = summarizeLifecycleEvents(
+        entryEvents.filter((event) =>
+          ["solar", "energy"].includes(queryText(event) ?? "")
+        ),
+      );
+      lifecycle.spaceChange = summarizeLifecycleEvents(
+        entryEvents.filter((event) =>
+          queryText(event) === "inspection" &&
+          event.path.includes(`/spaces/${firstSpace.space_uid}/`)
+        ),
+      );
+      expect(lifecycle.rapidSearchChanges.actualAbortCount).toBeGreaterThan(0);
+      expect(lifecycle.rapidSearchChanges.residualPendingCount).toBe(0);
+      expect(lifecycle.spaceChange.actualAbortCount).toBeGreaterThan(0);
+      expect(lifecycle.spaceChange.endedAbortCount).toBe(
+        lifecycle.spaceChange.actualAbortCount,
+      );
+      expect(lifecycle.spaceChange.residualPendingCount).toBe(0);
+
+      const measureSqlLifecycle = async (
+        path: string,
+        requestPath: string,
+        trigger: () => Promise<void>,
+      ): Promise<QueryLifecycleMeasurement> => {
+        await page.goto(getFrontendUrl(path), {
+          waitUntil: "domcontentloaded",
+        });
+        await expect(rowLocator).toBeVisible();
+        await page.route(`**${requestPath}`, async (route) => {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          try {
+            await route.continue();
+          } catch {
+            // The route may be canceled while deliberately held in flight.
+          }
+        });
+        const pendingRequest = page.waitForRequest(
+          (request) => request.url().includes(requestPath),
+          { timeout: 15_000 },
+        );
+        await trigger();
+        await pendingRequest;
+        await page.getByLabel("Space", { exact: true }).selectOption(
+          secondSpace.space_uid,
+        );
+        await expect(page).toHaveURL(
+          new RegExp(`/spaces/${secondSpace.space_uid}/(?:forms|search)$`),
+        );
+        await page.waitForTimeout(500);
+        const events = await page.evaluate(
+          (pathFragment) =>
+            ((window as Window & {
+              __ugoiteQueryEvents?: QueryEvent[];
+            }).__ugoiteQueryEvents ?? []).filter((event) =>
+              event.path.includes(pathFragment)
+            ),
+          requestPath,
+        );
+        return summarizeLifecycleEvents(events);
+      };
+
+      lifecycle.sqlPageChange = await measureSqlLifecycle(
+        `/spaces/${firstSpace.space_uid}/sql/${firstSpace.saved_sql_id}/run`,
+        "/sql/query",
+        async () => {
+          const nextButton = page.getByRole("button", { name: "Next" });
+          await expect(nextButton).toBeEnabled();
+          await nextButton.click();
+        },
+      );
+      expect(lifecycle.sqlPageChange.actualAbortCount).toBeGreaterThan(0);
+      expect(lifecycle.sqlPageChange.endedAbortCount).toBe(
+        lifecycle.sqlPageChange.actualAbortCount,
+      );
+      expect(lifecycle.sqlPageChange.residualPendingCount).toBe(0);
+
+      lifecycle.sqlCountIdentityChange = await measureSqlLifecycle(
+        `/spaces/${firstSpace.space_uid}/sql/${firstSpace.saved_sql_id}/run`,
+        "/sql/query/count",
+        async () => {
+          const countButton = page.getByRole("button", {
+            name: "Count rows",
+          });
+          await expect(countButton).toBeEnabled();
+          await countButton.click();
+        },
+      );
+      expect(
+        lifecycle.sqlCountIdentityChange.actualAbortCount,
+      ).toBeGreaterThan(0);
+      expect(lifecycle.sqlCountIdentityChange.endedAbortCount).toBe(
+        lifecycle.sqlCountIdentityChange.actualAbortCount,
+      );
+      expect(lifecycle.sqlCountIdentityChange.residualPendingCount).toBe(0);
+    }
 
     const outputPath = Deno.env.get("UGOITE_QUERY_MEASURE_OUTPUT");
     if (outputPath) {
@@ -430,6 +642,8 @@ test("records real two-Space query surface measurements", async ({ page, request
             },
             environment: {
               backend: "Ugoite server under direct-process local E2E",
+              backend_source_sha: Deno.env.get("UGOITE_BACKEND_SOURCE_SHA") ??
+                "unknown",
               backend_startup_seconds: Number(
                 Deno.env.get("UGOITE_BACKEND_STARTUP_SECONDS") ?? "NaN",
               ),

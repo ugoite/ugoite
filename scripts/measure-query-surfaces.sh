@@ -47,6 +47,7 @@ bash "$ROOT_DIR/scripts/dev-seed.sh" \
 echo "Running the server-backed browser measurement..." >&2
 mise run build:wasm
 cargo build -p ugoite-server --locked
+UGOITE_SOURCE_SHA="${UGOITE_SOURCE_SHA:-$(git -C "$ROOT_DIR" rev-parse HEAD)}" \
 UGOITE_QUERY_MEASURE_ENABLED=true \
 UGOITE_QUERY_MEASURE_OUTPUT="$OUTPUT_FILE" \
 UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=300 \

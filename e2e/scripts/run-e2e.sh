@@ -32,6 +32,7 @@ if [ -n "${UGOITE_SOURCE_SHA:-}" ] && [ "$UGOITE_SOURCE_SHA" != "$CHECKOUT_SOURC
   exit 1
 fi
 export UGOITE_SOURCE_SHA="$CHECKOUT_SOURCE_SHA"
+export UGOITE_BACKEND_SOURCE_SHA="${UGOITE_BACKEND_SOURCE_SHA:-$UGOITE_SOURCE_SHA}"
 PROXY_TIMEOUT_MS="${UGOITE_PROXY_TIMEOUT_MS:-30000}"
 ENFORCE_CI_GATES="${E2E_ENFORCE_CI_GATES:-false}"
 FRONTEND_MODE="${E2E_FRONTEND_MODE:-static}"
@@ -174,7 +175,15 @@ if [ -n "$STATIC_DIR" ]; then
   BACKEND_ENV+=("UGOITE_STATIC_DIR=$STATIC_DIR")
 fi
 BACKEND_LOG="$E2E_STORAGE_ROOT/backend.log"
-env "${BACKEND_ENV[@]}" cargo run -p ugoite-server --locked > >(tee "$BACKEND_LOG") 2>&1 &
+BACKEND_COMMAND=(cargo run -p ugoite-server --locked)
+if [ -n "${UGOITE_E2E_BACKEND_BINARY:-}" ]; then
+  if [ ! -x "$UGOITE_E2E_BACKEND_BINARY" ]; then
+    echo "✗ ERROR: UGOITE_E2E_BACKEND_BINARY is not executable"
+    exit 1
+  fi
+  BACKEND_COMMAND=("$UGOITE_E2E_BACKEND_BINARY")
+fi
+env "${BACKEND_ENV[@]}" "${BACKEND_COMMAND[@]}" > >(tee "$BACKEND_LOG") 2>&1 &
 BACKEND_PID=$!
 
 FRONTEND_PID=""
