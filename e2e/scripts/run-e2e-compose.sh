@@ -175,7 +175,6 @@ if [ "$TEST_TYPE" = "portable-space" ]; then
   echo "Seeding a CLI-core Space before Node startup..."
   PORTABLE_CLI_CONFIG="${E2E_COMPOSE_STORAGE_ROOT}.cli-config.toml"
   bash "$SCRIPT_DIR/seed-portable-space.sh" "$E2E_COMPOSE_STORAGE_ROOT" >/dev/null
-  chmod -R a+rwX "$E2E_COMPOSE_STORAGE_ROOT"
   export E2E_PORTABLE_PROOF_FILE="$E2E_COMPOSE_STORAGE_ROOT/portable-space-proof.json"
 fi
 
@@ -187,6 +186,11 @@ fi
 echo "Starting services via docker-compose.e2e.yml..."
 if [ "$TEST_TYPE" = "portable-space" ]; then
   "${compose_cmd[@]}" up --no-start
+  # The CLI seed runs as the host user and preserves Space's private modes.
+  # Hand the mounted fixture to the runtime identity so startup can validate
+  # and reapply its owner-only modes without broadening permissions.
+  "${compose_cmd[@]}" run --rm --no-deps --user 0:0 --entrypoint /bin/sh ugoite \
+    -c 'chown -R ugoite:ugoite /data'
   "${compose_cmd[@]}" start
 else
   "${compose_cmd[@]}" up -d
