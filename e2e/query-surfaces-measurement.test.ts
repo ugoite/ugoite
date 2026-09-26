@@ -302,7 +302,7 @@ test("records real two-Space query surface measurements", async ({ page, request
           __ugoiteQueryEvents?: QueryEvent[];
         }).__ugoiteQueryEvents ?? [],
         dataRows: document.querySelectorAll(
-          "tbody tr.paged-result-row",
+          "tbody tr:not(.paged-result-spacer)",
         ).length,
       }));
       expect(
