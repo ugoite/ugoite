@@ -64,6 +64,15 @@ interface RowListMainProps {
   title?: string;
 }
 
+/** Shared unboxed navigation mark used by row-list links and table actions. */
+export function RowListChevron() {
+  return (
+    <span class="rowListChevron" aria-hidden="true">
+      ›
+    </span>
+  );
+}
+
 function RowListMainContent(props: RowListMainProps) {
   return (
     <>
@@ -77,9 +86,7 @@ function RowListMainContent(props: RowListMainProps) {
         {(meta) => <span class="rowListMeta">{meta()}</span>}
       </Show>
       <Show when={props.chevron}>
-        <span class="rowListChevron" aria-hidden="true">
-          ›
-        </span>
+        <RowListChevron />
       </Show>
     </>
   );

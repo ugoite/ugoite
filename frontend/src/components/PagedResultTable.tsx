@@ -42,6 +42,10 @@ export interface PagedResultTableProps<Row> {
   renderPrimaryAction?: (row: Row, index: number) => JSX.Element;
   renderTrailingAction?: (row: Row, index: number) => JSX.Element;
   trailingActionLabel?: string;
+  trailingActionClassName?: string;
+  trailingHeaderClassName?: string;
+  onRowSelect?: (row: Row, index: number) => void;
+  selectedRowKey?: string;
   entryDataId?: (row: Row) => string;
   classNames?: { table?: string; scroll?: string };
   paginationLabel?: string;
@@ -161,11 +165,19 @@ export function PagedResultTable<Row>(props: PagedResultTableProps<Row>) {
 
   const renderIndexedRow = (row: Row, index: Accessor<number>) => (
     <tr
-      class="paged-result-row"
+      classList={{
+        "paged-result-row": true,
+        "paged-result-row-selected": props.selectedRowKey ===
+          props.rowKey(row, index()),
+      }}
       data-row-index={index()}
       data-row-key={props.rowKey(row, index())}
       data-entry-id={props.entryDataId?.(row)}
       aria-rowindex={virtualized() ? index() + 2 : undefined}
+      aria-selected={props.selectedRowKey === props.rowKey(row, index()) ||
+        undefined}
+      onClick={() => props.onRowSelect?.(row, index())}
+      onFocusIn={() => props.onRowSelect?.(row, index())}
       onKeyDown={handleTableKeyDown}
     >
       <For each={props.columns}>
@@ -181,7 +193,13 @@ export function PagedResultTable<Row>(props: PagedResultTableProps<Row>) {
         )}
       </For>
       <Show when={props.renderTrailingAction}>
-        <td class="paged-result-cell">
+        <td
+          class="paged-result-cell"
+          classList={{
+            [props.trailingActionClassName ?? ""]: !!props
+              .trailingActionClassName,
+          }}
+        >
           {props.renderTrailingAction!(row, index())}
         </td>
       </Show>
@@ -229,7 +247,10 @@ export function PagedResultTable<Row>(props: PagedResultTableProps<Row>) {
                   {(column) => <th scope="col">{column.label}</th>}
                 </For>
                 <Show when={props.renderTrailingAction}>
-                  <th scope="col">
+                  <th
+                    scope="col"
+                    class={props.trailingHeaderClassName}
+                  >
                     <span class="ui-sr-only">
                       {props.trailingActionLabel}
                     </span>
@@ -249,7 +270,8 @@ export function PagedResultTable<Row>(props: PagedResultTableProps<Row>) {
               </Show>
               <For each={visibleRows()}>
                 {(row, visibleIndex) => {
-                  const index = () => range().start + visibleIndex();
+                  const index = () =>
+                    range().start + visibleIndex();
                   return renderIndexedRow(row, index);
                 }}
               </For>

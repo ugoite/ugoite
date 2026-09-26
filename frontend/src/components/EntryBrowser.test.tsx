@@ -125,12 +125,66 @@ describe("EntryBrowser", () => {
         onSelect={onSelect}
       />
     ));
-    fireEvent.click(screen.getByRole("button", { name: "Target row" }));
-
+    const targetRow = screen.getByText("Target row").closest("tr");
+    expect(targetRow).not.toBeNull();
+    fireEvent.click(targetRow!);
+    expect(targetRow).toHaveAttribute("aria-selected", "true");
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Use this entry" }));
     expect(onSelect).toHaveBeenCalledWith(
       expect.objectContaining({ id: "stable-entry-id" }),
     );
     expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("navigates only from the shared trailing chevron action", async () => {
+    queryMock.mockResolvedValue({
+      rows: [{
+        id: "entry-to-open",
+        form_id: "form-1",
+        revision_id: "revision-1",
+        created_at_micros: CREATED_MICROS,
+        updated_at_micros: UPDATED_MICROS,
+        preview: "Entry name",
+      }],
+      has_more: false,
+    });
+    const onSelect = vi.fn();
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    const { container } = render(() => (
+      <EntryBrowser
+        controller={controller}
+        capabilities={systemEntryCapabilities({
+          kind: "form",
+          form_id: "form-1",
+        })}
+        onSelect={onSelect}
+      />
+    ));
+
+    const row = screen.getByRole("row", { name: /Entry name/ });
+    fireEvent.click(row);
+    expect(row).toHaveAttribute("aria-selected", "true");
+    expect(onSelect).not.toHaveBeenCalled();
+
+    const open = screen.getByRole("button", { name: "Open entry" });
+    expect(open.querySelector("span.rowListChevron")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(container.querySelectorAll(".rowListChevron")).toHaveLength(1);
+    fireEvent.click(open);
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "entry-to-open" }),
+    );
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
   it("updates Form labels when metadata arrives without reloading the page", async () => {
@@ -270,7 +324,12 @@ describe("EntryBrowser", () => {
       <EntryBrowser controller={controller} capabilities={capabilities} />
     ));
 
-    expect(headerLabels()).toEqual(["status", "owner", "Updated"]);
+    expect(headerLabels()).toEqual([
+      "status",
+      "owner",
+      "Updated",
+      "Open entry",
+    ]);
     const row = screen.getByRole("row", { name: /active/ });
     expect(within(row).getByText("active")).toBeInTheDocument();
     expect(within(row).getByText("ada")).toBeInTheDocument();
@@ -281,6 +340,46 @@ describe("EntryBrowser", () => {
     expect(
       document.querySelector('[data-entry-id="entry-9"]'),
     ).not.toBeNull();
+  });
+
+  it("keeps timestamp columns after Form fields in stable Created then Updated order", async () => {
+    queryMock.mockResolvedValue({
+      rows: [{
+        id: "entry-1",
+        form_id: "form-1",
+        revision_id: "revision-1",
+        created_at_micros: CREATED_MICROS,
+        updated_at_micros: UPDATED_MICROS,
+        preview: "Record",
+      }],
+      has_more: false,
+    });
+    const capabilities = systemEntryCapabilities({
+      kind: "form",
+      form_id: "form-1",
+    });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      { scope: capabilities.scope, filters: [], sort: [] },
+      {
+        kind: "fields",
+        fields: [
+          { kind: "updated_at" },
+          { kind: "created_at" },
+        ],
+      },
+      50,
+      queryMock,
+    );
+    await controller.load();
+    render(() => (
+      <EntryBrowser controller={controller} capabilities={capabilities} />
+    ));
+    expect(headerLabels()).toEqual([
+      "Created",
+      "Updated",
+      "Open entry",
+    ]);
   });
 
   it("shows system-level columns only for All Forms and never unions properties", async () => {
@@ -326,7 +425,13 @@ describe("EntryBrowser", () => {
       />
     ));
 
-    expect(headerLabels()).toEqual(["Form", "Preview", "Created", "Updated"]);
+    expect(headerLabels()).toEqual([
+      "Form",
+      "Preview",
+      "Created",
+      "Updated",
+      "Open entry",
+    ]);
     expect(screen.getByText("Tasks")).toBeInTheDocument();
     expect(screen.queryByText("form-9")).not.toBeInTheDocument();
 

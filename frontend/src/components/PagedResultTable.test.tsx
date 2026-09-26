@@ -156,7 +156,9 @@ describe("PagedResultTable", () => {
     expect(within(table).queryByText("Value 0")).not.toBeInTheDocument();
     expect(within(table).getAllByRole("row").length).toBeLessThanOrEqual(30);
     expect(
-      table.querySelectorAll('tbody tr.paged-result-spacer[aria-hidden="true"]'),
+      table.querySelectorAll(
+        'tbody tr.paged-result-spacer[aria-hidden="true"]',
+      ),
     ).toHaveLength(2);
     expect(within(table).getAllByRole("row")).toHaveLength(23);
     expect(within(table).getAllByRole("row")[1]).toHaveAttribute(
@@ -297,5 +299,90 @@ describe("PagedResultTable", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Request failed");
     expect(screen.queryByText("No rows")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+  });
+
+  it("supports selectable rows and a native trailing action column", () => {
+    const onRowSelect = vi.fn();
+    const onAction = vi.fn();
+    render(() => (
+      <PagedResultTable
+        columns={columns}
+        rows={rows(1)}
+        rowKey={(row) => row.id}
+        pageIdentity="selectable"
+        loading={false}
+        loadingLabel="Loading"
+        emptyLabel="No rows"
+        retryLabel="Retry"
+        canPrevious={false}
+        canNext={false}
+        previousLabel="Previous"
+        nextLabel="Next"
+        onPrevious={() => {}}
+        onNext={() => {}}
+        onRowSelect={onRowSelect}
+        selectedRowKey="row-0"
+        renderTrailingAction={() => (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction();
+            }}
+          >
+            Open row
+          </button>
+        )}
+        trailingActionLabel="Actions"
+        trailingActionClassName="sticky-action-cell"
+        trailingHeaderClassName="sticky-action-header"
+      />
+    ));
+
+    const row = screen.getByRole("button", { name: "Value 0" }).closest("tr");
+    expect(row).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("columnheader", { name: "Actions" }))
+      .toHaveClass("sticky-action-header");
+    expect(row?.lastElementChild).toHaveClass("sticky-action-cell");
+    expect(screen.getByRole("table")).toBeInTheDocument();
+
+    fireEvent.click(row!);
+    expect(onRowSelect).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Open row" }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onRowSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves arrow-key focus to the trailing action when no primary action exists", async () => {
+    const twoRows = rows(2);
+    render(() => (
+      <PagedResultTable
+        columns={[{ key: "value", label: "Value", cell: (row) => row.value }]}
+        rows={twoRows}
+        rowKey={(row) => row.id}
+        pageIdentity="trailing-keyboard"
+        loading={false}
+        loadingLabel="Loading"
+        emptyLabel="No rows"
+        retryLabel="Retry"
+        canPrevious={false}
+        canNext={false}
+        previousLabel="Previous"
+        nextLabel="Next"
+        onPrevious={() => {}}
+        onNext={() => {}}
+        renderTrailingAction={(row) => (
+          <button type="button">Open {row.id}</button>
+        )}
+        trailingActionLabel="Open"
+      />
+    ));
+
+    const firstAction = screen.getByRole("button", { name: "Open row-0" });
+    fireEvent.keyDown(firstAction, { key: "ArrowDown" });
+    const secondAction = screen.getByRole("button", { name: "Open row-1" });
+    await waitFor(() => expect(secondAction).toHaveFocus());
+    fireEvent.keyDown(secondAction, { key: "ArrowUp" });
+    await waitFor(() => expect(firstAction).toHaveFocus());
   });
 });

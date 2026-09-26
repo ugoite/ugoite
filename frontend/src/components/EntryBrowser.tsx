@@ -1,4 +1,4 @@
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import type {
   EntryFieldCapability,
   EntryFieldRef,
@@ -13,6 +13,7 @@ import type {
 import { formatDateLabel } from "~/lib/date-format";
 import { formatValueForDisplay } from "~/lib/display-value";
 import { t } from "~/lib/i18n";
+import { RowListChevron } from "./RowList";
 import { PagedResultTable, type ResultColumn } from "./PagedResultTable";
 
 export type EntryBrowserMode = "browse" | "select_one";
@@ -84,6 +85,7 @@ const projectionFields = (projection: EntryProjection): EntryFieldRef[] =>
 const MAX_PROJECTION_FIELDS = 64;
 
 export function EntryBrowser(props: EntryBrowserProps) {
+  const [selectedEntryId, setSelectedEntryId] = createSignal<string>();
   const mode = () => props.mode ?? "browse";
   const queryState = createMemo(() => props.controller.query());
   const projectionState = createMemo(() => props.controller.projection());
@@ -246,18 +248,31 @@ export function EntryBrowser(props: EntryBrowserProps) {
   const visibleColumns = (): VisibleColumn[] => {
     const projection = projectionState();
     if (projection.kind === "fields") {
-      const columns: VisibleColumn[] = [];
+      const regularColumns: VisibleColumn[] = [];
+      const timestampColumns = new Map<string, VisibleColumn>();
       for (const field of projection.fields) {
         const capability = capabilityForField(props, field);
         if (capability) {
-          columns.push({
+          const column: VisibleColumn = {
             kind: "field",
             key: fieldKey(field),
             label: capability.name,
             field,
-          });
+          };
+          if (field.kind === "created_at" || field.kind === "updated_at") {
+            timestampColumns.set(field.kind, column);
+          } else {
+            regularColumns.push(column);
+          }
         }
       }
+      const columns = [
+        ...regularColumns,
+        ...(["created_at", "updated_at"] as const).flatMap((kind) => {
+          const column = timestampColumns.get(kind);
+          return column ? [column] : [];
+        }),
+      ];
       if (columns.length > 0) return columns;
     }
     return previewColumns();
@@ -567,31 +582,43 @@ export function EntryBrowser(props: EntryBrowserProps) {
         nextLabel={t("common.next")}
         onPrevious={() => void props.controller.previous()}
         onNext={() => void props.controller.next()}
-        renderPrimaryAction={(row) => (
-          <button
-            type="button"
-            class="entry-browser-primary"
-            title={cellText(row, visibleColumns()[0])}
-            disabled={loadingState()}
-            onClick={() => props.onSelect?.(row)}
-          >
-            {cellText(row, visibleColumns()[0])}
-          </button>
-        )}
+        selectedRowKey={selectedEntryId()}
+        onRowSelect={(row) => setSelectedEntryId(row.id)}
         renderTrailingAction={mode() === "select_one"
           ? (row) => (
             <button
               type="button"
               class="ui-button ui-button-secondary"
               disabled={loadingState()}
-              onClick={() => props.onSelect?.(row)}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onSelect?.(row);
+              }}
             >
               {t("entryBrowser.confirm")}
             </button>
           )
-          : undefined}
-        trailingActionLabel={t("entryBrowser.confirm")}
+          : (row) => (
+            <button
+              type="button"
+              class="entry-browser-open"
+              aria-label={t("entryBrowser.openEntry")}
+              title={t("entryBrowser.openEntry")}
+              disabled={loadingState()}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onSelect?.(row);
+              }}
+            >
+              <RowListChevron />
+            </button>
+          )}
+        trailingActionLabel={mode() === "select_one"
+          ? t("entryBrowser.confirm")
+          : t("entryBrowser.openEntry")}
         entryDataId={(row) => row.id}
+        trailingActionClassName="entry-browser-trailing-cell"
+        trailingHeaderClassName="entry-browser-trailing-header"
         paginationLabel={t("entryBrowser.pagination")}
         classNames={{
           table: "entry-browser-table",

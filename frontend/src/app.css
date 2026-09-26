@@ -3317,7 +3317,8 @@ a.tool {
 .entry-browser-table {
   width: 100%;
   min-width: 36rem;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .entry-browser-header-cell,
@@ -3341,27 +3342,71 @@ a.tool {
   text-overflow: ellipsis;
 }
 
-.entry-browser-primary {
+.entry-browser-trailing-cell,
+.entry-browser-trailing-header {
+  position: sticky;
+  right: 0;
+  width: 52px;
+  min-width: 52px;
+  padding: 2px 4px;
+  background: var(--panel);
+  text-align: center;
+}
+
+.entry-browser-trailing-header {
+  z-index: 2;
+  background: var(--panel);
+}
+
+.entry-browser-trailing-cell {
+  z-index: 1;
+  border-bottom: 1px solid var(--line);
+}
+
+.entry-browser-open {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border: 0;
+  border-radius: 8px;
   background: transparent;
-  color: inherit;
-  font: inherit;
-  font-weight: 700;
-  text-align: left;
+  color: var(--ink);
   cursor: pointer;
 }
 
-.entry-browser-primary:hover,
-.entry-browser-primary:focus-visible {
-  text-decoration: underline;
+.entry-browser-open:hover {
+  background: var(--soft2);
+}
+
+.entry-browser-open:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 
 .entry-browser-row:hover {
   background: var(--soft2);
 }
 
+.entry-browser-table tbody tr.paged-result-row {
+  cursor: pointer;
+}
+
 .entry-browser-table tbody tr:not(.paged-result-spacer):hover {
+  background: var(--soft2);
+}
+
+.entry-browser-table tbody tr.paged-result-row-selected > td:first-child {
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.entry-browser-table tbody tr.paged-result-row-selected {
+  background: var(--soft2);
+}
+
+.entry-browser-table tbody tr.paged-result-row-selected
+  > .entry-browser-trailing-cell {
   background: var(--soft2);
 }
 
