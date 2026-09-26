@@ -4,7 +4,7 @@
 
 mod mcp;
 
-use anyhow::Context as _;
+use anyhow::{anyhow, Context as _};
 use axum::{
     body::{Body, Bytes, HttpBody as _},
     extract::{
@@ -57,21 +57,41 @@ use ugoite_iceberg::{
     },
     form, saved_sql,
     service::{
-        ApplyOperation, SpacePermission, UgoiteService, MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS,
+        ApplyOperation, SpaceOnboardingState, SpacePermission, UgoiteService,
+        MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS,
     },
     space,
 };
 use ugoite_identity::{
     node_identity::{
-        AccountInvitation, ActiveCredentialKind, NodeAuditInput, NodeIdentityService,
-        OidcAttemptPurpose, OwnerRecoveryContext, RecoveryBindingSnapshot, StepUpError,
-        TotpEnrollmentFinishError, STEP_UP_ELIGIBLE_OPERATIONS,
+        AccountInvitation, ActiveCredentialKind, InitialSpaceClaim, NodeAuditInput,
+        NodeIdentityService, NodeLifecycle, OidcAttemptPurpose, OwnerRecoveryContext,
+        RecoveryBindingSnapshot, StepUpError, TotpEnrollmentFinishError,
+        STEP_UP_ELIGIBLE_OPERATIONS,
     },
     oauth::{self, AccessTokenClaims, Confirmation},
 };
 
 #[derive(Clone, Copy, Default)]
 struct MakeRequestUuidV7;
+
+fn active_owner_principal_id(state: &AuthorizationState) -> anyhow::Result<Uuid> {
+    state
+        .memberships
+        .values()
+        .filter(|membership| matches!(membership.role, SpaceRole::Owner))
+        .find_map(|membership| {
+            state
+                .principals
+                .get(&membership.principal_id)
+                .filter(|principal| {
+                    matches!(principal.kind, PrincipalKind::Human)
+                        && matches!(principal.state, PrincipalState::Active)
+                })
+                .map(|principal| principal.principal_id)
+        })
+        .ok_or_else(|| anyhow!("Space has no active owner principal"))
+}
 
 impl MakeRequestId for MakeRequestUuidV7 {
     fn make_request_id<B>(&mut self, _request: &Request<B>) -> Option<RequestId> {
@@ -915,6 +935,183 @@ impl AppState {
         self.service.workspace_path(space_id)
     }
 
+    async fn complete_pending_initial_space_claims(&self) -> anyhow::Result<Vec<(Uuid, Uuid)>> {
+        let pending = self.identity.pending_initial_space_claims().await?;
+        if pending.is_empty() {
+            return Ok(Vec::new());
+        }
+        let account_id = pending[0].account_id;
+        if pending.iter().any(|claim| claim.account_id != account_id) {
+            return Err(anyhow!(
+                "initial Space claim intents contain multiple accounts"
+            ));
+        }
+        let node_state = self.identity.read_state().await?;
+        let authorizer = Authorizer::new(self.service.operator().clone());
+        let mut bindings = Vec::with_capacity(pending.len());
+        let mut completed = Vec::with_capacity(pending.len());
+        let mut resolved = Vec::with_capacity(pending.len());
+        for claim in &pending {
+            let account = node_state
+                .accounts
+                .get(&claim.account_id)
+                .filter(|account| matches!(account.status, AccountStatus::Active))
+                .ok_or_else(|| anyhow!("pending initial Space claim has no active account"))?;
+            let space_uid = claim
+                .space_uid
+                .ok_or_else(|| anyhow!("pending initial Space claim has no fixed UID"))?;
+            let space_id = claim
+                .space_id
+                .clone()
+                .ok_or_else(|| anyhow!("pending initial Space claim has no fixed directory"))?;
+            if space_id != space_uid.to_string() {
+                return Err(anyhow!(
+                    "pending initial Space claim UID and directory disagree"
+                ));
+            }
+            let existing = self
+                .service
+                .recover_initial_space_claim_target(&claim.slug, space_uid, claim.principal_id)
+                .await?;
+            match existing {
+                Some(existing_id) if existing_id == space_id => {}
+                Some(_) => {
+                    return Err(anyhow!(
+                        "pending initial Space claim resolved to a different Space"
+                    ));
+                }
+                None if claim.create_if_missing => {
+                    let created_uid = self
+                        .service
+                        .create_space_for_principal_with_uid(
+                            &claim.slug,
+                            space_uid,
+                            claim.principal_id,
+                            &account.display_name,
+                        )
+                        .await?;
+                    if created_uid != space_uid {
+                        return Err(anyhow!(
+                            "created Space UID does not match durable initial claim intent"
+                        ));
+                    }
+                }
+                None => {
+                    return Err(anyhow!(
+                        "pending initial Space claim target no longer exists"
+                    ));
+                }
+            }
+            let metadata = self.service.get_space(&space_id).await?;
+            let current_uid = metadata
+                .get("space_uid")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("pending initial Space claim has no immutable UID"))
+                .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))?;
+            let current_slug = metadata
+                .get("slug")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("pending initial Space claim has no slug"))?;
+            if current_uid != space_uid || current_slug != claim.slug {
+                return Err(anyhow!(
+                    "pending initial Space claim identity changed; refusing to bind"
+                ));
+            }
+            match self
+                .service
+                .classify_space_for_node_onboarding(&space_id)
+                .await?
+            {
+                SpaceOnboardingState::PortableUnclaimed { uid, slug }
+                    if uid == space_uid && slug == claim.slug =>
+                {
+                    authorizer
+                        .initialize_owner(
+                            &space_id,
+                            space_uid,
+                            claim.principal_id,
+                            &account.display_name,
+                        )
+                        .await?;
+                }
+                SpaceOnboardingState::ClaimedValid { uid, slug }
+                    if uid == space_uid && slug == claim.slug =>
+                {
+                    let state = authorizer.state(&space_id).await?;
+                    let active_owner = active_owner_principal_id(&state)?;
+                    if active_owner != claim.principal_id {
+                        return Err(anyhow!(
+                            "pending initial Space claim conflicts with a different owner"
+                        ));
+                    }
+                }
+                SpaceOnboardingState::IncompleteOrPending { .. }
+                | SpaceOnboardingState::InvalidOrForeign { .. }
+                | SpaceOnboardingState::ClaimedValid { .. }
+                | SpaceOnboardingState::PortableUnclaimed { .. } => {
+                    return Err(anyhow!(
+                        "pending initial Space claim no longer matches a claimable Space"
+                    ));
+                }
+            }
+            let state = authorizer.state(&space_id).await?;
+            authorizer
+                .validate_current_layout(&space_id, space_uid)
+                .await?;
+            if active_owner_principal_id(&state)? != claim.principal_id {
+                return Err(anyhow!(
+                    "Space owner does not match durable initial claim intent"
+                ));
+            }
+            self.service
+                .bind_initial_space_slug_claim_owner(&claim.slug, space_uid, claim.principal_id)
+                .await?;
+            bindings.push(ugoite_domain::identity::PrincipalBinding {
+                space_uid,
+                principal_id: claim.principal_id,
+                node_account_id: claim.account_id,
+                binding_method: BindingMethod::Setup,
+            });
+            completed.push((space_uid, claim.principal_id));
+            resolved.push((space_id, space_uid, claim.principal_id));
+        }
+        self.identity.add_bindings(bindings).await?;
+        let observed = self.identity.read_state().await?;
+        for (_space_id, space_uid, principal_id) in &resolved {
+            if !observed.bindings.iter().any(|binding| {
+                binding.space_uid == *space_uid
+                    && binding.principal_id == *principal_id
+                    && binding.node_account_id == account_id
+            }) {
+                return Err(anyhow!(
+                    "Node binding does not match durable initial claim intent"
+                ));
+            }
+        }
+        for (space_id, _space_uid, principal_id) in &resolved {
+            let state = authorizer.state(space_id).await?;
+            if active_owner_principal_id(&state)? != *principal_id {
+                return Err(anyhow!(
+                    "Space owner changed before completing initial claim intent"
+                ));
+            }
+        }
+        // Keep the durable intent as an admission fence until every paired
+        // recovery record, audit outbox, and Space audit has reconciled. A
+        // retry after any failure re-enters this idempotent recovery path.
+        for (space_uid, _) in &completed {
+            let space_id = space_uid.to_string();
+            reconcile_recovery_fences(self, &space_id).await?;
+            reconcile_recovery_audit_outbox(self, &space_id).await?;
+            reconcile_human_approval_audit_outbox(self, &space_id).await?;
+            self.service.reconcile_space_audit(&space_id).await?;
+        }
+        self.identity
+            .complete_initial_space_claims(account_id)
+            .await?;
+        Ok(completed)
+    }
+
     pub async fn initialize_node(&self) -> anyhow::Result<()> {
         let authorizer = Authorizer::new(self.service.operator().clone());
         if let Err(error) = authorizer.ensure_authoritative_mutation_contract() {
@@ -952,11 +1149,47 @@ impl AppState {
         // it before strict enumeration so a crash-left pending bootstrap does
         // not prevent the server from reaching its listener on restart.
         self.service.recover_pending_space_claims().await?;
+        self.complete_pending_initial_space_claims().await?;
+        let first_setup_is_pending = matches!(
+            self.identity.read_state().await?.lifecycle,
+            NodeLifecycle::Uninitialized
+        );
         let space_ids = self.service.list_space_ids().await?;
+        let mut claimed_space_ids = Vec::new();
+        for space_id in &space_ids {
+            match self
+                .service
+                .classify_space_for_node_onboarding(space_id)
+                .await?
+            {
+                SpaceOnboardingState::ClaimedValid { .. } => {
+                    claimed_space_ids.push(space_id.clone());
+                }
+                SpaceOnboardingState::PortableUnclaimed { .. } => {
+                    if first_setup_is_pending {
+                        eprintln!(
+                            "Portable Space is unclaimed; the first Node setup will claim it"
+                        );
+                    } else {
+                        eprintln!("Portable Space is quarantined because this Node is already initialized; use a fresh Node for first-setup claim");
+                    }
+                }
+                SpaceOnboardingState::IncompleteOrPending { uid, slug, reason } => {
+                    return Err(anyhow!(
+                        "Space onboarding is incomplete (uid={uid:?}, slug={slug:?}): {reason}"
+                    ));
+                }
+                SpaceOnboardingState::InvalidOrForeign { uid, slug, reason } => {
+                    return Err(anyhow!(
+                        "Space onboarding validation failed closed (uid={uid:?}, slug={slug:?}): {reason}"
+                    ));
+                }
+            }
+        }
         // Resolve every durable recovery fence and audit obligation before
         // launching maintenance. Maintenance can mutate derived/asset
         // storage, so it must not race an unresolved recovery decision.
-        for space_id in &space_ids {
+        for space_id in &claimed_space_ids {
             reconcile_recovery_fences(self, space_id).await?;
             reconcile_recovery_audit_outbox(self, space_id).await?;
             reconcile_human_approval_audit_outbox(self, space_id).await?;
@@ -966,7 +1199,7 @@ impl AppState {
             // propagate instead of hiding as success.
             self.service.reconcile_space_audit(space_id).await?;
         }
-        for space_id in space_ids {
+        for space_id in claimed_space_ids {
             // Rehydrate relation-local maintenance on every server start.
             let maintenance_service = self.service.clone();
             let maintenance_space_id = space_id.clone();
@@ -1803,8 +2036,28 @@ async fn require_auth(
             request_id,
         }
     };
+    match state.identity.pending_initial_space_claims().await {
+        Ok(pending) if pending.is_empty() => {}
+        Ok(_) => {
+            return initial_setup_recovery_pending_response();
+        }
+        Err(_) => {
+            return initial_setup_recovery_pending_response();
+        }
+    }
     request.extensions_mut().insert(identity);
     next.run(request).await
+}
+
+fn initial_setup_recovery_pending_response() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({
+            "code": "INITIAL_SETUP_RECOVERY_PENDING",
+            "message": "initial Space setup is recovering; retry after Node recovery completes"
+        })),
+    )
+        .into_response()
 }
 
 fn unauthorized(message: &str) -> Response {
@@ -1966,80 +2219,194 @@ async fn auth_setup_finish(
     Authorizer::new(state.service.operator().clone())
         .ensure_authoritative_mutation_contract()
         .map_err(ApiError::from_core)?;
-    // Validate every existing Space before the identity service consumes the
-    // one-time setup secret and persists the new account. Current-release
-    // setup does not upgrade old Space layouts, so an invalid Space must leave
-    // setup retryable with the original secret.
+    state
+        .service
+        .validate_no_pending_space_claims()
+        .await
+        .map_err(ApiError::from_core)?;
+    // Classify every existing Space before consuming the setup secret. Only a
+    // complete unclaimed portable Space or a validated existing owner is
+    // eligible; corrupt, pending, or foreign state leaves setup retryable.
     let existing_spaces = state
         .service
         .list_space_ids()
         .await
         .map_err(ApiError::from_core)?;
     let authorizer = Authorizer::new(state.service.operator().clone());
-    // Setup spans Node identity and every existing Space. Shared object
-    // storage cannot commit those objects as one transaction, so reject the
-    // whole bootstrap before consuming the one-time setup secret.
+    let mut initial_claims = Vec::with_capacity(existing_spaces.len());
     for space_id in &existing_spaces {
-        let space_uid = state
+        let classification = state
             .service
-            .space_uid(space_id)
+            .classify_space_for_node_onboarding(space_id)
             .await
             .map_err(ApiError::from_core)?;
-        space::validate_complete_bootstrap(state.service.operator(), space_id)
+        let (space_uid, slug, principal_id) = match classification {
+            SpaceOnboardingState::PortableUnclaimed { uid, slug } => (uid, slug, Uuid::now_v7()),
+            SpaceOnboardingState::ClaimedValid { uid, slug } => {
+                let authorization = authorizer
+                    .state_if_present(space_id, uid)
+                    .await
+                    .map_err(ApiError::from_core)?
+                    .ok_or_else(|| {
+                        ApiError::from_core(
+                            AppError::conflict(
+                                ErrorCode::InvalidInput,
+                                "SPACE_ONBOARDING_STATE_CHANGED",
+                            )
+                            .into(),
+                        )
+                    })?;
+                (
+                    uid,
+                    slug,
+                    active_owner_principal_id(&authorization).map_err(auth_error)?,
+                )
+            }
+            SpaceOnboardingState::IncompleteOrPending { reason, .. } => {
+                return Err(ApiError::from_core(
+                    AppError::conflict(
+                        ErrorCode::InvalidInput,
+                        format!("SPACE_ONBOARDING_PENDING: {reason}"),
+                    )
+                    .into(),
+                ));
+            }
+            SpaceOnboardingState::InvalidOrForeign { reason, .. } => {
+                return Err(ApiError::from_core(
+                    AppError::conflict(
+                        ErrorCode::InvalidInput,
+                        format!("SPACE_ONBOARDING_INVALID: {reason}"),
+                    )
+                    .into(),
+                ));
+            }
+        };
+        initial_claims.push(InitialSpaceClaim {
+            space_id: Some(space_id.clone()),
+            space_uid: Some(space_uid),
+            slug,
+            principal_id,
+            create_if_missing: false,
+        });
+    }
+    if existing_spaces.is_empty() {
+        // Allocate the default UID before the one-time setup registration is
+        // persisted. Recovery must never adopt a concurrent Space that later
+        // claims the `default` slug.
+        let default_uid = Uuid::now_v7();
+        initial_claims.push(InitialSpaceClaim {
+            space_id: Some(default_uid.to_string()),
+            space_uid: Some(default_uid),
+            slug: "default".to_string(),
+            principal_id: Uuid::now_v7(),
+            create_if_missing: true,
+        });
+    }
+    // Freeze the inventory and each target identity again immediately before
+    // the one-time secret is consumed. This catches a concurrent pending slug
+    // claim or a Space/owner change during setup validation.
+    state
+        .service
+        .validate_no_pending_space_claims()
+        .await
+        .map_err(ApiError::from_core)?;
+    if state
+        .service
+        .list_space_ids()
+        .await
+        .map_err(ApiError::from_core)?
+        != existing_spaces
+    {
+        return Err(ApiError::from_core(
+            AppError::conflict(
+                ErrorCode::InvalidInput,
+                "SPACE_ONBOARDING_INVENTORY_CHANGED",
+            )
+            .into(),
+        ));
+    }
+    for claim in &initial_claims {
+        let space_id = claim
+            .space_id
+            .as_deref()
+            .ok_or_else(|| auth_error(anyhow!("setup claim has no Space id")))?;
+        let space_uid = claim
+            .space_uid
+            .ok_or_else(|| auth_error(anyhow!("setup claim has no fixed Space UID")))?;
+        if claim.create_if_missing {
+            if state
+                .service
+                .recover_initial_space_claim_target(&claim.slug, space_uid, claim.principal_id)
+                .await
+                .map_err(ApiError::from_core)?
+                .is_some()
+            {
+                return Err(ApiError::from_core(
+                    AppError::conflict(
+                        ErrorCode::InvalidInput,
+                        "SPACE_ONBOARDING_DEFAULT_TARGET_CHANGED",
+                    )
+                    .into(),
+                ));
+            }
+            continue;
+        }
+        match state
+            .service
+            .classify_space_for_node_onboarding(space_id)
             .await
-            .map_err(ApiError::from_core)?;
-        authorizer
-            .validate_current_layout(space_id, space_uid)
-            .await
-            .map_err(ApiError::from_core)?;
+            .map_err(ApiError::from_core)?
+        {
+            SpaceOnboardingState::PortableUnclaimed { uid, slug }
+                if uid == space_uid && slug == claim.slug => {}
+            SpaceOnboardingState::ClaimedValid { uid, slug }
+                if uid == space_uid && slug == claim.slug =>
+            {
+                let authorization = authorizer
+                    .state_if_present(space_id, uid)
+                    .await
+                    .map_err(ApiError::from_core)?
+                    .ok_or_else(|| {
+                        ApiError::from_core(
+                            AppError::conflict(
+                                ErrorCode::InvalidInput,
+                                "SPACE_ONBOARDING_STATE_CHANGED",
+                            )
+                            .into(),
+                        )
+                    })?;
+                if active_owner_principal_id(&authorization).map_err(auth_error)?
+                    != claim.principal_id
+                {
+                    return Err(ApiError::from_core(
+                        AppError::conflict(
+                            ErrorCode::InvalidInput,
+                            "SPACE_ONBOARDING_OWNER_CHANGED",
+                        )
+                        .into(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(ApiError::from_core(
+                    AppError::conflict(ErrorCode::InvalidInput, "SPACE_ONBOARDING_STATE_CHANGED")
+                        .into(),
+                ));
+            }
+        }
     }
     let result = state
         .identity
-        .finish_setup_registration(
+        .finish_setup_registration_with_initial_space_claims(
             &payload.setup_secret,
             payload.challenge_id,
             &payload.credential,
+            &initial_claims,
         )
         .await
         .map_err(recovery_aware_auth_error)?;
-    let mut claims = Vec::new();
-    if existing_spaces.is_empty() {
-        let principal_id = Uuid::now_v7();
-        let space_uid = state
-            .service
-            .create_space_for_principal("default", principal_id, &result.account.display_name)
-            .await
-            .map_err(ApiError::from_core)?;
-        claims.push((space_uid, principal_id));
-    } else {
-        for space_id in &existing_spaces {
-            let space_uid = state
-                .service
-                .space_uid(space_id)
-                .await
-                .map_err(ApiError::from_core)?;
-            let principal_id = authorizer
-                .ensure_owner(space_id, space_uid, &result.account.display_name)
-                .await
-                .map_err(ApiError::from_core)?;
-            claims.push((space_uid, principal_id));
-        }
-    }
-    state
-        .identity
-        .add_bindings(
-            claims
-                .iter()
-                .map(
-                    |(space_uid, principal_id)| ugoite_domain::identity::PrincipalBinding {
-                        space_uid: *space_uid,
-                        principal_id: *principal_id,
-                        node_account_id: result.account.account_id,
-                        binding_method: BindingMethod::Setup,
-                    },
-                )
-                .collect(),
-        )
+    let claims = state
+        .complete_pending_initial_space_claims()
         .await
         .map_err(auth_error)?;
     let claimed_space_uids = claims
@@ -2214,6 +2581,21 @@ async fn auth_passkey_finish(
     State(state): State<AppState>,
     Json(payload): Json<PasskeyFinishRequest>,
 ) -> ApiResult<Response> {
+    if !state
+        .identity
+        .pending_initial_space_claims()
+        .await
+        .map_err(auth_error)?
+        .is_empty()
+    {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({
+                "code": "INITIAL_SETUP_RECOVERY_PENDING",
+                "message": "initial Space setup is recovering; retry after Node recovery completes"
+            }),
+        ));
+    }
     let (account, session_id) = state
         .identity
         .finish_authentication(payload.challenge_id, &payload.credential)
@@ -3455,7 +3837,25 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
 
 async fn reconcile_all_recovery_fences(state: &AppState) -> anyhow::Result<()> {
     for space_id in state.service.list_space_ids().await? {
-        reconcile_recovery_fences(state, &space_id).await?;
+        match state
+            .service
+            .classify_space_for_node_onboarding(&space_id)
+            .await?
+        {
+            SpaceOnboardingState::ClaimedValid { .. } => {
+                reconcile_recovery_fences(state, &space_id).await?;
+            }
+            // A portable Space added after Node setup has no authorization
+            // state by design. Keep it quarantined while allowing unrelated
+            // authorized Spaces to recover normally.
+            SpaceOnboardingState::PortableUnclaimed { .. } => {}
+            SpaceOnboardingState::IncompleteOrPending { uid, slug, reason }
+            | SpaceOnboardingState::InvalidOrForeign { uid, slug, reason } => {
+                anyhow::bail!(
+                    "Space onboarding validation failed during recovery (uid={uid:?}, slug={slug:?}): {reason}"
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -13146,6 +13546,59 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn pending_initial_claim_blocks_authenticated_space_reads_and_writes(
+    ) -> anyhow::Result<()> {
+        let principal_id = Uuid::from_u128(25119);
+        let (client, state, space_id, _credential_id, account_id) =
+            step_up_production_fixture("initial-claim-admission", principal_id).await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let slug = state.service.get_space(&space_id).await?["slug"]
+            .as_str()
+            .expect("Space slug")
+            .to_string();
+        state
+            .identity
+            .seed_test_initial_space_claims(
+                HumanAccount {
+                    account_id,
+                    display_name: "Recovery test account".to_string(),
+                    status: AccountStatus::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    node_roles: [NodeRole::NodeAdmin].into_iter().collect(),
+                    credential_generation: 0,
+                },
+                &[InitialSpaceClaim {
+                    space_id: Some(space_id.clone()),
+                    space_uid: Some(space_uid),
+                    slug,
+                    principal_id,
+                    create_if_missing: false,
+                }],
+            )
+            .await?;
+
+        let (status, read_body) = client
+            .json(Method::GET, &format!("/spaces/{space_id}/forms"), None)
+            .await?;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{read_body}");
+        assert_eq!(read_body["code"], "INITIAL_SETUP_RECOVERY_PENDING");
+        let (status, write_body) = client
+            .json(
+                Method::POST,
+                &format!("/spaces/{space_id}/forms"),
+                Some(json!({
+                    "name": "BlockedWhileRecovering",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                })),
+            )
+            .await?;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{write_body}");
+        assert_eq!(write_body["code"], "INITIAL_SETUP_RECOVERY_PENDING");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn step_up_challenge_enables_one_bound_space_mutation() -> anyhow::Result<()> {
         let principal_id = Uuid::from_u128(25110);
         let (client, state, space_id, _credential_id, account_id) =
@@ -19059,6 +19512,529 @@ mod authentication_regression_tests {
                 "kind": "remove",
                 "id": "approval-entry"
             })
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod initial_space_claim_recovery_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn all_space_recovery_skips_only_quarantined_portable_spaces() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-quarantined-recovery-{}",
+            Uuid::now_v7()
+        ))?;
+        state
+            .identity
+            .bootstrap_if_needed()
+            .await?
+            .expect("bootstrap");
+        let healthy_uid = state
+            .service
+            .create_space_for_principal("healthy", Uuid::now_v7(), "Healthy owner")
+            .await?;
+        let portable_uid = match state
+            .service
+            .ensure_operator_space("portable-import")
+            .await?
+        {
+            ugoite_iceberg::service::SpaceCreateOutcome::Created(uid)
+            | ugoite_iceberg::service::SpaceCreateOutcome::Existing(uid) => uid,
+        };
+        assert!(matches!(
+            state
+                .service
+                .classify_space_for_node_onboarding(&portable_uid.to_string())
+                .await?,
+            SpaceOnboardingState::PortableUnclaimed { .. }
+        ));
+        reconcile_all_recovery_fences(&state).await?;
+        assert!(matches!(
+            state
+                .service
+                .classify_space_for_node_onboarding(&healthy_uid.to_string())
+                .await?,
+            SpaceOnboardingState::ClaimedValid { .. }
+        ));
+        assert!(matches!(
+            state
+                .service
+                .classify_space_for_node_onboarding(&portable_uid.to_string())
+                .await?,
+            SpaceOnboardingState::PortableUnclaimed { .. }
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn setup_rejects_missing_acl_for_committed_owner_claim_without_repair(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-missing-owner-acl-{}",
+            Uuid::now_v7()
+        ))?;
+        let slug = format!("missing-acl-{}", Uuid::now_v7());
+        let account_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal(&slug, principal_id, "Existing owner")
+            .await?;
+        let space_id = space_uid.to_string();
+        let acl_path = format!("spaces/{space_id}/security/principals.json");
+        state.service.operator().delete(&acl_path).await?;
+        let identity = state.identity.clone();
+        identity.bootstrap_if_needed().await?.expect("bootstrap");
+        let claim = InitialSpaceClaim {
+            space_id: Some(space_id.clone()),
+            space_uid: Some(space_uid),
+            slug,
+            principal_id,
+            create_if_missing: false,
+        };
+        identity
+            .seed_test_initial_space_claims(
+                HumanAccount {
+                    account_id,
+                    display_name: "Existing owner".to_string(),
+                    status: AccountStatus::Active,
+                    created_at: "2026-09-27T00:00:00Z".to_string(),
+                    node_roles: [NodeRole::NodeAdmin].into_iter().collect(),
+                    credential_generation: 0,
+                },
+                std::slice::from_ref(&claim),
+            )
+            .await?;
+
+        assert!(state.complete_pending_initial_space_claims().await.is_err());
+        assert!(
+            state.service.operator().read(&acl_path).await.is_err(),
+            "setup recovery must not recreate a missing owner-backed ACL"
+        );
+        assert_eq!(
+            state.identity.pending_initial_space_claims().await?.len(),
+            1
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn setup_rejects_released_default_claim_before_consuming_secret() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-released-default-preflight-{}",
+            Uuid::now_v7()
+        ))?;
+        let bootstrap = state
+            .identity
+            .bootstrap_if_needed()
+            .await?
+            .expect("first bootstrap");
+        let stale_uid = Uuid::now_v7();
+        state
+            .service
+            .operator()
+            .write(
+                "spaces/.ugoite-space-slug-claims/default.json",
+                serde_json::to_vec(&json!({
+                    "slug": "default",
+                    "space_name": "default",
+                    "space_id": stale_uid.to_string(),
+                    "state": "released",
+                    "claim_id": Uuid::now_v7().to_string(),
+                    "created_at": "2026-09-27T00:00:00Z",
+                    "heartbeat_at": "2026-09-27T00:00:00Z",
+                    "expires_at": "2026-09-27T00:01:00Z",
+                    "owner_principal_id": null,
+                    "owner_display_name": null,
+                }))?,
+            )
+            .await?;
+        let invalid_credential: RegisterPublicKeyCredential = serde_json::from_value(json!({
+            "id": "invalid",
+            "rawId": "aW52YWxpZA",
+            "response": {
+                "attestationObject": "aW52YWxpZA",
+                "clientDataJSON": "aW52YWxpZA"
+            },
+            "type": "public-key"
+        }))?;
+        let error = auth_setup_finish(
+            State(state.clone()),
+            Json(SetupFinishRequest {
+                setup_secret: bootstrap.setup_secret.clone(),
+                challenge_id: Uuid::now_v7(),
+                credential: invalid_credential,
+            }),
+        )
+        .await
+        .expect_err("released default claim must stop setup before passkey validation");
+        assert_eq!(error.status, StatusCode::CONFLICT);
+
+        let retry = auth_setup_start(
+            State(state),
+            Json(SetupStartRequest {
+                setup_secret: bootstrap.setup_secret,
+                display_name: "First owner".to_string(),
+            }),
+        )
+        .await
+        .expect("one-time setup secret remains retryable");
+        assert!(retry.0.get("challenge_id").is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn startup_resumes_default_claim_to_the_persisted_uid_and_principal() -> anyhow::Result<()>
+    {
+        let service = UgoiteService::new(format!(
+            "memory://server-default-claim-restart-{}",
+            Uuid::now_v7()
+        ))?;
+        let control_store = ugoite_identity::OpenDalNodeControlStore::memory_for_tests();
+        let identity = NodeIdentityService::new_for_tests_with_control_store(
+            control_store.clone(),
+            "localhost",
+            "http://localhost:8000",
+        )?;
+        identity.bootstrap_if_needed().await?.expect("bootstrap");
+
+        let account_id = Uuid::now_v7();
+        let target_uid = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let claim = InitialSpaceClaim {
+            space_id: Some(target_uid.to_string()),
+            space_uid: Some(target_uid),
+            slug: "default".to_string(),
+            principal_id,
+            create_if_missing: true,
+        };
+        identity
+            .seed_test_initial_space_claims(
+                HumanAccount {
+                    account_id,
+                    display_name: "First owner".to_string(),
+                    status: AccountStatus::Active,
+                    created_at: "2026-09-27T00:00:00Z".to_string(),
+                    node_roles: [NodeRole::NodeAdmin].into_iter().collect(),
+                    credential_generation: 0,
+                },
+                std::slice::from_ref(&claim),
+            )
+            .await?;
+
+        // Recreate the identity service over the same Node control store to
+        // model a process restart after registration persisted its intent.
+        let restarted_identity = NodeIdentityService::new_for_tests_with_control_store(
+            control_store,
+            "localhost",
+            "http://localhost:8000",
+        )?;
+        let restarted = AppState {
+            security_headers: SecurityHeadersPolicy::from_public_origin(
+                restarted_identity.public_origin(),
+            ),
+            service,
+            identity: restarted_identity,
+        };
+        restarted.initialize_node().await?;
+
+        let space_id = target_uid.to_string();
+        let metadata = restarted.service.get_space(&space_id).await?;
+        assert_eq!(metadata["space_uid"], target_uid.to_string());
+        assert_eq!(metadata["slug"], "default");
+        let authorization = Authorizer::new(restarted.service.operator().clone())
+            .state(&space_id)
+            .await?;
+        assert_eq!(active_owner_principal_id(&authorization)?, principal_id);
+        let bindings = restarted.identity.bindings_for_space(target_uid).await?;
+        assert!(bindings.iter().any(|binding| {
+            binding.node_account_id == account_id && binding.principal_id == principal_id
+        }));
+        assert!(restarted
+            .identity
+            .pending_initial_space_claims()
+            .await?
+            .is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn startup_resumes_portable_space_claim_without_changing_history() -> anyhow::Result<()> {
+        let service = UgoiteService::new(format!(
+            "memory://server-portable-claim-restart-{}",
+            Uuid::now_v7()
+        ))?;
+        let slug = format!("portable-{}", Uuid::now_v7());
+        let space_uid = match service.ensure_operator_space(&slug).await? {
+            ugoite_iceberg::service::SpaceCreateOutcome::Created(uid)
+            | ugoite_iceberg::service::SpaceCreateOutcome::Existing(uid) => uid,
+        };
+        let space_id = space_uid.to_string();
+        service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Portable",
+                    "fields": {"Title": {"type": "string", "required": true}}
+                }),
+            )
+            .await?;
+        let history_before = service.list_changes(&space_id).await?;
+
+        let control_store = ugoite_identity::OpenDalNodeControlStore::memory_for_tests();
+        let identity = NodeIdentityService::new_for_tests_with_control_store(
+            control_store.clone(),
+            "localhost",
+            "http://localhost:8000",
+        )?;
+        identity.bootstrap_if_needed().await?.expect("bootstrap");
+        let account_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let claim = InitialSpaceClaim {
+            space_id: Some(space_id.clone()),
+            space_uid: Some(space_uid),
+            slug: slug.clone(),
+            principal_id,
+            create_if_missing: false,
+        };
+        identity
+            .seed_test_initial_space_claims(
+                HumanAccount {
+                    account_id,
+                    display_name: "Portable owner".to_string(),
+                    status: AccountStatus::Active,
+                    created_at: "2026-09-27T00:00:00Z".to_string(),
+                    node_roles: [NodeRole::NodeAdmin].into_iter().collect(),
+                    credential_generation: 0,
+                },
+                std::slice::from_ref(&claim),
+            )
+            .await?;
+
+        let restarted_identity = NodeIdentityService::new_for_tests_with_control_store(
+            control_store,
+            "localhost",
+            "http://localhost:8000",
+        )?;
+        let restarted = AppState {
+            security_headers: SecurityHeadersPolicy::from_public_origin(
+                restarted_identity.public_origin(),
+            ),
+            service,
+            identity: restarted_identity,
+        };
+        restarted.initialize_node().await?;
+
+        let metadata = restarted.service.get_space(&space_id).await?;
+        assert_eq!(metadata["space_uid"], space_uid.to_string());
+        assert_eq!(metadata["slug"], slug);
+        assert_eq!(
+            restarted.service.list_changes(&space_id).await?,
+            history_before
+        );
+        let authorization = Authorizer::new(restarted.service.operator().clone())
+            .state(&space_id)
+            .await?;
+        assert_eq!(active_owner_principal_id(&authorization)?, principal_id);
+        let bindings = restarted.identity.bindings_for_space(space_uid).await?;
+        assert!(bindings.iter().any(|binding| {
+            binding.node_account_id == account_id && binding.principal_id == principal_id
+        }));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reconciliation_failure_keeps_claim_pending_and_restart_resumes() -> anyhow::Result<()>
+    {
+        let service = UgoiteService::new(format!(
+            "memory://server-claim-admission-fence-{}",
+            Uuid::now_v7()
+        ))?;
+        let control_store = ugoite_identity::OpenDalNodeControlStore::memory_for_tests();
+        let identity = NodeIdentityService::new_for_tests_with_control_store(
+            control_store.clone(),
+            "localhost",
+            "http://localhost:8000",
+        )?;
+        let state = AppState {
+            security_headers: SecurityHeadersPolicy::from_public_origin(identity.public_origin()),
+            service,
+            identity,
+        };
+        let slug = format!("claim-failure-{}", Uuid::now_v7());
+        let account_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal(&slug, principal_id, "Portable owner")
+            .await?;
+        let space_id = space_uid.to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name":"Entry",
+                    "fields":{"Body":{"type":"markdown","required":true}}
+                }),
+            )
+            .await?;
+        state
+            .service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                "audit-proof",
+                "Entry".to_string(),
+                Vec::new(),
+                [("Body".to_string(), json!("audit proof"))].into(),
+                Default::default(),
+                "portable owner",
+            )
+            .await?;
+        let history_before = state.service.list_changes(&space_id).await?;
+
+        let acl_path = format!("spaces/{space_id}/security/principals.json");
+        let mut acl: Value =
+            serde_json::from_slice(&state.service.operator().read(&acl_path).await?.to_bytes())?;
+        let recovery_fence_id = Uuid::now_v7();
+        acl["recovery_fences"] = json!({(recovery_fence_id.to_string()): {
+            "fence_id": Uuid::now_v7(),
+            "request_id": Uuid::now_v7(),
+            "space_uid": space_uid,
+            "issuer_principal_id": principal_id,
+            "issuer_account_id": account_id,
+            "target_principal_id": principal_id,
+            "target_account_id": account_id,
+            "authorization_revision": 1,
+            "issuer_space_lifecycle_epoch": 0,
+            "target_space_lifecycle_epoch": 0,
+            "issuer_generation": 0,
+            "target_generation": 0,
+            "expires_at": "invalid-timestamp",
+            "status": "active"
+        }});
+        state
+            .service
+            .operator()
+            .write(&acl_path, serde_json::to_vec(&acl)?)
+            .await?;
+
+        let identity = state.identity.clone();
+        identity.bootstrap_if_needed().await?.expect("bootstrap");
+        let claim = InitialSpaceClaim {
+            space_id: Some(space_id.clone()),
+            space_uid: Some(space_uid),
+            slug: slug.clone(),
+            principal_id,
+            create_if_missing: false,
+        };
+        identity
+            .seed_test_initial_space_claims(
+                HumanAccount {
+                    account_id,
+                    display_name: "Portable owner".to_string(),
+                    status: AccountStatus::Active,
+                    created_at: "2026-09-27T00:00:00Z".to_string(),
+                    node_roles: [NodeRole::NodeAdmin].into_iter().collect(),
+                    credential_generation: 0,
+                },
+                std::slice::from_ref(&claim),
+            )
+            .await?;
+
+        let failed = state.complete_pending_initial_space_claims().await;
+        assert!(
+            failed.is_err(),
+            "malformed recovery fence must stop admission"
+        );
+        assert_eq!(
+            state.identity.pending_initial_space_claims().await?.len(),
+            1,
+            "intent remains durable until reconciliation completes"
+        );
+        assert!(state
+            .identity
+            .bindings_for_space(space_uid)
+            .await?
+            .iter()
+            .any(|binding| binding.node_account_id == account_id));
+        let invalid_credential: PublicKeyCredential = serde_json::from_value(json!({
+            "id": "invalid",
+            "rawId": "aW52YWxpZA",
+            "response": {"authenticatorData":"aW52YWxpZA","clientDataJSON":"aW52YWxpZA","signature":"aW52YWxpZA"},
+            "type": "public-key"
+        }))?;
+        let login = auth_passkey_finish(
+            State(state.clone()),
+            Json(PasskeyFinishRequest {
+                challenge_id: Uuid::now_v7(),
+                credential: invalid_credential,
+            }),
+        )
+        .await
+        .expect_err("login must remain blocked while claim recovery is pending");
+        assert_eq!(login.status, StatusCode::SERVICE_UNAVAILABLE);
+
+        acl["recovery_fences"] = json!({});
+        state
+            .service
+            .operator()
+            .write(&acl_path, serde_json::to_vec(&acl)?)
+            .await?;
+        let restarted = AppState {
+            security_headers: SecurityHeadersPolicy::from_public_origin(
+                state.identity.public_origin(),
+            ),
+            service: state.service.clone(),
+            identity: NodeIdentityService::new_for_tests_with_control_store(
+                control_store,
+                "localhost",
+                "http://localhost:8000",
+            )?,
+        };
+        restarted.complete_pending_initial_space_claims().await?;
+        assert!(restarted
+            .identity
+            .pending_initial_space_claims()
+            .await?
+            .is_empty());
+        let authorization = Authorizer::new(restarted.service.operator().clone())
+            .state(&space_id)
+            .await?;
+        assert_eq!(active_owner_principal_id(&authorization)?, principal_id);
+        assert!(restarted
+            .identity
+            .bindings_for_space(space_uid)
+            .await?
+            .iter()
+            .any(|binding| binding.node_account_id == account_id));
+        assert_eq!(
+            restarted.service.list_changes(&space_id).await?,
+            history_before
+        );
+        let audit_before = audit::list_audit_events(
+            restarted.service.operator(),
+            &space_id,
+            audit::AuditListOptions::default(),
+        )
+        .await?;
+        assert!(audit_before["total"].as_u64().unwrap_or_default() > 0);
+        assert!(audit_before["items"]
+            .as_array()
+            .is_some_and(|items| { items.iter().any(|event| event["action"] == "entry.created") }));
+        restarted.service.reconcile_space_audit(&space_id).await?;
+        let audit_after = audit::list_audit_events(
+            restarted.service.operator(),
+            &space_id,
+            audit::AuditListOptions::default(),
+        )
+        .await?;
+        assert_eq!(
+            audit_after, audit_before,
+            "audit reconciliation is idempotent"
         );
         Ok(())
     }

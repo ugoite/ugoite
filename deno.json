@@ -32,6 +32,7 @@
     "e2e:mobile-ui": "bash e2e/scripts/run-e2e-parity.sh mobile-ui",
     "e2e:qry02": "bash e2e/scripts/run-e2e-parity.sh qry02",
     "e2e:query-measurement": "bash e2e/scripts/run-e2e.sh query-measurement",
+    "e2e:portable-space": "bash e2e/scripts/run-e2e-parity.sh portable-space",
     "e2e:full": "bash e2e/scripts/run-e2e-parity.sh full",
     "e2e:static": "E2E_FRONTEND_MODE=static E2E_ENFORCE_CI_GATES=true bash e2e/scripts/run-e2e.sh smoke",
     "mitase:sync": "deno run -A tools/mitase_sync.ts"

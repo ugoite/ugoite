@@ -369,6 +369,10 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 description = "Run the required owner-approved Space access recovery E2E"
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:owner-recovery"
 
+[tasks."test:e2e:portable-space"]
+description = "Run the required portable Space first-setup E2E"
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:portable-space"
+
 [tasks.e2e]
 description = "Run CI-parity E2E tests, preferring Docker Compose and falling back to host processes"
 run = "deno task e2e:full"
@@ -506,6 +510,7 @@ run = [
   { task = "test:e2e:mobile-ui" },
   { task = "test:e2e:qry02" },
   { task = "test:e2e:owner-recovery" },
+  { task = "test:e2e:portable-space" },
   { task = "version:check" },
 ]
 

@@ -8,6 +8,7 @@
     "asset-owned": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entries.test.ts --grep REQ-FE-1877",
     "smoke-and-asset-owned": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test smoke.test.ts entries.test.ts --grep \"@smoke|@asset-owned\"",
     "owner-recovery": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test owner-space-recovery.test.ts",
+    "portable-space": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test portable-space-onboarding.test.ts",
     "forms": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test forms.test.ts",
     "knowledge-journey": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test knowledge-journey.test.ts",
     "mobile-ui": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test ui-mobile-regression.test.ts login-responsive.test.ts entry-browser-ux.test.ts",

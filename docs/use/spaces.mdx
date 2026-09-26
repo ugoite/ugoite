@@ -62,6 +62,24 @@ remote identity. See the [CLI Reference](../reference/cli.md).
 </TabItem>
 </Tabs>
 
+## Use a CLI-created Space on a new Node
+
+A complete Space created in CLI core mode can be moved to a fresh server-backed
+Node without moving the old Node's identity. Stop writes to the source, copy its
+`spaces/<SPACE_UID>` directory to the destination, then start the new Node and
+complete its normal first Passkey setup. Setup claims the copied Space's
+existing UID; its Forms, Entries, and history remain in that Space. Until setup
+finishes, the new Node does not expose the unclaimed Space through anonymous
+API access. Keep the source copy stopped while using the destination; concurrent
+writes from both copies are unsupported.
+
+This flow is for a complete unclaimed Space. Corrupt authorization state,
+unresolved creation claims, or a Space that already has an owner are not
+silently adopted. A Space prefix includes its HMAC key in metadata, but it does
+not include Node accounts, Passkeys, bindings, or sessions. Restoring a whole
+Node requires its separately configured control store and the same Node secret;
+see [Storage and Recovery](../operate/storage-recovery.md).
+
 ## Verify the result
 
 Reopen the Space across process and session boundaries and confirm the same

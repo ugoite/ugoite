@@ -208,6 +208,7 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
       '{ task = "test:e2e:smoke-and-asset-owned" }',
       '{ task = "test:e2e:mobile-ui" }',
       '{ task = "test:e2e:owner-recovery" }',
+      '{ task = "test:e2e:portable-space" }',
       '{ task = "version:check" }',
     ],
     "artifact E2E task",

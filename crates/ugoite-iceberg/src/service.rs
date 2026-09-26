@@ -49,7 +49,7 @@ use ugoite_domain::id::{
     validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
     validate_space_id, validate_sql_id, FormId,
 };
-use ugoite_domain::identity::Action;
+use ugoite_domain::identity::{Action, PrincipalKind, PrincipalState, SpaceRole};
 use ugoite_storage::{
     is_local_operator, operator_from_uri, operator_from_uri_with_endpoint, OpendalStorage,
     SpaceCatalogStore, StorageBackend,
@@ -495,6 +495,28 @@ struct SpaceSlugClaim {
     owner_principal_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     owner_display_name: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SpaceOnboardingState {
+    ClaimedValid {
+        uid: Uuid,
+        slug: String,
+    },
+    PortableUnclaimed {
+        uid: Uuid,
+        slug: String,
+    },
+    IncompleteOrPending {
+        uid: Option<Uuid>,
+        slug: Option<String>,
+        reason: String,
+    },
+    InvalidOrForeign {
+        uid: Option<Uuid>,
+        slug: Option<String>,
+        reason: String,
+    },
 }
 
 impl SpaceSlugClaim {
@@ -1603,13 +1625,48 @@ impl UgoiteService {
         principal_id: Uuid,
         display_name: &str,
     ) -> Result<Uuid> {
-        self.create_space_for_principal_with_name(slug, principal_id, display_name, slug)
+        self.create_space_for_principal_with_uid(slug, Uuid::now_v7(), principal_id, display_name)
             .await
+    }
+
+    pub async fn create_space_for_principal_with_uid(
+        &self,
+        slug: &str,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        display_name: &str,
+    ) -> Result<Uuid> {
+        self.create_space_for_principal_with_uid_and_name(
+            slug,
+            space_uid,
+            principal_id,
+            display_name,
+            slug,
+        )
+        .await
     }
 
     pub async fn create_space_for_principal_with_name(
         &self,
         slug: &str,
+        principal_id: Uuid,
+        owner_display_name: &str,
+        space_name: &str,
+    ) -> Result<Uuid> {
+        self.create_space_for_principal_with_uid_and_name(
+            slug,
+            Uuid::now_v7(),
+            principal_id,
+            owner_display_name,
+            space_name,
+        )
+        .await
+    }
+
+    async fn create_space_for_principal_with_uid_and_name(
+        &self,
+        slug: &str,
+        space_uid: Uuid,
         principal_id: Uuid,
         owner_display_name: &str,
         space_name: &str,
@@ -1625,6 +1682,9 @@ impl UgoiteService {
         // be retried under the same slug.
         Authorizer::new(self.operator.clone()).ensure_authoritative_mutation_contract()?;
         validate_storage_id(validate_space_id(slug))?;
+        if space_uid.get_version() != Some(uuid::Version::SortRand) {
+            bail!("new Space UID must be a UUIDv7");
+        }
         crate::iceberg_store::ensure_mutation_admitted(&self.operator, &format!("spaces/{slug}"))
             .await?;
         if self.recover_claimed_space(slug).await?.is_some()
@@ -1636,7 +1696,6 @@ impl UgoiteService {
             )
             .into());
         }
-        let space_uid = Uuid::now_v7();
         let space_id = space_uid.to_string();
         let claim = self
             .claim_space_slug_with_owner_and_name(
@@ -1689,6 +1748,249 @@ impl UgoiteService {
             }
         }
         Ok(space_uid)
+    }
+
+    /// Classifies a complete Space for server startup and first-node setup.
+    /// This method does not create or repair authorization state. Only an
+    /// exact NotFound for the authorization object is treated as unclaimed;
+    /// malformed JSON and every other storage error remain errors.
+    pub async fn classify_space_for_node_onboarding(
+        &self,
+        space_id: &str,
+    ) -> Result<SpaceOnboardingState> {
+        space::validate_complete_bootstrap(&self.operator, space_id)
+            .await
+            .context("validate complete Space before onboarding classification")?;
+        let metadata = self.get_space(space_id).await?;
+        let uid = metadata
+            .get("space_uid")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("Space metadata is missing immutable space_uid"))
+            .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))?;
+        let slug = metadata
+            .get("slug")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| anyhow!("Space metadata is missing slug"))?
+            .to_string();
+
+        let claim = self.read_space_slug_claim(&slug).await?;
+        if let Some(claim) = &claim {
+            if claim.slug != slug || claim.space_id != space_id {
+                return Ok(SpaceOnboardingState::InvalidOrForeign {
+                    uid: Some(uid),
+                    slug: Some(slug),
+                    reason: "slug claim identifies a different Space".to_string(),
+                });
+            }
+            match claim.state.as_str() {
+                "pending" => {
+                    return Ok(SpaceOnboardingState::IncompleteOrPending {
+                        uid: Some(uid),
+                        slug: Some(slug),
+                        reason: "slug claim recovery is pending".to_string(),
+                    });
+                }
+                "released" => {
+                    return Ok(SpaceOnboardingState::InvalidOrForeign {
+                        uid: Some(uid),
+                        slug: Some(slug),
+                        reason: "slug claim has been released".to_string(),
+                    });
+                }
+                "committed" => {}
+                _ => unreachable!("slug claim reader validates state"),
+            }
+        }
+
+        let authorizer = Authorizer::new(self.operator.clone());
+        let auth_state = authorizer.state_if_present(space_id, uid).await?;
+        // This also rejects legacy authorization markers and membership-
+        // managed settings when the current authorization object is absent.
+        // Exact absence only establishes a candidate portable Space; it must
+        // not bypass the rest of current-layout validation.
+        authorizer.validate_current_layout(space_id, uid).await?;
+        match auth_state {
+            Some(_state) => {
+                // The slug claim owner records who first claimed the name.
+                // Ownership can later move through the supported authz API,
+                // so current authorization state is authoritative here.
+                Ok(SpaceOnboardingState::ClaimedValid { uid, slug })
+            }
+            None => {
+                if claim
+                    .as_ref()
+                    .is_some_and(|claim| claim.owner_principal_id.is_some())
+                {
+                    return Ok(SpaceOnboardingState::InvalidOrForeign {
+                        uid: Some(uid),
+                        slug: Some(slug),
+                        reason: "owner-backed slug claim has no authorization state".into(),
+                    });
+                }
+                Ok(SpaceOnboardingState::PortableUnclaimed { uid, slug })
+            }
+        }
+    }
+
+    /// Recovers a setup claim only when its slug record and any existing
+    /// Space resolve to the UID/principal fixed in Node control state.
+    pub async fn recover_initial_space_claim_target(
+        &self,
+        slug: &str,
+        expected_space_uid: Uuid,
+        _expected_principal_id: Uuid,
+    ) -> Result<Option<String>> {
+        if expected_space_uid.get_version() != Some(uuid::Version::SortRand) {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "initial Space claim target must use a UUIDv7",
+            )
+            .into());
+        }
+        let expected_space_id = expected_space_uid.to_string();
+        if let Some(claim) = self.read_space_slug_claim(slug).await? {
+            if claim.state == "released" || claim.space_id != expected_space_id {
+                return Err(AppError::conflict(
+                    ErrorCode::InvalidInput,
+                    "SPACE_ONBOARDING_TARGET_CONFLICT",
+                )
+                .into());
+            }
+            if claim.state == "pending" {
+                return Err(AppError::conflict(
+                    ErrorCode::InvalidInput,
+                    "SPACE_ONBOARDING_TARGET_PENDING",
+                )
+                .into());
+            }
+            // Committed Knowledge is authoritative and must be inspected
+            // without the generic slug recovery path: that path can restore
+            // missing authorization state from historical owner metadata.
+            // Setup must never reinterpret a missing/corrupt ACL as a fresh
+            // portable Space or repair it implicitly.
+            return match self
+                .classify_space_for_node_onboarding(&expected_space_id)
+                .await?
+            {
+                SpaceOnboardingState::ClaimedValid {
+                    uid,
+                    slug: current_slug,
+                }
+                | SpaceOnboardingState::PortableUnclaimed {
+                    uid,
+                    slug: current_slug,
+                } if uid == expected_space_uid && current_slug == slug => {
+                    Ok(Some(expected_space_id))
+                }
+                _ => Err(AppError::conflict(
+                    ErrorCode::InvalidInput,
+                    "SPACE_ONBOARDING_TARGET_CONFLICT",
+                )
+                .into()),
+            };
+        }
+        if let Some(existing_space_id) = self.space_id_by_slug(slug).await? {
+            if existing_space_id != expected_space_id {
+                return Err(AppError::conflict(
+                    ErrorCode::InvalidInput,
+                    "SPACE_ONBOARDING_TARGET_CONFLICT",
+                )
+                .into());
+            }
+            match self
+                .classify_space_for_node_onboarding(&existing_space_id)
+                .await?
+            {
+                SpaceOnboardingState::ClaimedValid {
+                    uid,
+                    slug: current_slug,
+                }
+                | SpaceOnboardingState::PortableUnclaimed {
+                    uid,
+                    slug: current_slug,
+                } if uid == expected_space_uid && current_slug == slug => {}
+                _ => {
+                    return Err(AppError::conflict(
+                        ErrorCode::InvalidInput,
+                        "SPACE_ONBOARDING_TARGET_CONFLICT",
+                    )
+                    .into());
+                }
+            }
+            return Ok(Some(existing_space_id));
+        }
+        Ok(None)
+    }
+
+    /// Persist the first setup owner into an existing portable slug claim.
+    /// Prefix-only transfers have no outer claim record and remain valid with
+    /// no record; a present record must match the exact UID. An existing
+    /// owner remains historical metadata after a later supported transfer.
+    pub async fn bind_initial_space_slug_claim_owner(
+        &self,
+        slug: &str,
+        expected_space_uid: Uuid,
+        expected_principal_id: Uuid,
+    ) -> Result<()> {
+        let space_id = expected_space_uid.to_string();
+        let _claim_lock = acquire_local_space_slug_claim_lock(&self.operator, slug).await?;
+        let Some((mut claim, etag)) = self.read_space_slug_claim_exact(slug).await? else {
+            return Ok(());
+        };
+        if claim.state != "committed" || claim.space_id != space_id {
+            return Err(AppError::conflict(
+                ErrorCode::InvalidInput,
+                "SPACE_ONBOARDING_TARGET_CONFLICT",
+            )
+            .into());
+        }
+        let metadata = self.get_space(&space_id).await?;
+        if metadata.get("space_uid").and_then(Value::as_str) != Some(space_id.as_str())
+            || metadata.get("slug").and_then(Value::as_str) != Some(slug)
+        {
+            return Err(AppError::conflict(
+                ErrorCode::InvalidInput,
+                "SPACE_ONBOARDING_TARGET_CONFLICT",
+            )
+            .into());
+        }
+        let authorization = Authorizer::new(self.operator.clone())
+            .state(&space_id)
+            .await?;
+        let active_owner = authorization
+            .memberships
+            .values()
+            .filter(|membership| matches!(membership.role, SpaceRole::Owner))
+            .find_map(|membership| {
+                authorization
+                    .principals
+                    .get(&membership.principal_id)
+                    .filter(|principal| {
+                        matches!(principal.kind, PrincipalKind::Human)
+                            && matches!(principal.state, PrincipalState::Active)
+                    })
+                    .map(|principal| principal.principal_id)
+            });
+        if active_owner != Some(expected_principal_id) {
+            return Err(AppError::conflict(
+                ErrorCode::InvalidInput,
+                "SPACE_ONBOARDING_OWNER_CHANGED",
+            )
+            .into());
+        }
+        // Preserve the original claimer as historical metadata after an
+        // authorized ownership transfer. Only fill an ownerless record.
+        if claim.owner_principal_id.is_some() {
+            return Ok(());
+        }
+        claim.owner_principal_id = Some(expected_principal_id);
+        self.write_space_slug_claim(
+            &format!("{SPACE_SLUG_CLAIMS_DIR}{slug}.json"),
+            serde_json::to_vec(&claim)?,
+            etag.as_deref(),
+        )
+        .await
     }
 
     pub async fn list_space_ids(&self) -> Result<Vec<String>> {
@@ -1853,6 +2155,17 @@ impl UgoiteService {
             if claim.state == "pending" {
                 self.ensure_mutation_admitted(&claim.space_id).await?;
                 let _ = self.recover_claimed_space(&slug).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuses onboarding while any durable slug claim remains pending,
+    /// including live claims omitted from ordinary Space discovery.
+    pub async fn validate_no_pending_space_claims(&self) -> Result<()> {
+        for (slug, claim) in self.list_space_slug_claims().await? {
+            if claim.state == "pending" {
+                bail!("Space slug claim recovery remains pending for {slug}");
             }
         }
         Ok(())
@@ -5744,6 +6057,228 @@ mod tests {
         Membership, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
     };
     use ugoite_storage::SpaceCatalogStore;
+
+    #[tokio::test]
+    async fn onboarding_rejects_pending_slug_claims_omitted_from_discovery() -> Result<()> {
+        let service =
+            UgoiteService::new(format!("memory://onboarding-pending-{}", Uuid::now_v7()))?;
+        let slug = format!("pending-{}", Uuid::now_v7());
+        service
+            .claim_space_slug(&slug, &Uuid::now_v7().to_string())
+            .await?;
+        let error = service
+            .validate_no_pending_space_claims()
+            .await
+            .expect_err("live pending claim must not disappear from setup inventory");
+        assert!(error.to_string().contains(&slug));
+        assert!(service.list_space_ids().await?.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn onboarding_accepts_historical_slug_owner_after_supported_transfer() -> Result<()> {
+        let service = UgoiteService::new(format!("memory://onboarding-owner-{}", Uuid::now_v7()))?;
+        let slug = format!("owner-{}", Uuid::now_v7());
+        let principal_id = Uuid::now_v7();
+        let space_uid = service
+            .create_space_for_principal(&slug, principal_id, "Owner")
+            .await?;
+        let transferred_owner = Uuid::now_v7();
+        let authorizer = Authorizer::new(service.operator.clone());
+        authorizer
+            .add_human_member(
+                &space_uid.to_string(),
+                principal_id,
+                SpacePrincipal {
+                    principal_id: transferred_owner,
+                    kind: PrincipalKind::Human,
+                    display_name: "Transferred owner".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: "2026-09-27T00:00:00Z".to_string(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        authorizer
+            .change_role(
+                &space_uid.to_string(),
+                principal_id,
+                transferred_owner,
+                SpaceRole::Owner,
+            )
+            .await?;
+        authorizer
+            .change_role(
+                &space_uid.to_string(),
+                principal_id,
+                principal_id,
+                SpaceRole::Editor,
+            )
+            .await?;
+        assert_eq!(
+            service
+                .recover_initial_space_claim_target(&slug, space_uid, transferred_owner)
+                .await?,
+            Some(space_uid.to_string()),
+            "a fresh Node must trust the validated active owner, not the historical claimer"
+        );
+        service
+            .bind_initial_space_slug_claim_owner(&slug, space_uid, transferred_owner)
+            .await?;
+        assert_eq!(
+            service
+                .read_space_slug_claim(&slug)
+                .await?
+                .and_then(|claim| claim.owner_principal_id),
+            Some(principal_id),
+            "ownership transfer must not rewrite historical claim metadata"
+        );
+        assert_eq!(
+            service
+                .classify_space_for_node_onboarding(&space_uid.to_string())
+                .await?,
+            SpaceOnboardingState::ClaimedValid {
+                uid: space_uid,
+                slug
+            }
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn onboarding_rejects_legacy_layout_when_current_acl_is_absent() -> Result<()> {
+        for (suffix, legacy_path, bytes) in [
+            ("legacy-marker", "authorization.json", br#"{}"#.as_slice()),
+            (
+                "membership-setting",
+                "settings.json",
+                br#"{"default_form":"Entry","members":[]}"#.as_slice(),
+            ),
+        ] {
+            let service = UgoiteService::new(format!(
+                "memory://onboarding-absent-acl-{suffix}-{}",
+                Uuid::now_v7()
+            ))?;
+            let slug = format!("legacy-{suffix}-{}", Uuid::now_v7());
+            let space_uid = match service.ensure_operator_space(&slug).await? {
+                SpaceCreateOutcome::Created(uid) | SpaceCreateOutcome::Existing(uid) => uid,
+            };
+            let acl_path = format!("spaces/{space_uid}/security/principals.json");
+            assert!(matches!(
+                service.operator.read(&acl_path).await,
+                Err(error) if error.kind() == opendal::ErrorKind::NotFound
+            ));
+            service
+                .operator
+                .write(&format!("spaces/{space_uid}/{legacy_path}"), bytes.to_vec())
+                .await?;
+            let error = service
+                .classify_space_for_node_onboarding(&space_uid.to_string())
+                .await
+                .expect_err("legacy layout must not be classified as portable-unclaimed");
+            assert!(
+                format!("{error:#}").contains("unsupported Space layout"),
+                "{error:#}"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn setup_recovery_rejects_a_slug_bound_to_a_different_fixed_uid() -> Result<()> {
+        let service = UgoiteService::new(format!(
+            "memory://onboarding-fixed-target-{}",
+            Uuid::now_v7()
+        ))?;
+        let slug = format!("fixed-target-{}", Uuid::now_v7());
+        let principal_id = Uuid::now_v7();
+        let original_uid = service
+            .create_space_for_principal(&slug, principal_id, "Original Owner")
+            .await?;
+        let expected_uid = Uuid::now_v7();
+        let error = service
+            .recover_initial_space_claim_target(&slug, expected_uid, principal_id)
+            .await
+            .expect_err("a retry must not adopt another UID under the intended slug");
+        assert!(format!("{error:#}").contains("SPACE_ONBOARDING_TARGET_CONFLICT"));
+        assert_eq!(
+            service.space_id_by_slug(&slug).await?,
+            Some(original_uid.to_string())
+        );
+        let claim = service
+            .read_space_slug_claim(&slug)
+            .await?
+            .expect("existing claim remains intact");
+        assert_eq!(claim.space_id, original_uid.to_string());
+        assert_eq!(claim.owner_principal_id, Some(principal_id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn setup_preflight_rejects_released_default_claim() -> Result<()> {
+        let service = UgoiteService::new(format!(
+            "memory://onboarding-released-default-{}",
+            Uuid::now_v7()
+        ))?;
+        let expected_uid = match service.ensure_operator_space("default").await? {
+            SpaceCreateOutcome::Created(uid) | SpaceCreateOutcome::Existing(uid) => uid,
+        };
+        let principal_id = Uuid::now_v7();
+        let path = format!("{SPACE_SLUG_CLAIMS_DIR}default.json");
+        let mut claim = service
+            .read_space_slug_claim("default")
+            .await?
+            .expect("operator Space claim");
+        claim.state = "released".to_string();
+        service
+            .operator
+            .write(&path, serde_json::to_vec(&claim)?)
+            .await?;
+        let error = service
+            .recover_initial_space_claim_target("default", expected_uid, principal_id)
+            .await
+            .expect_err("released default claim must fail before setup secret consumption");
+        assert!(format!("{error:#}").contains("SPACE_ONBOARDING_TARGET_CONFLICT"));
+        assert_eq!(
+            service.space_id_by_slug("default").await?,
+            Some(expected_uid.to_string())
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn setup_claim_persists_owner_into_existing_slug_record() -> Result<()> {
+        let service = UgoiteService::new(format!(
+            "memory://onboarding-bind-slug-owner-{}",
+            Uuid::now_v7()
+        ))?;
+        let slug = format!("bind-owner-{}", Uuid::now_v7());
+        let space_uid = match service.ensure_operator_space(&slug).await? {
+            SpaceCreateOutcome::Created(uid) | SpaceCreateOutcome::Existing(uid) => uid,
+        };
+        let principal_id = Uuid::now_v7();
+        Authorizer::new(service.operator.clone())
+            .initialize_owner(&space_uid.to_string(), space_uid, principal_id, "Owner")
+            .await?;
+        service
+            .bind_initial_space_slug_claim_owner(&slug, space_uid, principal_id)
+            .await?;
+        let claim = service
+            .read_space_slug_claim(&slug)
+            .await?
+            .expect("portable Space retains its slug claim");
+        assert_eq!(claim.owner_principal_id, Some(principal_id));
+        assert_eq!(
+            service
+                .classify_space_for_node_onboarding(&space_uid.to_string())
+                .await?,
+            SpaceOnboardingState::ClaimedValid {
+                uid: space_uid,
+                slug
+            }
+        );
+        Ok(())
+    }
 
     #[test]
     fn saved_sql_scope_accepts_more_than_normal_read_rows_of_denials() -> Result<()> {

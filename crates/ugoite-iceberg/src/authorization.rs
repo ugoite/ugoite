@@ -621,6 +621,38 @@ impl Authorizer {
         Ok(state)
     }
 
+    /// Read authorization state while preserving the distinction between an
+    /// exactly missing state object and a malformed or unreadable object.
+    /// Used only for read-only Space onboarding classification.
+    pub async fn state_if_present(
+        &self,
+        space_id: &str,
+        expected_space_uid: Uuid,
+    ) -> Result<Option<AuthorizationState>> {
+        let path = state_path(space_id);
+        let Some(bytes) = crate::read_object_exact_optional(&self.operator, &path).await? else {
+            return Ok(None);
+        };
+        let state: AuthorizationState =
+            serde_json::from_slice(&bytes).context("decode Space authorization state")?;
+        validate_authorization_state(&state)?;
+        if state.space_uid != expected_space_uid {
+            bail!("Space metadata and authorization state use different space_uid values");
+        }
+        let metadata = crate::space::get_space_raw(&self.operator, space_id)
+            .await
+            .context("read Space metadata for authorization binding")?;
+        let metadata_space_uid = metadata
+            .get("space_uid")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("Space metadata has no immutable space_uid"))
+            .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))?;
+        if metadata_space_uid != expected_space_uid {
+            bail!("Space metadata and authorization state use different space_uid values");
+        }
+        Ok(Some(state))
+    }
+
     async fn acquire_durable_mutation_lease(
         &self,
         space_id: &str,
