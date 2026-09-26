@@ -2130,12 +2130,6 @@ textarea {
     right: 14px;
     width: min(430px, calc(100vw - 28px));
   }
-  .loginShell {
-    grid-template-columns: 1fr;
-  }
-  .loginStatement {
-    display: none;
-  }
 }
 
 @media (max-width: 560px) {
@@ -3829,6 +3823,7 @@ a.tool {
 
 .loginShell {
   min-height: 100vh;
+  min-height: 100svh;
   background: #fff;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(340px, 42%);
@@ -3837,6 +3832,8 @@ a.tool {
 
 .loginPanel {
   align-self: center;
+  box-sizing: border-box;
+  min-width: 0;
   width: min(420px, calc(100vw - 48px));
   margin: 0 auto;
   padding: 42px 0;
@@ -3867,6 +3864,8 @@ a.tool {
 .loginPanel > .btn,
 .loginPanel > .tonal {
   width: max-content;
+  max-width: 100%;
+  min-height: 44px;
 }
 
 .or {
@@ -3889,7 +3888,10 @@ a.tool {
 }
 
 .loginLink {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  min-width: 44px;
+  min-height: 44px;
   margin-top: 18px;
   color: var(--brand-ink);
   font-size: 12px;
@@ -3950,6 +3952,81 @@ a.tool {
 @media (max-width: 560px) {
   .loginPanel {
     width: calc(100vw - 48px);
+  }
+}
+
+/* Login: keep all narrow-screen overrides after the desktop base rules. */
+@media (max-width: 900px) {
+  .loginShell {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    min-height: 100vh;
+    min-height: 100svh;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .loginPanel {
+    align-self: start;
+    width: min(100%, 480px);
+    padding: clamp(24px, 7svh, 56px) 24px 16px;
+  }
+
+  .loginBrand {
+    margin-bottom: 36px;
+  }
+
+  .loginPanel > .btn,
+  .loginPanel > .tonal {
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .loginLink {
+    display: inline-flex;
+    align-items: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin-top: 12px;
+    font-size: 14px;
+  }
+
+  .loginStatement {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-content: flex-start;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    box-sizing: border-box;
+    width: min(100%, 480px);
+    justify-self: center;
+    padding: 10px 24px 24px;
+    background: none;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: normal;
+    line-height: 1.5;
+  }
+
+  .loginStatement p,
+  .loginStatement p + p {
+    margin: 0;
+    color: inherit;
+  }
+
+  .statementMark {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .loginPanel {
+    width: 100%;
   }
 }
 
