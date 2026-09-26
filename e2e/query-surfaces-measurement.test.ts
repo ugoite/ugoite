@@ -18,6 +18,22 @@ type QueryEvent = {
   body?: unknown;
   entryIds?: string[];
 };
+type LifecycleMeasurement = {
+  events?: QueryEvent[];
+  supersededInFlightCount: number;
+  actualAbortCount: number;
+  endedAbortCount: number;
+  residualPendingCount: number;
+  visibleEntryIds: string[];
+  staleSourceEntryIds: string[];
+  unexpectedTargetEntryIds: string[];
+  visibleDataRows: number;
+  targetSpaceQueryCount: number;
+  targetSpaceQueryPaths: string[];
+  rowsBeforeTargetQuery: number;
+  rowsWhileTargetQueryPending: number;
+  instrumentOnly?: boolean;
+};
 
 const MEASUREMENT_SLUGS = ["query-space-a", "query-space-b"] as const;
 const TRIAL_COUNT = 5;
@@ -158,7 +174,7 @@ test("records real two-Space query surface measurements", async ({ page, request
 
   const trials: Array<Record<string, unknown>> = [];
   const sqlPagination: Array<Record<string, unknown>> = [];
-  const rowLocator = page.locator("tbody tr.paged-result-row").first();
+  const rowLocator = page.locator("tbody tr").first();
 
   try {
     for (const space of measuredSpaces) {
@@ -181,7 +197,7 @@ test("records real two-Space query surface measurements", async ({ page, request
             memory?: { usedJSHeapSize?: number };
           }).memory?.usedJSHeapSize ?? null,
           dataRows: document.querySelectorAll(
-            "tbody tr.paged-result-row",
+            "tbody tr",
           ).length,
           queryEvents: (window as Window & {
             __ugoiteQueryEvents?: QueryEvent[];
@@ -221,7 +237,7 @@ test("records real two-Space query surface measurements", async ({ page, request
             memory?: { usedJSHeapSize?: number };
           }).memory?.usedJSHeapSize ?? null,
           dataRows: document.querySelectorAll(
-            "tbody tr.paged-result-row",
+            "tbody tr",
           ).length,
           queryEvents: (window as Window & {
             __ugoiteQueryEvents?: QueryEvent[];
@@ -304,122 +320,142 @@ test("records real two-Space query surface measurements", async ({ page, request
       { waitUntil: "domcontentloaded" },
     );
     await expect(rowLocator).toBeVisible();
-    const sourceEntryIds = await page.locator(
-      "tbody tr.paged-result-row[data-entry-id]",
-    ).evaluateAll((rows) =>
-      rows.flatMap((row) => row.getAttribute("data-entry-id") ?? [])
-    );
-    expect(sourceEntryIds.length).toBeGreaterThan(0);
-    await page.route("**/entries/query", async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      try {
-        await route.continue();
-      } catch {
-        // The browser may cancel this deliberately delayed request first.
-      }
-    });
-    const filter = page.getByText("Filter", { exact: true });
-    await filter.click();
-    const searchbox = page.getByRole("searchbox");
-    const firstRapidRequest = page.waitForRequest((request) =>
-      request.url().includes("/entries/query")
-    );
-    await searchbox.fill("solar");
-    await firstRapidRequest;
-    const secondRapidRequest = page.waitForRequest((request) =>
-      request.url().includes("/entries/query")
-    );
-    await searchbox.fill("energy");
-    await secondRapidRequest;
-    const switchingRequest = page.waitForRequest((request) =>
-      request.url().includes("/entries/query")
-    );
-    await searchbox.fill("inspection");
-    await switchingRequest;
-    await page.getByLabel("Space", { exact: true }).selectOption(
-      secondSpace.space_uid,
-    );
-    await expect(page).toHaveURL(
-      new RegExp(`/spaces/${secondSpace.space_uid}/forms$`),
-    );
-    await page.waitForTimeout(500);
-    const rowsBeforeTargetQuery = await page.locator(
-      ".paged-result-row",
-    ).count();
-    const targetSpaceRequest = page.waitForRequest((request) =>
-      request.url().includes(
-        `/spaces/${secondSpace.space_uid}/entries/query`,
-      )
-    );
-    await page.getByText(SQL_FORM_NAME, { exact: true }).click();
-    await targetSpaceRequest;
-    const rowsWhileTargetQueryPending = await page.locator(
-      ".paged-result-row",
-    ).count();
-    expect(rowsWhileTargetQueryPending).toBe(0);
-    await expect(rowLocator).toBeVisible();
-    await page.waitForTimeout(500);
-    const lifecycle = await page.evaluate(({
-      targetSpaceUid,
-      sourceEntryIds,
-      rowsBeforeTargetQuery,
-      rowsWhileTargetQueryPending,
-    }) => {
-      const events = (window as Window & {
-        __ugoiteQueryEvents?: QueryEvent[];
-      }).__ugoiteQueryEvents ?? [];
-      const targetSpaceEvents = events.filter((event) =>
-        event.path.includes(`/spaces/${targetSpaceUid}/entries/query`)
+    let lifecycle: LifecycleMeasurement = {
+      events: [],
+      instrumentOnly: true,
+      supersededInFlightCount: 0,
+      actualAbortCount: 0,
+      endedAbortCount: 0,
+      residualPendingCount: 0,
+      visibleEntryIds: [],
+      staleSourceEntryIds: [],
+      unexpectedTargetEntryIds: [],
+      visibleDataRows: 0,
+      targetSpaceQueryCount: 0,
+      targetSpaceQueryPaths: [],
+      rowsBeforeTargetQuery: 0,
+      rowsWhileTargetQueryPending: 0,
+    };
+    if (Deno.env.get("UGOITE_QUERY_MEASURE_BASELINE") !== "true") {
+      const sourceEntryIds = await page.locator(
+        "tbody tr[data-entry-id]",
+      ).evaluateAll((rows) =>
+        rows.flatMap((row) => row.getAttribute("data-entry-id") ?? [])
       );
-      const visibleEntryIds = Array.from(document.querySelectorAll(
-        "tbody tr.paged-result-row[data-entry-id]",
-      )).flatMap((row) => row.getAttribute("data-entry-id") ?? []);
-      const targetEntryIds = new Set(
-        targetSpaceEvents.flatMap((event) => event.entryIds ?? []),
+      expect(sourceEntryIds.length).toBeGreaterThan(0);
+      await page.route("**/entries/query", async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        try {
+          await route.continue();
+        } catch {
+          // The browser may cancel this deliberately delayed request first.
+        }
+      });
+      const filter = page.getByText("Filter", { exact: true });
+      await filter.click();
+      const searchbox = page.getByRole("searchbox");
+      const firstRapidRequest = page.waitForRequest((request) =>
+        request.url().includes("/entries/query")
       );
-      return {
-        events,
-        supersededInFlightCount: events.filter((event) => event.aborted).length,
-        actualAbortCount: events.filter((event) => event.aborted).length,
-        endedAbortCount: events.filter((event) =>
-          event.aborted && event.endedAt !== undefined
-        ).length,
-        residualPendingCount: events.filter((event) =>
-          event.endedAt === undefined
-        ).length,
-        visibleEntryIds,
-        staleSourceEntryIds: visibleEntryIds.filter((id) =>
-          sourceEntryIds.includes(id)
-        ),
-        unexpectedTargetEntryIds: visibleEntryIds.filter((id) =>
-          !targetEntryIds.has(id)
-        ),
-        visibleDataRows: document.querySelectorAll(
-          ".paged-result-row",
-        ).length,
-        targetSpaceQueryCount: targetSpaceEvents.length,
-        targetSpaceQueryPaths: targetSpaceEvents.map((event) => event.path),
+      await searchbox.fill("solar");
+      await firstRapidRequest;
+      const secondRapidRequest = page.waitForRequest((request) =>
+        request.url().includes("/entries/query")
+      );
+      await searchbox.fill("energy");
+      await secondRapidRequest;
+      const switchingRequest = page.waitForRequest((request) =>
+        request.url().includes("/entries/query")
+      );
+      await searchbox.fill("inspection");
+      await switchingRequest;
+      await page.getByLabel("Space", { exact: true }).selectOption(
+        secondSpace.space_uid,
+      );
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${secondSpace.space_uid}/forms$`),
+      );
+      await page.waitForTimeout(500);
+      const rowsBeforeTargetQuery = await page.locator(
+        "tbody tr",
+      ).count();
+      const targetSpaceRequest = page.waitForRequest((request) =>
+        request.url().includes(
+          `/spaces/${secondSpace.space_uid}/entries/query`,
+        )
+      );
+      await page.getByText(SQL_FORM_NAME, { exact: true }).click();
+      await targetSpaceRequest;
+      const rowsWhileTargetQueryPending = await page.locator(
+        "tbody tr",
+      ).count();
+      expect(rowsWhileTargetQueryPending).toBe(0);
+      await expect(rowLocator).toBeVisible();
+      await page.waitForTimeout(500);
+      lifecycle = await page.evaluate(({
+        targetSpaceUid,
+        sourceEntryIds,
         rowsBeforeTargetQuery,
         rowsWhileTargetQueryPending,
-      };
-    }, {
-      targetSpaceUid: secondSpace.space_uid,
-      sourceEntryIds,
-      rowsBeforeTargetQuery,
-      rowsWhileTargetQueryPending,
-    });
-    expect(lifecycle.actualAbortCount).toBeGreaterThan(0);
-    expect(lifecycle.residualPendingCount).toBe(0);
-    expect(rowsBeforeTargetQuery).toBe(0);
-    expect(lifecycle.targetSpaceQueryCount).toBeGreaterThan(0);
-    expect(
-      lifecycle.targetSpaceQueryPaths.every((path) =>
-        path.includes(`/spaces/${secondSpace.space_uid}/`)
-      ),
-    ).toBe(true);
-    expect(lifecycle.visibleDataRows).toBeGreaterThan(0);
-    expect(lifecycle.staleSourceEntryIds).toEqual([]);
-    expect(lifecycle.unexpectedTargetEntryIds).toEqual([]);
+      }) => {
+        const events = (window as Window & {
+          __ugoiteQueryEvents?: QueryEvent[];
+        }).__ugoiteQueryEvents ?? [];
+        const targetSpaceEvents = events.filter((event) =>
+          event.path.includes(`/spaces/${targetSpaceUid}/entries/query`)
+        );
+        const visibleEntryIds = Array.from(document.querySelectorAll(
+          "tbody tr[data-entry-id]",
+        )).flatMap((row) => row.getAttribute("data-entry-id") ?? []);
+        const targetEntryIds = new Set(
+          targetSpaceEvents.flatMap((event) => event.entryIds ?? []),
+        );
+        return {
+          events,
+          supersededInFlightCount: events.filter((event) =>
+            event.aborted
+          ).length,
+          actualAbortCount: events.filter((event) => event.aborted).length,
+          endedAbortCount: events.filter((event) =>
+            event.aborted && event.endedAt !== undefined
+          ).length,
+          residualPendingCount: events.filter((event) =>
+            event.endedAt === undefined
+          ).length,
+          visibleEntryIds,
+          staleSourceEntryIds: visibleEntryIds.filter((id) =>
+            sourceEntryIds.includes(id)
+          ),
+          unexpectedTargetEntryIds: visibleEntryIds.filter((id) =>
+            !targetEntryIds.has(id)
+          ),
+          visibleDataRows: document.querySelectorAll(
+            "tbody tr",
+          ).length,
+          targetSpaceQueryCount: targetSpaceEvents.length,
+          targetSpaceQueryPaths: targetSpaceEvents.map((event) => event.path),
+          rowsBeforeTargetQuery,
+          rowsWhileTargetQueryPending,
+        };
+      }, {
+        targetSpaceUid: secondSpace.space_uid,
+        sourceEntryIds,
+        rowsBeforeTargetQuery,
+        rowsWhileTargetQueryPending,
+      });
+      expect(lifecycle.actualAbortCount).toBeGreaterThan(0);
+      expect(lifecycle.residualPendingCount).toBe(0);
+      expect(rowsBeforeTargetQuery).toBe(0);
+      expect(lifecycle.targetSpaceQueryCount).toBeGreaterThan(0);
+      expect(
+        lifecycle.targetSpaceQueryPaths.every((path) =>
+          path.includes(`/spaces/${secondSpace.space_uid}/`)
+        ),
+      ).toBe(true);
+      expect(lifecycle.visibleDataRows).toBeGreaterThan(0);
+      expect(lifecycle.staleSourceEntryIds).toEqual([]);
+      expect(lifecycle.unexpectedTargetEntryIds).toEqual([]);
+    }
 
     const outputPath = Deno.env.get("UGOITE_QUERY_MEASURE_OUTPUT");
     if (outputPath) {
@@ -469,6 +505,8 @@ test("records real two-Space query surface measurements", async ({ page, request
             },
             environment: {
               backend: "Ugoite server under direct-process local E2E",
+              backend_source_sha: Deno.env.get("UGOITE_BACKEND_SOURCE_SHA") ??
+                "unknown",
               backend_startup_seconds: Number(
                 Deno.env.get("UGOITE_BACKEND_STARTUP_SECONDS") ?? "NaN",
               ),
