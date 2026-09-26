@@ -1,4 +1,6 @@
-# Query surface measurement: 2026-09
+---
+title: "Query surface measurement: 2026-09"
+---
 
 This is one server-backed local measurement of EntryQuery and Saved SQL on two
 fixed-seed Spaces. It records current-build behavior; it does not establish an
