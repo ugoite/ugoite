@@ -6,8 +6,12 @@ import { openIsolatedPasskeyPage } from "./lib/security-context.ts";
 type RemoteBarrier = {
   proxyUrl: string;
   waitForSecondPage: () => Promise<void>;
+  waitForFirstPageResponse: () => Promise<void>;
+  waitForCredentialExpiry: () => Promise<void>;
   releasePage: () => void;
   queryRequests: () => number;
+  refreshRequests: () => number;
+  successfulRefreshResponses: () => number;
   sqlPageIdentity: () => Array<{ sql: string; hasContinuation: boolean }>;
   leaksOpaqueContinuation: (text: string) => boolean;
   safeEvents: () => string[];
@@ -29,10 +33,15 @@ function deferred() {
 async function startRemoteBarrier(
   backendUrl: string,
   spaceId: string,
+  options: { holdFirstPageResponse?: boolean } = {},
 ): Promise<RemoteBarrier> {
   const secondPageSeen = deferred();
+  const firstPageResponseReady = deferred();
   const release = deferred();
   let sqlQueries = 0;
+  let refreshGrants = 0;
+  let successfulRefreshes = 0;
+  let credentialExpiresAt: number | undefined;
   let released = false;
   let opaqueContinuation: string | undefined;
   const events: string[] = [];
@@ -49,6 +58,23 @@ async function startRemoteBarrier(
         ? undefined
         : await request.arrayBuffer();
       events.push(`incoming ${request.method} ${targetUrl.pathname}`);
+
+      let grantType = "";
+      if (
+        request.method === "POST" && targetUrl.pathname.endsWith("/oauth/token")
+      ) {
+        try {
+          grantType = String(
+            (JSON.parse(new TextDecoder().decode(body)) as {
+              grant_type?: unknown;
+            })
+              .grant_type ?? "",
+          );
+        } catch {
+          // Do not retain or log token request bodies.
+        }
+        if (grantType === "refresh_token") refreshGrants += 1;
+      }
 
       if (
         request.method === "POST" &&
@@ -86,6 +112,24 @@ async function startRemoteBarrier(
         body,
         redirect: "manual",
       });
+      if (grantType === "refresh_token" && upstream.ok) {
+        successfulRefreshes += 1;
+      }
+      if (
+        grantType === "urn:ietf:params:oauth:grant-type:device_code" &&
+        upstream.ok
+      ) {
+        const token = await upstream.clone().json() as {
+          access_token?: unknown;
+          expires_in?: unknown;
+        };
+        if (
+          typeof token.access_token === "string" &&
+          typeof token.expires_in === "number"
+        ) {
+          credentialExpiresAt = Date.now() + token.expires_in * 1000;
+        }
+      }
       if (
         request.method === "POST" &&
         isSpaceSqlQueryPath(targetUrl.pathname, spaceId) &&
@@ -116,6 +160,15 @@ async function startRemoteBarrier(
         responseHeaders.delete(name);
       }
       const responseBody = await upstream.arrayBuffer();
+      if (
+        options.holdFirstPageResponse &&
+        request.method === "POST" &&
+        isSpaceSqlQueryPath(targetUrl.pathname, spaceId) &&
+        sqlQueries === 1
+      ) {
+        firstPageResponseReady.resolve();
+        if (!released) await release.promise;
+      }
       events.push(
         `${request.method} ${targetUrl.pathname} -> ${upstream.status} (${responseBody.byteLength} bytes)${
           safeError ? ` ${safeError}` : ""
@@ -150,11 +203,49 @@ async function startRemoteBarrier(
         ),
       ]);
     },
+    waitForFirstPageResponse: async () => {
+      await Promise.race([
+        firstPageResponseReady.promise,
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("page-one response was not observed")),
+            30_000,
+          )
+        ),
+      ]);
+    },
+    waitForCredentialExpiry: async () => {
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          const poll = () => {
+            if (credentialExpiresAt !== undefined) resolve();
+            else setTimeout(poll, 50);
+          };
+          poll();
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("device token expiry was not observed")),
+            30_000,
+          )
+        ),
+      ]);
+      const expiresAt = credentialExpiresAt;
+      if (expiresAt === undefined) {
+        throw new Error("device token expiry was not observed");
+      }
+      const delayMs = Math.max(0, expiresAt + 1_500 - Date.now());
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    },
     releasePage: () => {
       released = true;
       release.resolve();
     },
     queryRequests: () => sqlQueries,
+    refreshRequests: () => refreshGrants,
+    successfulRefreshResponses: () => successfulRefreshes,
     sqlPageIdentity: () => [...sqlPageIdentity],
     leaksOpaqueContinuation: (text: string) =>
       Boolean(opaqueContinuation && text.includes(opaqueContinuation)),
@@ -465,6 +556,196 @@ test.describe("SQL export Remote authorization revocation", () => {
       expect(stderr).toMatch(/FORBIDDEN|forbidden/i);
       expect(stderr).toMatch(/rows_exported/i);
       expect(barrier.leaksOpaqueContinuation(stderr)).toBe(false);
+    } finally {
+      barrier.releasePage();
+      await barrier.close();
+      await Deno.remove(configDir, { recursive: true }).catch(() => {});
+    }
+  });
+  test("refreshes a credential that expires between SQL pages", async ({ browser, request }) => {
+    test.setTimeout(420_000);
+    const id = Date.now();
+    const created = await request.post(getBackendUrl("/spaces"), {
+      data: { slug: `sql-expiry-${id}`, name: `SQL expiry ${id}` },
+    });
+    expect(created.status()).toBe(201);
+    const { space_uid: spaceId } = await created.json() as {
+      space_uid: string;
+    };
+
+    const form = await request.post(getBackendUrl(`/spaces/${spaceId}/forms`), {
+      data: {
+        name: `RemoteExpiry${id}`,
+        version: 1,
+        template: "# Remote expiry\n\n## Value\n",
+        fields: { Value: { type: "string", required: true } },
+      },
+    });
+    expect([200, 201]).toContain(form.status());
+    for (const value of ["first", "second"]) {
+      const entry = await request.post(
+        getBackendUrl(`/spaces/${spaceId}/entries`),
+        { data: { form: `RemoteExpiry${id}`, fields: { Value: value } } },
+      );
+      expect(entry.status()).toBe(201);
+    }
+
+    const invitation = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/members/invitations`),
+      { data: { label: `Remote expiry ${id}`, role: "viewer" } },
+    );
+    expect(invitation.status()).toBe(201);
+    const { invitation_url: invitationUrl } = await invitation.json() as {
+      invitation_url: string;
+    };
+    const configDir = await Deno.makeTempDir({
+      prefix: "ugoite-remote-expiry-",
+    });
+    const configPath = join(configDir, "config.toml");
+    const home = join(configDir, "home");
+    const outputPath = join(configDir, "expired-between-pages.ndjson");
+    const backend = backendBaseUrl();
+    const barrier = await startRemoteBarrier(backend, spaceId, {
+      holdFirstPageResponse: true,
+    });
+    const loginConfig =
+      `version = 1\ncurrent_context = "test"\n\n[connections.remote]\ntype = "backend"\nurl = ${
+        JSON.stringify(backend)
+      }\n\n[contexts.test]\nconnection = "remote"\nspace_uid = ${
+        JSON.stringify(spaceId)
+      }\ncredential = "remote-auth"\n`;
+    await Deno.writeTextFile(configPath, loginConfig);
+    await Deno.mkdir(home, { recursive: true });
+
+    try {
+      const isolated = await openIsolatedPasskeyPage(browser);
+      try {
+        await isolated.page.goto(invitationUrl);
+        await isolated.page.getByRole("button", { name: "Accept invitation" })
+          .click();
+        await expect(isolated.page).toHaveURL(/\/spaces$/);
+
+        const login = new Deno.Command(cliBinary(), {
+          args: [
+            "--config",
+            configPath,
+            "auth",
+            "login",
+            "--connection",
+            "remote",
+            "--credential",
+            "remote-auth",
+            "--device-name",
+            `SQL export expiry ${id}`,
+            "--space-uid",
+            spaceId,
+            "--actions",
+            "read",
+          ],
+          env: {
+            HOME: home,
+            HTTP_PROXY: barrier.proxyUrl,
+            http_proxy: barrier.proxyUrl,
+            NO_PROXY: "",
+            no_proxy: "",
+          },
+          stdin: "null",
+          stdout: "null",
+          stderr: "piped",
+        }).spawn();
+        let approvalUrl: string;
+        try {
+          approvalUrl = await waitForCliApprovalUrl(login);
+        } catch (error) {
+          throw new Error(
+            `${
+              error instanceof Error ? error.message : String(error)
+            }; proxy: ${barrier.safeEvents().join("; ")}`,
+          );
+        }
+        await isolated.page.goto(approvalUrl);
+        await expect(isolated.page.getByRole("heading", {
+          name: "Approve CLI access",
+        })).toBeVisible();
+        await isolated.page.getByRole("button", {
+          name: "Review CLI access request",
+        }).click();
+        await isolated.page.getByRole("button", { name: "Approve CLI access" })
+          .click();
+        await expect(isolated.page.getByRole("heading", {
+          name: "CLI access approved",
+        })).toBeVisible();
+        await finishChild(login, "device authorization");
+      } finally {
+        await isolated.close();
+      }
+
+      const forms = await request.get(
+        getBackendUrl(`/spaces/${spaceId}/forms`),
+      );
+      expect(forms.ok()).toBeTruthy();
+      const formList = await forms.json() as Array<
+        { name: string; sql_relation?: string }
+      >;
+      const relation = formList.find((item) =>
+        item.name === `RemoteExpiry${id}`
+      )
+        ?.sql_relation;
+      expect(relation).toBeTruthy();
+      const exportSql =
+        `SELECT _ugoite_id FROM "${relation}" ORDER BY _ugoite_id`;
+      const exportProcess = new Deno.Command(cliBinary(), {
+        args: [
+          "--config",
+          configPath,
+          "sql",
+          "export",
+          exportSql,
+          "--max-rows",
+          "10",
+          "--page-size",
+          "1",
+          "--output",
+          outputPath,
+        ],
+        env: {
+          HOME: home,
+          HTTP_PROXY: barrier.proxyUrl,
+          http_proxy: barrier.proxyUrl,
+          NO_PROXY: "",
+          no_proxy: "",
+        },
+        stdin: "null",
+        stdout: "piped",
+        stderr: "piped",
+      }).spawn();
+
+      await barrier.waitForFirstPageResponse();
+      await barrier.waitForCredentialExpiry();
+      barrier.releasePage();
+      const result = await exportProcess.output();
+      expect(result.success).toBe(true);
+      expect(barrier.queryRequests()).toBe(2);
+      expect(barrier.refreshRequests()).toBe(1);
+      expect(barrier.successfulRefreshResponses()).toBe(1);
+      const pages = barrier.sqlPageIdentity();
+      expect(pages).toHaveLength(2);
+      expect(pages[0].hasContinuation).toBe(false);
+      expect(pages[1].hasContinuation).toBe(true);
+      expect(pages[1].sql).toBe(pages[0].sql);
+      expect(await Deno.stat(outputPath).then((info) => info.isFile)).toBe(
+        true,
+      );
+      const outputRows = (await Deno.readTextFile(outputPath)).trim().split(
+        "\n",
+      );
+      expect(outputRows).toHaveLength(2);
+      expect(barrier.leaksOpaqueContinuation(outputRows.join("\n"))).toBe(
+        false,
+      );
+      expect(
+        barrier.safeEvents().some((event) => event.includes("/oauth/token")),
+      ).toBe(true);
     } finally {
       barrier.releasePage();
       await barrier.close();
