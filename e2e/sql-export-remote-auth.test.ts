@@ -12,6 +12,8 @@ type RemoteBarrier = {
   queryRequests: () => number;
   refreshRequests: () => number;
   successfulRefreshResponses: () => number;
+  refreshSqlQueryCounts: () => number[];
+  firstPageStartedBeforeCredentialExpiry: () => boolean | undefined;
   sqlPageIdentity: () => Array<{ sql: string; hasContinuation: boolean }>;
   leaksOpaqueContinuation: (text: string) => boolean;
   safeEvents: () => string[];
@@ -41,6 +43,8 @@ async function startRemoteBarrier(
   let sqlQueries = 0;
   let refreshGrants = 0;
   let successfulRefreshes = 0;
+  const refreshSqlQueryCounts: number[] = [];
+  let firstPageStartedBeforeCredentialExpiry: boolean | undefined;
   let credentialExpiresAt: number | undefined;
   let released = false;
   let opaqueContinuation: string | undefined;
@@ -73,7 +77,10 @@ async function startRemoteBarrier(
         } catch {
           // Do not retain or log token request bodies.
         }
-        if (grantType === "refresh_token") refreshGrants += 1;
+        if (grantType === "refresh_token") {
+          refreshGrants += 1;
+          refreshSqlQueryCounts.push(sqlQueries);
+        }
       }
 
       if (
@@ -81,6 +88,11 @@ async function startRemoteBarrier(
         isSpaceSqlQueryPath(targetUrl.pathname, spaceId)
       ) {
         sqlQueries += 1;
+        if (sqlQueries === 1) {
+          firstPageStartedBeforeCredentialExpiry = credentialExpiresAt !==
+              undefined &&
+            Date.now() < credentialExpiresAt;
+        }
         const payload = JSON.parse(new TextDecoder().decode(body)) as {
           sql?: unknown;
           continuation?: unknown;
@@ -246,6 +258,9 @@ async function startRemoteBarrier(
     queryRequests: () => sqlQueries,
     refreshRequests: () => refreshGrants,
     successfulRefreshResponses: () => successfulRefreshes,
+    refreshSqlQueryCounts: () => [...refreshSqlQueryCounts],
+    firstPageStartedBeforeCredentialExpiry: () =>
+      firstPageStartedBeforeCredentialExpiry,
     sqlPageIdentity: () => [...sqlPageIdentity],
     leaksOpaqueContinuation: (text: string) =>
       Boolean(opaqueContinuation && text.includes(opaqueContinuation)),
@@ -728,6 +743,8 @@ test.describe("SQL export Remote authorization and credential lifecycle", () => 
       expect(barrier.queryRequests()).toBe(2);
       expect(barrier.refreshRequests()).toBe(1);
       expect(barrier.successfulRefreshResponses()).toBe(1);
+      expect(barrier.refreshSqlQueryCounts()).toEqual([1]);
+      expect(barrier.firstPageStartedBeforeCredentialExpiry()).toBe(true);
       const pages = barrier.sqlPageIdentity();
       expect(pages).toHaveLength(2);
       expect(pages[0].hasContinuation).toBe(false);
