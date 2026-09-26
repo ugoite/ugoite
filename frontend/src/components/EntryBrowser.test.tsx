@@ -172,6 +172,9 @@ describe("EntryBrowser", () => {
     ));
 
     const row = screen.getByRole("row", { name: /Entry name/ });
+    const primaryCell = within(row).getByText("Entry name");
+    expect(primaryCell.closest("button, a")).toBeNull();
+    expect(primaryCell.closest("strong, b")).toBeNull();
     fireEvent.click(row);
     expect(row).toHaveAttribute("aria-selected", "true");
     expect(onSelect).not.toHaveBeenCalled();
@@ -704,6 +707,46 @@ describe("EntryBrowser", () => {
 
     expect(controller.projection()).toEqual({ kind: "preview" });
     expect(headerLabels()).toEqual(["Preview", "Open entry"]);
+  });
+
+  it("keeps the remaining timestamp column after ordinary columns", async () => {
+    const hiddenCreatedMicros = CREATED_MICROS - 86_400_000_000;
+    queryMock.mockResolvedValue({
+      rows: [{
+        id: "entry-preview-one-time",
+        form_id: "form-1",
+        revision_id: "revision-1",
+        created_at_micros: hiddenCreatedMicros,
+        updated_at_micros: UPDATED_MICROS,
+        preview: "Preview row",
+      }],
+      has_more: false,
+    });
+    const capabilities = systemEntryCapabilities({
+      kind: "form",
+      form_id: "form-1",
+    });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      { scope: capabilities.scope, filters: [], sort: [] },
+      { kind: "preview" },
+      50,
+      queryMock,
+    );
+    await controller.load();
+    render(() => (
+      <EntryBrowser controller={controller} capabilities={capabilities} />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Created" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(controller.projection()).toEqual({ kind: "preview" });
+    expect(headerLabels()).toEqual(["Preview", "Updated", "Open entry"]);
+    await screen.findByText(expectedDateLabel(UPDATED_MICROS));
+    expect(screen.queryByText(expectedDateLabel(hiddenCreatedMicros)))
+      .not.toBeInTheDocument();
   });
 
   it("validates numeric filter input before applying its typed value", () => {
