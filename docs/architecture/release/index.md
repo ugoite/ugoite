@@ -28,5 +28,8 @@ a product or support claim is safe to make.
   supported release scope.
 - [v0.1 Knowledge compatibility floor](v0.1-knowledge-compatibility.md) defines
   semantic recoverability and authority invariants.
+- [v0.2.1 virtual result table AT acceptance](v0.2.1-virtual-table-at.md)
+  tracks automated evidence separately from the still-unverified manual
+  screen-reader acceptance.
 - [Release notes and historical channel records](changelog.md) define the
   stable manual-note contract and label beta/alpha metadata as historical.

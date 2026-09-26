@@ -155,6 +155,14 @@ describe("PagedResultTable", () => {
     expect(within(table).getByText("Value 115")).toBeInTheDocument();
     expect(within(table).queryByText("Value 0")).not.toBeInTheDocument();
     expect(within(table).getAllByRole("row").length).toBeLessThanOrEqual(30);
+    expect(
+      table.querySelectorAll('tbody tr.paged-result-spacer[aria-hidden="true"]'),
+    ).toHaveLength(2);
+    expect(within(table).getAllByRole("row")).toHaveLength(23);
+    expect(within(table).getAllByRole("row")[1]).toHaveAttribute(
+      "aria-rowindex",
+      "96",
+    );
   });
 
   it("moves keyboard focus to an offscreen row after rendering it", async () => {
