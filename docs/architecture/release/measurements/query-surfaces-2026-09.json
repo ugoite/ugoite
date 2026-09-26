@@ -1,0 +1,1380 @@
+{
+  "schema_version": 1,
+  "source_sha": "6c735e76515151ac8731095f44b04783bbdf189e",
+  "date": "2026-09-26T01:46:01.065Z",
+  "dataset": {
+    "seed": "renewable-ops; Space A 3134001/6,000 Entries; Space B 3134002/4,000 Entries",
+    "spaces": [
+      {
+        "slug": "query-space-a",
+        "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+        "saved_sql_id": "7670fffc-4464-4f85-a45c-e5b9030ce3d9"
+      },
+      {
+        "slug": "query-space-b",
+        "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+        "saved_sql_id": "d5f10d61-5c6a-42c3-978d-cffe78c3f3d2"
+      }
+    ],
+    "entry_type_distribution": {
+      "Site": "2%",
+      "Array": "8%",
+      "Inspection": "20%",
+      "MaintenanceTicket": "25%",
+      "EnergyReport": "45%"
+    },
+    "measured_form": "MaintenanceTicket",
+    "forms": {
+      "query-space-a": {
+        "id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
+        "relation": "form_01a0db5dd2a376f9996ed43eaec5c3c8"
+      },
+      "query-space-b": {
+        "id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+        "relation": "form_01a0db5f55ca763191c4cd11a8bfc1c9"
+      }
+    },
+    "sql": {
+      "01a0db5d-d226-767a-9f1e-8500956235c3": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id",
+      "01a0db5f-5552-7768-a1cc-a377d3f73f59": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
+    },
+    "page_size": 100
+  },
+  "environment": {
+    "backend": "Ugoite server under direct-process local E2E",
+    "backend_startup_seconds": 126,
+    "storage": "local filesystem Space root",
+    "network": "browser and server on local loopback; no external network path",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+    "heap_api": "performance.memory.usedJSHeapSize when Chromium exposes it; otherwise null",
+    "lifecycle_interception": "400 ms Playwright delay on EntryQuery requests only; performance trials are not intercepted"
+  },
+  "summaries": {
+    "entry_query_first_visible_row": {
+      "trials": 10,
+      "p50Ms": 1848,
+      "p95Ms": 2417
+    },
+    "sql_first_visible_row": {
+      "trials": 10,
+      "p50Ms": 1347,
+      "p95Ms": 1351
+    }
+  },
+  "trials": [
+    {
+      "surface": "entry-query",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 1,
+      "elapsedToFirstVisibleRowMs": 2417,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
+          "method": "POST",
+          "startedAt": 1124.4000000953674,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1897.5,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 2,
+      "elapsedToFirstVisibleRowMs": 1848,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
+          "method": "POST",
+          "startedAt": 1078.8999998569489,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1825.2000000476837,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 3,
+      "elapsedToFirstVisibleRowMs": 1848,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
+          "method": "POST",
+          "startedAt": 1072.4000000953674,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1827.7000000476837,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 4,
+      "elapsedToFirstVisibleRowMs": 1853,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
+          "method": "POST",
+          "startedAt": 1073,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1832.6999998092651,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 5,
+      "elapsedToFirstVisibleRowMs": 1844,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
+          "method": "POST",
+          "startedAt": 1076.2999999523163,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1820.5,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 1,
+      "elapsedToFirstVisibleRowMs": 1348,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/sql/query",
+          "method": "POST",
+          "startedAt": 451.59999990463257,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1191.7999999523163,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 2,
+      "elapsedToFirstVisibleRowMs": 1349,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/sql/query",
+          "method": "POST",
+          "startedAt": 447.39999985694885,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1195.0999999046326,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 3,
+      "elapsedToFirstVisibleRowMs": 1345,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/sql/query",
+          "method": "POST",
+          "startedAt": 500.80000019073486,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1250,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 4,
+      "elapsedToFirstVisibleRowMs": 1347,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/sql/query",
+          "method": "POST",
+          "startedAt": 445.7999999523163,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1189.5999999046326,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0db5d-d226-767a-9f1e-8500956235c3",
+      "trial": 5,
+      "elapsedToFirstVisibleRowMs": 1351,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/sql/query",
+          "method": "POST",
+          "startedAt": 451.59999990463257,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5dd2a376f9996ed43eaec5c3c8\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1197.7999999523163,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 1,
+      "elapsedToFirstVisibleRowMs": 1843,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
+          "method": "POST",
+          "startedAt": 1074.3999998569489,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1810.2999999523163,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 2,
+      "elapsedToFirstVisibleRowMs": 1849,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
+          "method": "POST",
+          "startedAt": 1075.2000000476837,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1820.9000000953674,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 3,
+      "elapsedToFirstVisibleRowMs": 1843,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
+          "method": "POST",
+          "startedAt": 1071.3999998569489,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1804.5,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 4,
+      "elapsedToFirstVisibleRowMs": 1877,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
+          "method": "POST",
+          "startedAt": 1120.8000001907349,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1855.9000000953674,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 5,
+      "elapsedToFirstVisibleRowMs": 1869,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
+          "method": "POST",
+          "startedAt": 1109.2999999523163,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1847.0999999046326,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 1,
+      "elapsedToFirstVisibleRowMs": 1331,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/sql/query",
+          "method": "POST",
+          "startedAt": 480.5,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1215.1000001430511,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 2,
+      "elapsedToFirstVisibleRowMs": 1345,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/sql/query",
+          "method": "POST",
+          "startedAt": 455.7000000476837,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1195.3000001907349,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 3,
+      "elapsedToFirstVisibleRowMs": 1347,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/sql/query",
+          "method": "POST",
+          "startedAt": 460.40000009536743,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1192.7999999523163,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 4,
+      "elapsedToFirstVisibleRowMs": 1347,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/sql/query",
+          "method": "POST",
+          "startedAt": 442.10000014305115,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1175.7999999523163,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0db5f-5552-7768-a1cc-a377d3f73f59",
+      "trial": 5,
+      "elapsedToFirstVisibleRowMs": 1351,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/sql/query",
+          "method": "POST",
+          "startedAt": 444.2999999523163,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0db5f55ca763191c4cd11a8bfc1c9\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1178.6999998092651,
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "sql_pagination": [
+    {
+      "space": "query-space-a",
+      "initialPageCount": 1,
+      "initialCountRequests": 0,
+      "pageCountAfterNext": 2,
+      "dataRowsOnPageTwo": 100,
+      "pageSize": 100,
+      "hasContinuation": true
+    },
+    {
+      "space": "query-space-b",
+      "initialPageCount": 1,
+      "initialCountRequests": 0,
+      "pageCountAfterNext": 2,
+      "dataRowsOnPageTwo": 100,
+      "pageSize": 100,
+      "hasContinuation": true
+    }
+  ],
+  "lifecycle": {
+    "events": [
+      {
+        "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
+        "method": "POST",
+        "startedAt": 1086.7999999523163,
+        "aborted": false,
+        "body": {
+          "limit": 50,
+          "projection": {
+            "fields": [
+              {
+                "kind": "created_at"
+              },
+              {
+                "kind": "updated_at"
+              },
+              {
+                "field_id": 100,
+                "kind": "property"
+              },
+              {
+                "field_id": 101,
+                "kind": "property"
+              },
+              {
+                "field_id": 102,
+                "kind": "property"
+              },
+              {
+                "field_id": 103,
+                "kind": "property"
+              },
+              {
+                "field_id": 104,
+                "kind": "property"
+              },
+              {
+                "field_id": 105,
+                "kind": "property"
+              }
+            ],
+            "kind": "fields"
+          },
+          "query": {
+            "filters": [],
+            "scope": {
+              "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
+              "kind": "form"
+            },
+            "sort": []
+          }
+        },
+        "endedAt": 1878.2999999523163,
+        "status": 200
+      },
+      {
+        "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
+        "method": "POST",
+        "startedAt": 2418.5999999046326,
+        "aborted": true,
+        "body": {
+          "limit": 50,
+          "projection": {
+            "fields": [
+              {
+                "kind": "created_at"
+              },
+              {
+                "kind": "updated_at"
+              },
+              {
+                "field_id": 100,
+                "kind": "property"
+              },
+              {
+                "field_id": 101,
+                "kind": "property"
+              },
+              {
+                "field_id": 102,
+                "kind": "property"
+              },
+              {
+                "field_id": 103,
+                "kind": "property"
+              },
+              {
+                "field_id": 104,
+                "kind": "property"
+              },
+              {
+                "field_id": 105,
+                "kind": "property"
+              }
+            ],
+            "kind": "fields"
+          },
+          "query": {
+            "filters": [],
+            "scope": {
+              "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
+              "kind": "form"
+            },
+            "sort": [],
+            "text": "solar"
+          }
+        },
+        "endedAt": 2432.0999999046326,
+        "error": "signal is aborted without reason"
+      },
+      {
+        "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
+        "method": "POST",
+        "startedAt": 2432.4000000953674,
+        "aborted": true,
+        "body": {
+          "limit": 50,
+          "projection": {
+            "fields": [
+              {
+                "kind": "created_at"
+              },
+              {
+                "kind": "updated_at"
+              },
+              {
+                "field_id": 100,
+                "kind": "property"
+              },
+              {
+                "field_id": 101,
+                "kind": "property"
+              },
+              {
+                "field_id": 102,
+                "kind": "property"
+              },
+              {
+                "field_id": 103,
+                "kind": "property"
+              },
+              {
+                "field_id": 104,
+                "kind": "property"
+              },
+              {
+                "field_id": 105,
+                "kind": "property"
+              }
+            ],
+            "kind": "fields"
+          },
+          "query": {
+            "filters": [],
+            "scope": {
+              "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
+              "kind": "form"
+            },
+            "sort": [],
+            "text": "energy"
+          }
+        },
+        "endedAt": 2439,
+        "error": "signal is aborted without reason"
+      },
+      {
+        "path": "/api/spaces/01a0db5d-d226-767a-9f1e-8500956235c3/entries/query",
+        "method": "POST",
+        "startedAt": 2439.4000000953674,
+        "aborted": true,
+        "body": {
+          "limit": 50,
+          "projection": {
+            "fields": [
+              {
+                "kind": "created_at"
+              },
+              {
+                "kind": "updated_at"
+              },
+              {
+                "field_id": 100,
+                "kind": "property"
+              },
+              {
+                "field_id": 101,
+                "kind": "property"
+              },
+              {
+                "field_id": 102,
+                "kind": "property"
+              },
+              {
+                "field_id": 103,
+                "kind": "property"
+              },
+              {
+                "field_id": 104,
+                "kind": "property"
+              },
+              {
+                "field_id": 105,
+                "kind": "property"
+              }
+            ],
+            "kind": "fields"
+          },
+          "query": {
+            "filters": [],
+            "scope": {
+              "form_id": "01a0db5d-d2a3-76f9-996e-d43eaec5c3c8",
+              "kind": "form"
+            },
+            "sort": [],
+            "text": "inspection"
+          }
+        },
+        "endedAt": 2447.7999999523163,
+        "error": "signal is aborted without reason"
+      },
+      {
+        "path": "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query",
+        "method": "POST",
+        "startedAt": 4855.700000047684,
+        "aborted": false,
+        "body": {
+          "limit": 50,
+          "projection": {
+            "fields": [
+              {
+                "kind": "created_at"
+              },
+              {
+                "kind": "updated_at"
+              },
+              {
+                "field_id": 100,
+                "kind": "property"
+              },
+              {
+                "field_id": 101,
+                "kind": "property"
+              },
+              {
+                "field_id": 102,
+                "kind": "property"
+              },
+              {
+                "field_id": 103,
+                "kind": "property"
+              },
+              {
+                "field_id": 104,
+                "kind": "property"
+              },
+              {
+                "field_id": 105,
+                "kind": "property"
+              }
+            ],
+            "kind": "fields"
+          },
+          "query": {
+            "filters": [],
+            "scope": {
+              "form_id": "01a0db5f-55ca-7631-91c4-cd11a8bfc1c9",
+              "kind": "form"
+            },
+            "sort": []
+          }
+        },
+        "endedAt": 6024.599999904633,
+        "status": 200
+      }
+    ],
+    "actualAbortCount": 3,
+    "residualPendingCount": 0,
+    "visibleDataRows": 50,
+    "targetSpaceQueryCount": 1,
+    "targetSpaceQueryPaths": [
+      "/api/spaces/01a0db5f-5552-7768-a1cc-a377d3f73f59/entries/query"
+    ],
+    "rowsBeforeTargetQuery": 0,
+    "rowsWhileTargetQueryPending": 0
+  },
+  "limitations": [
+    "AbortSignal cancellation is measured in the browser fetch layer; it does not establish cancellation of SQL engine work after a server has begun execution.",
+    "Performance values include frontend navigation, local HTTP, server, storage, and rendering; the per-trial browser API heap value is not process RSS."
+  ]
+}

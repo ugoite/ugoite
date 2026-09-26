@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/dev-seed.sh [--root PATH] [--space-id ID] [--scenario NAME] [--entry-count N] [--seed VALUE]
+Usage: bash scripts/dev-seed.sh [--root PATH] [--space-id ID] [--scenario NAME] [--entry-count N] [--seed VALUE] [--owner NAME]
 
 Create local sample data with the xtask dev seed command and
 visible terminal progress.
@@ -13,6 +13,7 @@ Defaults:
   --space-id    dev-seed
   --scenario    renewable-ops
   --entry-count 50
+  --owner       omit to create a Space without authorization owner metadata
 
 Environment variable overrides:
   UGOITE_SEED_ROOT
@@ -29,6 +30,7 @@ SPACE_ID="${UGOITE_SEED_SPACE_ID:-dev-seed}"
 SCENARIO="${UGOITE_SEED_SCENARIO:-renewable-ops}"
 ENTRY_COUNT="${UGOITE_SEED_ENTRY_COUNT:-50}"
 SEED_VALUE="${UGOITE_SEED_VALUE:-}"
+OWNER_DISPLAY_NAME="${UGOITE_SEED_OWNER:-}"
 CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target/rust}"
 
 while (($# > 0)); do
@@ -51,6 +53,10 @@ while (($# > 0)); do
       ;;
     --seed)
       SEED_VALUE="${2:?missing value for --seed}"
+      shift 2
+      ;;
+    --owner)
+      OWNER_DISPLAY_NAME="${2:?missing value for --owner}"
       shift 2
       ;;
     -h | --help)
@@ -157,6 +163,9 @@ command=(
 
 if [[ -n "$SEED_VALUE" ]]; then
   command+=(--seed "$SEED_VALUE")
+fi
+if [[ -n "$OWNER_DISPLAY_NAME" ]]; then
+  command+=(--owner "$OWNER_DISPLAY_NAME")
 fi
 
 "${command[@]}"
