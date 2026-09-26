@@ -76,10 +76,16 @@ disconnect stops SQL engine work after server execution begins.
 
 ## Reproduction
 
-Build the release backend from the current checkout, seed the same two Spaces,
-then run the measurement helper with the fixed backend binary:
+Use a clean worktree at the exact current measurement checkout, then build the
+release backend there, seed the same two Spaces, and run the measurement helper
+with that fixed backend binary. The runner checks `UGOITE_SOURCE_SHA` against
+`HEAD`, so the current measurement must run at
+`4e66c9f74058b5d15d2603c543c6a6aed5d7dc95` (the PR head contains later
+documentation changes):
 
 ```sh
+git worktree add /tmp/query-surfaces-current 4e66c9f74058b5d15d2603c543c6a6aed5d7dc95
+cd /tmp/query-surfaces-current
 cargo build -p ugoite-server --release --locked
 UGOITE_QUERY_MEASURE_ROOT=/tmp/query-surfaces-current-root \
 UGOITE_QUERY_MEASURE_OUTPUT=/tmp/query-surfaces-current.json \
