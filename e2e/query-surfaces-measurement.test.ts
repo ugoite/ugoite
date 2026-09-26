@@ -33,6 +33,15 @@ type LifecycleMeasurement = {
   rowsBeforeTargetQuery: number;
   rowsWhileTargetQueryPending: number;
   instrumentOnly?: boolean;
+  sqlPageChange?: QueryLifecycleMeasurement;
+  sqlCountIdentityChange?: QueryLifecycleMeasurement;
+};
+type QueryLifecycleMeasurement = {
+  supersededInFlightCount: number;
+  actualAbortCount: number;
+  endedAbortCount: number;
+  residualPendingCount: number;
+  events: QueryEvent[];
 };
 
 const MEASUREMENT_SLUGS = ["query-space-a", "query-space-b"] as const;
@@ -455,6 +464,86 @@ test("records real two-Space query surface measurements", async ({ page, request
       expect(lifecycle.visibleDataRows).toBeGreaterThan(0);
       expect(lifecycle.staleSourceEntryIds).toEqual([]);
       expect(lifecycle.unexpectedTargetEntryIds).toEqual([]);
+
+      const measureSqlLifecycle = async (
+        path: string,
+        requestPath: string,
+        trigger: () => Promise<void>,
+      ): Promise<QueryLifecycleMeasurement> => {
+        await page.goto(getFrontendUrl(path), {
+          waitUntil: "domcontentloaded",
+        });
+        await expect(rowLocator).toBeVisible();
+        await page.route(`**${requestPath}`, async (route) => {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          try {
+            await route.continue();
+          } catch {
+            // The route may be canceled while deliberately held in flight.
+          }
+        });
+        const pendingRequest = page.waitForRequest((request) =>
+          request.url().includes(requestPath)
+        );
+        await trigger();
+        await pendingRequest;
+        await page.getByLabel("Space", { exact: true }).selectOption(
+          secondSpace.space_uid,
+        );
+        await expect(page).toHaveURL(
+          new RegExp(`/spaces/${secondSpace.space_uid}/forms$`),
+        );
+        await page.waitForTimeout(500);
+        const events = await page.evaluate(
+          (pathFragment) =>
+            ((window as Window & {
+              __ugoiteQueryEvents?: QueryEvent[];
+            }).__ugoiteQueryEvents ?? []).filter((event) =>
+              event.path.includes(pathFragment)
+            ),
+          requestPath,
+        );
+        const abortedEvents = events.filter((event) => event.aborted);
+        return {
+          supersededInFlightCount: abortedEvents.length,
+          actualAbortCount: abortedEvents.length,
+          endedAbortCount: abortedEvents.filter((event) =>
+            event.endedAt !== undefined
+          ).length,
+          residualPendingCount: events.filter((event) =>
+            event.endedAt === undefined
+          ).length,
+          events,
+        };
+      };
+
+      lifecycle.sqlPageChange = await measureSqlLifecycle(
+        `/spaces/${firstSpace.space_uid}/sql/${firstSpace.saved_sql_id}/run`,
+        "/sql/query",
+        async () => {
+          await page.getByRole("button", { name: "Next" }).click();
+        },
+      );
+      expect(lifecycle.sqlPageChange.actualAbortCount).toBeGreaterThan(0);
+      expect(lifecycle.sqlPageChange.endedAbortCount).toBe(
+        lifecycle.sqlPageChange.actualAbortCount,
+      );
+      expect(lifecycle.sqlPageChange.residualPendingCount).toBe(0);
+
+      lifecycle.sqlCountIdentityChange = await measureSqlLifecycle(
+        `/spaces/${firstSpace.space_uid}/sql/${firstSpace.saved_sql_id}/run`,
+        "/sql/count",
+        async () => {
+          await page.getByRole("button", { name: "Count rows" }).click();
+        },
+      );
+      expect(
+        lifecycle.sqlCountIdentityChange.actualAbortCount,
+      ).toBeGreaterThan(0);
+      expect(lifecycle.sqlCountIdentityChange.endedAbortCount).toBe(
+        lifecycle.sqlCountIdentityChange.actualAbortCount,
+      );
+      expect(lifecycle.sqlCountIdentityChange.residualPendingCount).toBe(0);
     }
 
     const outputPath = Deno.env.get("UGOITE_QUERY_MEASURE_OUTPUT");
