@@ -56,6 +56,13 @@ the exact PR base and head commits, writes Mitase PR-context JSON and Markdown
 reports, and uploads both as an artifact. This report job is an additional
 PR-only lane; `ci-required` still requires the four quality/artifact lanes and
 accepts the report lane when successful (or skipped for non-PR events).
+The report keeps Binding-derived direct impact and upstream specifications
+separate from the path-triggered `review.always` context. The latter covers
+frontend implementation/configuration and `docs/spec/ui/**` with POL-006 and
+PHIL-INTERACTION-001, and bounded Knowledge authority/compatibility surfaces
+with PHIL-000, POL-000, POL-016, and POL-017. These are reviewer prompts; they
+do not mechanically decide compatibility or replace the PR's Knowledge
+Compatibility Review and its Evidence/Decision.
 
 The required Rust suite covers the memory and filesystem implementations. The
 optional `crates/ugoite-storage/tests/s3_contract.rs` integration test runs only
