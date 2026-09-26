@@ -10,15 +10,6 @@ type PortableProof = {
   changes: Array<Record<string, unknown>>;
 };
 
-function changeId(row: Record<string, unknown>): string | undefined {
-  if (typeof row.change_id === "string") return row.change_id;
-  const change = row.change;
-  return change && typeof change === "object" &&
-      typeof (change as Record<string, unknown>).change_id === "string"
-    ? (change as Record<string, string>).change_id
-    : undefined;
-}
-
 test("first Passkey setup claims the CLI Space without changing its history", async ({ request }) => {
   const proofFile = Deno.env.get("E2E_PORTABLE_PROOF_FILE");
   expect(proofFile).toBeTruthy();
