@@ -16,7 +16,7 @@ use ugoite_domain::change::ChangeCommand;
 use ugoite_domain::entry::{
     EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue, RevisionError,
 };
-use ugoite_domain::form::{sql_relation_name, FieldType};
+use ugoite_domain::form::{sql_relation_name, FieldType, FormDefinition};
 use ugoite_domain::id::{validate_asset_id, FieldId, FormId, RevisionId};
 use uuid::Uuid;
 
@@ -335,6 +335,50 @@ pub(crate) fn render_markdown_for_form(
     let field_order = form_field_names(form_def);
     let merged_fields = merge_entry_fields(fields, extra_attributes);
     render_markdown(form_name, tags, &merged_fields, &field_order)
+}
+
+/// Reconstructs the canonical markdown for a domain revision and calculates
+/// the integrity values that belong to that exact revision. Values are mapped
+/// by immutable FieldId and rendered in the current Form's declared order,
+/// matching the historical revision reader's field-name projection.
+pub(crate) fn integrity_for_domain_revision(
+    form: &FormDefinition,
+    revision: &EntryRevision,
+    provider: &dyn IntegrityProvider,
+) -> Result<EntryIntegrity> {
+    let mut fields = Map::new();
+    let mut field_order = Vec::with_capacity(form.fields.len());
+    for field in &form.fields {
+        field_order.push(field.name.clone());
+        if let Some(value) = revision.values.get(&field.id) {
+            fields.insert(
+                field.name.clone(),
+                serde_json::to_value(value).context("serialize revision field value")?,
+            );
+        }
+    }
+    if let Some(field_id) = revision
+        .values
+        .keys()
+        .find(|field_id| !form.fields.iter().any(|field| field.id == **field_id))
+    {
+        anyhow::bail!(
+            "revision contains FieldId {field_id:?} absent from Form {}",
+            form.id
+        );
+    }
+    let fields = Value::Object(fields);
+    let extra_attributes = Value::Object(revision.extra_attributes.clone().into_iter().collect());
+    let markdown = render_markdown(
+        &form.name,
+        &revision.entry.tags,
+        &merge_entry_fields(&fields, &extra_attributes),
+        &field_order,
+    );
+    Ok(EntryIntegrity {
+        checksum: provider.checksum(&markdown),
+        signature: provider.signature(&markdown),
+    })
 }
 
 async fn append_revision_rows_to_workspace(

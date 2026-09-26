@@ -1277,10 +1277,11 @@ impl IcebergWorkspace {
     /// Append a selective inverse for one committed Change. The operation is
     /// intentionally scoped to one Form publication: cross-Form atomicity is
     /// a separate capability and must not be implied by the public API.
-    pub async fn revert_change(
+    pub async fn revert_change<I: crate::integrity::IntegrityProvider + Sync>(
         &self,
         target_change_id: &str,
         command: &ChangeCommand,
+        integrity_provider: &I,
     ) -> Result<CommitReceipt> {
         command
             .validate()
@@ -1383,7 +1384,7 @@ impl IcebergWorkspace {
                 if !restoring_existing {
                     values.clear();
                 }
-                inverse_revisions.push(EntryRevision {
+                let mut inverse = EntryRevision {
                     form_id: current.form_id,
                     entry_id: current.entry_id,
                     revision_id: RevisionId::from(Uuid::new_v4()),
@@ -1398,14 +1399,31 @@ impl IcebergWorkspace {
                     },
                     committed_at_micros: now,
                     author_id: current.author_id.clone(),
-                    form_version: current.form_version,
+                    form_version: form.version,
                     source_kind: current.source_kind.clone(),
                     source_id: current.source_id.clone(),
                     entry,
                     values,
                     extra_attributes: current.extra_attributes.clone(),
                     extension_metadata: current.extension_metadata.clone(),
-                });
+                };
+                inverse.entry.integrity =
+                    entry::integrity_for_domain_revision(&form, &inverse, integrity_provider)
+                        .map_err(|error| {
+                            AppError::conflict(
+                                ErrorCode::RevisionConflict,
+                                format!(
+                                    "cannot render inverse revision with the current Form: {error}"
+                                ),
+                            )
+                        })?;
+                inverse.validate_payload(&form).map_err(|error| {
+                    AppError::conflict(
+                        ErrorCode::RevisionConflict,
+                        format!("inverse revision is incompatible with the current Form: {error}"),
+                    )
+                })?;
+                inverse_revisions.push(inverse);
             }
             break;
         }

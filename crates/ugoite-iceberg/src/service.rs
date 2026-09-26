@@ -1958,6 +1958,7 @@ impl UgoiteService {
         }
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let workspace = iceberg_store::native_mutation_workspace(
             &self.operator,
             &self.workspace_path(space_id),
@@ -1973,7 +1974,9 @@ impl UgoiteService {
             reverts_change_id: Some(target_change_id.to_owned()),
             created_at_micros: Utc::now().timestamp_micros(),
         };
-        let receipt = workspace.revert_change(target_change_id, &command).await?;
+        let receipt = workspace
+            .revert_change(target_change_id, &command, &integrity)
+            .await?;
         Ok(json!({
             "change_id": receipt.command_id,
             "reverts_change_id": target_change_id,
