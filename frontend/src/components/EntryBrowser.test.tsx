@@ -2,6 +2,7 @@
 // REQ-FE-008: EntryBrowser selection remains separate from mutation
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, within } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EntryBrowser } from "./EntryBrowser";
 import {
@@ -130,6 +131,83 @@ describe("EntryBrowser", () => {
       expect.objectContaining({ id: "stable-entry-id" }),
     );
     expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("updates Form labels when metadata arrives without reloading the page", async () => {
+    queryMock.mockResolvedValue({
+      rows: [{
+        id: "entry-1",
+        form_id: "form-1",
+        revision_id: "revision-1",
+        created_at_micros: CREATED_MICROS,
+        updated_at_micros: UPDATED_MICROS,
+        preview: "Readable entry",
+      }],
+      has_more: true,
+    });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    const [labels, setLabels] = createSignal<Record<string, string>>({});
+    const { container } = render(() => (
+      <EntryBrowser
+        controller={controller}
+        capabilities={systemEntryCapabilities({ kind: "all" })}
+        formLabels={labels()}
+      />
+    ));
+
+    expect(screen.getByText("Unknown form")).toBeInTheDocument();
+    const scroll = container.querySelector(".entry-browser-table-scroll");
+    if (!scroll) throw new Error("Expected the result scroll container");
+    scroll.scrollTop = 80;
+    setLabels({ "form-1": "Tasks" });
+
+    expect(await screen.findByText("Tasks")).toBeInTheDocument();
+    expect(scroll.scrollTop).toBe(80);
+    expect(controller.rows()).toHaveLength(1);
+    expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a neutral placeholder while Form labels are loading or unavailable", async () => {
+    queryMock.mockResolvedValue({
+      rows: [{
+        id: "entry-1",
+        form_id: "form-1",
+        revision_id: "revision-1",
+        created_at_micros: CREATED_MICROS,
+        updated_at_micros: UPDATED_MICROS,
+        preview: "Readable entry",
+      }],
+      has_more: false,
+    });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    const [state, setState] = createSignal<"loading" | "error">("loading");
+    render(() => (
+      <EntryBrowser
+        controller={controller}
+        capabilities={systemEntryCapabilities({ kind: "all" })}
+        formLabels={{ "form-1": "Stale label" }}
+        formLabelsState={state()}
+      />
+    ));
+
+    expect(screen.getByText("—")).toBeInTheDocument();
+    setState("error");
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText("Unknown form")).not.toBeInTheDocument();
   });
 
   it("renders form-scoped projected fields as explicit columns in projection order", async () => {

@@ -16,6 +16,7 @@ import { t } from "~/lib/i18n";
 import { PagedResultTable, type ResultColumn } from "./PagedResultTable";
 
 export type EntryBrowserMode = "browse" | "select_one";
+export type EntryBrowserFormLabelsState = "loading" | "ready" | "error";
 
 export interface EntryBrowserProps {
   mode?: EntryBrowserMode;
@@ -23,6 +24,8 @@ export interface EntryBrowserProps {
   capabilities: EntryQueryCapabilities;
   /** Optional human-readable Form labels. UUIDs are never used as labels. */
   formLabels?: Record<string, string>;
+  /** State of the optional Space-scoped Form label metadata. */
+  formLabelsState?: EntryBrowserFormLabelsState;
   onSelect?: (row: EntryQueryResult) => void;
 }
 
@@ -264,16 +267,22 @@ export function EntryBrowser(props: EntryBrowserProps) {
     visibleColumns().map((column) => ({
       key: column.key,
       label: column.label,
-      cell: (row) => {
-        const value = cellText(row, column);
-        return <span title={value}>{value}</span>;
-      },
+      // Keep the cell expression reactive to label metadata that arrives
+      // after the query rows. Its value is display-only and must not change
+      // the table's page identity or cause another EntryQuery.
+      cell: (row) => (
+        <span title={cellText(row, column)}>{cellText(row, column)}</span>
+      ),
     }))
   );
 
   const cellText = (row: EntryQueryResult, column: VisibleColumn): string => {
     if (column.kind === "preview") return row.preview?.trim() || "—";
     if (column.field.kind === "form") {
+      if (
+        props.formLabelsState === "loading" ||
+        props.formLabelsState === "error"
+      ) return "—";
       return props.formLabels?.[row.form_id] ??
         t("entryBrowser.unknownForm");
     }

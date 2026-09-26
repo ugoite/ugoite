@@ -27,6 +27,13 @@ components:
         component: EntryBrowser and PagedResultTable
         controller: EntryQueryController
         selection_target: space-entry-detail
+        form_labels:
+          source: current-space-form-list
+          lookup_key: entry.form_id
+          loading: show-neutral-placeholder-and-page-level-status
+          failure: preserve-results-and-offer-form-list-retry
+          unresolved_id: show-unknown-form-label-without-removing-entry
+          consistency: separate-read-no-shared-snapshot-guarantee
         rendering:
           mode: page-scoped-visible-rows
           fast_path_limit: 100

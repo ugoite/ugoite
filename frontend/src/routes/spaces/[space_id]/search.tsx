@@ -4,11 +4,14 @@ import {
   createMemo,
   createSignal,
   onMount,
+  Show,
   untrack,
 } from "solid-js";
 import { A } from "@solidjs/router";
 import { UiIcon } from "~/components/UiIcon";
 import { EntryBrowser } from "~/components/EntryBrowser";
+import { formApi } from "~/lib/ugoite-client";
+import { createResource } from "~/lib/recoverable-resource";
 import {
   createEntryQueryController,
   systemEntryCapabilities,
@@ -32,6 +35,35 @@ export default function SpaceSearchRoute() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const spaceId = () => params.space_id;
+  const [formMetadata, { refetch: refetchForms }] = createResource(
+    spaceId,
+    async (requestedSpaceId) => ({
+      spaceId: requestedSpaceId,
+      forms: await formApi.list(requestedSpaceId),
+    }),
+  );
+  const formLabelsState = createMemo<"loading" | "ready" | "error">(() => {
+    if (formMetadata.state === "errored") return "error";
+    const metadata = formMetadata();
+    if (
+      formMetadata.state !== "ready" || !metadata ||
+      metadata.spaceId !== spaceId()
+    ) return "loading";
+    return "ready";
+  });
+  const formLabels = createMemo(() => {
+    const metadata = formMetadata();
+    if (
+      formLabelsState() !== "ready" || !metadata ||
+      metadata.spaceId !== spaceId()
+    ) return undefined;
+    return Object.fromEntries(
+      metadata.forms.filter((form) => form.id).map((form) => [
+        form.id!,
+        form.name,
+      ]),
+    );
+  });
   const initialText = () => {
     const raw = searchParams.q;
     const text = Array.isArray(raw) ? raw[0] : raw;
@@ -121,9 +153,31 @@ export default function SpaceSearchRoute() {
           </div>
         </form>
       </section>
+      <Show when={formLabelsState() === "loading"}>
+        <p class="mt-3 ui-muted" aria-live="polite">
+          {t("searchPage.loadingFormNames")}
+        </p>
+      </Show>
+      <Show when={formLabelsState() === "error"}>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <p class="ui-text-danger" role="alert">
+            {t("searchPage.failedLoadFormNames")}
+          </p>
+          <button
+            type="button"
+            class="ui-button ui-button-secondary"
+            disabled={formMetadata.loading}
+            onClick={() => void refetchForms()}
+          >
+            {t("common.retry")}
+          </button>
+        </div>
+      </Show>
       <EntryBrowser
         controller={controller}
         capabilities={capabilities()}
+        formLabels={formLabels()}
+        formLabelsState={formLabelsState()}
         onSelect={(row) => navigate(spaceEntryPath(spaceId(), row.id))}
       />
     </div>
