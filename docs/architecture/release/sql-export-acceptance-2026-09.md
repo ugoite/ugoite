@@ -81,9 +81,8 @@ separate transport/error projection test.
 
 The live Remote test recorded in
 [`v0.2.1-remote-export-auth.md`](v0.2.1-remote-export-auth.md) verifies a real
-membership revocation between pages. Credential expiry was not exercised and
-remains tracked separately in
-[#3186](https://github.com/ugoite/ugoite/issues/3186). The local 10,000-row
+membership revocation between pages and a real access-token expiry followed by
+a successful credential refresh between pages. The local 10,000-row
 memory/timing measurement above is from the earlier recorded source SHA; it
 remains a single local-Core run per page size, not a performance comparison or
 Remote measure.
