@@ -482,8 +482,9 @@ test("records real two-Space query surface measurements", async ({ page, request
             // The route may be canceled while deliberately held in flight.
           }
         });
-        const pendingRequest = page.waitForRequest((request) =>
-          request.url().includes(requestPath)
+        const pendingRequest = page.waitForRequest(
+          (request) => request.url().includes(requestPath),
+          { timeout: 15_000 },
         );
         await trigger();
         await pendingRequest;
@@ -521,7 +522,9 @@ test("records real two-Space query surface measurements", async ({ page, request
         `/spaces/${firstSpace.space_uid}/sql/${firstSpace.saved_sql_id}/run`,
         "/sql/query",
         async () => {
-          await page.getByRole("button", { name: "Next" }).click();
+          const nextButton = page.getByRole("button", { name: "Next" });
+          await expect(nextButton).toBeEnabled();
+          await nextButton.click();
         },
       );
       expect(lifecycle.sqlPageChange.actualAbortCount).toBeGreaterThan(0);
@@ -534,7 +537,11 @@ test("records real two-Space query surface measurements", async ({ page, request
         `/spaces/${firstSpace.space_uid}/sql/${firstSpace.saved_sql_id}/run`,
         "/sql/count",
         async () => {
-          await page.getByRole("button", { name: "Count rows" }).click();
+          const countButton = page.getByRole("button", {
+            name: "Count rows",
+          });
+          await expect(countButton).toBeEnabled();
+          await countButton.click();
         },
       );
       expect(
