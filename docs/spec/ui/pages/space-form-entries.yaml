@@ -15,13 +15,47 @@ components:
       type: page-header
       description: The selected Form name is the sole page identity; Forms navigation remains owned by the persistent shell.
     - id: form-entry-list
-      type: list
-      description: The Form's Entries workspace loads that Form's current Entries from a form-scoped server query as border-separated rows, offers a compact Entry creation action with a clear accessible name, opens Entry creation with that Form preselected, selects a row to open its Entry, and hides the browser for unknown or reserved metadata Forms.
-      items:
-        - form-field-values
+      type: query-results
+      component: EntryBrowser and PagedResultTable
+      controller: EntryQueryController
+      description: The Form's Entries workspace loads current Entries from a form-scoped server query in a native table, offers a compact Entry creation action with a clear accessible name, opens Entry creation with that Form preselected, and hides the browser for unknown or reserved metadata Forms. Clicking a data row selects it; a dedicated trailing action opens the Entry.
+      projection:
+        configurable: true
+        source: EntryQueryCapabilities.fields where projectable is true
+        maximum_fields: 64
+        system_timestamps_at_end:
+          order:
+            - created_at
+            - updated_at
+          reorderable: false
+        preview_mode: supported
+      display_controls:
+        toolbar:
+          - keyword-search
+          - columns-dialog
+          - filters-dialog
+          - multi-sort-dialog
+        filters:
+          source: EntryQueryCapabilities.fields where filterable is true
+          operators: EntryQueryCapabilities.fields.supported_operators
+          values: validated-by-field-type
+          apply: explicit
+          active_rule_count: applied-filter-count
+        sort:
+          source: EntryQueryCapabilities.fields where sortable is true
+          order: query-priority-order
+          maximum_rules: 8
+          duplicate_fields: disallowed
+          apply: explicit
+      selection:
+        row_click: select-only
+        trailing_action: open-entry
+      query_results:
+        pagination: server-keyset
+        count: explicit-only
       actions:
         - create-entry
         - open-entry
 responsive:
-  desktop: border-separated-list
-  mobile: stacked-border-separated-list
+  desktop: horizontally-scrollable-table-with-sticky-trailing-action
+  mobile: horizontally-scrollable-table-with-sticky-trailing-action

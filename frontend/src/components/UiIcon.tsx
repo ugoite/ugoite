@@ -23,7 +23,10 @@ export type UiIconName =
   | "trash"
   | "preview"
   | "download"
-  | "close";
+  | "close"
+  | "columns"
+  | "filter"
+  | "sort";
 
 const paths: Record<UiIconName, () => JSX.Element> = {
   home: () => (
@@ -170,6 +173,22 @@ const paths: Record<UiIconName, () => JSX.Element> = {
   close: () => (
     <>
       <path d="m6 6 12 12M18 6 6 18" />
+    </>
+  ),
+  columns: () => (
+    <>
+      <rect x="3.5" y="4" width="17" height="16" rx="2" />
+      <path d="M9 4v16M15 4v16" />
+    </>
+  ),
+  filter: () => (
+    <>
+      <path d="M3 5h18l-7 8v5l-4 2v-7z" />
+    </>
+  ),
+  sort: () => (
+    <>
+      <path d="M8 5v14M8 5l-3 3M8 5l3 3M16 19V5m0 14-3-3m3 3 3-3" />
     </>
   ),
 };

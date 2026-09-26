@@ -13,8 +13,13 @@ import type {
 import { formatDateLabel } from "~/lib/date-format";
 import { formatValueForDisplay } from "~/lib/display-value";
 import { t } from "~/lib/i18n";
+import {
+  EntryBrowserDisplayDialog,
+  type EntryBrowserDisplayMode,
+} from "./EntryBrowserDisplayDialog";
 import { RowListChevron } from "./RowList";
 import { PagedResultTable, type ResultColumn } from "./PagedResultTable";
+import { UiIcon } from "./UiIcon";
 
 export type EntryBrowserMode = "browse" | "select_one";
 export type EntryBrowserFormLabelsState = "loading" | "ready" | "error";
@@ -31,8 +36,8 @@ export interface EntryBrowserProps {
 }
 
 const fieldKey = (field: EntryFieldRef): string => JSON.stringify(field);
-
-const fieldLabel = (field: EntryFieldCapability): string => field.name;
+const filterOperatorLabel = (operator: EntryFilterOperator): string =>
+  t(`entryBrowser.operator.${operator}`);
 
 const dateFromMicros = (micros: number): string =>
   formatDateLabel(new Date(micros / 1_000).toISOString());
@@ -66,137 +71,72 @@ const capabilityForKind = (
  * into common columns, and the backend rejects property fields for the All
  * scope.
  */
-const columnOptions = (props: EntryBrowserProps): EntryFieldCapability[] =>
-  props.capabilities.fields.filter((field) =>
-    field.projectable &&
-    (props.capabilities.scope.kind !== "all" ||
-      field.field.kind !== "property")
-  );
-
-const sortableFields = (props: EntryBrowserProps): EntryFieldCapability[] =>
-  props.capabilities.fields.filter((field) => field.sortable);
-
-const filterableFields = (props: EntryBrowserProps): EntryFieldCapability[] =>
-  props.capabilities.fields.filter((field) => field.filterable);
-
 const projectionFields = (projection: EntryProjection): EntryFieldRef[] =>
   projection.kind === "fields" ? projection.fields : [];
 
-const MAX_PROJECTION_FIELDS = 64;
-
 export function EntryBrowser(props: EntryBrowserProps) {
   const [selectedEntryId, setSelectedEntryId] = createSignal<string>();
+  const [dialogMode, setDialogMode] = createSignal<EntryBrowserDisplayMode>();
+  const [dialogTrigger, setDialogTrigger] = createSignal<HTMLElement>();
   const mode = () => props.mode ?? "browse";
   const queryState = createMemo(() => props.controller.query());
   const projectionState = createMemo(() => props.controller.projection());
+  const [previewSystemFields, setPreviewSystemFields] = createSignal<
+    EntryFieldRef[]
+  >(
+    projectionState().kind === "fields"
+      ? projectionFields(projectionState()).filter((field) =>
+        field.kind === "created_at" || field.kind === "updated_at"
+      )
+      : props.capabilities.fields.filter((field) =>
+        field.field.kind === "created_at" || field.field.kind === "updated_at"
+      ).map((field) => field.field),
+  );
   const rowsState = createMemo(() => props.controller.rows());
   const loadingState = createMemo(() => props.controller.loading());
   const errorState = createMemo(() => props.controller.error());
   const hasMoreState = createMemo(() => props.controller.hasMore());
   const canGoPreviousState = createMemo(() => props.controller.canGoPrevious());
-  const projectionOptions = () => columnOptions(props);
-  const sortOptions = () => sortableFields(props);
-  const filterOptions = () => filterableFields(props);
   const currentSort = () => queryState().sort;
   const currentFilters = () => queryState().filters;
   const currentText = () => queryState().text ?? "";
+  const appliedCount = (mode: EntryBrowserDisplayMode): number =>
+    mode === "filter"
+      ? currentFilters().length
+      : mode === "sort"
+      ? currentSort().length
+      : 0;
 
-  const isProjected = (field: EntryFieldRef) =>
-    projectionFields(projectionState()).some((candidate) =>
-      fieldKey(candidate) === fieldKey(field)
-    );
-
-  const toggleProjection = (field: EntryFieldRef) => {
-    const selected = projectionFields(projectionState());
-    const next =
-      selected.some((candidate) => fieldKey(candidate) === fieldKey(field))
-        ? selected.filter((candidate) =>
-          fieldKey(candidate) !== fieldKey(field)
-        )
-        : [...selected, field];
-    if (next.length > 0 && next.length <= MAX_PROJECTION_FIELDS) {
-      props.controller.setProjection({ kind: "fields", fields: next });
-    }
-  };
-
-  const addSort = (field: EntryFieldRef) => {
-    if (
-      currentSort().some((sort) => fieldKey(sort.field) === fieldKey(field))
-    ) {
-      return;
-    }
-    props.controller.setSort([
-      ...currentSort(),
-      { field, direction: "asc" },
-    ]);
-  };
-
-  const updateSort = (index: number, sort: EntrySort) => {
-    props.controller.setSort(
-      currentSort().map((current, currentIndex) =>
-        currentIndex === index ? sort : current
-      ),
-    );
-  };
-
-  const removeSort = (index: number) => {
-    props.controller.setSort(
-      currentSort().filter((_, currentIndex) => currentIndex !== index),
-    );
-  };
-
-  const filterCapability = (
-    index: number,
-  ): EntryFieldCapability | undefined => {
-    const filter = currentFilters()[index];
-    return filterOptions().find((candidate) =>
-      fieldKey(candidate.field) === fieldKey(filter.field)
-    );
-  };
-
-  const parseFilterValue = (fieldType: string, value: string): unknown => {
-    const trimmed = value.trim();
-    if (fieldType === "boolean") {
-      if (trimmed.toLowerCase() === "true") return true;
-      if (trimmed.toLowerCase() === "false") return false;
-      return value;
-    }
-    if (fieldType === "integer") {
-      if (/^[+-]?\d+$/.test(trimmed)) {
-        const parsed = Number(trimmed);
-        return Number.isSafeInteger(parsed) ? parsed : value;
-      }
-      return value;
-    }
-    if (fieldType === "numeric") {
-      const parsed = Number(trimmed);
-      return trimmed !== "" && Number.isFinite(parsed) ? parsed : value;
-    }
-    return value;
-  };
-
-  const addFilter = () => {
-    const capability = filterOptions()[0];
-    const operator = capability?.supported_operators[0];
-    if (!capability || !operator) return;
-    props.controller.setFilters([
-      ...currentFilters(),
-      { field: capability.field, operator, value: "" },
-    ]);
-  };
-
-  const updateFilter = (index: number, filter: EntryFilter) => {
-    props.controller.setFilters(
-      currentFilters().map((current, currentIndex) =>
-        currentIndex === index ? filter : current
-      ),
-    );
-  };
-
-  const removeFilter = (index: number) => {
+  const removeFilter = (index: number) =>
     props.controller.setFilters(
       currentFilters().filter((_, currentIndex) => currentIndex !== index),
     );
+  const removeSort = (index: number) =>
+    props.controller.setSort(
+      currentSort().filter((_, currentIndex) => currentIndex !== index),
+    );
+  const displayValueForField = (field: EntryFieldRef) =>
+    props.capabilities.fields.find((candidate) =>
+      fieldKey(candidate.field) === fieldKey(field)
+    )?.name ?? field.kind;
+  const applyDisplayDraft = (draft: {
+    projection?: EntryProjection;
+    previewSystemFields?: EntryFieldRef[];
+    filters?: EntryFilter[];
+    sort?: EntrySort[];
+  }) => {
+    if (draft.previewSystemFields) {
+      setPreviewSystemFields(draft.previewSystemFields);
+    }
+    if (draft.projection) props.controller.setProjection(draft.projection);
+    if (draft.filters) props.controller.setFilters(draft.filters);
+    if (draft.sort) props.controller.setSort(draft.sort);
+    setDialogMode(undefined);
+    dialogTrigger()?.focus();
+  };
+  const closeDisplayDialog = () => {
+    setDialogMode(undefined);
+    dialogTrigger()?.focus();
   };
 
   /**
@@ -226,7 +166,9 @@ export function EntryBrowser(props: EntryBrowserProps) {
     });
     for (const kind of ["created_at", "updated_at"] as const) {
       const capability = capabilityForKind(props, kind);
-      if (capability) {
+      if (
+        capability && previewSystemFields().some((field) => field.kind === kind)
+      ) {
         columns.push({
           kind: "field",
           key: fieldKey(capability.field),
@@ -323,244 +265,145 @@ export function EntryBrowser(props: EntryBrowserProps) {
         role="toolbar"
         aria-label={t("entryBrowser.label")}
       >
-        <details>
-          <summary class="ui-button ui-button-secondary">
-            {t("entryBrowser.columns")}
-          </summary>
-          <fieldset class="entry-browser-popover">
-            <legend class="ui-sr-only">{t("entryBrowser.columns")}</legend>
-            <For each={projectionOptions()}>
-              {(capability) => (
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={isProjected(capability.field)}
-                    disabled={!isProjected(capability.field) &&
-                      projectionFields(projectionState()).length >=
-                        MAX_PROJECTION_FIELDS}
-                    onChange={() => toggleProjection(capability.field)}
-                  />
-                  {fieldLabel(capability)}
-                </label>
-              )}
-            </For>
-            <label>
-              <input
-                type="radio"
-                name="entry-projection"
-                checked={projectionState().kind === "preview"}
-                onChange={() =>
-                  props.controller.setProjection({ kind: "preview" })}
-              />
-              {t("entryBrowser.preview")}
-            </label>
-          </fieldset>
-        </details>
-
-        <details>
-          <summary class="ui-button ui-button-secondary">
-            {t("entryBrowser.filter")}
-          </summary>
-          <div class="entry-browser-popover">
-            <label>
-              {t("entryBrowser.textLabel")}
-              <input
-                type="search"
-                class="ui-input"
-                value={currentText()}
-                placeholder={t("entryBrowser.textPlaceholder")}
-                onInput={(event) =>
-                  props.controller.setText(event.currentTarget.value)}
-              />
-            </label>
-            <Show
-              when={filterOptions().length > 0}
-              fallback={
-                <p class="ui-muted">{t("entryBrowser.noFilterCapabilities")}</p>
-              }
-            >
-              <div class="ui-stack-sm">
-                <For each={currentFilters()}>
-                  {(filter, index) => {
-                    const capability = () => filterCapability(index());
-                    return (
-                      <div class="flex flex-wrap items-end gap-2">
-                        <label>
-                          {t("entryBrowser.filterField")}
-                          <select
-                            class="ui-select"
-                            aria-label={`${t("entryBrowser.filterField")} ${
-                              index() + 1
-                            }`}
-                            value={fieldKey(filter.field)}
-                            onChange={(event) => {
-                              const nextCapability = filterOptions().find((
-                                candidate,
-                              ) =>
-                                fieldKey(candidate.field) ===
-                                  event.currentTarget.value
-                              );
-                              const nextOperator = nextCapability
-                                ?.supported_operators[0];
-                              if (nextCapability && nextOperator) {
-                                updateFilter(index(), {
-                                  ...filter,
-                                  field: nextCapability.field,
-                                  operator: nextOperator,
-                                });
-                              }
-                            }}
-                          >
-                            <For each={filterOptions()}>
-                              {(candidate) => (
-                                <option value={fieldKey(candidate.field)}>
-                                  {candidate.name}
-                                </option>
-                              )}
-                            </For>
-                          </select>
-                        </label>
-                        <label>
-                          {t("entryBrowser.filterOperator")}
-                          <select
-                            class="ui-select"
-                            aria-label={`${t("entryBrowser.filterOperator")} ${
-                              index() + 1
-                            }`}
-                            value={filter.operator}
-                            onChange={(event) =>
-                              updateFilter(index(), {
-                                ...filter,
-                                operator: event.currentTarget
-                                  .value as EntryFilterOperator,
-                              })}
-                          >
-                            <For each={capability()?.supported_operators ?? []}>
-                              {(operator) => (
-                                <option value={operator}>{operator}</option>
-                              )}
-                            </For>
-                          </select>
-                        </label>
-                        <label>
-                          {t("entryBrowser.filterValue")}
-                          <input
-                            class="ui-input"
-                            value={String(filter.value ?? "")}
-                            onInput={(event) =>
-                              updateFilter(index(), {
-                                ...filter,
-                                value: parseFilterValue(
-                                  capability()?.field_type ?? "string",
-                                  event.currentTarget.value,
-                                ),
-                              })}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          class="ui-button ui-button-secondary"
-                          onClick={() => removeFilter(index())}
-                        >
-                          {t("entryBrowser.remove")}
-                        </button>
-                      </div>
-                    );
-                  }}
-                </For>
-                <button
-                  type="button"
-                  class="ui-button ui-button-secondary"
-                  onClick={addFilter}
-                  disabled={filterOptions().every((field) =>
-                    currentFilters().some((filter) =>
-                      fieldKey(filter.field) === fieldKey(field.field)
-                    )
-                  )}
-                >
-                  {t("entryBrowser.addFilter")}
-                </button>
-              </div>
-            </Show>
-          </div>
-        </details>
-
-        <details>
-          <summary class="ui-button ui-button-secondary">
-            {t("entryBrowser.sort")}
-          </summary>
-          <div class="entry-browser-popover ui-stack-sm">
-            <For each={currentSort()}>
-              {(sort, index) => (
-                <div class="flex items-center gap-2">
-                  <select
-                    class="ui-select"
-                    aria-label={`${t("entryBrowser.sortField")} ${index() + 1}`}
-                    value={fieldKey(sort.field)}
-                    onChange={(event) => {
-                      const capability = sortOptions().find((candidate) =>
-                        fieldKey(candidate.field) === event.currentTarget.value
-                      );
-                      if (capability) {
-                        updateSort(index(), {
-                          ...sort,
-                          field: capability.field,
-                        });
-                      }
-                    }}
-                  >
-                    <For each={sortOptions()}>
-                      {(capability) => (
-                        <option value={fieldKey(capability.field)}>
-                          {fieldLabel(capability)}
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                  <select
-                    class="ui-select"
-                    aria-label={`${t("entryBrowser.sortDirection")} ${
-                      index() + 1
-                    }`}
-                    value={sort.direction}
-                    onChange={(event) =>
-                      updateSort(index(), {
-                        ...sort,
-                        direction: event.currentTarget.value as "asc" | "desc",
-                      })}
-                  >
-                    <option value="asc">{t("entryBrowser.ascending")}</option>
-                    <option value="desc">{t("entryBrowser.descending")}</option>
-                  </select>
-                  <button
-                    type="button"
-                    class="ui-button ui-button-secondary"
-                    onClick={() => removeSort(index())}
-                  >
-                    {t("entryBrowser.remove")}
-                  </button>
-                </div>
-              )}
-            </For>
-            <Show when={sortOptions().length > currentSort().length}>
+        <label class="entry-browser-search">
+          <span class="ui-sr-only">{t("entryBrowser.textLabel")}</span>
+          <input
+            type="search"
+            class="ui-input"
+            value={currentText()}
+            placeholder={t("entryBrowser.textPlaceholder")}
+            onInput={(event) =>
+              props.controller.setText(event.currentTarget.value)}
+          />
+        </label>
+        <div class="entry-browser-display-actions">
+          <For
+            each={[
+              {
+                mode: "columns" as const,
+                icon: "columns" as const,
+                key: "entryBrowser.columns",
+              },
+              {
+                mode: "filter" as const,
+                icon: "filter" as const,
+                key: "entryBrowser.filter",
+              },
+              {
+                mode: "sort" as const,
+                icon: "sort" as const,
+                key: "entryBrowser.sort",
+              },
+            ]}
+          >
+            {(action) => (
               <button
                 type="button"
-                class="ui-button ui-button-secondary"
-                onClick={() => {
-                  const candidate = sortOptions().find((field) =>
-                    !currentSort().some((sort) =>
-                      fieldKey(sort.field) === fieldKey(field.field)
-                    )
-                  );
-                  if (candidate) addSort(candidate.field);
+                class="ui-button ui-button-secondary entry-browser-display-button"
+                aria-label={`${t(action.key)}${
+                  appliedCount(action.mode) > 0
+                    ? `, ${
+                      t("entryBrowser.appliedCount", {
+                        count: appliedCount(action.mode),
+                      })
+                    }`
+                    : ""
+                }`}
+                title={t(action.key)}
+                aria-haspopup="dialog"
+                aria-expanded={dialogMode() === action.mode}
+                onClick={(event) => {
+                  setDialogTrigger(event.currentTarget);
+                  setDialogMode(action.mode);
                 }}
               >
-                {t("entryBrowser.addSort")}
+                <UiIcon name={action.icon} />
+                <Show when={appliedCount(action.mode) > 0}>
+                  <span class="entry-browser-count-badge" aria-hidden="true">
+                    {appliedCount(action.mode)}
+                  </span>
+                </Show>
               </button>
-            </Show>
-          </div>
-        </details>
+            )}
+          </For>
+        </div>
       </div>
+
+      <Show when={currentFilters().length > 0 || currentSort().length > 0}>
+        <div
+          class="entry-browser-query-chips"
+          role="group"
+          aria-label={t("entryBrowser.appliedConditions")}
+        >
+          <For each={currentFilters()}>
+            {(filter, index) => (
+              <button
+                type="button"
+                class="entry-browser-query-chip"
+                aria-label={`${t("entryBrowser.remove")} ${
+                  displayValueForField(filter.field)
+                } ${filterOperatorLabel(filter.operator)} ${
+                  String(filter.value ?? "")
+                }`}
+                onClick={() => removeFilter(index())}
+              >
+                <span>
+                  {displayValueForField(filter.field)}{" "}
+                  {filterOperatorLabel(filter.operator)}{" "}
+                  {String(filter.value ?? "")}
+                </span>
+                <span aria-hidden="true">×</span>
+              </button>
+            )}
+          </For>
+          <For each={currentSort()}>
+            {(sort, index) => (
+              <button
+                type="button"
+                class="entry-browser-query-chip"
+                aria-label={`${t("entryBrowser.remove")} ${
+                  displayValueForField(sort.field)
+                } ${
+                  t(
+                    sort.direction === "asc"
+                      ? "entryBrowser.ascending"
+                      : "entryBrowser.descending",
+                  )
+                }`}
+                onClick={() => removeSort(index())}
+              >
+                <span>
+                  {displayValueForField(sort.field)} · {t(
+                    sort.direction === "asc"
+                      ? "entryBrowser.ascending"
+                      : "entryBrowser.descending",
+                  )}
+                </span>
+                <span aria-hidden="true">×</span>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+
+      <Show when={dialogMode()}>
+        {(mode) => (
+          <EntryBrowserDisplayDialog
+            mode={mode()}
+            returnFocus={dialogTrigger()}
+            fields={props.capabilities.fields.filter((field) =>
+              props.capabilities.scope.kind !== "all" ||
+              field.field.kind !== "property"
+            )}
+            projection={projectionState()}
+            previewSystemFields={previewSystemFields()}
+            filters={currentFilters()}
+            sort={currentSort()}
+            onApply={applyDisplayDraft}
+            onClose={closeDisplayDialog}
+          />
+        )}
+      </Show>
 
       <PagedResultTable
         columns={tableColumns()}

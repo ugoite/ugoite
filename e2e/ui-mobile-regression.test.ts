@@ -180,7 +180,8 @@ async function runMobileRegression(
         await expect(
           page.getByRole("toolbar", { name: "Entry browser" }),
         ).toBeVisible();
-        await expect(page.getByText("Filter", { exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: /^Filter/ }))
+          .toBeVisible();
         await expectMobileControlFontSize(page);
       },
     },

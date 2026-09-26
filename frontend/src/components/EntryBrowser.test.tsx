@@ -65,20 +65,22 @@ describe("EntryBrowser", () => {
     ]);
     expect(screen.getByText("Readable entry")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Filter"));
     fireEvent.input(screen.getByRole("searchbox"), {
       target: { value: "alice" },
     });
     expect(controller.query().text).toBe("alice");
 
-    fireEvent.click(screen.getByText("Sort"));
+    fireEvent.click(screen.getByRole("button", { name: "Sort" }));
     fireEvent.click(screen.getByRole("button", { name: "Add sort" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     expect(controller.query().sort).toHaveLength(1);
     expect(controller.query().sort[0].field).toEqual({ kind: "created_at" });
 
-    fireEvent.click(screen.getAllByText("Columns")[0]);
-    const updatedColumn = screen.getByRole("checkbox", { name: "Updated" });
-    fireEvent.click(updatedColumn);
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Selected fields" }));
+    const createdColumn = screen.getByRole("checkbox", { name: "Created" });
+    fireEvent.click(createdColumn);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     expect(controller.projection()).toEqual({
       kind: "fields",
       fields: [{ kind: "updated_at" }],
@@ -435,7 +437,7 @@ describe("EntryBrowser", () => {
     expect(screen.getByText("Tasks")).toBeInTheDocument();
     expect(screen.queryByText("form-9")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByText("Columns")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
     expect(screen.getByRole("checkbox", { name: "Form" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Created" }))
       .toBeInTheDocument();
@@ -522,7 +524,9 @@ describe("EntryBrowser", () => {
       <EntryBrowser controller={controller} capabilities={capabilities} />
     ));
 
-    fireEvent.click(screen.getByText("Filter"));
+    fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
+    expect(screen.getByRole("button", { name: "Filter, 1 applied" }))
+      .toBeInTheDocument();
     fireEvent.change(
       screen.getByRole("combobox", { name: "Filter field 1" }),
       { target: { value: JSON.stringify({ kind: "property", field_id: 7 }) } },
@@ -536,7 +540,248 @@ describe("EntryBrowser", () => {
     expect(controller.query().filters).toEqual([{
       field: { kind: "property", field_id: 7 },
       operator: "equals",
+      value: "",
+    }]);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(controller.query().filters).toEqual([{
+      field: { kind: "property", field_id: 7 },
+      operator: "equals",
       value: "active",
     }]);
+    expect(screen.getByRole("button", { name: "Filter, 1 applied" }))
+      .toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Remove status Equals active/ }),
+    );
+    expect(controller.query().filters).toEqual([]);
+    expect(screen.getByRole("button", { name: "Filter" }))
+      .toBeInTheDocument();
+  });
+
+  it("preserves untouched timezone-aware filter precision on Apply", async () => {
+    queryMock.mockResolvedValue({ rows: [], has_more: false });
+    const timestamp = "2026-09-25T01:02:03.123456789+09:00";
+    const capabilities: EntryQueryCapabilities = {
+      ...systemEntryCapabilities({ kind: "form", form_id: "form-1" }),
+      fields: [
+        ...systemEntryCapabilities({ kind: "form", form_id: "form-1" })
+          .fields,
+        {
+          field: { kind: "property", field_id: 9 },
+          name: "Occurred at",
+          field_type: "timestamp_tz_ns",
+          filterable: true,
+          sortable: true,
+          projectable: true,
+          supported_operators: ["equals"],
+        },
+      ],
+    };
+    const initialFilter = {
+      field: { kind: "property" as const, field_id: 9 },
+      operator: "equals" as const,
+      value: timestamp,
+    };
+    const controller = createEntryQueryController(
+      () => "space-1",
+      {
+        scope: { kind: "form", form_id: "form-1" },
+        filters: [initialFilter],
+        sort: [],
+      },
+      undefined,
+      50,
+      queryMock,
+    );
+    render(() => (
+      <EntryBrowser controller={controller} capabilities={capabilities} />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: /^Filter/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(controller.query().filters).toEqual([initialFilter]);
+  });
+
+  it("keeps column reordering in a draft until Apply and fixes timestamps at the end", async () => {
+    queryMock.mockResolvedValue({ rows: [], has_more: false });
+    const capabilities: EntryQueryCapabilities = {
+      ...systemEntryCapabilities({ kind: "form", form_id: "form-1" }),
+      fields: [
+        ...systemEntryCapabilities({ kind: "form", form_id: "form-1" }).fields,
+        ...[
+          { id: 7, name: "Status" },
+          { id: 8, name: "Owner" },
+        ].map(({ id, name }) => ({
+          field: { kind: "property" as const, field_id: id },
+          name,
+          field_type: "string",
+          filterable: true,
+          sortable: true,
+          projectable: true,
+          supported_operators: ["equals" as const],
+        })),
+      ],
+    };
+    const controller = createEntryQueryController(
+      () => "space-1",
+      { scope: capabilities.scope, filters: [], sort: [] },
+      {
+        kind: "fields",
+        fields: [
+          { kind: "property", field_id: 7 },
+          { kind: "property", field_id: 8 },
+          { kind: "updated_at" },
+          { kind: "created_at" },
+        ],
+      },
+      50,
+      queryMock,
+    );
+    render(() => (
+      <EntryBrowser controller={controller} capabilities={capabilities} />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move down Status" }));
+    const orderedOptions = Array.from(
+      document.querySelectorAll(".entry-browser-column-row label"),
+      (label) => label.textContent?.trim(),
+    );
+    expect(orderedOptions.slice(0, 2)).toEqual(["Owner", "Status"]);
+    expect(controller.projection().kind).toBe("fields");
+    if (controller.projection().kind === "fields") {
+      expect(controller.projection().fields[0]).toEqual({
+        kind: "property",
+        field_id: 7,
+      });
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(controller.projection()).toEqual({
+      kind: "fields",
+      fields: [
+        { kind: "property", field_id: 8 },
+        { kind: "property", field_id: 7 },
+        { kind: "created_at" },
+        { kind: "updated_at" },
+      ],
+    });
+  });
+
+  it("can hide preview timestamp columns without changing the server projection", async () => {
+    queryMock.mockResolvedValue({
+      rows: [{
+        id: "entry-preview",
+        form_id: "form-1",
+        revision_id: "revision-1",
+        created_at_micros: CREATED_MICROS,
+        updated_at_micros: UPDATED_MICROS,
+        preview: "Preview row",
+      }],
+      has_more: false,
+    });
+    const capabilities = systemEntryCapabilities({
+      kind: "form",
+      form_id: "form-1",
+    });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      { scope: capabilities.scope, filters: [], sort: [] },
+      { kind: "preview" },
+      50,
+      queryMock,
+    );
+    await controller.load();
+    render(() => (
+      <EntryBrowser controller={controller} capabilities={capabilities} />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Created" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Updated" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(controller.projection()).toEqual({ kind: "preview" });
+    expect(headerLabels()).toEqual(["Preview", "Open entry"]);
+  });
+
+  it("validates numeric filter input before applying its typed value", () => {
+    queryMock.mockResolvedValue({ rows: [], has_more: false });
+    const base = systemEntryCapabilities({ kind: "form", form_id: "form-1" });
+    const capabilities: EntryQueryCapabilities = {
+      ...base,
+      fields: [
+        ...base.fields,
+        {
+          field: { kind: "property", field_id: 4 },
+          name: "Amount",
+          field_type: "double",
+          filterable: true,
+          sortable: true,
+          projectable: true,
+          supported_operators: ["equals", "gt"],
+        },
+      ],
+    };
+    const controller = createEntryQueryController(
+      () => "space-1",
+      { scope: capabilities.scope, filters: [], sort: [] },
+      undefined,
+      50,
+      queryMock,
+    );
+    render(() => (
+      <EntryBrowser controller={controller} capabilities={capabilities} />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter field 1" }), {
+      target: { value: JSON.stringify({ kind: "property", field_id: 4 }) },
+    });
+    const value = screen.getByRole("spinbutton");
+    fireEvent.input(value, { target: { value: "1e309" } });
+
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(controller.query().filters).toEqual([]);
+    fireEvent.input(value, { target: { value: "3.5" } });
+    expect(value).toHaveValue(3.5);
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(controller.query().filters).toEqual([{
+      field: { kind: "property", field_id: 4 },
+      operator: "equals",
+      value: 3.5,
+    }]);
+  });
+
+  it("discards a filter draft on Escape and returns focus to its toolbar button", () => {
+    queryMock.mockResolvedValue({ rows: [], has_more: false });
+    const capabilities = systemEntryCapabilities({
+      kind: "form",
+      form_id: "form-1",
+    });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      { scope: capabilities.scope, filters: [], sort: [] },
+      undefined,
+      50,
+      queryMock,
+    );
+    render(() => (
+      <EntryBrowser controller={controller} capabilities={capabilities} />
+    ));
+
+    const filterButton = screen.getByRole("button", { name: "Filter" });
+    fireEvent.click(filterButton);
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    expect(controller.query().filters).toEqual([]);
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(controller.query().filters).toEqual([]);
+    expect(document.activeElement).toBe(filterButton);
+    expect(filterButton).toHaveAttribute("aria-expanded", "false");
   });
 });

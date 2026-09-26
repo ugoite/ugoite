@@ -3238,10 +3238,158 @@ a.tool {
 
 .entry-browser-toolbar {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
   max-width: 100%;
+}
+
+.entry-browser-search {
+  flex: 1 1 220px;
+  min-width: min(100%, 180px);
+}
+.entry-browser-search .ui-input {
+  width: 100%;
+}
+.entry-browser-display-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.entry-browser-display-button {
+  position: relative;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+}
+.entry-browser-display-button .icon {
+  width: 20px;
+  height: 20px;
+}
+.entry-browser-count-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  border: 2px solid #FFFFFF;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #FFFFFF;
+  font-size: 10px;
+  line-height: 1;
+}
+.entry-browser-query-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+.entry-browser-query-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+}
+.entry-browser-query-chip:hover {
+  border-color: var(--brand);
+}
+.entry-browser-dialog-backdrop {
+  z-index: 110;
+}
+.entry-browser-display-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+}
+.entry-browser-display-dialog .ui-dialog-header {
+  flex: 0 0 auto;
+}
+.entry-browser-dialog-close {
+  width: 38px;
+  min-width: 38px;
+  padding: 0;
+}
+.entry-browser-dialog-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 2px;
+}
+.entry-browser-display-dialog fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.entry-browser-dialog-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+}
+.entry-browser-column-row,
+.entry-browser-filter-row,
+.entry-browser-sort-row {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.entry-browser-column-row .entry-browser-dialog-option {
+  flex: 1 1 auto;
+}
+.entry-browser-column-order,
+.entry-browser-sort-order {
+  display: flex;
+  gap: 4px;
+}
+.entry-browser-column-order .ui-button,
+.entry-browser-sort-order .ui-button {
+  min-width: 38px;
+  padding: 0 8px;
+}
+.entry-browser-filter-row > label,
+.entry-browser-sort-row > label {
+  display: flex;
+  flex: 1 1 130px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 13px;
+}
+.entry-browser-filter-row .ui-alert {
+  flex: 1 0 100%;
+  margin: 0;
+  padding: 6px 8px;
+}
+.entry-browser-sort-priority {
+  width: 28px;
+  align-self: center;
+  color: var(--muted);
+  text-align: center;
+}
+.entry-browser-display-dialog > .ui-dialog-actions {
+  flex: 0 0 auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
 }
 
 .entry-browser-popover {
