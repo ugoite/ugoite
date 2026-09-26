@@ -352,7 +352,7 @@ async function finishChild(
   }
 }
 
-test.describe("SQL export Remote authorization revocation", () => {
+test.describe("SQL export Remote authorization and credential lifecycle", () => {
   test.beforeAll(async ({ request }) => await waitForServers(request));
 
   test("a live membership revoke rejects page two and leaves no output", async ({ browser, request }) => {
