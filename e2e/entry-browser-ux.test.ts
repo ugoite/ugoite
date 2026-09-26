@@ -154,9 +154,13 @@ test.describe("Form Entry browser UX", () => {
     await expect(page.getByText(new RegExp("Alpha entry"))).toBeVisible();
     await expect(page.getByText(new RegExp("Beta entry"))).toHaveCount(0);
 
-    await page.goto(
-      getFrontendUrl(`/spaces/${spaceId}/forms/${betaForm}/entries`),
-      { waitUntil: "domcontentloaded" },
+    await page.getByRole("link", { name: "Forms" }).first().click();
+    await expect(page).toHaveURL(
+      new RegExp(`/spaces/${spaceId}/forms$`),
+    );
+    await page.getByRole("button", { name: betaForm, exact: true }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/spaces/${spaceId}/forms/${betaForm}/entries$`),
     );
     await expect(page.getByText(new RegExp("Beta entry"))).toBeVisible();
     await expect(page.getByText(new RegExp("Alpha entry"))).toHaveCount(0);
