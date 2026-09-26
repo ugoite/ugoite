@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { formatDateTimeLabel } from "~/lib/date-format";
@@ -167,6 +167,65 @@ describe("space history route", () => {
     );
     // The timeline refreshes from the server-confirmed result.
     expect(changeApi.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("audit_baseline_revert_success_retains_confirmation_dialog", async () => {
+    vi.mocked(changeApi.list)
+      .mockResolvedValueOnce([
+        {
+          change_id: "audit-change-before",
+          generation: 1,
+          actor_principal_id: "human:owner",
+          message: null,
+          reverts_change_id: null,
+          run_id: null,
+          created_at_micros: 1767225600000000,
+        },
+      ])
+      .mockResolvedValue([]);
+    let resolveRevert!: (
+      value: Awaited<ReturnType<typeof changeApi.revert>>,
+    ) => void;
+    vi.mocked(changeApi.revert).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRevert = resolve;
+      }),
+    );
+
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Revert this change" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const confirm = screen.getByRole("button", { name: "Append new Change" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(confirm).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(dialog).toBeInTheDocument();
+    expect(changeApi.revert).toHaveBeenCalledTimes(1);
+
+    resolveRevert({
+      change_id: "audit-change-inverse",
+      reverts_change_id: "audit-change-before",
+      run_id: null,
+    });
+    expect(await screen.findByText("Reverted as Change audit-change-inverse."))
+      .toBeInTheDocument();
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(changeApi.revert).toHaveBeenCalledTimes(1);
+    expect(changeApi.revert).toHaveBeenCalledWith(
+      "default",
+      "audit-change-before",
+      {},
+    );
+    expect(changeApi.list).toHaveBeenCalledTimes(2);
+
+    // F05 baseline defect, not the desired contract: the successful operation
+    // must remove this dialog so its confirmation cannot be submitted again.
+    // This mocked response does not prove an actual Change was committed.
+    expect(screen.getByRole("dialog")).toBe(dialog);
   });
 
   it("offers Run undo only when the response carries a Run ID", async () => {
