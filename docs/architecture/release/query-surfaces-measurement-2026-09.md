@@ -39,10 +39,14 @@ surface total). Results were:
 
 Both SQL Spaces loaded page one without an automatic count request. Selecting
 Next loaded page two with 100 rows and a continuation token in each Space. The
-browser recorded three aborted EntryQuery fetches during rapid filter changes,
-zero residual pending fetches after the observation interval, and zero visible
-rows after switching Spaces. The 400 ms interception delay applied only to
-EntryQuery lifecycle observations, not to performance trials.
+browser recorded three aborted EntryQuery fetches during rapid filter changes
+and zero residual pending fetches after the observation interval. After switching
+Spaces, the Forms index had no result rows before the test reopened the same
+EntryQuery in Space B; Space B then issued its own EntryQuery request and rendered
+rows. This checks that the target query surface loads in the destination Space;
+it does not compare row contents with a pre-switch snapshot. The 400 ms
+interception delay applied only to EntryQuery lifecycle observations, not to
+performance trials.
 
 The local backend startup took 128 seconds for both seeded Spaces. The
 measurement does not isolate audit recovery from other server initialization.

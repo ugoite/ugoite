@@ -326,10 +326,26 @@ test("records real two-Space query surface measurements", async ({ page, request
       new RegExp(`/spaces/${secondSpace.space_uid}/forms$`),
     );
     await page.waitForTimeout(500);
-    const lifecycle = await page.evaluate(() => {
+    const rowsBeforeTargetQuery = await page.locator(
+      ".paged-result-row",
+    ).count();
+    await page.goto(
+      getFrontendUrl(
+        `/spaces/${secondSpace.space_uid}/forms/${SQL_FORM_NAME}/entries`,
+      ),
+      { waitUntil: "domcontentloaded" },
+    );
+    await expect(rowLocator).toBeVisible();
+    const lifecycle = await page.evaluate(({
+      targetSpaceUid,
+      rowsBeforeTargetQuery,
+    }) => {
       const events = (window as Window & {
         __ugoiteQueryEvents?: QueryEvent[];
       }).__ugoiteQueryEvents ?? [];
+      const targetSpaceQueryEvents = events.filter((event) =>
+        event.path.includes(`/spaces/${targetSpaceUid}/entries/query`)
+      );
       return {
         events,
         actualAbortCount: events.filter((event) => event.aborted).length,
@@ -339,11 +355,23 @@ test("records real two-Space query surface measurements", async ({ page, request
         visibleDataRows: document.querySelectorAll(
           ".paged-result-row",
         ).length,
+        targetSpaceQueryCount: targetSpaceQueryEvents.length,
+        targetSpaceQueryPaths: targetSpaceQueryEvents.map((event) =>
+          event.path
+        ),
+        rowsBeforeTargetQuery,
       };
-    });
+    }, { targetSpaceUid: secondSpace.space_uid, rowsBeforeTargetQuery });
     expect(lifecycle.actualAbortCount).toBeGreaterThan(0);
     expect(lifecycle.residualPendingCount).toBe(0);
-    expect(lifecycle.visibleDataRows).toBe(0);
+    expect(rowsBeforeTargetQuery).toBe(0);
+    expect(lifecycle.targetSpaceQueryCount).toBeGreaterThan(0);
+    expect(
+      lifecycle.targetSpaceQueryPaths.every((path) =>
+        path.includes(`/spaces/${secondSpace.space_uid}/`)
+      ),
+    ).toBe(true);
+    expect(lifecycle.visibleDataRows).toBeGreaterThan(0);
 
     const outputPath = Deno.env.get("UGOITE_QUERY_MEASURE_OUTPUT");
     if (outputPath) {
