@@ -41,7 +41,10 @@ type FakeKonaseHost = {
   resolvedConfirmations: Array<{ requestId: string; approved: boolean }>;
   disposed: boolean;
   submit(prompt: string): Promise<FakeTurn>;
-  previewSelectedContext(prompt: string, uris: string[]): Promise<SelectedContextPreview>;
+  previewSelectedContext(
+    prompt: string,
+    uris: string[],
+  ): Promise<SelectedContextPreview>;
   sendSelectedContext(previewId: string): Promise<FakeTurn>;
   invalidateContextPreview(): void;
   undo(workId: string): Promise<{ success: boolean }>;
@@ -53,7 +56,14 @@ type FakeKonaseHost = {
   emitProgress(progress: FakeProgress): void;
 };
 
-const { getSpaceMock, authorizeMock, listFormsMock, queryEntriesMock, hostInstances, createDeferred } = vi
+const {
+  getSpaceMock,
+  authorizeMock,
+  listFormsMock,
+  queryEntriesMock,
+  hostInstances,
+  createDeferred,
+} = vi
   .hoisted(() => {
     const createDeferred = <T,>(): Deferred<T> => {
       let resolve!: Deferred<T>["resolve"];
@@ -123,7 +133,10 @@ vi.mock("~/lib/konase/host", () => ({
       return deferred.promise;
     }
 
-    previewSelectedContext(_prompt: string, uris: string[]): Promise<SelectedContextPreview> {
+    previewSelectedContext(
+      _prompt: string,
+      uris: string[],
+    ): Promise<SelectedContextPreview> {
       this.selectedUriCalls.push([...uris]);
       const deferred = createDeferred<SelectedContextPreview>();
       this.previewDeferreds.push(deferred);
@@ -359,14 +372,35 @@ describe("KonasePanel Space authority", () => {
     ]);
     queryEntriesMock.mockResolvedValueOnce({
       rows: [
-        { id: "entry-a", form_id: "form-a", revision_id: "rev-a", created_at_micros: 1, updated_at_micros: 1, preview: "Selected entry" },
-        { id: "entry-unselected", form_id: "form-a", revision_id: "rev-b", created_at_micros: 2, updated_at_micros: 2, preview: "Other entry" },
+        {
+          id: "entry-a",
+          form_id: "form-a",
+          revision_id: "rev-a",
+          created_at_micros: 1,
+          updated_at_micros: 1,
+          preview: "Selected entry",
+        },
+        {
+          id: "entry-unselected",
+          form_id: "form-a",
+          revision_id: "rev-b",
+          created_at_micros: 2,
+          updated_at_micros: 2,
+          preview: "Other entry",
+        },
       ],
       has_more: true,
       next: "page-2",
     }).mockResolvedValueOnce({
       rows: [
-        { id: "entry-b", form_id: "form-a", revision_id: "rev-c", created_at_micros: 3, updated_at_micros: 3, preview: "Second page entry" },
+        {
+          id: "entry-b",
+          form_id: "form-a",
+          revision_id: "rev-c",
+          created_at_micros: 3,
+          updated_at_micros: 3,
+          preview: "Second page entry",
+        },
       ],
       has_more: false,
     });
@@ -376,10 +410,15 @@ describe("KonasePanel Space authority", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
     await waitFor(() => expect(hostInstances).toHaveLength(1));
-    await waitFor(() => expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument()
+    );
     fireEvent.click(screen.getByLabelText("Note (form-a)"));
     fireEvent.click(screen.getByRole("button", { name: "Search Entries" }));
-    await waitFor(() => expect(screen.getByLabelText("Selected entry (entry-a)")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByLabelText("Selected entry (entry-a)"))
+        .toBeInTheDocument()
+    );
     expect(queryEntriesMock).toHaveBeenCalledWith(
       "space-a",
       expect.objectContaining({
@@ -390,7 +429,10 @@ describe("KonasePanel Space authority", () => {
     );
     fireEvent.click(screen.getByLabelText("Selected entry (entry-a)"));
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-    await waitFor(() => expect(screen.getByLabelText("Second page entry (entry-b)")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByLabelText("Second page entry (entry-b)"))
+        .toBeInTheDocument()
+    );
     expect(queryEntriesMock).toHaveBeenLastCalledWith(
       "space-a",
       expect.objectContaining({ after: "page-2", limit: 20 }),
@@ -400,7 +442,9 @@ describe("KonasePanel Space authority", () => {
     fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
       target: { value: "Explain these resources" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Preview selected Context" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Preview selected Context" }),
+    );
 
     const host = hostInstances[0];
     await waitFor(() => expect(host.previewDeferreds).toHaveLength(1));
@@ -413,26 +457,149 @@ describe("KonasePanel Space authority", () => {
     host.previewDeferreds[0].resolve({
       id: "preview-a",
       spaceId: "space-a",
-      selectedUris: ["ugoite://form/form-a", "ugoite://entry/entry-a", "ugoite://entry/entry-b"],
+      selectedUris: [
+        "ugoite://form/form-a",
+        "ugoite://entry/entry-a",
+        "ugoite://entry/entry-b",
+      ],
       admission: [
         { uri: "ugoite://form/form-a", status: "included" },
-        { uri: "ugoite://entry/entry-a", status: "truncated", reason: "projection_compacted" },
+        {
+          uri: "ugoite://entry/entry-a",
+          status: "truncated",
+          reason: "projection_compacted",
+        },
         { uri: "ugoite://entry/entry-b", status: "included" },
       ],
       resources: [
         { uri: "ugoite://form/form-a", content: "normalized Form projection" },
-        { uri: "ugoite://entry/entry-a", content: "normalized selected Entry projection" },
-        { uri: "ugoite://entry/entry-b", content: "normalized second page Entry projection" },
+        {
+          uri: "ugoite://entry/entry-a",
+          content: "normalized selected Entry projection",
+        },
+        {
+          uri: "ugoite://entry/entry-b",
+          content: "normalized second page Entry projection",
+        },
       ],
     });
-    await waitFor(() => expect(screen.getByText("normalized Form projection")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("normalized Form projection")).toBeInTheDocument()
+    );
+    const previewHeading = screen.getByRole("heading", {
+      name: "Review Context before sending",
+    });
+    await waitFor(() => expect(previewHeading).toHaveFocus());
+    expect(screen.getByText(/Selected Knowledge is untrusted data/))
+      .toHaveAttribute("role", "status");
+    expect(screen.getByRole("button", { name: "Send this Context" }))
+      .toBeInTheDocument();
     expect(screen.queryByText("entry-unselected")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Send this Context" }));
     await waitFor(() => expect(host.sendDeferreds).toHaveLength(1));
     expect(host.submitDeferreds).toHaveLength(0);
     host.sendDeferreds[0].resolve(fakeTurn("Context sent"));
-    await waitFor(() => expect(screen.getByText("Context sent")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Context sent")).toBeInTheDocument()
+    );
+  });
+
+  it("restores keyboard focus to the preview trigger when the preview is cancelled", async () => {
+    mockConnection();
+    listFormsMock.mockResolvedValue([
+      { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+    ]);
+    render(() => <KonasePanel spaceId="space-a" />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByLabelText("Note (form-a)"));
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Explain this Form" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Preview selected Context" }),
+    );
+    const host = hostInstances[0];
+    await waitFor(() => expect(host.previewDeferreds).toHaveLength(1));
+    host.previewDeferreds[0].resolve({
+      id: "preview-cancel",
+      spaceId: "space-a",
+      selectedUris: ["ugoite://form/form-a"],
+      admission: [{ uri: "ugoite://form/form-a", status: "included" }],
+      resources: [{ uri: "ugoite://form/form-a", content: "Form projection" }],
+    });
+
+    const cancelButton = await screen.findByRole("button", {
+      name: "Cancel preview",
+    });
+    const previewTrigger = screen.getByRole("button", {
+      name: "Preview selected Context",
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("heading", {
+        name: "Review Context before sending",
+      })).toHaveFocus()
+    );
+    cancelButton.focus();
+    fireEvent.click(cancelButton);
+
+    await waitFor(() => expect(previewTrigger).toHaveFocus());
+    expect(screen.queryByRole("button", { name: "Send this Context" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("moves focus to the new Space connection action when an open preview is invalidated", async () => {
+    mockConnection();
+    listFormsMock.mockResolvedValue([
+      { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+    ]);
+    const [spaceId, setSpaceId] = createSignal("space-a");
+    render(() => <KonasePanel spaceId={spaceId()} />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByLabelText("Note (form-a)"));
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Explain this Form" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Preview selected Context" }),
+    );
+    const oldHost = hostInstances[0];
+    await waitFor(() => expect(oldHost.previewDeferreds).toHaveLength(1));
+    oldHost.previewDeferreds[0].resolve({
+      id: "preview-space-change",
+      spaceId: "space-a",
+      selectedUris: ["ugoite://form/form-a"],
+      admission: [{ uri: "ugoite://form/form-a", status: "included" }],
+      resources: [{ uri: "ugoite://form/form-a", content: "Form projection" }],
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("heading", {
+        name: "Review Context before sending",
+      })).toHaveFocus()
+    );
+
+    setSpaceId("space-b");
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Konase" }))
+        .toHaveFocus()
+    );
+    expect(screen.queryByText("Form projection")).not.toBeInTheDocument();
+    expect(oldHost.disposed).toBe(true);
   });
 
   it("drops a late Context preview when the Panel moves to another Space", async () => {
@@ -454,12 +621,16 @@ describe("KonasePanel Space authority", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
     await waitFor(() => expect(hostInstances).toHaveLength(1));
-    await waitFor(() => expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument()
+    );
     fireEvent.click(screen.getByLabelText("Note (form-a)"));
     fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
       target: { value: "Explain this Form" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Preview selected Context" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Preview selected Context" }),
+    );
     const oldHost = hostInstances[0];
     await waitFor(() => expect(oldHost.previewDeferreds).toHaveLength(1));
 
@@ -476,7 +647,9 @@ describe("KonasePanel Space authority", () => {
       resources: [{ uri: "ugoite://form/form-a", content: "stale Space data" }],
     });
 
-    await waitFor(() => expect(screen.queryByText("stale Space data")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByText("stale Space data")).not.toBeInTheDocument()
+    );
     expect(screen.queryByRole("button", { name: "Send this Context" })).not
       .toBeInTheDocument();
     expect(oldHost.sendDeferreds).toHaveLength(0);
