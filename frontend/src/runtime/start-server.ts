@@ -1,5 +1,6 @@
 // @refresh skip
 import { eventHandler } from "vinxi/http";
+import { brandIconLinksHtml } from "~/lib/brand-icon-links";
 
 type ManifestAsset = {
   attrs: Record<string, string>;
@@ -79,7 +80,7 @@ const buildClientBootHtml = async (): Promise<string> => {
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" href="/favicon.ico">
+    ${brandIconLinksHtml()}
     <script>${manifestScript}</script>
   </head>
   <body>

@@ -72,6 +72,7 @@
     "npm:rettime@~0.11.7": "0.11.11",
     "npm:seroval-plugins@1.5.4": "1.5.4_seroval@1.5.4",
     "npm:seroval@1.5.4": "1.5.4",
+    "npm:sharp@0.34.5": "0.34.5",
     "npm:shiki@4.3.0": "4.3.0",
     "npm:solid-js@^1.9.10": "1.9.13",
     "npm:solid-refresh@~0.6.3": "0.6.3_solid-js@1.9.13",
@@ -9182,6 +9183,10 @@
     }
   },
   "workspace": {
+    "dependencies": [
+      "jsr:@std/assert@1",
+      "npm:sharp@0.34.5"
+    ],
     "members": {
       "docsite": {
         "dependencies": [

@@ -27,6 +27,8 @@ are new: architecture names the owners and adapters around the Space model.
   coordinates in [Data model architecture](data-model/overview.md).
 - **Testing:** repository validation, CI lanes, and release-grade checks in
   [Testing architecture](testing/strategy.md).
+- **Branding:** the canonical `!!` artwork and generated browser/GitHub icons in
+  [Brand icons](branding/brand-icons.md).
 - **Quality:** error contracts and fail-closed behavior in
   [Quality architecture](quality/error-handling.md).
 - **Normative contracts:** implementation-facing architecture specifications

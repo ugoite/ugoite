@@ -1,5 +1,6 @@
 // @refresh reload
 import { createHandler, StartServer } from "~/runtime/start-server";
+import { BRAND_ICON_LINKS } from "~/lib/brand-icon-links";
 
 export default createHandler(() => (
   <StartServer
@@ -8,7 +9,7 @@ export default createHandler(() => (
         <head>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <link rel="icon" href="/favicon.ico" />
+          {BRAND_ICON_LINKS.map((link) => <link key={link.href} {...link} />)}
           {assets}
         </head>
         <body>
