@@ -191,6 +191,21 @@ class SelectedResourcesMcp extends ScriptedMcp {
   }
 }
 
+class FailAfterSaveMcp extends ScriptedMcp {
+  override async callMcp(
+    request: McpRequest,
+    workId: string,
+  ): Promise<McpResult> {
+    if (request.operation === "resources/read") {
+      this.operations.push(request.operation);
+      this.calls.push({ operation: request.operation, workId });
+      this.requests.push(structuredClone(request));
+      throw new Error("MCP authorization expired");
+    }
+    return await super.callMcp(request, workId);
+  }
+}
+
 describe("Konase browser host", () => {
   it("previews only selected portable Context and starts the model only after confirmation", async () => {
     const [form, entry] = selectedContextFixture.selected;
@@ -990,6 +1005,52 @@ describe("Konase browser host", () => {
     });
     expect(mcp.calls.filter((call) => call.operation === "ugoite.save"))
       .toHaveLength(1);
+  });
+
+  it("preserves a confirmed save and its Undo when a later read loses authorization", async () => {
+    const model = new ScriptedModel([
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "save-call",
+          name: "ugoite.save",
+          arguments: { form: "Note", fields: { title: "Saved first" } },
+        }],
+      },
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "read-call",
+          name: "resources/read",
+          arguments: {
+            uri: "ugoite://entry/00000000-0000-0000-0000-000000000001",
+          },
+        }],
+      },
+    ]);
+    const mcp = new FailAfterSaveMcp();
+    const host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: (preview) => {
+        host.resolveConfirmation(preview.requestId, true);
+      },
+    });
+
+    const failure = await host.submit("Save, then read the entry").catch(
+      (cause) => cause,
+    );
+
+    expect(failure).toBeInstanceOf(KonaseWorkFailure);
+    expect(failure).toMatchObject({
+      partial: { knowledge: "saved", undoAvailable: true },
+      reason: expect.objectContaining({ message: "MCP authorization expired" }),
+    });
+    expect(mcp.calls.map((call) => call.operation)).toEqual([
+      "ugoite.save",
+      "resources/read",
+    ]);
   });
 
   it("does not report saved or undoable when a save receipt is missing", async () => {
