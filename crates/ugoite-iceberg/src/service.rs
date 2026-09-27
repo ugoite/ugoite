@@ -2542,6 +2542,66 @@ impl UgoiteService {
         Ok(json!({ "changes": changes, "next_cursor": next_cursor }))
     }
 
+    /// Query a bounded Change page and attach the same evidence-backed
+    /// summary used by `change.inspect`, evaluated with the caller's current
+    /// Entry read scope. Each row is inspected against its already-resolved
+    /// immutable publication, so a page does not restart Change lookup from
+    /// the moving Catalog Head for every row.
+    pub async fn query_changes_authorized_for_principals(
+        &self,
+        space_id: &str,
+        requested_limit: Option<usize>,
+        cursor: Option<&str>,
+        query: ChangeHistoryQuery,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        let mut page = self
+            .query_changes(space_id, requested_limit, cursor, query)
+            .await?;
+        let Some(changes) = page.get_mut("changes").and_then(Value::as_array_mut) else {
+            bail!("Change query page has no changes array");
+        };
+        if changes.is_empty() {
+            return Ok(page);
+        }
+
+        let scopes = self
+            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
+            .await?;
+        let scope_fingerprint = Self::change_inspect_scope_fingerprint(&scopes);
+        let signing_key = self.sql_query_signing_key(space_id).await?;
+        for row in changes {
+            let published_change: crate::PublishedChange =
+                serde_json::from_value(row.clone()).context("Change query row is invalid")?;
+            let cursor = Self::encode_change_inspect_cursor(
+                &ChangeInspectPageToken {
+                    version: 1,
+                    space_id: space_id.to_string(),
+                    change_id: published_change.change_id.clone(),
+                    publication: published_change.publication.clone(),
+                    change: published_change.change.clone(),
+                    scope_fingerprint: scope_fingerprint.clone(),
+                    limit: 1,
+                    offset: 0,
+                },
+                &signing_key,
+            )?;
+            let inspection = self
+                .inspect_change_authorized_for_principals(
+                    space_id,
+                    &published_change.change_id,
+                    Some(1),
+                    Some(&cursor),
+                    principal_ids,
+                )
+                .await?;
+            row["target_visibility"] = inspection["target_visibility"].clone();
+            row["summary"] = inspection.get("summary").cloned().unwrap_or(Value::Null);
+        }
+        Ok(page)
+    }
+
     /// Inspect one committed Change using current Entry read scopes. Summary
     /// values are Change-wide only when every current Form is fully readable;
     /// partial access returns authorized target samples without a count or

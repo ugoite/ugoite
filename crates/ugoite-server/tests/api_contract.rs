@@ -1343,6 +1343,13 @@ fn issue_2037_openapi_publishes_the_public_knowledge_contract() {
     }
 
     let change_query = &paths["/spaces/{space_id}/changes/query"]["get"];
+    assert!(change_query["responses"]["200"]["description"]
+        .as_str()
+        .is_some_and(|description| {
+            description.contains("target_visibility")
+                && description.contains("evidence-backed summary")
+                && description.contains("null summary")
+        }));
     assert!(change_query["parameters"]
         .as_array()
         .unwrap()

@@ -11,6 +11,61 @@ export type SpaceChange = {
   created_at_micros: number;
 };
 
+export type SpaceChangeDescriptor = Pick<
+  SpaceChange,
+  | "actor_principal_id"
+  | "message"
+  | "reverts_change_id"
+  | "run_id"
+  | "created_at_micros"
+>;
+
+export type SpaceChangeComparedValue = {
+  state: "missing" | "value" | "unavailable" | "redacted";
+  value?: unknown;
+};
+
+export type SpaceChangeFieldGroup = {
+  form_id: string;
+  field_id: string;
+  before: SpaceChangeComparedValue;
+  after: SpaceChangeComparedValue;
+  affected_entry_count: number;
+};
+
+export type SpaceChangeSummary = {
+  affected_entry_count: number;
+  field_groups: SpaceChangeFieldGroup[];
+};
+
+export type SpaceChangeQueryRow = {
+  change_id: string;
+  generation: number;
+  change: SpaceChangeDescriptor;
+  publication: {
+    generation: number;
+    publication_uri: { space_uid: string; key: string };
+    publication_checksum: string;
+  };
+  target_visibility: "complete" | "partial";
+  summary: SpaceChangeSummary | null;
+};
+
+export type SpaceChangeQueryFilters = {
+  limit?: number;
+  cursor?: string;
+  actor_principal_id?: string;
+  run_id?: string;
+  text?: string;
+  created_after_micros?: number;
+  created_before_micros?: number;
+};
+
+export type SpaceChangeQueryPage = {
+  changes: SpaceChangeQueryRow[];
+  next_cursor: string | null;
+};
+
 const asRecord = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
@@ -18,6 +73,104 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 const asString = (value: unknown): string | null =>
   typeof value === "string" ? value : null;
+
+const requiredString = (value: unknown, field: string): string => {
+  const result = asString(value);
+  if (result === null) throw new Error(`Invalid Change query field: ${field}`);
+  return result;
+};
+
+const requiredNumber = (value: unknown, field: string): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Invalid Change query field: ${field}`);
+  }
+  return value;
+};
+
+const decodeComparedValue = (value: unknown): SpaceChangeComparedValue => {
+  const row = asRecord(value);
+  const state = asString(row.state);
+  if (
+    state !== "missing" && state !== "value" && state !== "unavailable" &&
+    state !== "redacted"
+  ) {
+    throw new Error("Invalid Change query compared value");
+  }
+  return state === "value" ? { state, value: row.value } : { state };
+};
+
+const decodeSummary = (value: unknown): SpaceChangeSummary | null => {
+  if (value === null) return null;
+  const summary = asRecord(value);
+  if (!Array.isArray(summary.field_groups)) {
+    throw new Error("Invalid Change query summary");
+  }
+  return {
+    affected_entry_count: requiredNumber(
+      summary.affected_entry_count,
+      "summary.affected_entry_count",
+    ),
+    field_groups: summary.field_groups.map((value) => {
+      const group = asRecord(value);
+      return {
+        form_id: requiredString(group.form_id, "summary.field_groups.form_id"),
+        field_id: requiredString(
+          group.field_id,
+          "summary.field_groups.field_id",
+        ),
+        before: decodeComparedValue(group.before),
+        after: decodeComparedValue(group.after),
+        affected_entry_count: requiredNumber(
+          group.affected_entry_count,
+          "summary.field_groups.affected_entry_count",
+        ),
+      };
+    }),
+  };
+};
+
+const decodeQueryRow = (value: unknown): SpaceChangeQueryRow => {
+  const row = asRecord(value);
+  const change = asRecord(row.change);
+  const publication = asRecord(row.publication);
+  const targetVisibility = asString(row.target_visibility);
+  if (targetVisibility !== "complete" && targetVisibility !== "partial") {
+    throw new Error("Invalid Change query target visibility");
+  }
+  return {
+    change_id: requiredString(row.change_id, "change_id"),
+    generation: requiredNumber(row.generation, "generation"),
+    change: {
+      actor_principal_id: requiredString(
+        change.actor_principal_id,
+        "change.actor_principal_id",
+      ),
+      message: asString(change.message),
+      reverts_change_id: asString(change.reverts_change_id),
+      run_id: asString(change.run_id),
+      created_at_micros: requiredNumber(
+        change.created_at_micros,
+        "change.created_at_micros",
+      ),
+    },
+    publication: {
+      generation: requiredNumber(publication.generation, "publication.generation"),
+      publication_uri: (() => {
+        const uri = asRecord(publication.publication_uri);
+        return {
+          space_uid: requiredString(uri.space_uid, "publication.publication_uri.space_uid"),
+          key: requiredString(uri.key, "publication.publication_uri.key"),
+        };
+      })(),
+      publication_checksum: requiredString(
+        publication.publication_checksum,
+        "publication.publication_checksum",
+      ),
+    },
+    target_visibility: targetVisibility,
+    summary: decodeSummary(row.summary),
+  };
+};
 
 /** Result of appending a revert Change. The reverted Change is kept. */
 export type RevertResult = {
@@ -61,6 +214,25 @@ export const changeApi = {
           : 0,
       };
     });
+  },
+
+  async query(
+    spaceId: string,
+    filters: SpaceChangeQueryFilters = {},
+  ): Promise<SpaceChangeQueryPage> {
+    const value = asRecord(
+      await protocolFetch<unknown>("change.query", {
+        space_id: spaceId,
+        ...filters,
+      }),
+    );
+    if (!Array.isArray(value.changes)) {
+      throw new Error("Invalid Change query page");
+    }
+    return {
+      changes: value.changes.map(decodeQueryRow),
+      next_cursor: asString(value.next_cursor),
+    };
   },
 
   async revert(

@@ -9823,6 +9823,8 @@ async fn query_changes(
     Query(query): Query<ChangeQueryParams>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     let filters = ugoite_domain::change_history::ChangeHistoryQuery {
         actor_principal_id: query.actor_principal_id,
         run_id: query.run_id,
@@ -9833,7 +9835,13 @@ async fn query_changes(
     Ok(Json(
         state
             .service
-            .query_changes(&space_id, query.limit, query.cursor.as_deref(), filters)
+            .query_changes_authorized_for_principals(
+                &space_id,
+                query.limit,
+                query.cursor.as_deref(),
+                filters,
+                &principals,
+            )
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -13254,6 +13262,11 @@ mod authentication_regression_tests {
         for change in changes {
             assert_publication_coordinate(&change["publication"], space_uid);
         }
+        let target_created_at = changes
+            .iter()
+            .find(|change| change["change_id"] == target_change_id)
+            .and_then(|change| change["change"]["created_at_micros"].as_i64())
+            .expect("target Change has a committed timestamp");
 
         let page_response = route
             .clone()
@@ -13329,6 +13342,30 @@ mod authentication_regression_tests {
         assert_eq!(inspected["targets"].as_array().map(Vec::len), Some(1));
         assert_eq!(inspected["targets"][0]["entry_id"], entry_id);
         assert!(inspected.get("next_cursor").is_none());
+
+        let summary_query_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/query?limit=100&actor_principal_id={principal_id}&created_after_micros={target_created_at}&created_before_micros={target_created_at}"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(summary_query_response.status(), StatusCode::OK);
+        let summary_query_body =
+            axum::body::to_bytes(summary_query_response.into_body(), usize::MAX).await?;
+        let summary_page: Value = serde_json::from_slice(&summary_query_body)?;
+        let summarized_change = summary_page["changes"]
+            .as_array()
+            .and_then(|changes| {
+                changes
+                    .iter()
+                    .find(|change| change["change_id"] == target_change_id)
+            })
+            .expect("query page includes the selected target Change");
+        assert_eq!(summarized_change["target_visibility"], "complete");
+        assert_eq!(summarized_change["summary"]["affected_entry_count"], 1);
 
         let invalid_inspect_cursor = route
             .clone()
@@ -13411,6 +13448,7 @@ mod authentication_regression_tests {
             )
             .await?;
         let denied_route = Router::new()
+            .route("/spaces/{space_id}/changes/query", get(query_changes))
             .route(
                 "/spaces/{space_id}/changes/{change_id}/inspect",
                 get(inspect_change),
@@ -13450,6 +13488,30 @@ mod authentication_regression_tests {
         assert!(partially_visible["targets"]
             .as_array()
             .is_some_and(Vec::is_empty));
+
+        let partial_summary_query_response = denied_route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/query?limit=100&actor_principal_id={principal_id}&created_after_micros={target_created_at}&created_before_micros={target_created_at}"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(partial_summary_query_response.status(), StatusCode::OK);
+        let partial_summary_body =
+            axum::body::to_bytes(partial_summary_query_response.into_body(), usize::MAX).await?;
+        let partial_summary_page: Value = serde_json::from_slice(&partial_summary_body)?;
+        let partial_summary_change = partial_summary_page["changes"]
+            .as_array()
+            .and_then(|changes| {
+                changes
+                    .iter()
+                    .find(|change| change["change_id"] == target_change_id)
+            })
+            .expect("partially visible query includes the selected Change");
+        assert_eq!(partial_summary_change["target_visibility"], "partial");
+        assert!(partial_summary_change["summary"].is_null());
 
         let cursor = query_page["next_cursor"].as_str().unwrap();
         let mismatched_query_response = route
