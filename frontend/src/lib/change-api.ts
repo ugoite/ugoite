@@ -354,13 +354,14 @@ export const changeApi = {
     changeId: string,
     entryId: string,
   ): Promise<SpaceChangeAffectedEntry> {
-    return decodeAffectedEntry(
+    const response = asRecord(
       await protocolFetch<unknown>("change.affected.get", {
         space_id: spaceId,
         change_id: changeId,
         entry_id: entryId,
       }),
     );
+    return decodeAffectedEntry(response.target);
   },
 
   async revert(

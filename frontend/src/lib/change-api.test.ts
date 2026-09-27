@@ -154,9 +154,12 @@ describe("changeApi inspection", () => {
       http.get(testApiUrl("/spaces/space-1/changes/change-1/affected/entry-1"), ({ request }) => {
         received = new URL(request.url);
         return HttpResponse.json({
-          form_id: "form-1", entry_id: "entry-1", before_revision_id: "revision-0",
-          after_revision_id: "revision-1", operation: "update",
-          fields: [{ field_id: 1, before: { state: "value", value: "Draft" }, after: { state: "value", value: "Approved" } }],
+          change_id: "change-1",
+          target: {
+            form_id: "form-1", entry_id: "entry-1", before_revision_id: "revision-0",
+            after_revision_id: "revision-1", operation: "update",
+            fields: [{ field_id: 1, before: { state: "value", value: "Draft" }, after: { state: "value", value: "Approved" } }],
+          },
         });
       }),
     );
