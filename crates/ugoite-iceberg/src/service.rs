@@ -61,7 +61,7 @@ use crate::{
     },
     entry, form, iceberg_store, index, preferences, saved_sql, space,
 };
-use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef};
+use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef, RevisionView};
 use ugoite_core::entry_query::{
     EntryCount, EntryCountRequest, EntryCursor, EntryFieldRef, EntryPage, EntryPageRequest,
     EntryProjection, EntryQueryError, EntryQueryScope, EntryResult,
@@ -72,11 +72,11 @@ use ugoite_core::sql_query::{
     SqlContinuation, SqlQueryCountRequest, SqlQueryError, SqlQueryPage, SqlQueryRequest,
 };
 use ugoite_domain::change::{ChangeCommand, RunId};
-use ugoite_domain::change_history::ChangeHistoryQuery;
+use ugoite_domain::change_history::{diff_entry_change, ChangeHistoryQuery};
 use ugoite_domain::form::{sql_relation_name, FormDefinition};
 use ugoite_domain::id::{
     validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
-    validate_space_id, validate_sql_id, FormId,
+    validate_space_id, validate_sql_id, EntryId, FormId,
 };
 use ugoite_domain::identity::{Action, PrincipalKind, PrincipalState, SpaceRole};
 use ugoite_storage::{
@@ -3729,6 +3729,114 @@ impl UgoiteService {
             )
             .await?,
         )?)
+    }
+
+    /// Read the typed before/after evidence for one Entry revision belonging
+    /// to a committed Change. The requested identity is intersected with the
+    /// current provider-side Entry ACL before historical rows are decoded.
+    pub async fn change_affected_entry_authorized_for_principals(
+        &self,
+        space_id: &str,
+        change_id: &str,
+        entry_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        if change_id.trim().is_empty() || change_id.len() > 128 {
+            return Err(
+                AppError::invalid_input(ErrorCode::InvalidInput, "change_id is invalid").into(),
+            );
+        }
+        let entry_uuid = Uuid::parse_str(entry_id)
+            .map(EntryId::from_uuid)
+            .map_err(|_| {
+                AppError::invalid_input(ErrorCode::InvalidInput, "entry_id must be a UUID")
+            })?;
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                let workspace =
+                    iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
+                        .await?;
+                let publication = workspace.current_publication().await?;
+                let forms = workspace.forms_at_publication(&publication).await?;
+                let target_scope = EntryScope::Only(BTreeSet::from([entry_uuid]));
+
+                for form in forms {
+                    let Some(authorized_scope) = scopes.get(&form.name.to_ascii_lowercase()) else {
+                        continue;
+                    };
+                    let entry_is_readable = match authorized_scope {
+                        EntryScope::AllCurrent => true,
+                        EntryScope::Only(entry_ids) => entry_ids.contains(&entry_uuid),
+                        EntryScope::AllExcept(entry_ids) => !entry_ids.contains(&entry_uuid),
+                    };
+                    if !entry_is_readable {
+                        continue;
+                    }
+                    let revisions = workspace
+                        .read_revision_view_at_publication_with_scope(
+                            &publication,
+                            form.id,
+                            target_scope.clone(),
+                            RevisionView::All,
+                        )
+                        .await?;
+                    let matching = revisions
+                        .iter()
+                        .filter(|revision| revision.change_id == change_id)
+                        .collect::<Vec<_>>();
+                    if matching.is_empty() {
+                        continue;
+                    }
+                    if matching.len() != 1 {
+                        bail!("Change has conflicting target revisions for one Entry");
+                    }
+                    let after = matching[0];
+                    let before = after.parent_revision_id.and_then(|parent_id| {
+                        revisions
+                            .iter()
+                            .find(|revision| revision.revision_id == parent_id)
+                    });
+                    if after.parent_revision_id.is_some() && before.is_none() {
+                        bail!("Change target is missing its committed parent revision");
+                    }
+                    let form_history = workspace
+                        .form_history_at_publication(&publication, form.id)
+                        .await?
+                        .into_iter()
+                        .map(|form| (form.version.get(), form))
+                        .collect::<BTreeMap<_, _>>();
+                    let after_form =
+                        form_history.get(&after.form_version.get()).ok_or_else(|| {
+                            anyhow!("Change target Form version is missing from history")
+                        })?;
+                    let before_form = before
+                        .map(|revision| {
+                            form_history
+                                .get(&revision.form_version.get())
+                                .ok_or_else(|| {
+                                    anyhow!("Change parent Form version is missing from history")
+                                })
+                        })
+                        .transpose()?;
+                    let evidence = diff_entry_change(before, after, before_form, after_form)
+                        .map_err(|error| anyhow!(error.to_string()))?;
+                    return Ok(json!({ "change_id": change_id, "target": evidence }));
+                }
+
+                Err(AppError::not_found(
+                    ErrorCode::EntryNotFound,
+                    format!("Entry not found: {entry_id}"),
+                )
+                .into())
+            })
+            .await
     }
 
     pub async fn entry_revision_authorized_for_principals(

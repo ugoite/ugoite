@@ -1618,6 +1618,10 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route("/spaces/{space_id}/changes/page", get(page_changes))
         .route("/spaces/{space_id}/changes/query", get(query_changes))
         .route(
+            "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}",
+            get(change_affected_entry),
+        )
+        .route(
             "/spaces/{space_id}/changes/{change_id}/revert",
             post(revert_change),
         )
@@ -9821,6 +9825,29 @@ async fn query_changes(
     ))
 }
 
+async fn change_affected_entry(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, change_id, entry_id)): Path<(String, String, String)>,
+) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    validate_id(&entry_id, "entry_id")?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    Ok(Json(
+        state
+            .service
+            .change_affected_entry_authorized_for_principals(
+                &space_id,
+                &change_id,
+                &entry_id,
+                &principals,
+            )
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
 #[derive(Default, Deserialize)]
 struct ChangeRevertRequest {
     run_id: Option<String>,
@@ -12979,6 +13006,10 @@ mod authentication_regression_tests {
             .route("/spaces/{space_id}/changes/page", get(page_changes))
             .route("/spaces/{space_id}/changes/query", get(query_changes))
             .route(
+                "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}",
+                get(change_affected_entry),
+            )
+            .route(
                 "/spaces/{space_id}/changes/{change_id}/revert",
                 post(revert_change),
             )
@@ -13089,6 +13120,39 @@ mod authentication_regression_tests {
                 }),
             )
             .await?;
+        let entry_id = Uuid::from_u128(204201).to_string();
+        let created = state
+            .service
+            .create_structured_entry_authorized_for_principals(
+                &space_id,
+                &entry_id,
+                "Entry".into(),
+                Vec::new(),
+                BTreeMap::from([("Body".into(), json!("before"))]),
+                BTreeMap::new(),
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let updated = state
+            .service
+            .update_structured_entry_authorized_for_principals(
+                &space_id,
+                &entry_id,
+                Some("Entry".into()),
+                None,
+                BTreeMap::from([("Body".into(), json!("after"))]),
+                BTreeMap::new(),
+                created["revision_id"].as_str(),
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let target_change_id = updated["change_id"]
+            .as_str()
+            .expect("update publishes Change")
+            .to_owned();
+        let policy_operator = state.service.operator().clone();
         state
             .service
             .upsert_form(
@@ -13110,11 +13174,16 @@ mod authentication_regression_tests {
             )
             .await?;
         let space_uid = state.service.space_uid(&space_id).await?;
+        let denied_route_state = state.clone();
         let route = Router::new()
             .route("/spaces/{space_id}/pins", get(list_pins))
             .route("/spaces/{space_id}/changes", get(list_changes))
             .route("/spaces/{space_id}/changes/page", get(page_changes))
             .route("/spaces/{space_id}/changes/query", get(query_changes))
+            .route(
+                "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}",
+                get(change_affected_entry),
+            )
             .layer(Extension(content_identity(principal_id, space_uid)))
             .with_state(state);
 
@@ -13189,6 +13258,89 @@ mod authentication_regression_tests {
         let query_page: Value = serde_json::from_slice(&query_body)?;
         assert_eq!(query_page["changes"].as_array().map(Vec::len), Some(0));
         assert!(query_page["next_cursor"].as_str().is_some());
+
+        let affected_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/{target_change_id}/affected/{entry_id}"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(affected_response.status(), StatusCode::OK);
+        let affected_body = axum::body::to_bytes(affected_response.into_body(), usize::MAX).await?;
+        let affected: Value = serde_json::from_slice(&affected_body)?;
+        assert_eq!(affected["change_id"], target_change_id);
+        assert_eq!(affected["target"]["entry_id"], entry_id);
+        assert!(affected["target"]["fields"]
+            .as_array()
+            .is_some_and(|fields| {
+                fields.len() == 1
+                    && fields[0]["before"]["state"] == "value"
+                    && fields[0]["before"]["value"] == "before"
+                    && fields[0]["after"]["state"] == "value"
+                    && fields[0]["after"]["value"] == "after"
+            }));
+
+        let unrelated_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/not-a-change/affected/{entry_id}"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(unrelated_response.status(), StatusCode::NOT_FOUND);
+
+        let viewer_id = Uuid::from_u128(204202);
+        Authorizer::new(policy_operator.clone())
+            .add_human_member(
+                &space_id,
+                principal_id,
+                ugoite_domain::identity::SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "History viewer".into(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        Authorizer::new(policy_operator)
+            .set_policy(
+                &space_id,
+                principal_id,
+                &ugoite_iceberg::authorization::ResourceRef {
+                    kind: ResourceKind::Entry,
+                    id: entry_id.clone(),
+                    parent: None,
+                },
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
+        let denied_route = Router::new()
+            .route(
+                "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}",
+                get(change_affected_entry),
+            )
+            .layer(Extension(content_identity(viewer_id, space_uid)))
+            .with_state(denied_route_state);
+        let denied_response = denied_route
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/{target_change_id}/affected/{entry_id}"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(denied_response.status(), StatusCode::NOT_FOUND);
 
         let cursor = query_page["next_cursor"].as_str().unwrap();
         let mismatched_query_response = route

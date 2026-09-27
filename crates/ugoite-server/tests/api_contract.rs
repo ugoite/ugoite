@@ -1331,6 +1331,7 @@ fn issue_2037_openapi_publishes_the_public_knowledge_contract() {
     for path in [
         "/spaces/{space_id}/changes",
         "/spaces/{space_id}/changes/query",
+        "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}",
         "/spaces/{space_id}/changes/{change_id}/revert",
         "/spaces/{space_id}/runs/{run_id}/undo",
         "/spaces/{space_id}/apply",
@@ -1351,6 +1352,12 @@ fn issue_2037_openapi_publishes_the_public_knowledge_contract() {
         .unwrap()
         .iter()
         .any(|p| p["name"] == "text"));
+
+    assert_eq!(
+        paths["/spaces/{space_id}/changes/{change_id}/affected/{entry_id}"]["get"]["parameters"][2]
+            ["schema"]["format"],
+        "uuid"
+    );
 
     assert_eq!(
         paths["/spaces/{space_id}/changes/{change_id}/revert"]["post"]["responses"]["409"]

@@ -36,6 +36,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "change.list",
     "change.page",
     "change.query",
+    "change.affected.get",
     "change.revert",
     "run.undo",
     "ugoite.apply",
@@ -582,6 +583,18 @@ pub fn prepare_request(
                     query,
                 )
             }
+            "change.affected.get" => (
+                OperationSpec::get("Failed to get Change target evidence"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "changes".into(),
+                    required_string(operation, args, "change_id")?,
+                    "affected".into(),
+                    required_string(operation, args, "entry_id")?,
+                ],
+                vec![],
+            ),
             "change.revert" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to revert Knowledge change"),
                 vec![
@@ -1479,6 +1492,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to query Knowledge changes",
             RequestBodyKind::None,
         ),
+        "change.affected.get" => (
+            HttpMethod::Get,
+            "Failed to get Change target evidence",
+            RequestBodyKind::None,
+        ),
         "change.revert" => (
             HttpMethod::Post,
             "Failed to revert Knowledge change",
@@ -2062,6 +2080,25 @@ mod tests {
         assert!(error
             .to_string()
             .contains("created_after_micros must be an integer"));
+    }
+
+    #[test]
+    fn change_affected_get_uses_a_read_only_target_route() {
+        let request = prepare_request(
+            "change.affected.get",
+            &json!({
+                "space_id": "demo",
+                "change_id": "change-1",
+                "entry_id": "00000000-0000-0000-0000-000000000001",
+            }),
+            None,
+        )
+        .expect("Change target request");
+        assert_eq!(request.method, HttpMethod::Get);
+        assert_eq!(
+            request.path,
+            "/spaces/demo/changes/change-1/affected/00000000-0000-0000-0000-000000000001"
+        );
     }
 
     #[test]
