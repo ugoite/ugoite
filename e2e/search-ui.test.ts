@@ -17,24 +17,97 @@ test.describe("Search UI", () => {
 		await ensureDefaultForm(request, spaceId);
 	});
 
-	test("REQ-SRCH-006: search navigation exposes the four primary destinations", async ({ page }) => {
+	test("REQ-SRCH-006: search toolbar keeps its query and saved SQL routes reachable", async ({ page }) => {
 		await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
 			waitUntil: "domcontentloaded",
 		});
 
-		const navigation = page.getByRole("navigation", { name: "Search" });
-		await expect(navigation).toBeVisible();
+		await expect(page.getByRole("search")).toHaveCount(1);
 		await expect(page.getByLabel("Search keywords")).toBeVisible();
+		await expect(page.getByRole("textbox", { name: "Search keywords" }))
+			.toHaveCount(1);
 		await expect(page.getByRole("button", { name: "Search entries" }))
 			.toBeVisible();
-		await expect(navigation.getByRole("link", { name: "Files" }))
-			.toHaveAttribute("href", `/spaces/${spaceId}/assets`);
-		await expect(navigation.getByRole("link", { name: "Saved" }))
+		for (const name of ["Columns", "Filter", "Sort"]) {
+			await expect(page.getByRole("button", { name, exact: true }))
+				.toHaveCount(1);
+		}
+		const savedQueries = page.getByRole("link", {
+			name: "Open saved queries",
+		});
+		await expect(savedQueries)
 			.toHaveAttribute("href", `/spaces/${spaceId}/sql`);
-		await expect(navigation.getByRole("link", { name: "Open SQL editor" }))
+		await expect(savedQueries).toHaveAttribute("title", "Open saved queries");
+		await expect(savedQueries.locator("svg")).toHaveAttribute(
+			"aria-hidden",
+			"true",
+		);
+		await expect(page.getByText("Saved SQL", { exact: true }))
 			.not.toBeAttached();
-		await expect(page.getByRole("heading", { name: "Search history" }))
-			.not.toBeAttached();
+
+		await savedQueries.click();
+		await expect(page).toHaveURL(`/spaces/${spaceId}/sql`);
+		await expect(page.getByRole("heading", { name: "Saved SQL" }))
+			.toBeVisible();
+		await page.getByRole("link", { name: "Search", exact: true }).click();
+		await expect(page).toHaveURL(`/spaces/${spaceId}/search`);
+		await expectNoObjectCoercion(page);
+	});
+
+	test("REQ-SRCH-006: toolbar controls fit at phone and 200% zoom widths", async ({ page }) => {
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
+			waitUntil: "domcontentloaded",
+		});
+		await expect(page.getByLabel("Search keywords")).toBeVisible();
+
+		// 160 CSS pixels models the effective viewport of a 320px display at 200% zoom.
+		for (const width of [160, 320, 375, 390]) {
+			await page.setViewportSize({ width, height: 844 });
+			const layout = await page.evaluate(() => {
+				const controls = Array.from(document.querySelectorAll(
+					".entry-browser-display-button, .entry-browser-sql-link",
+				)).map((element) => {
+					const rect = element.getBoundingClientRect();
+					return { width: rect.width, height: rect.height };
+				});
+				const groups = Array.from(document.querySelectorAll(
+					".entry-browser-search-form, .entry-browser-display-actions, .entry-browser-toolbar-navigation",
+				)).map((element) => element.getBoundingClientRect().toJSON());
+				return {
+					documentWidth: document.documentElement.scrollWidth,
+					viewportWidth: document.documentElement.clientWidth,
+					controls,
+					groups,
+				};
+			});
+			expect(layout.documentWidth).toBeLessThanOrEqual(
+				layout.viewportWidth + 1,
+			);
+			expect(layout.controls).toHaveLength(4);
+			for (const control of layout.controls) {
+				expect(control.width).toBeGreaterThanOrEqual(44);
+				expect(control.height).toBeGreaterThanOrEqual(44);
+			}
+			for (
+				let leftIndex = 0;
+				leftIndex < layout.groups.length;
+				leftIndex++
+			) {
+				for (
+					let rightIndex = leftIndex + 1;
+					rightIndex < layout.groups.length;
+					rightIndex++
+				) {
+					const left = layout.groups[leftIndex];
+					const right = layout.groups[rightIndex];
+					expect(
+						left.right <= right.left || right.right <= left.left ||
+						left.bottom <= right.top || right.bottom <= left.top,
+					).toBe(true);
+				}
+			}
+		}
 		await expectNoObjectCoercion(page);
 	});
 
@@ -58,7 +131,7 @@ test.describe("Search UI", () => {
 			await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
 				waitUntil: "domcontentloaded",
 			});
-			await page.getByRole("navigation", { name: "Search" }).waitFor();
+			await page.getByRole("search").waitFor();
 			await expect(page.getByLabel("Search keywords")).toBeVisible();
 			await page.getByLabel("Search keywords").fill("keyword-first");
 			await page.getByRole("button", { name: "Search entries" }).click();

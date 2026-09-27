@@ -1,52 +1,48 @@
-version: "0.1"
-updated: "2026-09-24"
+version: "0.2"
+updated: "2026-09-27"
 page:
   id: space-search
   title: Entry Search
   route: /spaces/{space_id}/search
   implementation: implemented
+  visible_heading: screen-reader-only
 components:
   shared:
     - id: space-shell
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-    - id: keyword-search-panel
-      type: search-panel
-      placeholder: Search entries by title, fields, tags, or content
-      action:
-        id: search-entries-button
-        label: search-entries
-      execution:
-        mode: entry-query
-        text_clause: query.text
-        collection_read: POST /spaces/{space_id}/entries/query
-      result_surface:
-        id: keyword-result-list
-        type: query-results
-        component: EntryBrowser and PagedResultTable
-        controller: EntryQueryController
-        selection_target: space-entry-detail
-        form_labels:
-          source: current-space-form-list
-          lookup_key: entry.form_id
-          loading: show-neutral-placeholder-and-page-level-status
-          failure: preserve-results-and-offer-form-list-retry
-          unresolved_id: show-unknown-form-label-without-removing-entry
-          consistency: separate-read-no-shared-snapshot-guarantee
-        rendering:
-          mode: page-scoped-visible-rows
-          fast_path_limit: 100
-          virtual_row_height_px: 48
-          overscan_rows_each_side: 6
-          scroll_state: transient-ui-only
-    - id: power-user-query-button
-      type: button
-      label: open-sql-editor
-      target_page: space-query-create
-    - id: search-history-list
-      type: list
-      item_type: saved-search
-      selection:
-        target_page_with_variables: space-query-variables
-        target_page_without_variables: space-entries-object
+    - id: keyword-result-list
+      type: query-results
+      component: EntryBrowser and PagedResultTable
+      reference: ../components/entry-browser.yaml
+      controller: EntryQueryController
+      selection_target: space-entry-detail
+      toolbar:
+        search_control:
+          owner: search-page
+          role: search
+          input_label: searchPage.searchKeywords
+          submit_label: searchPage.searchEntries
+          commit: explicit-submit
+          deep_link: query.q
+        result_actions: [columns-dialog, filters-dialog, multi-sort-dialog]
+        navigation:
+          control: icon-link
+          icon: UiIcon.sql
+          accessible_name: searchPage.openSavedQueries
+          target: /spaces/{space_id}/sql
+          position: after-result-actions
+      form_labels:
+        source: current-space-form-list
+        lookup_key: entry.form_id
+        loading: show-neutral-placeholder-and-page-level-status
+        failure: preserve-results-and-offer-form-list-retry
+        unresolved_id: show-unknown-form-label-without-removing-entry
+        consistency: separate-read-no-shared-snapshot-guarantee
+      rendering:
+        mode: page-scoped-visible-rows
+        fast_path_limit: 100
+        virtual_row_height_px: 48
+        overscan_rows_each_side: 6
+        scroll_state: transient-ui-only

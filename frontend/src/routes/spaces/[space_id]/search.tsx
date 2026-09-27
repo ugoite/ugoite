@@ -117,22 +117,25 @@ export default function SpaceSearchRoute() {
       <h1 class="ui-sr-only" id="search-page-title">
         {t("searchPage.title")}
       </h1>
-      <div class="ui-muted">
-        <A href={spaceSqlPath(spaceId())}>{t("searchPage.nav.saved")}</A>
-      </div>
-      <section class="searchControls" aria-labelledby="search-page-title">
-        <form
-          class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"
-          onSubmit={(event) => {
-            event.preventDefault();
-            commitDraft();
-          }}
-        >
-          <div class="flex-1">
+      <EntryBrowser
+        controller={controller}
+        capabilities={capabilities()}
+        formLabels={formLabels()}
+        formLabelsState={formLabelsState()}
+        onSelect={(row) => navigate(spaceEntryPath(spaceId(), row.id))}
+        searchControl={
+          <form
+            class="entry-browser-search-form"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              commitDraft();
+            }}
+          >
             <label class="ui-sr-only" for="search-keywords">
               {t("searchPage.searchKeywords")}
             </label>
-            <div class="searchBox">
+            <div class="searchBox entry-browser-search-field">
               <input
                 id="search-keywords"
                 type="text"
@@ -141,18 +144,27 @@ export default function SpaceSearchRoute() {
                 onInput={(event) => setDraftText(event.currentTarget.value)}
               />
             </div>
-          </div>
-          <div class="sm:self-end queryLane">
             <button
               type="submit"
-              class="ui-button ui-button-primary text-sm"
+              class="ui-button ui-button-primary entry-browser-search-submit"
               aria-label={t("searchPage.searchEntries")}
+              title={t("searchPage.searchEntries")}
             >
               <UiIcon name="search" />
             </button>
-          </div>
-        </form>
-      </section>
+          </form>
+        }
+        toolbarNavigation={
+          <A
+            class="ui-button ui-button-secondary entry-browser-sql-link"
+            href={spaceSqlPath(spaceId())}
+            aria-label={t("searchPage.openSavedQueries")}
+            title={t("searchPage.openSavedQueries")}
+          >
+            <UiIcon name="sql" />
+          </A>
+        }
+      />
       <Show when={formLabelsState() === "loading"}>
         <p class="mt-3 ui-muted" aria-live="polite">
           {t("searchPage.loadingFormNames")}
@@ -173,13 +185,6 @@ export default function SpaceSearchRoute() {
           </button>
         </div>
       </Show>
-      <EntryBrowser
-        controller={controller}
-        capabilities={capabilities()}
-        formLabels={formLabels()}
-        formLabelsState={formLabelsState()}
-        onSelect={(row) => navigate(spaceEntryPath(spaceId(), row.id))}
-      />
     </div>
   );
 }

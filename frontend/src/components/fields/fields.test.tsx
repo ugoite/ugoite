@@ -310,6 +310,10 @@ describe("RowReferenceSelect picker dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select entry" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(await screen.findByText("Project Alpha")).toBeInTheDocument();
+    expect(screen.getAllByRole("searchbox")).toHaveLength(1);
+    expect(
+      screen.queryByRole("link", { name: "Open saved queries" }),
+    ).not.toBeInTheDocument();
   };
 
   const flushFocus = async () => {

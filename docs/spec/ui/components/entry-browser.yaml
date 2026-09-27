@@ -2,7 +2,7 @@ version: "0.2"
 updated: "2026-09-27"
 component_group:
   id: entry-browser
-  title: Form-scoped Entry Browser
+  title: Shared Entry Browser
 components:
   - id: form-entry-table
     type: server-query-results
@@ -28,10 +28,17 @@ components:
         reorderable: false
         visibility: configurable
     toolbar:
-      - keyword-search
-      - columns-dialog
-      - filters-dialog
-      - multi-sort-dialog
+      built_in_search:
+        default: visible
+        update: input
+      search_control:
+        prop: searchControl
+        behavior: replaces-built-in-search
+      display_actions: [columns-dialog, filters-dialog, multi-sort-dialog]
+      navigation:
+        prop: toolbarNavigation
+        behavior: render-caller-owned-content-when-supplied
+        position: after-display-actions
     column_dialog:
       projectable_fields: reorderable-within-form-fields
       system_timestamps: separate-visibility-controls
