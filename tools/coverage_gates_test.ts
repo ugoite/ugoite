@@ -67,7 +67,10 @@ function assertMainTrigger(source: string, trigger: string): void {
   );
 }
 
-function assertAggregateWorkflow(workflow: string, mise: string): void {
+async function assertAggregateWorkflow(
+  workflow: string,
+  mise: string,
+): Promise<void> {
   const rustCheckJob = workflowJobBlock(workflow, "rust-check");
   const rustTestJob = workflowJobBlock(workflow, "rust-test");
   const webJob = workflowJobBlock(workflow, "web");
@@ -104,6 +107,12 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
   const releaseBuild = taskBlock(mise, "build:rust:release");
   const artifactsTask = taskBlock(mise, "ci:artifacts");
   const artifactsE2eTask = taskBlock(mise, "ci:artifacts:e2e");
+  const releaseCliSeed = await Deno.readTextFile(
+    new URL("../e2e/scripts/seed-portable-space.sh", import.meta.url),
+  );
+  const measureStep = await Deno.readTextFile(
+    new URL("../scripts/measure-step.sh", import.meta.url),
+  );
   const mergeTask = taskBlock(mise, "ci:merge");
 
   assertContainsAll(
@@ -204,11 +213,48 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
   assertContainsAll(
     artifactsE2eTask,
     [
+      '{ task = "test:e2e:portable-space", env = { UGOITE_PORTABLE_CLI_BINARY = "target/rust/release/ugoite" } }',
+    ],
+    "portable E2E uses the release CLI built by the artifact lane",
+  );
+  assertContainsAll(
+    releaseBuild,
+    [
+      '"target/rust/release/ugoite.source-sha"',
+      "target/rust/release/ugoite.source-sha",
+    ],
+    "release CLI source identity output",
+  );
+  assertContainsAll(
+    releaseCliSeed,
+    [
+      'PORTABLE_CLI_BINARY="${UGOITE_PORTABLE_CLI_BINARY:-}"',
+      '[[ ! -x "$PORTABLE_CLI_BINARY" ]]',
+      '[[ "$(cat "$source_sha_file")" != "$CHECKOUT_SOURCE_SHA" ]]',
+      'run_cli "$config" space verify --deep --format json',
+      "cargo run -q --manifest-path",
+      "portable_seed_duration_seconds",
+    ],
+    "portable fixture CLI selection and provenance checks",
+  );
+  assertEquals(
+    (releaseCliSeed.match(/cargo run -q --manifest-path/g) ?? []).length,
+    1,
+    "all fixture commands use the selected CLI runner instead of recompiling",
+  );
+  assertContainsAll(
+    measureStep,
+    ["trap finish_measurement EXIT", "duration_seconds=", "exit_code="],
+    "CI measurement preserves failed-step duration and status",
+  );
+  assertContainsAll(
+    artifactsE2eTask,
+    [
       '{ task = "test:docsite:e2e:navigation" }',
       '{ task = "test:e2e:smoke-and-asset-owned" }',
       '{ task = "test:e2e:mobile-ui" }',
       '{ task = "test:e2e:owner-recovery" }',
-      '{ task = "test:e2e:portable-space" }',
+      '{ task = "test:e2e:portable-space", env = { UGOITE_PORTABLE_CLI_BINARY = "target/rust/release/ugoite" } }',
       '{ task = "version:check" }',
     ],
     "artifact E2E task",
@@ -403,7 +449,7 @@ Deno.test("CI aggregate tasks own test coverage and lane scheduling", async () =
   const mise = await Deno.readTextFile("mise.toml");
   const workflow = await Deno.readTextFile(".github/workflows/ci.yml");
 
-  assertAggregateWorkflow(workflow, mise);
+  await assertAggregateWorkflow(workflow, mise);
 });
 
 Deno.test("REQ-OPS-021: frontend coverage remains a canonical test contract", async () => {

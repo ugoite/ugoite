@@ -26,16 +26,52 @@ AUTH_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ugoite-portable-auth.XXXXXX")"
 PORTABLE_SPACE_SLUG="portable-e2e-$(date +%s)-$$"
 PORTABLE_FORM_NAME="PortableAudit"
 ASSET_FORM_NAME="PortableAsset"
+PORTABLE_CLI_BINARY="${UGOITE_PORTABLE_CLI_BINARY:-}"
+PORTABLE_CLI_START_EPOCH="$(date +%s)"
 
 cleanup() {
   rm -rf "$SOURCE_ROOT" "$PARTIAL_ROOT" "$AUTH_ROOT"
   rm -f "$SOURCE_CLI_CONFIG" "$PARTIAL_CLI_CONFIG" "${AUTH_ROOT}.cli-config.toml"
 }
-trap cleanup EXIT
+
+finish_portable_seed() {
+  local exit_code=$?
+  local duration_seconds=$(( $(date +%s) - PORTABLE_CLI_START_EPOCH ))
+  cleanup
+  printf 'portable fixture seed exit=%s duration=%ss\n' "$exit_code" "$duration_seconds"
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    printf 'portable_seed_duration_seconds=%s\n' "$duration_seconds" >>"$GITHUB_OUTPUT"
+    printf 'portable_seed_exit_code=%s\n' "$exit_code" >>"$GITHUB_OUTPUT"
+  fi
+  return "$exit_code"
+}
+trap finish_portable_seed EXIT
+
+run_cli() {
+  local config="$1"
+  shift
+  if [[ -n "$PORTABLE_CLI_BINARY" ]]; then
+    if [[ "$PORTABLE_CLI_BINARY" != /* ]]; then
+      PORTABLE_CLI_BINARY="$ROOT_DIR/$PORTABLE_CLI_BINARY"
+    fi
+    if [[ ! -x "$PORTABLE_CLI_BINARY" ]]; then
+      echo "portable CLI binary is not executable: $PORTABLE_CLI_BINARY" >&2
+      return 1
+    fi
+    local source_sha_file="${PORTABLE_CLI_BINARY}.source-sha"
+    if [[ ! -f "$source_sha_file" ]] || [[ "$(cat "$source_sha_file")" != "$CHECKOUT_SOURCE_SHA" ]]; then
+      echo "portable CLI binary source SHA does not match checkout: $source_sha_file" >&2
+      return 1
+    fi
+    "$PORTABLE_CLI_BINARY" --config "$config" "$@"
+  else
+    cargo run -q --manifest-path "$ROOT_DIR/Cargo.toml" -p ugoite-cli --locked \
+      -- --config "$config" "$@"
+  fi
+}
 
 run_source_cli() {
-  cargo run -q --manifest-path "$ROOT_DIR/Cargo.toml" -p ugoite-cli --locked \
-    -- --config "$SOURCE_CLI_CONFIG" "$@"
+  run_cli "$SOURCE_CLI_CONFIG" "$@"
 }
 
 write_fixture_config() {
@@ -57,8 +93,7 @@ verify_unclaimed_fixture() {
   local config="$2"
   local output="$3"
   set +e
-  (cd "$root" && cargo run -q --manifest-path "$ROOT_DIR/Cargo.toml" -p ugoite-cli --locked \
-    -- --config "$config" space verify --deep --format json) >"$output" 2>"${output}.stderr"
+  (cd "$root" && run_cli "$config" space verify --deep --format json) >"$output" 2>"${output}.stderr"
   local status=$?
   set -e
   # A CLI-owned portable Space is intentionally not yet claimed by a Node.
@@ -127,8 +162,7 @@ cp "$SOURCE_ROOT/spaces/$SPACE_UID/meta.json" "$PARTIAL_ROOT/spaces/$SPACE_UID/m
 cp "$PARTIAL_ROOT/spaces/$SPACE_UID/meta.json" "$PARTIAL_ROOT/before-meta.json"
 write_fixture_config "$PARTIAL_ROOT" "$PARTIAL_CLI_CONFIG"
 set +e
-(cd "$PARTIAL_ROOT" && cargo run -q --manifest-path "$ROOT_DIR/Cargo.toml" -p ugoite-cli --locked \
-  -- --config "$PARTIAL_CLI_CONFIG" space verify --deep --format json) >"$PARTIAL_ROOT/verify.json" 2>"$PARTIAL_ROOT/verify.stderr"
+(cd "$PARTIAL_ROOT" && run_cli "$PARTIAL_CLI_CONFIG" space verify --deep --format json) >"$PARTIAL_ROOT/verify.json" 2>"$PARTIAL_ROOT/verify.stderr"
 PARTIAL_VERIFY_EXIT=$?
 set -e
 if [ "$PARTIAL_VERIFY_EXIT" -eq 0 ]; then
@@ -165,8 +199,7 @@ EOF
   cp "$CASE_ROOT/spaces/$SPACE_UID/security/principals.json" "$CASE_ROOT/before.json"
   write_fixture_config "$CASE_ROOT" "$CASE_CONFIG"
   set +e
-  (cd "$CASE_ROOT" && cargo run -q --manifest-path "$ROOT_DIR/Cargo.toml" -p ugoite-cli --locked \
-    -- --config "$CASE_CONFIG" space verify --deep --format json) >"$CASE_ROOT/verify.json" 2>"$CASE_ROOT/verify.stderr"
+  (cd "$CASE_ROOT" && run_cli "$CASE_CONFIG" space verify --deep --format json) >"$CASE_ROOT/verify.json" 2>"$CASE_ROOT/verify.stderr"
   AUTH_VERIFY_EXIT=$?
   set -e
   if [ "$AUTH_VERIFY_EXIT" -eq 0 ]; then
