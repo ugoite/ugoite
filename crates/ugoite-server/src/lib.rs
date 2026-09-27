@@ -108,11 +108,7 @@ mod read_query_cancellation_tests {
     async fn slow_query_endpoint(
         axum::extract::State(probe): axum::extract::State<Probe>,
     ) -> &'static str {
-        ugoite_iceberg::query_context::run_slow_query_for_test(
-            probe.dropped,
-            probe.started,
-        )
-        .await;
+        ugoite_iceberg::query_context::run_slow_query_for_test(probe.dropped, probe.started).await;
         "finished"
     }
 
@@ -129,7 +125,9 @@ mod read_query_cancellation_tests {
             });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
-        let server = tokio::spawn(axum::serve(listener, app));
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
 
         let mut client = tokio::net::TcpStream::connect(address).await?;
         tokio::io::AsyncWriteExt::write_all(

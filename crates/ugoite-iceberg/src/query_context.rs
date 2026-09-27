@@ -18,8 +18,8 @@ use datafusion::prelude::{col, lit, DataFrame, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
 use std::any::Any;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
 use ugoite_core::sql_query::{
@@ -280,7 +280,8 @@ pub async fn run_slow_query_for_test(
     }
 
     impl futures::Stream for SlowSource {
-        type Item = std::result::Result<arrow_array::RecordBatch, datafusion::error::DataFusionError>;
+        type Item =
+            std::result::Result<arrow_array::RecordBatch, datafusion::error::DataFusionError>;
 
         fn poll_next(
             mut self: std::pin::Pin<&mut Self>,
@@ -301,14 +302,16 @@ pub async fn run_slow_query_for_test(
         }
     }
 
-    let stream = Box::pin(datafusion::physical_plan::stream::RecordBatchStreamAdapter::new(
-        Arc::new(arrow_schema::Schema::empty()),
-        SlowSource {
-            dropped,
-            started,
-            first_poll: true,
-        },
-    ));
+    let stream = Box::pin(
+        datafusion::physical_plan::stream::RecordBatchStreamAdapter::new(
+            Arc::new(arrow_schema::Schema::empty()),
+            SlowSource {
+                dropped,
+                started,
+                first_poll: true,
+            },
+        ),
+    );
     let _ = collect_query_stream(stream).await;
 }
 
@@ -1738,12 +1741,21 @@ mod cancellation_tests {
         tokio::time::timeout(std::time::Duration::from_secs(5), started.notified())
             .await
             .expect("slow source must be polled");
-        assert!(active_query_streams() > before, "query stream did not become active");
+        assert!(
+            active_query_streams() > before,
+            "query stream did not become active"
+        );
 
         query.abort();
-        assert!(query.await.expect_err("aborted query must not finish").is_cancelled());
+        assert!(query
+            .await
+            .expect_err("aborted query must not finish")
+            .is_cancelled());
 
-        assert!(dropped.load(Ordering::SeqCst), "DataFusion source was not dropped");
+        assert!(
+            dropped.load(Ordering::SeqCst),
+            "DataFusion source was not dropped"
+        );
         assert_eq!(active_query_streams(), before, "active query count leaked");
     }
 }
