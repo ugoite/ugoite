@@ -19,7 +19,7 @@ async fn s3_backed_space_survives_service_reopen_and_revert() -> Result<()> {
 
     let service = open_verified_service(&root_uri, &endpoint, &space_slug).await?;
     let space_id = service
-        .create_space_for_principal(&space_slug, owner, "MinIO recovery test")
+        .create_space_for_principal(&space_slug, owner, "S3 recovery test")
         .await?
         .to_string();
     service
@@ -42,7 +42,7 @@ async fn s3_backed_space_survives_service_reopen_and_revert() -> Result<()> {
             Vec::new(),
             fields,
             BTreeMap::new(),
-            "MinIO recovery test",
+            "S3 recovery test",
             &[owner],
         )
         .await?;
@@ -61,7 +61,7 @@ async fn s3_backed_space_survives_service_reopen_and_revert() -> Result<()> {
             updated_fields,
             BTreeMap::new(),
             None,
-            "MinIO recovery test",
+            "S3 recovery test",
             &[owner],
         )
         .await?;

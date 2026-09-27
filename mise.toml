@@ -292,8 +292,8 @@ description = "Validate the v0.1 supported authentication contract and test trac
 run = "cargo run -p xtask -- supported-check"
 
 [tasks."test:s3-storage"]
-description = "Run the opt-in S3 publication and Space recovery proof against MinIO"
-run = "bash scripts/test-minio-storage.sh"
+description = "Run the S3 publication and Space recovery proof against a configured deployment backend"
+run = "bash scripts/test-s3-storage.sh"
 
 [tasks."test:rust"]
 description = "Run workspace Rust tests with nextest and Cargo doctests"

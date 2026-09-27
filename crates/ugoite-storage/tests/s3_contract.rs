@@ -11,6 +11,7 @@ async fn s3_backend_satisfies_publication_contract() -> Result<()> {
     let Some((endpoint, bucket)) = s3_test_config()? else {
         return Ok(());
     };
+    opendal::install_default();
     let uri = format!("s3://{bucket}/ugoite/contract/{}", Uuid::now_v7());
     let operator = operator_from_uri_with_endpoint(&uri, Some(&endpoint))?;
     OpendalPublicationStore::new(operator)
