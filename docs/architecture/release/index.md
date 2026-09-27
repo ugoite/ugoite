@@ -28,11 +28,8 @@ a product or support claim is safe to make.
   supported release scope.
 - [v0.1 Knowledge compatibility floor](v0.1-knowledge-compatibility.md) defines
   semantic recoverability and authority invariants.
-- [v0.2.1 virtual result table AT acceptance](v0.2.1-virtual-table-at.md) tracks
-  automated evidence separately from the still-unverified manual screen-reader
-  acceptance.
 - [v0.2.1 read-surface acceptance evidence](v0.2.1-read-acceptance.md) indexes
-  the query, virtual table, and SQL export gates without implying a release.
+  query and SQL export evidence without implying a release.
 - [v0.2.1 product journey and evidence index](v0.2.1-product-journeys.md)
   defines user-visible outcomes and marks evidence that remains unverified.
 - [v0.2.1 release note draft](v0.2.1-release-note-draft.md) lists proposed scope
@@ -40,8 +37,8 @@ a product or support claim is safe to make.
 - [v0.2.1 operation-audit baseline](v0.2.1-operation-audit-baseline.md) records
   six independently reproduced findings and separates baseline observations from
   fix acceptance evidence.
-- [QRY-02 frontend query comparison](query-surfaces-comparison-2026-09.md)
-  records same-backend first-row latency, pagination, and cancellation evidence.
+- [QRY-02 query lifecycle observations](query-surfaces-comparison-2026-09.md)
+  records browser request cancellation and paging observations.
 - [v0.2.1 Remote SQL export authorization acceptance](v0.2.1-remote-export-auth.md)
   records the live membership-revocation gate separately from unverified
   credential-expiry coverage.
