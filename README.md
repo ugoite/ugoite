@@ -39,7 +39,10 @@ Details live in the docsite: [Use Ugoite](docs/use/index.md),
 
 Start at [`docs/`](docs/index.md). Task pages, operator procedures, Vision,
 engineering docs, reference entries, and the specification all live there and
-render directly to the Starlight site.
+render directly to the Starlight site. The
+[product journey evidence](docs/architecture/testing/cross-surface-acceptance.md#product-journeys-for-the-v021-candidate)
+defines completed outcomes and links current evidence and gaps; it does not
+imply that every journey has passed.
 
 ## Development
 

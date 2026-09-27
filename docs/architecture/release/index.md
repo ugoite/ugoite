@@ -33,9 +33,13 @@ a product or support claim is safe to make.
   acceptance.
 - [v0.2.1 read-surface acceptance evidence](v0.2.1-read-acceptance.md) indexes
   the query, virtual table, and SQL export gates without implying a release.
+- [v0.2.1 product journey and evidence index](v0.2.1-product-journeys.md)
+  defines user-visible outcomes and marks evidence that remains unverified.
+- [v0.2.1 release note draft](v0.2.1-release-note-draft.md) lists proposed scope
+  without treating it as prepared, implemented, or released.
 - [v0.2.1 operation-audit baseline](v0.2.1-operation-audit-baseline.md) records
-  six independently reproduced findings and separates baseline observations
-  from fix acceptance evidence.
+  six independently reproduced findings and separates baseline observations from
+  fix acceptance evidence.
 - [QRY-02 frontend query comparison](query-surfaces-comparison-2026-09.md)
   records same-backend first-row latency, pagination, and cancellation evidence.
 - [v0.2.1 Remote SQL export authorization acceptance](v0.2.1-remote-export-auth.md)
