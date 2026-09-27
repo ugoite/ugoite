@@ -113,6 +113,20 @@ history and restore produces a new append-only revision. Search indexes and SQL
 sessions may be rebuilt; they are not evidence that the authoritative Space is
 intact.
 
+The repository's `portable-space` E2E seeds a Space through the local CLI in a
+temporary source root, verifies it, copies only `spaces/<SPACE_UID>` into an
+empty destination root, and then starts a fresh Node there. It reads the
+imported Form, Entry history, Asset bytes, and Saved SQL, appends a new Change,
+checks that the imported revision is still present, and verifies the claimed
+Space afterward. SHA-256 values for the preexisting immutable prefix objects
+must remain unchanged. It also gives `space verify --deep` a deliberately partial
+prefix and checks that verification rejects it without writing into it. Run it
+with `bash e2e/scripts/run-e2e.sh portable-space` for the direct-process lane or
+`bash e2e/scripts/run-e2e-compose.sh portable-space` for the container lane.
+The server startup test `startup_resumes_portable_space_claim_without_changing_history`
+covers recovery of a persisted pending claim across restart; malformed and
+foreign authorization fixtures are reported separately by the verifier.
+
 ## Test a storage backend before trusting it
 
 Test connectivity with the current binary before pointing a Space at a new

@@ -174,6 +174,7 @@ trap cleanup EXIT INT TERM
 if [ "$TEST_TYPE" = "portable-space" ]; then
   echo "Seeding a CLI-core Space before Node startup..."
   PORTABLE_CLI_CONFIG="${E2E_COMPOSE_STORAGE_ROOT}.cli-config.toml"
+  export E2E_PORTABLE_RUNNER_COMMAND="bash e2e/scripts/run-e2e-compose.sh portable-space"
   bash "$SCRIPT_DIR/seed-portable-space.sh" "$E2E_COMPOSE_STORAGE_ROOT" >/dev/null
   export E2E_PORTABLE_PROOF_FILE="$E2E_COMPOSE_STORAGE_ROOT/portable-space-proof.json"
 fi
@@ -389,6 +390,20 @@ case "$TEST_TYPE" in
     ;;
   portable-space)
     run_e2e_task portable-space "$base_report_file"
+    # Let the host CLI read the Space, then restore the runtime owner before
+    # the composed service is stopped.
+    "${compose_cmd[@]}" run --rm --no-deps --user 0:0 --entrypoint /bin/sh ugoite \
+      -c "chown -R $(id -u):$(id -g) /data"
+    echo "Verifying the claimed copied Space with the local CLI..."
+    cargo run -q --manifest-path "$ROOT_DIR/Cargo.toml" -p ugoite-cli --locked \
+      -- --config "$PORTABLE_CLI_CONFIG" space verify --deep --format json > "$E2E_COMPOSE_STORAGE_ROOT/verify-after-claim.json"
+    deno eval '
+      const report = JSON.parse(await Deno.readTextFile(Deno.args[0]));
+      if (!["valid", "valid_with_rebuildable_derived_state"].includes(report.status)) throw new Error(`post-claim Space status was ${report.status}`);
+      if (report.sections.authorization.status !== "valid") throw new Error(`post-claim authorization status was ${report.sections.authorization.status}`);
+    ' "$E2E_COMPOSE_STORAGE_ROOT/verify-after-claim.json"
+    "${compose_cmd[@]}" run --rm --no-deps --user 0:0 --entrypoint /bin/sh ugoite \
+      -c 'chown -R ugoite:ugoite /data'
     ;;
   mobile-ui)
     run_e2e_task mobile-ui "$base_report_file"
