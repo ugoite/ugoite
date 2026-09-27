@@ -766,6 +766,7 @@ export const SERVICE_METHOD_OPERATIONS: Record<string, string> = {
   list_space_ids: "space.list",
   get_space: "space.get",
   upsert_form: "form.upsert",
+  upsert_form_result: "form.upsert",
   list_forms: "form.list",
   get_form: "form.get",
   list_entries: "entry.list",
@@ -929,20 +930,20 @@ export async function buildReport(): Promise<CapabilityReport> {
   }
 
   // CLI: remote via http::execute (compat path) or the target-aware
-  // http::execute[_bytes|_multipart][_for_target] boundary, core via UgoiteService methods.
+  // http::execute[_bytes|_multipart|_form_upsert][_for_target] boundary, core via UgoiteService methods.
   const cliRemoteOps = new Set<string>();
   const cliCoreOps = new Set<string>();
   for (const path of await collectFiles("crates/ugoite-cli/src/", ".rs")) {
     const content = await Deno.readTextFile(path);
     for (
       const match of content.matchAll(
-        /http::execute(?:_bytes|_multipart)?(?:_for_target)?\s*\(/g,
+        /http::execute(?:_bytes|_multipart|_form_upsert)?(?:_for_target)?\s*\(/g,
       )
     ) {
       const window = content.slice(match.index ?? 0, (match.index ?? 0) + 300);
-      const operation = quotedOperations(window).find((candidate) =>
-        candidate.includes(".")
-      );
+      const operation = match[0].includes("execute_form_upsert")
+        ? "form.upsert"
+        : quotedOperations(window).find((candidate) => candidate.includes("."));
       if (operation && rustSet.has(operation)) cliRemoteOps.add(operation);
     }
     for (const match of content.matchAll(/service\s*\.\s*([a-z_]+)/g)) {

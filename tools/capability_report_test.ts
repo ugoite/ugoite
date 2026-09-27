@@ -306,6 +306,7 @@ Deno.test("capability states distinguish evidence and surface gaps", () => {
 // CLI core service methods must stay mapped to the operations they fulfil.
 Deno.test("CLI core service map covers the journey mutations", () => {
   assertEquals(SERVICE_METHOD_OPERATIONS["upsert_form"], "form.upsert");
+  assertEquals(SERVICE_METHOD_OPERATIONS["upsert_form_result"], "form.upsert");
   assertEquals(SERVICE_METHOD_OPERATIONS["create_entry"], "entry.create");
   assertEquals(SERVICE_METHOD_OPERATIONS["update_entry"], "entry.update");
   assertEquals(SERVICE_METHOD_OPERATIONS["entry_history"], "entry.history");
