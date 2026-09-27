@@ -1,0 +1,2488 @@
+{
+  "schema_version": 1,
+  "source_sha": "78e7c0f79881c3db5915199e2a77ec1f31f6a56e",
+  "date": "2026-09-27T00:35:35.110Z",
+  "dataset": {
+    "seed": "renewable-ops; Space A 3134001/6,000 Entries; Space B 3134002/4,000 Entries",
+    "spaces": [
+      {
+        "slug": "query-space-a",
+        "space_uid": "01a0e043-420f-70b4-b9f3-b285ca821e5f",
+        "saved_sql_id": "3d08b6aa-e0af-4784-84ce-ae19cca2a659",
+        "parameterized_sql_id": "f674752d-71e7-4963-8e5b-877a86f95820"
+      },
+      {
+        "slug": "query-space-b",
+        "space_uid": "01a0e044-bf0c-738b-85af-2970d9123d9a",
+        "saved_sql_id": "43677002-08f8-400d-b77e-1857f5879d05"
+      }
+    ],
+    "entry_type_distribution": {
+      "Site": "2%",
+      "Array": "8%",
+      "Inspection": "20%",
+      "MaintenanceTicket": "25%",
+      "EnergyReport": "45%"
+    },
+    "measured_form": "MaintenanceTicket",
+    "forms": {
+      "query-space-a": {
+        "id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+        "relation": "form_01a0e04342a07603acb0b3c79ccf2b3b"
+      },
+      "query-space-b": {
+        "id": "01a0e044-bf8e-7163-a39a-ae0d08caee8c",
+        "relation": "form_01a0e044bf8e7163a39aae0d08caee8c"
+      }
+    },
+    "sql": {
+      "01a0e043-420f-70b4-b9f3-b285ca821e5f": "SELECT _ugoite_id FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id",
+      "01a0e044-bf0c-738b-85af-2970d9123d9a": "SELECT _ugoite_id FROM \"form_01a0e044bf8e7163a39aae0d08caee8c\" ORDER BY _ugoite_id"
+    },
+    "page_size": 100
+  },
+  "environment": {
+    "backend": "Ugoite server under direct-process local E2E",
+    "backend_source_sha": "78e7c0f79881c3db5915199e2a77ec1f31f6a56e",
+    "backend_startup_seconds": 132,
+    "storage": "local filesystem Space root",
+    "network": "browser and server on local loopback; no external network path",
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+    "heap_api": "performance.memory.usedJSHeapSize when Chromium exposes it; otherwise null",
+    "lifecycle_interception": "400 ms Playwright delays on selected EntryQuery and SQL page/count lifecycle requests; first-visible-row performance trials are not delayed"
+  },
+  "summaries": {
+    "entry_query_first_visible_row": {
+      "trials": 10,
+      "p50Ms": 1846,
+      "p95Ms": 2359
+    },
+    "sql_first_visible_row": {
+      "trials": 10,
+      "p50Ms": 1345,
+      "p95Ms": 1358
+    }
+  },
+  "trials": [
+    {
+      "surface": "entry-query",
+      "space": "query-space-a",
+      "space_uid": "01a0e043-420f-70b4-b9f3-b285ca821e5f",
+      "trial": 1,
+      "elapsedToFirstVisibleRowMs": 1902,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+          "method": "POST",
+          "startedAt": 1124,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1875.2999999523163,
+          "status": 200,
+          "entryIds": [
+            "maintenance-01500",
+            "maintenance-01499",
+            "maintenance-01498",
+            "maintenance-01497",
+            "maintenance-01496",
+            "maintenance-01495",
+            "maintenance-01494",
+            "maintenance-01493",
+            "maintenance-01492",
+            "maintenance-01491",
+            "maintenance-01490",
+            "maintenance-01489",
+            "maintenance-01488",
+            "maintenance-01487",
+            "maintenance-01486",
+            "maintenance-01485",
+            "maintenance-01484",
+            "maintenance-01483",
+            "maintenance-01482",
+            "maintenance-01481",
+            "maintenance-01480",
+            "maintenance-01479",
+            "maintenance-01478",
+            "maintenance-01477",
+            "maintenance-01476",
+            "maintenance-01475",
+            "maintenance-01474",
+            "maintenance-01473",
+            "maintenance-01472",
+            "maintenance-01471",
+            "maintenance-01470",
+            "maintenance-01469",
+            "maintenance-01468",
+            "maintenance-01467",
+            "maintenance-01466",
+            "maintenance-01465",
+            "maintenance-01464",
+            "maintenance-01463",
+            "maintenance-01462",
+            "maintenance-01461",
+            "maintenance-01460",
+            "maintenance-01459",
+            "maintenance-01458",
+            "maintenance-01457",
+            "maintenance-01456",
+            "maintenance-01455",
+            "maintenance-01454",
+            "maintenance-01453",
+            "maintenance-01452",
+            "maintenance-01451"
+          ]
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-a",
+      "space_uid": "01a0e043-420f-70b4-b9f3-b285ca821e5f",
+      "trial": 2,
+      "elapsedToFirstVisibleRowMs": 1843,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+          "method": "POST",
+          "startedAt": 1071.5999999046326,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1821.5,
+          "status": 200,
+          "entryIds": [
+            "maintenance-01500",
+            "maintenance-01499",
+            "maintenance-01498",
+            "maintenance-01497",
+            "maintenance-01496",
+            "maintenance-01495",
+            "maintenance-01494",
+            "maintenance-01493",
+            "maintenance-01492",
+            "maintenance-01491",
+            "maintenance-01490",
+            "maintenance-01489",
+            "maintenance-01488",
+            "maintenance-01487",
+            "maintenance-01486",
+            "maintenance-01485",
+            "maintenance-01484",
+            "maintenance-01483",
+            "maintenance-01482",
+            "maintenance-01481",
+            "maintenance-01480",
+            "maintenance-01479",
+            "maintenance-01478",
+            "maintenance-01477",
+            "maintenance-01476",
+            "maintenance-01475",
+            "maintenance-01474",
+            "maintenance-01473",
+            "maintenance-01472",
+            "maintenance-01471",
+            "maintenance-01470",
+            "maintenance-01469",
+            "maintenance-01468",
+            "maintenance-01467",
+            "maintenance-01466",
+            "maintenance-01465",
+            "maintenance-01464",
+            "maintenance-01463",
+            "maintenance-01462",
+            "maintenance-01461",
+            "maintenance-01460",
+            "maintenance-01459",
+            "maintenance-01458",
+            "maintenance-01457",
+            "maintenance-01456",
+            "maintenance-01455",
+            "maintenance-01454",
+            "maintenance-01453",
+            "maintenance-01452",
+            "maintenance-01451"
+          ]
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-a",
+      "space_uid": "01a0e043-420f-70b4-b9f3-b285ca821e5f",
+      "trial": 3,
+      "elapsedToFirstVisibleRowMs": 1841,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+          "method": "POST",
+          "startedAt": 1069.2000000476837,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1812.7999999523163,
+          "status": 200,
+          "entryIds": [
+            "maintenance-01500",
+            "maintenance-01499",
+            "maintenance-01498",
+            "maintenance-01497",
+            "maintenance-01496",
+            "maintenance-01495",
+            "maintenance-01494",
+            "maintenance-01493",
+            "maintenance-01492",
+            "maintenance-01491",
+            "maintenance-01490",
+            "maintenance-01489",
+            "maintenance-01488",
+            "maintenance-01487",
+            "maintenance-01486",
+            "maintenance-01485",
+            "maintenance-01484",
+            "maintenance-01483",
+            "maintenance-01482",
+            "maintenance-01481",
+            "maintenance-01480",
+            "maintenance-01479",
+            "maintenance-01478",
+            "maintenance-01477",
+            "maintenance-01476",
+            "maintenance-01475",
+            "maintenance-01474",
+            "maintenance-01473",
+            "maintenance-01472",
+            "maintenance-01471",
+            "maintenance-01470",
+            "maintenance-01469",
+            "maintenance-01468",
+            "maintenance-01467",
+            "maintenance-01466",
+            "maintenance-01465",
+            "maintenance-01464",
+            "maintenance-01463",
+            "maintenance-01462",
+            "maintenance-01461",
+            "maintenance-01460",
+            "maintenance-01459",
+            "maintenance-01458",
+            "maintenance-01457",
+            "maintenance-01456",
+            "maintenance-01455",
+            "maintenance-01454",
+            "maintenance-01453",
+            "maintenance-01452",
+            "maintenance-01451"
+          ]
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-a",
+      "space_uid": "01a0e043-420f-70b4-b9f3-b285ca821e5f",
+      "trial": 4,
+      "elapsedToFirstVisibleRowMs": 1855,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+          "method": "POST",
+          "startedAt": 1074.2000000476837,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1832.5999999046326,
+          "status": 200,
+          "entryIds": [
+            "maintenance-01500",
+            "maintenance-01499",
+            "maintenance-01498",
+            "maintenance-01497",
+            "maintenance-01496",
+            "maintenance-01495",
+            "maintenance-01494",
+            "maintenance-01493",
+            "maintenance-01492",
+            "maintenance-01491",
+            "maintenance-01490",
+            "maintenance-01489",
+            "maintenance-01488",
+            "maintenance-01487",
+            "maintenance-01486",
+            "maintenance-01485",
+            "maintenance-01484",
+            "maintenance-01483",
+            "maintenance-01482",
+            "maintenance-01481",
+            "maintenance-01480",
+            "maintenance-01479",
+            "maintenance-01478",
+            "maintenance-01477",
+            "maintenance-01476",
+            "maintenance-01475",
+            "maintenance-01474",
+            "maintenance-01473",
+            "maintenance-01472",
+            "maintenance-01471",
+            "maintenance-01470",
+            "maintenance-01469",
+            "maintenance-01468",
+            "maintenance-01467",
+            "maintenance-01466",
+            "maintenance-01465",
+            "maintenance-01464",
+            "maintenance-01463",
+            "maintenance-01462",
+            "maintenance-01461",
+            "maintenance-01460",
+            "maintenance-01459",
+            "maintenance-01458",
+            "maintenance-01457",
+            "maintenance-01456",
+            "maintenance-01455",
+            "maintenance-01454",
+            "maintenance-01453",
+            "maintenance-01452",
+            "maintenance-01451"
+          ]
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-a",
+      "space_uid": "01a0e043-420f-70b4-b9f3-b285ca821e5f",
+      "trial": 5,
+      "elapsedToFirstVisibleRowMs": 2355,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+          "method": "POST",
+          "startedAt": 1087.5,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1831.3000001907349,
+          "status": 200,
+          "entryIds": [
+            "maintenance-01500",
+            "maintenance-01499",
+            "maintenance-01498",
+            "maintenance-01497",
+            "maintenance-01496",
+            "maintenance-01495",
+            "maintenance-01494",
+            "maintenance-01493",
+            "maintenance-01492",
+            "maintenance-01491",
+            "maintenance-01490",
+            "maintenance-01489",
+            "maintenance-01488",
+            "maintenance-01487",
+            "maintenance-01486",
+            "maintenance-01485",
+            "maintenance-01484",
+            "maintenance-01483",
+            "maintenance-01482",
+            "maintenance-01481",
+            "maintenance-01480",
+            "maintenance-01479",
+            "maintenance-01478",
+            "maintenance-01477",
+            "maintenance-01476",
+            "maintenance-01475",
+            "maintenance-01474",
+            "maintenance-01473",
+            "maintenance-01472",
+            "maintenance-01471",
+            "maintenance-01470",
+            "maintenance-01469",
+            "maintenance-01468",
+            "maintenance-01467",
+            "maintenance-01466",
+            "maintenance-01465",
+            "maintenance-01464",
+            "maintenance-01463",
+            "maintenance-01462",
+            "maintenance-01461",
+            "maintenance-01460",
+            "maintenance-01459",
+            "maintenance-01458",
+            "maintenance-01457",
+            "maintenance-01456",
+            "maintenance-01455",
+            "maintenance-01454",
+            "maintenance-01453",
+            "maintenance-01452",
+            "maintenance-01451"
+          ]
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0e043-420f-70b4-b9f3-b285ca821e5f",
+      "trial": 1,
+      "elapsedToFirstVisibleRowMs": 1358,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 461.39999985694885,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1190.5,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0e043-420f-70b4-b9f3-b285ca821e5f",
+      "trial": 2,
+      "elapsedToFirstVisibleRowMs": 1345,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 455.5,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1192.1000001430511,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0e043-420f-70b4-b9f3-b285ca821e5f",
+      "trial": 3,
+      "elapsedToFirstVisibleRowMs": 1346,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 461.2999999523163,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1203.6999998092651,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0e043-420f-70b4-b9f3-b285ca821e5f",
+      "trial": 4,
+      "elapsedToFirstVisibleRowMs": 1342,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 451.2000000476837,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1191.4000000953674,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-a",
+      "space_uid": "01a0e043-420f-70b4-b9f3-b285ca821e5f",
+      "trial": 5,
+      "elapsedToFirstVisibleRowMs": 1344,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 445.90000009536743,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1185.7000000476837,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0e044-bf0c-738b-85af-2970d9123d9a",
+      "trial": 1,
+      "elapsedToFirstVisibleRowMs": 1838,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/entries/query",
+          "method": "POST",
+          "startedAt": 1065,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e044-bf8e-7163-a39a-ae0d08caee8c",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1807.0999999046326,
+          "status": 200,
+          "entryIds": [
+            "maintenance-01000",
+            "maintenance-00999",
+            "maintenance-00998",
+            "maintenance-00997",
+            "maintenance-00996",
+            "maintenance-00995",
+            "maintenance-00994",
+            "maintenance-00993",
+            "maintenance-00992",
+            "maintenance-00991",
+            "maintenance-00990",
+            "maintenance-00989",
+            "maintenance-00988",
+            "maintenance-00987",
+            "maintenance-00986",
+            "maintenance-00985",
+            "maintenance-00984",
+            "maintenance-00983",
+            "maintenance-00982",
+            "maintenance-00981",
+            "maintenance-00980",
+            "maintenance-00979",
+            "maintenance-00978",
+            "maintenance-00977",
+            "maintenance-00976",
+            "maintenance-00975",
+            "maintenance-00974",
+            "maintenance-00973",
+            "maintenance-00972",
+            "maintenance-00971",
+            "maintenance-00970",
+            "maintenance-00969",
+            "maintenance-00968",
+            "maintenance-00967",
+            "maintenance-00966",
+            "maintenance-00965",
+            "maintenance-00964",
+            "maintenance-00963",
+            "maintenance-00962",
+            "maintenance-00961",
+            "maintenance-00960",
+            "maintenance-00959",
+            "maintenance-00958",
+            "maintenance-00957",
+            "maintenance-00956",
+            "maintenance-00955",
+            "maintenance-00954",
+            "maintenance-00953",
+            "maintenance-00952",
+            "maintenance-00951"
+          ]
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0e044-bf0c-738b-85af-2970d9123d9a",
+      "trial": 2,
+      "elapsedToFirstVisibleRowMs": 1846,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/entries/query",
+          "method": "POST",
+          "startedAt": 1069.9000000953674,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e044-bf8e-7163-a39a-ae0d08caee8c",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1803.2999999523163,
+          "status": 200,
+          "entryIds": [
+            "maintenance-01000",
+            "maintenance-00999",
+            "maintenance-00998",
+            "maintenance-00997",
+            "maintenance-00996",
+            "maintenance-00995",
+            "maintenance-00994",
+            "maintenance-00993",
+            "maintenance-00992",
+            "maintenance-00991",
+            "maintenance-00990",
+            "maintenance-00989",
+            "maintenance-00988",
+            "maintenance-00987",
+            "maintenance-00986",
+            "maintenance-00985",
+            "maintenance-00984",
+            "maintenance-00983",
+            "maintenance-00982",
+            "maintenance-00981",
+            "maintenance-00980",
+            "maintenance-00979",
+            "maintenance-00978",
+            "maintenance-00977",
+            "maintenance-00976",
+            "maintenance-00975",
+            "maintenance-00974",
+            "maintenance-00973",
+            "maintenance-00972",
+            "maintenance-00971",
+            "maintenance-00970",
+            "maintenance-00969",
+            "maintenance-00968",
+            "maintenance-00967",
+            "maintenance-00966",
+            "maintenance-00965",
+            "maintenance-00964",
+            "maintenance-00963",
+            "maintenance-00962",
+            "maintenance-00961",
+            "maintenance-00960",
+            "maintenance-00959",
+            "maintenance-00958",
+            "maintenance-00957",
+            "maintenance-00956",
+            "maintenance-00955",
+            "maintenance-00954",
+            "maintenance-00953",
+            "maintenance-00952",
+            "maintenance-00951"
+          ]
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0e044-bf0c-738b-85af-2970d9123d9a",
+      "trial": 3,
+      "elapsedToFirstVisibleRowMs": 2359,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/entries/query",
+          "method": "POST",
+          "startedAt": 1085.5999999046326,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e044-bf8e-7163-a39a-ae0d08caee8c",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1833,
+          "status": 200,
+          "entryIds": [
+            "maintenance-01000",
+            "maintenance-00999",
+            "maintenance-00998",
+            "maintenance-00997",
+            "maintenance-00996",
+            "maintenance-00995",
+            "maintenance-00994",
+            "maintenance-00993",
+            "maintenance-00992",
+            "maintenance-00991",
+            "maintenance-00990",
+            "maintenance-00989",
+            "maintenance-00988",
+            "maintenance-00987",
+            "maintenance-00986",
+            "maintenance-00985",
+            "maintenance-00984",
+            "maintenance-00983",
+            "maintenance-00982",
+            "maintenance-00981",
+            "maintenance-00980",
+            "maintenance-00979",
+            "maintenance-00978",
+            "maintenance-00977",
+            "maintenance-00976",
+            "maintenance-00975",
+            "maintenance-00974",
+            "maintenance-00973",
+            "maintenance-00972",
+            "maintenance-00971",
+            "maintenance-00970",
+            "maintenance-00969",
+            "maintenance-00968",
+            "maintenance-00967",
+            "maintenance-00966",
+            "maintenance-00965",
+            "maintenance-00964",
+            "maintenance-00963",
+            "maintenance-00962",
+            "maintenance-00961",
+            "maintenance-00960",
+            "maintenance-00959",
+            "maintenance-00958",
+            "maintenance-00957",
+            "maintenance-00956",
+            "maintenance-00955",
+            "maintenance-00954",
+            "maintenance-00953",
+            "maintenance-00952",
+            "maintenance-00951"
+          ]
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0e044-bf0c-738b-85af-2970d9123d9a",
+      "trial": 4,
+      "elapsedToFirstVisibleRowMs": 1848,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/entries/query",
+          "method": "POST",
+          "startedAt": 1071,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e044-bf8e-7163-a39a-ae0d08caee8c",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1798.5999999046326,
+          "status": 200,
+          "entryIds": [
+            "maintenance-01000",
+            "maintenance-00999",
+            "maintenance-00998",
+            "maintenance-00997",
+            "maintenance-00996",
+            "maintenance-00995",
+            "maintenance-00994",
+            "maintenance-00993",
+            "maintenance-00992",
+            "maintenance-00991",
+            "maintenance-00990",
+            "maintenance-00989",
+            "maintenance-00988",
+            "maintenance-00987",
+            "maintenance-00986",
+            "maintenance-00985",
+            "maintenance-00984",
+            "maintenance-00983",
+            "maintenance-00982",
+            "maintenance-00981",
+            "maintenance-00980",
+            "maintenance-00979",
+            "maintenance-00978",
+            "maintenance-00977",
+            "maintenance-00976",
+            "maintenance-00975",
+            "maintenance-00974",
+            "maintenance-00973",
+            "maintenance-00972",
+            "maintenance-00971",
+            "maintenance-00970",
+            "maintenance-00969",
+            "maintenance-00968",
+            "maintenance-00967",
+            "maintenance-00966",
+            "maintenance-00965",
+            "maintenance-00964",
+            "maintenance-00963",
+            "maintenance-00962",
+            "maintenance-00961",
+            "maintenance-00960",
+            "maintenance-00959",
+            "maintenance-00958",
+            "maintenance-00957",
+            "maintenance-00956",
+            "maintenance-00955",
+            "maintenance-00954",
+            "maintenance-00953",
+            "maintenance-00952",
+            "maintenance-00951"
+          ]
+        }
+      ]
+    },
+    {
+      "surface": "entry-query",
+      "space": "query-space-b",
+      "space_uid": "01a0e044-bf0c-738b-85af-2970d9123d9a",
+      "trial": 5,
+      "elapsedToFirstVisibleRowMs": 1838,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 50,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/entries/query",
+          "method": "POST",
+          "startedAt": 1066.7999999523163,
+          "aborted": false,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e044-bf8e-7163-a39a-ae0d08caee8c",
+                "kind": "form"
+              },
+              "sort": []
+            }
+          },
+          "endedAt": 1807.7999999523163,
+          "status": 200,
+          "entryIds": [
+            "maintenance-01000",
+            "maintenance-00999",
+            "maintenance-00998",
+            "maintenance-00997",
+            "maintenance-00996",
+            "maintenance-00995",
+            "maintenance-00994",
+            "maintenance-00993",
+            "maintenance-00992",
+            "maintenance-00991",
+            "maintenance-00990",
+            "maintenance-00989",
+            "maintenance-00988",
+            "maintenance-00987",
+            "maintenance-00986",
+            "maintenance-00985",
+            "maintenance-00984",
+            "maintenance-00983",
+            "maintenance-00982",
+            "maintenance-00981",
+            "maintenance-00980",
+            "maintenance-00979",
+            "maintenance-00978",
+            "maintenance-00977",
+            "maintenance-00976",
+            "maintenance-00975",
+            "maintenance-00974",
+            "maintenance-00973",
+            "maintenance-00972",
+            "maintenance-00971",
+            "maintenance-00970",
+            "maintenance-00969",
+            "maintenance-00968",
+            "maintenance-00967",
+            "maintenance-00966",
+            "maintenance-00965",
+            "maintenance-00964",
+            "maintenance-00963",
+            "maintenance-00962",
+            "maintenance-00961",
+            "maintenance-00960",
+            "maintenance-00959",
+            "maintenance-00958",
+            "maintenance-00957",
+            "maintenance-00956",
+            "maintenance-00955",
+            "maintenance-00954",
+            "maintenance-00953",
+            "maintenance-00952",
+            "maintenance-00951"
+          ]
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0e044-bf0c-738b-85af-2970d9123d9a",
+      "trial": 1,
+      "elapsedToFirstVisibleRowMs": 1345,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/sql/query",
+          "method": "POST",
+          "startedAt": 426.90000009536743,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e044bf8e7163a39aae0d08caee8c\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1153.7000000476837,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0e044-bf0c-738b-85af-2970d9123d9a",
+      "trial": 2,
+      "elapsedToFirstVisibleRowMs": 1348,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/sql/query",
+          "method": "POST",
+          "startedAt": 448.09999990463257,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e044bf8e7163a39aae0d08caee8c\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1171.8999998569489,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0e044-bf0c-738b-85af-2970d9123d9a",
+      "trial": 3,
+      "elapsedToFirstVisibleRowMs": 1339,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/sql/query",
+          "method": "POST",
+          "startedAt": 415.5,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e044bf8e7163a39aae0d08caee8c\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1144.0999999046326,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0e044-bf0c-738b-85af-2970d9123d9a",
+      "trial": 4,
+      "elapsedToFirstVisibleRowMs": 1344,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/sql/query",
+          "method": "POST",
+          "startedAt": 460.7000000476837,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e044bf8e7163a39aae0d08caee8c\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1189.5,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "surface": "sql-page",
+      "space": "query-space-b",
+      "space_uid": "01a0e044-bf0c-738b-85af-2970d9123d9a",
+      "trial": 5,
+      "elapsedToFirstVisibleRowMs": 1346,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "usedHeapBytes": 10000000,
+      "dataRows": 100,
+      "queryEvents": [
+        {
+          "path": "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/sql/query",
+          "method": "POST",
+          "startedAt": 426.10000014305115,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e044bf8e7163a39aae0d08caee8c\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1157.7999999523163,
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "sql_pagination": [
+    {
+      "space": "query-space-a",
+      "initialPageCount": 1,
+      "initialCountRequests": 0,
+      "pageCountAfterNext": 2,
+      "dataRowsOnPageTwo": 100,
+      "pageSize": 100,
+      "hasContinuation": true
+    },
+    {
+      "space": "query-space-b",
+      "initialPageCount": 1,
+      "initialCountRequests": 0,
+      "pageCountAfterNext": 2,
+      "dataRowsOnPageTwo": 100,
+      "pageSize": 100,
+      "hasContinuation": true
+    }
+  ],
+  "lifecycle": {
+    "events": [
+      {
+        "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+        "method": "POST",
+        "startedAt": 1085.0999999046326,
+        "aborted": false,
+        "body": {
+          "limit": 50,
+          "projection": {
+            "fields": [
+              {
+                "kind": "created_at"
+              },
+              {
+                "kind": "updated_at"
+              },
+              {
+                "field_id": 100,
+                "kind": "property"
+              },
+              {
+                "field_id": 101,
+                "kind": "property"
+              },
+              {
+                "field_id": 102,
+                "kind": "property"
+              },
+              {
+                "field_id": 103,
+                "kind": "property"
+              },
+              {
+                "field_id": 104,
+                "kind": "property"
+              },
+              {
+                "field_id": 105,
+                "kind": "property"
+              }
+            ],
+            "kind": "fields"
+          },
+          "query": {
+            "filters": [],
+            "scope": {
+              "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+              "kind": "form"
+            },
+            "sort": []
+          }
+        },
+        "endedAt": 1840.5999999046326,
+        "status": 200,
+        "entryIds": [
+          "maintenance-01500",
+          "maintenance-01499",
+          "maintenance-01498",
+          "maintenance-01497",
+          "maintenance-01496",
+          "maintenance-01495",
+          "maintenance-01494",
+          "maintenance-01493",
+          "maintenance-01492",
+          "maintenance-01491",
+          "maintenance-01490",
+          "maintenance-01489",
+          "maintenance-01488",
+          "maintenance-01487",
+          "maintenance-01486",
+          "maintenance-01485",
+          "maintenance-01484",
+          "maintenance-01483",
+          "maintenance-01482",
+          "maintenance-01481",
+          "maintenance-01480",
+          "maintenance-01479",
+          "maintenance-01478",
+          "maintenance-01477",
+          "maintenance-01476",
+          "maintenance-01475",
+          "maintenance-01474",
+          "maintenance-01473",
+          "maintenance-01472",
+          "maintenance-01471",
+          "maintenance-01470",
+          "maintenance-01469",
+          "maintenance-01468",
+          "maintenance-01467",
+          "maintenance-01466",
+          "maintenance-01465",
+          "maintenance-01464",
+          "maintenance-01463",
+          "maintenance-01462",
+          "maintenance-01461",
+          "maintenance-01460",
+          "maintenance-01459",
+          "maintenance-01458",
+          "maintenance-01457",
+          "maintenance-01456",
+          "maintenance-01455",
+          "maintenance-01454",
+          "maintenance-01453",
+          "maintenance-01452",
+          "maintenance-01451"
+        ]
+      },
+      {
+        "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+        "method": "POST",
+        "startedAt": 2399.5999999046326,
+        "aborted": true,
+        "body": {
+          "limit": 50,
+          "projection": {
+            "fields": [
+              {
+                "kind": "created_at"
+              },
+              {
+                "kind": "updated_at"
+              },
+              {
+                "field_id": 100,
+                "kind": "property"
+              },
+              {
+                "field_id": 101,
+                "kind": "property"
+              },
+              {
+                "field_id": 102,
+                "kind": "property"
+              },
+              {
+                "field_id": 103,
+                "kind": "property"
+              },
+              {
+                "field_id": 104,
+                "kind": "property"
+              },
+              {
+                "field_id": 105,
+                "kind": "property"
+              }
+            ],
+            "kind": "fields"
+          },
+          "query": {
+            "filters": [],
+            "scope": {
+              "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+              "kind": "form"
+            },
+            "sort": [],
+            "text": "solar"
+          }
+        },
+        "endedAt": 2408.0999999046326,
+        "error": "signal is aborted without reason"
+      },
+      {
+        "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+        "method": "POST",
+        "startedAt": 2408.5,
+        "aborted": true,
+        "body": {
+          "limit": 50,
+          "projection": {
+            "fields": [
+              {
+                "kind": "created_at"
+              },
+              {
+                "kind": "updated_at"
+              },
+              {
+                "field_id": 100,
+                "kind": "property"
+              },
+              {
+                "field_id": 101,
+                "kind": "property"
+              },
+              {
+                "field_id": 102,
+                "kind": "property"
+              },
+              {
+                "field_id": 103,
+                "kind": "property"
+              },
+              {
+                "field_id": 104,
+                "kind": "property"
+              },
+              {
+                "field_id": 105,
+                "kind": "property"
+              }
+            ],
+            "kind": "fields"
+          },
+          "query": {
+            "filters": [],
+            "scope": {
+              "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+              "kind": "form"
+            },
+            "sort": [],
+            "text": "energy"
+          }
+        },
+        "endedAt": 2414.0999999046326,
+        "error": "signal is aborted without reason"
+      },
+      {
+        "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+        "method": "POST",
+        "startedAt": 2414.399999856949,
+        "aborted": true,
+        "body": {
+          "limit": 50,
+          "projection": {
+            "fields": [
+              {
+                "kind": "created_at"
+              },
+              {
+                "kind": "updated_at"
+              },
+              {
+                "field_id": 100,
+                "kind": "property"
+              },
+              {
+                "field_id": 101,
+                "kind": "property"
+              },
+              {
+                "field_id": 102,
+                "kind": "property"
+              },
+              {
+                "field_id": 103,
+                "kind": "property"
+              },
+              {
+                "field_id": 104,
+                "kind": "property"
+              },
+              {
+                "field_id": 105,
+                "kind": "property"
+              }
+            ],
+            "kind": "fields"
+          },
+          "query": {
+            "filters": [],
+            "scope": {
+              "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+              "kind": "form"
+            },
+            "sort": [],
+            "text": "inspection"
+          }
+        },
+        "endedAt": 2420.7000000476837,
+        "error": "signal is aborted without reason"
+      },
+      {
+        "path": "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/entries/query",
+        "method": "POST",
+        "startedAt": 4786.599999904633,
+        "aborted": false,
+        "body": {
+          "limit": 50,
+          "projection": {
+            "fields": [
+              {
+                "kind": "created_at"
+              },
+              {
+                "kind": "updated_at"
+              },
+              {
+                "field_id": 100,
+                "kind": "property"
+              },
+              {
+                "field_id": 101,
+                "kind": "property"
+              },
+              {
+                "field_id": 102,
+                "kind": "property"
+              },
+              {
+                "field_id": 103,
+                "kind": "property"
+              },
+              {
+                "field_id": 104,
+                "kind": "property"
+              },
+              {
+                "field_id": 105,
+                "kind": "property"
+              }
+            ],
+            "kind": "fields"
+          },
+          "query": {
+            "filters": [],
+            "scope": {
+              "form_id": "01a0e044-bf8e-7163-a39a-ae0d08caee8c",
+              "kind": "form"
+            },
+            "sort": []
+          }
+        },
+        "endedAt": 5953.700000047684,
+        "status": 200,
+        "entryIds": [
+          "maintenance-01000",
+          "maintenance-00999",
+          "maintenance-00998",
+          "maintenance-00997",
+          "maintenance-00996",
+          "maintenance-00995",
+          "maintenance-00994",
+          "maintenance-00993",
+          "maintenance-00992",
+          "maintenance-00991",
+          "maintenance-00990",
+          "maintenance-00989",
+          "maintenance-00988",
+          "maintenance-00987",
+          "maintenance-00986",
+          "maintenance-00985",
+          "maintenance-00984",
+          "maintenance-00983",
+          "maintenance-00982",
+          "maintenance-00981",
+          "maintenance-00980",
+          "maintenance-00979",
+          "maintenance-00978",
+          "maintenance-00977",
+          "maintenance-00976",
+          "maintenance-00975",
+          "maintenance-00974",
+          "maintenance-00973",
+          "maintenance-00972",
+          "maintenance-00971",
+          "maintenance-00970",
+          "maintenance-00969",
+          "maintenance-00968",
+          "maintenance-00967",
+          "maintenance-00966",
+          "maintenance-00965",
+          "maintenance-00964",
+          "maintenance-00963",
+          "maintenance-00962",
+          "maintenance-00961",
+          "maintenance-00960",
+          "maintenance-00959",
+          "maintenance-00958",
+          "maintenance-00957",
+          "maintenance-00956",
+          "maintenance-00955",
+          "maintenance-00954",
+          "maintenance-00953",
+          "maintenance-00952",
+          "maintenance-00951"
+        ]
+      }
+    ],
+    "supersededInFlightCount": 3,
+    "actualAbortCount": 3,
+    "endedAbortCount": 3,
+    "residualPendingCount": 0,
+    "visibleEntryIds": [
+      "maintenance-01000",
+      "maintenance-00999",
+      "maintenance-00998",
+      "maintenance-00997",
+      "maintenance-00996",
+      "maintenance-00995",
+      "maintenance-00994",
+      "maintenance-00993",
+      "maintenance-00992",
+      "maintenance-00991",
+      "maintenance-00990",
+      "maintenance-00989",
+      "maintenance-00988",
+      "maintenance-00987",
+      "maintenance-00986",
+      "maintenance-00985",
+      "maintenance-00984",
+      "maintenance-00983",
+      "maintenance-00982",
+      "maintenance-00981",
+      "maintenance-00980",
+      "maintenance-00979",
+      "maintenance-00978",
+      "maintenance-00977",
+      "maintenance-00976",
+      "maintenance-00975",
+      "maintenance-00974",
+      "maintenance-00973",
+      "maintenance-00972",
+      "maintenance-00971",
+      "maintenance-00970",
+      "maintenance-00969",
+      "maintenance-00968",
+      "maintenance-00967",
+      "maintenance-00966",
+      "maintenance-00965",
+      "maintenance-00964",
+      "maintenance-00963",
+      "maintenance-00962",
+      "maintenance-00961",
+      "maintenance-00960",
+      "maintenance-00959",
+      "maintenance-00958",
+      "maintenance-00957",
+      "maintenance-00956",
+      "maintenance-00955",
+      "maintenance-00954",
+      "maintenance-00953",
+      "maintenance-00952",
+      "maintenance-00951"
+    ],
+    "staleSourceEntryIds": [],
+    "unexpectedTargetEntryIds": [],
+    "visibleDataRows": 50,
+    "targetSpaceQueryCount": 1,
+    "targetSpaceQueryPaths": [
+      "/api/spaces/01a0e044-bf0c-738b-85af-2970d9123d9a/entries/query"
+    ],
+    "rowsBeforeTargetQuery": 0,
+    "rowsWhileTargetQueryPending": 0,
+    "rapidSearchChanges": {
+      "supersededInFlightCount": 2,
+      "actualAbortCount": 2,
+      "endedAbortCount": 2,
+      "residualPendingCount": 0,
+      "events": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+          "method": "POST",
+          "startedAt": 2399.5999999046326,
+          "aborted": true,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+                "kind": "form"
+              },
+              "sort": [],
+              "text": "solar"
+            }
+          },
+          "endedAt": 2408.0999999046326,
+          "error": "signal is aborted without reason"
+        },
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+          "method": "POST",
+          "startedAt": 2408.5,
+          "aborted": true,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+                "kind": "form"
+              },
+              "sort": [],
+              "text": "energy"
+            }
+          },
+          "endedAt": 2414.0999999046326,
+          "error": "signal is aborted without reason"
+        }
+      ]
+    },
+    "spaceChange": {
+      "supersededInFlightCount": 1,
+      "actualAbortCount": 1,
+      "endedAbortCount": 1,
+      "residualPendingCount": 0,
+      "events": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/entries/query",
+          "method": "POST",
+          "startedAt": 2414.399999856949,
+          "aborted": true,
+          "body": {
+            "limit": 50,
+            "projection": {
+              "fields": [
+                {
+                  "kind": "created_at"
+                },
+                {
+                  "kind": "updated_at"
+                },
+                {
+                  "field_id": 100,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 101,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 102,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 103,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 104,
+                  "kind": "property"
+                },
+                {
+                  "field_id": 105,
+                  "kind": "property"
+                }
+              ],
+              "kind": "fields"
+            },
+            "query": {
+              "filters": [],
+              "scope": {
+                "form_id": "01a0e043-42a0-7603-acb0-b3c79ccf2b3b",
+                "kind": "form"
+              },
+              "sort": [],
+              "text": "inspection"
+            }
+          },
+          "endedAt": 2420.7000000476837,
+          "error": "signal is aborted without reason"
+        }
+      ]
+    },
+    "sqlPageChange": {
+      "supersededInFlightCount": 1,
+      "actualAbortCount": 1,
+      "endedAbortCount": 1,
+      "residualPendingCount": 0,
+      "events": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 474.09999990463257,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1222.0999999046326,
+          "status": 200
+        },
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 1343.5999999046326,
+          "aborted": true,
+          "body": {
+            "continuation": "[redacted]",
+            "limit": 100,
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1351.9000000953674,
+          "error": "signal is aborted without reason"
+        }
+      ]
+    },
+    "sqlCountIdentityChange": {
+      "supersededInFlightCount": 1,
+      "actualAbortCount": 1,
+      "endedAbortCount": 1,
+      "residualPendingCount": 0,
+      "events": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query/count",
+          "method": "POST",
+          "startedAt": 1871.7999999523163,
+          "aborted": true,
+          "body": {
+            "parameter_types": {},
+            "parameters": {},
+            "sql": "SELECT _ugoite_id FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 1882.4000000953674,
+          "error": "signal is aborted without reason"
+        }
+      ]
+    },
+    "sqlParameterValueChange": {
+      "supersededInFlightCount": 1,
+      "actualAbortCount": 1,
+      "endedAbortCount": 1,
+      "residualPendingCount": 0,
+      "events": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 2723.100000143051,
+          "aborted": true,
+          "body": {
+            "continuation": "[redacted]",
+            "limit": 100,
+            "parameter_types": {
+              "threshold": "integer"
+            },
+            "parameters": {
+              "threshold": 100
+            },
+            "sql": "SELECT CAST($threshold AS BIGINT) AS threshold_value FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 2732.5,
+          "error": "signal is aborted without reason"
+        },
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 2732.7999999523163,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {
+              "threshold": "integer"
+            },
+            "parameters": {
+              "threshold": 200
+            },
+            "sql": "SELECT CAST($threshold AS BIGINT) AS threshold_value FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 3863.100000143051,
+          "status": 200
+        }
+      ]
+    },
+    "sqlParameterTypeChange": {
+      "supersededInFlightCount": 1,
+      "actualAbortCount": 1,
+      "endedAbortCount": 1,
+      "residualPendingCount": 0,
+      "events": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query/count",
+          "method": "POST",
+          "startedAt": 2160.7999999523163,
+          "aborted": true,
+          "body": {
+            "parameter_types": {
+              "threshold": "integer"
+            },
+            "parameters": {
+              "threshold": 200
+            },
+            "sql": "SELECT CAST($threshold AS BIGINT) AS threshold_value FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 2168.199999809265,
+          "error": "signal is aborted without reason"
+        }
+      ]
+    },
+    "sqlPreviousPage": {
+      "supersededInFlightCount": 0,
+      "actualAbortCount": 0,
+      "endedAbortCount": 0,
+      "residualPendingCount": 0,
+      "events": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 2183.9000000953674,
+          "aborted": false,
+          "body": {
+            "continuation": "[redacted]",
+            "limit": 100,
+            "parameter_types": {
+              "threshold": "integer"
+            },
+            "parameters": {
+              "threshold": 100
+            },
+            "sql": "SELECT CAST($threshold AS BIGINT) AS threshold_value FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 2916.600000143051,
+          "status": 200
+        },
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 3031.7999999523163,
+          "aborted": false,
+          "body": {
+            "limit": 100,
+            "parameter_types": {
+              "threshold": "integer"
+            },
+            "parameters": {
+              "threshold": 100
+            },
+            "sql": "SELECT CAST($threshold AS BIGINT) AS threshold_value FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 3748.7999999523163,
+          "status": 200
+        }
+      ]
+    },
+    "sqlCountRetry": {
+      "supersededInFlightCount": 1,
+      "actualAbortCount": 1,
+      "endedAbortCount": 1,
+      "residualPendingCount": 0,
+      "events": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query/count",
+          "method": "POST",
+          "startedAt": 2180.399999856949,
+          "aborted": true,
+          "body": {
+            "parameter_types": {
+              "threshold": "integer"
+            },
+            "parameters": {
+              "threshold": 100
+            },
+            "sql": "SELECT CAST($threshold AS BIGINT) AS threshold_value FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 2196.5999999046326,
+          "error": "Failed to fetch"
+        },
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query/count",
+          "method": "POST",
+          "startedAt": 2248.2999999523163,
+          "aborted": false,
+          "body": {
+            "parameter_types": {
+              "threshold": "integer"
+            },
+            "parameters": {
+              "threshold": 100
+            },
+            "sql": "SELECT CAST($threshold AS BIGINT) AS threshold_value FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 2960,
+          "status": 200
+        }
+      ],
+      "countRequestCount": 2,
+      "queryRequestCountBeforeRetry": 0,
+      "queryRequestCountAfterRetry": 0
+    },
+    "sqlRouteDispose": {
+      "supersededInFlightCount": 1,
+      "actualAbortCount": 1,
+      "endedAbortCount": 1,
+      "residualPendingCount": 0,
+      "events": [
+        {
+          "path": "/api/spaces/01a0e043-420f-70b4-b9f3-b285ca821e5f/sql/query",
+          "method": "POST",
+          "startedAt": 2185,
+          "aborted": true,
+          "body": {
+            "continuation": "[redacted]",
+            "limit": 100,
+            "parameter_types": {
+              "threshold": "integer"
+            },
+            "parameters": {
+              "threshold": 100
+            },
+            "sql": "SELECT CAST($threshold AS BIGINT) AS threshold_value FROM \"form_01a0e04342a07603acb0b3c79ccf2b3b\" ORDER BY _ugoite_id"
+          },
+          "endedAt": 2219,
+          "error": "signal is aborted without reason"
+        }
+      ]
+    }
+  },
+  "limitations": [
+    "AbortSignal cancellation is measured in the browser fetch layer; it does not establish cancellation of SQL engine work after a server has begun execution.",
+    "Performance values include frontend navigation, local HTTP, server, storage, and rendering; the per-trial browser API heap value is not process RSS."
+  ]
+}
