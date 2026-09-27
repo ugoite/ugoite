@@ -340,6 +340,9 @@ async function assertAggregateWorkflow(
     [
       "name: artifacts",
       "scripts/measure-step.sh artifacts mise run ci:artifacts",
+      "PORTABLE_SEED_DURATION_SECONDS: ${{ steps.artifacts.outputs.portable_seed_duration_seconds }}",
+      "PORTABLE_SEED_EXIT_CODE: ${{ steps.artifacts.outputs.portable_seed_exit_code }}",
+      "portable fixture seed duration:",
     ],
     "artifact CI lane",
   );
