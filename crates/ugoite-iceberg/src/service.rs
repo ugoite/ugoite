@@ -3063,6 +3063,47 @@ impl UgoiteService {
         }))
     }
 
+    /// Server-facing Change revert. Every committed target is checked against
+    /// the current authorization snapshot before the all-target inverse is
+    /// appended, using the same authorization lease as other protected writes.
+    pub async fn revert_change_authorized_for_principals(
+        &self,
+        space_id: &str,
+        target_change_id: &str,
+        actor_principal_id: &str,
+        run_id: Option<&str>,
+        message: Option<&str>,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        let (state, authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let targets = workspace.change_target_entries(target_change_id).await?;
+        for entry_id in targets {
+            self.require_action_for_principals_in_state(
+                &state,
+                &entry_id,
+                ResourceKind::Entry,
+                Action::Update,
+                principal_ids,
+            )?;
+        }
+        let _authorization_lease = authorization_lease;
+        self.revert_change(
+            space_id,
+            target_change_id,
+            actor_principal_id,
+            run_id,
+            message,
+        )
+        .await
+    }
+
     /// Undo every Change correlated to a Run in reverse publication order.
     /// Each inverse is its own append-only Change; the Run itself has no
     /// durable status record and can be resumed by repeating this request.
@@ -3071,6 +3112,31 @@ impl UgoiteService {
         space_id: &str,
         run_id: &str,
         actor_principal_id: &str,
+    ) -> Result<Value> {
+        self.undo_run_inner(space_id, run_id, actor_principal_id, None)
+            .await
+    }
+
+    /// Server-facing Run undo. Each Change is reauthorized against all of its
+    /// current Entry targets immediately before its inverse is appended.
+    pub async fn undo_run_authorized_for_principals(
+        &self,
+        space_id: &str,
+        run_id: &str,
+        actor_principal_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.undo_run_inner(space_id, run_id, actor_principal_id, Some(principal_ids))
+            .await
+    }
+
+    async fn undo_run_inner(
+        &self,
+        space_id: &str,
+        run_id: &str,
+        actor_principal_id: &str,
+        principal_ids: Option<&[Uuid]>,
     ) -> Result<Value> {
         let run_id = RunId::new(run_id)
             .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
@@ -3094,7 +3160,17 @@ impl UgoiteService {
         changes.sort_by(|left, right| right.generation.cmp(&left.generation));
         let mut inverses = Vec::with_capacity(changes.len());
         for change in changes {
-            inverses.push(
+            let inverse = if let Some(principal_ids) = principal_ids {
+                self.revert_change_authorized_for_principals(
+                    space_id,
+                    &change.change_id,
+                    actor_principal_id,
+                    Some(run_id.as_str()),
+                    Some("Undo Run"),
+                    principal_ids,
+                )
+                .await?
+            } else {
                 self.revert_change(
                     space_id,
                     &change.change_id,
@@ -3102,8 +3178,9 @@ impl UgoiteService {
                     Some(run_id.as_str()),
                     Some("Undo Run"),
                 )
-                .await?,
-            );
+                .await?
+            };
+            inverses.push(inverse);
         }
         Ok(json!({
             "run_id": run_id,
@@ -8348,6 +8425,83 @@ mod tests {
             resumed.get("reverted_change_count").and_then(Value::as_u64),
             Some(0)
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn change_revert_rechecks_resource_update_authorization() -> anyhow::Result<()> {
+        let (service, space_id, owner) = batch_test_space("revert-resource-authorization").await?;
+        let editor = Uuid::now_v7();
+        Authorizer::new(service.operator.clone())
+            .add_human_member(
+                &space_id,
+                owner,
+                SpacePrincipal {
+                    principal_id: editor,
+                    kind: PrincipalKind::Human,
+                    display_name: "Editor".into(),
+                    state: PrincipalState::Active,
+                    created_at: Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Editor,
+            )
+            .await?;
+        let entry_id = "revert-auth-entry";
+        let created = service
+            .apply_operations(
+                &space_id,
+                vec![batch_create(entry_id)],
+                &editor.to_string(),
+                &[editor],
+                Some("run-revert-auth"),
+                Some("create for authorization test"),
+            )
+            .await?;
+        let change_id = created["operations"][0]["change_id"]
+            .as_str()
+            .expect("create returns canonical Change identity")
+            .to_owned();
+        Authorizer::new(service.operator.clone())
+            .set_policy(
+                &space_id,
+                owner,
+                &ResourceRef {
+                    kind: ResourceKind::Entry,
+                    id: entry_id.into(),
+                    parent: None,
+                },
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
+
+        let error = service
+            .revert_change_authorized_for_principals(
+                &space_id,
+                &change_id,
+                &editor.to_string(),
+                None,
+                None,
+                &[editor],
+            )
+            .await
+            .expect_err("resource-level Update revocation blocks Change revert");
+        assert_eq!(
+            error
+                .downcast_ref::<AppError>()
+                .expect("typed authorization error")
+                .code(),
+            ErrorCode::Forbidden
+        );
+        let changes = service.list_changes(&space_id).await?;
+        assert!(!changes
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|change| { change["change"]["reverts_change_id"] == change_id }));
         Ok(())
     }
 

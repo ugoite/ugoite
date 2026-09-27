@@ -1522,6 +1522,30 @@ impl IcebergWorkspace {
             .await
     }
 
+    /// Returns the committed Entry identities touched by a Change. Callers
+    /// use this authoritative set to check per-Entry authorization before
+    /// invoking [`Self::revert_change`].
+    pub async fn change_target_entries(&self, target_change_id: &str) -> Result<Vec<String>> {
+        let mut targets = BTreeSet::new();
+        for form in self.list_forms().await? {
+            let revisions = self.read_revisions(form.id).await?;
+            for revision in revisions
+                .iter()
+                .filter(|revision| revision.change_id == target_change_id)
+            {
+                targets.insert(revision.entry.external_id.clone());
+            }
+        }
+        if targets.is_empty() {
+            return Err(AppError::not_found(
+                ErrorCode::RevisionNotFound,
+                format!("target Change was not found: {target_change_id}"),
+            )
+            .into());
+        }
+        Ok(targets.into_iter().collect())
+    }
+
     /// Loads Form definitions with explicit count and serialized-size bounds.
     /// Catalog implementations may return table identifiers as a Vec, so the
     /// count is checked before any table metadata is retained. Definitions are
