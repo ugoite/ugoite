@@ -1,5 +1,8 @@
 use crate::config::non_empty_env_value;
-use crate::output::{emit_diagnostic, emit_success, emit_text, Format};
+use crate::output::{
+    emit_diagnostic, emit_success, emit_text, is_machine_stderr, Format, MutationOutcome,
+    MutationOutcomeError,
+};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use clap::Args;
@@ -1009,6 +1012,12 @@ pub async fn run(
             .await?;
             let report = report_turn(result, false);
             if report.failed {
+                if let Some(outcome) = report.mutation_outcome {
+                    return Err(anyhow::Error::new(MutationOutcomeError::new(
+                        outcome,
+                        mcp_outcome_message(outcome),
+                    )));
+                }
                 bail!("Konase Work failed");
             }
         }
@@ -1019,6 +1028,7 @@ pub async fn run(
             let mut input = String::new();
             let mut last_work_id: Option<String> = None;
             let mut failed_work = false;
+            let mut mutation_outcome = None;
             loop {
                 if interactive {
                     print!("> ");
@@ -1070,10 +1080,17 @@ pub async fn run(
                 );
                 if !interactive {
                     failed_work |= report.failed;
+                    mutation_outcome = mutation_outcome.or(report.mutation_outcome);
                 }
                 last_work_id = report.work_id;
             }
             if failed_work {
+                if let Some(outcome) = mutation_outcome {
+                    return Err(anyhow::Error::new(MutationOutcomeError::new(
+                        outcome,
+                        mcp_outcome_message(outcome),
+                    )));
+                }
                 bail!("one or more Konase Works failed");
             }
         }
@@ -1144,6 +1161,16 @@ struct TurnInput<'a> {
 struct TurnReport {
     work_id: Option<String>,
     failed: bool,
+    mutation_outcome: Option<MutationOutcome>,
+}
+
+fn mcp_outcome_message(outcome: MutationOutcome) -> &'static str {
+    match outcome {
+        MutationOutcome::ReceiptInvalid => "The MCP server reported success but returned an invalid write receipt. Inspect History or the affected resource before retrying.",
+        MutationOutcome::Unknown => "The MCP write result is unconfirmed. Inspect History or the affected resource before retrying.",
+        MutationOutcome::Rejected => "The MCP write was rejected and was not saved.",
+        MutationOutcome::Confirmed => "The MCP write was confirmed.",
+    }
 }
 
 fn report_turn(result: TurnResult, show_undo_hint: bool) -> TurnReport {
@@ -1165,6 +1192,7 @@ fn report_turn(result: TurnResult, show_undo_hint: bool) -> TurnReport {
             TurnReport {
                 work_id: (show_undo_hint && turn.undo_available).then_some(turn.work_id),
                 failed: false,
+                mutation_outcome: None,
             }
         }
         TurnResult::Failed(failure) => {
@@ -1172,10 +1200,14 @@ fn report_turn(result: TurnResult, show_undo_hint: bool) -> TurnReport {
                 emit_diagnostic("Model request interrupted.");
             } else if failure.error.kind == "write_denied" {
                 emit_diagnostic("Write denied; no MCP mutation was sent.");
-            } else if failure.error.kind == "mcp_unconfirmed" {
-                emit_diagnostic(
-                    "MCP mutation outcome is unconfirmed; no automatic retry was attempted.",
-                );
+            } else if failure.error.kind == "mcp_receipt_invalid" {
+                if !is_machine_stderr() {
+                    emit_diagnostic(mcp_outcome_message(MutationOutcome::ReceiptInvalid));
+                }
+            } else if failure.error.kind == "mcp_outcome_unknown" {
+                if !is_machine_stderr() {
+                    emit_diagnostic(mcp_outcome_message(MutationOutcome::Unknown));
+                }
             } else {
                 emit_diagnostic(format!(
                     "Model host failed ({}): {}",
@@ -1191,6 +1223,11 @@ fn report_turn(result: TurnResult, show_undo_hint: bool) -> TurnReport {
             TurnReport {
                 work_id: (show_undo_hint && failure.undo_available).then_some(failure.work_id),
                 failed: true,
+                mutation_outcome: match failure.error.kind.as_str() {
+                    "mcp_receipt_invalid" => Some(MutationOutcome::ReceiptInvalid),
+                    "mcp_outcome_unknown" => Some(MutationOutcome::Unknown),
+                    _ => None,
+                },
             }
         }
     }
@@ -1425,6 +1462,7 @@ async fn run_turn_with_contents<M: ModelHost, C: McpHost, I: ModelInterruptSourc
                     );
                 }
                 let operation = request.operation.clone();
+                let is_mutation_write = request.effect == Some(CapabilityEffect::Write);
                 let is_undoable_write =
                     request.effect == Some(CapabilityEffect::Write) && operation == "ugoite.save";
                 let request_id = request.request_id.clone();
@@ -1440,7 +1478,9 @@ async fn run_turn_with_contents<M: ModelHost, C: McpHost, I: ModelInterruptSourc
                             undo_available,
                             HostError {
                                 kind: if error.to_string().contains("MCP mutation receipt") {
-                                    "mcp_unconfirmed".into()
+                                    "mcp_receipt_invalid".into()
+                                } else if is_mutation_write {
+                                    "mcp_outcome_unknown".into()
                                 } else {
                                     "mcp_transport_failure".into()
                                 },
@@ -1877,6 +1917,30 @@ mod tests {
 
         assert!(report.failed);
         assert_eq!(report.work_id.as_deref(), Some("work-1"));
+    }
+
+    #[test]
+    fn mcp_write_failures_preserve_unknown_vs_invalid_receipt() {
+        for (kind, expected) in [
+            ("mcp_outcome_unknown", MutationOutcome::Unknown),
+            ("mcp_receipt_invalid", MutationOutcome::ReceiptInvalid),
+        ] {
+            let report = report_turn(
+                TurnResult::Failed(TurnFailure {
+                    error: HostError {
+                        kind: kind.into(),
+                        message: "MCP write did not produce a trusted result".into(),
+                        request_id: Some("request-1".into()),
+                    },
+                    work_id: "work-1".into(),
+                    undo_available: false,
+                    knowledge: KnowledgeOutcome::Unchanged,
+                }),
+                false,
+            );
+            assert!(report.failed);
+            assert_eq!(report.mutation_outcome, Some(expected));
+        }
     }
 
     fn selected_form_resource() -> ResourceContent {

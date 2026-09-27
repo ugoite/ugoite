@@ -34,6 +34,9 @@ const CODE_KEYS: Record<string, TranslationKey> = {
   TOTP_ENROLLMENT_FAILED: "errors.code.totpEnrollmentFailed",
   AUTHENTICATION_FAILED: "errors.code.authenticationFailed",
   PASSKEY_CANCELLED: "securityPage.passkeyCancelled",
+  MUTATION_REJECTED: "errors.mutationRejected",
+  MUTATION_OUTCOME_UNKNOWN: "errors.mutationOutcomeUnknown",
+  MUTATION_RECEIPT_INVALID: "errors.mutationReceiptInvalid",
 };
 
 const OPERATION_KEYS: Partial<
@@ -116,6 +119,30 @@ export const formatUserFacingError = (
   operation?: string,
 ): string => {
   const apiError = error instanceof UgoiteApiError ? error : null;
+  const mutationOutcome = apiError?.mutationOutcome ??
+    (error && typeof error === "object" &&
+        "mutationOutcome" in error &&
+        (error.mutationOutcome === "rejected" ||
+          error.mutationOutcome === "unknown" ||
+          error.mutationOutcome === "receipt_invalid")
+      ? error.mutationOutcome
+      : null);
+  if (mutationOutcome) {
+    const key: TranslationKey = mutationOutcome === "rejected"
+      ? "errors.mutationRejected"
+      : mutationOutcome === "receipt_invalid"
+      ? "errors.mutationReceiptInvalid"
+      : "errors.mutationOutcomeUnknown";
+    // Keep the server's typed rejection detail, but never let transport or
+    // receipt diagnostics obscure the recovery instruction.
+    if (mutationOutcome === "rejected") {
+      const detail = apiError ? apiDetails(apiError) : detailText(error);
+      return detail
+        ? t("errors.withDetail", { summary: t(key), detail })
+        : t(key);
+    }
+    return t(key);
+  }
   const stringOperationKey = typeof error === "string" && operation
     ? OPERATION_KEYS[operation]
     : undefined;

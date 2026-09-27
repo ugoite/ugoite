@@ -3,6 +3,7 @@ import selectedContextFixture from "../../../../crates/ugoite-konase/fixtures/se
 import {
   type Capability,
   KonaseHost,
+  KonaseMutationUnconfirmedError,
   KonaseWorkFailure,
   type WritePreview,
 } from "./host";
@@ -1075,9 +1076,51 @@ describe("Konase browser host", () => {
       },
     });
 
-    await expect(host.submit("Save the note")).rejects.toThrow(/confirm/);
+    const failure = await host.submit("Save the note").catch((cause) => cause);
+    expect(failure).toBeInstanceOf(KonaseMutationUnconfirmedError);
+    expect(failure).toMatchObject({
+      mutationOutcome: "receipt_invalid",
+      mutationCode: "MUTATION_RECEIPT_INVALID",
+    });
     expect(mcp.calls.filter((call) => call.operation === "ugoite.save"))
       .toHaveLength(1);
+  });
+
+  it("marks a lost MCP write response as unknown", async () => {
+    const model = new ScriptedModel([
+      {
+        request_id: "",
+        tool_calls: [{
+          id: "save-call",
+          name: "ugoite.save",
+          arguments: { form: "Note", fields: { title: "x" } },
+        }],
+      },
+      { request_id: "", text: "Save attempted", tool_calls: [] },
+    ]);
+    const mcp = new ScriptedMcp();
+    const callMcp = mcp.callMcp.bind(mcp);
+    mcp.callMcp = async (request, workId) => {
+      if (request.operation === "ugoite.save") {
+        throw new Error("connection reset after request dispatch");
+      }
+      return await callMcp(request, workId);
+    };
+    const host = new KonaseHost({
+      model,
+      mcp,
+      spaceId: "space-a",
+      onConfirmationRequired: (preview) => {
+        host.resolveConfirmation(preview.requestId, true);
+      },
+    });
+
+    const failure = await host.submit("Save the note").catch((cause) => cause);
+    expect(failure).toBeInstanceOf(KonaseMutationUnconfirmedError);
+    expect(failure).toMatchObject({
+      mutationOutcome: "unknown",
+      mutationCode: "MUTATION_OUTCOME_UNKNOWN",
+    });
   });
 
   it("requires separate approval for model Undo and clears Undo availability", async () => {

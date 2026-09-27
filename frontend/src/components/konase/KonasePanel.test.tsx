@@ -86,8 +86,14 @@ const {
   });
 
 vi.mock("~/lib/konase/host", () => ({
-  KonaseWriteDeniedError: class extends Error {},
-  KonaseMutationUnconfirmedError: class extends Error {},
+  KonaseWriteDeniedError: class extends Error {
+    readonly mutationOutcome = "rejected";
+    readonly mutationCode = "MUTATION_REJECTED";
+  },
+  KonaseMutationUnconfirmedError: class extends Error {
+    readonly mutationOutcome = "unknown";
+    readonly mutationCode = "MUTATION_OUTCOME_UNKNOWN";
+  },
   KonaseWorkFailure: class extends Error {
     constructor(
       readonly reason: unknown,

@@ -25,6 +25,7 @@ import {
   systemEntryCapabilities,
 } from "~/lib/entry-query";
 import { t } from "~/lib/i18n";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateLabel } from "~/lib/date-format";
 import {
@@ -589,23 +590,26 @@ export function FormTable(props: FormTableProps) {
       /* v8 ignore stop */
       const fields = { ...(entry.fields ?? {}), [field]: value };
 
-      const updatedEntry = await entryApi.update(props.spaceId, entryId, {
+      await entryApi.update(props.spaceId, entryId, {
         form: entry.form,
         fields,
         parent_revision_id: entry.revision_id,
       });
-      void updatedEntry;
-      await controller.invalidate();
     } catch (err) {
       /* v8 ignore start */
       // biome-ignore lint/suspicious/noConsole: error logging
       console.error(t("formTable.updateFailed"), err);
       setTableError(
-        `${t("formTable.updateFailed")}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        formatUserFacingError(err, "formTable.updateFailed", "entry.update"),
       );
+      return;
       /* v8 ignore stop */
+    }
+
+    try {
+      await controller.invalidate();
+    } catch {
+      setTableError(t("errors.savedButRefreshFailed"));
     }
   };
 

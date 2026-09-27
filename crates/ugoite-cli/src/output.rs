@@ -177,6 +177,54 @@ pub enum ExitCode {
     Unsupported = 7,
 }
 
+/// Outcome of a write at the caller boundary. A successful receipt is
+/// confirmed; failures preserve whether the write was rejected or may have
+/// completed without a trustworthy response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MutationOutcome {
+    Confirmed,
+    Rejected,
+    Unknown,
+    ReceiptInvalid,
+}
+
+/// Carries a mutation result classification through command layers that have
+/// already identified an ambiguous write, such as a Konase MCP receipt.
+#[derive(Debug)]
+pub struct MutationOutcomeError {
+    pub outcome: MutationOutcome,
+    pub message: String,
+}
+
+impl MutationOutcomeError {
+    pub fn new(outcome: MutationOutcome, message: impl Into<String>) -> Self {
+        Self {
+            outcome,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for MutationOutcomeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for MutationOutcomeError {}
+
+impl MutationOutcome {
+    const fn error_code(self) -> Option<&'static str> {
+        match self {
+            Self::Confirmed => None,
+            Self::Rejected => Some("MUTATION_REJECTED"),
+            Self::Unknown => Some("MUTATION_OUTCOME_UNKNOWN"),
+            Self::ReceiptInvalid => Some("MUTATION_RECEIPT_INVALID"),
+        }
+    }
+}
+
 impl ExitCode {
     pub const fn as_i32(self) -> i32 {
         self as i32
@@ -305,6 +353,22 @@ impl std::error::Error for ExportProgressError {
 
 /// Project any CLI failure into the shared error shape.
 pub fn project_error(error: &Error) -> CliError {
+    if let Some(outcome_error) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<MutationOutcomeError>())
+    {
+        let outcome = outcome_error.outcome;
+        return CliError {
+            code: outcome.error_code().unwrap_or("INTERNAL_ERROR").to_string(),
+            kind: "internal".to_string(),
+            message: outcome_error.message.clone(),
+            detail: Some(serde_json::json!({
+                "outcome": outcome,
+                "recovery_action": "inspect_history_before_retry",
+            })),
+            exit: ExitCode::Internal,
+        };
+    }
     if let Some(progress) = error
         .chain()
         .find_map(|cause| cause.downcast_ref::<ExportProgressError>())
@@ -357,6 +421,132 @@ pub fn project_error(error: &Error) -> CliError {
         detail: None,
         exit: ExitCode::Internal,
     }
+}
+
+/// Project a failure from a command that attempted a write into the shared
+/// mutation result vocabulary. Read-only command failures should continue to
+/// use [`project_error`] so their established API codes remain unchanged.
+pub fn project_mutation_error(error: &Error) -> CliError {
+    let mut projected = project_error(error);
+    let outcome = classify_mutation_error(error);
+    let Some(code) = outcome.error_code() else {
+        return projected;
+    };
+    let original_code = std::mem::replace(&mut projected.code, code.to_string());
+    let original_detail = projected.detail.take();
+    let outcome_message = match outcome {
+        MutationOutcome::Confirmed => unreachable!("confirmed errors are not projected"),
+        MutationOutcome::Rejected => projected.message.clone(),
+        MutationOutcome::Unknown => {
+            "Mutation outcome is unknown. Inspect History or the affected resource before retrying."
+                .to_string()
+        }
+        MutationOutcome::ReceiptInvalid => {
+            "The server reported success but returned an invalid mutation receipt. Inspect History or the affected resource before retrying.".to_string()
+        }
+    };
+    projected.message = outcome_message;
+    projected.detail = Some(serde_json::json!({
+        "original_code": original_code,
+        "original_message": error.to_string(),
+        "original_detail": original_detail,
+        "outcome": outcome,
+        "recovery_action": "inspect_history_before_retry",
+    }));
+    if outcome == MutationOutcome::ReceiptInvalid {
+        projected.exit = ExitCode::Internal;
+    }
+    projected
+}
+
+fn classify_mutation_error(error: &Error) -> MutationOutcome {
+    if let Some(protocol) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<ApiProtocolError>())
+    {
+        if protocol
+            .operation
+            .as_deref()
+            .is_some_and(|operation| !is_mutation_operation(operation))
+        {
+            // A read/preflight failure inside a write command proves that the
+            // write request was never sent.
+            return MutationOutcome::Rejected;
+        }
+        if protocol.kind == "invalid_response"
+            && protocol
+                .status
+                .is_some_and(|status| (200..300).contains(&status))
+        {
+            return MutationOutcome::ReceiptInvalid;
+        }
+        if protocol
+            .status
+            .is_some_and(|status| (400..500).contains(&status) && !matches!(status, 408 | 425))
+            || matches!(
+                protocol.kind.as_str(),
+                "invalid_arguments" | "invalid_operation" | "invalid_command"
+            )
+        {
+            return MutationOutcome::Rejected;
+        }
+        return MutationOutcome::Unknown;
+    }
+
+    if let Some(outcome_error) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<MutationOutcomeError>())
+    {
+        return outcome_error.outcome;
+    }
+
+    if let Some(app_error) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<AppError>())
+    {
+        return match app_error.kind() {
+            ErrorKind::Internal | ErrorKind::DependencyUnavailable => MutationOutcome::Unknown,
+            _ => MutationOutcome::Rejected,
+        };
+    }
+
+    if error
+        .chain()
+        .any(|cause| cause.downcast_ref::<reqwest::Error>().is_some())
+    {
+        return MutationOutcome::Unknown;
+    }
+
+    let diagnostic = format!("{error:#}").to_ascii_lowercase();
+    if diagnostic.contains("receipt") {
+        MutationOutcome::ReceiptInvalid
+    } else if diagnostic.contains("unconfirmed") {
+        MutationOutcome::Unknown
+    } else {
+        // An untyped error may have happened after the authoritative write.
+        // Only typed validation/rejection errors are safe to call rejected.
+        MutationOutcome::Unknown
+    }
+}
+
+fn is_mutation_operation(operation: &str) -> bool {
+    matches!(
+        operation,
+        "entry.create"
+            | "entry.update"
+            | "entry.delete"
+            | "entry.restore"
+            | "form.upsert"
+            | "asset.upload"
+            | "asset.delete"
+            | "change.revert"
+            | "run.undo"
+            | "pin.create"
+            | "pin.delete"
+            | "sql.create"
+            | "sql.update"
+            | "sql.delete"
+    )
 }
 
 fn from_app_error(error: &AppError) -> CliError {
@@ -509,12 +699,20 @@ fn format_validation_warning(warning: &Value) -> Option<String> {
 pub struct MutationReceipt {
     pub kind: String,
     pub id: String,
+    // A successful receipt is already the confirmed signal. Keep the stable
+    // machine receipt unchanged; the outcome enum is used for error mapping.
+    #[serde(skip, default = "confirmed_mutation_outcome")]
+    pub outcome: MutationOutcome,
     #[serde(default)]
     pub revision_id: Option<String>,
     #[serde(default)]
     pub change_id: Option<String>,
     #[serde(default)]
     pub run_id: Option<String>,
+}
+
+fn confirmed_mutation_outcome() -> MutationOutcome {
+    MutationOutcome::Confirmed
 }
 
 /// Upload receipt retains the canonical domain reference so callers can pass
@@ -594,6 +792,7 @@ impl MutationReceipt {
         Self {
             kind: "entry".to_string(),
             id,
+            outcome: MutationOutcome::Confirmed,
             revision_id,
             change_id,
             run_id: None,
@@ -604,6 +803,7 @@ impl MutationReceipt {
         Self {
             kind: "form".to_string(),
             id: name,
+            outcome: MutationOutcome::Confirmed,
             revision_id: None,
             change_id: None,
             run_id: None,
@@ -614,6 +814,7 @@ impl MutationReceipt {
         Self {
             kind: "sql".to_string(),
             id,
+            outcome: MutationOutcome::Confirmed,
             revision_id,
             change_id,
             run_id: None,
@@ -624,6 +825,7 @@ impl MutationReceipt {
         Self {
             kind: "asset".to_string(),
             id,
+            outcome: MutationOutcome::Confirmed,
             revision_id: None,
             change_id: None,
             run_id: None,
@@ -634,6 +836,7 @@ impl MutationReceipt {
         Self {
             kind: "change".to_string(),
             id: change_id.clone(),
+            outcome: MutationOutcome::Confirmed,
             revision_id: None,
             change_id: Some(change_id),
             run_id: None,
@@ -644,6 +847,7 @@ impl MutationReceipt {
         Self {
             kind: "pin".to_string(),
             id: name,
+            outcome: MutationOutcome::Confirmed,
             revision_id: None,
             change_id: None,
             run_id: None,
@@ -654,6 +858,7 @@ impl MutationReceipt {
         Self {
             kind: "run".to_string(),
             id: run_id.clone(),
+            outcome: MutationOutcome::Confirmed,
             revision_id: None,
             change_id: None,
             run_id: Some(run_id),
@@ -749,6 +954,89 @@ mod tests {
         assert_eq!(projected.exit_code(), 2);
         assert!(projected.human().contains("Count"));
         assert!(!projected.human().contains('{'));
+    }
+
+    #[test]
+    fn mutation_errors_distinguish_rejection_unknown_and_invalid_receipt() {
+        let rejected = ApiProtocolError {
+            kind: "conflict".to_string(),
+            message: "revision conflict".to_string(),
+            operation: Some("entry.update".to_string()),
+            status: Some(409),
+            detail: Some(Box::new(serde_json::json!({"current_revision_id":"r2"}))),
+            payload: Some(Box::new(serde_json::json!({
+                "code":"REVISION_CONFLICT", "message":"revision conflict"
+            }))),
+        };
+        let rejected = project_mutation_error(&anyhow::Error::from(rejected));
+        assert_eq!(rejected.code, "MUTATION_REJECTED");
+        assert_eq!(rejected.detail.as_ref().unwrap()["outcome"], "rejected");
+        assert_eq!(
+            rejected.detail.as_ref().unwrap()["original_code"],
+            "REVISION_CONFLICT"
+        );
+
+        let unknown = ApiProtocolError {
+            kind: "internal".to_string(),
+            message: "gateway timeout".to_string(),
+            operation: Some("asset.upload".to_string()),
+            status: Some(504),
+            detail: None,
+            payload: None,
+        };
+        let unknown = project_mutation_error(&anyhow::Error::from(unknown));
+        assert_eq!(unknown.code, "MUTATION_OUTCOME_UNKNOWN");
+        assert!(unknown.message.contains("before retrying"));
+
+        let invalid_receipt = ApiProtocolError {
+            kind: "invalid_response".to_string(),
+            message: "invalid receipt".to_string(),
+            operation: Some("form.upsert".to_string()),
+            status: Some(200),
+            detail: None,
+            payload: None,
+        };
+        let invalid_receipt = project_mutation_error(&anyhow::Error::from(invalid_receipt));
+        assert_eq!(invalid_receipt.code, "MUTATION_RECEIPT_INVALID");
+        assert_eq!(invalid_receipt.exit_code(), 1);
+        assert_eq!(
+            invalid_receipt.detail.as_ref().unwrap()["outcome"],
+            "receipt_invalid"
+        );
+
+        let preflight_failure = ApiProtocolError {
+            kind: "invalid_response".to_string(),
+            message: "invalid Form list response".to_string(),
+            operation: Some("form.list".to_string()),
+            status: Some(200),
+            detail: None,
+            payload: None,
+        };
+        let preflight_failure = project_mutation_error(&anyhow::Error::from(preflight_failure));
+        assert_eq!(preflight_failure.code, "MUTATION_REJECTED");
+    }
+
+    #[test]
+    fn typed_outcome_errors_keep_their_machine_code() {
+        let error = anyhow::Error::new(MutationOutcomeError::new(
+            MutationOutcome::ReceiptInvalid,
+            "invalid write receipt",
+        ));
+        let projected = project_error(&error);
+        assert_eq!(projected.code, "MUTATION_RECEIPT_INVALID");
+        assert_eq!(projected.exit_code(), 1);
+        assert_eq!(
+            projected.detail.as_ref().unwrap()["outcome"],
+            "receipt_invalid"
+        );
+    }
+
+    #[test]
+    fn untyped_mutation_failures_are_unknown_not_rejected() {
+        let error = anyhow::anyhow!("catalog commit response was lost");
+        let projected = project_mutation_error(&error);
+        assert_eq!(projected.code, "MUTATION_OUTCOME_UNKNOWN");
+        assert!(projected.message.contains("before retrying"));
     }
 
     #[test]

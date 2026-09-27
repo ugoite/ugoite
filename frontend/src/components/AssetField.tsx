@@ -12,6 +12,7 @@ import { ButtonSpinner } from "./ButtonSpinner";
 import { LocalBusyIndicator } from "./LocalBusyIndicator";
 import { UiIcon } from "./UiIcon";
 import { assetApi } from "~/lib/ugoite-client";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 import { locale, t } from "~/lib/i18n";
 import {
   type AssetDraftBinding,
@@ -150,8 +151,23 @@ export function AssetField(props: AssetFieldProps) {
     uploadFailed: t("assetField.error.uploadFailed"),
   });
 
-  const upload = (file: File, signal: AbortSignal) =>
-    assetApi.upload(props.spaceId, file, file.name, signal);
+  const upload = async (file: File, signal: AbortSignal) => {
+    try {
+      return await assetApi.upload(props.spaceId, file, file.name, signal);
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      // Preserve adapter/local errors verbatim; API errors carry the shared
+      // outcome property and need the recovery guidance from the formatter.
+      if (error instanceof Error && !("mutationOutcome" in error)) throw error;
+      throw new Error(
+        formatUserFacingError(
+          error,
+          "assetField.error.uploadFailed",
+          "asset.upload",
+        ),
+      );
+    }
+  };
 
   const chooseFiles = (files: File[], replaceAssetId?: string) => {
     const selected = replaceAssetId || !props.multiple

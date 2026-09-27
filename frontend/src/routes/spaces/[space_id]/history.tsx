@@ -36,7 +36,14 @@ const isDefiniteRevisionConflict = (error: unknown): boolean => {
 
 const isDefiniteApiRejection = (error: unknown): boolean => {
   if (!error || typeof error !== "object") return false;
-  const diagnostic = error as { kind?: unknown; status?: unknown };
+  const diagnostic = error as {
+    kind?: unknown;
+    status?: unknown;
+    mutationOutcome?: unknown;
+  };
+  if (diagnostic.mutationOutcome) {
+    return diagnostic.mutationOutcome === "rejected";
+  }
   return typeof diagnostic.kind === "string" &&
     typeof diagnostic.status === "number" &&
     diagnostic.status >= 400 && diagnostic.status < 500 &&
