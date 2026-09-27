@@ -220,13 +220,23 @@ pub async fn verify_space(
         },
         Err(error) => section(evidence_error_status(&error), true, Some(error.to_string())),
     };
-    let derived = section(
-        VerifyStatus::ValidWithRebuildableDerivedState,
-        true,
-        Some(
-            "derived indexes are disposable and can be rebuilt with `ugoite index run`".to_string(),
+    let derived = match crate::derived_relation::asset_text_refresh_needed(
+        operator,
+        &workspace_path,
+    )
+    .await
+    {
+        Ok(true) => section(
+            VerifyStatus::ValidWithRebuildableDerivedState,
+            true,
+            Some(
+                "derived indexes are stale or corrupt and can be rebuilt with `ugoite index run`"
+                    .to_string(),
+            ),
         ),
-    );
+        Ok(false) => section(VerifyStatus::Valid, true, None),
+        Err(error) => section(evidence_error_status(&error), true, Some(error.to_string())),
+    };
 
     let authorization = match Authorizer::new(operator.clone())
         .state_if_present(space_id, space_uid)
@@ -476,6 +486,7 @@ mod tests {
         for code in [
             "catalog_head_missing",
             "publication_chain_corrupt",
+            "publication_change_invalid",
             "table_metadata_invalid",
             "table_uuid_mismatch",
         ] {

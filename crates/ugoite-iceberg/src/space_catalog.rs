@@ -3101,6 +3101,15 @@ fn decode_publication_for_health(
 ) -> std::result::Result<PublicationRecord, &'static str> {
     let publication: PublicationRecord =
         serde_json::from_slice(bytes).map_err(|_| "publication_decode_failure")?;
+    let context = PublicationContext {
+        command_id: publication.command_id.clone(),
+        command_kind: publication.command_kind.clone(),
+        command_digest: publication.command_digest.clone(),
+        change: publication.change.clone(),
+    };
+    if context.validate().is_err() {
+        return Err("publication_change_invalid");
+    }
     if publication.checksum
         != publication_checksum(&publication).map_err(|_| "publication_decode_failure")?
     {
