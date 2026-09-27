@@ -140,13 +140,8 @@ pub async fn verify_space(
     let catalog = VerifySection {
         status: catalog_status,
         checked: true,
-        detail: (!issue_codes.is_empty()).then(|| {
-            issue_codes
-                .iter()
-                .map(|code| *code)
-                .collect::<Vec<_>>()
-                .join(",")
-        }),
+        detail: (!issue_codes.is_empty())
+            .then(|| issue_codes.iter().copied().collect::<Vec<_>>().join(",")),
         count: Some(health.tables.len()),
     };
 

@@ -617,14 +617,14 @@ pub(crate) async fn verify_history_integrity(
             let form = form_history.get(&row.form_version).unwrap_or(&current_form);
             let revision = revision_row_to_domain(row, form)?;
             let current = previous.get(&row.entry_id);
-            revision.validate(&form, current).map_err(|error| {
+            revision.validate(form, current).map_err(|error| {
                 anyhow!(
                     "Entry {} revision {}: {error}",
                     row.entry_id,
                     row.revision_id
                 )
             })?;
-            let expected = integrity_for_domain_revision(&form, &revision, &provider)?;
+            let expected = integrity_for_domain_revision(form, &revision, &provider)?;
             if expected.checksum != revision.entry.integrity.checksum
                 || expected.signature != revision.entry.integrity.signature
             {
