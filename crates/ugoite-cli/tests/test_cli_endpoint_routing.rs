@@ -1276,7 +1276,7 @@ fn test_entry_patch_help_explains_delta_and_conflict_behavior() {
         "ENTRY_ID",
         "--field <KEY=VALUE>",
         "--remove-field <KEY>",
-        "preserving the rest",
+        "applies only the requested field changes",
         "Concurrent changes are rejected as conflicts",
     ] {
         assert!(stdout.contains(needle), "{stdout}");
