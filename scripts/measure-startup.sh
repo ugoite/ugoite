@@ -122,7 +122,8 @@ for ((run = 1; run <= RUNS; run++)); do
   UGOITE_STARTUP_METRICS=true \
   UGOITE_SOURCE_SHA="$SOURCE_SHA" \
   UGOITE_NODE_SECRET_KEY="$NODE_SECRET_KEY" \
-    "$SERVER" >"$log_file" 2>&1 &
+    env -u UGOITE_NODE_CONTROL_URI -u UGOITE_STORAGE_ENDPOINT \
+      "$SERVER" >"$log_file" 2>&1 &
   server_pid=$!
   ready=false
   for _ in $(seq 1 "$((STARTUP_TIMEOUT_SECONDS * 10))"); do
