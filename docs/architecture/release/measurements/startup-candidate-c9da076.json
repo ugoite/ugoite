@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "measured_at": "2026-09-27T17:02:44.574854+00:00",
+  "command": "mise run measure:startup",
+  "source_sha": "c9da07675274e1123f82a51b0266906014f5894e",
+  "fixture": {
+    "seed": {
+      "startup-space-a": 3146001,
+      "startup-space-b": 3144001
+    },
+    "entries": 10000,
+    "space_entry_counts": {
+      "startup-space-a": 6000,
+      "startup-space-b": 4000
+    },
+    "audit_event_count": 9000,
+    "audit_event_counts_by_space_uid": {
+      "01a0e3cd-6dd9-712a-8459-56a150364b90": 5000,
+      "01a0e3ce-d622-7668-9a3c-428e476741ab": 4000
+    }
+  },
+  "runner": {
+    "os": "macOS-26.6.1-arm64-arm-64bit",
+    "architecture": "arm64"
+  },
+  "process_runs": [
+    {
+      "run": 1,
+      "cache_state": "first_process",
+      "phases": [
+        {
+          "duration_ms": 30.40675,
+          "event": "ugoite.startup.phase",
+          "phase": "bootstrap_auth",
+          "process_id": 48628,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e"
+        },
+        {
+          "duration_ms": 3.71625,
+          "event": "ugoite.startup.phase",
+          "phase": "claim_recovery",
+          "process_id": 48628,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e"
+        },
+        {
+          "duration_ms": 64.768792,
+          "event": "ugoite.startup.phase",
+          "phase": "space_onboarding_validation",
+          "process_id": 48628,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e",
+          "spaces": 2
+        },
+        {
+          "duration_ms": 114502.25525,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_recovery",
+          "process_id": 48628,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e",
+          "spaces": 2,
+          "targets_converged": 10000
+        },
+        {
+          "duration_ms": 0.071583,
+          "event": "ugoite.startup.phase",
+          "phase": "derived_rebuild_scheduling",
+          "process_id": 48628,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e",
+          "spaces": 2
+        },
+        {
+          "address": "127.0.0.1:18401",
+          "duration_ms": 114808.31000000001,
+          "event": "ugoite.startup.phase",
+          "phase": "listen_ready",
+          "process_id": 48628,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e"
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "cache_state": "subsequent_process",
+      "phases": [
+        {
+          "duration_ms": 0.346875,
+          "event": "ugoite.startup.phase",
+          "phase": "bootstrap_auth",
+          "process_id": 51799,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e"
+        },
+        {
+          "duration_ms": 0.944084,
+          "event": "ugoite.startup.phase",
+          "phase": "claim_recovery",
+          "process_id": 51799,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e"
+        },
+        {
+          "duration_ms": 61.261,
+          "event": "ugoite.startup.phase",
+          "phase": "space_onboarding_validation",
+          "process_id": 51799,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e",
+          "spaces": 2
+        },
+        {
+          "duration_ms": 3835.993375,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_recovery",
+          "process_id": 51799,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e",
+          "spaces": 2,
+          "targets_converged": 10000
+        },
+        {
+          "duration_ms": 0.034999999999999996,
+          "event": "ugoite.startup.phase",
+          "phase": "derived_rebuild_scheduling",
+          "process_id": 51799,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e",
+          "spaces": 2
+        },
+        {
+          "address": "127.0.0.1:18402",
+          "duration_ms": 4064.835166,
+          "event": "ugoite.startup.phase",
+          "phase": "listen_ready",
+          "process_id": 51799,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e"
+        }
+      ]
+    },
+    {
+      "run": 3,
+      "cache_state": "subsequent_process",
+      "phases": [
+        {
+          "duration_ms": 0.34841700000000003,
+          "event": "ugoite.startup.phase",
+          "phase": "bootstrap_auth",
+          "process_id": 51921,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e"
+        },
+        {
+          "duration_ms": 0.9135840000000001,
+          "event": "ugoite.startup.phase",
+          "phase": "claim_recovery",
+          "process_id": 51921,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e"
+        },
+        {
+          "duration_ms": 61.519375000000004,
+          "event": "ugoite.startup.phase",
+          "phase": "space_onboarding_validation",
+          "process_id": 51921,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e",
+          "spaces": 2
+        },
+        {
+          "duration_ms": 3818.800625,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_recovery",
+          "process_id": 51921,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e",
+          "spaces": 2,
+          "targets_converged": 10000
+        },
+        {
+          "duration_ms": 0.044,
+          "event": "ugoite.startup.phase",
+          "phase": "derived_rebuild_scheduling",
+          "process_id": 51921,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e",
+          "spaces": 2
+        },
+        {
+          "address": "127.0.0.1:18403",
+          "duration_ms": 4048.214291,
+          "event": "ugoite.startup.phase",
+          "phase": "listen_ready",
+          "process_id": 51921,
+          "schema_version": 1,
+          "source_sha": "c9da07675274e1123f82a51b0266906014f5894e"
+        }
+      ]
+    }
+  ],
+  "scope": "Process-cold and subsequent-process timings; OS page cache is not controlled."
+}

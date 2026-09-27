@@ -33,6 +33,7 @@ use anyhow::{Context, Result};
 use opendal::Operator;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::audit;
@@ -655,6 +656,7 @@ impl UgoiteService {
     /// Change/revision IDs never change. Returns the number of targets
     /// converged.
     pub async fn reconcile_space_audit(&self, space_id: &str) -> Result<usize> {
+        let reconcile_started = Instant::now();
         let workspace = self.workspace_path(space_id);
         // `space_uid` verifies uniqueness against every discoverable Space.
         // Validate once per sweep, then reuse the immutable identity for each
@@ -700,7 +702,9 @@ impl UgoiteService {
             }
         }
         let sql_ids = crate::saved_sql::list_sql_ids_for_audit(self.operator(), &workspace).await?;
-        let converged = entry_revisions.len() + sql_ids.len();
+        let entry_target_count = entry_revisions.len();
+        let sql_target_count = sql_ids.len();
+        let converged = entry_target_count + sql_target_count;
         let mut audit_events = Vec::new();
         for (entry_id, revisions) in entry_revisions {
             audit_events.extend(Self::entry_revision_audit_events(
@@ -731,9 +735,27 @@ impl UgoiteService {
                 ));
             }
         }
+        crate::audit::emit_startup_audit_measurement(
+            "audit_target_enumeration",
+            reconcile_started.elapsed(),
+            serde_json::json!({
+                "entries": entry_target_count,
+                "saved_sql": sql_target_count
+            }),
+        );
+        let target_count = converged;
+        let append_started = Instant::now();
         crate::audit::append_audit_events(self.operator(), space_id, &audit_events)
             .await
             .with_context(|| format!("reconcile audit events for Space {space_id}"))?;
+        crate::audit::emit_startup_audit_measurement(
+            "audit_reconcile_append",
+            append_started.elapsed(),
+            serde_json::json!({
+                "targets": target_count,
+                "events": audit_events.len()
+            }),
+        );
         Ok(converged)
     }
 }

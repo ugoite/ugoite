@@ -47,6 +47,27 @@ mise run seed
 The helper refuses to overwrite an existing target Space. Use
 `bash scripts/dev-seed.sh --help` for the supported scenario and size options.
 
+To capture server startup phase timings on a fixed 6,000 + 4,000 Entry fixture,
+run `mise run measure:startup`. It writes a JSON report under `target/` and
+removes its temporary fixture when complete. Set `UGOITE_STARTUP_MEASURE_ROOT`
+to retain the fixture, `UGOITE_STARTUP_MEASURE_OUTPUT` to change the report
+path, or `UGOITE_STARTUP_MEASURE_RUNS` to change the number of process starts.
+Set `UGOITE_STARTUP_MEASURE_TIMEOUT_SECONDS` to change the readiness timeout.
+When reusing a retained fixture, set `UGOITE_STARTUP_MEASURE_REUSE_ROOT=true`
+with the same `UGOITE_STARTUP_MEASURE_ROOT`; the script also retains a mode-600
+Node secret sidecar beside that root so identity state opens consistently.
+Delete the root and its `.node-secret` sidecar when finished. The report
+distinguishes the first process from later processes; it does not control the
+operating system's file cache.
+
+The committed [L06 profile](../architecture/release/measurements/startup-profile-candidate-9b47ccc.json)
+records the initial fixture-opening audit backfill at 104.3 s and two later
+starts over the persisted audit chain at 4.0 s on macOS arm64. Marker
+reconciliation and commit dominate the backfill. The startup path has no
+verified persistent audit checkpoint, so the 15 s checkpoint-backed cold-start
+target was not measured. Do not describe the first-process result as a
+checkpoint measurement.
+
 ## Development authentication
 
 Open the local server's one-use setup URL from the server output, register the

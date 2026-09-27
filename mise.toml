@@ -41,6 +41,10 @@ run = "bash scripts/dev-seed.sh"
 description = "Seed two local Spaces and measure EntryQuery and SQL browser reads"
 run = "bash scripts/measure-query-surfaces.sh"
 
+[tasks."measure:startup"]
+description = "Seed two local Spaces and measure server startup phases"
+run = "bash scripts/measure-startup.sh"
+
 [tasks."devcontainer:ssh"]
 description = "Configure SSH access to the development container"
 run = "bash scripts/devcontainer-ssh setup"

@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use chrono::{SecondsFormat, Utc};
 use fs2::FileExt;
+use futures::stream::{self, StreamExt, TryStreamExt};
 use opendal::Operator;
 use regex::Regex;
 use serde_json::{json, Value};
@@ -10,6 +11,7 @@ use std::{
     collections::HashMap,
     fs::{self, OpenOptions},
     path::Path,
+    time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
 use ugoite_core::error::{AppError, ErrorCode};
@@ -18,6 +20,33 @@ const DEFAULT_AUDIT_LIMIT: usize = 100;
 const MAX_AUDIT_LIMIT: usize = 500;
 const DEFAULT_AUDIT_RETENTION: usize = 5000;
 const MAX_AUDIT_RETENTION: usize = 50000;
+
+pub(crate) fn emit_startup_audit_measurement(phase: &str, duration: Duration, fields: Value) {
+    if !matches!(
+        std::env::var("UGOITE_STARTUP_METRICS").as_deref(),
+        Ok("true")
+    ) {
+        return;
+    }
+    let mut event = serde_json::Map::from_iter([
+        ("schema_version".to_string(), json!(1)),
+        ("event".to_string(), json!("ugoite.startup.phase")),
+        ("phase".to_string(), json!(phase)),
+        (
+            "duration_ms".to_string(),
+            json!(duration.as_secs_f64() * 1000.0),
+        ),
+        ("process_id".to_string(), json!(std::process::id())),
+        (
+            "source_sha".to_string(),
+            json!(std::env::var("UGOITE_SOURCE_SHA").unwrap_or_else(|_| "unknown".to_string())),
+        ),
+    ]);
+    if let Some(fields) = fields.as_object() {
+        event.extend(fields.clone());
+    }
+    eprintln!("{}", Value::Object(event));
+}
 
 /// Normalize a protocol-supplied audit page before any `usize` conversion.
 ///
@@ -316,6 +345,30 @@ async fn read_event_marker(
     Ok(Some((marker, version)))
 }
 
+/// Read a recovery batch's existing markers concurrently. The verified audit
+/// chain remains authoritative; this only batches independent exact marker
+/// reads that were previously awaited one by one.
+async fn read_event_markers(
+    op: &Operator,
+    space_id: &str,
+    event_ids: impl IntoIterator<Item = String>,
+) -> Result<HashMap<String, Option<(Value, Option<String>)>>> {
+    let op = op.clone();
+    let space_id = space_id.to_string();
+    let markers = stream::iter(event_ids.into_iter().map(|event_id| {
+        let op = op.clone();
+        let space_id = space_id.clone();
+        async move {
+            let marker = read_event_marker(&op, &space_id, &event_id).await?;
+            Ok::<_, anyhow::Error>((event_id, marker))
+        }
+    }))
+    .buffer_unordered(32)
+    .try_collect::<Vec<_>>()
+    .await?;
+    Ok(markers.into_iter().collect())
+}
+
 async fn create_pending_marker(
     op: &Operator,
     space_id: &str,
@@ -493,8 +546,14 @@ async fn append_audit_events_once(
     } else {
         None
     };
+    let chain_verify_started = Instant::now();
     let mut events = read_events(op, &safe_space_id).await?;
     verify_chain(&events)?;
+    emit_startup_audit_measurement(
+        "audit_chain_verification",
+        chain_verify_started.elapsed(),
+        json!({"events": events.len()}),
+    );
     let persisted_event_count = events.len();
     let mut event_indexes = HashMap::with_capacity(events.len() + payloads.len());
     for (index, event) in events.iter().enumerate() {
@@ -502,11 +561,38 @@ async fn append_audit_events_once(
             event_indexes.insert(event_id.to_string(), index);
         }
     }
+    let requested_event_ids = payloads
+        .iter()
+        .filter_map(|payload| {
+            payload
+                .get("event_id")
+                .and_then(Value::as_str)
+                .and_then(|value| uuid::Uuid::parse_str(value).ok())
+                .map(|value| value.to_string())
+        })
+        .collect::<std::collections::HashSet<_>>();
+    let marker_prefetch_started = Instant::now();
+    let persisted_markers = read_event_markers(
+        op,
+        &safe_space_id,
+        requested_event_ids.into_iter().filter(|event_id| {
+            event_indexes
+                .get(event_id)
+                .is_some_and(|index| *index < persisted_event_count)
+        }),
+    )
+    .await?;
+    emit_startup_audit_measurement(
+        "audit_marker_prefetch",
+        marker_prefetch_started.elapsed(),
+        json!({"markers": persisted_markers.len()}),
+    );
 
     let mut output = Vec::with_capacity(payloads.len());
     let mut pending_markers = Vec::with_capacity(payloads.len());
     let mut appended = false;
     let mut marker_directory_created = false;
+    let reconcile_markers_started = Instant::now();
     for payload in payloads {
         let payload_obj = payload
             .as_object()
@@ -570,8 +656,15 @@ async fn append_audit_events_once(
 
         let mut marker_version = None;
         if let Some(event_id) = requested_event_id.as_deref() {
-            if let Some((marker, version)) = read_event_marker(op, &safe_space_id, event_id).await?
+            let marker_state = if event_indexes
+                .get(event_id)
+                .is_some_and(|index| *index < persisted_event_count)
             {
+                persisted_markers.get(event_id).cloned().flatten()
+            } else {
+                read_event_marker(op, &safe_space_id, event_id).await?
+            };
+            if let Some((marker, version)) = marker_state {
                 if marker.get("status").and_then(Value::as_str) == Some("committed") {
                     let canonical = marker.get("event").unwrap_or(&marker);
                     if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
@@ -709,6 +802,11 @@ async fn append_audit_events_once(
         output.push(event);
         appended = true;
     }
+    emit_startup_audit_measurement(
+        "audit_marker_reconciliation",
+        reconcile_markers_started.elapsed(),
+        json!({"payloads": payloads.len(), "new_events": pending_markers.len()}),
+    );
 
     if appended {
         let retention = normalize_retention_limit(None);
@@ -726,8 +824,16 @@ async fn append_audit_events_once(
                 *event = (*canonical).clone();
             }
         }
+        let write_chain_started = Instant::now();
         write_events(op, &safe_space_id, &events, expected_version.as_deref()).await?;
+        emit_startup_audit_measurement(
+            "audit_chain_write",
+            write_chain_started.elapsed(),
+            json!({"events": events.len()}),
+        );
     }
+    let commit_markers_started = Instant::now();
+    let committed_marker_count = pending_markers.len();
     for (event_id, marker_version, event) in pending_markers {
         commit_event_marker(
             op,
@@ -738,6 +844,11 @@ async fn append_audit_events_once(
         )
         .await?;
     }
+    emit_startup_audit_measurement(
+        "audit_marker_commit",
+        commit_markers_started.elapsed(),
+        json!({"markers": committed_marker_count}),
+    );
     Ok(output)
 }
 
