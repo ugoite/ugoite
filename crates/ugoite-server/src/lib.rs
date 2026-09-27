@@ -2514,14 +2514,18 @@ async fn auth_setup_finish(
         )
         .await
         .map_err(|error| {
-            tracing::warn!(error = %error, "initial setup registration failed");
+            if std::env::var_os("UGOITE_E2E_DIAGNOSTICS").is_some() {
+                eprintln!("initial setup registration failed: {error:#}");
+            }
             recovery_aware_auth_error(error)
         })?;
     let claims = state
         .complete_pending_initial_space_claims()
         .await
         .map_err(|error| {
-            tracing::warn!(error = %error, "initial Space claims could not be completed");
+            if std::env::var_os("UGOITE_E2E_DIAGNOSTICS").is_some() {
+                eprintln!("initial Space claims could not be completed: {error:#}");
+            }
             auth_error(error)
         })?;
     let claimed_space_uids = claims
