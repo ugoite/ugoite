@@ -125,7 +125,8 @@ describe("space history list", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Revert this change" }));
     expect(await screen.findByText("Append a revert for this Change?")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Confirm revert" }));
-    expect(await screen.findByText("Reverted as Change inverse-change.")).toBeInTheDocument();
+    expect(await screen.findByText("Revert added to history.")).toBeInTheDocument();
+    expect(screen.queryByText("inverse-change")).toBeNull();
     expect(changeApi.revert).toHaveBeenCalledWith("default", "change-1", {});
     expect(changeApi.query).toHaveBeenCalledTimes(3);
   });
@@ -225,6 +226,32 @@ describe("space history list", () => {
     expect(await screen.findByText("entry-1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(setSearchParams).toHaveBeenCalledWith({ change: undefined });
+  });
+
+  it("replaces affected Entry rows when moving between bounded detail pages", async () => {
+    vi.mocked(changeApi.inspect).mockImplementation(async (_spaceId, changeId, options = {}) => {
+      const source = row(changeId, 2);
+      const secondPage = options.cursor === "entry-page-2";
+      return {
+        change_id: changeId,
+        change: source.change,
+        target_visibility: "complete",
+        summary: source.summary,
+        targets: [{ form_id: "form-1", entry_id: secondPage ? "entry-2" : "entry-1", before_revision_id: null, after_revision_id: secondPage ? "revision-2" : "revision-1", operation: "create", fields: [] }],
+        next_cursor: secondPage ? null : "entry-page-2",
+      };
+    });
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open change" }))[0]);
+    await screen.findByRole("dialog", { name: "Expenses · 100 entries" });
+    expect(await screen.findByText(/Entry 1/)).toBeInTheDocument();
+    const pagination = document.querySelector(".history-affected-layout .history-detail-pagination")!;
+    fireEvent.click(within(pagination).getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(changeApi.affectedEntry).toHaveBeenCalledWith("default", "change-1", "entry-2"));
+    expect(document.querySelectorAll(".history-affected-list li")).toHaveLength(1);
+    fireEvent.click(within(pagination).getByRole("button", { name: "Previous" }));
+    await waitFor(() => expect(changeApi.inspect).toHaveBeenLastCalledWith("default", "change-1", { limit: 10, cursor: undefined }));
+    expect(document.querySelectorAll(".history-affected-list li")).toHaveLength(1);
   });
 
   it("applies supported text, actor, date, sort, and column controls server-side", async () => {

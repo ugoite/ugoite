@@ -1595,6 +1595,7 @@ textarea {
 .history-entry-diff dt, .history-technical-info dt { font-weight: 600; margin-top: 10px; }
 .history-entry-diff dd, .history-technical-info dd { margin: 4px 0 0; overflow-wrap: anywhere; }
 .history-detail-actions { flex: 0 0 auto; border-top: 1px solid var(--line); padding-top: 14px; }
+.history-detail-pagination { display: flex; gap: 8px; margin-top: 10px; }
 .history-technical-info { margin: 16px 0; color: var(--muted); }
 .history-technical-info summary { cursor: pointer; }
 @media (max-width: 640px) {

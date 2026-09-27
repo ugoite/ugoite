@@ -49,11 +49,13 @@ export default function SpaceHistoryRoute() {
   const [openChange, setOpenChange] = createSignal<string>();
   const [targetRows, setTargetRows] = createSignal<NonNullable<Awaited<ReturnType<typeof changeApi.inspect>>>["targets"]>([]);
   const [targetCursor, setTargetCursor] = createSignal<string>();
+  const [targetHistory, setTargetHistory] = createSignal<(string | undefined)[]>([undefined]);
   const [targetLoading, setTargetLoading] = createSignal(false);
   const [targetError, setTargetError] = createSignal(false);
   const [selectedEntryId, setSelectedEntryId] = createSignal<string>();
   const [relatedChanges, setRelatedChanges] = createSignal<SpaceChangeQueryRow[]>([]);
   const [relatedCursor, setRelatedCursor] = createSignal<string>();
+  const [relatedHistory, setRelatedHistory] = createSignal<(string | undefined)[]>([undefined]);
   const [relatedLoading, setRelatedLoading] = createSignal(false);
   const [pendingRecovery, setPendingRecovery] = createSignal<"revert" | "undo" | null>(null);
   const [recoveryMessage, setRecoveryMessage] = createSignal("");
@@ -206,10 +208,12 @@ export default function SpaceHistoryRoute() {
     if (!current || current.change_id !== openChange()) return;
     setTargetRows(current.targets);
     setTargetCursor(current.next_cursor ?? undefined);
+    setTargetHistory([undefined]);
     setTargetError(false);
     setSelectedEntryId(current.targets[0]?.entry_id);
     setRelatedChanges([]);
     setRelatedCursor(undefined);
+    setRelatedHistory([undefined]);
     if (current.change.run_id) {
       const runId = current.change.run_id;
       void changeApi.query(spaceId(), { limit: 10, run_id: runId })
@@ -221,34 +225,39 @@ export default function SpaceHistoryRoute() {
         .catch(() => { if (openChange() === current.change_id) setRelatedChanges([]); });
     }
   });
-  const loadMoreTargets = async () => {
+  const loadTargetPage = async (cursor: string | undefined, direction: "next" | "previous") => {
     const changeId = openChange();
-    const cursor = targetCursor();
-    if (!changeId || !cursor || targetLoading()) return;
+    if (!changeId || targetLoading()) return;
     setTargetLoading(true);
     setTargetError(false);
     try {
       const next = await changeApi.inspect(spaceId(), changeId, { limit: 10, cursor });
       if (openChange() !== changeId) return;
-      setTargetRows((current) => [...current, ...next.targets]);
+      setTargetRows(next.targets);
+      setSelectedEntryId(next.targets[0]?.entry_id);
       setTargetCursor(next.next_cursor ?? undefined);
+      setTargetHistory((current) => direction === "next"
+        ? [...current, cursor]
+        : current.slice(0, -1));
     } catch {
       setTargetError(true);
     } finally {
       setTargetLoading(false);
     }
   };
-  const loadMoreRelatedChanges = async () => {
+  const loadRelatedPage = async (cursor: string | undefined, direction: "next" | "previous") => {
     const runId = inspection()?.change.run_id;
     const changeId = openChange();
-    const cursor = relatedCursor();
-    if (!runId || !changeId || !cursor || relatedLoading()) return;
+    if (!runId || !changeId || relatedLoading()) return;
     setRelatedLoading(true);
     try {
       const next = await changeApi.query(spaceId(), { limit: 10, run_id: runId, cursor });
       if (openChange() !== changeId) return;
-      setRelatedChanges((current) => [...current, ...next.changes]);
+      setRelatedChanges(next.changes);
       setRelatedCursor(next.next_cursor ?? undefined);
+      setRelatedHistory((current) => direction === "next"
+        ? [...current, cursor]
+        : current.slice(0, -1));
     } catch {
       // The initial Change detail remains available if related history cannot be read.
     } finally {
@@ -397,7 +406,7 @@ export default function SpaceHistoryRoute() {
     try {
       if (kind === "revert") {
         const result = await changeApi.revert(spaceId(), row.change_id, recoveryMessage().trim() ? { message: recoveryMessage().trim() } : {});
-        setRecoveryNotice(t("spaceHistory.revertSuccess", { value: result.change_id }));
+        setRecoveryNotice(t("spaceHistory.revertSuccess"));
       } else if (row.change.run_id) {
         const result = await changeApi.undoRun(spaceId(), row.change.run_id);
         setRecoveryNotice(t("spaceHistory.undoSuccess", { count: result.reverted_change_count }));
@@ -550,13 +559,16 @@ export default function SpaceHistoryRoute() {
                   <section class="history-affected-layout"><div><h3>{t("spaceHistory.affectedEntries")}</h3>
                     <ul class="history-affected-list"><For each={targetRows()}>{(target, index) => <li><button type="button" classList={{ selected: selectedEntryId() === target.entry_id }} onClick={() => setSelectedEntryId(target.entry_id)}><span>{formName(target.form_id)} · {t("spaceHistory.entryNumber", { count: index() + 1 })}</span><span aria-hidden="true">›</span></button></li>}</For></ul>
                     <Show when={targetError()}><p role="alert">{t("spaceHistory.loadError")}</p></Show>
-                    <Show when={targetCursor()}><button type="button" class="ui-button ui-button-secondary" disabled={targetLoading()} onClick={() => void loadMoreTargets()}>{targetLoading() ? t("spaceHistory.loading") : t("common.next")}</button></Show>
+                    <nav class="history-detail-pagination" aria-label={t("spaceHistory.affectedEntries")}>
+                      <Show when={targetHistory().length > 1}><button type="button" class="ui-button ui-button-secondary" disabled={targetLoading()} onClick={() => void loadTargetPage(targetHistory().at(-2), "previous")}>{t("common.previous")}</button></Show>
+                      <Show when={targetCursor()}><button type="button" class="ui-button ui-button-secondary" disabled={targetLoading()} onClick={() => void loadTargetPage(targetCursor(), "next")}>{targetLoading() ? t("spaceHistory.loading") : t("common.next")}</button></Show>
+                    </nav>
                   </div><div class="history-entry-diff"><h3>{t("spaceHistory.selectedEntry")}</h3>
                     <Show when={affectedEntry.loading}><p>{t("spaceHistory.loading")}</p></Show>
                     <Show when={affectedEntry.error}><p role="alert">{t("spaceHistory.loadError")}</p></Show>
                     <Show when={affectedEntry()}><dl><For each={affectedEntry()!.fields}>{(field) => <><dt>{fieldName(affectedEntry()!.form_id, field.field_id)}</dt><dd><span>{userValue(field.before)}</span><span aria-hidden="true"> → </span><span>{userValue(field.after)}</span></dd></>}</For></dl></Show>
                   </div></section>
-                  <Show when={inspection()!.change.run_id}><section><h3>{t("spaceHistory.relatedChanges")}</h3><ul class="history-related-list"><For each={relatedChanges().filter((change) => change.change_id !== openChange())}>{(change) => <li><button type="button" onClick={() => setDetail(change.change_id)}>{formatDateTimeLabel(change.change.created_at_micros / 1000)} · {showSummary(change)}</button></li>}</For></ul><Show when={relatedCursor()}><button type="button" class="ui-button ui-button-secondary" disabled={relatedLoading()} onClick={() => void loadMoreRelatedChanges()}>{relatedLoading() ? t("spaceHistory.loading") : t("common.next")}</button></Show></section></Show>
+                  <Show when={inspection()!.change.run_id}><section><h3>{t("spaceHistory.relatedChanges")}</h3><ul class="history-related-list"><For each={relatedChanges().filter((change) => change.change_id !== openChange())}>{(change) => <li><button type="button" onClick={() => setDetail(change.change_id)}>{formatDateTimeLabel(change.change.created_at_micros / 1000)} · {showSummary(change)}</button></li>}</For></ul><nav class="history-detail-pagination" aria-label={t("spaceHistory.relatedChanges")}><Show when={relatedHistory().length > 1}><button type="button" class="ui-button ui-button-secondary" disabled={relatedLoading()} onClick={() => void loadRelatedPage(relatedHistory().at(-2), "previous")}>{t("common.previous")}</button></Show><Show when={relatedCursor()}><button type="button" class="ui-button ui-button-secondary" disabled={relatedLoading()} onClick={() => void loadRelatedPage(relatedCursor(), "next")}>{relatedLoading() ? t("spaceHistory.loading") : t("common.next")}</button></Show></nav></section></Show>
                   <details class="history-technical-info"><summary>{t("spaceHistory.technicalInfo")}</summary><dl><dt>Change ID</dt><dd>{inspection()!.change_id}</dd><Show when={inspection()!.change.run_id}><dt>Run ID</dt><dd>{inspection()!.change.run_id}</dd></Show><Show when={selectedEntryId()}><dt>Entry ID</dt><dd>{selectedEntryId()}</dd></Show></dl></details>
                 </Show>
               </div>
