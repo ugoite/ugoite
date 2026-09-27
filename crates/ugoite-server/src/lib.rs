@@ -1200,6 +1200,19 @@ impl AppState {
     }
 
     pub async fn initialize_node(&self) -> anyhow::Result<()> {
+        self.initialize_node_with_setup_notice(true).await
+    }
+
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub async fn initialize_node_for_tests(&self) -> anyhow::Result<()> {
+        self.initialize_node_with_setup_notice(false).await
+    }
+
+    async fn initialize_node_with_setup_notice(
+        &self,
+        emit_setup_notice: bool,
+    ) -> anyhow::Result<()> {
         let authorizer = Authorizer::new(self.service.operator().clone());
         if let Err(error) = authorizer.ensure_authoritative_mutation_contract() {
             if error
@@ -1227,10 +1240,12 @@ impl AppState {
             return Err(error);
         }
         if let Some(bootstrap) = self.identity.bootstrap_if_needed().await? {
-            println!(
-                "Ugoite setup URL (expires {}): {}",
-                bootstrap.expires_at, bootstrap.setup_url
-            );
+            if emit_setup_notice {
+                println!(
+                    "Ugoite setup URL (expires {}): {}",
+                    bootstrap.expires_at, bootstrap.setup_url
+                );
+            }
         }
         // Claim-backed Space creation is the explicit recovery boundary. Run
         // it before strict enumeration so a crash-left pending bootstrap does
