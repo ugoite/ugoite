@@ -224,6 +224,14 @@ test("records real two-Space query surface measurements", async ({ page, request
         }
         return response;
       } catch (error) {
+        // Fetch can reject before the AbortSignal event listener is delivered.
+        // Sample the signal here so an in-flight abort is still ordered before
+        // fetch settlement; an abort after a resolved response stays ordered
+        // after endedAt and is not counted as cancellation.
+        if (signal?.aborted && event.abortedAt === undefined) {
+          event.aborted = true;
+          event.abortedAt = performance.now();
+        }
         event.endedAt = performance.now();
         event.error = error instanceof Error ? error.message : String(error);
         throw error;
