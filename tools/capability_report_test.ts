@@ -32,7 +32,7 @@ Deno.test("capability projection tracks the portable operation manifests", async
   );
   const rustOperations = rustManifestOperations(rustSource);
   const tsOperations = typescriptManifestOperations(tsSource);
-  assertEquals(rustOperations.length, 65);
+  assertEquals(rustOperations.length, 66);
   assertEquals(tsOperations, rustOperations);
 });
 

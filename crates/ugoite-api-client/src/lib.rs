@@ -34,6 +34,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "space.audit",
     "space.health",
     "change.list",
+    "change.page",
     "change.revert",
     "run.undo",
     "ugoite.apply",
@@ -496,6 +497,40 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "change.page" => {
+                let mut query = Vec::new();
+                if let Some(limit) = args.get("limit") {
+                    let limit = limit.as_u64().ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(
+                            operation,
+                            "limit must be a positive integer",
+                        )
+                    })?;
+                    query.push(("limit".into(), limit.to_string()));
+                }
+                if let Some(cursor) = args.get("cursor") {
+                    let cursor = cursor
+                        .as_str()
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| {
+                            ApiProtocolError::invalid_arguments(
+                                operation,
+                                "cursor must be a non-empty string",
+                            )
+                        })?;
+                    query.push(("cursor".into(), cursor.to_string()));
+                }
+                (
+                    OperationSpec::get("Failed to page Knowledge changes"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "changes".into(),
+                        "page".into(),
+                    ],
+                    query,
+                )
+            }
             "change.revert" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to revert Knowledge change"),
                 vec![
@@ -1383,6 +1418,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to list Knowledge changes",
             RequestBodyKind::None,
         ),
+        "change.page" => (
+            HttpMethod::Get,
+            "Failed to page Knowledge changes",
+            RequestBodyKind::None,
+        ),
         "change.revert" => (
             HttpMethod::Post,
             "Failed to revert Knowledge change",
@@ -1917,6 +1957,21 @@ mod tests {
         .expect("request");
 
         assert_eq!(request.path, "/spaces/demo/entries?limit=1000&offset=2000");
+    }
+
+    #[test]
+    fn change_page_encodes_limit_and_cursor() {
+        let request = prepare_request(
+            "change.page",
+            &json!({"space_id": "demo", "limit": 20, "cursor": "a.b+/="}),
+            None,
+        )
+        .expect("change page request");
+        assert_eq!(request.method, HttpMethod::Get);
+        assert_eq!(
+            request.path,
+            "/spaces/demo/changes/page?limit=20&cursor=a.b%2B%2F%3D"
+        );
     }
 
     #[test]

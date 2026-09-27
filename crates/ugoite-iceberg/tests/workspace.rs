@@ -363,11 +363,42 @@ async fn publication_coordinates_are_portable_for_uri_like_command_ids() -> anyh
             "test.entry.append",
             &revision,
         )?)?
-        .append_revisions(form.id, vec![revision])
+        .append_revisions(form.id, vec![revision.clone()])
+        .await?;
+
+    let second_change_id = "change:history/2";
+    let mut second_revision = revision.clone();
+    second_revision.entry_id = Uuid::from_u128(3_013).into();
+    second_revision.revision_id = Uuid::from_u128(3_014).into();
+    second_revision.change_id = second_change_id.into();
+    second_revision.entry.external_id = "portable-coordinate-entry-2".into();
+    let second_command = ChangeCommand {
+        change_id: second_change_id.into(),
+        run_id: None,
+        actor_principal_id: "principal:owner".into(),
+        message: Some("second portable coordinate regression".into()),
+        reverts_change_id: None,
+        created_at_micros: 3,
+    };
+    workspace
+        .commit(publication_context_for_change(
+            &second_command,
+            "test.entry.append",
+            &second_revision,
+        )?)?
+        .append_revisions(form.id, vec![second_revision])
+        .await?;
+    workspace
+        .create_pin(
+            "after-second-history-change",
+            "principal:owner",
+            4,
+            "pin-after-second-history-change",
+        )
         .await?;
 
     let changes = workspace.list_changes().await?;
-    assert_eq!(changes.len(), 1);
+    assert_eq!(changes.len(), 2);
     assert_eq!(changes[0].change_id, change_id);
     let coordinate = &changes[0].publication;
     coordinate.validate()?;
@@ -385,6 +416,58 @@ async fn publication_coordinates_are_portable_for_uri_like_command_ids() -> anyh
     assert!(!coordinate_text.contains("memory://"));
     assert!(!coordinate_text.contains("file://"));
     assert!(!coordinate_text.contains("change:"));
+
+    let first_page = workspace.list_changes_page(None, 1).await?;
+    assert!(first_page.changes.is_empty());
+    let continuation = first_page.next.expect("older Change cursor");
+
+    let third_change_id = "change:history/3";
+    let mut third_revision = revision.clone();
+    third_revision.entry_id = Uuid::from_u128(3_015).into();
+    third_revision.revision_id = Uuid::from_u128(3_016).into();
+    third_revision.change_id = third_change_id.into();
+    third_revision.entry.external_id = "portable-coordinate-entry-3".into();
+    let third_command = ChangeCommand {
+        change_id: third_change_id.into(),
+        run_id: None,
+        actor_principal_id: "principal:owner".into(),
+        message: Some("third Change after page boundary".into()),
+        reverts_change_id: None,
+        created_at_micros: 4,
+    };
+    workspace
+        .commit(publication_context_for_change(
+            &third_command,
+            "test.entry.append",
+            &third_revision,
+        )?)?
+        .append_revisions(form.id, vec![third_revision])
+        .await?;
+
+    let second_page = workspace.list_changes_page(Some(continuation), 1).await?;
+    assert_eq!(second_page.changes.len(), 1);
+    assert_eq!(second_page.changes[0].change_id, second_change_id);
+    let mut cursor = second_page.next;
+    let mut resumed_changes = Vec::new();
+    for _ in 0..10 {
+        let Some(position) = cursor.take() else {
+            break;
+        };
+        let page = workspace.list_changes_page(Some(position), 1).await?;
+        resumed_changes.extend(page.changes);
+        cursor = page.next;
+    }
+    assert!(cursor.is_none(), "history cursor should reach the boundary");
+    assert_eq!(
+        resumed_changes
+            .iter()
+            .map(|change| change.change_id.as_str())
+            .collect::<Vec<_>>(),
+        vec![change_id]
+    );
+    assert!(!resumed_changes
+        .iter()
+        .any(|change| change.change_id == third_change_id));
 
     let pins = workspace.list_pins().await?;
     assert_eq!(pins.get("before-history"), Some(&pin));

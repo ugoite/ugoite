@@ -1615,6 +1615,7 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route("/spaces/{space_id}/pins", get(list_pins).post(create_pin))
         .route("/spaces/{space_id}/pins/{pin_name}", delete(delete_pin))
         .route("/spaces/{space_id}/changes", get(list_changes))
+        .route("/spaces/{space_id}/changes/page", get(page_changes))
         .route(
             "/spaces/{space_id}/changes/{change_id}/revert",
             post(revert_change),
@@ -9763,6 +9764,28 @@ async fn list_changes(
 }
 
 #[derive(Default, Deserialize)]
+struct ChangePageQuery {
+    limit: Option<usize>,
+    cursor: Option<String>,
+}
+
+async fn page_changes(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Query(query): Query<ChangePageQuery>,
+) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    Ok(Json(
+        state
+            .service
+            .page_changes(&space_id, query.limit, query.cursor.as_deref())
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+#[derive(Default, Deserialize)]
 struct ChangeRevertRequest {
     run_id: Option<String>,
     message: Option<String>,
@@ -12917,6 +12940,7 @@ mod authentication_regression_tests {
     fn reversible_knowledge_route(state: AppState, identity: RequestIdentityContext) -> Router {
         Router::new()
             .route("/spaces/{space_id}/changes", get(list_changes))
+            .route("/spaces/{space_id}/changes/page", get(page_changes))
             .route(
                 "/spaces/{space_id}/changes/{change_id}/revert",
                 post(revert_change),
@@ -13041,6 +13065,7 @@ mod authentication_regression_tests {
         let route = Router::new()
             .route("/spaces/{space_id}/pins", get(list_pins))
             .route("/spaces/{space_id}/changes", get(list_changes))
+            .route("/spaces/{space_id}/changes/page", get(page_changes))
             .layer(Extension(content_identity(principal_id, space_uid)))
             .with_state(state);
 
@@ -13059,6 +13084,47 @@ mod authentication_regression_tests {
         for change in changes {
             assert_publication_coordinate(&change["publication"], space_uid);
         }
+
+        let page_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!("/spaces/{space_id}/changes/page?limit=1"))
+                    .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(page_response.status(), StatusCode::OK);
+        let page_body = axum::body::to_bytes(page_response.into_body(), usize::MAX).await?;
+        let page: Value = serde_json::from_slice(&page_body)?;
+        assert_eq!(page["changes"].as_array().map(Vec::len), Some(0));
+        let cursor = page["next_cursor"]
+            .as_str()
+            .expect("Pin-only page still advances the publication cursor");
+        let next_page_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/page?limit=1&cursor={cursor}"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(next_page_response.status(), StatusCode::OK);
+        let next_page_body =
+            axum::body::to_bytes(next_page_response.into_body(), usize::MAX).await?;
+        let next_page: Value = serde_json::from_slice(&next_page_body)?;
+        assert_eq!(next_page["changes"].as_array().map(Vec::len), Some(1));
+
+        let invalid_page_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!("/spaces/{space_id}/changes/page?limit=101"))
+                    .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(
+            invalid_page_response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
 
         let pins_response = route
             .oneshot(Request::get(format!("/spaces/{space_id}/pins")).body(Body::empty())?)

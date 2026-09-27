@@ -1,10 +1,12 @@
 use anyhow::{anyhow, bail, Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use fs2::FileExt;
 use futures::TryStreamExt;
+use hmac::{Hmac, KeyInit, Mac};
 use opendal::options::WriteOptions;
 use opendal::{EntryMode, ErrorKind, Operator};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -17,6 +19,30 @@ use std::time::Duration;
 use tokio::sync::{Mutex as AsyncMutex, Notify};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
+
+type HmacSha256 = Hmac<sha2::Sha256>;
+
+const CHANGE_PAGE_DEFAULT_LIMIT: usize = 50;
+const CHANGE_PAGE_MAX_LIMIT: usize = 100;
+
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct ChangeHistoryPageToken {
+    version: u32,
+    space_id: String,
+    position: crate::ChangeHistoryChainCursor,
+}
+
+fn change_history_page_limit(requested: Option<usize>) -> Result<usize> {
+    let limit = requested.unwrap_or(CHANGE_PAGE_DEFAULT_LIMIT);
+    if !(1..=CHANGE_PAGE_MAX_LIMIT).contains(&limit) {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            format!("limit must be between 1 and {CHANGE_PAGE_MAX_LIMIT}"),
+        )
+        .into());
+    }
+    Ok(limit)
+}
 
 fn canonical_entry_id(requested_id: Option<&str>) -> String {
     requested_id
@@ -714,6 +740,58 @@ impl UgoiteService {
         digest.update([0]);
         digest.update(space_id.as_bytes());
         Ok(digest.finalize().to_vec())
+    }
+
+    fn encode_change_page_cursor(
+        token: &ChangeHistoryPageToken,
+        signing_key: &[u8],
+    ) -> Result<String> {
+        let payload = serde_json::to_vec(token)?;
+        let mut mac = HmacSha256::new_from_slice(signing_key)
+            .map_err(|_| anyhow!("invalid Change history cursor signing key"))?;
+        mac.update(&payload);
+        Ok(format!(
+            "v1.{}.{}",
+            URL_SAFE_NO_PAD.encode(payload),
+            URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+        ))
+    }
+
+    fn decode_change_page_cursor(
+        encoded: &str,
+        expected_space_id: &str,
+        signing_key: &[u8],
+    ) -> Result<ChangeHistoryPageToken> {
+        if encoded.len() > 16_384 {
+            bail!("Change history cursor is too large");
+        }
+        let mut parts = encoded.split('.');
+        if parts.next() != Some("v1") {
+            bail!("Change history cursor version is unsupported");
+        }
+        let payload = URL_SAFE_NO_PAD
+            .decode(parts.next().context("Change history cursor is malformed")?)
+            .context("Change history cursor payload is malformed")?;
+        let signature = URL_SAFE_NO_PAD
+            .decode(parts.next().context("Change history cursor is malformed")?)
+            .context("Change history cursor signature is malformed")?;
+        if parts.next().is_some() {
+            bail!("Change history cursor is malformed");
+        }
+        let mut mac = HmacSha256::new_from_slice(signing_key)
+            .map_err(|_| anyhow!("invalid Change history cursor signing key"))?;
+        mac.update(&payload);
+        mac.verify_slice(&signature)
+            .map_err(|_| anyhow!("Change history cursor signature is invalid"))?;
+        let token: ChangeHistoryPageToken =
+            serde_json::from_slice(&payload).context("Change history cursor payload is invalid")?;
+        if token.version != 1 {
+            bail!("Change history cursor version is unsupported");
+        }
+        if token.space_id != expected_space_id {
+            bail!("Change history cursor belongs to another Space");
+        }
+        Ok(token)
     }
 
     async fn validate_complete_space(&self, space_id: &str) -> Result<()> {
@@ -2208,6 +2286,44 @@ impl UgoiteService {
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         Ok(serde_json::to_value(workspace.list_changes().await?)?)
+    }
+
+    pub async fn page_changes(
+        &self,
+        space_id: &str,
+        requested_limit: Option<usize>,
+        cursor: Option<&str>,
+    ) -> Result<Value> {
+        let limit = change_history_page_limit(requested_limit)?;
+        self.validate_complete_space(space_id).await?;
+        let signing_key = self.sql_query_signing_key(space_id).await?;
+        let position = cursor
+            .map(|cursor| {
+                Self::decode_change_page_cursor(cursor, space_id, &signing_key).map_err(
+                    |error| -> anyhow::Error {
+                        AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()).into()
+                    },
+                )
+            })
+            .transpose()?
+            .map(|token| token.position);
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let page = workspace.list_changes_page(position, limit).await?;
+        let next_cursor = page
+            .next
+            .map(|position| {
+                Self::encode_change_page_cursor(
+                    &ChangeHistoryPageToken {
+                        version: 1,
+                        space_id: space_id.to_string(),
+                        position,
+                    },
+                    &signing_key,
+                )
+            })
+            .transpose()?;
+        Ok(json!({ "changes": page.changes, "next_cursor": next_cursor }))
     }
 
     /// Reopen hook: converge commit-coupled audit evidence after a Space is
@@ -7152,5 +7268,67 @@ mod tests {
             Some(0)
         );
         Ok(())
+    }
+
+    #[test]
+    fn change_page_cursor_is_signed_and_space_bound() -> anyhow::Result<()> {
+        use ugoite_domain::space_key::{SpaceKey, SpaceUri};
+
+        let space_uid = Uuid::now_v7();
+        let signing_key = Uuid::now_v7();
+        let boundary = PublicationRef::new(
+            4,
+            SpaceUri::new(
+                space_uid,
+                SpaceKey::parse("_ugoite/catalog/publications/4-616263.json")?,
+            )?,
+            "a".repeat(64),
+        )?;
+        let token = ChangeHistoryPageToken {
+            version: 1,
+            space_id: space_uid.to_string(),
+            position: crate::ChangeHistoryChainCursor {
+                boundary,
+                generation: 3,
+                publication_path: "spaces/test/_ugoite/catalog/publications/3-646566.json".into(),
+                expected_next_head_checksum: "b".repeat(64),
+            },
+        };
+        let encoded = UgoiteService::encode_change_page_cursor(&token, signing_key.as_bytes())?;
+        assert_eq!(
+            UgoiteService::decode_change_page_cursor(
+                &encoded,
+                &token.space_id,
+                signing_key.as_bytes()
+            )?,
+            token
+        );
+        assert!(UgoiteService::decode_change_page_cursor(
+            &encoded,
+            "another-space",
+            signing_key.as_bytes()
+        )
+        .is_err());
+
+        let mut parts: Vec<_> = encoded.split('.').map(str::to_string).collect();
+        let first_payload_byte = parts[1].remove(0);
+        parts[1].insert(0, if first_payload_byte == 'A' { 'B' } else { 'A' });
+        let tampered = parts.join(".");
+        assert!(UgoiteService::decode_change_page_cursor(
+            &tampered,
+            &token.space_id,
+            signing_key.as_bytes()
+        )
+        .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn change_page_limit_has_a_hard_cap() {
+        assert_eq!(change_history_page_limit(None).unwrap(), 50);
+        assert_eq!(change_history_page_limit(Some(1)).unwrap(), 1);
+        assert_eq!(change_history_page_limit(Some(100)).unwrap(), 100);
+        assert!(change_history_page_limit(Some(0)).is_err());
+        assert!(change_history_page_limit(Some(101)).is_err());
     }
 }
