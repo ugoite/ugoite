@@ -146,6 +146,14 @@ export PLAYWRIGHT_JUNIT_OUTPUT_FILE="${PLAYWRIGHT_JUNIT_OUTPUT_FILE:-test-result
 compose_cmd=(docker compose -f "$COMPOSE_FILE")
 
 cleanup() {
+  local exit_status=$?
+  if [ "$exit_status" -ne 0 ]; then
+    echo ""
+    echo "Service diagnostics (setup secrets redacted):"
+    "${compose_cmd[@]}" logs --no-color ugoite 2>/dev/null \
+      | sed -E 's/(#secret=)[^[:space:]]+/\1[redacted]/g' \
+      | tail -n 120 || true
+  fi
   echo ""
   echo "Stopping services..."
   "${compose_cmd[@]}" down -v 2>/dev/null || true
