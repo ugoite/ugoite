@@ -189,6 +189,31 @@ pub enum MutationOutcome {
     ReceiptInvalid,
 }
 
+/// Carries a mutation result classification through command layers that have
+/// already identified an ambiguous write, such as a Konase MCP receipt.
+#[derive(Debug)]
+pub struct MutationOutcomeError {
+    pub outcome: MutationOutcome,
+    pub message: String,
+}
+
+impl MutationOutcomeError {
+    pub fn new(outcome: MutationOutcome, message: impl Into<String>) -> Self {
+        Self {
+            outcome,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for MutationOutcomeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for MutationOutcomeError {}
+
 impl MutationOutcome {
     const fn error_code(self) -> Option<&'static str> {
         match self {
@@ -328,6 +353,22 @@ impl std::error::Error for ExportProgressError {
 
 /// Project any CLI failure into the shared error shape.
 pub fn project_error(error: &Error) -> CliError {
+    if let Some(outcome_error) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<MutationOutcomeError>())
+    {
+        let outcome = outcome_error.outcome;
+        return CliError {
+            code: outcome.error_code().unwrap_or("INTERNAL_ERROR").to_string(),
+            kind: "internal".to_string(),
+            message: outcome_error.message.clone(),
+            detail: Some(serde_json::json!({
+                "outcome": outcome,
+                "recovery_action": "inspect_history_before_retry",
+            })),
+            exit: ExitCode::Internal,
+        };
+    }
     if let Some(progress) = error
         .chain()
         .find_map(|cause| cause.downcast_ref::<ExportProgressError>())
@@ -452,6 +493,13 @@ fn classify_mutation_error(error: &Error) -> MutationOutcome {
         return MutationOutcome::Unknown;
     }
 
+    if let Some(outcome_error) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<MutationOutcomeError>())
+    {
+        return outcome_error.outcome;
+    }
+
     if let Some(app_error) = error
         .chain()
         .find_map(|cause| cause.downcast_ref::<AppError>())
@@ -475,10 +523,9 @@ fn classify_mutation_error(error: &Error) -> MutationOutcome {
     } else if diagnostic.contains("unconfirmed") {
         MutationOutcome::Unknown
     } else {
-        // Failures before a typed response or transport error mean no
-        // authoritative write was confirmed; presenting them as rejected is
-        // safer than implying that a save may have succeeded.
-        MutationOutcome::Rejected
+        // An untyped error may have happened after the authoritative write.
+        // Only typed validation/rejection errors are safe to call rejected.
+        MutationOutcome::Unknown
     }
 }
 
@@ -967,6 +1014,29 @@ mod tests {
         };
         let preflight_failure = project_mutation_error(&anyhow::Error::from(preflight_failure));
         assert_eq!(preflight_failure.code, "MUTATION_REJECTED");
+    }
+
+    #[test]
+    fn typed_outcome_errors_keep_their_machine_code() {
+        let error = anyhow::Error::new(MutationOutcomeError::new(
+            MutationOutcome::ReceiptInvalid,
+            "invalid write receipt",
+        ));
+        let projected = project_error(&error);
+        assert_eq!(projected.code, "MUTATION_RECEIPT_INVALID");
+        assert_eq!(projected.exit_code(), 1);
+        assert_eq!(
+            projected.detail.as_ref().unwrap()["outcome"],
+            "receipt_invalid"
+        );
+    }
+
+    #[test]
+    fn untyped_mutation_failures_are_unknown_not_rejected() {
+        let error = anyhow::anyhow!("catalog commit response was lost");
+        let projected = project_mutation_error(&error);
+        assert_eq!(projected.code, "MUTATION_OUTCOME_UNKNOWN");
+        assert!(projected.message.contains("before retrying"));
     }
 
     #[test]

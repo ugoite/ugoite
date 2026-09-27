@@ -180,12 +180,14 @@ export class KonaseWriteDeniedError extends Error {
 }
 
 export class KonaseMutationUnconfirmedError extends Error {
-  readonly mutationOutcome = "unknown" as const;
-  readonly mutationCode = MUTATION_ERROR_CODES.unknown;
+  readonly mutationOutcome: "unknown" | "receipt_invalid";
+  readonly mutationCode: string;
 
-  constructor() {
+  constructor(outcome: "unknown" | "receipt_invalid" = "unknown") {
     super("Ugoite could not confirm the mutation result");
     this.name = "KonaseMutationUnconfirmedError";
+    this.mutationOutcome = outcome;
+    this.mutationCode = MUTATION_ERROR_CODES[outcome];
   }
 }
 
@@ -461,7 +463,7 @@ export class KonaseHost {
     try {
       result = validateMutationResult(request, workId, rawResult);
     } catch {
-      throw new KonaseMutationUnconfirmedError();
+      throw new KonaseMutationUnconfirmedError("receipt_invalid");
     }
     this.assertCurrent(generation);
     if (!result.success) {
@@ -563,6 +565,7 @@ export class KonaseHost {
         this.assertCurrent(generation);
         const mcpRequest = action.request;
         let dispatchStarted = false;
+        let receiptValidationStarted = false;
         let receiptValidated = false;
         try {
           runtime.authorizeDispatch(
@@ -577,6 +580,7 @@ export class KonaseHost {
           });
           dispatchStarted = true;
           const rawResult = await this.mcp.callMcp(mcpRequest, workId);
+          receiptValidationStarted = true;
           const mcpResult = validateMutationResult(
             mcpRequest,
             workId,
@@ -613,7 +617,9 @@ export class KonaseHost {
             dispatchStarted && !receiptValidated &&
             mcpRequest.effect === "write"
           ) {
-            throw new KonaseMutationUnconfirmedError();
+            throw new KonaseMutationUnconfirmedError(
+              receiptValidationStarted ? "receipt_invalid" : "unknown",
+            );
           }
           throw cause;
         }
