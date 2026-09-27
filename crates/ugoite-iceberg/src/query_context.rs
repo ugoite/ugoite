@@ -41,18 +41,26 @@ pub fn active_query_streams() -> usize {
     ACTIVE_QUERY_STREAMS.load(Ordering::Relaxed)
 }
 
-struct ActiveQueryStream;
+struct ActiveQueryStream {
+    query_active: Option<Arc<std::sync::atomic::AtomicBool>>,
+}
 
 impl ActiveQueryStream {
-    fn new() -> Self {
+    fn new(query_active: Option<Arc<std::sync::atomic::AtomicBool>>) -> Self {
         ACTIVE_QUERY_STREAMS.fetch_add(1, Ordering::Relaxed);
-        Self
+        if let Some(query_active) = &query_active {
+            query_active.store(true, Ordering::SeqCst);
+        }
+        Self { query_active }
     }
 }
 
 impl Drop for ActiveQueryStream {
     fn drop(&mut self) {
         ACTIVE_QUERY_STREAMS.fetch_sub(1, Ordering::Relaxed);
+        if let Some(query_active) = &self.query_active {
+            query_active.store(false, Ordering::SeqCst);
+        }
     }
 }
 
@@ -252,11 +260,18 @@ fn allowed_scalar_functions(allowed_functions: &BTreeSet<String>) -> Vec<Arc<Sca
 async fn collect_query_stream(
     stream: datafusion::physical_plan::SendableRecordBatchStream,
 ) -> Result<Vec<arrow_array::RecordBatch>> {
+    collect_query_stream_with_probe(stream, None).await
+}
+
+async fn collect_query_stream_with_probe(
+    stream: datafusion::physical_plan::SendableRecordBatchStream,
+    query_active: Option<Arc<std::sync::atomic::AtomicBool>>,
+) -> Result<Vec<arrow_array::RecordBatch>> {
     // Keep the stream in this future's scope. Dropping an HTTP request future
     // drops this collector, which drops the DataFusion stream and aborts its
     // execution tasks. The guard makes active execution independently
     // observable during that lifetime and is released on every exit path.
-    let _active_stream = ActiveQueryStream::new();
+    let _active_stream = ActiveQueryStream::new(query_active);
     let mut stream = stream;
     let mut batches = Vec::new();
     while let Some(batch) = futures::TryStreamExt::try_next(&mut stream)
@@ -271,6 +286,7 @@ async fn collect_query_stream(
 #[cfg(feature = "test-support")]
 pub async fn run_slow_query_for_test(
     dropped: Arc<std::sync::atomic::AtomicBool>,
+    query_active: Arc<std::sync::atomic::AtomicBool>,
     started: Arc<tokio::sync::Notify>,
 ) {
     struct SlowSource {
@@ -312,7 +328,7 @@ pub async fn run_slow_query_for_test(
             },
         ),
     );
-    let _ = collect_query_stream(stream).await;
+    let _ = collect_query_stream_with_probe(stream, Some(query_active)).await;
 }
 
 fn classify_datafusion_error(error: datafusion::error::DataFusionError) -> AuthorizedQueryError {
@@ -1355,7 +1371,7 @@ impl AuthorizedQueryContext {
             .map_err(classify_datafusion_error)?;
         let mut batches = Vec::new();
         let mut bytes = 0usize;
-        let _active_stream = ActiveQueryStream::new();
+        let _active_stream = ActiveQueryStream::new(None);
         let mut stream = stream;
         while let Some(batch) = futures::TryStreamExt::try_next(&mut stream)
             .await
@@ -1687,7 +1703,7 @@ fn validate_physical_plan(
 
 #[cfg(test)]
 mod cancellation_tests {
-    use super::{active_query_streams, collect_query_stream};
+    use super::collect_query_stream_with_probe;
     use arrow_schema::Schema;
     use datafusion::error::DataFusionError;
     use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
@@ -1727,6 +1743,7 @@ mod cancellation_tests {
     #[tokio::test]
     async fn aborting_query_collector_drops_slow_source_and_clears_active_count() {
         let dropped = Arc::new(AtomicBool::new(false));
+        let query_active = Arc::new(AtomicBool::new(false));
         let started = Arc::new(tokio::sync::Notify::new());
         let stream = Box::pin(RecordBatchStreamAdapter::new(
             Arc::new(Schema::empty()),
@@ -1736,13 +1753,15 @@ mod cancellation_tests {
                 first_poll: true,
             },
         ));
-        let before = active_query_streams();
-        let query = tokio::spawn(collect_query_stream(stream));
+        let query = tokio::spawn(collect_query_stream_with_probe(
+            stream,
+            Some(query_active.clone()),
+        ));
         tokio::time::timeout(std::time::Duration::from_secs(5), started.notified())
             .await
             .expect("slow source must be polled");
         assert!(
-            active_query_streams() > before,
+            query_active.load(Ordering::SeqCst),
             "query stream did not become active"
         );
 
@@ -1756,6 +1775,9 @@ mod cancellation_tests {
             dropped.load(Ordering::SeqCst),
             "DataFusion source was not dropped"
         );
-        assert_eq!(active_query_streams(), before, "active query count leaked");
+        assert!(
+            !query_active.load(Ordering::SeqCst),
+            "query active guard leaked"
+        );
     }
 }

@@ -102,25 +102,32 @@ mod read_query_cancellation_tests {
     #[derive(Clone)]
     struct Probe {
         dropped: Arc<AtomicBool>,
+        query_active: Arc<AtomicBool>,
         started: Arc<tokio::sync::Notify>,
     }
 
     async fn slow_query_endpoint(
         axum::extract::State(probe): axum::extract::State<Probe>,
     ) -> &'static str {
-        ugoite_iceberg::query_context::run_slow_query_for_test(probe.dropped, probe.started).await;
+        ugoite_iceberg::query_context::run_slow_query_for_test(
+            probe.dropped,
+            probe.query_active,
+            probe.started,
+        )
+        .await;
         "finished"
     }
 
     #[tokio::test]
     async fn disconnect_drops_server_query_stream_and_clears_active_work() -> anyhow::Result<()> {
-        let active_before = ugoite_iceberg::query_context::active_query_streams();
         let source_dropped = Arc::new(AtomicBool::new(false));
+        let query_active = Arc::new(AtomicBool::new(false));
         let source_started = Arc::new(tokio::sync::Notify::new());
         let app = axum::Router::new()
             .route("/slow-query", axum::routing::post(slow_query_endpoint))
             .with_state(Probe {
                 dropped: source_dropped.clone(),
+                query_active: query_active.clone(),
                 started: source_started.clone(),
             });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
@@ -138,7 +145,7 @@ mod read_query_cancellation_tests {
 
         tokio::time::timeout(Duration::from_secs(5), source_started.notified()).await?;
         tokio::time::timeout(Duration::from_secs(5), async {
-            while ugoite_iceberg::query_context::active_query_streams() <= active_before {
+            while !query_active.load(Ordering::SeqCst) {
                 tokio::task::yield_now().await;
             }
         })
@@ -146,9 +153,7 @@ mod read_query_cancellation_tests {
         drop(client);
 
         let stopped = tokio::time::timeout(Duration::from_secs(5), async {
-            while ugoite_iceberg::query_context::active_query_streams() != active_before
-                || !source_dropped.load(Ordering::SeqCst)
-            {
+            while query_active.load(Ordering::SeqCst) || !source_dropped.load(Ordering::SeqCst) {
                 tokio::task::yield_now().await;
             }
         })
@@ -156,10 +161,7 @@ mod read_query_cancellation_tests {
         server.abort();
         stopped?;
         assert!(source_dropped.load(Ordering::SeqCst));
-        assert_eq!(
-            ugoite_iceberg::query_context::active_query_streams(),
-            active_before
-        );
+        assert!(!query_active.load(Ordering::SeqCst));
         Ok(())
     }
 }
