@@ -9865,6 +9865,7 @@ async fn change_affected_entry(
 #[derive(Default, Deserialize)]
 struct ChangeInspectQuery {
     limit: Option<usize>,
+    cursor: Option<String>,
 }
 
 async fn inspect_change(
@@ -9883,6 +9884,7 @@ async fn inspect_change(
                 &space_id,
                 &change_id,
                 query.limit,
+                query.cursor.as_deref(),
                 &principals,
             )
             .await
@@ -13326,6 +13328,21 @@ mod authentication_regression_tests {
         assert_eq!(inspected["summary"]["affected_entry_count"], 1);
         assert_eq!(inspected["targets"].as_array().map(Vec::len), Some(1));
         assert_eq!(inspected["targets"][0]["entry_id"], entry_id);
+        assert!(inspected.get("next_cursor").is_none());
+
+        let invalid_inspect_cursor = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/{target_change_id}/inspect?cursor=invalid"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(
+            invalid_inspect_cursor.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
 
         let affected_response = route
             .clone()

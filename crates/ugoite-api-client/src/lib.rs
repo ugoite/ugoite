@@ -598,6 +598,18 @@ pub fn prepare_request(
                         })?;
                     query.push(("limit".into(), limit.to_string()));
                 }
+                if let Some(cursor) = args.get("cursor") {
+                    let cursor = cursor
+                        .as_str()
+                        .filter(|cursor| !cursor.is_empty() && cursor.len() <= 16_384)
+                        .ok_or_else(|| {
+                            ApiProtocolError::invalid_arguments(
+                                operation,
+                                "cursor must be a non-empty string no longer than 16384 bytes",
+                            )
+                        })?;
+                    query.push(("cursor".into(), cursor.to_string()));
+                }
                 (
                     OperationSpec::get("Failed to inspect Knowledge change"),
                     vec![
@@ -2129,6 +2141,21 @@ mod tests {
             "/spaces/demo/changes/change-1/inspect?limit=10"
         );
 
+        let next_page = prepare_request(
+            "change.inspect",
+            &json!({
+                "space_id": "demo",
+                "change_id": "change-1",
+                "cursor": "v1.eyJvZmZzZXQiOjEwfQ.sig"
+            }),
+            None,
+        )
+        .expect("change inspect continuation request");
+        assert_eq!(
+            next_page.path,
+            "/spaces/demo/changes/change-1/inspect?cursor=v1.eyJvZmZzZXQiOjEwfQ.sig"
+        );
+
         let error = prepare_request(
             "change.inspect",
             &json!({"space_id": "demo", "change_id": "change-1", "limit": 11}),
@@ -2136,6 +2163,16 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("between 1 and 10"));
+
+        let error = prepare_request(
+            "change.inspect",
+            &json!({"space_id": "demo", "change_id": "change-1", "cursor": ""}),
+            None,
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("cursor must be a non-empty string"));
     }
 
     #[test]
@@ -2870,6 +2907,7 @@ mod tests {
         if operation == "change.inspect" {
             arguments.insert("change_id".into(), json!("change-1"));
             arguments.insert("limit".into(), json!(10));
+            arguments.insert("cursor".into(), json!("v1.page.sig"));
         }
         if operation == "run.undo" {
             arguments.insert("run_id".into(), json!("run-1"));
