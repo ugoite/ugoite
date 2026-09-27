@@ -1142,11 +1142,17 @@ test.describe("Entries CRUD", () => {
 		expect(finalChangesRes.ok()).toBe(true);
 		const finalChanges = (await finalChangesRes.json()) as Array<{
 			change_id: string;
+			reverts_change_id?: string | null;
 		}>;
 		expect(finalChanges.filter((change) => change.change_id === reverted.change_id))
 			.toHaveLength(1);
 		expect(finalChanges.some((change) => change.change_id === targetChangeId))
 			.toBe(true);
+		const inverseChanges = finalChanges.filter((change) =>
+			change.reverts_change_id === targetChangeId
+		);
+		expect(inverseChanges).toHaveLength(1);
+		expect(inverseChanges[0]?.change_id).toBe(reverted.change_id);
 		const deletedEntryRes = await request.get(
 			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
