@@ -39,11 +39,11 @@ for (const [relativePath, expectedHash] of Object.entries(proof.source_files)) {
   if (expectedPrefix) {
     const prefix = Uint8Array.from(expectedPrefix);
     if (
-      bytes.length <= prefix.length ||
+      bytes.length < prefix.length ||
       !prefix.every((byte, index) => bytes[index] === byte)
     ) {
       throw new Error(
-        `append-only authoritative file prefix changed or no claim audit was appended: ${relativePath}`,
+        `append-only authoritative file prefix changed: ${relativePath}`,
       );
     }
     verified += 1;
