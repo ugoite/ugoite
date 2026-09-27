@@ -9,7 +9,7 @@ use crate::entry::{EntryOperation, EntryRevision, FieldValue};
 use crate::form::FormDefinition;
 use crate::id::{EntryId, FieldId, FormId, RevisionId};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A value state in a verified revision comparison.
 ///
@@ -182,6 +182,32 @@ pub struct ChangeHistoryQuery {
     pub created_after_micros: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_before_micros: Option<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sort: Vec<ChangeHistorySort>,
+}
+
+/// Metadata field available to the bounded Change query sorter.
+#[derive(Debug, Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChangeHistorySortField {
+    CreatedAtMicros,
+    ActorPrincipalId,
+    RunId,
+}
+
+/// Direction for one Change query sort key.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChangeHistorySortDirection {
+    Asc,
+    Desc,
+}
+
+/// One ordered metadata key in a Change query.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ChangeHistorySort {
+    pub field: ChangeHistorySortField,
+    pub direction: ChangeHistorySortDirection,
 }
 
 impl ChangeHistoryQuery {
@@ -198,7 +224,69 @@ impl ChangeHistoryQuery {
         ) {
             return Err(ChangeHistoryQueryError::InvalidTimeRange);
         }
+        if self.sort.len() > 3
+            || self
+                .sort
+                .iter()
+                .map(|sort| sort.field)
+                .collect::<BTreeSet<_>>()
+                .len()
+                != self.sort.len()
+        {
+            return Err(ChangeHistoryQueryError::InvalidSort);
+        }
         Ok(self)
+    }
+
+    /// Compare committed descriptors using the requested keys. A stable
+    /// newest-first publication identity breaks all ties, independent of the
+    /// direction of user-selected keys.
+    pub fn compare_changes(
+        &self,
+        left: &ChangeDescriptor,
+        left_change_id: &str,
+        left_generation: u64,
+        right: &ChangeDescriptor,
+        right_change_id: &str,
+        right_generation: u64,
+    ) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        for sort in &self.sort {
+            let ordering = match sort.field {
+                ChangeHistorySortField::CreatedAtMicros => {
+                    left.created_at_micros.cmp(&right.created_at_micros)
+                }
+                ChangeHistorySortField::ActorPrincipalId => {
+                    left.actor_principal_id.cmp(&right.actor_principal_id)
+                }
+                ChangeHistorySortField::RunId => match (&left.run_id, &right.run_id) {
+                    (Some(left), Some(right)) => {
+                        let ordering = left.cmp(right);
+                        if sort.direction == ChangeHistorySortDirection::Desc {
+                            ordering.reverse()
+                        } else {
+                            ordering
+                        }
+                    }
+                    (Some(_), None) => return Ordering::Less,
+                    (None, Some(_)) => return Ordering::Greater,
+                    (None, None) => Ordering::Equal,
+                },
+            };
+            let ordering = if sort.field != ChangeHistorySortField::RunId
+                && sort.direction == ChangeHistorySortDirection::Desc
+            {
+                ordering.reverse()
+            } else {
+                ordering
+            };
+            if ordering != Ordering::Equal {
+                return ordering;
+            }
+        }
+        right_generation
+            .cmp(&left_generation)
+            .then_with(|| left_change_id.cmp(right_change_id))
     }
 
     pub fn matches(&self, change: &ChangeDescriptor) -> bool {
@@ -245,6 +333,7 @@ fn normalize_query_text(
 pub enum ChangeHistoryQueryError {
     InvalidFilter,
     InvalidTimeRange,
+    InvalidSort,
 }
 
 impl std::fmt::Display for ChangeHistoryQueryError {
@@ -254,6 +343,7 @@ impl std::fmt::Display for ChangeHistoryQueryError {
             Self::InvalidTimeRange => {
                 formatter.write_str("created_after_micros must not exceed created_before_micros")
             }
+            Self::InvalidSort => formatter.write_str("Change history sort is invalid"),
         }
     }
 }
@@ -458,6 +548,7 @@ mod tests {
             text: Some("  TRAVEL  ".into()),
             created_after_micros: Some(1_000),
             created_before_micros: Some(1_000),
+            sort: Vec::new(),
         }
         .normalize()
         .unwrap();
@@ -471,6 +562,60 @@ mod tests {
         .normalize()
         .unwrap();
         assert!(!other.matches(&descriptor()));
+    }
+
+    #[test]
+    fn query_sort_rejects_duplicate_keys_and_keeps_null_runs_last() {
+        let duplicate = ChangeHistorySort {
+            field: ChangeHistorySortField::ActorPrincipalId,
+            direction: ChangeHistorySortDirection::Asc,
+        };
+        assert_eq!(
+            ChangeHistoryQuery {
+                sort: vec![duplicate, duplicate],
+                ..ChangeHistoryQuery::default()
+            }
+            .normalize()
+            .unwrap_err(),
+            ChangeHistoryQueryError::InvalidSort
+        );
+
+        let query = ChangeHistoryQuery {
+            sort: vec![ChangeHistorySort {
+                field: ChangeHistorySortField::RunId,
+                direction: ChangeHistorySortDirection::Desc,
+            }],
+            ..ChangeHistoryQuery::default()
+        };
+        let with_run = descriptor();
+        let mut without_run = descriptor();
+        without_run.run_id = None;
+        assert_eq!(
+            query.compare_changes(&with_run, "a", 1, &without_run, "b", 2),
+            std::cmp::Ordering::Less
+        );
+
+        let query = ChangeHistoryQuery {
+            sort: vec![
+                ChangeHistorySort {
+                    field: ChangeHistorySortField::CreatedAtMicros,
+                    direction: ChangeHistorySortDirection::Asc,
+                },
+                ChangeHistorySort {
+                    field: ChangeHistorySortField::ActorPrincipalId,
+                    direction: ChangeHistorySortDirection::Desc,
+                },
+            ],
+            ..ChangeHistoryQuery::default()
+        };
+        let mut first = descriptor();
+        first.actor_principal_id = "actor-a".into();
+        let mut second = descriptor();
+        second.actor_principal_id = "actor-b".into();
+        assert_eq!(
+            query.compare_changes(&second, "b", 2, &first, "a", 1),
+            std::cmp::Ordering::Less
+        );
     }
 
     #[test]

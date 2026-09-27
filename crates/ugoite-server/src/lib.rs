@@ -9851,6 +9851,47 @@ struct ChangeQueryParams {
     text: Option<String>,
     created_after_micros: Option<i64>,
     created_before_micros: Option<i64>,
+    sort: Option<String>,
+}
+
+fn parse_change_history_sort(
+    value: Option<String>,
+) -> Result<Vec<ugoite_domain::change_history::ChangeHistorySort>, ApiError> {
+    use ugoite_domain::change_history::{
+        ChangeHistorySort, ChangeHistorySortDirection as Direction, ChangeHistorySortField as Field,
+    };
+    value
+        .map(|value| value.split(',').map(str::to_owned).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|value| {
+            let (field, direction) = value.split_once(':').ok_or_else(|| {
+                ApiError::new(StatusCode::BAD_REQUEST, "sort must use field:direction")
+            })?;
+            let field = match field {
+                "created_at_micros" => Field::CreatedAtMicros,
+                "actor_principal_id" => Field::ActorPrincipalId,
+                "run_id" => Field::RunId,
+                _ => {
+                    return Err(ApiError::new(
+                        StatusCode::BAD_REQUEST,
+                        "sort field is unsupported",
+                    ))
+                }
+            };
+            let direction = match direction {
+                "asc" => Direction::Asc,
+                "desc" => Direction::Desc,
+                _ => {
+                    return Err(ApiError::new(
+                        StatusCode::BAD_REQUEST,
+                        "sort direction is unsupported",
+                    ))
+                }
+            };
+            Ok(ChangeHistorySort { field, direction })
+        })
+        .collect()
 }
 
 async fn page_changes(
@@ -9884,6 +9925,7 @@ async fn query_changes(
         text: query.text,
         created_after_micros: query.created_after_micros,
         created_before_micros: query.created_before_micros,
+        sort: parse_change_history_sort(query.sort)?,
     };
     Ok(Json(
         state
@@ -13629,6 +13671,48 @@ mod authentication_regression_tests {
             )
             .await?;
         assert_eq!(unsupported_sort_response.status(), StatusCode::BAD_REQUEST);
+
+        let sorted_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/query?limit=1&sort=created_at_micros:asc,actor_principal_id:desc"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        let sorted_status = sorted_response.status();
+        let sorted_body = axum::body::to_bytes(sorted_response.into_body(), usize::MAX).await?;
+        assert_eq!(
+            sorted_status,
+            StatusCode::OK,
+            "{}",
+            String::from_utf8_lossy(&sorted_body)
+        );
+        let sorted_page: Value = serde_json::from_slice(&sorted_body)?;
+        let first_sorted = sorted_page["changes"][0]["change"]["created_at_micros"]
+            .as_i64()
+            .expect("sorted page has a Change timestamp");
+        let sorted_cursor = sorted_page["next_cursor"]
+            .as_str()
+            .expect("sorted page has a continuation cursor");
+        let sorted_continuation = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/query?limit=1&sort=created_at_micros:asc,actor_principal_id:desc&cursor={sorted_cursor}"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(sorted_continuation.status(), StatusCode::OK);
+        let sorted_continuation_body =
+            axum::body::to_bytes(sorted_continuation.into_body(), usize::MAX).await?;
+        let sorted_continuation_page: Value = serde_json::from_slice(&sorted_continuation_body)?;
+        let second_sorted = sorted_continuation_page["changes"][0]["change"]["created_at_micros"]
+            .as_i64()
+            .expect("sorted continuation has a Change timestamp");
+        assert!(first_sorted <= second_sorted);
 
         let pins_response = route
             .oneshot(Request::get(format!("/spaces/{space_id}/pins")).body(Body::empty())?)

@@ -26,6 +26,7 @@ const CHANGE_PAGE_DEFAULT_LIMIT: usize = 50;
 const CHANGE_PAGE_MAX_LIMIT: usize = 100;
 const CHANGE_INSPECT_DEFAULT_TARGET_LIMIT: usize = 10;
 const CHANGE_INSPECT_MAX_PUBLICATIONS: usize = 10_000;
+const CHANGE_QUERY_SORT_MAX_PUBLICATIONS: usize = 10_000;
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct ChangeHistoryPageToken {
@@ -34,6 +35,8 @@ struct ChangeHistoryPageToken {
     position: crate::ChangeHistoryChainCursor,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     query_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sort_offset: Option<usize>,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2475,6 +2478,7 @@ impl UgoiteService {
                         space_id: space_id.to_string(),
                         position,
                         query_hash: None,
+                        sort_offset: None,
                     },
                     &signing_key,
                 )
@@ -2500,6 +2504,94 @@ impl UgoiteService {
             .collect::<String>();
         self.validate_complete_space(space_id).await?;
         let signing_key = self.sql_query_signing_key(space_id).await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        if !query.sort.is_empty() {
+            let (snapshot, offset, page) = if let Some(cursor) = cursor {
+                let token = Self::decode_change_page_cursor(cursor, space_id, &signing_key)
+                    .map_err(|error| {
+                        AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
+                    })?;
+                if token.query_hash.as_deref() != Some(query_hash.as_str()) {
+                    return Err(AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "Change query cursor does not match the requested filters or sort",
+                    )
+                    .into());
+                }
+                let offset = token.sort_offset.ok_or_else(|| {
+                    AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "Change query cursor does not contain a sorted page position",
+                    )
+                })?;
+                let page = workspace
+                    .list_changes_page(
+                        Some(token.position.clone()),
+                        CHANGE_QUERY_SORT_MAX_PUBLICATIONS + 1,
+                    )
+                    .await?;
+                (token.position, offset, page)
+            } else {
+                let page = workspace
+                    .list_changes_page(None, CHANGE_QUERY_SORT_MAX_PUBLICATIONS + 1)
+                    .await?;
+                let snapshot = page.start.clone().ok_or_else(|| {
+                    AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "Change history snapshot could not be established",
+                    )
+                })?;
+                (snapshot, 0, page)
+            };
+            if page.scanned_publications > CHANGE_QUERY_SORT_MAX_PUBLICATIONS || page.next.is_some()
+            {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    format!(
+                        "sorted Change queries are limited to {CHANGE_QUERY_SORT_MAX_PUBLICATIONS} publications"
+                    ),
+                )
+                .into());
+            }
+            let mut changes = page
+                .changes
+                .into_iter()
+                .filter(|change| query.matches(&change.change))
+                .collect::<Vec<_>>();
+            changes.sort_by(|left, right| {
+                query.compare_changes(
+                    &left.change,
+                    &left.change_id,
+                    left.generation,
+                    &right.change,
+                    &right.change_id,
+                    right.generation,
+                )
+            });
+            let page_end = offset.saturating_add(limit).min(changes.len());
+            let has_more = page_end < changes.len();
+            let changes = changes
+                .into_iter()
+                .skip(offset)
+                .take(limit)
+                .collect::<Vec<_>>();
+            let next_cursor = if has_more {
+                Some(Self::encode_change_page_cursor(
+                    &ChangeHistoryPageToken {
+                        version: 1,
+                        space_id: space_id.to_string(),
+                        position: snapshot,
+                        query_hash: Some(query_hash),
+                        sort_offset: Some(page_end),
+                    },
+                    &signing_key,
+                )?)
+            } else {
+                None
+            };
+            return Ok(json!({ "changes": changes, "next_cursor": next_cursor }));
+        }
         let position = cursor
             .map(|cursor| {
                 Self::decode_change_page_cursor(cursor, space_id, &signing_key)
@@ -2507,7 +2599,9 @@ impl UgoiteService {
                         AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()).into()
                     })
                     .and_then(|token| {
-                        if token.query_hash.as_deref() != Some(query_hash.as_str()) {
+                        if token.query_hash.as_deref() != Some(query_hash.as_str())
+                            || token.sort_offset.is_some()
+                        {
                             bail!("Change query cursor does not match the requested filters");
                         }
                         Ok(token.position)
@@ -2517,8 +2611,6 @@ impl UgoiteService {
             .map_err(|error: anyhow::Error| {
                 AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
             })?;
-        let workspace =
-            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         let page = workspace.list_changes_page(position, limit).await?;
         let changes = page
             .changes
@@ -2534,6 +2626,7 @@ impl UgoiteService {
                         space_id: space_id.to_string(),
                         position,
                         query_hash: Some(query_hash),
+                        sort_offset: None,
                     },
                     &signing_key,
                 )
@@ -8263,8 +8356,10 @@ mod tests {
                 generation: 3,
                 publication_path: "spaces/test/_ugoite/catalog/publications/3-646566.json".into(),
                 expected_next_head_checksum: "b".repeat(64),
+                start: false,
             },
             query_hash: None,
+            sort_offset: None,
         };
         let encoded = UgoiteService::encode_change_page_cursor(&token, signing_key.as_bytes())?;
         assert_eq!(
