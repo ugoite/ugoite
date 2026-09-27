@@ -189,6 +189,16 @@ fn cli_sql_export_writes_complete_ndjson_atomically() {
         3
     );
     let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(summary["complete"], true);
+    assert_eq!(summary["rows"], 3);
+    assert!(summary["bytes"].as_u64().unwrap() > 0);
+    assert_eq!(summary["output"], path.to_string_lossy().as_ref());
+    assert!(
+        summary["query_fingerprint"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:")
+    );
     assert_eq!(summary["rows_exported"], 3);
     assert_eq!(summary["pages_fetched"], 2);
 
@@ -201,13 +211,95 @@ fn cli_sql_export_writes_complete_ndjson_atomically() {
         "{}",
         String::from_utf8_lossy(&streamed.stderr)
     );
-    assert!(streamed.stderr.is_empty());
+    let receipt: serde_json::Value = serde_json::from_slice(&streamed.stderr).unwrap();
+    assert_eq!(receipt["complete"], true);
+    assert_eq!(receipt["output"], serde_json::Value::Null);
+    assert_eq!(receipt["rows"], 3);
+    assert_eq!(receipt["pages"], 2);
     let lines = String::from_utf8_lossy(&streamed.stdout)
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
         .collect::<Vec<_>>();
     assert_eq!(lines.len(), 3);
     assert!(lines.iter().all(serde_json::Value::is_object));
+}
+
+#[test]
+fn cli_sql_export_max_bytes_fails_before_crossing_row_and_cleans_temp_file() {
+    let space = setup_cli_sql_space();
+    let sql = base_sql(&space);
+    let first_row = serde_json::json!({"_ugoite_id": "cli-sql-00"});
+    let first_row_bytes = serde_json::to_vec(&first_row).unwrap().len() + 1;
+    let path = space._dir.path().join("over-limit.ndjson");
+    let max_bytes = first_row_bytes.to_string();
+
+    let file_output = run_cli(
+        &space.config_path,
+        &[
+            "sql",
+            "export",
+            &sql,
+            "--max-rows",
+            "3",
+            "--page-size",
+            "3",
+            "--max-bytes",
+            &max_bytes,
+            "--output",
+            path.to_str().unwrap(),
+        ],
+    );
+    assert!(!file_output.status.success());
+    assert!(!path.exists(), "an incomplete temp export must not publish");
+    assert!(file_output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&file_output.stderr).contains("max-bytes"));
+    assert!(std::fs::read_dir(space._dir.path()).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".ugoite-export-")
+    }));
+
+    let streamed = run_cli(
+        &space.config_path,
+        &[
+            "sql",
+            "export",
+            &sql,
+            "--max-rows",
+            "3",
+            "--page-size",
+            "3",
+            "--max-bytes",
+            &max_bytes,
+        ],
+    );
+    assert!(!streamed.status.success());
+    let lines = String::from_utf8_lossy(&streamed.stdout)
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        lines,
+        vec![first_row],
+        "only complete rows fit the byte bound"
+    );
+    let stderr = String::from_utf8_lossy(&streamed.stderr);
+    assert!(stderr.contains("max-bytes"), "{stderr}");
+    assert!(stderr.contains("rows_exported"), "{stderr}");
+}
+
+#[test]
+fn cli_sql_export_documents_default_byte_limit_in_help() {
+    let help = Command::new(ugoite_bin())
+        .args(["sql", "export", "--help"])
+        .output()
+        .expect("show sql export help");
+    assert!(help.status.success());
+    let help_text = String::from_utf8_lossy(&help.stdout);
+    assert!(help_text.contains("104857600"), "{help_text}");
+    assert!(help_text.contains("100 MiB"), "{help_text}");
 }
 
 #[test]

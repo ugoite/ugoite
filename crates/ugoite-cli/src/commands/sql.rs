@@ -1,11 +1,12 @@
-use crate::cli_config::{resolve_command_target, SpaceTarget};
+use crate::cli_config::{SpaceTarget, resolve_command_target};
 use crate::http;
 use crate::output::{
-    effective_format, emit_mutation, print_json, print_json_table, Format, MutationReceipt,
-    UsageError,
+    Format, MutationReceipt, UsageError, effective_format, emit_mutation, print_json,
+    print_json_table,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -53,7 +54,7 @@ pub enum SqlSubCmd {
     },
     /// Export a complete bounded SQL result as NDJSON
     #[command(
-        long_about = "Export a complete SQL result as one JSON object per line. --max-rows is required. Without --output, rows stream to stdout; a failure can leave partial stdout, so use pipefail and check the exit status."
+        long_about = "Export a complete SQL result as one JSON object per line. --max-rows is required; --max-bytes defaults to 104857600 (100 MiB) and limits serialized NDJSON bytes including newlines. A row that would exceed either bound is not written. Without --output, rows stream to stdout; a failure can leave earlier rows on stdout, so use pipefail and check the exit status."
     )]
     Export {
         #[arg(value_name = "SQL_OR_FILE")]
@@ -64,6 +65,8 @@ pub enum SqlSubCmd {
         parameter_types: Vec<String>,
         #[arg(long, required = true)]
         max_rows: usize,
+        #[arg(long, default_value_t = DEFAULT_SQL_EXPORT_BYTES)]
+        max_bytes: usize,
         #[arg(long, default_value_t = 100)]
         page_size: usize,
         #[arg(long, value_name = "PATH")]
@@ -75,6 +78,61 @@ pub enum SqlSubCmd {
 }
 
 const MAX_SQL_EXPORT_ROWS: usize = 1_000_000;
+const DEFAULT_SQL_EXPORT_BYTES: usize = 100 * 1024 * 1024;
+
+#[derive(serde::Serialize)]
+struct ExportReceipt {
+    rows: usize,
+    bytes: usize,
+    pages: usize,
+    query_fingerprint: String,
+    output: Option<PathBuf>,
+    complete: bool,
+    // Preserve the original file-export receipt fields for existing scripts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<PathBuf>,
+    rows_exported: usize,
+    pages_fetched: usize,
+}
+
+#[derive(Default)]
+struct ExportPageValidator {
+    expected_columns: Option<Vec<String>>,
+    seen_tokens: HashSet<String>,
+}
+
+impl ExportPageValidator {
+    fn accept(&mut self, page: &SqlQueryPage, requested_limit: usize) -> Result<()> {
+        if page.rows.len() > requested_limit {
+            anyhow::bail!(
+                "sql export received {} rows for a requested page size of {}",
+                page.rows.len(),
+                requested_limit
+            );
+        }
+        if page.has_more != page.next.is_some() {
+            anyhow::bail!("sql export received inconsistent continuation metadata");
+        }
+        if self
+            .expected_columns
+            .as_ref()
+            .is_some_and(|columns| columns != &page.columns)
+        {
+            anyhow::bail!("sql export received different columns between pages");
+        }
+        self.expected_columns
+            .get_or_insert_with(|| page.columns.clone());
+        if page.has_more && page.rows.is_empty() {
+            anyhow::bail!("sql export cannot continue after an empty page");
+        }
+        if let Some(token) = &page.next {
+            if !self.seen_tokens.insert(token.clone()) {
+                anyhow::bail!("sql export received a repeated continuation token");
+            }
+        }
+        Ok(())
+    }
+}
 
 enum ExportSink {
     Stdout(std::io::Stdout),
@@ -109,12 +167,12 @@ impl ExportSink {
         }
     }
 
-    fn write_row(&mut self, row: &serde_json::Value) -> Result<()> {
+    fn write_row(&mut self, row: &serde_json::Value, remaining_bytes: usize) -> Result<usize> {
         let writer: &mut dyn Write = match self {
             Self::Stdout(writer) => writer,
             Self::File { writer, .. } => writer,
         };
-        write_export_row(writer, row)
+        write_export_row_bounded(writer, row, remaining_bytes)
     }
 
     fn finish(self) -> Result<Option<PathBuf>> {
@@ -157,16 +215,36 @@ fn write_export_row(writer: &mut dyn Write, row: &serde_json::Value) -> Result<(
     Ok(())
 }
 
+fn write_export_row_bounded(
+    writer: &mut dyn Write,
+    row: &serde_json::Value,
+    remaining_bytes: usize,
+) -> Result<usize> {
+    // Measure the exact NDJSON representation before touching the sink. This
+    // keeps the row that crosses the byte limit out of stdout and temp files.
+    let row_bytes = serde_json::to_vec(row)?.len().saturating_add(1);
+    if row_bytes > remaining_bytes {
+        return Err(UsageError(format!(
+            "sql export is incomplete: --max-bytes would be exceeded ({} bytes remain, next row needs {row_bytes})",
+            remaining_bytes
+        ))
+        .into());
+    }
+    write_export_row(writer, row)?;
+    Ok(row_bytes)
+}
+
 async fn export_sql(
     target: &SpaceTarget,
     mut request: SqlQueryRequest,
     max_rows: usize,
+    max_bytes: usize,
     sink: &mut ExportSink,
     rows_exported: &mut usize,
+    bytes_exported: &mut usize,
 ) -> Result<usize> {
     let mut pages_fetched = 0usize;
-    let mut expected_columns: Option<Vec<String>> = None;
-    let mut seen_tokens = HashSet::new();
+    let mut page_validator = ExportPageValidator::default();
     let mut interrupt = Box::pin(tokio::signal::ctrl_c());
     loop {
         let requested_limit = request.limit;
@@ -178,35 +256,17 @@ async fn export_sql(
             result = query_sql_page(target, request.clone()) => result?,
         };
         pages_fetched += 1;
-        if page.rows.len() > requested_limit {
-            anyhow::bail!(
-                "sql export received {} rows for a requested page size of {}",
-                page.rows.len(),
-                requested_limit
-            );
-        }
-        if page.has_more != page.next.is_some() {
-            anyhow::bail!("sql export received inconsistent continuation metadata");
-        }
-        if expected_columns
-            .as_ref()
-            .is_some_and(|columns| columns != &page.columns)
-        {
-            anyhow::bail!("sql export received different columns between pages");
-        }
-        expected_columns.get_or_insert_with(|| page.columns.clone());
-        if page.has_more && page.rows.is_empty() {
-            anyhow::bail!("sql export cannot continue after an empty page");
-        }
-        if page
-            .next
-            .as_ref()
-            .is_some_and(|token| seen_tokens.contains(token))
-        {
-            anyhow::bail!("sql export received a repeated continuation token");
-        }
+        page_validator.accept(&page, requested_limit)?;
         for row in &page.rows {
-            sink.write_row(row)?;
+            tokio::select! {
+                result = &mut interrupt => {
+                    result?;
+                    anyhow::bail!("sql export interrupted")
+                }
+                _ = tokio::task::yield_now() => {}
+            }
+            let written = sink.write_row(row, max_bytes.saturating_sub(*bytes_exported))?;
+            *bytes_exported += written;
             *rows_exported += 1;
         }
         if *rows_exported == max_rows && page.has_more {
@@ -219,7 +279,6 @@ async fn export_sql(
             break;
         }
         let next = page.next.expect("continuation metadata checked");
-        seen_tokens.insert(next.clone());
         request.continuation = Some(next);
         request.limit = (max_rows - *rows_exported).min(request.limit);
     }
@@ -231,6 +290,34 @@ async fn export_sql(
         _ = tokio::task::yield_now() => {}
     }
     Ok(pages_fetched)
+}
+
+fn sql_export_fingerprint(
+    space_id: &str,
+    sql: &str,
+    parameters: &serde_json::Map<String, serde_json::Value>,
+    parameter_types: &std::collections::BTreeMap<String, String>,
+) -> String {
+    // Fingerprint query shape only. Parameter values can contain private user data
+    // and are deliberately excluded from both the receipt and diagnostics.
+    let parameter_names = parameters.keys().collect::<Vec<_>>();
+    let material = serde_json::json!({
+        "space_id": space_id,
+        "sql": sql,
+        "parameters": parameter_names,
+        "parameter_types": parameter_types,
+    });
+    let mut hasher = Sha256::new();
+    hasher.update(b"ugoite-sql-export-v1\0");
+    hasher.update(serde_json::to_vec(&material).expect("fingerprint material serializes"));
+    let digest = hasher.finalize();
+    let mut fingerprint = String::with_capacity("sha256:".len() + digest.len() * 2);
+    fingerprint.push_str("sha256:");
+    for byte in digest {
+        use std::fmt::Write as _;
+        write!(&mut fingerprint, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    fingerprint
 }
 
 #[cfg(test)]
@@ -260,6 +347,92 @@ mod export_sink_tests {
         let error = write_export_row(&mut writer, &serde_json::json!({"id": "row"}))
             .expect_err("a failing output writer must stop export");
         assert!(error.to_string().contains("simulated output write failure"));
+    }
+
+    #[test]
+    fn sql_export_rejects_oversized_row_before_writing_it() {
+        let mut writer = Vec::new();
+        let row = serde_json::json!({"value": "large"});
+        let error = write_export_row_bounded(&mut writer, &row, 1)
+            .expect_err("row beyond byte budget must fail");
+        assert!(error.to_string().contains("--max-bytes"));
+        assert!(writer.is_empty(), "over-limit row must not reach the sink");
+
+        let expected_bytes = serde_json::to_vec(&row).unwrap().len() + 1;
+        assert_eq!(
+            write_export_row_bounded(&mut writer, &row, expected_bytes).unwrap(),
+            expected_bytes
+        );
+        assert_eq!(writer.last(), Some(&b'\n'));
+    }
+
+    #[test]
+    fn sql_export_fingerprint_excludes_parameter_values() {
+        let types = std::collections::BTreeMap::from([("owner".to_string(), "string".to_string())]);
+        let first = serde_json::Map::from_iter([(
+            "owner".to_string(),
+            serde_json::Value::String("private-one".to_string()),
+        )]);
+        let second = serde_json::Map::from_iter([(
+            "owner".to_string(),
+            serde_json::Value::String("private-two".to_string()),
+        )]);
+        assert_eq!(
+            sql_export_fingerprint(
+                "space",
+                "select * from entries where owner = :owner",
+                &first,
+                &types
+            ),
+            sql_export_fingerprint(
+                "space",
+                "select * from entries where owner = :owner",
+                &second,
+                &types
+            ),
+        );
+    }
+
+    #[test]
+    fn sql_export_page_validation_rejects_changed_columns_and_repeated_tokens() {
+        let page = |columns: &[&str], next: &str| SqlQueryPage {
+            columns: columns.iter().map(|column| (*column).to_string()).collect(),
+            rows: vec![serde_json::json!({"row": 1})],
+            has_more: true,
+            next: Some(next.to_string()),
+        };
+        let mut validator = ExportPageValidator::default();
+        validator.accept(&page(&["one"], "token-1"), 1).unwrap();
+        let changed_columns = validator
+            .accept(&page(&["two"], "token-2"), 1)
+            .expect_err("columns must remain stable between pages");
+        assert!(changed_columns.to_string().contains("different columns"));
+
+        let mut validator = ExportPageValidator::default();
+        validator.accept(&page(&["one"], "token-1"), 1).unwrap();
+        let repeated = validator
+            .accept(&page(&["one"], "token-1"), 1)
+            .expect_err("continuation tokens must advance");
+        assert!(repeated.to_string().contains("repeated continuation token"));
+    }
+
+    #[test]
+    fn sql_export_page_validation_rejects_inconsistent_continuation_metadata() {
+        let mut validator = ExportPageValidator::default();
+        let page = SqlQueryPage {
+            columns: vec!["one".to_string()],
+            rows: vec![serde_json::json!({"row": 1})],
+            has_more: true,
+            next: None,
+        };
+        let error = validator
+            .accept(&page, 1)
+            .expect_err("has_more requires a continuation token");
+        assert!(
+            error
+                .to_string()
+                .contains("inconsistent continuation metadata")
+        );
     }
 }
 
@@ -374,13 +547,13 @@ fn parse_sql_bindings(
                 return Err(UsageError(format!(
                     "SQL null parameter {name:?} requires --param-type"
                 ))
-                .into())
+                .into());
             }
             serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
                 return Err(UsageError(format!(
                     "SQL parameter {name:?} must be a scalar JSON value"
                 ))
-                .into())
+                .into());
             }
         };
         parameter_types.insert(name.clone(), kind.to_string());
@@ -563,6 +736,7 @@ pub async fn run(
             parameters,
             parameter_types,
             max_rows,
+            max_bytes,
             page_size,
             output,
         } => {
@@ -571,6 +745,9 @@ pub async fn run(
                     "--max-rows must be between 1 and {MAX_SQL_EXPORT_ROWS}"
                 ))
                 .into());
+            }
+            if max_bytes == 0 {
+                return Err(UsageError("--max-bytes must be greater than zero".to_string()).into());
             }
             if page_size == 0 || page_size > ugoite_core::sql_query::MAX_SQL_PAGE_LIMIT {
                 return Err(UsageError(format!(
@@ -582,6 +759,12 @@ pub async fn run(
             let sql = sql_text_from_argument(&sql_text)?;
             let (parameters, parameter_types) = parse_sql_bindings(&parameters, &parameter_types)?;
             let target = resolve_command_target(explicit_config, context_override, "sql export")?;
+            let fingerprint = sql_export_fingerprint(
+                target_space_id(&target),
+                &sql,
+                &parameters,
+                &parameter_types,
+            );
             let mut sink = ExportSink::new(output)?;
             let request = SqlQueryRequest {
                 sql,
@@ -591,22 +774,43 @@ pub async fn run(
                 continuation: None,
             };
             let mut rows_exported = 0usize;
-            let pages = export_sql(&target, request, max_rows, &mut sink, &mut rows_exported)
-                .await
-                .map_err(|source| crate::output::ExportProgressError {
-                    rows_exported,
-                    source,
-                })?;
+            let mut bytes_exported = 0usize;
+            let pages = export_sql(
+                &target,
+                request,
+                max_rows,
+                max_bytes,
+                &mut sink,
+                &mut rows_exported,
+                &mut bytes_exported,
+            )
+            .await
+            .map_err(|source| crate::output::ExportProgressError {
+                rows_exported,
+                source,
+            })?;
             let output_path =
                 sink.finish()
                     .map_err(|source| crate::output::ExportProgressError {
                         rows_exported,
                         source,
                     })?;
-            if let Some(path) = output_path {
-                print_json(
-                    &serde_json::json!({"path": path, "rows_exported": rows_exported, "pages_fetched": pages}),
-                );
+            let receipt = ExportReceipt {
+                rows: rows_exported,
+                bytes: bytes_exported,
+                pages,
+                query_fingerprint: fingerprint,
+                output: output_path.clone(),
+                complete: true,
+                path: output_path,
+                rows_exported,
+                pages_fetched: pages,
+            };
+            if receipt.output.is_some() {
+                print_json(&receipt);
+            } else {
+                // stdout is the NDJSON data stream; keep its machine format pure.
+                eprintln!("{}", serde_json::to_string(&receipt)?);
             }
         }
         SqlSubCmd::Saved(SavedSqlSubCmd::List) => {
