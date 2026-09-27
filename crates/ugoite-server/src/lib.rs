@@ -93,6 +93,79 @@ fn active_owner_principal_id(state: &AuthorizationState) -> anyhow::Result<Uuid>
         .ok_or_else(|| anyhow!("Space has no active owner principal"))
 }
 
+#[cfg(test)]
+mod read_query_cancellation_tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[derive(Clone)]
+    struct Probe {
+        dropped: Arc<AtomicBool>,
+        started: Arc<tokio::sync::Notify>,
+    }
+
+    async fn slow_query_endpoint(
+        axum::extract::State(probe): axum::extract::State<Probe>,
+    ) -> &'static str {
+        ugoite_iceberg::query_context::run_slow_query_for_test(
+            probe.dropped,
+            probe.started,
+        )
+        .await;
+        "finished"
+    }
+
+    #[tokio::test]
+    async fn disconnect_drops_server_query_stream_and_clears_active_work() -> anyhow::Result<()> {
+        let active_before = ugoite_iceberg::query_context::active_query_streams();
+        let source_dropped = Arc::new(AtomicBool::new(false));
+        let source_started = Arc::new(tokio::sync::Notify::new());
+        let app = axum::Router::new()
+            .route("/slow-query", axum::routing::post(slow_query_endpoint))
+            .with_state(Probe {
+                dropped: source_dropped.clone(),
+                started: source_started.clone(),
+            });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let server = tokio::spawn(axum::serve(listener, app));
+
+        let mut client = tokio::net::TcpStream::connect(address).await?;
+        tokio::io::AsyncWriteExt::write_all(
+            &mut client,
+            b"POST /slow-query HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n",
+        )
+        .await?;
+
+        tokio::time::timeout(Duration::from_secs(5), source_started.notified()).await?;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while ugoite_iceberg::query_context::active_query_streams() <= active_before {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+        drop(client);
+
+        let stopped = tokio::time::timeout(Duration::from_secs(5), async {
+            while ugoite_iceberg::query_context::active_query_streams() != active_before
+                || !source_dropped.load(Ordering::SeqCst)
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        server.abort();
+        stopped?;
+        assert!(source_dropped.load(Ordering::SeqCst));
+        assert_eq!(
+            ugoite_iceberg::query_context::active_query_streams(),
+            active_before
+        );
+        Ok(())
+    }
+}
+
 impl MakeRequestId for MakeRequestUuidV7 {
     fn make_request_id<B>(&mut self, _request: &Request<B>) -> Option<RequestId> {
         let request_id = Uuid::now_v7()

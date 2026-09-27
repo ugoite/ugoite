@@ -19,6 +19,7 @@ use iceberg_datafusion::IcebergStaticTableProvider;
 use std::any::Any;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
 use ugoite_core::sql_query::{
@@ -29,6 +30,31 @@ use ugoite_domain::form::sql_column_name;
 use crate::{form_from_table, IcebergWorkspace};
 
 const INTERNAL_RELATION_PREFIX: &str = "__ugoite_authorized_source_";
+
+/// Number of DataFusion execution streams currently being consumed by this
+/// process. The count covers stream polling, not query planning or response
+/// serialization, and returns to its prior value when execution is cancelled.
+static ACTIVE_QUERY_STREAMS: AtomicUsize = AtomicUsize::new(0);
+
+/// Returns the number of DataFusion streams currently being consumed.
+pub fn active_query_streams() -> usize {
+    ACTIVE_QUERY_STREAMS.load(Ordering::Relaxed)
+}
+
+struct ActiveQueryStream;
+
+impl ActiveQueryStream {
+    fn new() -> Self {
+        ACTIVE_QUERY_STREAMS.fetch_add(1, Ordering::Relaxed);
+        Self
+    }
+}
+
+impl Drop for ActiveQueryStream {
+    fn drop(&mut self) {
+        ACTIVE_QUERY_STREAMS.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 pub(crate) fn preserved_unnest_column(input: &str) -> String {
     format!("__ugoite_preserved_{input}")
@@ -221,6 +247,69 @@ fn allowed_scalar_functions(allowed_functions: &BTreeSet<String>) -> Vec<Arc<Sca
         functions.push(crate::search_normalization::search_normalize_udf());
     }
     functions
+}
+
+async fn collect_query_stream(
+    stream: datafusion::physical_plan::SendableRecordBatchStream,
+) -> Result<Vec<arrow_array::RecordBatch>> {
+    // Keep the stream in this future's scope. Dropping an HTTP request future
+    // drops this collector, which drops the DataFusion stream and aborts its
+    // execution tasks. The guard makes active execution independently
+    // observable during that lifetime and is released on every exit path.
+    let _active_stream = ActiveQueryStream::new();
+    let mut stream = stream;
+    let mut batches = Vec::new();
+    while let Some(batch) = futures::TryStreamExt::try_next(&mut stream)
+        .await
+        .map_err(classify_datafusion_error)?
+    {
+        batches.push(batch);
+    }
+    Ok(batches)
+}
+
+#[cfg(feature = "test-support")]
+pub async fn run_slow_query_for_test(
+    dropped: Arc<std::sync::atomic::AtomicBool>,
+    started: Arc<tokio::sync::Notify>,
+) {
+    struct SlowSource {
+        dropped: Arc<std::sync::atomic::AtomicBool>,
+        started: Arc<tokio::sync::Notify>,
+        first_poll: bool,
+    }
+
+    impl futures::Stream for SlowSource {
+        type Item = std::result::Result<arrow_array::RecordBatch, datafusion::error::DataFusionError>;
+
+        fn poll_next(
+            mut self: std::pin::Pin<&mut Self>,
+            _context: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Self::Item>> {
+            if self.first_poll {
+                self.first_poll = false;
+                self.started.notify_one();
+            }
+            std::task::Poll::Pending
+        }
+    }
+
+    impl Drop for SlowSource {
+        fn drop(&mut self) {
+            self.dropped
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    let stream = Box::pin(datafusion::physical_plan::stream::RecordBatchStreamAdapter::new(
+        Arc::new(arrow_schema::Schema::empty()),
+        SlowSource {
+            dropped,
+            started,
+            first_poll: true,
+        },
+    ));
+    let _ = collect_query_stream(stream).await;
 }
 
 fn classify_datafusion_error(error: datafusion::error::DataFusionError) -> AuthorizedQueryError {
@@ -1242,10 +1331,9 @@ impl AuthorizedQueryContext {
             .map_err(AuthorizedQueryError::execution_failed)?;
         validate_physical_plan(&physical, &self.authorized_scans)
             .map_err(AuthorizedQueryError::unauthorized)?;
-        let batches = datafusion::physical_plan::collect(physical, task_context)
-            .await
+        let stream = datafusion::physical_plan::execute_stream(physical, task_context)
             .map_err(classify_datafusion_error)?;
-        Ok(batches)
+        collect_query_stream(stream).await
     }
 
     async fn collect_frame_bounded(
@@ -1260,10 +1348,12 @@ impl AuthorizedQueryContext {
             .map_err(AuthorizedQueryError::execution_failed)?;
         validate_physical_plan(&physical, &self.authorized_scans)
             .map_err(AuthorizedQueryError::unauthorized)?;
-        let mut stream = datafusion::physical_plan::execute_stream(physical, task_context)
+        let stream = datafusion::physical_plan::execute_stream(physical, task_context)
             .map_err(classify_datafusion_error)?;
         let mut batches = Vec::new();
         let mut bytes = 0usize;
+        let _active_stream = ActiveQueryStream::new();
+        let mut stream = stream;
         while let Some(batch) = futures::TryStreamExt::try_next(&mut stream)
             .await
             .map_err(classify_datafusion_error)?
@@ -1590,4 +1680,70 @@ fn validate_physical_plan(
         validate_physical_plan(child, authorized_scans)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::{active_query_streams, collect_query_stream};
+    use arrow_schema::Schema;
+    use datafusion::error::DataFusionError;
+    use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
+    use futures::Stream;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::task::{Context, Poll};
+
+    struct SlowSource {
+        dropped: Arc<AtomicBool>,
+        started: Arc<tokio::sync::Notify>,
+        first_poll: bool,
+    }
+
+    impl Stream for SlowSource {
+        type Item = Result<arrow_array::RecordBatch, DataFusionError>;
+
+        fn poll_next(
+            mut self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+        ) -> Poll<Option<Self::Item>> {
+            if self.first_poll {
+                self.first_poll = false;
+                self.started.notify_one();
+            }
+            Poll::Pending
+        }
+    }
+
+    impl Drop for SlowSource {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn aborting_query_collector_drops_slow_source_and_clears_active_count() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let started = Arc::new(tokio::sync::Notify::new());
+        let stream = Box::pin(RecordBatchStreamAdapter::new(
+            Arc::new(Schema::empty()),
+            SlowSource {
+                dropped: dropped.clone(),
+                started: started.clone(),
+                first_poll: true,
+            },
+        ));
+        let before = active_query_streams();
+        let query = tokio::spawn(collect_query_stream(stream));
+        tokio::time::timeout(std::time::Duration::from_secs(5), started.notified())
+            .await
+            .expect("slow source must be polled");
+        assert!(active_query_streams() > before, "query stream did not become active");
+
+        query.abort();
+        assert!(query.await.expect_err("aborted query must not finish").is_cancelled());
+
+        assert!(dropped.load(Ordering::SeqCst), "DataFusion source was not dropped");
+        assert_eq!(active_query_streams(), before, "active query count leaked");
+    }
 }
