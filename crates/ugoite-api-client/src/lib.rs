@@ -138,6 +138,21 @@ pub struct ApiResponse {
     pub body: String,
 }
 
+pub const FORM_UPSERT_FORM_ID_HEADER: &str = "X-Ugoite-Form-Id";
+pub const FORM_UPSERT_FORM_VERSION_HEADER: &str = "X-Ugoite-Form-Version";
+pub const FORM_UPSERT_APPLIED_HEADER: &str = "X-Ugoite-Form-Applied";
+pub const FORM_UPSERT_CHANGE_ID_HEADER: &str = "X-Ugoite-Change-Id";
+
+/// Additive receipt metadata for the Form upsert response. `None` from
+/// [`parse_form_upsert_metadata`] means the server predates these headers.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct FormUpsertResponseMetadata {
+    pub form_id: String,
+    pub form_version: u32,
+    pub applied: bool,
+    pub change_id: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ApiProtocolError {
     pub kind: String,
@@ -185,6 +200,75 @@ impl ApiProtocolError {
             payload: None,
         }
     }
+}
+
+/// Parse the documented Form upsert response headers. A response with no
+/// receipt headers is treated as an older server; partial or inconsistent
+/// metadata is an invalid response and must not be turned into a receipt.
+pub fn parse_form_upsert_metadata(
+    headers: &[Header],
+    status: u16,
+) -> Result<Option<FormUpsertResponseMetadata>, ApiProtocolError> {
+    let invalid =
+        |message: String| ApiProtocolError::invalid_response("form.upsert", status, message);
+    let value = |name: &str| -> Result<Option<String>, ApiProtocolError> {
+        let matches = headers
+            .iter()
+            .filter(|header| header.name.eq_ignore_ascii_case(name))
+            .collect::<Vec<_>>();
+        if matches.len() > 1 {
+            return Err(invalid(format!(
+                "Form receipt contains duplicate {name} headers"
+            )));
+        }
+        Ok(matches.first().map(|header| header.value.clone()))
+    };
+    let form_id = value(FORM_UPSERT_FORM_ID_HEADER)?;
+    let form_version = value(FORM_UPSERT_FORM_VERSION_HEADER)?;
+    let applied = value(FORM_UPSERT_APPLIED_HEADER)?;
+    let change_id = value(FORM_UPSERT_CHANGE_ID_HEADER)?;
+    if form_id.is_none() && form_version.is_none() && applied.is_none() && change_id.is_none() {
+        return Ok(None);
+    }
+    let (Some(form_id), Some(form_version), Some(applied)) = (form_id, form_version, applied)
+    else {
+        return Err(invalid(
+            "Form save succeeded but the server returned incomplete receipt metadata".into(),
+        ));
+    };
+    if form_id.trim().is_empty() {
+        return Err(invalid("Form receipt has an empty Form ID".into()));
+    }
+    let form_version = form_version
+        .parse::<u32>()
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or_else(|| invalid("Form receipt has an invalid Form version".into()))?;
+    let applied = match applied.as_str() {
+        "true" => true,
+        "false" => false,
+        _ => return Err(invalid("Form receipt has an invalid applied flag".into())),
+    };
+    let change_id = match (applied, change_id) {
+        (true, Some(value)) if !value.trim().is_empty() => Some(value.to_owned()),
+        (true, _) => {
+            return Err(invalid(
+                "Applied Form receipt is missing its committed Change ID".into(),
+            ));
+        }
+        (false, None) => None,
+        (false, Some(_)) => {
+            return Err(invalid(
+                "No-op Form receipt must not contain a Change ID".into(),
+            ));
+        }
+    };
+    Ok(Some(FormUpsertResponseMetadata {
+        form_id: form_id.to_owned(),
+        form_version,
+        applied,
+        change_id,
+    }))
 }
 
 impl fmt::Display for ApiProtocolError {
@@ -1656,6 +1740,90 @@ fn failure(error: ApiProtocolError) -> ProtocolEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn form_header(name: &str, value: &str) -> Header {
+        Header {
+            name: name.to_string(),
+            value: value.to_string(),
+        }
+    }
+
+    #[test]
+    fn parses_form_upsert_receipt_and_older_server_response() {
+        let headers = vec![
+            form_header(
+                FORM_UPSERT_FORM_ID_HEADER,
+                "0199c2b2-7c00-7000-8000-000000000001",
+            ),
+            form_header(FORM_UPSERT_FORM_VERSION_HEADER, "2"),
+            form_header(FORM_UPSERT_APPLIED_HEADER, "true"),
+            form_header(FORM_UPSERT_CHANGE_ID_HEADER, "form-evolve:form-1:1"),
+        ];
+        assert_eq!(
+            parse_form_upsert_metadata(&headers, 201).expect("valid receipt"),
+            Some(FormUpsertResponseMetadata {
+                form_id: "0199c2b2-7c00-7000-8000-000000000001".into(),
+                form_version: 2,
+                applied: true,
+                change_id: Some("form-evolve:form-1:1".into()),
+            })
+        );
+        assert_eq!(
+            parse_form_upsert_metadata(&[], 201).expect("old server"),
+            None
+        );
+        assert_eq!(
+            parse_form_upsert_metadata(
+                &[
+                    form_header(
+                        FORM_UPSERT_FORM_ID_HEADER,
+                        "0199c2b2-7c00-7000-8000-000000000001",
+                    ),
+                    form_header(FORM_UPSERT_FORM_VERSION_HEADER, "2"),
+                    form_header(FORM_UPSERT_APPLIED_HEADER, "false"),
+                ],
+                201,
+            )
+            .expect("valid no-op receipt"),
+            Some(FormUpsertResponseMetadata {
+                form_id: "0199c2b2-7c00-7000-8000-000000000001".into(),
+                form_version: 2,
+                applied: false,
+                change_id: None,
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_partial_or_inconsistent_form_upsert_receipt() {
+        for headers in [
+            vec![form_header(FORM_UPSERT_FORM_ID_HEADER, "form-id")],
+            vec![
+                form_header(FORM_UPSERT_FORM_ID_HEADER, "form-id"),
+                form_header(FORM_UPSERT_FORM_VERSION_HEADER, "1"),
+                form_header(FORM_UPSERT_APPLIED_HEADER, "true"),
+            ],
+            vec![
+                form_header(FORM_UPSERT_FORM_ID_HEADER, "form-id"),
+                form_header(FORM_UPSERT_FORM_VERSION_HEADER, "1"),
+                form_header(FORM_UPSERT_APPLIED_HEADER, "false"),
+                form_header(FORM_UPSERT_CHANGE_ID_HEADER, "unexpected"),
+            ],
+            vec![
+                form_header(FORM_UPSERT_FORM_ID_HEADER, "form-id"),
+                form_header(FORM_UPSERT_FORM_ID_HEADER, "other-form-id"),
+                form_header(FORM_UPSERT_FORM_VERSION_HEADER, "1"),
+                form_header(FORM_UPSERT_APPLIED_HEADER, "false"),
+            ],
+        ] {
+            assert_eq!(
+                parse_form_upsert_metadata(&headers, 201)
+                    .expect_err("invalid receipt metadata")
+                    .kind,
+                "invalid_response"
+            );
+        }
+    }
 
     #[test]
     fn test_api_req_api_001_encodes_path_segments_and_query_values() {

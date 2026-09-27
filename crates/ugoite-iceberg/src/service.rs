@@ -2722,11 +2722,23 @@ impl UgoiteService {
     }
 
     pub async fn upsert_form(&self, space_id: &str, form_def: &Value) -> Result<()> {
+        self.upsert_form_result(space_id, form_def)
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn upsert_form_result(
+        &self,
+        space_id: &str,
+        form_def: &Value,
+    ) -> Result<form::FormUpsertOutcome> {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
-        form::upsert_form(&self.operator, &self.workspace_path(space_id), form_def).await?;
+        let outcome =
+            form::upsert_form_result(&self.operator, &self.workspace_path(space_id), form_def)
+                .await?;
         self.schedule_asset_text_refresh(space_id);
-        Ok(())
+        Ok(outcome)
     }
 
     /// Shared admission/auth prelude for structured Entry writes.

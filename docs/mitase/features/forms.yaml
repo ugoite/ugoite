@@ -23,7 +23,7 @@ features:
           - id: upsert-form
             adapter: rust
             path: crates/ugoite-iceberg/src/form.rs
-            selector: { kind: symbol, name: upsert_form }
+            selector: { kind: symbol, name: upsert_form_result }
             claims:
               - kind: satisfies
                 criterion: REQ-FORM-002#criterion.preserve-physical-fields
@@ -37,6 +37,8 @@ features:
                 criterion: REQ-FORM-006#criterion.reserved-forms
               - kind: satisfies
                 criterion: REQ-FORM-007#criterion.row-reference
+              - kind: satisfies
+                criterion: REQ-FORM-010#criterion.upsert-receipt
           - id: extract-properties
             adapter: rust
             path: crates/ugoite-iceberg/src/index.rs
@@ -161,7 +163,7 @@ features:
             role: client
           - target: FEAT-FORM-001#binding.cli/target.form-command
             role: operator
-        guarantees: [REQ-FORM-010#criterion.upsert-operation]
+        guarantees: [REQ-FORM-010#criterion.upsert-operation, REQ-FORM-010#criterion.upsert-receipt]
       - id: types
         kind: http
         source: FEAT-FORM-001#binding.contract/target.types-contract

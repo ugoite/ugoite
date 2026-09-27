@@ -4761,6 +4761,18 @@
               },
               "X-Ugoite-Signature": {
                 "$ref": "#/components/headers/X-Ugoite-Signature"
+              },
+              "X-Ugoite-Form-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Form-Id"
+              },
+              "X-Ugoite-Form-Version": {
+                "$ref": "#/components/headers/X-Ugoite-Form-Version"
+              },
+              "X-Ugoite-Form-Applied": {
+                "$ref": "#/components/headers/X-Ugoite-Form-Applied"
+              },
+              "X-Ugoite-Change-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Change-Id"
               }
             }
           },
@@ -10973,6 +10985,22 @@
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         }
+      },
+      "X-Ugoite-Form-Id": {
+        "description": "Immutable ID of the persisted Form.",
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "X-Ugoite-Form-Version": {
+        "description": "Persisted Form version after this operation (including no-op saves).",
+        "schema": { "type": "integer", "minimum": 1 }
+      },
+      "X-Ugoite-Form-Applied": {
+        "description": "Whether this request created or evolved the Form; false means no-op.",
+        "schema": { "type": "boolean" }
+      },
+      "X-Ugoite-Change-Id": {
+        "description": "ID of the Change committed by this operation. Omitted when the save is a no-op.",
+        "schema": { "type": "string", "minLength": 1 }
       }
     },
     "parameters": {

@@ -2765,20 +2765,32 @@ impl SpaceCommitCoordinator {
     }
 
     pub async fn create_form(&self, form: &FormDefinition) -> Result<()> {
+        self.create_form_with_receipt(form).await.map(|_| ())
+    }
+
+    /// Create a Form and return the command ID resolved from the authoritative
+    /// Catalog publication, including when recovering an earlier attempt.
+    pub async fn create_form_with_receipt(&self, form: &FormDefinition) -> Result<String> {
         self.ensure_authoritative_mutation_contract()?;
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
-            if self.publication_outcome().await?.is_some() {
-                return Ok(());
+            if let Some(publication) = self.publication_outcome().await? {
+                return Ok(publication.command_id);
             }
             let attempt = self.attempt_workspace().await?;
             match attempt.recover_existing_publication().await {
-                Ok(Some(_)) => return Ok(()),
+                Ok(Some(publication)) => return Ok(publication.command_id),
                 Ok(None) => {}
                 Err(error) if is_publication_conflict(&error) => continue,
                 Err(error) => return Err(error),
             }
             match attempt.create_form(form).await {
-                Ok(()) => return Ok(()),
+                Ok(()) => {
+                    return self
+                        .publication_outcome()
+                        .await?
+                        .map(|publication| publication.command_id)
+                        .context("successful Form creation is missing its Catalog publication")
+                }
                 Err(error) if is_publication_conflict(&error) => continue,
                 Err(error) => return Err(error),
             }
@@ -2787,20 +2799,41 @@ impl SpaceCommitCoordinator {
     }
 
     pub async fn evolve_form(&self, changes: &FormChangeSet) -> Result<FormDefinition> {
+        self.evolve_form_with_receipt(changes)
+            .await
+            .map(|(form, _)| form)
+    }
+
+    /// Evolve a Form and return both its operation result and the command ID
+    /// resolved from the authoritative Catalog publication.
+    pub async fn evolve_form_with_receipt(
+        &self,
+        changes: &FormChangeSet,
+    ) -> Result<(FormDefinition, String)> {
         self.ensure_authoritative_mutation_contract()?;
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
-            if self.publication_outcome().await?.is_some() {
-                return self.workspace.load_form(changes.form_id).await;
+            if let Some(publication) = self.publication_outcome().await? {
+                let form = self.workspace.load_form(changes.form_id).await?;
+                return Ok((form, publication.command_id));
             }
             let attempt = self.attempt_workspace().await?;
             match attempt.recover_existing_publication().await {
-                Ok(Some(_)) => return self.workspace.load_form(changes.form_id).await,
+                Ok(Some(publication)) => {
+                    let form = self.workspace.load_form(changes.form_id).await?;
+                    return Ok((form, publication.command_id));
+                }
                 Ok(None) => {}
                 Err(error) if is_publication_conflict(&error) => continue,
                 Err(error) => return Err(error),
             }
             match attempt.evolve_form(changes).await {
-                Ok(form) => return Ok(form),
+                Ok(form) => {
+                    let publication = self
+                        .publication_outcome()
+                        .await?
+                        .context("successful Form evolution is missing its Catalog publication")?;
+                    return Ok((form, publication.command_id));
+                }
                 Err(error) if is_publication_conflict(&error) => continue,
                 Err(error) => return Err(error),
             }

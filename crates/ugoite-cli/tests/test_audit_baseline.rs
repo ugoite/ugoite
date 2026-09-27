@@ -263,7 +263,7 @@ fn audit_f04_update_help_and_full_replacement_workflow_are_explicit() {
 }
 
 #[test]
-fn audit_baseline_f06_form_receipt_cannot_identify_commit_or_noop() {
+fn audit_baseline_f06_form_receipt_identifies_commit_and_noop() {
     let fixture = AuditFixture::new();
     let form_file = fixture.note_form();
     let changes_before = fixture.json(&["change", "list", "-o", "json"]);
@@ -280,17 +280,27 @@ fn audit_baseline_f06_form_receipt_cannot_identify_commit_or_noop() {
     assert_eq!(changes_after, changes_noop);
     assert_eq!(fixture.json(&["form", "get", "AuditNote"]), stored);
 
-    // F06 desired invariant: preserve id=Form name and add durable Form ID,
-    // actual committed Change ID/version, and applied=false for no-op.
+    // Keep the common mutation fields and Form-name identity while reporting
+    // the immutable persisted ID, version, and exact Change committed here.
+    assert_eq!(created["kind"], "form");
+    assert_eq!(created["id"], "AuditNote");
+    assert_eq!(created["name"], "AuditNote");
+    assert_eq!(created["revision_id"], Value::Null);
+    assert_eq!(created["run_id"], Value::Null);
+    assert_eq!(created["form_id"], stored["id"]);
+    assert_eq!(created["form_version"], stored["version"]);
+    assert_eq!(created["applied"], true);
+    let committed_change_id = created["change_id"].as_str().expect("create Change ID");
     assert_eq!(
-        created,
-        json!({
-            "kind": "form", "id": "AuditNote", "revision_id": null,
-            "change_id": null, "run_id": null
-        })
+        changes_after.as_array().unwrap().last().unwrap()["change_id"],
+        committed_change_id
     );
-    assert_eq!(
-        created, noop,
-        "current receipt cannot distinguish create from no-op"
-    );
+
+    assert_eq!(noop["kind"], "form");
+    assert_eq!(noop["id"], "AuditNote");
+    assert_eq!(noop["form_id"], created["form_id"]);
+    assert_eq!(noop["form_version"], created["form_version"]);
+    assert_eq!(noop["applied"], false);
+    assert_eq!(noop["change_id"], Value::Null);
+    assert_ne!(created, noop, "no-op must be distinguishable from create");
 }

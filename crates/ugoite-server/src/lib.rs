@@ -189,6 +189,10 @@ const MAX_STARTUP_REFRESH_REARM_RETRIES: usize = 8;
 const RESPONSE_KEY_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-key-id");
 const RESPONSE_SIGNATURE_HEADER: HeaderName = HeaderName::from_static("x-ugoite-signature");
 const SOURCE_SHA_HEADER: HeaderName = HeaderName::from_static("x-ugoite-source-sha");
+const FORM_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-form-id");
+const FORM_VERSION_HEADER: HeaderName = HeaderName::from_static("x-ugoite-form-version");
+const FORM_APPLIED_HEADER: HeaderName = HeaderName::from_static("x-ugoite-form-applied");
+const CHANGE_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-change-id");
 const OIDC_STATE_COOKIE: &str = "ugoite_oidc_state";
 
 #[derive(Clone, Debug)]
@@ -1719,7 +1723,14 @@ fn app_layers(router: Router<AppState>, state: AppState) -> Router {
                         Method::DELETE,
                         Method::OPTIONS,
                     ])
-                    .expose_headers([RESPONSE_KEY_ID_HEADER, RESPONSE_SIGNATURE_HEADER])
+                    .expose_headers([
+                        RESPONSE_KEY_ID_HEADER,
+                        RESPONSE_SIGNATURE_HEADER,
+                        FORM_ID_HEADER,
+                        FORM_VERSION_HEADER,
+                        FORM_APPLIED_HEADER,
+                        CHANGE_ID_HEADER,
+                    ])
                     .allow_headers([
                         header::ACCEPT,
                         header::AUTHORIZATION,
@@ -10631,7 +10642,7 @@ async fn upsert_form(
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
     Json(payload): Json<Value>,
-) -> ApiResult<(StatusCode, Json<Value>)> {
+) -> ApiResult<(StatusCode, HeaderMap, Json<Value>)> {
     let form_name = payload.get("name").and_then(Value::as_str).ok_or_else(|| {
         ApiError::from_core(
             AppError::invalid_input(
@@ -10644,14 +10655,37 @@ async fn upsert_form(
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let payload_for_write = payload.clone();
-    with_authorized_form_upsert(&state, &space_id, &identity, form_name, |_| async move {
-        service
-            .upsert_form(&space_id_for_write, &payload_for_write)
-            .await
-            .map_err(ApiError::from_core)
-    })
-    .await?;
-    Ok((StatusCode::CREATED, Json(payload)))
+    let outcome =
+        with_authorized_form_upsert(&state, &space_id, &identity, form_name, |_| async move {
+            service
+                .upsert_form_result(&space_id_for_write, &payload_for_write)
+                .await
+                .map_err(ApiError::from_core)
+        })
+        .await?;
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        FORM_ID_HEADER,
+        HeaderValue::from_str(&outcome.form_id.to_string())
+            .expect("Form ID is a valid response header value"),
+    );
+    headers.insert(
+        FORM_VERSION_HEADER,
+        HeaderValue::from_str(&outcome.form_version.get().to_string())
+            .expect("Form version is a valid response header value"),
+    );
+    headers.insert(
+        FORM_APPLIED_HEADER,
+        HeaderValue::from_static(if outcome.applied { "true" } else { "false" }),
+    );
+    if let Some(change_id) = outcome.change_id {
+        headers.insert(
+            CHANGE_ID_HEADER,
+            HeaderValue::from_str(&change_id)
+                .expect("committed Change ID is a valid response header value"),
+        );
+    }
+    Ok((StatusCode::CREATED, headers, Json(payload)))
 }
 
 fn validate_normal_read_limit(limit: usize, operation: &str) -> ApiResult<()> {
@@ -15998,6 +16032,108 @@ mod authentication_regression_tests {
         }));
         let stored_after_removal = state.service.get_form(&space_id, "Meeting").await?;
         assert_eq!(stored_after_removal["fields"]["time"]["type"], "timestamp");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn form_upsert_route_returns_actual_receipt_without_changing_body_or_status(
+    ) -> anyhow::Result<()> {
+        async fn save_form(
+            route: Router,
+            space_id: &str,
+            payload: &Value,
+        ) -> axum::response::Response {
+            route
+                .oneshot(
+                    Request::post(format!("/spaces/{space_id}/forms"))
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(payload.to_string()))
+                        .expect("Form request"),
+                )
+                .await
+                .expect("Form response")
+        }
+        let state = AppState::new_for_tests("memory://server-form-upsert-receipt")?;
+        let principal_id = Uuid::from_u128(19101);
+        let space_id = state
+            .service
+            .create_space_for_principal("form-receipt", principal_id, "Receipt test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let identity = content_identity(principal_id, space_uid);
+        let route = Router::new()
+            .route("/spaces/{space_id}/forms", post(upsert_form))
+            .layer(Extension(identity))
+            .with_state(state.clone());
+        let payload = json!({
+            "name": "ReceiptForm",
+            "fields": {"Subject": {"type": "string", "required": true}}
+        });
+
+        let before = state.service.list_changes(&space_id).await?;
+        let response = save_form(route.clone(), &space_id, &payload).await;
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let headers = response.headers().clone();
+        let form_id = headers
+            .get(FORM_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .expect("Form ID header")
+            .to_owned();
+        let version = headers
+            .get(FORM_VERSION_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .expect("Form version header");
+        let applied = headers
+            .get(FORM_APPLIED_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .expect("Form applied header");
+        let change_id = headers
+            .get(CHANGE_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .expect("Change ID header");
+        assert_eq!(version, "1");
+        assert_eq!(applied, "true");
+        let created_change_id = change_id.to_owned();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        assert_eq!(serde_json::from_slice::<Value>(&body)?, payload);
+        let stored = state.service.get_form(&space_id, "ReceiptForm").await?;
+        assert_eq!(form_id, stored["id"].as_str().expect("persisted Form ID"));
+        let changes = state.service.list_changes(&space_id).await?;
+        assert_eq!(
+            changes.as_array().unwrap().len(),
+            before.as_array().unwrap().len() + 1
+        );
+        assert_eq!(
+            changes.as_array().unwrap().last().unwrap()["change_id"],
+            created_change_id
+        );
+
+        let response = save_form(route.clone(), &space_id, &payload).await;
+        let headers = response.headers();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        assert_eq!(
+            headers
+                .get(FORM_ID_HEADER)
+                .and_then(|value| value.to_str().ok()),
+            Some(form_id.as_str())
+        );
+        assert_eq!(
+            headers
+                .get(FORM_VERSION_HEADER)
+                .and_then(|value| value.to_str().ok()),
+            Some("1")
+        );
+        assert_eq!(
+            headers
+                .get(FORM_APPLIED_HEADER)
+                .and_then(|value| value.to_str().ok()),
+            Some("false")
+        );
+        assert!(!headers.contains_key(CHANGE_ID_HEADER));
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        assert_eq!(serde_json::from_slice::<Value>(&body)?, payload);
+        assert_eq!(state.service.list_changes(&space_id).await?, changes);
         Ok(())
     }
 
