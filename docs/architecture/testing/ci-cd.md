@@ -97,6 +97,11 @@ the canonical frontend and Rust release outputs into the image instead of
 compiling them again inside Docker. E2E tasks require the already loaded
 `ugoite:e2e` image and never invoke an image build. The default Dockerfile
 target remains a portable source build for direct Docker and Compose use.
+The hosted portable-Space E2E fixture also reuses the release CLI from that
+artifact build. Its source-SHA sidecar must match the checked-out source before
+the fixture runs; standalone local E2E continues to build through `cargo run`.
+Seed and measured-step durations and exit status are emitted even when a step
+fails.
 
 ## Release contract
 

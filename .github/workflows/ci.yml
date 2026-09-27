@@ -449,6 +449,8 @@ jobs:
           DOCSITE_ORIGIN: ${{ steps.ci-config.outputs.docsite_origin }}
           DOCSITE_BASE: ${{ steps.ci-config.outputs.docsite_base }}
           CACHE_SAVE_ALLOWED: ${{ steps.ci-config.outputs.cache_save_allowed }}
+          PORTABLE_SEED_DURATION_SECONDS: ${{ steps.artifacts.outputs.portable_seed_duration_seconds }}
+          PORTABLE_SEED_EXIT_CODE: ${{ steps.artifacts.outputs.portable_seed_exit_code }}
           DOCKER_CACHE_SCOPE: ${{ steps.ci-config.outputs.docker_cache_scope }}
           DOCKER_CACHE_MODE: ${{ steps.ci-config.outputs.docker_cache_mode }}
           DOCKER_CACHE_FROM: ${{ steps.ci-config.outputs.docker_cache_from }}
@@ -521,6 +523,7 @@ jobs:
             echo "- DOCSITE_ORIGIN: \`${DOCSITE_ORIGIN}\`"
             echo "- DOCSITE_BASE: \`${DOCSITE_BASE}\`"
             echo "- ci:artifacts duration: ${{ steps.artifacts.outputs.duration_seconds }}s"
+            echo "- portable fixture seed duration: ${PORTABLE_SEED_DURATION_SECONDS:-n/a}s (exit ${PORTABLE_SEED_EXIT_CODE:-n/a})"
             echo "- install Playwright duration: ${{ steps.install-playwright.outputs.duration_seconds }}s"
             echo "- total artifact lane duration: ${total_duration_seconds}s"
             echo

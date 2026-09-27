@@ -11,12 +11,17 @@ label="$1"
 shift
 
 start_epoch="$(date +%s)"
+
+finish_measurement() {
+  local exit_code=$?
+  local duration_seconds=$(( $(date +%s) - start_epoch ))
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    printf 'label=%s\nduration_seconds=%s\nexit_code=%s\n' \
+      "$label" "$duration_seconds" "$exit_code" >>"$GITHUB_OUTPUT"
+  fi
+  printf '%s exited with status %s after %ss\n' "$label" "$exit_code" "$duration_seconds"
+  return "$exit_code"
+}
+trap finish_measurement EXIT
+
 "$@"
-end_epoch="$(date +%s)"
-duration_seconds="$((end_epoch - start_epoch))"
-
-if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  printf 'duration_seconds=%s\n' "$duration_seconds" >>"$GITHUB_OUTPUT"
-fi
-
-printf '%s completed in %ss\n' "$label" "$duration_seconds"

@@ -194,8 +194,9 @@ sources = [
 outputs = [
   "target/rust/release/ugoite",
   "target/rust/release/ugoite-server",
+  "target/rust/release/ugoite.source-sha",
 ]
-run = "cargo build -p ugoite-server -p ugoite-cli --release --locked"
+run = "cargo build -p ugoite-server -p ugoite-cli --release --locked && printf '%s\\n' \"${UGOITE_SOURCE_SHA:-$(git rev-parse HEAD)}\" > target/rust/release/ugoite.source-sha"
 
 [tasks."build:image"]
 description = "Build the runtime image once for E2E and packaging"
@@ -509,7 +510,7 @@ run = [
   { task = "test:e2e:smoke-and-asset-owned" },
   { task = "test:e2e:mobile-ui" },
   { task = "test:e2e:owner-recovery" },
-  { task = "test:e2e:portable-space" },
+  { task = "test:e2e:portable-space", env = { UGOITE_PORTABLE_CLI_BINARY = "target/rust/release/ugoite" } },
   { task = "version:check" },
 ]
 
