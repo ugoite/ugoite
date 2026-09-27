@@ -1,4 +1,4 @@
-import { useParams, useSearchParams } from "@solidjs/router";
+import { useLocation, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
@@ -33,6 +33,7 @@ const userValue = (value: { state: string; value?: unknown }): string => {
 export default function SpaceHistoryRoute() {
   const params = useParams<{ space_id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation<{ historyRecoveryNotice?: unknown }>();
   const spaceId = () => params.space_id;
   const [text, setText] = createSignal("");
   const [actorId, setActorId] = createSignal("");
@@ -60,7 +61,10 @@ export default function SpaceHistoryRoute() {
   const [pendingRecovery, setPendingRecovery] = createSignal<"revert" | "undo" | null>(null);
   const [recoveryMessage, setRecoveryMessage] = createSignal("");
   const [recoveryBusy, setRecoveryBusy] = createSignal(false);
-  const [recoveryNotice, setRecoveryNotice] = createSignal<string | null>(null);
+  const initialRecoveryNotice = location.state?.historyRecoveryNotice;
+  const [recoveryNotice, setRecoveryNotice] = createSignal<string | null>(
+    typeof initialRecoveryNotice === "string" ? initialRecoveryNotice : null,
+  );
   const [recoveryFailure, setRecoveryFailure] = createSignal<string | null>(null);
   const [historyNeedsReview, setHistoryNeedsReview] = createSignal(false);
   const [recoveryAttempt, setRecoveryAttempt] = createSignal<{
@@ -189,14 +193,15 @@ export default function SpaceHistoryRoute() {
       summary: inspected.summary,
     } satisfies SpaceChangeQueryRow;
   };
-  const setDetail = (changeId?: string) => {
+  const setDetail = (changeId?: string, navigationOptions?: { state?: unknown }) => {
     if (changeId) {
       setOpenChange(changeId);
       setSearchParams({ change: changeId });
     } else {
       setOpenChange(undefined);
       setSelectedEntryId(undefined);
-      setSearchParams({ change: undefined });
+      if (navigationOptions) setSearchParams({ change: undefined }, navigationOptions);
+      else setSearchParams({ change: undefined });
     }
   };
   createEffect(on(
@@ -264,8 +269,8 @@ export default function SpaceHistoryRoute() {
       setRelatedLoading(false);
     }
   };
-  const closeDetail = () => {
-    setDetail(undefined);
+  const closeDetail = (navigationOptions?: { state?: unknown }) => {
+    setDetail(undefined, navigationOptions);
     queueMicrotask(() => detailOpener?.focus());
   };
   createEffect(() => {
@@ -414,7 +419,6 @@ export default function SpaceHistoryRoute() {
       }
       setPendingRecovery(null);
       setRecoveryMessage("");
-      closeDetail();
       setRecoveryFailure(null);
       setHistoryNeedsReview(true);
       try {
@@ -424,7 +428,12 @@ export default function SpaceHistoryRoute() {
       } catch {
         setRecoveryFailure(t("spaceHistory.refreshFailedAfterSave"));
       }
-      if (successNotice) setRecoveryNotice(successNotice);
+      if (successNotice) {
+        setRecoveryNotice(successNotice);
+        closeDetail({ state: { historyRecoveryNotice: successNotice } });
+      } else {
+        closeDetail();
+      }
     } catch (error) {
       if (isDefiniteRevisionConflict(error)) {
         setPendingRecovery(null);
@@ -547,7 +556,7 @@ export default function SpaceHistoryRoute() {
               <header class="history-detail-header">
                 <div><h2 id="history-detail-title">{detailRow() ? changeTitle(detailRow()!) : t("spaceHistory.detailTitle")}</h2>
                   <p>{inspection() ? formatDateTimeLabel(inspection()!.change.created_at_micros / 1000) : t("spaceHistory.loading")}{inspection() ? ` · ${actorName(inspection()!.change.actor_principal_id)}` : ""}</p></div>
-                <button ref={detailCloseButton} type="button" class="ui-button ui-button-secondary" onClick={closeDetail}>{t("common.back")}</button>
+                <button ref={detailCloseButton} type="button" class="ui-button ui-button-secondary" onClick={() => closeDetail()}>{t("common.back")}</button>
               </header>
               <div class="history-detail-content">
                 <Show when={inspection.error}><p class="ui-alert ui-alert-error" role="alert">{t("spaceHistory.loadError")}</p></Show>

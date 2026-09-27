@@ -14,6 +14,7 @@ const setSearchParams = vi.hoisted(() => vi.fn((value: Record<string, string | u
 }));
 vi.mock("@solidjs/router", () => ({
   useParams: () => ({ space_id: "default" }),
+  useLocation: () => ({ state: null }),
   useSearchParams: () => [searchParams.value, setSearchParams],
 }));
 vi.mock("~/lib/ugoite-client", () => ({
@@ -128,6 +129,10 @@ describe("space history list", () => {
     expect(await screen.findByText("Revert added to history.")).toBeInTheDocument();
     expect(screen.queryByText("inverse-change")).toBeNull();
     expect(changeApi.revert).toHaveBeenCalledWith("default", "change-1", {});
+    expect(setSearchParams).toHaveBeenCalledWith(
+      { change: undefined },
+      { state: { historyRecoveryNotice: "Revert added to history." } },
+    );
     expect(changeApi.query).toHaveBeenCalledTimes(3);
   });
 
