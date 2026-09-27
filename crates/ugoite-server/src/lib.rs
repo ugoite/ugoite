@@ -1616,6 +1616,7 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route("/spaces/{space_id}/pins/{pin_name}", delete(delete_pin))
         .route("/spaces/{space_id}/changes", get(list_changes))
         .route("/spaces/{space_id}/changes/page", get(page_changes))
+        .route("/spaces/{space_id}/changes/query", get(query_changes))
         .route(
             "/spaces/{space_id}/changes/{change_id}/revert",
             post(revert_change),
@@ -9769,6 +9770,18 @@ struct ChangePageQuery {
     cursor: Option<String>,
 }
 
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChangeQueryParams {
+    limit: Option<usize>,
+    cursor: Option<String>,
+    actor_principal_id: Option<String>,
+    run_id: Option<String>,
+    text: Option<String>,
+    created_after_micros: Option<i64>,
+    created_before_micros: Option<i64>,
+}
+
 async fn page_changes(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
@@ -9780,6 +9793,29 @@ async fn page_changes(
         state
             .service
             .page_changes(&space_id, query.limit, query.cursor.as_deref())
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+async fn query_changes(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Query(query): Query<ChangeQueryParams>,
+) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let filters = ugoite_domain::change_history::ChangeHistoryQuery {
+        actor_principal_id: query.actor_principal_id,
+        run_id: query.run_id,
+        text: query.text,
+        created_after_micros: query.created_after_micros,
+        created_before_micros: query.created_before_micros,
+    };
+    Ok(Json(
+        state
+            .service
+            .query_changes(&space_id, query.limit, query.cursor.as_deref(), filters)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -12941,6 +12977,7 @@ mod authentication_regression_tests {
         Router::new()
             .route("/spaces/{space_id}/changes", get(list_changes))
             .route("/spaces/{space_id}/changes/page", get(page_changes))
+            .route("/spaces/{space_id}/changes/query", get(query_changes))
             .route(
                 "/spaces/{space_id}/changes/{change_id}/revert",
                 post(revert_change),
@@ -13054,6 +13091,17 @@ mod authentication_regression_tests {
             .await?;
         state
             .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Notes",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        state
+            .service
             .create_pin(
                 &space_id,
                 "before-history",
@@ -13066,6 +13114,7 @@ mod authentication_regression_tests {
             .route("/spaces/{space_id}/pins", get(list_pins))
             .route("/spaces/{space_id}/changes", get(list_changes))
             .route("/spaces/{space_id}/changes/page", get(page_changes))
+            .route("/spaces/{space_id}/changes/query", get(query_changes))
             .layer(Extension(content_identity(principal_id, space_uid)))
             .with_state(state);
 
@@ -13125,6 +13174,85 @@ mod authentication_regression_tests {
             invalid_page_response.status(),
             StatusCode::UNPROCESSABLE_ENTITY
         );
+
+        let query_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/query?limit=1&created_after_micros=0"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(query_response.status(), StatusCode::OK);
+        let query_body = axum::body::to_bytes(query_response.into_body(), usize::MAX).await?;
+        let query_page: Value = serde_json::from_slice(&query_body)?;
+        assert_eq!(query_page["changes"].as_array().map(Vec::len), Some(0));
+        assert!(query_page["next_cursor"].as_str().is_some());
+
+        let cursor = query_page["next_cursor"].as_str().unwrap();
+        let mismatched_query_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/query?limit=1&created_after_micros=1&cursor={cursor}"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(
+            mismatched_query_response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+
+        let mut final_cursor = Some(cursor.to_owned());
+        let mut continued_count = 0;
+        for _ in 0..10 {
+            let Some(cursor) = final_cursor.take() else {
+                break;
+            };
+            let response = route
+                .clone()
+                .oneshot(
+                    Request::get(format!(
+                        "/spaces/{space_id}/changes/query?limit=1&created_after_micros=0&cursor={cursor}"
+                    ))
+                    .body(Body::empty())?,
+                )
+                .await?;
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+            let page: Value = serde_json::from_slice(&body)?;
+            continued_count += page["changes"].as_array().map_or(0, Vec::len);
+            final_cursor = page["next_cursor"].as_str().map(str::to_owned);
+        }
+        assert!(continued_count >= 2);
+        assert!(final_cursor.is_none());
+
+        let empty_query_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/query?actor_principal_id=not-this-actor"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(empty_query_response.status(), StatusCode::OK);
+        let empty_query_body =
+            axum::body::to_bytes(empty_query_response.into_body(), usize::MAX).await?;
+        let empty_query: Value = serde_json::from_slice(&empty_query_body)?;
+        assert_eq!(empty_query["changes"].as_array().map(Vec::len), Some(0));
+        assert!(empty_query["next_cursor"].is_null());
+
+        let unsupported_sort_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!("/spaces/{space_id}/changes/query?sort=created_at"))
+                    .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(unsupported_sort_response.status(), StatusCode::BAD_REQUEST);
 
         let pins_response = route
             .oneshot(Request::get(format!("/spaces/{space_id}/pins")).body(Body::empty())?)

@@ -35,6 +35,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "space.health",
     "change.list",
     "change.page",
+    "change.query",
     "change.revert",
     "run.undo",
     "ugoite.apply",
@@ -527,6 +528,56 @@ pub fn prepare_request(
                         required_string(operation, args, "space_id")?,
                         "changes".into(),
                         "page".into(),
+                    ],
+                    query,
+                )
+            }
+            "change.query" => {
+                let mut query = Vec::new();
+                if let Some(limit) = args.get("limit") {
+                    let limit = limit.as_u64().ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(
+                            operation,
+                            "limit must be a positive integer",
+                        )
+                    })?;
+                    query.push(("limit".into(), limit.to_string()));
+                }
+                if let Some(cursor) = args.get("cursor") {
+                    let cursor = cursor
+                        .as_str()
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| {
+                            ApiProtocolError::invalid_arguments(
+                                operation,
+                                "cursor must be a non-empty string",
+                            )
+                        })?;
+                    query.push(("cursor".into(), cursor.to_string()));
+                }
+                for key in ["actor_principal_id", "run_id", "text"] {
+                    if let Some(value) = optional_string(operation, args, key)? {
+                        query.push((key.into(), value));
+                    }
+                }
+                for key in ["created_after_micros", "created_before_micros"] {
+                    if let Some(value) = args.get(key) {
+                        let value = value.as_i64().ok_or_else(|| {
+                            ApiProtocolError::invalid_arguments(
+                                operation,
+                                format!("{key} must be an integer"),
+                            )
+                        })?;
+                        query.push((key.into(), value.to_string()));
+                    }
+                }
+                (
+                    OperationSpec::get("Failed to query Knowledge changes"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "changes".into(),
+                        "query".into(),
                     ],
                     query,
                 )
@@ -1423,6 +1474,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to page Knowledge changes",
             RequestBodyKind::None,
         ),
+        "change.query" => (
+            HttpMethod::Get,
+            "Failed to query Knowledge changes",
+            RequestBodyKind::None,
+        ),
         "change.revert" => (
             HttpMethod::Post,
             "Failed to revert Knowledge change",
@@ -1972,6 +2028,40 @@ mod tests {
             request.path,
             "/spaces/demo/changes/page?limit=20&cursor=a.b%2B%2F%3D"
         );
+    }
+
+    #[test]
+    fn change_query_encodes_filters_and_rejects_invalid_timestamp_types() {
+        let request = prepare_request(
+            "change.query",
+            &json!({
+                "space_id": "demo",
+                "limit": 20,
+                "cursor": "opaque+token",
+                "actor_principal_id": "actor 1",
+                "run_id": "run-1",
+                "text": "Travel",
+                "created_after_micros": -10,
+                "created_before_micros": 100,
+            }),
+            None,
+        )
+        .expect("change query request");
+        assert_eq!(request.method, HttpMethod::Get);
+        assert_eq!(
+            request.path,
+            "/spaces/demo/changes/query?limit=20&cursor=opaque%2Btoken&actor_principal_id=actor+1&run_id=run-1&text=Travel&created_after_micros=-10&created_before_micros=100"
+        );
+
+        let error = prepare_request(
+            "change.query",
+            &json!({"space_id": "demo", "created_after_micros": "yesterday"}),
+            None,
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("created_after_micros must be an integer"));
     }
 
     #[test]
