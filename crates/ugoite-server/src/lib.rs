@@ -15956,7 +15956,7 @@ mod authentication_regression_tests {
     async fn form_upsert_route_returns_actual_receipt_without_changing_body_or_status(
     ) -> anyhow::Result<()> {
         async fn save_form(
-            route: Router<AppState>,
+            route: Router,
             space_id: &str,
             payload: &Value,
         ) -> axum::response::Response {

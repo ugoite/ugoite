@@ -102,11 +102,11 @@ append-only Space audit chain. `403 HUMAN_APPROVAL_REQUIRED`,
 `POST /spaces/{space_id}/forms` keeps its `201` status and Form JSON body. Its
 success response also reports `X-Ugoite-Form-Id`, `X-Ugoite-Form-Version`, and
 `X-Ugoite-Form-Applied`; a committed create/evolution includes the exact
-`X-Ugoite-Change-Id`, while a no-op omits that header. These receipt headers
-are additive response metadata and are not covered by the existing
-body-only response HMAC signature. A remote CLI talking to an older server
-without these headers reports the successful save as `identity_unverified`
-and does not invent a Form or Change ID.
+`X-Ugoite-Change-Id`, while a no-op omits that header. These receipt headers are
+additive response metadata and are not covered by the existing body-only
+response HMAC signature. A remote CLI talking to an older server without these
+headers reports the successful save as `identity_unverified` and does not invent
+a Form or Change ID.
 
 `GET /spaces/{space_id}/health` is a Space-management read-only doctor report.
 It follows only the exact Catalog Head, its reachable immutable publication
@@ -178,12 +178,12 @@ unsupported before v1. The server returns HTTP 422 with code
 recommending a new field; it does not return this expected rejection as a 500.
 When concurrent Form updates cannot be safely re-evaluated against the latest
 version, the server returns HTTP 409 with `FORM_VERSION_CONFLICT` rather than
-attributing another writer's Change to the request.
-Removing an existing physical field is also unsupported before v1. The server
-returns HTTP 422 with `FORM_FIELD_REMOVAL_NOT_SUPPORTED`, naming the field and
-directing the caller to add a new field instead. The browser editor disables
-these destructive/non-compatible operations; the server remains the authority
-for CLI and other protocol callers.
+attributing another writer's Change to the request. Removing an existing
+physical field is also unsupported before v1. The server returns HTTP 422 with
+`FORM_FIELD_REMOVAL_NOT_SUPPORTED`, naming the field and directing the caller to
+add a new field instead. The browser editor disables these
+destructive/non-compatible operations; the server remains the authority for CLI
+and other protocol callers.
 
 Entry create and update accept structured Form fields. A field whose declared
 type is `markdown` remains ordinary Markdown text, but the Entry payload is
