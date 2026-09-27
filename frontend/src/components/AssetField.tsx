@@ -156,6 +156,9 @@ export function AssetField(props: AssetFieldProps) {
       return await assetApi.upload(props.spaceId, file, file.name, signal);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") throw error;
+      // Preserve adapter/local errors verbatim; API errors carry the shared
+      // outcome property and need the recovery guidance from the formatter.
+      if (error instanceof Error && !("mutationOutcome" in error)) throw error;
       throw new Error(
         formatUserFacingError(
           error,
