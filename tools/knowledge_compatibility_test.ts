@@ -152,12 +152,15 @@ Deno.test("Knowledge Compatibility Review is a checked PR gate", () => {
     "PR Context Report artifact",
   );
   const webJobStart = ciWorkflow.indexOf("  web:\n");
-  const artifactsJobStart = ciWorkflow.indexOf("  artifacts:\n", webJobStart);
+  const artifactsJobStart = ciWorkflow.indexOf(
+    "  artifact-build:\n",
+    webJobStart,
+  );
   assertEquals(webJobStart >= 0, true, "CI web job must exist");
   assertEquals(
     artifactsJobStart > webJobStart,
     true,
-    "CI artifacts job must exist",
+    "CI artifact build job must exist",
   );
   requireText(
     codeqlWorkflow,

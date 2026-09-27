@@ -386,6 +386,10 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 description = "Run the required portable Space first-setup E2E"
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:portable-space"
 
+[tasks."ci:artifacts:load"]
+description = "Verify and load the current-run CI image and portable CLI archive"
+run = "deno run -A tools/ci_artifact_bundle.ts load"
+
 [tasks.e2e]
 description = "Run CI-parity E2E tests, preferring Docker Compose and falling back to host processes"
 run = "deno task e2e:full"
@@ -523,7 +527,32 @@ run = [
   { task = "test:e2e:mobile-ui" },
   { task = "test:e2e:owner-recovery" },
   { task = "test:e2e:portable-space", env = { UGOITE_PORTABLE_CLI_BINARY = "target/rust/release/ugoite" } },
+]
+
+[tasks."ci:artifacts:prepare"]
+description = "Build, package, verify, and version-check artifacts before E2E"
+run = [
+  { task = "build" },
+  { task = "package" },
+  { task = "verify" },
   { task = "version:check" },
+]
+
+[tasks."ci:lane:e2e-smoke-mobile"]
+description = "Run the smoke/Asset and mobile E2E group against the loaded CI image"
+run = [
+  { task = "test:e2e:smoke-and-asset-owned" },
+  { task = "test:e2e:mobile-ui" },
+]
+
+[tasks."ci:lane:e2e-owner"]
+description = "Run owner recovery E2E against the loaded CI image"
+run = [{ task = "test:e2e:owner-recovery" }]
+
+[tasks."ci:lane:e2e-portable"]
+description = "Run portable Space E2E against the loaded CI image and release CLI"
+run = [
+  { task = "test:e2e:portable-space", env = { UGOITE_PORTABLE_CLI_BINARY = "target/rust/release/ugoite" } },
 ]
 
 [tasks.ci]
@@ -538,9 +567,7 @@ run = [
 [tasks."ci:artifacts"]
 description = "Build and verify merge-gated deployable artifacts"
 run = [
-  { task = "build" },
-  { task = "package" },
-  { task = "verify" },
+  { task = "ci:artifacts:prepare" },
   { task = "ci:artifacts:e2e" },
 ]
 
