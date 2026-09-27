@@ -1557,6 +1557,9 @@ textarea {
   box-shadow: var(--shadow);
   padding: 20px;
 }
+.history-detail-backdrop {
+  z-index: 60;
+}
 .ui-row-reference-dialog {
   width: min(760px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);

@@ -32,7 +32,7 @@ const row = (id: string, count: number, runId: string | null = null) => ({
     affected_entry_count: count,
     field_groups: [{
       form_id: "form-1",
-      field_id: "1",
+      field_id: 1,
       before: { state: "value" as const, value: "Travel" },
       after: { state: "value" as const, value: "Business travel" },
       affected_entry_count: count,

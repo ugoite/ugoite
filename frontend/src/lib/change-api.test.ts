@@ -30,7 +30,7 @@ describe("changeApi.query", () => {
         affected_entry_count: 2,
         field_groups: [{
           form_id: "form-1",
-          field_id: "field-1",
+          field_id: 100,
           before: { state: "value", value: "Travel" },
           after: { state: "value", value: "Business travel" },
           affected_entry_count: 2,
@@ -66,7 +66,7 @@ describe("changeApi.query", () => {
           affected_entry_count: 2,
           field_groups: [{
             form_id: "form-1",
-            field_id: "field-1",
+            field_id: 100,
             before: { state: "value", value: "Travel" },
             after: { state: "value", value: "Business travel" },
             affected_entry_count: 2,

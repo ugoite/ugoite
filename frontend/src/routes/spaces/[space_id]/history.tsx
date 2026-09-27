@@ -125,7 +125,7 @@ export default function SpaceHistoryRoute() {
       candidate.id === formId || candidate.name === formId
     );
     const field = Object.entries(form?.fields ?? {}).find(([name, value]) =>
-      name === fieldId || String(value.id) === fieldId
+      name === fieldId || value.id === fieldId
     );
     return field?.[0] ?? t("spaceHistory.unknownField");
   };
@@ -429,7 +429,7 @@ export default function SpaceHistoryRoute() {
       <Show when={openedRow()}>
         {(row) => (
           <Portal>
-          <div class="ui-backdrop" onClick={(event) => { if (event.target === event.currentTarget) closeDetail(); }}>
+          <div class="ui-backdrop history-detail-backdrop" onClick={(event) => { if (event.target === event.currentTarget) closeDetail(); }}>
             <section class="ui-dialog history-detail" role="dialog" aria-modal="true" aria-labelledby="history-detail-title" onKeyDown={handleDetailKeyDown}>
               <h2 id="history-detail-title">{targetLabel(row())}</h2>
               <p>{formatDateTimeLabel(row().change.created_at_micros / 1000)} · {actorName(row().change.actor_principal_id)}</p>
