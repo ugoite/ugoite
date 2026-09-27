@@ -370,6 +370,8 @@ async function assertAggregateWorkflow(
     [
       "name: ci-e2e-smoke-mobile",
       "needs: [impact, artifact-build]",
+      "name: Configure Deno and Playwright cache paths",
+      'echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"',
       "actions/download-artifact@",
       "scripts/measure-step.sh load-artifacts mise run ci:artifacts:load",
       "scripts/measure-step.sh smoke-mobile mise run ci:lane:e2e-smoke-mobile",
@@ -381,6 +383,7 @@ async function assertAggregateWorkflow(
     e2eOwnerJob,
     [
       "name: ci-e2e-owner",
+      "name: Configure Deno and Playwright cache paths",
       "actions/download-artifact@",
       "scripts/measure-step.sh owner-recovery mise run ci:lane:e2e-owner",
     ],
@@ -390,6 +393,7 @@ async function assertAggregateWorkflow(
     e2ePortableJob,
     [
       "name: ci-e2e-portable",
+      "name: Configure Deno and Playwright cache paths",
       "actions/download-artifact@",
       "scripts/measure-step.sh portable-space mise run ci:lane:e2e-portable",
     ],

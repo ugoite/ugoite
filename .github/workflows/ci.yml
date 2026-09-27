@@ -567,8 +567,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      DENO_DIR: ${{ runner.temp }}/deno-cache
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
       UGOITE_SOURCE_SHA: ${{ github.sha }}
       UGOITE_CI_RUN_ID: ${{ github.run_id }}
       UGOITE_IMAGE_TAG: ugoite:e2e
@@ -578,6 +576,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Configure Deno and Playwright cache paths
+        run: |
+          echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -679,8 +682,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      DENO_DIR: ${{ runner.temp }}/deno-cache
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
       UGOITE_SOURCE_SHA: ${{ github.sha }}
       UGOITE_CI_RUN_ID: ${{ github.run_id }}
       UGOITE_IMAGE_TAG: ugoite:e2e
@@ -690,6 +691,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Configure Deno and Playwright cache paths
+        run: |
+          echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
+
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install: true
@@ -769,8 +776,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      DENO_DIR: ${{ runner.temp }}/deno-cache
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
       UGOITE_SOURCE_SHA: ${{ github.sha }}
       UGOITE_CI_RUN_ID: ${{ github.run_id }}
       UGOITE_IMAGE_TAG: ugoite:e2e
@@ -780,6 +785,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Configure Deno and Playwright cache paths
+        run: |
+          echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
+
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install: true
