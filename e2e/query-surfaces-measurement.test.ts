@@ -12,6 +12,7 @@ type QueryEvent = {
   method: string;
   startedAt: number;
   endedAt?: number;
+  abortedAt?: number;
   status?: number;
   aborted: boolean;
   error?: string;
@@ -204,6 +205,7 @@ test("records real two-Space query surface measurements", async ({ page, request
       };
       signal?.addEventListener("abort", () => {
         event.aborted = true;
+        event.abortedAt = performance.now();
       }, { once: true });
       measured.__ugoiteQueryEvents!.push(event);
       try {
@@ -465,14 +467,16 @@ test("records real two-Space query surface measurements", async ({ page, request
         const targetEntryIds = new Set(
           targetSpaceEvents.flatMap((event) => event.entryIds ?? []),
         );
+        const abortedInFlightEvents = events.filter((event) =>
+          event.abortedAt !== undefined &&
+          (event.endedAt === undefined || event.abortedAt < event.endedAt)
+        );
         return {
           events,
-          supersededInFlightCount: events.filter((event) =>
-            event.aborted
-          ).length,
-          actualAbortCount: events.filter((event) => event.aborted).length,
-          endedAbortCount: events.filter((event) =>
-            event.aborted && event.endedAt !== undefined
+          supersededInFlightCount: abortedInFlightEvents.length,
+          actualAbortCount: abortedInFlightEvents.length,
+          endedAbortCount: abortedInFlightEvents.filter((event) =>
+            event.endedAt !== undefined
           ).length,
           residualPendingCount: events.filter((event) =>
             event.endedAt === undefined
@@ -514,7 +518,10 @@ test("records real two-Space query surface measurements", async ({ page, request
       const summarizeLifecycleEvents = (
         events: QueryEvent[],
       ): QueryLifecycleMeasurement => {
-        const abortedEvents = events.filter((event) => event.aborted);
+        const abortedEvents = events.filter((event) =>
+          event.abortedAt !== undefined &&
+          (event.endedAt === undefined || event.abortedAt < event.endedAt)
+        );
         return {
           supersededInFlightCount: abortedEvents.length,
           actualAbortCount: abortedEvents.length,
@@ -942,7 +949,7 @@ test("records real two-Space query surface measurements", async ({ page, request
               heap_api:
                 "performance.memory.usedJSHeapSize when Chromium exposes it; otherwise null",
               lifecycle_interception:
-                "400 ms Playwright delay on EntryQuery requests only; performance trials are not intercepted",
+                "400 ms Playwright delays on selected EntryQuery and SQL page/count lifecycle requests; first-visible-row performance trials are not delayed",
             },
             summaries: {
               entry_query_first_visible_row: summarize(entryTrials),
