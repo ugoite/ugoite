@@ -1,4 +1,5 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
+import type { JSX } from "solid-js";
 import type {
   EntryFieldCapability,
   EntryFieldRef,
@@ -28,6 +29,10 @@ export interface EntryBrowserProps {
   mode?: EntryBrowserMode;
   controller: EntryQueryController;
   capabilities: EntryQueryCapabilities;
+  /** Search form owned by the calling page; replaces the built-in search field. */
+  searchControl?: JSX.Element;
+  /** Optional caller-owned navigation rendered after the display actions. */
+  toolbarNavigation?: JSX.Element;
   /** Optional human-readable Form labels. UUIDs are never used as labels. */
   formLabels?: Record<string, string>;
   /** State of the optional Space-scoped Form label metadata. */
@@ -265,17 +270,24 @@ export function EntryBrowser(props: EntryBrowserProps) {
         role="toolbar"
         aria-label={t("entryBrowser.label")}
       >
-        <label class="entry-browser-search">
-          <span class="ui-sr-only">{t("entryBrowser.textLabel")}</span>
-          <input
-            type="search"
-            class="ui-input"
-            value={currentText()}
-            placeholder={t("entryBrowser.textPlaceholder")}
-            onInput={(event) =>
-              props.controller.setText(event.currentTarget.value)}
-          />
-        </label>
+        <Show
+          when={props.searchControl}
+          fallback={
+            <label class="entry-browser-search">
+              <span class="ui-sr-only">{t("entryBrowser.textLabel")}</span>
+              <input
+                type="search"
+                class="ui-input"
+                value={currentText()}
+                placeholder={t("entryBrowser.textPlaceholder")}
+                onInput={(event) =>
+                  props.controller.setText(event.currentTarget.value)}
+              />
+            </label>
+          }
+        >
+          {props.searchControl}
+        </Show>
         <div class="entry-browser-display-actions">
           <For
             each={[
@@ -327,6 +339,11 @@ export function EntryBrowser(props: EntryBrowserProps) {
             )}
           </For>
         </div>
+        <Show when={props.toolbarNavigation}>
+          <div class="entry-browser-toolbar-navigation">
+            {props.toolbarNavigation}
+          </div>
+        </Show>
       </div>
 
       <Show when={currentFilters().length > 0 || currentSort().length > 0}>

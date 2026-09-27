@@ -95,6 +95,66 @@ describe("EntryBrowser", () => {
     ).toBeInTheDocument();
   });
 
+  it("uses a caller-owned search control in place of built-in search and renders optional navigation", async () => {
+    queryMock.mockResolvedValue({ rows: [], has_more: false });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    const { container } = render(() => (
+      <EntryBrowser
+        controller={controller}
+        capabilities={systemEntryCapabilities({ kind: "all" })}
+        searchControl={
+          <form role="search" aria-label="Page search">
+            <input type="search" aria-label="Page query" />
+            <button type="submit">Search</button>
+          </form>
+        }
+        toolbarNavigation={<a href="/spaces/space-1/sql">Saved queries</a>}
+      />
+    ));
+
+    expect(screen.getAllByRole("searchbox")).toHaveLength(1);
+    expect(screen.getByRole("searchbox", { name: "Page query" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Saved queries" }))
+      .toHaveAttribute("href", "/spaces/space-1/sql");
+    expect(container.querySelectorAll(".entry-browser-display-button"))
+      .toHaveLength(3);
+
+    expect(container.querySelector(".entry-browser-toolbar-navigation"))
+      .toBeInTheDocument();
+  });
+
+  it("omits optional toolbar navigation and keeps the built-in search by default", async () => {
+    queryMock.mockResolvedValue({ rows: [], has_more: false });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    const { container } = render(() => (
+      <EntryBrowser
+        controller={controller}
+        capabilities={systemEntryCapabilities({ kind: "all" })}
+      />
+    ));
+
+    expect(screen.getAllByRole("searchbox")).toHaveLength(1);
+    expect(container.querySelector(".entry-browser-toolbar-navigation"))
+      .not.toBeInTheDocument();
+    expect(container.querySelectorAll(".entry-browser-display-button"))
+      .toHaveLength(3);
+  });
+
   it("keeps selection separate from server mutation", async () => {
     queryMock.mockResolvedValue({
       rows: [{
