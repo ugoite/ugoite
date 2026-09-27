@@ -331,6 +331,86 @@ fn sql_integrity_payload(
     }
 }
 
+/// Recomputes the content integrity stored on one Saved SQL history row.
+/// Saved SQL has its own canonical payload and must not be checked as
+/// Markdown-backed Entry content.
+pub(crate) fn verify_revision_integrity(
+    row: &entry::RevisionRow,
+    integrity: &dyn IntegrityProvider,
+) -> Result<()> {
+    let mut fields = row.fields.clone();
+    let mut extra_attributes = row.extra_attributes.clone();
+    if row.operation == "delete" {
+        let state = row
+            .state
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Saved SQL tombstone state is missing"))?;
+        if !state.deleted
+            || state.entry_id != row.entry_id
+            || state.revision_id != row.revision_id
+            || state.parent_revision_id != row.parent_revision_id
+            || state.integrity.checksum != row.integrity.checksum
+            || state.integrity.signature != row.integrity.signature
+            || !row.fields.as_object().is_some_and(Map::is_empty)
+            || !row.extra_attributes.as_object().is_some_and(Map::is_empty)
+        {
+            anyhow::bail!("Saved SQL tombstone state does not match its revision");
+        }
+        fields = state.fields.clone();
+        extra_attributes = state.extra_attributes.clone();
+    }
+    if let Some(state) = &row.state {
+        let mut state = state.clone();
+        apply_sql_name_compat(&mut state);
+        if let (Some(fields), Some(state_fields)) =
+            (fields.as_object_mut(), state.fields.as_object())
+        {
+            if let Some(name) = state_fields.get("name") {
+                fields.entry("name").or_insert_with(|| name.clone());
+            }
+        }
+    }
+
+    let name = fields
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .map(str::to_owned);
+    let sql = fields
+        .get("sql")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("SQL text is missing"))?
+        .to_owned();
+    let variables = normalize_sql_variables(fields.get("variables"))?;
+    let kind: SqlKind = serde_json::from_value(
+        extra_attributes
+            .get("kind")
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("SQL kind is missing"))?,
+    )
+    .context("SQL kind is invalid")?;
+    let metadata = extra_attributes
+        .get("metadata")
+        .cloned()
+        .filter(|value| !value.is_null())
+        .map(serde_json::from_value::<SqlMetadata>)
+        .transpose()
+        .context("SQL metadata is invalid")?;
+    let payload = SqlPayload {
+        name,
+        kind,
+        metadata,
+        sql,
+        variables: variables.clone(),
+    };
+    let expected = sql_integrity_payload(integrity, &payload, &variables);
+    if expected.checksum != row.integrity.checksum || expected.signature != row.integrity.signature
+    {
+        anyhow::bail!("Saved SQL integrity mismatch");
+    }
+    Ok(())
+}
+
 fn sql_extra_attributes(payload: &SqlPayload) -> Value {
     serde_json::json!({
         "kind": payload.kind,
@@ -759,6 +839,7 @@ pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str, actor: &str)
 #[cfg(test)]
 mod name_field_tests {
     use super::*;
+    use crate::integrity::FakeIntegrityProvider;
 
     fn row_with_saved_query_name(name: &str, fields: Value) -> entry::EntryRow {
         entry::EntryRow {
@@ -797,6 +878,87 @@ mod name_field_tests {
         fields.insert("sql".to_string(), Value::String("SELECT 1".to_string()));
         fields.insert("variables".to_string(), Value::Array(Vec::new()));
         Value::Object(fields)
+    }
+
+    #[test]
+    fn revision_integrity_uses_saved_sql_payload_and_rejects_tampering() {
+        let provider = FakeIntegrityProvider;
+        let variables = Value::Array(Vec::new());
+        let payload = SqlPayload {
+            name: Some("portable-recovery".into()),
+            kind: SqlKind::UserQuery,
+            metadata: None,
+            sql: "SELECT 1 AS recovery_check".into(),
+            variables: variables.clone(),
+        };
+        let integrity = sql_integrity_payload(&provider, &payload, &variables);
+        let mut fields = Map::new();
+        fields.insert("name".into(), Value::String(payload.name.clone().unwrap()));
+        fields.insert("sql".into(), Value::String(payload.sql.clone()));
+        fields.insert("variables".into(), variables);
+        let mut row = entry::RevisionRow {
+            revision_id: "revision-1".into(),
+            change_id: "change-1".into(),
+            entry_id: "saved-sql-1".into(),
+            parent_revision_id: None,
+            timestamp: 1.0,
+            author: "test".into(),
+            updated_by: "test".into(),
+            deleted_by: None,
+            fields: Value::Object(fields),
+            extra_attributes: serde_json::json!({"kind": "user-query", "metadata": null}),
+            markdown_checksum: integrity.checksum.clone(),
+            integrity,
+            restored_from: None,
+            form_version: 1,
+            state: None,
+            entry_version: 1,
+            operation: "upsert".into(),
+            source_kind: "test".into(),
+            source_id: None,
+            extension_metadata: Value::Object(Map::new()),
+        };
+
+        verify_revision_integrity(&row, &provider).expect("valid Saved SQL integrity");
+        row.fields["sql"] = Value::String("SELECT 200 AS recovery_check".into());
+        assert!(verify_revision_integrity(&row, &provider).is_err());
+
+        row.fields["sql"] = Value::String(payload.sql.clone());
+        let state = entry::EntryRow {
+            entry_id: row.entry_id.clone(),
+            legacy_saved_query_name: String::new(),
+            form: SQL_FORM_NAME.into(),
+            tags: Vec::new(),
+            created_at: row.timestamp,
+            updated_at: row.timestamp + 1.0,
+            fields: row.fields.clone(),
+            extra_attributes: row.extra_attributes.clone(),
+            revision_id: "revision-delete".into(),
+            parent_revision_id: Some(row.revision_id.clone()),
+            integrity: row.integrity.clone(),
+            deleted: true,
+            deleted_at: Some(row.timestamp + 1.0),
+            author: row.author.clone(),
+            updated_by: "test".into(),
+            deleted_by: Some("test".into()),
+            entry_version: 2,
+            legacy_columns: BTreeMap::new(),
+        };
+        row.revision_id = state.revision_id.clone();
+        row.parent_revision_id = state.parent_revision_id.clone();
+        row.fields = Value::Object(Map::new());
+        row.extra_attributes = Value::Object(Map::new());
+        row.operation = "delete".into();
+        row.updated_by = "test".into();
+        row.deleted_by = Some("test".into());
+        row.entry_version = 2;
+        row.state = Some(state);
+        verify_revision_integrity(&row, &provider)
+            .expect("valid Saved SQL tombstone uses its retained state");
+
+        row.state.as_mut().unwrap().fields["sql"] =
+            Value::String("SELECT 200 AS recovery_check".into());
+        assert!(verify_revision_integrity(&row, &provider).is_err());
     }
 
     #[test]

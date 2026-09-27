@@ -605,6 +605,7 @@ pub(crate) async fn verify_history_integrity(
     let mut asset_references = Vec::new();
     for form_value in forms {
         let current_form = crate::form::to_domain_form(&form_value)?;
+        let is_saved_sql = current_form.name == crate::saved_sql::SQL_FORM_NAME_FOR_AUDIT;
         let (_, form_history, mut rows) =
             revision_rows_for_form_read_only(op, ws_path, &current_form.name).await?;
         rows.sort_by(|left, right| {
@@ -624,12 +625,21 @@ pub(crate) async fn verify_history_integrity(
                     row.revision_id
                 )
             })?;
-            let expected = integrity_for_domain_revision(form, &revision, &provider)?;
-            if expected.checksum != revision.entry.integrity.checksum
-                || expected.signature != revision.entry.integrity.signature
-            {
+            let integrity_result = if is_saved_sql {
+                crate::saved_sql::verify_revision_integrity(row, &provider)
+            } else {
+                let expected = integrity_for_domain_revision(form, &revision, &provider)?;
+                if expected.checksum == revision.entry.integrity.checksum
+                    && expected.signature == revision.entry.integrity.signature
+                {
+                    Ok(())
+                } else {
+                    Err(anyhow!("integrity mismatch"))
+                }
+            };
+            if let Err(error) = integrity_result {
                 anyhow::bail!(
-                    "Entry {} revision {} integrity mismatch",
+                    "Entry {} revision {} integrity verification failed: {error}",
                     row.entry_id,
                     row.revision_id
                 );
