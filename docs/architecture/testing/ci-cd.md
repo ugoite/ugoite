@@ -8,8 +8,8 @@ docsite Pages, and publish versioned non-docsite release artifacts.
 
 | Event                               | Hosted CI behavior                                                                                                     |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| pull request to `main`              | validation, canonical build/package steps, a focused docsite-navigation E2E lane, artifact verification, and E2E smoke |
-| merge queue to `main`               | same merge gate as pull requests against the queued head                                                               |
+| pull request to `main`              | change-selected validation; uncertain or cross-cutting changes run every lane                                           |
+| merge queue to `main`               | every validation lane against the exact queued source SHA                                                               |
 | push to `main`                      | merge gate plus shared-cache refresh and verified artifact upload                                                      |
 | manual `Release Candidate` dispatch | builds and verifies the exact selected source SHA and stores a candidate bundle                                        |
 | manual `Release Publish` dispatch   | verifies an operator-selected candidate bundle and promotes its exact artifacts without rebuilding                     |
@@ -40,21 +40,24 @@ Root task composition:
   E2E smoke plus Form-owned Asset acceptance, the mobile browser visual
   regression suite, and version validation;
 - `ci:merge`: `ci` plus `ci:artifacts`;
-- `ci:impact`: a standalone, conservative PR/main-push diff report used by
-  hosted CI in shadow mode; it never changes which jobs run;
+- `ci:impact`: a standalone, conservative diff planner used by hosted CI to
+  select pull-request lanes while preserving full main-push and merge-group
+  validation;
 - `ci:lane:docsite-nav`: the standalone navigation/link E2E lane used by hosted
   CI for early docsite feedback;
 - `ci:release`: release artifact build/package/verification plus npm
   packaging/verification; it does not rerun `ci:merge` or full E2E.
 
-Hosted CI schedules the `ci-rust-check`, `ci-rust-test`, `ci-web`, and
-`artifacts` lanes in parallel with a standalone `ci-docsite-nav` lane and the
-`ci-impact-shadow` report. Impact classification reports a conservative
-candidate scope for pull requests and main pushes; merge groups and uncertain,
-large, global, or unclassified changes report `all`. This is shadow data only:
-it does not skip or condition any CI lane. The `ci-required` aggregator runs on
-`ubuntu-slim` and preserves the required status-check context while failing
-closed on any missing or unsuccessful required result. The three quality lanes
+Hosted CI uses the `ci:impact` diff planner to select pull-request lanes and
+schedules selected lanes in parallel. Docs-only pull requests run Web and
+docsite navigation; frontend-only pull requests run Web and artifact/E2E
+verification; Rust changes also run both Rust lanes. Main pushes and merge
+groups always run every lane. Large diffs, global or unclassified paths,
+missing SHAs, unsupported events, and diff failures fall back to the full lane
+plan. The artifact/E2E lane remains mandatory on main pushes so the Pages site
+and source manifest continue to be produced. `ci-required` runs on
+`ubuntu-slim`, checks every planned lane against its result, and fails closed
+on missing results, unexpected skips, and unexpected executions. The three quality lanes
 run only
 `mise run ci:lane:rust-check`, `mise run ci:lane:rust-test`, and
 `mise run ci:lane:web`; they do not duplicate repository validation commands in

@@ -34,7 +34,7 @@ Deno.test("CI impact classifier maps the declared top-level categories", () => {
   });
 });
 
-Deno.test("ordinary docs and frontend diffs produce a shadow-only scoped report", () => {
+Deno.test("docs and frontend diffs select only their required lanes", () => {
   const report = makeImpactReport({
     event: "pull_request",
     baseSha,
@@ -49,8 +49,44 @@ Deno.test("ordinary docs and frontend diffs produce a shadow-only scoped report"
     global: false,
   });
   assertEquals(report.candidateLanes, ["artifacts", "docsite-nav", "web"]);
-  assertEquals(report.executionMode, "shadow-only");
-  assertEquals(report.jobsSkipped, false);
+  assertEquals(report.executionMode, "selective-pr");
+  assertEquals(report.jobsSkipped, true);
+
+  const docsOnly = makeImpactReport({
+    event: "pull_request",
+    baseSha,
+    headSha,
+    paths: ["docs/guide.md"],
+  });
+  assertEquals(docsOnly.candidateLanes, ["docsite-nav", "web"]);
+
+  const frontendOnly = makeImpactReport({
+    event: "pull_request",
+    baseSha,
+    headSha,
+    paths: ["frontend/src/page.tsx"],
+  });
+  assertEquals(frontendOnly.candidateLanes, ["artifacts", "web"]);
+});
+
+Deno.test("main pushes retain every lane and merge groups remain unconditional", () => {
+  const push = makeImpactReport({
+    event: "push",
+    baseSha,
+    headSha,
+    paths: ["docs/guide.md"],
+  });
+  assertEquals(push.scope, "all");
+  assertEquals(push.candidateLanes, [
+    "artifacts",
+    "docsite-nav",
+    "rust-check",
+    "rust-test",
+    "web",
+  ]);
+  assertEquals(push.jobsSkipped, false);
+  const mergeGroup = makeImpactReport({ event: "merge_group" });
+  assertEquals(mergeGroup.candidateLanes, push.candidateLanes);
 });
 
 Deno.test("merge groups, uncertain inputs, large diffs, and global paths plan all", () => {

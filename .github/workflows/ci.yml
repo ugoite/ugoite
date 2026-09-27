@@ -20,13 +20,18 @@ concurrency:
 
 jobs:
   impact:
-    name: ci-impact-shadow
+    name: ci-impact-plan
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       plan_status: ${{ steps.plan.outputs.plan_status }}
       plan_scope: ${{ steps.plan.outputs.plan_scope }}
       jobs_skipped: ${{ steps.plan.outputs.jobs_skipped }}
+      plan_rust_check: ${{ steps.plan.outputs.plan_rust_check }}
+      plan_rust_test: ${{ steps.plan.outputs.plan_rust_test }}
+      plan_web: ${{ steps.plan.outputs.plan_web }}
+      plan_artifacts: ${{ steps.plan.outputs.plan_artifacts }}
+      plan_docsite_nav: ${{ steps.plan.outputs.plan_docsite_nav }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,7 +44,7 @@ jobs:
           install_args: deno
           cache: true
 
-      - name: Report conservative change impact
+      - name: Report conservative CI lane plan
         id: plan
         env:
           CI_IMPACT_EVENT: ${{ github.event_name }}
@@ -49,6 +54,8 @@ jobs:
 
   rust-check:
     name: ci-rust-check
+    needs: impact
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_rust_check == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
@@ -110,6 +117,8 @@ jobs:
 
   rust-test:
     name: ci-rust-test
+    needs: impact
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_rust_test == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
@@ -166,6 +175,8 @@ jobs:
 
   web:
     name: ci-web
+    needs: impact
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_web == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
@@ -252,6 +263,8 @@ jobs:
 
   artifacts:
     name: artifacts
+    needs: impact
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_artifacts == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
@@ -581,6 +594,8 @@ jobs:
 
   docsite-nav:
     name: ci-docsite-nav
+    needs: impact
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_docsite_nav == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -682,13 +697,18 @@ jobs:
           sparse-checkout: scripts/ci-gate-check.sh
           sparse-checkout-cone-mode: false
 
-      - name: Validate the shadow plan and required lane results
+      - name: Validate CI lane plan and required results
         env:
           EVENT_NAME: ${{ github.event_name }}
           IMPACT_RESULT: ${{ needs.impact.result }}
           IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}
           IMPACT_PLAN_SCOPE: ${{ needs.impact.outputs.plan_scope }}
           IMPACT_JOBS_SKIPPED: ${{ needs.impact.outputs.jobs_skipped }}
+          PLAN_RUST_CHECK: ${{ needs.impact.outputs.plan_rust_check }}
+          PLAN_RUST_TEST: ${{ needs.impact.outputs.plan_rust_test }}
+          PLAN_WEB: ${{ needs.impact.outputs.plan_web }}
+          PLAN_ARTIFACTS: ${{ needs.impact.outputs.plan_artifacts }}
+          PLAN_DOCSITE_NAV: ${{ needs.impact.outputs.plan_docsite_nav }}
           RUST_CHECK_RESULT: ${{ needs.rust-check.result }}
           RUST_TEST_RESULT: ${{ needs.rust-test.result }}
           WEB_RESULT: ${{ needs.web.result }}

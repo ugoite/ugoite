@@ -414,7 +414,7 @@ async function assertAggregateWorkflow(
   assertContainsAll(
     impactJob,
     [
-      "name: ci-impact-shadow",
+      "name: ci-impact-plan",
       "fetch-depth: 0",
       "CI_IMPACT_EVENT: ${{ github.event_name }}",
       "github.event.pull_request.base.sha || github.event.before",
@@ -422,7 +422,7 @@ async function assertAggregateWorkflow(
       "install_args: deno",
       "run: mise run ci:impact",
     ],
-    "impact shadow lane",
+    "impact plan lane",
   );
   assertContainsAll(
     docsiteNavJob,
@@ -476,6 +476,11 @@ async function assertAggregateWorkflow(
       "IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}",
       "IMPACT_PLAN_SCOPE: ${{ needs.impact.outputs.plan_scope }}",
       "IMPACT_JOBS_SKIPPED: ${{ needs.impact.outputs.jobs_skipped }}",
+      "PLAN_RUST_CHECK: ${{ needs.impact.outputs.plan_rust_check }}",
+      "PLAN_RUST_TEST: ${{ needs.impact.outputs.plan_rust_test }}",
+      "PLAN_WEB: ${{ needs.impact.outputs.plan_web }}",
+      "PLAN_ARTIFACTS: ${{ needs.impact.outputs.plan_artifacts }}",
+      "PLAN_DOCSITE_NAV: ${{ needs.impact.outputs.plan_docsite_nav }}",
       "RUST_CHECK_RESULT: ${{ needs.rust-check.result }}",
       "RUST_TEST_RESULT: ${{ needs.rust-test.result }}",
       "WEB_RESULT: ${{ needs.web.result }}",

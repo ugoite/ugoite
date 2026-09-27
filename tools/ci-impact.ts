@@ -15,9 +15,17 @@ export type ImpactReport = {
   scope: "all" | "scoped";
   reason: string;
   candidateLanes: string[];
-  executionMode: "shadow-only";
-  jobsSkipped: false;
+  executionMode: "selective-pr" | "all-lanes";
+  jobsSkipped: boolean;
 };
+
+const ALL_LANES = [
+  "rust-check",
+  "rust-test",
+  "web",
+  "artifacts",
+  "docsite-nav",
+] as const;
 
 const ZERO_SHA = /^0{40}$/;
 const SHA = /^[0-9a-f]{40}$/i;
@@ -64,7 +72,7 @@ export function classifyPaths(paths: string[]): ImpactCategories {
       continue;
     }
 
-    // An unclassified path makes the shadow plan conservative.
+    // An unclassified path makes the lane plan conservative.
     categories.global = true;
   }
 
@@ -126,23 +134,10 @@ export function makeImpactReport(input: {
   }
 
   const candidateLanes = new Set<string>();
-  if (scope === "all") {
-    for (
-      const lane of [
-        "rust-check",
-        "rust-test",
-        "web",
-        "artifacts",
-        "docsite-nav",
-      ]
-    ) {
-      candidateLanes.add(lane);
-    }
-  } else {
+  if (scope !== "all" && event === "pull_request") {
     if (categories.docs) {
       candidateLanes.add("docsite-nav");
       candidateLanes.add("web");
-      candidateLanes.add("artifacts");
     }
     if (categories.frontend) {
       candidateLanes.add("web");
@@ -155,6 +150,19 @@ export function makeImpactReport(input: {
     }
   }
 
+  // Main pushes must retain the artifact lane for the docsite Pages payload and
+  // its source manifest. Other non-PR events also stay on the full gate.
+  if (event !== "pull_request" || scope === "all") {
+    scope = "all";
+    if (event === "push") {
+      reason = "main pushes retain every lane and publish verified artifacts";
+    }
+    for (const lane of ALL_LANES) candidateLanes.add(lane);
+  }
+
+  const plannedLanes = [...candidateLanes];
+  const jobsSkipped = plannedLanes.length < ALL_LANES.length;
+
   return {
     schemaVersion: 1,
     event,
@@ -164,9 +172,9 @@ export function makeImpactReport(input: {
     categories,
     scope,
     reason,
-    candidateLanes: [...candidateLanes].sort(),
-    executionMode: "shadow-only",
-    jobsSkipped: false,
+    candidateLanes: plannedLanes.sort(),
+    executionMode: jobsSkipped ? "selective-pr" : "all-lanes",
+    jobsSkipped,
   };
 }
 
@@ -232,13 +240,15 @@ function markdown(report: ImpactReport): string {
     .map(([name]) => name)
     .join(", ") || "none";
   return [
-    "### CI impact shadow report",
+    "### CI impact report",
     "",
     `- Proposed scope: **${report.scope}** (${report.reason})`,
     `- Categories: ${categories}`,
     `- Changed files examined: ${report.fileCount ?? "unavailable"}`,
     `- Candidate lanes: ${report.candidateLanes.join(", ")}`,
-    `- Execution: **${report.executionMode}**; jobs skipped: **no**`,
+    `- Execution: **${report.executionMode}**; jobs skipped: **${
+      report.jobsSkipped ? "yes" : "no"
+    }**`,
   ].join("\n");
 }
 
@@ -279,7 +289,13 @@ export async function runImpactCli(args = Deno.args): Promise<ImpactReport> {
   if (outputPath) {
     await Deno.writeTextFile(
       outputPath,
-      `plan_status=ok\nplan_scope=${report.scope}\njobs_skipped=false\nreport_json=${json}\n`,
+      `plan_status=ok\nplan_scope=${report.scope}\njobs_skipped=${report.jobsSkipped}\n${
+        ALL_LANES.map((lane) =>
+          `plan_${lane.replaceAll("-", "_")}=${
+            report.candidateLanes.includes(lane)
+          }`
+        ).join("\n")
+      }\nreport_json=${json}\n`,
       { append: true },
     );
   }

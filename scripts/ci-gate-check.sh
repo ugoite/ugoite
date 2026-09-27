@@ -15,15 +15,40 @@ require_success() {
 require_success "impact" "${IMPACT_RESULT:-missing}"
 [[ "${IMPACT_PLAN_STATUS:-}" == "ok" ]] || fail "impact plan was not validated"
 [[ "${IMPACT_PLAN_SCOPE:-}" == "all" || "${IMPACT_PLAN_SCOPE:-}" == "scoped" ]] || fail "impact scope was invalid"
-[[ "${IMPACT_JOBS_SKIPPED:-}" == "false" ]] || fail "shadow mode must not skip jobs"
-if [[ "${EVENT_NAME:-}" == "merge_group" && "${IMPACT_PLAN_SCOPE:-}" != "all" ]]; then
-  fail "merge-group impact scope must be all"
+validate_lane() {
+  local name="$1"
+  local planned="$2"
+  local result="$3"
+  case "$planned" in
+    true) require_success "$name" "$result" ;;
+    false) [[ "$result" == "skipped" ]] || fail "$name was unplanned but result was $result" ;;
+    *) fail "$name plan was invalid: $planned" ;;
+  esac
+}
+
+any_skipped=false
+for planned in \
+  "${PLAN_RUST_CHECK:-missing}" "${PLAN_RUST_TEST:-missing}" \
+  "${PLAN_WEB:-missing}" "${PLAN_ARTIFACTS:-missing}" \
+  "${PLAN_DOCSITE_NAV:-missing}"; do
+  case "$planned" in
+    true) ;;
+    false) any_skipped=true ;;
+    *) fail "lane plan contained an invalid value: $planned" ;;
+  esac
+done
+[[ "${IMPACT_JOBS_SKIPPED:-}" == "$any_skipped" ]] || fail "jobs_skipped did not match the planned lanes"
+
+if [[ "${EVENT_NAME:-}" == "merge_group" || "${EVENT_NAME:-}" == "push" ]]; then
+  [[ "${IMPACT_PLAN_SCOPE:-}" == "all" ]] || fail "$EVENT_NAME impact scope must be all"
+  [[ "$any_skipped" == "false" ]] || fail "$EVENT_NAME must run every lane"
 fi
-require_success "rust-check" "${RUST_CHECK_RESULT:-missing}"
-require_success "rust-test" "${RUST_TEST_RESULT:-missing}"
-require_success "web" "${WEB_RESULT:-missing}"
-require_success "artifacts" "${ARTIFACTS_RESULT:-missing}"
-require_success "docsite-nav" "${DOCSITE_NAV_RESULT:-missing}"
+
+validate_lane "rust-check" "${PLAN_RUST_CHECK:-missing}" "${RUST_CHECK_RESULT:-missing}"
+validate_lane "rust-test" "${PLAN_RUST_TEST:-missing}" "${RUST_TEST_RESULT:-missing}"
+validate_lane "web" "${PLAN_WEB:-missing}" "${WEB_RESULT:-missing}"
+validate_lane "artifacts" "${PLAN_ARTIFACTS:-missing}" "${ARTIFACTS_RESULT:-missing}"
+validate_lane "docsite-nav" "${PLAN_DOCSITE_NAV:-missing}" "${DOCSITE_NAV_RESULT:-missing}"
 
 if [[ "${EVENT_NAME:-}" == "pull_request" ]]; then
   require_success "pr-context-report" "${PR_CONTEXT_RESULT:-missing}"
@@ -31,4 +56,4 @@ else
   [[ "${PR_CONTEXT_RESULT:-}" == "skipped" ]] || fail "pr-context-report result was ${PR_CONTEXT_RESULT:-missing} outside pull_request"
 fi
 
-printf 'ci-required: all CI lanes succeeded; impact report remained shadow-only\n'
+printf 'ci-required: planned lanes matched their results\n'
