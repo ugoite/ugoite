@@ -1080,4 +1080,76 @@ test.describe("Entries CRUD", () => {
 		);
 		expect(fetchRes.status()).toBe(404);
 	});
+
+	test("@smoke History closes a confirmed revert and records the appended Change", async ({ page, request }) => {
+		const beforeRes = await request.get(
+			getBackendUrl(`/spaces/${spaceId}/changes`),
+		);
+		expect(beforeRes.ok()).toBe(true);
+		const before = (await beforeRes.json()) as Array<{ change_id: string }>;
+		const priorIds = new Set(before.map((change) => change.change_id));
+
+		const createRes = await request.post(
+			getBackendUrl(`/spaces/${spaceId}/entries`),
+			{
+				data: {
+					form: "Entry",
+					fields: { Body: `History revert dialog ${Date.now()}` },
+				},
+			},
+		);
+		expect(createRes.status()).toBe(201);
+		const created = (await createRes.json()) as { id: string };
+
+		const afterCreateRes = await request.get(
+			getBackendUrl(`/spaces/${spaceId}/changes`),
+		);
+		expect(afterCreateRes.ok()).toBe(true);
+		const afterCreate = (await afterCreateRes.json()) as Array<{
+			change_id: string;
+		}>;
+		const targetChangeId = afterCreate.find((change) =>
+			!priorIds.has(change.change_id)
+		)?.change_id;
+		expect(targetChangeId).toBeTruthy();
+		if (!targetChangeId) throw new Error("Entry creation did not append a Change");
+
+		await page.goto(`/spaces/${spaceId}/history`);
+		await expect(page.locator(".historyTable")).toBeVisible();
+		const targetRow = page.locator(".historyTable tbody tr").filter({
+			hasText: targetChangeId,
+		});
+		await targetRow.getByRole("button", { name: "Revert this change" })
+			.click();
+		const dialog = page.getByRole("dialog");
+		await expect(dialog).toBeVisible();
+
+		const revertResponsePromise = page.waitForResponse((response) =>
+			response.request().method() === "POST" &&
+			response.url().includes(`/changes/${targetChangeId}/revert`)
+		);
+		await dialog.getByRole("button", { name: "Append new Change" }).click();
+		const revertResponse = await revertResponsePromise;
+		expect(revertResponse.ok()).toBe(true);
+		const reverted = (await revertResponse.json()) as { change_id: string };
+		await expect(dialog).toHaveCount(0);
+		await expect(page.getByText(`Reverted as Change ${reverted.change_id}.`))
+			.toBeVisible();
+
+		const finalChangesRes = await request.get(
+			getBackendUrl(`/spaces/${spaceId}/changes`),
+		);
+		expect(finalChangesRes.ok()).toBe(true);
+		const finalChanges = (await finalChangesRes.json()) as Array<{
+			change_id: string;
+		}>;
+		expect(finalChanges.filter((change) => change.change_id === reverted.change_id))
+			.toHaveLength(1);
+		expect(finalChanges.some((change) => change.change_id === targetChangeId))
+			.toBe(true);
+		const deletedEntryRes = await request.get(
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
+		);
+		expect(deletedEntryRes.status()).toBe(404);
+	});
 });
