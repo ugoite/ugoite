@@ -124,3 +124,51 @@ Space-owned Knowledge, but its renderer and runtime state remain replaceable
 Experience. Provider/framework implementations, Agent Plugins, MCP transport,
 CLI UI, and browser UI remain replaceable adapters and are not part of this
 slice.
+
+## ADR-014 — SQL Form names resolve at execution and Saved SQL binds by Form ID
+
+**Accepted.** A normal stateless SQL request resolves a quoted Form name against
+the Forms already authorized for that request's pinned Publication. A SQL
+relation named `"Expense"` therefore identifies the uniquely matching Form in
+that Publication at execution time. Name matching is exact and
+case-sensitive. Form names use the existing identifier grammar (ASCII letters,
+digits, `_`, and `-`; digits may be first), and name references must use SQL
+double quotes; an unquoted identifier is not a Form-name reference. A missing
+or ambiguous name is an error. SQL parsing and
+relation collection use the Rust SQL parser, never SQL-text replacement.
+
+The legacy `form_<UUID>` relation remains valid and continues to identify the
+same physical Form relation. Physical table names and `sql_relation_name()` do
+not change. A Form name that collides with a reserved ID-shaped relation is
+ambiguous and fails closed; neither the name nor the internal relation silently
+wins. Name lookup only chooses among authorized Forms and never grants access.
+Existing logical/physical plan authorization and Publication isolation checks
+remain mandatory after resolution.
+
+Saved SQL stores its original SQL text and a versioned set of resolved Form
+bindings in that saved revision's integrity-protected metadata. The service
+derives the bindings when creating or updating Saved SQL; client-supplied
+bindings are not trusted. At execution, the saved SQL ID and revision select
+the exact historical payload and bindings. Each bound Form ID must still exist
+in the selected Publication and remain authorized. A missing, renamed, or
+unauthorized bound Form fails closed; it never falls back to a same-name Form.
+The SQL text is not rewritten on Form rename. Diagnostics expose the bound
+name and current Form name so a user can explicitly edit and save a new
+revision.
+
+The existing Saved SQL metadata object is the version boundary. Readers that do
+not recognize a binding version or its metadata fields fail closed because the
+Saved SQL metadata decoder rejects unknown fields. They must not return an
+apparently usable definition or append a revision that omits the bindings.
+Older Saved SQL revisions without binding metadata remain readable and retain
+their current behavior, including `form_<UUID>` references. No migration or
+rewrite occurs during read. This forward-reader boundary is intentional for
+the pre-1.0 format; mixed-version write access to a Space containing bound Saved
+SQL is unsupported. Rollback means deploying a reader that understands the
+binding format, not reopening the Space with an older binary.
+
+Query page, count, export, and continuation execution share the Rust SQL
+execution path. A continuation remains pinned to its Publication and SQL
+fingerprint and additionally carries the saved revision identity and resolved
+bindings when the request executes Saved SQL. Authorization is reevaluated on
+each continuation request.
