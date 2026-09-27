@@ -82,8 +82,17 @@ pub fn summarize_change(
 
     let mut groups = BTreeMap::<(FormId, FieldId, String, String), ChangeFieldGroup>::new();
     for entry in unique.values() {
-        let mut observed_fields = BTreeMap::<FieldId, (String, String)>::new();
+        let mut observed_fields =
+            BTreeMap::<FieldId, (ComparedFieldValue, ComparedFieldValue)>::new();
         for field in &entry.fields {
+            if let Some(previous) =
+                observed_fields.insert(field.field_id, (field.before.clone(), field.after.clone()))
+            {
+                if previous != (field.before.clone(), field.after.clone()) {
+                    return Err(ChangeSummaryError::ConflictingEntryEvidence);
+                }
+                continue;
+            }
             if !is_comparable(&field.before) || !is_comparable(&field.after) {
                 continue;
             }
@@ -91,14 +100,6 @@ pub fn summarize_change(
                 .map_err(|_| ChangeSummaryError::UnserializableValue)?;
             let after_key = serde_json::to_string(&field.after)
                 .map_err(|_| ChangeSummaryError::UnserializableValue)?;
-            if let Some(previous) =
-                observed_fields.insert(field.field_id, (before_key.clone(), after_key.clone()))
-            {
-                if previous != (before_key.clone(), after_key.clone()) {
-                    return Err(ChangeSummaryError::ConflictingEntryEvidence);
-                }
-                continue;
-            }
             let key = (entry.form_id, field.field_id, before_key, after_key);
             groups
                 .entry(key)
@@ -263,5 +264,27 @@ mod tests {
         .unwrap();
         assert_eq!(summary.affected_entry_count, 1);
         assert!(summary.field_groups.is_empty());
+    }
+
+    #[test]
+    fn conflicting_visibility_for_a_field_is_rejected() {
+        let error = summarize_change(&[EntryChangeEvidence {
+            form_id: form(1),
+            entry_id: entry(1),
+            fields: vec![
+                FieldChangeEvidence {
+                    field_id: field(),
+                    before: ComparedFieldValue::Value(FieldValue::String("old".into())),
+                    after: ComparedFieldValue::Value(FieldValue::String("new".into())),
+                },
+                FieldChangeEvidence {
+                    field_id: field(),
+                    before: ComparedFieldValue::Redacted,
+                    after: ComparedFieldValue::Unavailable,
+                },
+            ],
+        }])
+        .unwrap_err();
+        assert_eq!(error, ChangeSummaryError::ConflictingEntryEvidence);
     }
 }
