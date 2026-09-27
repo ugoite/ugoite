@@ -184,6 +184,9 @@ test("fresh Node claims a copied Space, reads its Knowledge, and appends without
     Record<string, unknown>
   >;
   expect(afterAppendChanges.length).toBeGreaterThan(proof.changes.length);
+  expect(afterAppendChanges.at(-1)).toMatchObject({
+    change_id: appended.change_id,
+  });
   expect(afterAppendChanges.slice(0, proof.changes.length)).toEqual(
     proof.changes,
   );
