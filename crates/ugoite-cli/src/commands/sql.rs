@@ -1,8 +1,8 @@
-use crate::cli_config::{SpaceTarget, resolve_command_target};
+use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::http;
 use crate::output::{
-    Format, MutationReceipt, UsageError, effective_format, emit_mutation, print_json,
-    print_json_table,
+    effective_format, emit_mutation, print_json, print_json_table, Format, MutationReceipt,
+    UsageError,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -428,11 +428,9 @@ mod export_sink_tests {
         let error = validator
             .accept(&page, 1)
             .expect_err("has_more requires a continuation token");
-        assert!(
-            error
-                .to_string()
-                .contains("inconsistent continuation metadata")
-        );
+        assert!(error
+            .to_string()
+            .contains("inconsistent continuation metadata"));
     }
 }
 

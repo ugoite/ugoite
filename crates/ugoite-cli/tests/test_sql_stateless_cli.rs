@@ -193,12 +193,10 @@ fn cli_sql_export_writes_complete_ndjson_atomically() {
     assert_eq!(summary["rows"], 3);
     assert!(summary["bytes"].as_u64().unwrap() > 0);
     assert_eq!(summary["output"], path.to_string_lossy().as_ref());
-    assert!(
-        summary["query_fingerprint"]
-            .as_str()
-            .unwrap()
-            .starts_with("sha256:")
-    );
+    assert!(summary["query_fingerprint"]
+        .as_str()
+        .unwrap()
+        .starts_with("sha256:"));
     assert_eq!(summary["rows_exported"], 3);
     assert_eq!(summary["pages_fetched"], 2);
 
