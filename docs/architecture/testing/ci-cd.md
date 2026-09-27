@@ -40,16 +40,28 @@ Root task composition:
   E2E smoke plus Form-owned Asset acceptance, the mobile browser visual
   regression suite, and version validation;
 - `ci:merge`: `ci` plus `ci:artifacts`;
+- `ci:impact`: a standalone, conservative PR/main-push diff report used by
+  hosted CI in shadow mode; it never changes which jobs run;
+- `ci:lane:docsite-nav`: the standalone navigation/link E2E lane used by hosted
+  CI for early docsite feedback;
 - `ci:release`: release artifact build/package/verification plus npm
   packaging/verification; it does not rerun `ci:merge` or full E2E.
 
 Hosted CI schedules the `ci-rust-check`, `ci-rust-test`, `ci-web`, and
-`artifacts` lanes in parallel, then the `ci-required` aggregator preserves the
-required status-check context. The three quality lanes run only
+`artifacts` lanes in parallel with a standalone `ci-docsite-nav` lane and the
+`ci-impact-shadow` report. Impact classification reports a conservative
+candidate scope for pull requests and main pushes; merge groups and uncertain,
+large, global, or unclassified changes report `all`. This is shadow data only:
+it does not skip or condition any CI lane. The `ci-required` aggregator runs on
+`ubuntu-slim` and preserves the required status-check context while failing
+closed on any missing or unsuccessful required result. The three quality lanes
+run only
 `mise run ci:lane:rust-check`, `mise run ci:lane:rust-test`, and
 `mise run ci:lane:web`; they do not duplicate repository validation commands in
 GitHub Actions. The artifact lane runs only `mise run ci:artifacts` and owns
-Playwright/BuildKit setup plus verified artifact upload.
+Playwright/BuildKit setup plus verified artifact upload. The standalone
+docsite-navigation lane runs through `mise run ci:lane:docsite-nav` so broken
+links and navigation can fail before the artifact build completes.
 
 Pull requests also run a separate `ci-pr-context-report` job. It checks out
 the exact PR base and head commits, writes Mitase PR-context JSON and Markdown
@@ -179,9 +191,12 @@ checks the packaged binary version, and then execs it. The default path does not
 build Mitase from Git; `MITASE_BIN` remains available as an explicit local
 development override.
 
-The required `ci-required` aggregator runs after all four lanes on pull
-requests, merge queues, and pushes to `main`. It fails unless `ci-rust-check`,
-`ci-rust-test`, `ci-web`, and `artifacts` are all successful. The canonical
+The required `ci-required` aggregator runs after all quality, artifact,
+docsite-navigation, and impact-report lanes on pull requests, merge queues, and
+pushes to `main`. It fails unless `ci-rust-check`, `ci-rust-test`, `ci-web`,
+`artifacts`, `ci-docsite-nav`, and the impact report are successful. The PR
+context report must succeed for pull requests and is accepted as skipped for
+other events. The canonical
 `test` Mise task and `ci:lane:web` run the normal docsite test suite; only
 frontend coverage remains a hard coverage gate. The docsite coverage task is
 intentionally separate developer convenience and is not a merge-quality

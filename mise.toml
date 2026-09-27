@@ -332,6 +332,14 @@ run = "deno task docsite:coverage"
 [tasks."test:docsite:e2e:navigation"]
 run = "deno task docsite:e2e:navigation"
 
+[tasks."ci:impact"]
+description = "Report conservative CI change impact as shadow data"
+run = "deno run -A tools/ci-impact.ts"
+
+[tasks."ci:lane:docsite-nav"]
+description = "Run standalone docsite navigation and link E2E checks"
+run = [{ task = "test:docsite:e2e:navigation" }]
+
 [tasks.test]
 depends = ["build:wasm:debug"]
 description = "Run the authoritative non-E2E test suite"
