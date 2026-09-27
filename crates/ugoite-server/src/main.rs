@@ -4,10 +4,28 @@ const DEFAULT_SERVER_ADDRESS: &str = "127.0.0.1:8000";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let startup_started = std::time::Instant::now();
     let state = AppState::from_env()?;
     state.initialize_node().await?;
     let address = configured_server_address();
     let listener = tokio::net::TcpListener::bind(&address).await?;
+    if matches!(
+        std::env::var("UGOITE_STARTUP_METRICS").as_deref(),
+        Ok("true")
+    ) {
+        eprintln!(
+            "{}",
+            serde_json::json!({
+                "schema_version": 1,
+                "event": "ugoite.startup.phase",
+                "phase": "listen_ready",
+                "duration_ms": startup_started.elapsed().as_secs_f64() * 1000.0,
+                "process_id": std::process::id(),
+                "source_sha": std::env::var("UGOITE_SOURCE_SHA").unwrap_or_else(|_| "unknown".to_string()),
+                "address": address,
+            })
+        );
+    }
     println!("ugoite-server listening on http://{address}");
     axum::serve(listener, app(state))
         .with_graceful_shutdown(shutdown_signal())

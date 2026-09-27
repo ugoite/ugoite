@@ -34,7 +34,7 @@ use std::{
     future::Future,
     net::IpAddr,
     pin::Pin,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
@@ -194,6 +194,30 @@ const FORM_VERSION_HEADER: HeaderName = HeaderName::from_static("x-ugoite-form-v
 const FORM_APPLIED_HEADER: HeaderName = HeaderName::from_static("x-ugoite-form-applied");
 const CHANGE_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-change-id");
 const OIDC_STATE_COOKIE: &str = "ugoite_oidc_state";
+
+fn emit_startup_measurement(phase: &str, started: Instant, fields: Value) {
+    if !matches!(env::var("UGOITE_STARTUP_METRICS").as_deref(), Ok("true")) {
+        return;
+    }
+    let mut event = serde_json::Map::from_iter([
+        ("schema_version".to_string(), json!(1)),
+        ("event".to_string(), json!("ugoite.startup.phase")),
+        ("phase".to_string(), json!(phase)),
+        (
+            "duration_ms".to_string(),
+            json!(started.elapsed().as_secs_f64() * 1000.0),
+        ),
+        ("process_id".to_string(), json!(std::process::id())),
+        (
+            "source_sha".to_string(),
+            json!(env::var("UGOITE_SOURCE_SHA").unwrap_or_else(|_| "unknown".to_string())),
+        ),
+    ]);
+    if let Some(fields) = fields.as_object() {
+        event.extend(fields.clone());
+    }
+    eprintln!("{}", Value::Object(event));
+}
 
 #[derive(Clone, Debug)]
 struct SignableResponseBody(Bytes);
@@ -1213,6 +1237,7 @@ impl AppState {
         &self,
         emit_setup_notice: bool,
     ) -> anyhow::Result<()> {
+        let bootstrap_started = Instant::now();
         let authorizer = Authorizer::new(self.service.operator().clone());
         if let Err(error) = authorizer.ensure_authoritative_mutation_contract() {
             if error
@@ -1247,18 +1272,24 @@ impl AppState {
                 );
             }
         }
+        emit_startup_measurement("bootstrap_auth", bootstrap_started, json!({}));
         // Claim-backed Space creation is the explicit recovery boundary. Run
         // it before strict enumeration so a crash-left pending bootstrap does
         // not prevent the server from reaching its listener on restart.
+        let claim_recovery_started = Instant::now();
         self.service.recover_pending_space_claims().await?;
         self.complete_pending_initial_space_claims().await?;
         let first_setup_is_pending = matches!(
             self.identity.read_state().await?.lifecycle,
             NodeLifecycle::Uninitialized
         );
+        emit_startup_measurement("claim_recovery", claim_recovery_started, json!({}));
         let space_ids = self.service.list_space_ids().await?;
         let mut claimed_space_ids = Vec::new();
+        let checkpoint_started = Instant::now();
+        let mut classified_spaces = 0usize;
         for space_id in &space_ids {
+            classified_spaces += 1;
             match self
                 .service
                 .classify_space_for_node_onboarding(space_id)
@@ -1288,9 +1319,16 @@ impl AppState {
                 }
             }
         }
+        emit_startup_measurement(
+            "space_onboarding_validation",
+            checkpoint_started,
+            json!({"spaces": classified_spaces}),
+        );
         // Resolve every durable recovery fence and audit obligation before
         // launching maintenance. Maintenance can mutate derived/asset
         // storage, so it must not race an unresolved recovery decision.
+        let audit_recovery_started = Instant::now();
+        let mut audit_targets_converged = 0usize;
         for space_id in &claimed_space_ids {
             reconcile_recovery_fences(self, space_id).await?;
             reconcile_recovery_audit_outbox(self, space_id).await?;
@@ -1299,8 +1337,18 @@ impl AppState {
             // crash windows between a Knowledge commit and its audit append
             // must not leave committed revisions without evidence. Failures
             // propagate instead of hiding as success.
-            self.service.reconcile_space_audit(space_id).await?;
+            audit_targets_converged += self.service.reconcile_space_audit(space_id).await?;
         }
+        emit_startup_measurement(
+            "audit_recovery",
+            audit_recovery_started,
+            json!({
+                "spaces": claimed_space_ids.len(),
+                "targets_converged": audit_targets_converged
+            }),
+        );
+        let derived_rearm_started = Instant::now();
+        let derived_spaces = claimed_space_ids.len();
         for space_id in claimed_space_ids {
             // Rehydrate relation-local maintenance on every server start.
             let maintenance_service = self.service.clone();
@@ -1335,6 +1383,11 @@ impl AppState {
                 }
             });
         }
+        emit_startup_measurement(
+            "derived_rebuild_scheduling",
+            derived_rearm_started,
+            json!({"spaces": derived_spaces}),
+        );
         Ok(())
     }
 }

@@ -47,6 +47,17 @@ mise run seed
 The helper refuses to overwrite an existing target Space. Use
 `bash scripts/dev-seed.sh --help` for the supported scenario and size options.
 
+To capture server startup phase timings on a fixed 6,000 + 4,000 Entry fixture,
+run `mise run measure:startup`. It writes a JSON report under `target/` and
+removes its temporary fixture when complete. Set `UGOITE_STARTUP_MEASURE_ROOT`
+to retain the fixture, `UGOITE_STARTUP_MEASURE_OUTPUT` to change the report
+path, or `UGOITE_STARTUP_MEASURE_RUNS` to change the number of process starts.
+Set `UGOITE_STARTUP_MEASURE_TIMEOUT_SECONDS` to change the readiness timeout.
+When reusing a retained fixture, set `UGOITE_STARTUP_MEASURE_REUSE_ROOT=true`
+with the same `UGOITE_STARTUP_MEASURE_ROOT`. The report distinguishes the first
+process from later processes; it does not control the operating system's file
+cache.
+
 ## Development authentication
 
 Open the local server's one-use setup URL from the server output, register the

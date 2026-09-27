@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use chrono::{SecondsFormat, Utc};
 use fs2::FileExt;
+use futures::stream::{self, StreamExt, TryStreamExt};
 use opendal::Operator;
 use regex::Regex;
 use serde_json::{json, Value};
@@ -316,6 +317,30 @@ async fn read_event_marker(
     Ok(Some((marker, version)))
 }
 
+/// Read a recovery batch's existing markers concurrently. The verified audit
+/// chain remains authoritative; this only batches independent exact marker
+/// reads that were previously awaited one by one.
+async fn read_event_markers(
+    op: &Operator,
+    space_id: &str,
+    event_ids: impl IntoIterator<Item = String>,
+) -> Result<HashMap<String, Option<(Value, Option<String>)>>> {
+    let op = op.clone();
+    let space_id = space_id.to_string();
+    let markers = stream::iter(event_ids.into_iter().map(|event_id| {
+        let op = op.clone();
+        let space_id = space_id.clone();
+        async move {
+            let marker = read_event_marker(&op, &space_id, &event_id).await?;
+            Ok::<_, anyhow::Error>((event_id, marker))
+        }
+    }))
+    .buffer_unordered(32)
+    .try_collect::<Vec<_>>()
+    .await?;
+    Ok(markers.into_iter().collect())
+}
+
 async fn create_pending_marker(
     op: &Operator,
     space_id: &str,
@@ -502,6 +527,26 @@ async fn append_audit_events_once(
             event_indexes.insert(event_id.to_string(), index);
         }
     }
+    let requested_event_ids = payloads
+        .iter()
+        .filter_map(|payload| {
+            payload
+                .get("event_id")
+                .and_then(Value::as_str)
+                .and_then(|value| uuid::Uuid::parse_str(value).ok())
+                .map(|value| value.to_string())
+        })
+        .collect::<std::collections::HashSet<_>>();
+    let persisted_markers = read_event_markers(
+        op,
+        &safe_space_id,
+        requested_event_ids.into_iter().filter(|event_id| {
+            event_indexes
+                .get(event_id)
+                .is_some_and(|index| *index < persisted_event_count)
+        }),
+    )
+    .await?;
 
     let mut output = Vec::with_capacity(payloads.len());
     let mut pending_markers = Vec::with_capacity(payloads.len());
@@ -570,8 +615,15 @@ async fn append_audit_events_once(
 
         let mut marker_version = None;
         if let Some(event_id) = requested_event_id.as_deref() {
-            if let Some((marker, version)) = read_event_marker(op, &safe_space_id, event_id).await?
+            let marker_state = if event_indexes
+                .get(event_id)
+                .is_some_and(|index| *index < persisted_event_count)
             {
+                persisted_markers.get(event_id).cloned().flatten()
+            } else {
+                read_event_marker(op, &safe_space_id, event_id).await?
+            };
+            if let Some((marker, version)) = marker_state {
                 if marker.get("status").and_then(Value::as_str) == Some("committed") {
                     let canonical = marker.get("event").unwrap_or(&marker);
                     if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {

@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e",
+  "fixture": {
+    "seed": {
+      "startup-space-a": 3146001,
+      "startup-space-b": 3144001
+    },
+    "entries": 10000,
+    "space_entry_counts": {
+      "startup-space-a": 6000,
+      "startup-space-b": 4000
+    },
+    "audit_event_count": 9000
+  },
+  "runner": {
+    "os": "macOS-26.6.1-arm64-arm-64bit",
+    "architecture": "arm64"
+  },
+  "process_runs": [
+    {
+      "run": 1,
+      "cache_state": "first_process",
+      "phases": [
+        {
+          "duration_ms": 37.430291999999994,
+          "event": "ugoite.startup.phase",
+          "phase": "bootstrap_auth",
+          "process_id": 36835,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e"
+        },
+        {
+          "duration_ms": 4.587667,
+          "event": "ugoite.startup.phase",
+          "phase": "claim_recovery",
+          "process_id": 36835,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e"
+        },
+        {
+          "duration_ms": 65.633,
+          "event": "ugoite.startup.phase",
+          "phase": "space_onboarding_validation",
+          "process_id": 36835,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e",
+          "spaces": 2
+        },
+        {
+          "duration_ms": 103102.15391600001,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_recovery",
+          "process_id": 36835,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e",
+          "spaces": 2,
+          "targets_converged": 10000
+        },
+        {
+          "duration_ms": 0.075666,
+          "event": "ugoite.startup.phase",
+          "phase": "derived_rebuild_scheduling",
+          "process_id": 36835,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e",
+          "spaces": 2
+        },
+        {
+          "address": "127.0.0.1:18401",
+          "duration_ms": 103420.318917,
+          "event": "ugoite.startup.phase",
+          "phase": "listen_ready",
+          "process_id": 36835,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e"
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "cache_state": "subsequent_process",
+      "phases": [
+        {
+          "duration_ms": 0.404917,
+          "event": "ugoite.startup.phase",
+          "phase": "bootstrap_auth",
+          "process_id": 39749,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e"
+        },
+        {
+          "duration_ms": 1.05,
+          "event": "ugoite.startup.phase",
+          "phase": "claim_recovery",
+          "process_id": 39749,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e"
+        },
+        {
+          "duration_ms": 62.16525,
+          "event": "ugoite.startup.phase",
+          "phase": "space_onboarding_validation",
+          "process_id": 39749,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e",
+          "spaces": 2
+        },
+        {
+          "duration_ms": 4191.317625,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_recovery",
+          "process_id": 39749,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e",
+          "spaces": 2,
+          "targets_converged": 10000
+        },
+        {
+          "duration_ms": 0.033374999999999995,
+          "event": "ugoite.startup.phase",
+          "phase": "derived_rebuild_scheduling",
+          "process_id": 39749,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e",
+          "spaces": 2
+        },
+        {
+          "address": "127.0.0.1:18402",
+          "duration_ms": 4426.369416,
+          "event": "ugoite.startup.phase",
+          "phase": "listen_ready",
+          "process_id": 39749,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e"
+        }
+      ]
+    },
+    {
+      "run": 3,
+      "cache_state": "subsequent_process",
+      "phases": [
+        {
+          "duration_ms": 0.34412499999999996,
+          "event": "ugoite.startup.phase",
+          "phase": "bootstrap_auth",
+          "process_id": 39875,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e"
+        },
+        {
+          "duration_ms": 1.0380420000000001,
+          "event": "ugoite.startup.phase",
+          "phase": "claim_recovery",
+          "process_id": 39875,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e"
+        },
+        {
+          "duration_ms": 61.504000000000005,
+          "event": "ugoite.startup.phase",
+          "phase": "space_onboarding_validation",
+          "process_id": 39875,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e",
+          "spaces": 2
+        },
+        {
+          "duration_ms": 4095.8704170000005,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_recovery",
+          "process_id": 39875,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e",
+          "spaces": 2,
+          "targets_converged": 10000
+        },
+        {
+          "duration_ms": 0.034584,
+          "event": "ugoite.startup.phase",
+          "phase": "derived_rebuild_scheduling",
+          "process_id": 39875,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e",
+          "spaces": 2
+        },
+        {
+          "address": "127.0.0.1:18403",
+          "duration_ms": 4326.899458,
+          "event": "ugoite.startup.phase",
+          "phase": "listen_ready",
+          "process_id": 39875,
+          "schema_version": 1,
+          "source_sha": "913aafa2fcbfef208908795f1706ba408bb9687e"
+        }
+      ]
+    }
+  ],
+  "scope": "Process-cold and subsequent-process timings; OS page cache is not controlled."
+}
