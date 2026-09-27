@@ -2513,11 +2513,17 @@ async fn auth_setup_finish(
             &initial_claims,
         )
         .await
-        .map_err(recovery_aware_auth_error)?;
+        .map_err(|error| {
+            tracing::warn!(error = %error, "initial setup registration failed");
+            recovery_aware_auth_error(error)
+        })?;
     let claims = state
         .complete_pending_initial_space_claims()
         .await
-        .map_err(auth_error)?;
+        .map_err(|error| {
+            tracing::warn!(error = %error, "initial Space claims could not be completed");
+            auth_error(error)
+        })?;
     let claimed_space_uids = claims
         .iter()
         .map(|(space_uid, _)| *space_uid)
