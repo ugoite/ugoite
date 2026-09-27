@@ -69,7 +69,9 @@ opt-in `mise run test:s3-storage` task runs against an explicitly configured
 S3-compatible deployment backend; it does not start an emulator or run in the
 required CI merge gate. Set `UGOITE_S3_TEST_ENDPOINT` and
 `UGOITE_S3_TEST_BUCKET`, with credentials supplied through the standard AWS
-environment variables. The task checks the publication probe, exact read,
+environment variables, and use a dedicated test bucket because recovery
+fixtures leave their uniquely scoped objects in place. The task checks the
+publication probe, exact read,
 create-if-absent, stale-write rejection, and one-winner concurrent Head CAS,
 then exercises a Space through the server-side `UgoiteService` and reconstructs
 its storage service to verify Entry, Form, Asset, and reverted Change history
