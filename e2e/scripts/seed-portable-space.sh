@@ -182,9 +182,10 @@ EOF
   cmp -s "$CASE_ROOT/before.json" "$CASE_ROOT/spaces/$SPACE_UID/security/principals.json"
 done
 
-SOURCE_FILES="$(SOURCE_ROOT="$SOURCE_ROOT" SPACE_UID="$SPACE_UID" "$DENO_BIN" eval '
+SOURCE_FILE_PROOF="$(SOURCE_ROOT="$SOURCE_ROOT" SPACE_UID="$SPACE_UID" "$DENO_BIN" eval '
   const root = `${Deno.env.get("SOURCE_ROOT")}/spaces/${Deno.env.get("SPACE_UID")}`;
   const files: Record<string, string> = {};
+  const appendOnlyPrefixes: Record<string, number[]> = {};
   for await (const entry of Deno.readDir(root)) {
     const pending = [entry.name];
     while (pending.length) {
@@ -197,10 +198,13 @@ SOURCE_FILES="$(SOURCE_ROOT="$SOURCE_ROOT" SPACE_UID="$SPACE_UID" "$DENO_BIN" ev
         const bytes = await Deno.readFile(path);
         const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
         files[relative] = [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        if (relative === "audit/events.jsonl") {
+          appendOnlyPrefixes[relative] = Array.from(bytes);
+        }
       }
     }
   }
-  console.log(JSON.stringify(files));
+  console.log(JSON.stringify({ files, append_only_prefixes: appendOnlyPrefixes }));
 ')"
 
 PORTABLE_SPACE_JSON="$(cat "$SOURCE_ROOT/space.json")" \
@@ -209,7 +213,7 @@ PORTABLE_SQL_JSON="$(cat "$SOURCE_ROOT/sql.json")" \
 PORTABLE_ASSET_JSON="$(cat "$SOURCE_ROOT/asset.json")" \
 PORTABLE_ASSET_ENTRY_JSON="$(cat "$SOURCE_ROOT/asset-entry-receipt.json")" \
 PORTABLE_CHANGES_JSON="$(cat "$SOURCE_ROOT/changes.json")" \
-PORTABLE_SOURCE_FILES="$SOURCE_FILES" \
+PORTABLE_SOURCE_FILES="$SOURCE_FILE_PROOF" \
 PORTABLE_SOURCE_SHA="$CHECKOUT_SOURCE_SHA" \
 PORTABLE_WORKING_TREE_DIRTY="$WORKING_TREE_DIRTY" \
 PORTABLE_SOURCE_REPORT="$SOURCE_ROOT/verify-source.json" \
@@ -228,6 +232,7 @@ DEST_ROOT="$DEST_ROOT" \
   const asset = JSON.parse(Deno.env.get("PORTABLE_ASSET_JSON")!);
   const assetEntry = JSON.parse(Deno.env.get("PORTABLE_ASSET_ENTRY_JSON")!);
   const changes = JSON.parse(Deno.env.get("PORTABLE_CHANGES_JSON")!);
+  const sourceFileProof = JSON.parse(Deno.env.get("PORTABLE_SOURCE_FILES")!);
   const readReport = async (name: string) => JSON.parse(await Deno.readTextFile(Deno.env.get(name)!));
   const sourceReport = await readReport("PORTABLE_SOURCE_REPORT");
   const copyReport = await readReport("PORTABLE_COPY_REPORT");
@@ -260,7 +265,8 @@ DEST_ROOT="$DEST_ROOT" \
     saved_sql_id: sql.id,
     saved_sql_revision_id: sql.revision_id,
     changes,
-    source_files: JSON.parse(Deno.env.get("PORTABLE_SOURCE_FILES")!),
+    source_files: sourceFileProof.files,
+    append_only_prefixes: sourceFileProof.append_only_prefixes,
   }, null, 2));
 '
 

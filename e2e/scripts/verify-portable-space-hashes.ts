@@ -8,6 +8,7 @@ if (!storageRoot || !proofFile) {
 type PortableProof = {
   space_uid: string;
   source_files: Record<string, string>;
+  append_only_prefixes: Record<string, number[]>;
 };
 
 const proof = JSON.parse(await Deno.readTextFile(proofFile)) as PortableProof;
@@ -34,6 +35,20 @@ for (const [relativePath, expectedHash] of Object.entries(proof.source_files)) {
 
   const path = `${storageRoot}/spaces/${proof.space_uid}/${relativePath}`;
   const bytes = await Deno.readFile(path);
+  const expectedPrefix = proof.append_only_prefixes?.[relativePath];
+  if (expectedPrefix) {
+    const prefix = Uint8Array.from(expectedPrefix);
+    if (
+      bytes.length <= prefix.length ||
+      !prefix.every((byte, index) => bytes[index] === byte)
+    ) {
+      throw new Error(
+        `append-only authoritative file prefix changed or no claim audit was appended: ${relativePath}`,
+      );
+    }
+    verified += 1;
+    continue;
+  }
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   const actualHash = [...digest].map((byte) =>
     byte.toString(16).padStart(2, "0")

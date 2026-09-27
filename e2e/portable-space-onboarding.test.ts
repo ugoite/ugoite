@@ -28,6 +28,7 @@ type PortableProof = {
   saved_sql_revision_id: string;
   changes: Array<Record<string, unknown>>;
   source_files: Record<string, string>;
+  append_only_prefixes: Record<string, number[]>;
 };
 
 test("fresh Node claims a copied Space, reads its Knowledge, and appends without rewriting history", async ({ request }) => {
