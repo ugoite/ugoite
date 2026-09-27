@@ -138,6 +138,11 @@ ugoite pin diff --from <NAME> --to <NAME>
 ugoite pin delete <NAME>
 ```
 
+The `entry update` example sends a complete replacement field map. A
+single `--field` removes every other existing Form field; use it only when
+those removals are intended. For a one-field edit that preserves the rest,
+follow the full-map workflow in [Create and Edit Entries](../use/entries.mdx).
+
 Entry creation returns the generated Entry ID in its mutation receipt. Use that
 returned ID for later reads, updates, history, and restore commands. The
 optional `--id` is an advanced override for imports and reconciliation. Saved

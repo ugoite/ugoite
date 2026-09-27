@@ -92,7 +92,9 @@ pub enum EntrySubCmd {
         author: Option<String>,
     },
     /// Update an entry
-    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    #[command(
+        long_about = "Use the selected context or --context NAME for this command.\n\nComplete replacement: unspecified existing Form fields are removed. To change one field, get all fields with `entry get`, edit only the desired value, then resend the full map with `--fields-file`. Pin the expected revision with `--parent-revision-id` to detect concurrent updates."
+    )]
     Update {
         #[arg(value_name = "ENTRY_ID")]
         entry_id: String,
@@ -105,13 +107,13 @@ pub enum EntrySubCmd {
         #[arg(
             long = "field",
             value_name = "KEY=VALUE",
-            help = "Structured field as KEY=VALUE (repeatable; VALUE stays a string and the shared Rust boundary coerces it)"
+            help = "One field in the complete post-update map (repeatable; unspecified existing Form fields are removed; VALUE stays a string and the shared Rust boundary coerces it)"
         )]
         fields: Vec<String>,
         #[arg(
             long = "fields-file",
             value_name = "PATH",
-            help = "Read structured fields as a JSON object from PATH, or from explicit stdin with --fields-file - (duplicate inputs are errors; duplicate keys within one JSON object use the parser's last value)"
+            help = "Read the complete post-update Form field map as a JSON object from PATH, or from explicit stdin with --fields-file -; unspecified existing Form fields are removed (duplicate inputs are errors; duplicate keys within one JSON object use the parser's last value)"
         )]
         fields_files: Vec<String>,
         #[arg(
