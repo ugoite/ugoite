@@ -63,6 +63,17 @@ pub async fn native_workspace(
     crate::IcebergWorkspace::open_space(store, space_id, crate::WriteConfig::default()).await
 }
 
+/// Opens an existing Space for operator inspection without creating a
+/// namespace or scheduling any repair work.
+pub async fn native_workspace_read_only(
+    operator: &Operator,
+    workspace_path: &str,
+) -> Result<crate::IcebergWorkspace> {
+    let space_id = stable_space_id(operator, workspace_path).await?;
+    let store = SpaceCatalogStore::new(operator.clone(), workspace_path)?;
+    crate::IcebergWorkspace::open_space_read_only(store, space_id).await
+}
+
 /// Opens a workspace for an authoritative mutation. Local stores use the
 /// process serializer; every other topology must pass the storage boundary's
 /// behavioral exact-read/CAS probe before a mutation permit exists.
@@ -178,6 +189,26 @@ async fn domain_form_by_name(
     Ok((workspace, form))
 }
 
+async fn domain_form_by_name_read_only(
+    operator: &Operator,
+    workspace_path: &str,
+    form_name: &str,
+) -> Result<(crate::IcebergWorkspace, FormDefinition)> {
+    let workspace = native_workspace_read_only(operator, workspace_path).await?;
+    let form = workspace
+        .list_forms()
+        .await?
+        .into_iter()
+        .find(|form| form.name == form_name)
+        .ok_or_else(|| {
+            Error::from(AppError::not_found(
+                ErrorCode::FormNotFound,
+                format!("Form not found: {form_name}"),
+            ))
+        })?;
+    Ok((workspace, form))
+}
+
 pub async fn revisions_for_form(
     operator: &Operator,
     workspace_path: &str,
@@ -200,6 +231,29 @@ pub async fn revisions_for_form_with_history(
     Vec<EntryRevision>,
 )> {
     let (workspace, form) = domain_form_by_name(operator, workspace_path, form_name).await?;
+    let history = workspace
+        .form_history(form.id)
+        .await?
+        .into_iter()
+        .map(|form| (form.version.get(), form))
+        .collect();
+    let revisions = workspace
+        .read_revision_view(form.id, crate::RevisionView::All)
+        .await?;
+    Ok((form, history, revisions))
+}
+
+pub(crate) async fn revisions_for_form_with_history_read_only(
+    operator: &Operator,
+    workspace_path: &str,
+    form_name: &str,
+) -> Result<(
+    FormDefinition,
+    BTreeMap<u32, FormDefinition>,
+    Vec<EntryRevision>,
+)> {
+    let (workspace, form) =
+        domain_form_by_name_read_only(operator, workspace_path, form_name).await?;
     let history = workspace
         .form_history(form.id)
         .await?

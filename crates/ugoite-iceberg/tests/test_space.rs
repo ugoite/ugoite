@@ -1,9 +1,9 @@
 mod common;
 use common::setup_operator;
+use futures::TryStreamExt;
 #[cfg(unix)]
 use opendal::services::Fs;
-#[cfg(unix)]
-use opendal::Operator;
+use opendal::{EntryMode, Operator};
 use serde_json::Value;
 #[cfg(unix)]
 use tempfile::tempdir;
@@ -11,6 +11,19 @@ use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::{form, space};
 use uuid::Uuid;
+
+async fn snapshot_space(op: &Operator, prefix: &str) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
+    let mut lister = op.lister_with(prefix).recursive(true).await?;
+    let mut snapshot = Vec::new();
+    while let Some(entry) = lister.try_next().await? {
+        if entry.metadata().mode() == EntryMode::FILE {
+            let path = entry.path().to_string();
+            snapshot.push((path.clone(), op.read(&path).await?.to_vec()));
+        }
+    }
+    snapshot.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(snapshot)
+}
 
 #[tokio::test]
 async fn operator_space_create_rejects_whitespace_display_name_before_write() -> anyhow::Result<()>
@@ -43,6 +56,28 @@ async fn operator_space_create_retry_keeps_first_display_name() -> anyhow::Resul
     assert_eq!(retry.space_id(), first.space_id());
     let metadata = service.get_space(&retry.space_id().to_string()).await?;
     assert_eq!(metadata["name"], serde_json::json!("Alpha"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn space_verify_reads_metadata_and_catalog_without_repairing_them() -> anyhow::Result<()> {
+    let service = UgoiteService::new_without_background_refresh("memory://space-verify-read-only")?;
+    let created = service.ensure_operator_space("verify-me").await?;
+    let space_id = created.space_id().to_string();
+    let prefix = format!("spaces/{space_id}/");
+    let before = snapshot_space(service.operator(), &prefix).await?;
+
+    let report = ugoite_iceberg::verify::verify_space(service.operator(), &space_id, true).await?;
+
+    let after = snapshot_space(service.operator(), &prefix).await?;
+    assert_eq!(
+        before, after,
+        "verification must not change stored Space bytes"
+    );
+    assert_eq!(report.schema_version, 1);
+    assert_eq!(report.space_id, space_id);
+    assert!(report.sections.metadata.checked);
+    assert!(report.sections.catalog.checked);
     Ok(())
 }
 

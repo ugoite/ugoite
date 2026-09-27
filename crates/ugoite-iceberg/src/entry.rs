@@ -582,6 +582,80 @@ fn revision_row_to_domain(
     })
 }
 
+/// Verifies every stored revision's parent/version chain and recomputes its
+/// checksum and signature using existing Space key material. This function
+/// is read-only and deliberately fails when the key is absent instead of
+/// creating a replacement key.
+pub(crate) async fn verify_history_integrity(
+    op: &Operator,
+    ws_path: &str,
+) -> Result<(usize, usize, Vec<Value>)> {
+    let forms = crate::form::list_forms_read_only(op, ws_path).await?;
+    let provider = {
+        let space_id = ws_path
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or_default();
+        let (_, secret) = crate::integrity::load_existing_hmac_material(op, space_id).await?;
+        crate::integrity::RealIntegrityProvider::new(secret)
+    };
+    let mut entry_count = 0usize;
+    let mut revision_count = 0usize;
+    let mut asset_references = Vec::new();
+    for form_value in forms {
+        let current_form = crate::form::to_domain_form(&form_value)?;
+        let (_, form_history, mut rows) =
+            revision_rows_for_form_read_only(op, ws_path, &current_form.name).await?;
+        rows.sort_by(|left, right| {
+            left.entry_id
+                .cmp(&right.entry_id)
+                .then(left.entry_version.cmp(&right.entry_version))
+        });
+        let mut previous = std::collections::BTreeMap::<String, EntryRevision>::new();
+        for row in &rows {
+            let form = form_history.get(&row.form_version).unwrap_or(&current_form);
+            let revision = revision_row_to_domain(row, form)?;
+            let current = previous.get(&row.entry_id);
+            revision.validate(&form, current).map_err(|error| {
+                anyhow!(
+                    "Entry {} revision {}: {error}",
+                    row.entry_id,
+                    row.revision_id
+                )
+            })?;
+            let expected = integrity_for_domain_revision(&form, &revision, &provider)?;
+            if expected.checksum != revision.entry.integrity.checksum
+                || expected.signature != revision.entry.integrity.signature
+            {
+                anyhow::bail!(
+                    "Entry {} revision {} integrity mismatch",
+                    row.entry_id,
+                    row.revision_id
+                );
+            }
+            let mut fields = Map::new();
+            for field in &form.fields {
+                if let Some(value) = revision.values.get(&field.id) {
+                    fields.insert(field.name.clone(), serde_json::to_value(value)?);
+                }
+            }
+            asset_references.extend(crate::asset::collect_asset_references(&[
+                serde_json::json!({
+                    "id": row.entry_id,
+                    "form": form.name,
+                    "fields": Value::Object(fields),
+                    "extra_attributes": revision.extra_attributes,
+                }),
+            ]));
+            previous.insert(row.entry_id.clone(), revision);
+            revision_count = revision_count.saturating_add(1);
+        }
+        entry_count = entry_count.saturating_add(previous.len());
+    }
+    Ok((entry_count, revision_count, asset_references))
+}
+
 fn restore_revision_payload(
     row: &RevisionRow,
     historical_form: &ugoite_domain::form::FormDefinition,
@@ -705,8 +779,36 @@ async fn revision_rows_for_form(
     BTreeMap<u32, ugoite_domain::form::FormDefinition>,
     Vec<RevisionRow>,
 )> {
-    let (form, form_history, revisions) =
-        iceberg_store::revisions_for_form_with_history(op, ws_path, form_name).await?;
+    revision_rows_for_form_inner(op, ws_path, form_name, false).await
+}
+
+async fn revision_rows_for_form_read_only(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+) -> Result<(
+    Value,
+    BTreeMap<u32, ugoite_domain::form::FormDefinition>,
+    Vec<RevisionRow>,
+)> {
+    revision_rows_for_form_inner(op, ws_path, form_name, true).await
+}
+
+async fn revision_rows_for_form_inner(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+    read_only: bool,
+) -> Result<(
+    Value,
+    BTreeMap<u32, ugoite_domain::form::FormDefinition>,
+    Vec<RevisionRow>,
+)> {
+    let (form, form_history, revisions) = if read_only {
+        iceberg_store::revisions_for_form_with_history_read_only(op, ws_path, form_name).await?
+    } else {
+        iceberg_store::revisions_for_form_with_history(op, ws_path, form_name).await?
+    };
     let form_def = form::from_domain_form(&form);
     let rows = revisions
         .into_iter()

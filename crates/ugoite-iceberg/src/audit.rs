@@ -236,11 +236,20 @@ async fn read_events(op: &Operator, space_id: &str) -> Result<Vec<Value>> {
         }
         let parsed: Value = serde_json::from_str(trimmed)
             .map_err(|_| anyhow!("Audit log contains malformed JSON"))?;
-        if parsed.is_object() {
-            events.push(parsed);
+        if !parsed.is_object() {
+            return Err(anyhow!("Audit log contains a non-object event"));
         }
+        events.push(parsed);
     }
     Ok(events)
+}
+
+/// Verifies append-only audit event hash links without performing recovery or
+/// writing event-id markers. Returns the number of verified records.
+pub async fn verify_integrity(op: &Operator, space_id: &str) -> Result<usize> {
+    let events = read_events(op, space_id).await?;
+    verify_chain(&events)?;
+    Ok(events.len())
 }
 
 async fn write_events(

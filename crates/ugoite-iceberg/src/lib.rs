@@ -29,6 +29,7 @@ pub mod saved_sql;
 pub mod search;
 pub mod service;
 pub mod space;
+pub mod verify;
 
 pub use health::SpaceHealthReport;
 use space_catalog::SpaceCatalog;
@@ -835,6 +836,27 @@ impl IcebergWorkspace {
             write,
         )
         .await
+    }
+
+    /// Opens an existing Space without creating a missing Catalog namespace.
+    /// Operator verification must never repair or otherwise alter the Space
+    /// it is inspecting.
+    pub(crate) async fn open_space_read_only(
+        store: SpaceCatalogStore,
+        space_id: SpaceId,
+    ) -> Result<Self> {
+        let warehouse = store.warehouse_uri();
+        let namespace = namespace_for_space(space_id);
+        let catalog = Arc::new(SpaceCatalog::new(store, space_id)?);
+        Ok(Self {
+            catalog: catalog.clone(),
+            space_catalog: Some(catalog),
+            namespace,
+            space_id,
+            logical_space_uid: logical_space_uid(space_id),
+            warehouse,
+            write: WriteConfig::default(),
+        })
     }
 
     async fn new_space_catalog(
