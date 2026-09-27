@@ -1,13 +1,31 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { changeApi, formApi, spaceApi } from "~/lib/ugoite-client";
 import SpaceHistoryRoute from "./history";
 
-vi.mock("@solidjs/router", () => ({ useParams: () => ({ space_id: "default" }) }));
+const searchParams = vi.hoisted(() => ({ value: {} as Record<string, string> }));
+const locationState = vi.hoisted(() => ({ value: null as { historyRecoveryNotice?: unknown } | null }));
+const setSearchParams = vi.hoisted(() => vi.fn((
+  value: Record<string, string | undefined>,
+  options?: { state?: unknown },
+) => {
+  for (const [key, item] of Object.entries(value)) {
+    if (item === undefined) delete searchParams.value[key];
+    else searchParams.value[key] = item;
+  }
+  if (options?.state && typeof options.state === "object") {
+    locationState.value = options.state as typeof locationState.value;
+  }
+}));
+vi.mock("@solidjs/router", () => ({
+  useParams: () => ({ space_id: "default" }),
+  useLocation: () => ({ state: locationState.value }),
+  useSearchParams: () => [searchParams.value, setSearchParams],
+}));
 vi.mock("~/lib/ugoite-client", () => ({
-  changeApi: { query: vi.fn(), revert: vi.fn(), undoRun: vi.fn() },
+  changeApi: { query: vi.fn(), inspect: vi.fn(), affectedEntry: vi.fn(), revert: vi.fn(), undoRun: vi.fn() },
   formApi: { list: vi.fn() },
   spaceApi: { listMembers: vi.fn() },
 }));
@@ -43,6 +61,17 @@ const row = (id: string, count: number, runId: string | null = null) => ({
 describe("space history list", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    searchParams.value = {};
+    locationState.value = null;
+    setSearchParams.mockImplementation((value, options) => {
+      for (const [key, item] of Object.entries(value)) {
+        if (item === undefined) delete searchParams.value[key];
+        else searchParams.value[key] = item;
+      }
+      if (options?.state && typeof options.state === "object") {
+        locationState.value = options.state as typeof locationState.value;
+      }
+    });
     setLocale("en");
     vi.mocked(formApi.list).mockResolvedValue([{
       id: "form-1", name: "Expenses", version: 1, template: "", fields: { purpose: { id: 1, type: "string", required: false } },
@@ -64,6 +93,21 @@ describe("space history list", () => {
       run_id: "run-1",
       reverted_change_count: 2,
     });
+    vi.mocked(changeApi.inspect).mockImplementation(async (_spaceId, changeId) => {
+      const source = row(changeId, 100, "run-1");
+      return {
+        change_id: changeId,
+        change: source.change,
+        target_visibility: "complete",
+        summary: source.summary,
+        targets: [{ form_id: "form-1", entry_id: "entry-1", before_revision_id: "rev-0", after_revision_id: "rev-1", operation: "update", fields: [{ field_id: 1, before: { state: "value", value: "Travel" }, after: { state: "value", value: "Business travel" } }] }],
+        next_cursor: null,
+      };
+    });
+    vi.mocked(changeApi.affectedEntry).mockResolvedValue({
+      form_id: "form-1", entry_id: "entry-1", before_revision_id: "rev-0", after_revision_id: "rev-1", operation: "update",
+      fields: [{ field_id: 1, before: { state: "value", value: "Travel" }, after: { state: "value", value: "Business travel" } }],
+    });
   });
 
   it("shows one bounded row per Change with safe, evidence-backed summaries", async () => {
@@ -79,6 +123,9 @@ describe("space history list", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Open change" })[0]);
     expect(document.querySelector("tbody tr[aria-selected='true']")).toBeInTheDocument();
     expect(await screen.findByRole("dialog", { name: "Expenses · 100 entries" })).toBeInTheDocument();
+    expect(await screen.findByText("Affected entries")).toBeInTheDocument();
+    await waitFor(() => expect(changeApi.affectedEntry).toHaveBeenCalledWith("default", "change-1", "entry-1"));
+    expect(setSearchParams).toHaveBeenCalledWith({ change: "change-1" });
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("searchbox", { name: "Search history" })).toHaveValue("");
@@ -88,11 +135,20 @@ describe("space history list", () => {
     render(() => <SpaceHistoryRoute />);
     fireEvent.click((await screen.findAllByRole("button", { name: "Open change" }))[0]);
     fireEvent.click(await screen.findByRole("button", { name: "Revert this change" }));
-    expect(await screen.findByText(/appends a new Change/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Append new Change" }));
-    expect(await screen.findByText("Reverted as Change inverse-change.")).toBeInTheDocument();
+    expect(await screen.findByText("Append a revert for this Change?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm revert" }));
+    expect(await screen.findByText("Revert added to history.")).toBeInTheDocument();
+    expect(screen.queryByText("inverse-change")).toBeNull();
     expect(changeApi.revert).toHaveBeenCalledWith("default", "change-1", {});
-    expect(changeApi.query).toHaveBeenCalledTimes(2);
+    expect(setSearchParams).toHaveBeenCalledWith(
+      { change: undefined },
+      { state: { historyRecoveryNotice: "Revert added to history." } },
+    );
+    expect(changeApi.query).toHaveBeenCalledTimes(3);
+
+    cleanup();
+    render(() => <SpaceHistoryRoute />);
+    expect(await screen.findByText("Revert added to history.")).toBeInTheDocument();
   });
 
   it("traps focus in the detail dialog and restores it when closed with Escape", async () => {
@@ -112,14 +168,14 @@ describe("space history list", () => {
     let calls = 0;
     vi.mocked(changeApi.query).mockImplementation(async () => {
       calls += 1;
-      if (calls === 2) throw new Error("offline");
+      if (calls === 3) throw new Error("offline");
       return { changes: [row("change-1", 100, "run-1")], next_cursor: null };
     });
     vi.mocked(changeApi.revert).mockRejectedValue(new Error("connection lost"));
     render(() => <SpaceHistoryRoute />);
     fireEvent.click((await screen.findAllByRole("button", { name: "Open change" }))[0]);
     fireEvent.click(await screen.findByRole("button", { name: "Revert this change" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Append new Change" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm revert" }));
     expect(await screen.findByRole("button", { name: "Retry history refresh" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
     vi.mocked(changeApi.revert).mockClear();
@@ -146,7 +202,7 @@ describe("space history list", () => {
       if (request.actor_principal_id) {
         return { changes: [original], next_cursor: null };
       }
-      if (requests.length === 3) {
+      if (request.limit === 50 && !request.actor_principal_id && !request.run_id) {
         return { changes: [inverse, original], next_cursor: null };
       }
       return { changes: [original], next_cursor: null };
@@ -157,11 +213,13 @@ describe("space history list", () => {
     fireEvent.click(screen.getByText("Columns, filters, and sort"));
     fireEvent.change(screen.getByLabelText("Filter by actor"), { target: { value: "human:editor" } });
     await waitFor(() => expect(changeApi.query).toHaveBeenLastCalledWith("default", expect.objectContaining({ actor_principal_id: "human:editor" })));
+    await waitFor(() => expect(document.querySelector(".space-history")).not.toHaveAttribute("aria-busy", "true"));
     fireEvent.click((await screen.findAllByRole("button", { name: "Open change" }))[0]);
+    await screen.findByRole("dialog", { name: "Expenses · 1 entries" });
     fireEvent.click(await screen.findByRole("button", { name: "Revert this change" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Append new Change" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm revert" }));
     expect(await screen.findByText("The recovery is confirmed in history.")).toBeInTheDocument();
-    expect(requests[2]).toEqual({ limit: 50, cursor: undefined });
+    expect(requests.some((request) => request.limit === 50 && !request.run_id && !request.actor_principal_id)).toBe(true);
     expect(screen.queryByRole("button", { name: "Retry history refresh" })).toBeNull();
   });
 
@@ -175,6 +233,45 @@ describe("space history list", () => {
     expect(screen.getByText("Some change details are unavailable")).toBeInTheDocument();
     expect(screen.queryByText(/100 entries/)).toBeNull();
     expect(screen.queryByText(/purpose:/)).toBeNull();
+  });
+
+  it("opens a direct detail URL with related Run Changes and collapsed identifiers", async () => {
+    searchParams.value = { change: "change-1" };
+    render(() => <SpaceHistoryRoute />);
+    expect(await screen.findByRole("dialog", { name: "Expenses · 100 entries" })).toBeInTheDocument();
+    await waitFor(() => expect(changeApi.query).toHaveBeenCalledWith("default", { limit: 10, run_id: "run-1" }));
+    expect(screen.getByText("Related changes in this Run")).toBeInTheDocument();
+    expect(document.querySelector<HTMLDetailsElement>(".history-technical-info")?.open).toBe(false);
+    fireEvent.click(screen.getByText("Technical info"));
+    expect(await screen.findByText("entry-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(setSearchParams).toHaveBeenCalledWith({ change: undefined });
+  });
+
+  it("replaces affected Entry rows when moving between bounded detail pages", async () => {
+    vi.mocked(changeApi.inspect).mockImplementation(async (_spaceId, changeId, options = {}) => {
+      const source = row(changeId, 2);
+      const secondPage = options.cursor === "entry-page-2";
+      return {
+        change_id: changeId,
+        change: source.change,
+        target_visibility: "complete",
+        summary: source.summary,
+        targets: [{ form_id: "form-1", entry_id: secondPage ? "entry-2" : "entry-1", before_revision_id: null, after_revision_id: secondPage ? "revision-2" : "revision-1", operation: "create", fields: [] }],
+        next_cursor: secondPage ? null : "entry-page-2",
+      };
+    });
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open change" }))[0]);
+    await screen.findByRole("dialog", { name: "Expenses · 100 entries" });
+    expect(await screen.findByText(/Entry 1/)).toBeInTheDocument();
+    const pagination = document.querySelector(".history-affected-layout .history-detail-pagination")!;
+    fireEvent.click(within(pagination).getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(changeApi.affectedEntry).toHaveBeenCalledWith("default", "change-1", "entry-2"));
+    expect(document.querySelectorAll(".history-affected-list li")).toHaveLength(1);
+    fireEvent.click(within(pagination).getByRole("button", { name: "Previous" }));
+    await waitFor(() => expect(changeApi.inspect).toHaveBeenLastCalledWith("default", "change-1", { limit: 10, cursor: undefined }));
+    expect(document.querySelectorAll(".history-affected-list li")).toHaveLength(1);
   });
 
   it("applies supported text, actor, date, sort, and column controls server-side", async () => {

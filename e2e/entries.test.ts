@@ -1130,13 +1130,12 @@ test.describe("Entries CRUD", () => {
 			response.request().method() === "POST" &&
 			response.url().includes(`/changes/${targetChangeId}/revert`)
 		);
-		await confirmation.getByRole("button", { name: "Append new Change" }).click();
+		await confirmation.getByRole("button", { name: "Confirm revert" }).click();
 		const revertResponse = await revertResponsePromise;
 		expect(revertResponse.ok()).toBe(true);
 		const reverted = (await revertResponse.json()) as { change_id: string };
 		await expect(page.getByRole("dialog")).toHaveCount(0);
-		await expect(page.getByText(`Reverted as Change ${reverted.change_id}.`))
-			.toBeVisible();
+		await expect(page.getByText("Revert added to history.")).toBeVisible();
 
 		const finalChangesRes = await request.get(
 			getBackendUrl(`/spaces/${spaceId}/changes`),

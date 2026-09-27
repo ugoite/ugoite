@@ -120,3 +120,52 @@ describe("changeApi.query", () => {
     expect(page.next_cursor).toBeNull();
   });
 });
+
+describe("changeApi inspection", () => {
+  it("loads a bounded Change detail page with its opaque cursor", async () => {
+    let received: URL | undefined;
+    server.use(
+      http.get(testApiUrl("/spaces/space-1/changes/change-1/inspect"), ({ request }) => {
+        received = new URL(request.url);
+        return HttpResponse.json({
+          change_id: "change-1",
+          change: { actor_principal_id: "principal-1", created_at_micros: 100 },
+          target_visibility: "complete",
+          summary: null,
+          targets: [{
+            form_id: "form-1", entry_id: "entry-1", before_revision_id: "revision-0",
+            after_revision_id: "revision-1", operation: "update", fields: [],
+          }],
+          next_cursor: "opaque-next",
+        });
+      }),
+    );
+
+    const page = await changeApi.inspect("space-1", "change-1", { limit: 8, cursor: "opaque cursor" });
+    expect(page.targets[0]).toMatchObject({ form_id: "form-1", entry_id: "entry-1", operation: "update" });
+    expect(page.next_cursor).toBe("opaque-next");
+    expect(received?.searchParams.get("limit")).toBe("8");
+    expect(received?.searchParams.get("cursor")).toBe("opaque cursor");
+  });
+
+  it("loads selected Entry field evidence through the authorized target endpoint", async () => {
+    let received: URL | undefined;
+    server.use(
+      http.get(testApiUrl("/spaces/space-1/changes/change-1/affected/entry-1"), ({ request }) => {
+        received = new URL(request.url);
+        return HttpResponse.json({
+          change_id: "change-1",
+          target: {
+            form_id: "form-1", entry_id: "entry-1", before_revision_id: "revision-0",
+            after_revision_id: "revision-1", operation: "update",
+            fields: [{ field_id: 1, before: { state: "value", value: "Draft" }, after: { state: "value", value: "Approved" } }],
+          },
+        });
+      }),
+    );
+
+    const entry = await changeApi.affectedEntry("space-1", "change-1", "entry-1");
+    expect(entry.fields[0]).toEqual({ field_id: 1, before: { state: "value", value: "Draft" }, after: { state: "value", value: "Approved" } });
+    expect(received?.pathname).toBe("/api/spaces/space-1/changes/change-1/affected/entry-1");
+  });
+});
