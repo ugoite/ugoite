@@ -65,12 +65,21 @@ do not mechanically decide compatibility or replace the PR's Knowledge
 Compatibility Review and its Evidence/Decision.
 
 The required Rust suite covers the memory and filesystem implementations. The
-optional `crates/ugoite-storage/tests/s3_contract.rs` integration test runs only
-when both `UGOITE_S3_TEST_ENDPOINT` and `UGOITE_S3_TEST_BUCKET` are configured;
-it invokes `OpendalPublicationStore::verify_contract` against that explicitly
-selected deployment backend. This test is intended for manual or release
-validation and is not part of required CI. Runtime startup continues to verify
-the backend selected by the deployment before shared publication is admitted.
+optional `S3 storage demonstration` workflow and
+`mise run test:s3-storage` run against a disposable MinIO instance; they
+remain outside the required CI merge gate, which intentionally has no emulator
+dependency. The local task requires Docker and starts pinned MinIO and `mc`
+images. The workflow checks publication probe, exact read, create-if-absent,
+stale-write rejection, and one-winner concurrent Head CAS, then exercises a
+Space through the server-side `UgoiteService` and reconstructs its storage
+service to verify Entry, Form, Asset, and reverted Change history recovery. Run
+the same opt-in checks against another explicitly selected backend by setting
+`UGOITE_S3_TEST_ENDPOINT`, `UGOITE_S3_TEST_BUCKET`, and
+`UGOITE_S3_TEST_REQUIRED=1`, with credentials supplied through the standard
+AWS environment variables. This proves the tested backend configuration only;
+it does not certify every S3-compatible provider. Runtime startup continues to
+verify the backend selected by the deployment before shared publication is
+admitted, and an unverified remote store remains read-only.
 
 Rust-compiling lanes restore the Rust registry/git dependency cache without
 caching `target/`; `ci-rust-check` is the sole Cargo dependency archive writer,

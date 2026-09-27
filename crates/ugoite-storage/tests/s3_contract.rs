@@ -21,10 +21,14 @@ async fn s3_backend_satisfies_publication_contract() -> Result<()> {
 }
 
 fn s3_test_config() -> Result<Option<(String, String)>> {
+    let required = env::var_os("UGOITE_S3_TEST_REQUIRED").is_some();
     match (
         env::var("UGOITE_S3_TEST_ENDPOINT").ok(),
         env::var("UGOITE_S3_TEST_BUCKET").ok(),
     ) {
+        (None, None) if required => {
+            bail!("UGOITE_S3_TEST_ENDPOINT and UGOITE_S3_TEST_BUCKET are required")
+        }
         (None, None) => Ok(None),
         (Some(endpoint), Some(bucket)) => {
             let endpoint = endpoint.trim();
