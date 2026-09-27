@@ -589,6 +589,7 @@ pub struct TestMcpAccess {
     pub credential_id: Uuid,
     pub resource: String,
     pub space_uid: Uuid,
+    pub principal_id: Uuid,
 }
 
 #[cfg(feature = "test-support")]
@@ -729,7 +730,16 @@ impl AppState {
             credential_id: credential.credential_id,
             resource,
             space_uid,
+            principal_id,
         })
+    }
+
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub async fn revoke_test_mcp_access(&self, access: &TestMcpAccess) -> anyhow::Result<()> {
+        self.identity
+            .revoke_device_credential(access.principal_id, access.credential_id)
+            .await
     }
 
     #[cfg(feature = "test-support")]

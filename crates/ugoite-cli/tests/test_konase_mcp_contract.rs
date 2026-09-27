@@ -219,6 +219,70 @@ async fn issue_2072_contract() {
     assert!(root_metadata < root_mcp);
 }
 
+#[tokio::test]
+async fn issue_3157_revoked_mcp_credential_cannot_read_resource_content() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind server");
+    let address = listener.local_addr().expect("server address");
+    let server_url = format!("http://localhost:{}", address.port());
+    let state = AppState::new_for_tests_with_origin(
+        format!(
+            "memory://konase-revoked-mcp-credential-{}",
+            uuid::Uuid::now_v7()
+        ),
+        &server_url,
+    )
+    .expect("server state");
+    state.initialize_node().await.expect("initialize server");
+    let (_, public_key_jwk) = test_key_and_jwk();
+    let access = state
+        .issue_test_mcp_access(public_key_jwk)
+        .await
+        .expect("issue test MCP credential");
+    let identity_state = state.clone();
+    let _server_task = ServerGuard(tokio::spawn(async move {
+        axum::serve(listener, app(state))
+            .await
+            .expect("integrated server exited unexpectedly");
+    }));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .expect("build probe client");
+
+    identity_state
+        .revoke_test_mcp_access(&access)
+        .await
+        .expect("revoke the issued MCP credential");
+    let uri = "ugoite://entry/00000000-0000-0000-0000-000000000001";
+    let denied = client
+        .post(format!("{server_url}/mcp"))
+        .header("accept", "application/json, text/event-stream")
+        .header("authorization", format!("Bearer {}", access.access_token))
+        .header("content-type", "application/json")
+        .header("mcp-method", "resources/read")
+        .header("mcp-name", uri)
+        .header("mcp-protocol-version", "2026-07-28")
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": "revoked-resource-read",
+            "method": "resources/read",
+            "params": {
+                "uri": uri,
+                "_meta": {
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                    "io.modelcontextprotocol/clientCapabilities": {}
+                }
+            }
+        }))
+        .send()
+        .await
+        .expect("send MCP resource read using revoked credential");
+    assert_eq!(denied.status(), reqwest::StatusCode::UNAUTHORIZED);
+    let denied_body = denied.text().await.expect("read denial response");
+    assert!(!denied_body.contains("contents"));
+    assert!(!denied_body.contains("private selected content"));
+}
+
 async fn record_request(
     Extension(requests): Extension<Arc<Mutex<Vec<RequestObservation>>>>,
     request: Request,

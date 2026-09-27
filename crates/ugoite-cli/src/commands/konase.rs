@@ -2255,6 +2255,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn expired_read_authorization_preserves_an_earlier_confirmed_save_and_undo() {
+        struct FailReadAfterSave(ScriptedMcp);
+
+        #[async_trait]
+        impl McpHost for FailReadAfterSave {
+            async fn call_mcp(&mut self, request: McpRequest, work_id: &str) -> Result<McpResult> {
+                if request.operation == "resources/read" {
+                    self.0.operations.push(request.operation);
+                    self.0.work_ids.push(work_id.to_owned());
+                    bail!("MCP authorization expired");
+                }
+                self.0.call_mcp(request, work_id).await
+            }
+
+            async fn capabilities(&self) -> Vec<Capability> {
+                self.0.capabilities().await
+            }
+        }
+
+        let mut model = ScriptedModel {
+            responses: vec![
+                Ok(ModelResult {
+                    request_id: String::new(),
+                    text: None,
+                    tool_calls: vec![ugoite_konase::ModelToolCall {
+                        id: "call-save".into(),
+                        name: "ugoite.save".into(),
+                        arguments: json!({"form":"Entry", "fields":{"title":"Saved first"}}),
+                    }],
+                }),
+                Ok(ModelResult {
+                    request_id: String::new(),
+                    text: None,
+                    tool_calls: vec![ugoite_konase::ModelToolCall {
+                        id: "call-read".into(),
+                        name: "resources/read".into(),
+                        arguments: json!({"uri":"ugoite://entry/00000000-0000-0000-0000-000000000001"}),
+                    }],
+                }),
+            ],
+        };
+        let mut mcp = FailReadAfterSave(ScriptedMcp {
+            operations: vec![],
+            work_ids: vec![],
+            fail_save: false,
+            fail_undo: false,
+        });
+        let capabilities = mcp.capabilities().await;
+
+        let TurnResult::Failed(failure) = run_turn_with_interrupts(
+            &mut model,
+            &mut mcp,
+            "save, then read the entry",
+            &capabilities,
+            &NeverModelInterrupt,
+            &ApproveConfirmation,
+        )
+        .await
+        .unwrap() else {
+            panic!("expected the revoked read to fail the Work")
+        };
+
+        assert_eq!(failure.error.kind, "mcp_transport_failure");
+        assert_eq!(failure.knowledge, KnowledgeOutcome::Saved);
+        assert!(failure.undo_available);
+        assert_eq!(mcp.0.operations, ["ugoite.save", "resources/read"]);
+        assert_eq!(mcp.0.work_ids[0], mcp.0.work_ids[1]);
+    }
+
+    #[tokio::test]
     async fn signal_coordinator_only_delivers_interrupts_to_a_model_waiter() {
         let coordinator = SignalCoordinator::new();
         let waiter = coordinator.wait_for_model_interrupt();
