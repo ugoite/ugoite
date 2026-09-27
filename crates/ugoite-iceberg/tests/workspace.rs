@@ -14,7 +14,7 @@ use ugoite_domain::form::{
     sql_column_name, sql_relation_name, FieldType, FormChange, FormChangeSet, FormDefinition,
     FormField, FormVersion, ListItemDefinition,
 };
-use ugoite_domain::id::{FieldId, FormId, SpaceId};
+use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId, SpaceId};
 use ugoite_iceberg::{
     physical_form_name, publication_context, publication_context_for_change, IcebergWorkspace,
     RevisionView, WriteConfig,
@@ -577,6 +577,189 @@ async fn revert_change_appends_a_selective_inverse_without_rewinding_head() -> a
         .any(|change| change.change_id == "change-undo"
             && change.change.reverts_change_id.as_deref() == Some("change-target")
             && change.change.run_id.as_ref().map(|run| run.as_str()) == Some("run-1")));
+    Ok(())
+}
+
+#[tokio::test]
+async fn revert_change_handles_one_hundred_targets_atomically() -> anyhow::Result<()> {
+    let space_id = SpaceId::from(Uuid::now_v7());
+    let workspace =
+        IcebergWorkspace::memory_for_tests(space_id, "memory://iceberg-revert-100-targets").await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+    let title = FieldId::new(100).unwrap();
+    let owner = "principal:owner";
+    let target_ids = (1..=100)
+        .map(|index| EntryId::from(Uuid::from_u128(50_000 + index)))
+        .collect::<Vec<_>>();
+    let revision = |entry_id: EntryId,
+                    revision_id: u128,
+                    change_id: &str,
+                    parent: Option<RevisionId>,
+                    version: u64,
+                    value: &str,
+                    committed_at_micros: i64| EntryRevision {
+        form_id: form.id,
+        entry_id,
+        revision_id: RevisionId::from(Uuid::from_u128(revision_id)),
+        change_id: change_id.into(),
+        parent_revision_id: parent,
+        entry_version: version,
+        expected_version: parent.map(|_| version - 1),
+        committed_at_micros,
+        author_id: owner.into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata {
+            external_id: format!("entry-{}", entry_id.as_uuid()),
+            updated_by: owner.into(),
+            updated_at_micros: committed_at_micros,
+            ..EntryMetadata::default()
+        },
+        operation: EntryOperation::Upsert,
+        values: BTreeMap::from([(title, FieldValue::String(value.into()))]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    let initial = target_ids
+        .iter()
+        .enumerate()
+        .map(|(index, entry_id)| {
+            revision(
+                *entry_id,
+                60_000 + index as u128,
+                "create-100",
+                None,
+                1,
+                "before",
+                1,
+            )
+        })
+        .collect::<Vec<_>>();
+    append_revisions(&workspace, form.id, initial.clone()).await?;
+    let hundred_change = initial
+        .iter()
+        .enumerate()
+        .map(|(index, before)| {
+            revision(
+                before.entry_id,
+                61_000 + index as u128,
+                "change-100",
+                Some(before.revision_id),
+                2,
+                "after",
+                2,
+            )
+        })
+        .collect::<Vec<_>>();
+    append_revisions(&workspace, form.id, hundred_change.clone()).await?;
+
+    let success = ChangeCommand {
+        change_id: "inverse-100".into(),
+        run_id: None,
+        actor_principal_id: owner.into(),
+        message: None,
+        reverts_change_id: Some("change-100".into()),
+        created_at_micros: 3,
+    };
+    let receipt = workspace
+        .revert_change(
+            "change-100",
+            &success,
+            &ugoite_domain::integrity::FakeIntegrityProvider,
+        )
+        .await?;
+    assert_eq!(receipt.committed_revision_ids.len(), 100);
+    assert_eq!(
+        workspace
+            .list_changes()
+            .await?
+            .iter()
+            .filter(|change| change.change.reverts_change_id.as_deref() == Some("change-100"))
+            .count(),
+        1,
+        "all targets in one Change are published by one inverse Change"
+    );
+
+    let reverted_current = workspace
+        .read_revision_view(form.id, RevisionView::Current)
+        .await?
+        .into_iter()
+        .map(|row| (row.entry_id, row))
+        .collect::<BTreeMap<_, _>>();
+    let after_success = hundred_change
+        .iter()
+        .enumerate()
+        .map(|(index, target)| {
+            let current = &reverted_current[&target.entry_id];
+            revision(
+                target.entry_id,
+                62_000 + index as u128,
+                "change-conflicted-100",
+                Some(current.revision_id),
+                current.entry_version + 1,
+                "next",
+                4,
+            )
+        })
+        .collect::<Vec<_>>();
+    append_revisions(&workspace, form.id, after_success.clone()).await?;
+    let conflict = revision(
+        after_success[99].entry_id,
+        63_000,
+        "conflicting-later-change",
+        Some(after_success[99].revision_id),
+        5,
+        "changed elsewhere",
+        5,
+    );
+    append_revisions(&workspace, form.id, vec![conflict]).await?;
+
+    let rejected = ChangeCommand {
+        change_id: "must-not-append".into(),
+        run_id: None,
+        actor_principal_id: owner.into(),
+        message: None,
+        reverts_change_id: Some("change-conflicted-100".into()),
+        created_at_micros: 6,
+    };
+    let error = workspace
+        .revert_change(
+            "change-conflicted-100",
+            &rejected,
+            &ugoite_domain::integrity::FakeIntegrityProvider,
+        )
+        .await
+        .expect_err("one conflicting target must prevent all 100 inverse revisions");
+    assert_eq!(
+        error
+            .downcast_ref::<AppError>()
+            .expect("typed conflict")
+            .code(),
+        ErrorCode::RevisionConflict
+    );
+    let changes = workspace.list_changes().await?;
+    assert!(!changes
+        .iter()
+        .any(|change| change.change_id == "must-not-append"));
+    assert_eq!(
+        changes
+            .iter()
+            .filter(|change| change.change.reverts_change_id.as_deref()
+                == Some("change-conflicted-100"))
+            .count(),
+        0
+    );
+    let current = workspace
+        .read_revision_view(form.id, RevisionView::Current)
+        .await?;
+    assert_eq!(current.len(), 100);
+    assert!(current.iter().all(|row| {
+        row.values.get(&title) == Some(&FieldValue::String("next".into()))
+            || (row.entry_id == after_success[99].entry_id
+                && row.values.get(&title) == Some(&FieldValue::String("changed elsewhere".into())))
+    }));
     Ok(())
 }
 

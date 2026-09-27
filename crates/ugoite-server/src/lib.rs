@@ -10058,14 +10058,15 @@ async fn revert_change(
         &identity,
         Action::Update,
         None,
-        move |principal_id, _principals| async move {
+        move |principal_id, principals| async move {
             service
-                .revert_change(
+                .revert_change_authorized_for_principals(
                     &space_id_for_write,
                     &change_id_for_write,
                     &principal_id.to_string(),
                     run_id.as_deref(),
                     message.as_deref(),
+                    &principals,
                 )
                 .await
                 .map_err(ApiError::from_core)
@@ -10095,12 +10096,13 @@ async fn undo_run(
         &identity,
         Action::Update,
         None,
-        move |principal_id, _principals| async move {
+        move |principal_id, principals| async move {
             service
-                .undo_run(
+                .undo_run_authorized_for_principals(
                     &space_id_for_write,
                     &run_id_for_write,
                     &principal_id.to_string(),
+                    &principals,
                 )
                 .await
                 .map_err(ApiError::from_core)
