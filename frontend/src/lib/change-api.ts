@@ -27,7 +27,7 @@ export type SpaceChangeComparedValue = {
 
 export type SpaceChangeFieldGroup = {
   form_id: string;
-  field_id: string;
+  field_id: number;
   before: SpaceChangeComparedValue;
   after: SpaceChangeComparedValue;
   affected_entry_count: number;
@@ -59,6 +59,12 @@ export type SpaceChangeQueryFilters = {
   text?: string;
   created_after_micros?: number;
   created_before_micros?: number;
+  sort?: SpaceChangeSort[];
+};
+
+export type SpaceChangeSort = {
+  field: "created_at_micros" | "actor_principal_id" | "run_id";
+  direction: "asc" | "desc";
 };
 
 export type SpaceChangeQueryPage = {
@@ -85,6 +91,14 @@ const requiredNumber = (value: unknown, field: string): number => {
     throw new Error(`Invalid Change query field: ${field}`);
   }
   return value;
+};
+
+const requiredFieldId = (value: unknown, field: string): number => {
+  const result = requiredNumber(value, field);
+  if (!Number.isSafeInteger(result) || result <= 0) {
+    throw new Error(`Invalid Change query field: ${field}`);
+  }
+  return result;
 };
 
 const decodeComparedValue = (value: unknown): SpaceChangeComparedValue => {
@@ -114,7 +128,7 @@ const decodeSummary = (value: unknown): SpaceChangeSummary | null => {
       const group = asRecord(value);
       return {
         form_id: requiredString(group.form_id, "summary.field_groups.form_id"),
-        field_id: requiredString(
+        field_id: requiredFieldId(
           group.field_id,
           "summary.field_groups.field_id",
         ),

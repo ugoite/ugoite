@@ -30,7 +30,7 @@ describe("changeApi.query", () => {
         affected_entry_count: 2,
         field_groups: [{
           form_id: "form-1",
-          field_id: "field-1",
+          field_id: 100,
           before: { state: "value", value: "Travel" },
           after: { state: "value", value: "Business travel" },
           affected_entry_count: 2,
@@ -54,6 +54,10 @@ describe("changeApi.query", () => {
         actor_principal_id: "principal-1",
         text: "travel",
         created_after_micros: 50,
+        sort: [
+          { field: "actor_principal_id", direction: "asc" },
+          { field: "created_at_micros", direction: "desc" },
+        ],
       }),
     ).resolves.toEqual({
       changes: [{
@@ -62,7 +66,7 @@ describe("changeApi.query", () => {
           affected_entry_count: 2,
           field_groups: [{
             form_id: "form-1",
-            field_id: "field-1",
+            field_id: 100,
             before: { state: "value", value: "Travel" },
             after: { state: "value", value: "Business travel" },
             affected_entry_count: 2,
@@ -76,6 +80,9 @@ describe("changeApi.query", () => {
     expect(received?.searchParams.get("actor_principal_id")).toBe("principal-1");
     expect(received?.searchParams.get("text")).toBe("travel");
     expect(received?.searchParams.get("created_after_micros")).toBe("50");
+    expect(received?.searchParams.get("sort")).toBe(
+      "actor_principal_id:asc,created_at_micros:desc",
+    );
   });
 
   it("preserves a null summary when the current read scope is partial", async () => {

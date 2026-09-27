@@ -19,6 +19,7 @@ export {
   type SpaceChangeQueryFilters,
   type SpaceChangeQueryPage,
   type SpaceChangeQueryRow,
+  type SpaceChangeSort,
   type SpaceChangeSummary,
 } from "../change-api";
 export { entryApi } from "../entry-api";
