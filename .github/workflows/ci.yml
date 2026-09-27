@@ -261,8 +261,8 @@ jobs:
           path: ${{ runner.temp }}/deno-cache
           key: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
 
-  artifacts:
-    name: artifacts
+  artifact-build:
+    name: artifact-build
     needs: impact
     if: needs.impact.result == 'success' && needs.impact.outputs.plan_artifacts == 'true'
     runs-on: ubuntu-24.04
@@ -281,7 +281,6 @@ jobs:
         run: |
           echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
           echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
-          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -338,15 +337,6 @@ jobs:
           restore-keys: |
             deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-
 
-      - name: Restore Playwright browser cache
-        id: playwright-cache-restore
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/playwright-browsers
-          key: playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('e2e/deno.json', 'deno.lock') }}
-          restore-keys: |
-            playwright-v1-${{ runner.os }}-${{ runner.arch }}-
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
 
@@ -393,11 +383,7 @@ jobs:
             echo "ugoite_source_sha=${GITHUB_SHA}"
           } >>"$GITHUB_OUTPUT"
 
-      - name: Install Playwright browser dependencies
-        id: install-playwright
-        run: scripts/measure-step.sh install-playwright deno task e2e:install:browsers
-
-      - name: Build, package, verify, and test artifacts
+      - name: Build, package, and verify artifacts
         id: artifacts
         env:
           DOCSITE_ORIGIN: ${{ steps.ci-config.outputs.docsite_origin }}
@@ -408,19 +394,26 @@ jobs:
           UGOITE_IMAGE_CACHE_FROM: ${{ steps.ci-config.outputs.docker_cache_from }}
           UGOITE_IMAGE_CACHE_TO: ${{ steps.ci-config.outputs.docker_cache_to }}
           UGOITE_CI_RUN_ID: ${{ github.run_id }}
-          UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
-        run: scripts/measure-step.sh artifacts mise run ci:artifacts
+        run: scripts/measure-step.sh artifact-prepare mise run ci:artifacts:prepare
 
-      - name: Upload browser E2E evidence
-        if: always()
+      - name: Upload verified build inputs for E2E jobs
+        id: upload-e2e-inputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ugoite-browser-e2e-evidence-${{ github.run_id }}
+          name: ugoite-ci-e2e-inputs
           path: |
-            target/e2e/login-responsive/
-            e2e/test-results/
-          if-no-files-found: warn
-          retention-days: 14
+            target/artifacts/manifest.json
+            target/artifacts/image/ugoite-e2e-docker.tar.gz
+            target/artifacts/cli/*.tar.gz
+            target/artifacts/cli/*.sha256
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 1
+
+      - name: Measure E2E input bundle
+        id: e2e-input-size
+        run: echo "bytes=$(du -sb target/artifacts/image target/artifacts/cli target/artifacts/manifest.json | awk '{sum += $1} END {print sum}')" >>"$GITHUB_OUTPUT"
 
       - name: Show sccache stats
         if: always()
@@ -477,21 +470,14 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-      - name: Save Playwright browser cache
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/playwright-browsers
-          key: ${{ steps.playwright-cache-restore.outputs.cache-primary-key }}
-
       - name: Summarize artifact lane
         if: always()
         env:
           DOCSITE_ORIGIN: ${{ steps.ci-config.outputs.docsite_origin }}
           DOCSITE_BASE: ${{ steps.ci-config.outputs.docsite_base }}
           CACHE_SAVE_ALLOWED: ${{ steps.ci-config.outputs.cache_save_allowed }}
-          PORTABLE_SEED_DURATION_SECONDS: ${{ steps.artifacts.outputs.portable_seed_duration_seconds }}
-          PORTABLE_SEED_EXIT_CODE: ${{ steps.artifacts.outputs.portable_seed_exit_code }}
+          ARTIFACT_PREPARE_DURATION_SECONDS: ${{ steps.artifacts.outputs.duration_seconds }}
+          E2E_INPUT_BUNDLE_BYTES: ${{ steps.e2e-input-size.outputs.bytes }}
           DOCKER_CACHE_SCOPE: ${{ steps.ci-config.outputs.docker_cache_scope }}
           DOCKER_CACHE_MODE: ${{ steps.ci-config.outputs.docker_cache_mode }}
           DOCKER_CACHE_FROM: ${{ steps.ci-config.outputs.docker_cache_from }}
@@ -500,9 +486,6 @@ jobs:
           DENO_CACHE_HIT: ${{ steps.deno-cache-restore.outputs.cache-hit }}
           DENO_CACHE_PRIMARY_KEY: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
           DENO_CACHE_MATCHED_KEY: ${{ steps.deno-cache-restore.outputs.cache-matched-key }}
-          PLAYWRIGHT_CACHE_HIT: ${{ steps.playwright-cache-restore.outputs.cache-hit }}
-          PLAYWRIGHT_CACHE_PRIMARY_KEY: ${{ steps.playwright-cache-restore.outputs.cache-primary-key }}
-          PLAYWRIGHT_CACHE_MATCHED_KEY: ${{ steps.playwright-cache-restore.outputs.cache-matched-key }}
           DOCSITE_ARTIFACT_DIGEST: ${{ steps.upload-docsite.outputs.artifact-digest }}
           IMAGE_ARTIFACT_DIGEST: ${{ steps.upload-image.outputs.artifact-digest }}
           CLI_ARTIFACT_DIGEST: ${{ steps.upload-cli.outputs.artifact-digest }}
@@ -510,16 +493,10 @@ jobs:
           MANIFEST_ARTIFACT_DIGEST: ${{ steps.upload-manifest.outputs.artifact-digest }}
           WORKFLOW_START_EPOCH: ${{ steps.workflow-start.outputs.epoch }}
           DENO_DIR_PATH: ${{ runner.temp }}/deno-cache
-          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
         run: |
           deno_cache_fallback="false"
           if [[ -n "${DENO_CACHE_MATCHED_KEY}" && "${DENO_CACHE_MATCHED_KEY}" != "${DENO_CACHE_PRIMARY_KEY}" ]]; then
             deno_cache_fallback="true"
-          fi
-
-          playwright_cache_fallback="false"
-          if [[ -n "${PLAYWRIGHT_CACHE_MATCHED_KEY}" && "${PLAYWRIGHT_CACHE_MATCHED_KEY}" != "${PLAYWRIGHT_CACHE_PRIMARY_KEY}" ]]; then
-            playwright_cache_fallback="true"
           fi
 
           total_duration_seconds="n/a"
@@ -537,11 +514,6 @@ jobs:
             deno_cache_size_bytes="$(du -sk "${DENO_DIR_PATH}" | awk '{print $1 * 1024}')"
           fi
 
-          playwright_cache_size_bytes="0"
-          if [[ -d "${PLAYWRIGHT_BROWSERS_PATH}" ]]; then
-            playwright_cache_size_bytes="$(du -sk "${PLAYWRIGHT_BROWSERS_PATH}" | awk '{print $1 * 1024}')"
-          fi
-
           rust_target_size_bytes="0"
           if [[ -d target/rust ]]; then
             rust_target_size_bytes="$(du -sk target/rust | awk '{print $1 * 1024}')"
@@ -556,16 +528,13 @@ jobs:
             echo "- Cargo dependency cache exact hit: \`${RUST_CACHE_HIT:-}\`"
             echo "- Deno cache exact hit: \`${DENO_CACHE_HIT:-}\`"
             echo "- Deno cache fallback restore: \`${deno_cache_fallback}\`"
-            echo "- Playwright browser cache exact hit: \`${PLAYWRIGHT_CACHE_HIT:-}\`"
-            echo "- Playwright cache fallback restore: \`${playwright_cache_fallback}\`"
             echo "- Saving shared caches allowed: \`${CACHE_SAVE_ALLOWED}\`"
             echo "- Docker cache scope: \`${DOCKER_CACHE_SCOPE}\`"
             echo "- Docker cache export mode: \`${DOCKER_CACHE_MODE}\`"
             echo "- DOCSITE_ORIGIN: \`${DOCSITE_ORIGIN}\`"
             echo "- DOCSITE_BASE: \`${DOCSITE_BASE}\`"
-            echo "- ci:artifacts duration: ${{ steps.artifacts.outputs.duration_seconds }}s"
-            echo "- portable fixture seed duration: ${PORTABLE_SEED_DURATION_SECONDS:-n/a}s (exit ${PORTABLE_SEED_EXIT_CODE:-n/a})"
-            echo "- install Playwright duration: ${{ steps.install-playwright.outputs.duration_seconds }}s"
+            echo "- Artifact preparation duration: ${ARTIFACT_PREPARE_DURATION_SECONDS:-n/a}s"
+            echo "- E2E input bundle size: ${E2E_INPUT_BUNDLE_BYTES:-n/a} bytes"
             echo "- total artifact lane duration: ${total_duration_seconds}s"
             echo
             echo "### Artifact Digests"
@@ -588,8 +557,313 @@ jobs:
             echo
             echo "- target/rust: \`${rust_target_size_bytes}\` bytes"
             echo "- DENO_DIR: \`${deno_cache_size_bytes}\` bytes"
-            echo "- Playwright browsers: \`${playwright_cache_size_bytes}\` bytes"
             echo "- target/artifacts: \`${artifact_size_bytes}\` bytes"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  e2e-smoke-mobile:
+    name: ci-e2e-smoke-mobile
+    needs: [impact, artifact-build]
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_artifacts == 'true' && needs.artifact-build.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      UGOITE_SOURCE_SHA: ${{ github.sha }}
+      UGOITE_CI_RUN_ID: ${{ github.run_id }}
+      UGOITE_IMAGE_TAG: ugoite:e2e
+      UGOITE_IMAGE_PLATFORM: linux/amd64
+      UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure Deno and Playwright cache paths
+        run: |
+          echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          install_args: deno
+          cache: true
+
+      - name: Resolve Deno version
+        id: deno-version
+        run: |
+          echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: deno-cache-restore
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
+          restore-keys: deno-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: playwright-cache-restore
+        with:
+          path: ${{ runner.temp }}/playwright-browsers
+          key: playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('e2e/deno.json', 'deno.lock') }}
+          restore-keys: playwright-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install browser dependencies
+        run: deno task e2e:install:browsers
+
+      - name: Start artifact transfer measurement
+        id: transfer-start
+        run: echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-ci-e2e-inputs
+          path: target/artifacts
+
+      - name: Record artifact transfer measurement
+        id: transfer
+        env:
+          START_EPOCH: ${{ steps.transfer-start.outputs.epoch }}
+        run: |
+          echo "seconds=$(( $(date +%s) - START_EPOCH ))" >>"$GITHUB_OUTPUT"
+          echo "bytes=$(du -sb target/artifacts | awk '{print $1}')" >>"$GITHUB_OUTPUT"
+
+      - name: Verify and load the exact build artifacts
+        id: load-artifacts
+        run: scripts/measure-step.sh load-artifacts mise run ci:artifacts:load
+
+      - name: Run smoke, Asset, and mobile E2E
+        id: e2e
+        run: scripts/measure-step.sh smoke-mobile mise run ci:lane:e2e-smoke-mobile
+
+      - name: Save Playwright browser cache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-browsers
+          key: ${{ steps.playwright-cache-restore.outputs.cache-primary-key }}
+
+      - name: Upload E2E evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ugoite-e2e-smoke-mobile-${{ github.run_id }}
+          path: |
+            target/e2e/login-responsive/
+            e2e/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize E2E lane
+        if: always()
+        env:
+          DOWNLOAD_SECONDS: ${{ steps.transfer.outputs.seconds }}
+          DOWNLOAD_BYTES: ${{ steps.transfer.outputs.bytes }}
+          LOAD_SECONDS: ${{ steps.load-artifacts.outputs.duration_seconds }}
+          VERIFY_SECONDS: ${{ steps.load-artifacts.outputs.verification_seconds }}
+          CLI_EXTRACT_SECONDS: ${{ steps.load-artifacts.outputs.cli_extract_seconds }}
+          IMAGE_LOAD_SECONDS: ${{ steps.load-artifacts.outputs.image_load_seconds }}
+          E2E_SECONDS: ${{ steps.e2e.outputs.duration_seconds }}
+        run: |
+          {
+            echo "## Smoke and mobile E2E timing"
+            echo
+            echo "- Artifact download: ${DOWNLOAD_SECONDS:-n/a}s / ${DOWNLOAD_BYTES:-n/a} bytes"
+            echo "- Artifact verification: ${VERIFY_SECONDS:-n/a}s"
+            echo "- CLI extraction: ${CLI_EXTRACT_SECONDS:-n/a}s"
+            echo "- Docker image load: ${IMAGE_LOAD_SECONDS:-n/a}s"
+            echo "- Total artifact load step: ${LOAD_SECONDS:-n/a}s"
+            echo "- E2E lane: ${E2E_SECONDS:-n/a}s"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  e2e-owner:
+    name: ci-e2e-owner
+    needs: [impact, artifact-build]
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_artifacts == 'true' && needs.artifact-build.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      UGOITE_SOURCE_SHA: ${{ github.sha }}
+      UGOITE_CI_RUN_ID: ${{ github.run_id }}
+      UGOITE_IMAGE_TAG: ugoite:e2e
+      UGOITE_IMAGE_PLATFORM: linux/amd64
+      UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure Deno and Playwright cache paths
+        run: |
+          echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          install_args: deno
+          cache: true
+      - name: Resolve Deno version
+        id: deno-version
+        run: |
+          echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: deno-cache-restore
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
+          restore-keys: deno-v1-${{ runner.os }}-${{ runner.arch }}-
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-browsers
+          key: playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('e2e/deno.json', 'deno.lock') }}
+          restore-keys: playwright-v1-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install browser dependencies
+        run: deno task e2e:install:browsers
+      - name: Start artifact transfer measurement
+        id: transfer-start
+        run: echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-ci-e2e-inputs
+          path: target/artifacts
+      - name: Record artifact transfer measurement
+        id: transfer
+        env:
+          START_EPOCH: ${{ steps.transfer-start.outputs.epoch }}
+        run: |
+          echo "seconds=$(( $(date +%s) - START_EPOCH ))" >>"$GITHUB_OUTPUT"
+          echo "bytes=$(du -sb target/artifacts | awk '{print $1}')" >>"$GITHUB_OUTPUT"
+      - name: Verify and load the exact build artifacts
+        id: load-artifacts
+        run: scripts/measure-step.sh load-artifacts mise run ci:artifacts:load
+      - name: Run owner recovery E2E
+        id: e2e
+        run: scripts/measure-step.sh owner-recovery mise run ci:lane:e2e-owner
+      - name: Upload E2E evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ugoite-e2e-owner-${{ github.run_id }}
+          path: e2e/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Summarize E2E lane
+        if: always()
+        env:
+          DOWNLOAD_SECONDS: ${{ steps.transfer.outputs.seconds }}
+          DOWNLOAD_BYTES: ${{ steps.transfer.outputs.bytes }}
+          LOAD_SECONDS: ${{ steps.load-artifacts.outputs.duration_seconds }}
+          VERIFY_SECONDS: ${{ steps.load-artifacts.outputs.verification_seconds }}
+          CLI_EXTRACT_SECONDS: ${{ steps.load-artifacts.outputs.cli_extract_seconds }}
+          IMAGE_LOAD_SECONDS: ${{ steps.load-artifacts.outputs.image_load_seconds }}
+          E2E_SECONDS: ${{ steps.e2e.outputs.duration_seconds }}
+        run: |
+          {
+            echo "## Owner recovery E2E timing"
+            echo
+            echo "- Artifact download: ${DOWNLOAD_SECONDS:-n/a}s / ${DOWNLOAD_BYTES:-n/a} bytes"
+            echo "- Artifact verification: ${VERIFY_SECONDS:-n/a}s"
+            echo "- CLI extraction: ${CLI_EXTRACT_SECONDS:-n/a}s"
+            echo "- Docker image load: ${IMAGE_LOAD_SECONDS:-n/a}s"
+            echo "- Total artifact load step: ${LOAD_SECONDS:-n/a}s"
+            echo "- E2E lane: ${E2E_SECONDS:-n/a}s"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  e2e-portable:
+    name: ci-e2e-portable
+    needs: [impact, artifact-build]
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_artifacts == 'true' && needs.artifact-build.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      UGOITE_SOURCE_SHA: ${{ github.sha }}
+      UGOITE_CI_RUN_ID: ${{ github.run_id }}
+      UGOITE_IMAGE_TAG: ugoite:e2e
+      UGOITE_IMAGE_PLATFORM: linux/amd64
+      UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure Deno and Playwright cache paths
+        run: |
+          echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          install_args: deno
+          cache: true
+      - name: Resolve Deno version
+        id: deno-version
+        run: |
+          echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: deno-cache-restore
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
+          restore-keys: deno-v1-${{ runner.os }}-${{ runner.arch }}-
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-browsers
+          key: playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('e2e/deno.json', 'deno.lock') }}
+          restore-keys: playwright-v1-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install browser dependencies
+        run: deno task e2e:install:browsers
+      - name: Start artifact transfer measurement
+        id: transfer-start
+        run: echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-ci-e2e-inputs
+          path: target/artifacts
+      - name: Record artifact transfer measurement
+        id: transfer
+        env:
+          START_EPOCH: ${{ steps.transfer-start.outputs.epoch }}
+        run: |
+          echo "seconds=$(( $(date +%s) - START_EPOCH ))" >>"$GITHUB_OUTPUT"
+          echo "bytes=$(du -sb target/artifacts | awk '{print $1}')" >>"$GITHUB_OUTPUT"
+      - name: Verify and load the exact build artifacts
+        id: load-artifacts
+        run: scripts/measure-step.sh load-artifacts mise run ci:artifacts:load
+      - name: Run portable-space E2E
+        id: e2e
+        run: scripts/measure-step.sh portable-space mise run ci:lane:e2e-portable
+      - name: Upload E2E evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ugoite-e2e-portable-${{ github.run_id }}
+          path: e2e/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Summarize E2E lane
+        if: always()
+        env:
+          DOWNLOAD_SECONDS: ${{ steps.transfer.outputs.seconds }}
+          DOWNLOAD_BYTES: ${{ steps.transfer.outputs.bytes }}
+          LOAD_SECONDS: ${{ steps.load-artifacts.outputs.duration_seconds }}
+          VERIFY_SECONDS: ${{ steps.load-artifacts.outputs.verification_seconds }}
+          CLI_EXTRACT_SECONDS: ${{ steps.load-artifacts.outputs.cli_extract_seconds }}
+          IMAGE_LOAD_SECONDS: ${{ steps.load-artifacts.outputs.image_load_seconds }}
+          E2E_SECONDS: ${{ steps.e2e.outputs.duration_seconds }}
+          PORTABLE_SEED_SECONDS: ${{ steps.e2e.outputs.portable_seed_duration_seconds }}
+          PORTABLE_SEED_EXIT_CODE: ${{ steps.e2e.outputs.portable_seed_exit_code }}
+        run: |
+          {
+            echo "## Portable-space E2E timing"
+            echo
+            echo "- Artifact download: ${DOWNLOAD_SECONDS:-n/a}s / ${DOWNLOAD_BYTES:-n/a} bytes"
+            echo "- Artifact verification: ${VERIFY_SECONDS:-n/a}s"
+            echo "- CLI extraction: ${CLI_EXTRACT_SECONDS:-n/a}s"
+            echo "- Docker image load: ${IMAGE_LOAD_SECONDS:-n/a}s"
+            echo "- Total artifact load step: ${LOAD_SECONDS:-n/a}s"
+            echo "- E2E lane: ${E2E_SECONDS:-n/a}s"
+            echo "- Portable fixture seed: ${PORTABLE_SEED_SECONDS:-n/a}s (exit ${PORTABLE_SEED_EXIT_CODE:-n/a})"
           } >>"$GITHUB_STEP_SUMMARY"
 
   docsite-nav:
@@ -687,7 +961,7 @@ jobs:
   required:
     name: ci-required
     if: ${{ always() }}
-    needs: [impact, rust-check, rust-test, web, artifacts, docsite-nav, pr-context-report]
+    needs: [impact, rust-check, rust-test, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, pr-context-report]
     runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
@@ -712,7 +986,10 @@ jobs:
           RUST_CHECK_RESULT: ${{ needs.rust-check.result }}
           RUST_TEST_RESULT: ${{ needs.rust-test.result }}
           WEB_RESULT: ${{ needs.web.result }}
-          ARTIFACTS_RESULT: ${{ needs.artifacts.result }}
+          ARTIFACT_BUILD_RESULT: ${{ needs.artifact-build.result }}
+          E2E_SMOKE_MOBILE_RESULT: ${{ needs.e2e-smoke-mobile.result }}
+          E2E_OWNER_RESULT: ${{ needs.e2e-owner.result }}
+          E2E_PORTABLE_RESULT: ${{ needs.e2e-portable.result }}
           DOCSITE_NAV_RESULT: ${{ needs.docsite-nav.result }}
           PR_CONTEXT_RESULT: ${{ needs.pr-context-report.result }}
         run: scripts/ci-gate-check.sh

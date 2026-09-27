@@ -74,7 +74,10 @@ async function assertAggregateWorkflow(
   const rustCheckJob = workflowJobBlock(workflow, "rust-check");
   const rustTestJob = workflowJobBlock(workflow, "rust-test");
   const webJob = workflowJobBlock(workflow, "web");
-  const artifactsJob = workflowJobBlock(workflow, "artifacts");
+  const artifactBuildJob = workflowJobBlock(workflow, "artifact-build");
+  const e2eSmokeMobileJob = workflowJobBlock(workflow, "e2e-smoke-mobile");
+  const e2eOwnerJob = workflowJobBlock(workflow, "e2e-owner");
+  const e2ePortableJob = workflowJobBlock(workflow, "e2e-portable");
   const impactJob = workflowJobBlock(workflow, "impact");
   const docsiteNavJob = workflowJobBlock(workflow, "docsite-nav");
   const requiredJob = workflowJobBlock(workflow, "required");
@@ -91,7 +94,7 @@ async function assertAggregateWorkflow(
     "Restore Cargo dependency cache",
   );
   const artifactsCargoCache = workflowStepBlock(
-    artifactsJob,
+    artifactBuildJob,
     "Restore Cargo dependency cache",
   );
   const canonicalCi = taskBlock(mise, "ci");
@@ -108,7 +111,9 @@ async function assertAggregateWorkflow(
   const webLane = taskBlock(mise, "ci:lane:web");
   const releaseBuild = taskBlock(mise, "build:rust:release");
   const artifactsTask = taskBlock(mise, "ci:artifacts");
+  const artifactsPrepareTask = taskBlock(mise, "ci:artifacts:prepare");
   const artifactsE2eTask = taskBlock(mise, "ci:artifacts:e2e");
+  const artifactLoadTask = taskBlock(mise, "ci:artifacts:load");
   const releaseCliSeed = await Deno.readTextFile(
     new URL("../e2e/scripts/seed-portable-space.sh", import.meta.url),
   );
@@ -205,12 +210,25 @@ async function assertAggregateWorkflow(
   assertContainsAll(
     artifactsTask,
     [
-      '{ task = "build" }',
-      '{ task = "package" }',
-      '{ task = "verify" }',
+      '{ task = "ci:artifacts:prepare" }',
       '{ task = "ci:artifacts:e2e" }',
     ],
     "artifact CI task",
+  );
+  assertContainsAll(
+    artifactsPrepareTask,
+    [
+      '{ task = "build" }',
+      '{ task = "package" }',
+      '{ task = "verify" }',
+      '{ task = "version:check" }',
+    ],
+    "artifact preparation task",
+  );
+  assertContainsAll(
+    artifactLoadTask,
+    ["tools/ci_artifact_bundle.ts load"],
+    "E2E artifact verification and load task",
   );
   assertContainsAll(
     artifactsE2eTask,
@@ -257,7 +275,6 @@ async function assertAggregateWorkflow(
       '{ task = "test:e2e:mobile-ui" }',
       '{ task = "test:e2e:owner-recovery" }',
       '{ task = "test:e2e:portable-space", env = { UGOITE_PORTABLE_CLI_BINARY = "target/rust/release/ugoite" } }',
-      '{ task = "version:check" }',
     ],
     "artifact E2E task",
   );
@@ -338,15 +355,49 @@ async function assertAggregateWorkflow(
     "web CI lane",
   );
   assertContainsAll(
-    artifactsJob,
+    artifactBuildJob,
     [
-      "name: artifacts",
-      "scripts/measure-step.sh artifacts mise run ci:artifacts",
-      "PORTABLE_SEED_DURATION_SECONDS: ${{ steps.artifacts.outputs.portable_seed_duration_seconds }}",
-      "PORTABLE_SEED_EXIT_CODE: ${{ steps.artifacts.outputs.portable_seed_exit_code }}",
-      "portable fixture seed duration:",
+      "name: artifact-build",
+      "scripts/measure-step.sh artifact-prepare mise run ci:artifacts:prepare",
+      "name: Upload verified build inputs for E2E jobs",
+      "name: ugoite-ci-e2e-inputs",
+      "E2E_INPUT_BUNDLE_BYTES",
     ],
-    "artifact CI lane",
+    "artifact build CI lane",
+  );
+  assertContainsAll(
+    e2eSmokeMobileJob,
+    [
+      "name: ci-e2e-smoke-mobile",
+      "needs: [impact, artifact-build]",
+      "name: Configure Deno and Playwright cache paths",
+      'echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"',
+      "actions/download-artifact@",
+      "scripts/measure-step.sh load-artifacts mise run ci:artifacts:load",
+      "scripts/measure-step.sh smoke-mobile mise run ci:lane:e2e-smoke-mobile",
+      "DOWNLOAD_BYTES",
+    ],
+    "smoke/mobile E2E consumer lane",
+  );
+  assertContainsAll(
+    e2eOwnerJob,
+    [
+      "name: ci-e2e-owner",
+      "name: Configure Deno and Playwright cache paths",
+      "actions/download-artifact@",
+      "scripts/measure-step.sh owner-recovery mise run ci:lane:e2e-owner",
+    ],
+    "owner recovery E2E consumer lane",
+  );
+  assertContainsAll(
+    e2ePortableJob,
+    [
+      "name: ci-e2e-portable",
+      "name: Configure Deno and Playwright cache paths",
+      "actions/download-artifact@",
+      "scripts/measure-step.sh portable-space mise run ci:lane:e2e-portable",
+    ],
+    "portable-space E2E consumer lane",
   );
   assertEquals(
     workflow.includes("mise run ci\n"),
@@ -390,20 +441,26 @@ async function assertAggregateWorkflow(
     "web Deno archive restore",
   );
   assertContainsAll(
-    workflowStepBlock(artifactsJob, "Restore Deno cache"),
+    workflowStepBlock(artifactBuildJob, "Restore Deno cache"),
     ["actions/cache/restore", "path: ${{ runner.temp }}/deno-cache"],
     "artifact Deno archive restore",
   );
   assertEquals(
-    artifactsJob.includes("- name: Save Deno cache"),
+    artifactBuildJob.includes("- name: Save Deno cache"),
     false,
     "artifact lane must not write the Deno archive",
   );
   assertEquals(
     workflow.match(/mise run [A-Za-z0-9:_-]+/g)?.sort().join("\n"),
     [
-      "mise run ci:artifacts",
+      "mise run ci:artifacts:load",
+      "mise run ci:artifacts:load",
+      "mise run ci:artifacts:load",
+      "mise run ci:artifacts:prepare",
       "mise run ci:impact",
+      "mise run ci:lane:e2e-owner",
+      "mise run ci:lane:e2e-portable",
+      "mise run ci:lane:e2e-smoke-mobile",
       "mise run ci:lane:docsite-nav",
       "mise run ci:lane:rust-check",
       "mise run ci:lane:rust-test",
@@ -470,7 +527,7 @@ async function assertAggregateWorkflow(
     [
       "name: ci-required",
       "if: ${{ always() }}",
-      "needs: [impact, rust-check, rust-test, web, artifacts, docsite-nav, pr-context-report]",
+      "needs: [impact, rust-check, rust-test, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, pr-context-report]",
       "runs-on: ubuntu-slim",
       "IMPACT_RESULT: ${{ needs.impact.result }}",
       "IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}",
@@ -484,7 +541,10 @@ async function assertAggregateWorkflow(
       "RUST_CHECK_RESULT: ${{ needs.rust-check.result }}",
       "RUST_TEST_RESULT: ${{ needs.rust-test.result }}",
       "WEB_RESULT: ${{ needs.web.result }}",
-      "ARTIFACTS_RESULT: ${{ needs.artifacts.result }}",
+      "ARTIFACT_BUILD_RESULT: ${{ needs.artifact-build.result }}",
+      "E2E_SMOKE_MOBILE_RESULT: ${{ needs.e2e-smoke-mobile.result }}",
+      "E2E_OWNER_RESULT: ${{ needs.e2e-owner.result }}",
+      "E2E_PORTABLE_RESULT: ${{ needs.e2e-portable.result }}",
       "DOCSITE_NAV_RESULT: ${{ needs.docsite-nav.result }}",
       "PR_CONTEXT_RESULT: ${{ needs.pr-context-report.result }}",
       "run: scripts/ci-gate-check.sh",

@@ -38,7 +38,15 @@ Root task composition:
 - `ci`: formatting check, lint, architecture/OpenAPI/type checks, and `test`;
 - `ci:artifacts`: build/package/verify, a focused docsite-navigation E2E lane,
   E2E smoke plus Form-owned Asset acceptance, the mobile browser visual
-  regression suite, and version validation;
+  regression suite, owner recovery, portable-Space acceptance, and version
+  validation;
+- `ci:artifacts:prepare`: build, package, verify, and version-check the current
+  source without running E2E;
+- `ci:artifacts:load`: verify the same-run manifest, source SHA, CI run ID, CLI
+  and image digests, then load the exact image and extract the portable CLI;
+- `ci:lane:e2e-smoke-mobile`, `ci:lane:e2e-owner`, and
+  `ci:lane:e2e-portable`: separate hosted E2E groups that consume the prepared
+  build artifact;
 - `ci:merge`: `ci` plus `ci:artifacts`;
 - `ci:impact`: a standalone, conservative diff planner used by hosted CI to
   select pull-request lanes while preserving full main-push and merge-group
@@ -54,23 +62,26 @@ docsite navigation; frontend-only pull requests run Web and artifact/E2E
 verification; Rust changes also run both Rust lanes. Main pushes and merge
 groups always run every lane. Large diffs, global or unclassified paths,
 missing SHAs, unsupported events, and diff failures fall back to the full lane
-plan. The artifact/E2E lane remains mandatory on main pushes so the Pages site
-and source manifest continue to be produced. `ci-required` runs on
-`ubuntu-slim`, checks every planned lane against its result, and fails closed
-on missing results, unexpected skips, and unexpected executions. The three quality lanes
-run only
+plan. The artifact build runs once and publishes the existing Pages and release
+artifacts on main pushes. Three E2E jobs download the same-run runtime image,
+CLI archive, and manifest; before starting, each verifies the source SHA, run
+ID, and file checksums, then loads the image and CLI. Each job reports download
+bytes and duration, manifest verification, CLI extraction, and Docker image
+load time so transfer overhead can be measured during the pilot. `ci-required` runs on `ubuntu-slim`, checks every
+planned lane against its result, and fails closed on missing results,
+unexpected skips, and unexpected executions. The three quality lanes run only
 `mise run ci:lane:rust-check`, `mise run ci:lane:rust-test`, and
 `mise run ci:lane:web`; they do not duplicate repository validation commands in
-GitHub Actions. The artifact lane runs only `mise run ci:artifacts` and owns
-Playwright/BuildKit setup plus verified artifact upload. The standalone
+GitHub Actions. The artifact producer runs `mise run ci:artifacts:prepare`;
+the three E2E groups use their corresponding Mise lane task and keep the
+Playwright worker count at one. The standalone
 docsite-navigation lane runs through `mise run ci:lane:docsite-nav` so broken
 links and navigation can fail before the artifact build completes.
 
 Pull requests also run a separate `ci-pr-context-report` job. It checks out
 the exact PR base and head commits, writes Mitase PR-context JSON and Markdown
 reports, and uploads both as an artifact. This report job is an additional
-PR-only lane; `ci-required` still requires the four quality/artifact lanes and
-accepts the report lane when successful (or skipped for non-PR events).
+PR-only lane; `ci-required` validates its success (or skip for non-PR events).
 The report keeps Binding-derived direct impact and upstream specifications
 separate from the path-triggered `review.always` context. The latter covers
 frontend implementation/configuration and `docs/spec/ui/**` with POL-006 and
@@ -97,8 +108,8 @@ an unverified remote store remains read-only.
 
 Rust-compiling lanes restore the Rust registry/git dependency cache without
 caching `target/`; `ci-rust-check` is the sole Cargo dependency archive writer,
-while `ci-rust-test`, `ci-web`, and `artifacts` are restore-only. `ci-web` is
-the sole Deno archive writer; `artifacts` may restore it, but does not write it.
+while `ci-rust-test`, `ci-web`, and `artifact-build` are restore-only. `ci-web`
+and `artifact-build` may restore the Deno cache, but only `ci-web` writes it.
 sccache owns compiler artifact reuse in all Rust-compiling lanes: it is
 read-only for pull requests and merge queues and writes only on successful
 `main` pushes. Playwright browser and BuildKit caches remain separately keyed
@@ -196,8 +207,9 @@ development override.
 
 The required `ci-required` aggregator runs after all quality, artifact,
 docsite-navigation, and impact-report lanes on pull requests, merge queues, and
-pushes to `main`. It fails unless `ci-rust-check`, `ci-rust-test`, `ci-web`,
-`artifacts`, `ci-docsite-nav`, and the impact report are successful. The PR
+pushes to `main`. It checks the planned results for `ci-rust-check`,
+`ci-rust-test`, `ci-web`, `artifact-build`, the three E2E consumer jobs, and
+`ci-docsite-nav`, and fails on unexpected skips or executions. The PR
 context report must succeed for pull requests and is accepted as skipped for
 other events. The canonical
 `test` Mise task and `ci:lane:web` run the normal docsite test suite; only
