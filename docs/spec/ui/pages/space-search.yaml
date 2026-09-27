@@ -41,8 +41,5 @@ components:
         unresolved_id: show-unknown-form-label-without-removing-entry
         consistency: separate-read-no-shared-snapshot-guarantee
       rendering:
-        mode: page-scoped-visible-rows
-        fast_path_limit: 100
-        virtual_row_height_px: 48
-        overscan_rows_each_side: 6
-        scroll_state: transient-ui-only
+        mode: native-page-table
+        rows: all-fetched-page-rows

@@ -3453,12 +3453,6 @@ a.tool {
   max-width: 100%;
 }
 
-.paged-result-scroll-virtual {
-  max-height: 480px;
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-
 .paged-result-table-element {
   width: 100%;
   min-width: 36rem;
@@ -3488,21 +3482,6 @@ a.tool {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.paged-result-scroll-virtual .paged-result-cell {
-  box-sizing: border-box;
-  height: 48px;
-  max-height: 48px;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-.paged-result-spacer,
-.paged-result-spacer td {
-  padding: 0;
-  border: 0;
-  line-height: 0;
 }
 
 .paged-result-pagination {
@@ -3593,7 +3572,7 @@ a.tool {
   cursor: pointer;
 }
 
-.entry-browser-table tbody tr:not(.paged-result-spacer):hover {
+.entry-browser-table tbody tr:hover {
   background: var(--soft2);
 }
 

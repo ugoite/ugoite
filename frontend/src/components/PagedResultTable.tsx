@@ -1,20 +1,5 @@
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  type JSX,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { type Accessor, For, type JSX, Show } from "solid-js";
 import { LocalBusyIndicator } from "./LocalBusyIndicator";
-import {
-  calculateVisibleRowRange,
-  VIRTUAL_ROW_HEIGHT,
-  VIRTUAL_ROW_THRESHOLD,
-} from "~/lib/virtual-rows";
 
 export interface ResultColumn<Row> {
   key: string;
@@ -52,92 +37,11 @@ export interface PagedResultTableProps<Row> {
 }
 
 export function PagedResultTable<Row>(props: PagedResultTableProps<Row>) {
-  let scrollElement: HTMLDivElement | undefined;
-  const [scrollTop, setScrollTop] = createSignal(0);
-  const [viewportHeight, setViewportHeight] = createSignal(480);
-  const [supportsResizeObserver, setSupportsResizeObserver] = createSignal(
-    true,
-  );
-  const [measuredRowHeight, setMeasuredRowHeight] = createSignal<number>();
-
-  const virtualized = createMemo(() =>
-    props.rows.length > VIRTUAL_ROW_THRESHOLD && supportsResizeObserver() &&
-    (!measuredRowHeight() ||
-      Math.abs(measuredRowHeight()! - VIRTUAL_ROW_HEIGHT) < 1)
-  );
-  const range = createMemo(() =>
-    virtualized()
-      ? calculateVisibleRowRange(
-        props.rows.length,
-        scrollTop(),
-        viewportHeight(),
-      )
-      : {
-        start: 0,
-        end: props.rows.length,
-        topSpacerHeight: 0,
-        bottomSpacerHeight: 0,
-      }
-  );
-  const visibleRows = createMemo(() => {
-    const { start, end } = range();
-    return props.rows.slice(start, end);
-  });
-  const identity = () =>
-    `${props.pageIdentity}\u0000${
-      props.columns.map((column) => column.key)
-        .join("\u0000")
-    }`;
-
-  createEffect(() => {
-    identity();
-    setScrollTop(0);
-    if (scrollElement) scrollElement.scrollTop = 0;
-  });
-
-  onMount(() => {
-    if (!scrollElement) return;
-    if (typeof ResizeObserver === "undefined") {
-      setSupportsResizeObserver(false);
-      return;
-    }
-    const observer = new ResizeObserver((entries) => {
-      const height = entries[0]?.contentRect.height ??
-        scrollElement?.clientHeight;
-      if (height && height > 0) setViewportHeight(height);
-      const firstRow = scrollElement?.querySelector<HTMLElement>(
-        "tbody tr[data-row-index]",
-      );
-      if (firstRow) {
-        const rowHeight = firstRow.getBoundingClientRect().height;
-        if (rowHeight > 0) setMeasuredRowHeight(rowHeight);
-      }
-    });
-    observer.observe(scrollElement);
-    onCleanup(() => observer.disconnect());
-  });
-
-  const handleScroll: JSX.EventHandlerUnion<HTMLDivElement, Event> = (
-    event,
-  ) => {
-    setScrollTop(event.currentTarget.scrollTop);
-  };
-
+  let tableElement: HTMLTableElement | undefined;
   const focusRow = (index: number) => {
     if (index < 0 || index >= props.rows.length) return;
-    if (scrollElement && virtualized()) {
-      const rowTop = (index + 1) * VIRTUAL_ROW_HEIGHT;
-      const rowBottom = rowTop + VIRTUAL_ROW_HEIGHT;
-      if (rowTop < scrollElement.scrollTop) scrollElement.scrollTop = rowTop;
-      else if (
-        rowBottom > scrollElement.scrollTop + scrollElement.clientHeight
-      ) {
-        scrollElement.scrollTop = rowBottom - scrollElement.clientHeight;
-      }
-      setScrollTop(scrollElement.scrollTop);
-    }
     const focusTarget = () => {
-      scrollElement?.querySelector<HTMLElement>(
+      tableElement?.querySelector<HTMLElement>(
         `tr[data-row-index="${index}"] button`,
       )?.focus();
     };
@@ -173,7 +77,6 @@ export function PagedResultTable<Row>(props: PagedResultTableProps<Row>) {
       data-row-index={index()}
       data-row-key={props.rowKey(row, index())}
       data-entry-id={props.entryDataId?.(row)}
-      aria-rowindex={virtualized() ? index() + 2 : undefined}
       aria-selected={props.selectedRowKey === props.rowKey(row, index()) ||
         undefined}
       onClick={() => props.onRowSelect?.(row, index())}
@@ -230,19 +133,16 @@ export function PagedResultTable<Row>(props: PagedResultTableProps<Row>) {
       </Show>
       <Show when={props.rows.length > 0 && !props.error}>
         <div
-          ref={scrollElement}
           class={props.classNames?.scroll ?? "paged-result-scroll"}
-          classList={{ "paged-result-scroll-virtual": virtualized() }}
-          tabIndex={virtualized() && !props.renderPrimaryAction ? 0 : undefined}
+          data-page-identity={props.pageIdentity}
           aria-label={props.paginationLabel}
-          onScroll={handleScroll}
         >
           <table
+            ref={tableElement}
             class={props.classNames?.table ?? "paged-result-table-element"}
-            aria-rowcount={virtualized() ? props.rows.length + 1 : undefined}
           >
             <thead>
-              <tr aria-rowindex={virtualized() ? 1 : undefined}>
+              <tr>
                 <For each={props.columns}>
                   {(column) => <th scope="col">{column.label}</th>}
                 </For>
@@ -259,31 +159,7 @@ export function PagedResultTable<Row>(props: PagedResultTableProps<Row>) {
               </tr>
             </thead>
             <tbody>
-              <Show when={virtualized() && range().topSpacerHeight > 0}>
-                <tr aria-hidden="true" class="paged-result-spacer">
-                  <td
-                    colspan={props.columns.length +
-                      (props.renderTrailingAction ? 1 : 0)}
-                    style={{ height: `${range().topSpacerHeight}px` }}
-                  />
-                </tr>
-              </Show>
-              <For each={visibleRows()}>
-                {(row, visibleIndex) => {
-                  const index = () =>
-                    range().start + visibleIndex();
-                  return renderIndexedRow(row, index);
-                }}
-              </For>
-              <Show when={virtualized() && range().bottomSpacerHeight > 0}>
-                <tr aria-hidden="true" class="paged-result-spacer">
-                  <td
-                    colspan={props.columns.length +
-                      (props.renderTrailingAction ? 1 : 0)}
-                    style={{ height: `${range().bottomSpacerHeight}px` }}
-                  />
-                </tr>
-              </Show>
+              <For each={props.rows}>{renderIndexedRow}</For>
             </tbody>
           </table>
         </div>
@@ -296,7 +172,8 @@ export function PagedResultTable<Row>(props: PagedResultTableProps<Row>) {
           type="button"
           class="ui-button ui-button-secondary"
           disabled={!props.canPrevious || props.loading || !!props.error}
-          onClick={() => props.onPrevious()}
+          onClick={() =>
+            props.onPrevious()}
         >
           {props.previousLabel}
         </button>
