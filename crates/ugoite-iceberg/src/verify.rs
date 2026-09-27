@@ -448,7 +448,7 @@ async fn verify_assets(
                 .read(&path)
                 .await
                 .context("read referenced Asset")?;
-            let digest = hex::encode(Sha256::digest(bytes.as_ref()));
+            let digest = hex::encode(Sha256::digest(bytes.to_bytes()));
             if digest != reference.sha256 {
                 anyhow::bail!(
                     "Asset {} SHA-256 does not match its reference",
