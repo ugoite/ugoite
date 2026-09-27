@@ -92,6 +92,7 @@ fn canonical_entry_id(requested_id: Option<&str>) -> String {
 use crate::integrity::RealIntegrityProvider;
 use crate::{
     asset,
+    audit::AuditCheckpointConfig,
     authorization::{
         effective_actions_for_state, AuthorizationLease, AuthorizationState, Authorizer,
         ResourceKind, ResourceRef,
@@ -517,6 +518,7 @@ pub struct UgoiteService {
     operator: Operator,
     root_uri: String,
     background_refresh: bool,
+    audit_checkpoint: Option<AuditCheckpointConfig>,
 }
 
 struct AssetTextRefreshWorker {
@@ -738,6 +740,7 @@ impl UgoiteService {
             operator,
             root_uri,
             background_refresh: true,
+            audit_checkpoint: None,
         })
     }
 
@@ -752,6 +755,7 @@ impl UgoiteService {
             operator,
             root_uri,
             background_refresh: false,
+            audit_checkpoint: None,
         })
     }
 
@@ -760,7 +764,20 @@ impl UgoiteService {
             operator,
             root_uri: root_uri.into(),
             background_refresh: true,
+            audit_checkpoint: None,
         }
+    }
+
+    /// Enables Node-local authenticated audit verification checkpoints.
+    /// Checkpoints are a cache: missing or invalid records always fall back
+    /// to full audit-chain verification.
+    pub fn with_audit_checkpoint(mut self, config: AuditCheckpointConfig) -> Self {
+        self.audit_checkpoint = Some(config);
+        self
+    }
+
+    pub(crate) fn audit_checkpoint_config(&self) -> Option<&AuditCheckpointConfig> {
+        self.audit_checkpoint.as_ref()
     }
 
     pub fn operator(&self) -> &Operator {

@@ -34,6 +34,7 @@ use std::{
     future::Future,
     net::IpAddr,
     pin::Pin,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tower_http::{
@@ -50,7 +51,7 @@ use ugoite_domain::identity::{
     RequestAuthenticationMethod, RequestIdentity, SpacePrincipal, SpaceRole,
 };
 use ugoite_iceberg::{
-    audit::{self, AuditListOptions},
+    audit::{self, AuditCheckpointRecord, AuditCheckpointStore, AuditListOptions},
     authorization::{
         AuthorizationState, Authorizer, HumanApproval, HumanApprovalIssue, ResourceKind,
         ResourceRef,
@@ -70,6 +71,7 @@ use ugoite_identity::{
         STEP_UP_ELIGIBLE_OPERATIONS,
     },
     oauth::{self, AccessTokenClaims, Confirmation},
+    EnvironmentSecretStore, NodeControlStore, NodeSecretStore, OpenDalNodeControlStore,
 };
 
 #[derive(Clone, Copy, Default)]
@@ -683,6 +685,32 @@ pub struct AppState {
     security_headers: SecurityHeadersPolicy,
 }
 
+#[derive(Clone)]
+struct NodeAuditCheckpointStore(OpenDalNodeControlStore);
+
+#[async_trait::async_trait]
+impl AuditCheckpointStore for NodeAuditCheckpointStore {
+    async fn get(&self, key: &str) -> anyhow::Result<Option<AuditCheckpointRecord>> {
+        Ok(self.0.get(key).await?.map(|record| AuditCheckpointRecord {
+            value: record.value,
+            version: record.version,
+        }))
+    }
+
+    async fn create_if_absent(&self, key: &str, value: Vec<u8>) -> anyhow::Result<String> {
+        self.0.create_if_absent(key, value).await
+    }
+
+    async fn compare_and_swap(
+        &self,
+        key: &str,
+        expected_version: &str,
+        value: Vec<u8>,
+    ) -> anyhow::Result<String> {
+        self.0.compare_and_swap(key, expected_version, value).await
+    }
+}
+
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub struct TestMcpAccess {
@@ -707,7 +735,7 @@ impl AppState {
         let root_uri = root_uri.into();
         let endpoint = env::var("UGOITE_STORAGE_ENDPOINT").ok();
         let endpoint = space::validate_storage_endpoint(endpoint.as_deref())?;
-        let service = UgoiteService::new_with_endpoint(root_uri, endpoint)?;
+        let mut service = UgoiteService::new_with_endpoint(root_uri, endpoint)?;
         let public_origin = env::var("UGOITE_PUBLIC_ORIGIN")
             .unwrap_or_else(|_| "http://localhost:8000".to_string());
         let rp_id = env::var("UGOITE_WEBAUTHN_RP_ID").unwrap_or_else(|_| {
@@ -721,6 +749,12 @@ impl AppState {
                 .context("configure UGOITE_NODE_CONTROL_URI")?,
             Err(_) => service.operator().clone(),
         };
+        let checkpoint_store = OpenDalNodeControlStore::new(control_operator.clone())?;
+        let node_secret = EnvironmentSecretStore.encryption_root_key()?;
+        service = service.with_audit_checkpoint(audit::AuditCheckpointConfig::new(
+            Arc::new(NodeAuditCheckpointStore(checkpoint_store)),
+            node_secret,
+        ));
         let identity = NodeIdentityService::new(control_operator, rp_id, public_origin)?;
         Ok(Self {
             security_headers: SecurityHeadersPolicy::from_public_origin(identity.public_origin()),
