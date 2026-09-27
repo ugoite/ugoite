@@ -132,6 +132,8 @@ features:
             selector: { kind: symbol, name: PagedResultTable }
             claims:
               - kind: satisfies
+                criterion: REQ-FE-068#criterion.native-page-rows
+              - kind: satisfies
                 criterion: REQ-FE-068#criterion.shared-native-table-and-actions
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.keyboard-row-navigation
