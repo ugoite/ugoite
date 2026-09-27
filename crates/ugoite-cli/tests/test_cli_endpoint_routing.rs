@@ -1052,6 +1052,109 @@ fn test_entry_create_structured_routes_form_fields_without_markdown() {
 }
 
 #[test]
+fn test_entry_patch_remote_reads_merges_and_pins_the_read_revision() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let (base_url, request_rx, server) = spawn_recording_server_responses(vec![
+        (
+            "HTTP/1.1 200 OK",
+            r#"{"id":"entry-1","form":"Article","revision_id":"rev-current","fields":{"Status":"active","Count":42.5,"Body":"before"},"extra_attributes":{"source":"import"}}"#,
+        ),
+        (
+            "HTTP/1.1 200 OK",
+            r#"{"id":"entry-1","revision_id":"rev-next","change_id":"change-next"}"#,
+        ),
+    ]);
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+
+    let output = run(
+        &config,
+        &[
+            "entry",
+            "patch",
+            "entry-1",
+            "--field",
+            "Body=after",
+            "--field",
+            "source=manual",
+            "--remove-field",
+            "Status",
+        ],
+    );
+    let get_request = request_rx.recv().unwrap();
+    let update_request = request_rx.recv().unwrap();
+    server.join().unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        get_request.starts_with(
+            "GET /spaces/019f1234-5678-7abc-8def-0123456789ab/entries/entry-1 HTTP/1.1\r\n"
+        ),
+        "{get_request}"
+    );
+    assert!(
+        update_request.starts_with(
+            "PUT /spaces/019f1234-5678-7abc-8def-0123456789ab/entries/entry-1 HTTP/1.1\r\n"
+        ),
+        "{update_request}"
+    );
+    let body = request_json_body(&update_request);
+    assert_eq!(body["parent_revision_id"], "rev-current");
+    assert_eq!(body["fields"]["Body"], "after");
+    assert!(body["fields"].get("Status").is_none());
+    assert!(body["fields"].get("source").is_none());
+    assert_eq!(body["fields"]["Count"], 42.5);
+    assert_eq!(body["extra_attributes"]["source"], "manual");
+    assert_eq!(body["form"], "Article");
+}
+
+#[test]
+fn test_entry_patch_remote_conflict_is_not_reported_as_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let (base_url, request_rx, server) = spawn_recording_server_responses(vec![
+        (
+            "HTTP/1.1 200 OK",
+            r#"{"id":"entry-1","form":"Article","revision_id":"rev-current","fields":{"Body":"before"},"extra_attributes":{}}"#,
+        ),
+        (
+            "HTTP/1.1 409 Conflict",
+            r#"{"error":{"code":"REVISION_CONFLICT","message":"entry changed concurrently"}}"#,
+        ),
+    ]);
+    init_config(&config);
+    set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+
+    let output = run(
+        &config,
+        &["entry", "patch", "entry-1", "--field", "Body=after"],
+    );
+    let _get_request = request_rx.recv().unwrap();
+    let update_request = request_rx.recv().unwrap();
+    server.join().unwrap();
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("409")
+            || String::from_utf8_lossy(&output.stderr).contains("REVISION_CONFLICT"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        request_json_body(&update_request)["parent_revision_id"],
+        "rev-current"
+    );
+}
+
+#[test]
 fn test_create_space_req_sto_010_requires_root_only_in_core_mode() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config.toml");
@@ -1156,6 +1259,25 @@ fn test_entry_update_req_ops_006_help_describes_required_inputs() {
         "--fields-file <PATH>",
         "--parent-revision-id <PARENT_REVISION_ID>",
         "--context <NAME>",
+    ] {
+        assert!(stdout.contains(needle), "{stdout}");
+    }
+}
+
+#[test]
+fn test_entry_patch_help_explains_delta_and_conflict_behavior() {
+    let output = Command::new(ugoite_bin())
+        .args(["entry", "patch", "--help"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for needle in [
+        "ENTRY_ID",
+        "--field <KEY=VALUE>",
+        "--remove-field <KEY>",
+        "preserving the rest",
+        "Concurrent changes are rejected as conflicts",
     ] {
         assert!(stdout.contains(needle), "{stdout}");
     }

@@ -128,6 +128,32 @@ pub enum EntrySubCmd {
         )]
         author: String,
     },
+    /// Change selected fields while preserving the rest of the entry
+    #[command(
+        long_about = "Use the selected context or --context NAME for this command. Reads the current entry, applies only the requested field changes, and pins the update to the revision that was read. Concurrent changes are rejected as conflicts."
+    )]
+    Patch {
+        #[arg(value_name = "ENTRY_ID")]
+        entry_id: String,
+        #[arg(
+            long = "field",
+            value_name = "KEY=VALUE",
+            help = "Set one field (repeatable; VALUE stays a string and the shared Rust boundary coerces it)"
+        )]
+        fields: Vec<String>,
+        #[arg(
+            long = "remove-field",
+            value_name = "KEY",
+            help = "Remove one field (repeatable)"
+        )]
+        remove_fields: Vec<String>,
+        #[arg(
+            long,
+            default_value = "cli",
+            help = "Author name to record in the revision history (local only)"
+        )]
+        author: String,
+    },
     /// Delete an entry
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Delete {
@@ -505,6 +531,170 @@ async fn update_structured_entry(
     Ok(())
 }
 
+/// Apply a narrow field delta to the current complete field maps. The read's
+/// revision is always used as the update parent so an intervening writer is a
+/// conflict instead of silently overwritten data.
+async fn patch_structured_entry(
+    target: &SpaceTarget,
+    fmt: &Format,
+    entry_id: String,
+    fields: Vec<String>,
+    remove_fields: Vec<String>,
+    author: String,
+) -> Result<()> {
+    if fields.is_empty() && remove_fields.is_empty() {
+        return Err(UsageError(
+            "entry patch requires at least one --field or --remove-field".to_string(),
+        )
+        .into());
+    }
+    let mut changes = std::collections::BTreeMap::new();
+    let mut changed_names = std::collections::BTreeSet::new();
+    for field in fields {
+        let (key, value) = parse_field_arg(&field).map_err(anyhow::Error::from)?;
+        if !changed_names.insert(key.clone()) {
+            return Err(UsageError(format!("field {key} is specified more than once")).into());
+        }
+        changes.insert(key, Some(value));
+    }
+    for key in remove_fields {
+        if key.is_empty() || key.contains('=') {
+            return Err(UsageError(format!(
+                "--remove-field must be a non-empty KEY without '=', got {key:?}"
+            ))
+            .into());
+        }
+        if !changed_names.insert(key.clone()) {
+            return Err(UsageError(format!(
+                "field {key} cannot be both set and removed or specified more than once"
+            ))
+            .into());
+        }
+        changes.insert(key, None);
+    }
+
+    if let SpaceTarget::Remote { space_uid, .. } = target {
+        if author != "cli" {
+            return Err(UsageError(
+                "entry patch --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
+                    .to_string(),
+            )
+            .into());
+        }
+        let current = http::execute_for_target(
+            target,
+            "entry.get",
+            serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
+            None,
+        )
+        .await?;
+        let revision_id = current_entry_revision_id(&current)?;
+        let form = current
+            .get("form")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+        let mut fields = entry_object_map(&current, "fields")?;
+        let mut extra_attributes = entry_object_map(&current, "extra_attributes")?;
+        apply_entry_field_delta(&mut fields, &mut extra_attributes, changes);
+        let mut body = serde_json::json!({
+            "fields": fields,
+            "extra_attributes": extra_attributes,
+            "parent_revision_id": revision_id,
+        });
+        if let Some(form) = form {
+            body["form"] = serde_json::json!(form);
+        }
+        let result = http::execute_for_target(
+            target,
+            "entry.update",
+            serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
+            Some(body),
+        )
+        .await?;
+        let receipt = entry_receipt(
+            entry_id,
+            result
+                .get("revision_id")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
+            result
+                .get("change_id")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
+        );
+        emit_mutation(
+            &receipt,
+            fmt,
+            Some(render_receipt(&receipt, &stdout_style())),
+        );
+        return Ok(());
+    }
+
+    let SpaceTarget::Core { root, space_id } = target else {
+        anyhow::bail!("operation entry.patch does not use the remote transport")
+    };
+    let service = UgoiteService::new_without_background_refresh(root)?;
+    let current = service.get_entry(space_id, &entry_id).await?;
+    let revision_id = current_entry_revision_id(&current)?;
+    let mut fields = entry_object_map(&current, "fields")?;
+    let mut extra_attributes = entry_object_map(&current, "extra_attributes")?;
+    apply_entry_field_delta(&mut fields, &mut extra_attributes, changes);
+    let result = service
+        .update_structured_entry(
+            space_id,
+            &entry_id,
+            current
+                .get("form")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            fields,
+            extra_attributes,
+            Some(&revision_id),
+            &author,
+        )
+        .await?;
+    let receipt = entry_receipt(
+        entry_id,
+        result
+            .get("revision_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        result
+            .get("change_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+    );
+    emit_mutation(
+        &receipt,
+        fmt,
+        Some(render_receipt(&receipt, &stdout_style())),
+    );
+    Ok(())
+}
+
+fn apply_entry_field_delta(
+    fields: &mut std::collections::BTreeMap<String, serde_json::Value>,
+    extra_attributes: &mut std::collections::BTreeMap<String, serde_json::Value>,
+    changes: std::collections::BTreeMap<String, Option<serde_json::Value>>,
+) {
+    for (key, value) in changes {
+        match value {
+            Some(value) => {
+                if fields.contains_key(&key) || !extra_attributes.contains_key(&key) {
+                    extra_attributes.remove(&key);
+                    fields.insert(key, value);
+                } else {
+                    extra_attributes.insert(key, value);
+                }
+            }
+            None => {
+                fields.remove(&key);
+                extra_attributes.remove(&key);
+            }
+        }
+    }
+}
+
 pub async fn run(
     cmd: EntryCmd,
     explicit_config: Option<&std::path::Path>,
@@ -585,6 +775,15 @@ pub async fn run(
                 author,
             )
             .await?;
+        }
+        EntrySubCmd::Patch {
+            entry_id,
+            fields,
+            remove_fields,
+            author,
+        } => {
+            let target = resolve_command_target(explicit_config, context_override, "entry patch")?;
+            patch_structured_entry(&target, &fmt, entry_id, fields, remove_fields, author).await?;
         }
         EntrySubCmd::Delete {
             entry_id,

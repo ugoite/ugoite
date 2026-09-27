@@ -601,6 +601,83 @@ fn test_cli_core_entry_update_parent_revision_matrix() {
     assert!(String::from_utf8_lossy(&stale.stderr).contains("REVISION_CONFLICT"));
 }
 
+#[test]
+fn test_cli_core_entry_patch_preserves_typed_unmodified_fields() {
+    let space = setup_parity_space(
+        r#"{"Status":{"type":"string"},"Count":{"type":"double"},"Body":{"type":"markdown"}}"#,
+    );
+    let entry_id = "patch-preserves-fields";
+    let created = run_cli(
+        &space.config_path,
+        &[
+            "entry",
+            "create",
+            "--id",
+            entry_id,
+            "--form",
+            space.form_name,
+            "--field",
+            "Status=active",
+            "--field",
+            "Count=42.5",
+            "--field",
+            "Body=before patch",
+        ],
+    );
+    assert!(
+        created.status.success(),
+        "entry create failed: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let before = stdout_json(
+        &run_cli(&space.config_path, &["entry", "get", entry_id]),
+        "entry get before patch",
+    );
+    let parent_revision = before["revision_id"].as_str().unwrap().to_owned();
+
+    let patched = run_cli(
+        &space.config_path,
+        &[
+            "entry",
+            "patch",
+            entry_id,
+            "--field",
+            "Body=after patch",
+            "--remove-field",
+            "Status",
+        ],
+    );
+    assert!(
+        patched.status.success(),
+        "entry patch failed: {}",
+        String::from_utf8_lossy(&patched.stderr)
+    );
+    let after = stdout_json(
+        &run_cli(&space.config_path, &["entry", "get", entry_id]),
+        "entry get after patch",
+    );
+    assert!(after["fields"].get("Status").is_none());
+    assert_eq!(after["fields"]["Body"], "after patch");
+    assert_eq!(after["fields"]["Count"], 42.5);
+
+    let history = stdout_json(
+        &run_cli(&space.config_path, &["entry", "history", entry_id]),
+        "entry history after patch",
+    );
+    let revision_id = revision_ids(&history)
+        .into_iter()
+        .find(|revision_id| revision_id != &parent_revision)
+        .expect("patch revision");
+    let revision = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &["entry", "revision", entry_id, &revision_id],
+        ),
+        "entry patch revision",
+    );
+    assert_eq!(revision["parent_revision_id"], parent_revision);
+}
+
 // --- Semantic parity corpus (surface=cli, transport=core/local) ---
 //
 // Each case asserts the same two things the remote corpus asserts: the
