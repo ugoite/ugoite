@@ -78,6 +78,35 @@ and the same Node secret.
 
 ## Verify recovery
 
+For a local core context, inspect the Space before and after copying it:
+
+```bash
+ugoite --context local space verify --deep --format json
+```
+
+`space verify` is read-only. It checks Space identity and version, the Catalog
+Head and publication chain, Form identities, Entry revision chains and
+integrity values, append-only audit links, and authorization state in a
+separate Node-owned section. `--deep` reads each referenced Asset and checks
+its SHA-256 against the Entry reference; without it, the verifier checks that
+the object exists and has the recorded size.
+
+The JSON report uses `schema_version: 1` and one of four statuses: `valid`,
+`valid_with_rebuildable_derived_state`, `invalid`, or `incomplete`. An
+incomplete report means required evidence could not be checked; it does not
+mean the Space is valid. Invalid and incomplete reports exit nonzero. Derived
+indexes remain disposable and the verifier never repairs them. Use
+`ugoite index run` separately when a derived index needs rebuilding.
+
+The top-level status and `valid` field describe portable Space Knowledge.
+Node-owned authorization state has its own `sections.authorization.status` and
+does not change the Space Knowledge result. The CLI exits nonzero if either
+Knowledge verification or the authorization section is invalid or incomplete.
+
+The verifier currently requires a local core context. It does not verify the
+Node control-store prefix or Node secret; keep those as separate recovery
+inputs as described above.
+
 A recovery is successful when the restored Space opens, its Forms and Entries
 read back, Asset references resolve, and a representative edit followed by
 history and restore produces a new append-only revision. Search indexes and SQL

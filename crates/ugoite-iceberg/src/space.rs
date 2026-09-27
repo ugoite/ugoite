@@ -1417,6 +1417,20 @@ pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Valu
     get_space_raw_with_storage(&storage, name).await
 }
 
+/// Reads Space metadata without bootstrap recovery, permission repair, or
+/// patch-lock side effects. Reserved for read-only operator inspection.
+pub(crate) async fn get_space_raw_read_only(
+    op: &Operator,
+    name: &str,
+) -> Result<serde_json::Value> {
+    validate_space_path_segment(name)?;
+    let path = format!("spaces/{name}/meta.json");
+    let bytes = crate::read_object_exact_optional(op, &path)
+        .await?
+        .ok_or_else(|| space_not_found(name))?;
+    serde_json::from_slice(&bytes).context("decode Space metadata")
+}
+
 async fn patch_space_with_operator(
     op: &Operator,
     space_id: &str,

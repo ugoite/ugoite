@@ -67,6 +67,18 @@ pub async fn list_forms(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
     Ok(forms)
 }
 
+/// Lists Forms through the non-repairing Catalog open path for the operator
+/// verifier. A missing namespace remains missing and is reported by the
+/// Catalog section instead of being created during inspection.
+pub(crate) async fn list_forms_read_only(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
+    let workspace = crate::iceberg_store::native_workspace_read_only(op, ws_path).await?;
+    let forms = workspace.list_forms().await?;
+    forms
+        .iter()
+        .map(|form| enrich_form_definition(&from_domain_form(form)))
+        .collect()
+}
+
 pub async fn list_column_types() -> Result<Vec<String>> {
     Ok(vec![
         "string".to_string(),

@@ -639,7 +639,7 @@ impl Authorizer {
         if state.space_uid != expected_space_uid {
             bail!("Space metadata and authorization state use different space_uid values");
         }
-        let metadata = crate::space::get_space_raw(&self.operator, space_id)
+        let metadata = crate::space::get_space_raw_read_only(&self.operator, space_id)
             .await
             .context("read Space metadata for authorization binding")?;
         let metadata_space_uid = metadata

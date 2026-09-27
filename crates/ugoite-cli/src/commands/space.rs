@@ -77,6 +77,12 @@ pub enum SpaceSubCmd {
         )]
         limit: u64,
     },
+    /// Verify Space metadata and stored evidence without repairing it
+    Verify {
+        /// Hash every referenced Asset and compare its SHA-256 value
+        #[arg(long)]
+        deep: bool,
+    },
 }
 
 fn validate_patch_settings(settings: &serde_json::Value) -> Result<()> {
@@ -633,6 +639,33 @@ pub async fn run(
                 }
             }
             print_json(&result);
+        }
+        SpaceSubCmd::Verify { deep } => {
+            let target = crate::cli_config::resolve_command_target(
+                explicit_config,
+                context_override,
+                "space verify",
+            )?;
+            let crate::cli_config::SpaceTarget::Core { root, space_id } = &target else {
+                bail!("space verify currently requires a local core context");
+            };
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let report =
+                ugoite_iceberg::verify::verify_space(service.operator(), space_id, deep).await?;
+            let status = report.status;
+            let authorization_status = report.sections.authorization.status;
+            print_json(&report);
+            if !report.valid
+                || !matches!(
+                    authorization_status,
+                    ugoite_iceberg::verify::VerifyStatus::Valid
+                        | ugoite_iceberg::verify::VerifyStatus::ValidWithRebuildableDerivedState
+                )
+            {
+                bail!(
+                    "Space verification did not complete successfully: Knowledge={status:?}, authorization={authorization_status:?}"
+                );
+            }
         }
     }
     Ok(())
