@@ -118,10 +118,15 @@ async fn form_upsert_receipt_tracks_create_evolve_noop_and_concurrent_writers() 
             "Body": {"type": "markdown"}
         }
     });
+    // Both writers have read Form version 2 and prepared different changes
+    // before either is allowed to create its deterministic publication.
+    let gate = form::TestFormEvolutionGate::new(created.form_id);
+    form::install_test_form_evolution_gate(gate);
     let (alpha, beta) = tokio::join!(
         form::upsert_form_result(&op, ws_path, &with_alpha),
         form::upsert_form_result(&op, ws_path, &with_beta),
     );
+    form::clear_test_form_evolution_gate();
     let alpha = alpha?;
     let beta = beta?;
     assert!(alpha.applied && beta.applied);
@@ -141,6 +146,19 @@ async fn form_upsert_receipt_tracks_create_evolve_noop_and_concurrent_writers() 
     assert!(
         final_form["fields"]["Subject"]["label"] == "Alpha"
             || final_form["fields"]["Subject"]["label"] == "Beta"
+    );
+    let latest_change_id = all_changes
+        .last()
+        .expect("the two evolutions were published")
+        .change_id
+        .as_str();
+    let final_label = final_form["fields"]["Subject"]["label"]
+        .as_str()
+        .expect("final Subject label");
+    assert!(
+        (latest_change_id == alpha_change && final_label == "Alpha")
+            || (latest_change_id == beta_change && final_label == "Beta"),
+        "the receipt for the last publication must belong to the writer whose value is in the final Form"
     );
     assert!(final_form["fields"]["Body"].is_object());
     assert_eq!(final_form["version"], 4);

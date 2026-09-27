@@ -3,6 +3,12 @@ use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+#[cfg(debug_assertions)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(debug_assertions)]
+use std::sync::{Arc, LazyLock, Mutex};
+#[cfg(debug_assertions)]
+use tokio::sync::Barrier;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::metadata;
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
@@ -15,6 +21,65 @@ use ugoite_domain::id::{FieldId, FormId};
 use uuid::Uuid;
 
 const EXTRA_ATTRIBUTES_POLICY_METADATA: &str = "ugoite.extra_attributes_policy";
+
+/// Debug-only rendezvous that makes two Form evolutions start publication
+/// from the same observed version. This is absent from release builds.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct TestFormEvolutionGate {
+    form_id: FormId,
+    arrivals: AtomicUsize,
+    barrier: Barrier,
+}
+
+#[cfg(debug_assertions)]
+impl TestFormEvolutionGate {
+    pub fn new(form_id: FormId) -> Arc<Self> {
+        Arc::new(Self {
+            form_id,
+            arrivals: AtomicUsize::new(0),
+            barrier: Barrier::new(2),
+        })
+    }
+
+    async fn pause_first_two(&self) {
+        if self.arrivals.fetch_add(1, Ordering::AcqRel) < 2 {
+            self.barrier.wait().await;
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+static TEST_FORM_EVOLUTION_GATE: LazyLock<Mutex<Option<Arc<TestFormEvolutionGate>>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn install_test_form_evolution_gate(gate: Arc<TestFormEvolutionGate>) {
+    *TEST_FORM_EVOLUTION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(gate);
+}
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn clear_test_form_evolution_gate() {
+    *TEST_FORM_EVOLUTION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+}
+
+#[cfg(debug_assertions)]
+async fn pause_first_two_form_evolutions(form_id: FormId) {
+    let gate = TEST_FORM_EVOLUTION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    if let Some(gate) = gate.filter(|gate| gate.form_id == form_id) {
+        gate.pause_first_two().await;
+    }
+}
 
 /// The exact persisted result of one Form upsert operation.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -208,6 +273,8 @@ async fn commit_form_evolution(
         "form.evolve",
         &changes,
     )?;
+    #[cfg(debug_assertions)]
+    pause_first_two_form_evolutions(current.id).await;
     crate::authorization::ensure_authorization_write_fence().await?;
     let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
     let result = workspace
