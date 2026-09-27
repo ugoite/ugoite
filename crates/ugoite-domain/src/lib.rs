@@ -2,6 +2,7 @@
 #![deny(clippy::all)]
 
 pub mod change;
+pub mod change_history;
 pub mod checkpoint;
 pub mod derived_relation;
 pub mod entry;
