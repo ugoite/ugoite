@@ -339,6 +339,26 @@ pub(crate) fn verify_revision_integrity(
     integrity: &dyn IntegrityProvider,
 ) -> Result<()> {
     let mut fields = row.fields.clone();
+    let mut extra_attributes = row.extra_attributes.clone();
+    if row.operation == "delete" {
+        let state = row
+            .state
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Saved SQL tombstone state is missing"))?;
+        if !state.deleted
+            || state.entry_id != row.entry_id
+            || state.revision_id != row.revision_id
+            || state.parent_revision_id != row.parent_revision_id
+            || state.integrity.checksum != row.integrity.checksum
+            || state.integrity.signature != row.integrity.signature
+            || !row.fields.as_object().is_some_and(Map::is_empty)
+            || !row.extra_attributes.as_object().is_some_and(Map::is_empty)
+        {
+            anyhow::bail!("Saved SQL tombstone state does not match its revision");
+        }
+        fields = state.fields.clone();
+        extra_attributes = state.extra_attributes.clone();
+    }
     if let Some(state) = &row.state {
         let mut state = state.clone();
         apply_sql_name_compat(&mut state);
@@ -363,14 +383,13 @@ pub(crate) fn verify_revision_integrity(
         .to_owned();
     let variables = normalize_sql_variables(fields.get("variables"))?;
     let kind: SqlKind = serde_json::from_value(
-        row.extra_attributes
+        extra_attributes
             .get("kind")
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("SQL kind is missing"))?,
     )
     .context("SQL kind is invalid")?;
-    let metadata = row
-        .extra_attributes
+    let metadata = extra_attributes
         .get("metadata")
         .cloned()
         .filter(|value| !value.is_null())
@@ -902,6 +921,43 @@ mod name_field_tests {
 
         verify_revision_integrity(&row, &provider).expect("valid Saved SQL integrity");
         row.fields["sql"] = Value::String("SELECT 200 AS recovery_check".into());
+        assert!(verify_revision_integrity(&row, &provider).is_err());
+
+        row.fields["sql"] = Value::String(payload.sql.clone());
+        let state = entry::EntryRow {
+            entry_id: row.entry_id.clone(),
+            legacy_saved_query_name: String::new(),
+            form: SQL_FORM_NAME.into(),
+            tags: Vec::new(),
+            created_at: row.timestamp,
+            updated_at: row.timestamp + 1.0,
+            fields: row.fields.clone(),
+            extra_attributes: row.extra_attributes.clone(),
+            revision_id: "revision-delete".into(),
+            parent_revision_id: Some(row.revision_id.clone()),
+            integrity: row.integrity.clone(),
+            deleted: true,
+            deleted_at: Some(row.timestamp + 1.0),
+            author: row.author.clone(),
+            updated_by: "test".into(),
+            deleted_by: Some("test".into()),
+            entry_version: 2,
+            legacy_columns: BTreeMap::new(),
+        };
+        row.revision_id = state.revision_id.clone();
+        row.parent_revision_id = state.parent_revision_id.clone();
+        row.fields = Value::Object(Map::new());
+        row.extra_attributes = Value::Object(Map::new());
+        row.operation = "delete".into();
+        row.updated_by = "test".into();
+        row.deleted_by = Some("test".into());
+        row.entry_version = 2;
+        row.state = Some(state);
+        verify_revision_integrity(&row, &provider)
+            .expect("valid Saved SQL tombstone uses its retained state");
+
+        row.state.as_mut().unwrap().fields["sql"] =
+            Value::String("SELECT 200 AS recovery_check".into());
         assert!(verify_revision_integrity(&row, &provider).is_err());
     }
 
