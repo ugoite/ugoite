@@ -1579,6 +1579,10 @@ mod tests {
     use std::{collections::BTreeMap, env, process::Command, sync::Mutex as StdMutex};
     use ugoite_storage::operator_from_uri;
 
+    fn test_node_secret() -> Arc<[u8]> {
+        Arc::from(uuid::Uuid::new_v4().as_bytes().to_vec())
+    }
+
     #[derive(Clone, Default)]
     struct MemoryCheckpointStore(Arc<StdMutex<BTreeMap<String, AuditCheckpointRecord>>>);
 
@@ -1642,7 +1646,7 @@ mod tests {
     async fn checkpointed_recovery_verifies_tail_and_refreshes_checkpoint() -> Result<()> {
         let op = operator_from_uri("memory://audit-checkpoint-tail")?;
         let store = MemoryCheckpointStore::default();
-        let config = AuditCheckpointConfig::new(Arc::new(store.clone()), Arc::from([0x42; 32]));
+        let config = AuditCheckpointConfig::new(Arc::new(store.clone()), test_node_secret());
         let space_uid = uuid::Uuid::now_v7().to_string();
         let first = json!({
             "event_id": uuid::Uuid::now_v7(),
@@ -1715,7 +1719,7 @@ mod tests {
     async fn invalid_checkpoint_falls_back_to_full_chain_verification() -> Result<()> {
         let op = operator_from_uri("memory://audit-checkpoint-corrupt")?;
         let store = MemoryCheckpointStore::default();
-        let config = AuditCheckpointConfig::new(Arc::new(store.clone()), Arc::from([0x24; 32]));
+        let config = AuditCheckpointConfig::new(Arc::new(store.clone()), test_node_secret());
         let space_uid = uuid::Uuid::now_v7().to_string();
         let event = json!({
             "event_id": uuid::Uuid::now_v7(),
@@ -1784,10 +1788,10 @@ mod tests {
         let op = operator_from_uri("memory://audit-checkpoint-new-node")?;
         let first_store = MemoryCheckpointStore::default();
         let first_config =
-            AuditCheckpointConfig::new(Arc::new(first_store.clone()), Arc::from([0x31; 32]));
+            AuditCheckpointConfig::new(Arc::new(first_store.clone()), test_node_secret());
         let new_node_store = MemoryCheckpointStore::default();
         let new_node_config =
-            AuditCheckpointConfig::new(Arc::new(new_node_store.clone()), Arc::from([0x32; 32]));
+            AuditCheckpointConfig::new(Arc::new(new_node_store.clone()), test_node_secret());
         let space_uid = uuid::Uuid::now_v7().to_string();
         let event = json!({
             "event_id": uuid::Uuid::now_v7(),
