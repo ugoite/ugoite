@@ -36,6 +36,18 @@ struct ChangeHistoryPageToken {
     query_hash: Option<String>,
 }
 
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct ChangeInspectPageToken {
+    version: u32,
+    space_id: String,
+    change_id: String,
+    publication: PublicationRef,
+    change: crate::ChangeDescriptor,
+    scope_fingerprint: String,
+    limit: usize,
+    offset: usize,
+}
+
 fn change_history_page_limit(requested: Option<usize>) -> Result<usize> {
     let limit = requested.unwrap_or(CHANGE_PAGE_DEFAULT_LIMIT);
     if !(1..=CHANGE_PAGE_MAX_LIMIT).contains(&limit) {
@@ -46,6 +58,29 @@ fn change_history_page_limit(requested: Option<usize>) -> Result<usize> {
         .into());
     }
     Ok(limit)
+}
+
+fn change_inspect_target_page(
+    targets: BTreeMap<(FormId, EntryId), ugoite_domain::change_history::ChangeAffectedEntry>,
+    offset: usize,
+    limit: usize,
+) -> Result<(
+    Vec<ugoite_domain::change_history::ChangeAffectedEntry>,
+    Option<usize>,
+)> {
+    if !(1..=CHANGE_INSPECT_DEFAULT_TARGET_LIMIT).contains(&limit) {
+        bail!("Change inspection target page limit is invalid");
+    }
+    if offset > targets.len() {
+        bail!("Change inspection cursor is beyond the end of the target list");
+    }
+    let target_count = targets.len();
+    let next_offset = offset.saturating_add(limit);
+    let next_offset = (target_count > next_offset).then_some(next_offset);
+    Ok((
+        targets.into_values().skip(offset).take(limit).collect(),
+        next_offset,
+    ))
 }
 
 fn canonical_entry_id(requested_id: Option<&str>) -> String {
@@ -800,6 +835,101 @@ impl UgoiteService {
             bail!("Change history cursor belongs to another Space");
         }
         Ok(token)
+    }
+
+    fn encode_change_inspect_cursor(
+        token: &ChangeInspectPageToken,
+        signing_key: &[u8],
+    ) -> Result<String> {
+        let payload = serde_json::to_vec(token)?;
+        let mut mac = HmacSha256::new_from_slice(signing_key)
+            .map_err(|_| anyhow!("invalid Change inspection cursor signing key"))?;
+        mac.update(&payload);
+        Ok(format!(
+            "v1.{}.{}",
+            URL_SAFE_NO_PAD.encode(payload),
+            URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+        ))
+    }
+
+    fn decode_change_inspect_cursor(
+        encoded: &str,
+        expected_space_id: &str,
+        expected_change_id: &str,
+        expected_limit: usize,
+        signing_key: &[u8],
+    ) -> Result<ChangeInspectPageToken> {
+        if encoded.len() > 16_384 {
+            bail!("Change inspection cursor is too large");
+        }
+        let mut parts = encoded.split('.');
+        if parts.next() != Some("v1") {
+            bail!("Change inspection cursor version is unsupported");
+        }
+        let payload = URL_SAFE_NO_PAD
+            .decode(
+                parts
+                    .next()
+                    .context("Change inspection cursor is malformed")?,
+            )
+            .context("Change inspection cursor payload is malformed")?;
+        let signature = URL_SAFE_NO_PAD
+            .decode(
+                parts
+                    .next()
+                    .context("Change inspection cursor is malformed")?,
+            )
+            .context("Change inspection cursor signature is malformed")?;
+        if parts.next().is_some() {
+            bail!("Change inspection cursor is malformed");
+        }
+        let mut mac = HmacSha256::new_from_slice(signing_key)
+            .map_err(|_| anyhow!("invalid Change inspection cursor signing key"))?;
+        mac.update(&payload);
+        mac.verify_slice(&signature)
+            .map_err(|_| anyhow!("Change inspection cursor signature is invalid"))?;
+        let token: ChangeInspectPageToken = serde_json::from_slice(&payload)
+            .context("Change inspection cursor payload is invalid")?;
+        if token.version != 1 {
+            bail!("Change inspection cursor version is unsupported");
+        }
+        if token.space_id != expected_space_id {
+            bail!("Change inspection cursor belongs to another Space");
+        }
+        if token.change_id != expected_change_id {
+            bail!("Change inspection cursor belongs to another Change");
+        }
+        if token.limit != expected_limit {
+            bail!("Change inspection cursor does not match the requested target limit");
+        }
+        Ok(token)
+    }
+
+    fn change_inspect_scope_fingerprint(scopes: &BTreeMap<String, EntryScope>) -> String {
+        let mut digest = Sha256::new();
+        digest.update(b"ugoite-change-inspect-scope-v1\0");
+        for (form_name, scope) in scopes {
+            digest.update((form_name.len() as u64).to_be_bytes());
+            digest.update(form_name.as_bytes());
+            match scope {
+                EntryScope::AllCurrent => digest.update([0]),
+                EntryScope::Only(entry_ids) => {
+                    digest.update([1]);
+                    digest.update((entry_ids.len() as u64).to_be_bytes());
+                    for entry_id in entry_ids {
+                        digest.update(entry_id.as_uuid().as_bytes());
+                    }
+                }
+                EntryScope::AllExcept(entry_ids) => {
+                    digest.update([2]);
+                    digest.update((entry_ids.len() as u64).to_be_bytes());
+                    for entry_id in entry_ids {
+                        digest.update(entry_id.as_uuid().as_bytes());
+                    }
+                }
+            }
+        }
+        URL_SAFE_NO_PAD.encode(digest.finalize())
     }
 
     async fn validate_complete_space(&self, space_id: &str) -> Result<()> {
@@ -2412,6 +2542,7 @@ impl UgoiteService {
         space_id: &str,
         change_id: &str,
         requested_target_limit: Option<usize>,
+        cursor: Option<&str>,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
         require_nonempty_authorized_principals(principal_ids)?;
@@ -2429,6 +2560,31 @@ impl UgoiteService {
             )
             .into());
         }
+        let signing_key = self.sql_query_signing_key(space_id).await?;
+        let cursor_token = cursor
+            .map(|cursor| {
+                Self::decode_change_inspect_cursor(
+                    cursor,
+                    space_id,
+                    change_id,
+                    target_limit,
+                    &signing_key,
+                )
+                .map_err(|error| {
+                    AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
+                })
+            })
+            .transpose()?;
+        if cursor_token
+            .as_ref()
+            .is_some_and(|token| token.offset > crate::MAX_NORMAL_READ_ROWS)
+        {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "Change inspection cursor offset is outside the supported read window",
+            )
+            .into());
+        }
 
         let authorizer = Authorizer::new(self.operator.clone());
         authorizer
@@ -2436,41 +2592,76 @@ impl UgoiteService {
                 let scopes = self
                     .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
                     .await?;
+                let scope_fingerprint = Self::change_inspect_scope_fingerprint(&scopes);
+                if cursor_token
+                    .as_ref()
+                    .is_some_and(|token| token.scope_fingerprint != scope_fingerprint)
+                {
+                    return Err(AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "Change inspection cursor does not match the current read scope",
+                    )
+                    .into());
+                }
                 let workspace =
                     iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
                         .await?;
-                let mut cursor = None;
-                let mut scanned_publications = 0usize;
-                let published_change = loop {
-                    let remaining =
-                        CHANGE_INSPECT_MAX_PUBLICATIONS.saturating_sub(scanned_publications);
-                    if remaining == 0 {
-                        return Err(AppError::invalid_input(
-                            ErrorCode::InvalidInput,
-                            "Change is outside the supported inspection window",
-                        )
-                        .into());
+                let published_change = if let Some(token) = &cursor_token {
+                    // The signed cursor carries the immutable Change metadata
+                    // found on the first page. Avoid searching from the moving
+                    // Head again: unrelated later publications must not push
+                    // this Change out of the bounded lookup window.
+                    crate::PublishedChange {
+                        change_id: token.change_id.clone(),
+                        generation: token.publication.generation,
+                        change: token.change.clone(),
+                        publication: token.publication.clone(),
                     }
-                    let page_limit = remaining.min(CHANGE_PAGE_MAX_LIMIT);
-                    let page = workspace.list_changes_page(cursor, page_limit).await?;
-                    scanned_publications += page_limit;
-                    if let Some(found) = page
-                        .changes
-                        .into_iter()
-                        .find(|published| published.change_id == change_id)
-                    {
-                        break found;
-                    }
-                    cursor = page.next;
-                    if cursor.is_none() {
-                        return Err(AppError::not_found(
-                            ErrorCode::EntryNotFound,
-                            format!("Change not found: {change_id}"),
-                        )
-                        .into());
+                } else {
+                    let mut cursor = None;
+                    let mut scanned_publications = 0usize;
+                    loop {
+                        let remaining =
+                            CHANGE_INSPECT_MAX_PUBLICATIONS.saturating_sub(scanned_publications);
+                        if remaining == 0 {
+                            return Err(AppError::invalid_input(
+                                ErrorCode::InvalidInput,
+                                "Change is outside the supported inspection window",
+                            )
+                            .into());
+                        }
+                        let page_limit = remaining.min(CHANGE_PAGE_MAX_LIMIT);
+                        let page = workspace.list_changes_page(cursor, page_limit).await?;
+                        scanned_publications += page_limit;
+                        if let Some(found) = page
+                            .changes
+                            .into_iter()
+                            .find(|published| published.change_id == change_id)
+                        {
+                            break found;
+                        }
+                        cursor = page.next;
+                        if cursor.is_none() {
+                            return Err(AppError::not_found(
+                                ErrorCode::EntryNotFound,
+                                format!("Change not found: {change_id}"),
+                            )
+                            .into());
+                        }
                     }
                 };
-                let publication = workspace.current_publication().await?;
+                let publication = published_change.publication.clone();
+                if cursor_token
+                    .as_ref()
+                    .is_some_and(|token| token.publication != publication)
+                {
+                    return Err(AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "Change inspection cursor does not match the committed publication",
+                    )
+                    .into());
+                }
+                let offset = cursor_token.as_ref().map_or(0, |token| token.offset);
                 let forms = workspace.forms_at_publication(&publication).await?;
                 let mut complete_visibility = true;
                 let mut revision_rows = 0usize;
@@ -2566,6 +2757,27 @@ impl UgoiteService {
                 } else {
                     None
                 };
+                let (target_page, next_offset) =
+                    change_inspect_target_page(targets, offset, target_limit).map_err(|error| {
+                        AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
+                    })?;
+                let next_cursor = if let Some(next_offset) = next_offset {
+                    Some(Self::encode_change_inspect_cursor(
+                        &ChangeInspectPageToken {
+                            version: 1,
+                            space_id: space_id.to_string(),
+                            change_id: change_id.to_string(),
+                            publication: publication.clone(),
+                            change: published_change.change.clone(),
+                            scope_fingerprint,
+                            limit: target_limit,
+                            offset: next_offset,
+                        },
+                        &signing_key,
+                    )?)
+                } else {
+                    None
+                };
                 let inspection = ChangeInspection {
                     change_id: published_change.change_id,
                     change: published_change.change,
@@ -2575,7 +2787,8 @@ impl UgoiteService {
                         ChangeTargetVisibility::Partial
                     },
                     summary,
-                    targets: targets.into_values().take(target_limit).collect(),
+                    targets: target_page,
+                    next_cursor,
                 };
                 Ok(serde_json::to_value(inspection)?)
             })
@@ -6546,9 +6759,316 @@ mod tests {
     use super::*;
     use crate::{IcebergWorkspace, PublicationContext, WriteConfig};
     use ugoite_domain::identity::{
-        Membership, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
+        AccessPolicy, Membership, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
     };
     use ugoite_storage::SpaceCatalogStore;
+
+    #[test]
+    fn change_inspect_target_pages_are_stable_and_gap_free() -> Result<()> {
+        let form_id = FormId::from_uuid(Uuid::from_u128(900));
+        let targets = (1..=11)
+            .map(|index| {
+                let entry_id = EntryId::from_uuid(Uuid::from_u128(1000 + index));
+                (
+                    (form_id, entry_id),
+                    ugoite_domain::change_history::ChangeAffectedEntry {
+                        form_id,
+                        entry_id,
+                        before_revision_id: None,
+                        after_revision_id: ugoite_domain::id::RevisionId::from_uuid(
+                            Uuid::from_u128(2000 + index),
+                        ),
+                        operation: ugoite_domain::entry::EntryOperation::Upsert,
+                        fields: Vec::new(),
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+
+        let (first, next_offset) = change_inspect_target_page(targets.clone(), 0, 4)?;
+        assert_eq!(next_offset, Some(4));
+        let (second, next_offset) =
+            change_inspect_target_page(targets.clone(), next_offset.unwrap(), 4)?;
+        assert_eq!(next_offset, Some(8));
+        let (third, next_offset) =
+            change_inspect_target_page(targets.clone(), next_offset.unwrap(), 4)?;
+        assert_eq!(next_offset, None);
+
+        let paged_ids = first
+            .into_iter()
+            .chain(second)
+            .chain(third)
+            .map(|target| target.entry_id)
+            .collect::<Vec<_>>();
+        let expected_ids = targets
+            .keys()
+            .map(|(_, entry_id)| *entry_id)
+            .collect::<Vec<_>>();
+        assert_eq!(paged_ids, expected_ids);
+        assert_eq!(paged_ids.iter().copied().collect::<BTreeSet<_>>().len(), 11);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn change_inspect_cursor_rejects_a_changed_read_scope() -> Result<()> {
+        let service =
+            UgoiteService::new(format!("memory://change-inspect-cursor-{}", Uuid::now_v7()))?;
+        let principal_id = Uuid::now_v7();
+        let viewer_id = Uuid::now_v7();
+        let space_id = service
+            .create_space_for_principal("change-inspect-cursor", principal_id, "Owner")
+            .await?
+            .to_string();
+        Authorizer::new(service.operator.clone())
+            .add_human_member(
+                &space_id,
+                principal_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "History viewer".into(),
+                    state: PrincipalState::Active,
+                    created_at: Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let entry_id = Uuid::now_v7().to_string();
+        let created = service
+            .create_structured_entry_authorized_for_principals(
+                &space_id,
+                &entry_id,
+                "Entry".into(),
+                Vec::new(),
+                BTreeMap::from([("Body".into(), json!("body"))]),
+                BTreeMap::new(),
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let change_id = created["change_id"].as_str().unwrap().to_owned();
+        let workspace =
+            iceberg_store::native_workspace(&service.operator, &service.workspace_path(&space_id))
+                .await?;
+        let published_change = workspace
+            .list_changes()
+            .await?
+            .into_iter()
+            .find(|change| change.change_id == change_id)
+            .expect("created Change is published");
+        let scopes = service
+            .authorized_form_entry_scopes_for_principals(&space_id, &[viewer_id])
+            .await?;
+        let signing_key = service.sql_query_signing_key(&space_id).await?;
+        let cursor = UgoiteService::encode_change_inspect_cursor(
+            &ChangeInspectPageToken {
+                version: 1,
+                space_id: space_id.clone(),
+                change_id: change_id.clone(),
+                publication: published_change.publication.clone(),
+                change: published_change.change.clone(),
+                scope_fingerprint: UgoiteService::change_inspect_scope_fingerprint(&scopes),
+                limit: 10,
+                offset: 0,
+            },
+            &signing_key,
+        )?;
+        assert!(UgoiteService::decode_change_inspect_cursor(
+            &cursor,
+            "another-space",
+            &change_id,
+            10,
+            &signing_key,
+        )
+        .is_err());
+        assert!(UgoiteService::decode_change_inspect_cursor(
+            &cursor,
+            &space_id,
+            "another-change",
+            10,
+            &signing_key,
+        )
+        .is_err());
+        assert!(UgoiteService::decode_change_inspect_cursor(
+            &format!("{cursor}x"),
+            &space_id,
+            &change_id,
+            10,
+            &signing_key,
+        )
+        .is_err());
+        assert!(UgoiteService::decode_change_inspect_cursor(
+            &cursor,
+            &space_id,
+            &change_id,
+            5,
+            &signing_key,
+        )
+        .is_err());
+        let first_page = service
+            .inspect_change_authorized_for_principals(
+                &space_id,
+                &change_id,
+                Some(10),
+                Some(&cursor),
+                &[viewer_id],
+            )
+            .await?;
+        assert_eq!(first_page["targets"].as_array().map(Vec::len), Some(1));
+
+        Authorizer::new(service.operator.clone())
+            .set_policy(
+                &space_id,
+                principal_id,
+                &ResourceRef {
+                    kind: ResourceKind::Entry,
+                    id: entry_id,
+                    parent: None,
+                },
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
+        let error = service
+            .inspect_change_authorized_for_principals(
+                &space_id,
+                &change_id,
+                Some(10),
+                Some(&cursor),
+                &[viewer_id],
+            )
+            .await
+            .expect_err("cursor from an old read scope must be rejected");
+        assert_eq!(
+            error
+                .downcast_ref::<AppError>()
+                .expect("typed invalid cursor")
+                .code(),
+            ErrorCode::InvalidInput
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn change_inspect_traverses_a_multi_entry_change_without_gaps() -> Result<()> {
+        let service =
+            UgoiteService::new(format!("memory://change-inspect-pages-{}", Uuid::now_v7()))?;
+        let principal_id = Uuid::now_v7();
+        let space_id = service
+            .create_space_for_principal("change-inspect-pages", principal_id, "Owner")
+            .await?
+            .to_string();
+        service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let form_version = service.get_form(&space_id, "Entry").await?["version"]
+            .as_u64()
+            .expect("Form version is numeric") as u32;
+        let change_id = Uuid::now_v7().to_string();
+        let rows = (1..=11)
+            .map(|index| crate::entry::RevisionRow {
+                revision_id: Uuid::now_v7().to_string(),
+                change_id: change_id.clone(),
+                entry_id: Uuid::from_u128(10_000 + index).to_string(),
+                parent_revision_id: None,
+                timestamp: Utc::now().timestamp_micros() as f64 / 1_000_000.0,
+                author: principal_id.to_string(),
+                updated_by: principal_id.to_string(),
+                deleted_by: None,
+                fields: json!({"Body": format!("target-{index}")}),
+                extra_attributes: json!({}),
+                markdown_checksum: String::new(),
+                integrity: crate::entry::IntegrityPayload::default(),
+                restored_from: None,
+                form_version,
+                state: None,
+                entry_version: 1,
+                operation: "upsert".into(),
+                source_kind: "api".into(),
+                source_id: None,
+                extension_metadata: json!({}),
+            })
+            .collect::<Vec<_>>();
+        let expected_ids = rows
+            .iter()
+            .map(|row| row.entry_id.clone())
+            .collect::<BTreeSet<_>>();
+        crate::entry::append_revision_batch_for_form(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "Entry",
+            &rows,
+        )
+        .await?;
+
+        let first = service
+            .inspect_change_authorized_for_principals(
+                &space_id,
+                &change_id,
+                Some(10),
+                None,
+                &[principal_id],
+            )
+            .await?;
+        assert_eq!(first["summary"]["affected_entry_count"], 11);
+        assert_eq!(first["targets"].as_array().map(Vec::len), Some(10));
+        let cursor = first["next_cursor"]
+            .as_str()
+            .expect("first page has a continuation cursor");
+        service
+            .create_structured_entry_authorized_for_principals(
+                &space_id,
+                &Uuid::now_v7().to_string(),
+                "Entry".into(),
+                Vec::new(),
+                BTreeMap::from([("Body".into(), json!("unrelated later Change"))]),
+                BTreeMap::new(),
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let second = service
+            .inspect_change_authorized_for_principals(
+                &space_id,
+                &change_id,
+                Some(10),
+                Some(cursor),
+                &[principal_id],
+            )
+            .await?;
+        assert_eq!(second["summary"]["affected_entry_count"], 11);
+        assert_eq!(second["targets"].as_array().map(Vec::len), Some(1));
+        assert!(second.get("next_cursor").is_none());
+        let returned_ids = first["targets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(second["targets"].as_array().unwrap())
+            .map(|target| target["entry_id"].as_str().unwrap().to_string())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(returned_ids, expected_ids);
+        Ok(())
+    }
 
     #[tokio::test]
     async fn onboarding_rejects_pending_slug_claims_omitted_from_discovery() -> Result<()> {

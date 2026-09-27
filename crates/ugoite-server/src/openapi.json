@@ -4491,11 +4491,18 @@
             "in": "query",
             "required": false,
             "schema": { "type": "integer", "minimum": 1, "maximum": 10, "default": 10 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 16384 },
+            "description": "Opaque continuation cursor bound to the Space, Change, committed publication, page limit, and current read scope. Authorization is re-evaluated for each page."
           }
         ],
         "responses": {
           "200": {
-            "description": "Committed Change descriptor, complete summary only when current read scopes cover every target, and at most ten authorized target diffs.",
+            "description": "Committed Change descriptor, complete summary only when current read scopes cover every target, at most ten authorized target diffs, and an optional cursor for the next page.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/JsonValue" }

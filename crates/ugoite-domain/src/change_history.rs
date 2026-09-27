@@ -72,6 +72,9 @@ pub struct ChangeInspection {
     pub summary: Option<ChangeHistorySummary>,
     /// At most ten authorized targets, ordered by stable identity.
     pub targets: Vec<ChangeAffectedEntry>,
+    /// Opaque cursor for the next authorized target page, when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 /// Build a stable-ID diff for one committed Entry revision and its parent.
