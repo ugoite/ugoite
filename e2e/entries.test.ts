@@ -1115,24 +1115,26 @@ test.describe("Entries CRUD", () => {
 		if (!targetChangeId) throw new Error("Entry creation did not append a Change");
 
 		await page.goto(`/spaces/${spaceId}/history`);
-		await expect(page.locator(".historyTable")).toBeVisible();
-		const targetRow = page.locator(".historyTable tbody tr").filter({
-			hasText: targetChangeId,
+		const targetRow = page.locator(".history-change-table tbody tr").filter({
+			hasText: `History revert dialog`,
 		});
-		await targetRow.getByRole("button", { name: "Revert this change" })
-			.click();
-		const dialog = page.getByRole("dialog");
-		await expect(dialog).toBeVisible();
+		await expect(targetRow).toBeVisible();
+		await targetRow.getByRole("button", { name: "Open change" }).click();
+		const detail = page.getByRole("dialog");
+		await expect(detail).toBeVisible();
+		await detail.getByRole("button", { name: "Revert this change" }).click();
+		const confirmation = page.getByRole("dialog", { name: "Revert this change" });
+		await expect(confirmation).toBeVisible();
 
 		const revertResponsePromise = page.waitForResponse((response) =>
 			response.request().method() === "POST" &&
 			response.url().includes(`/changes/${targetChangeId}/revert`)
 		);
-		await dialog.getByRole("button", { name: "Append new Change" }).click();
+		await confirmation.getByRole("button", { name: "Append new Change" }).click();
 		const revertResponse = await revertResponsePromise;
 		expect(revertResponse.ok()).toBe(true);
 		const reverted = (await revertResponse.json()) as { change_id: string };
-		await expect(dialog).toHaveCount(0);
+		await expect(page.getByRole("dialog")).toHaveCount(0);
 		await expect(page.getByText(`Reverted as Change ${reverted.change_id}.`))
 			.toBeVisible();
 
