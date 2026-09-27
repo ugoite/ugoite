@@ -1142,8 +1142,9 @@ fn test_entry_patch_remote_conflict_is_not_reported_as_success() {
 
     assert!(!output.status.success());
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("409")
-            || String::from_utf8_lossy(&output.stderr).contains("REVISION_CONFLICT"),
+        String::from_utf8_lossy(&output.stderr)
+            .to_ascii_lowercase()
+            .contains("conflict"),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
