@@ -4305,6 +4305,68 @@
         }
       }
     },
+    "/spaces/{space_id}/changes/page": {
+      "get": {
+        "summary": "Read a bounded page of committed Knowledge Changes",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 16384
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to limit committed Changes in newest-first publication order. Follow next_cursor even when changes is empty.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid limit or continuation cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/spaces/{space_id}/changes/{change_id}/revert": {
       "post": {
         "summary": "Append a selective inverse for a committed Change",

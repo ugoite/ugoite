@@ -134,6 +134,7 @@ export const OPENAPI_PATHS = [
   "/spaces/{space_id}/assets/{asset_id}",
   "/spaces/{space_id}/audit",
   "/spaces/{space_id}/changes",
+  "/spaces/{space_id}/changes/page",
   "/spaces/{space_id}/changes/{change_id}/revert",
   "/spaces/{space_id}/entries",
   "/spaces/{space_id}/entries/query",

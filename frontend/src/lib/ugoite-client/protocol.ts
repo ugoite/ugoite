@@ -23,6 +23,7 @@ export const UGOITE_API_OPERATIONS = [
   "space.audit",
   "space.health",
   "change.list",
+  "change.page",
   "change.revert",
   "run.undo",
   "ugoite.apply",

@@ -220,6 +220,22 @@ pub struct PublishedChange {
     pub publication: PublicationRef,
 }
 
+/// Opaque chain position used by the Change history pager. The service signs
+/// this value before returning it to a caller.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ChangeHistoryChainCursor {
+    pub boundary: PublicationRef,
+    pub generation: u64,
+    pub publication_path: String,
+    pub expected_next_head_checksum: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PublishedChangePage {
+    pub changes: Vec<PublishedChange>,
+    pub next: Option<ChangeHistoryChainCursor>,
+}
+
 impl std::fmt::Debug for SpaceCatalog {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -476,6 +492,190 @@ impl SpaceCatalog {
         }
         changes.reverse();
         Ok(changes)
+    }
+
+    /// Scans at most `publication_budget` records from the immutable chain,
+    /// plus one predecessor record to verify the continuation link. A cursor
+    /// resumes from that predecessor and stays pinned to the first page's
+    /// publication boundary.
+    pub async fn list_changes_page(
+        &self,
+        cursor: Option<ChangeHistoryChainCursor>,
+        publication_budget: usize,
+    ) -> Result<PublishedChangePage> {
+        if publication_budget == 0 {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "page size must be positive",
+            ));
+        }
+        let (boundary, mut path, mut generation, mut expected_checksum, mut head, mut prefetched) =
+            if let Some(cursor) = cursor {
+                cursor
+                    .boundary
+                    .validate()
+                    .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
+                if cursor.boundary.publication_uri.space_uid() != self.logical_space_uid {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Change cursor belongs to another Space",
+                    ));
+                }
+                let path = cursor.publication_path;
+                let prefix = self.store.publication_path(0, "");
+                let prefix = prefix
+                    .rsplit_once('/')
+                    .map(|(prefix, _)| prefix)
+                    .unwrap_or("");
+                if !path.starts_with(&format!("{prefix}/"))
+                    || path[prefix.len() + 1..].contains('/')
+                    || cursor.generation >= cursor.boundary.generation
+                    || cursor.expected_next_head_checksum.len() != 64
+                    || !cursor
+                        .expected_next_head_checksum
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+                {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Change cursor position is invalid",
+                    ));
+                }
+                (
+                    cursor.boundary,
+                    path,
+                    cursor.generation,
+                    cursor.expected_next_head_checksum,
+                    None,
+                    None,
+                )
+            } else {
+                let (head, _) = self
+                    .exact_head()
+                    .await?
+                    .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
+                let path = head.publication_location.clone().ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::DataInvalid,
+                        "Catalog Head has no publication location",
+                    )
+                })?;
+                let publication = decode_publication(
+                    &self
+                        .store
+                        .read_publication(&path)
+                        .await
+                        .map_err(storage_error)?,
+                )?;
+                validate_publication_matches_head(&publication, &head)?;
+                let boundary = self.publication_ref_for_record(&path, &publication)?;
+                let generation = head.generation;
+                let expected_checksum = head.checksum.clone();
+                let prefetched_path = path.clone();
+                (
+                    boundary,
+                    path,
+                    generation,
+                    expected_checksum,
+                    Some(head),
+                    Some((prefetched_path, publication)),
+                )
+            };
+
+        let mut changes = Vec::new();
+        let mut next = None;
+        for _ in 0..publication_budget {
+            let publication = match prefetched.take() {
+                Some((prefetched_path, publication)) if prefetched_path == path => publication,
+                Some(_) => {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Catalog Change cursor prefetch does not match its position",
+                    ));
+                }
+                None => decode_publication(
+                    &self
+                        .store
+                        .read_publication(&path)
+                        .await
+                        .map_err(storage_error)?,
+                )?,
+            };
+            if publication.generation != generation
+                || publication.next_head_checksum != expected_checksum
+            {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Change cursor does not match its publication",
+                ));
+            }
+            if let Some(head) = head.take() {
+                validate_publication_matches_head(&publication, &head)?;
+            }
+            let publication_ref = self.publication_ref_for_record(&path, &publication)?;
+            if generation > boundary.generation {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Change cursor is beyond its history boundary",
+                ));
+            }
+            if let Some(change) = publication.change.clone() {
+                changes.push(PublishedChange {
+                    change_id: publication.command_id.clone(),
+                    generation,
+                    change,
+                    publication: publication_ref,
+                });
+            }
+            next = None;
+            let (previous_generation, previous_path, previous_checksum) = match (
+                publication.previous_generation,
+                publication.previous_publication,
+                publication.previous_head_checksum,
+            ) {
+                (None, None, None) if generation == 0 => break,
+                (Some(previous_generation), Some(previous_path), Some(previous_checksum))
+                    if previous_generation.checked_add(1) == Some(generation) =>
+                {
+                    (previous_generation, previous_path, previous_checksum)
+                }
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Catalog publication chain is incomplete or corrupt",
+                    ));
+                }
+            };
+            let previous = decode_publication(
+                &self
+                    .store
+                    .read_publication(&previous_path)
+                    .await
+                    .map_err(storage_error)?,
+            )?;
+            if previous.generation != previous_generation
+                || previous.next_head_checksum != previous_checksum
+            {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog publication predecessor is corrupt",
+                ));
+            }
+            self.publication_ref_for_record(&previous_path, &previous)?;
+            if previous_generation > 0 || previous.change.is_some() {
+                next = Some(ChangeHistoryChainCursor {
+                    boundary: boundary.clone(),
+                    generation: previous_generation,
+                    publication_path: previous_path.clone(),
+                    expected_next_head_checksum: previous_checksum.clone(),
+                });
+            }
+            path = previous_path;
+            generation = previous_generation;
+            expected_checksum = previous_checksum;
+            prefetched = Some((path.clone(), previous));
+        }
+        Ok(PublishedChangePage { changes, next })
     }
 
     fn publication_uri(&self, publication_path: &str) -> Result<SpaceUri> {

@@ -33,7 +33,9 @@ pub mod verify;
 
 pub use health::SpaceHealthReport;
 use space_catalog::SpaceCatalog;
-pub use space_catalog::{PublicationContext, PublishedChange};
+pub use space_catalog::{
+    ChangeHistoryChainCursor, PublicationContext, PublishedChange, PublishedChangePage,
+};
 pub use ugoite_domain::checkpoint::{
     CheckpointChange, CheckpointChangeKind, CheckpointDiff, CheckpointTable, SpaceCheckpoint,
 };
@@ -474,6 +476,19 @@ impl IcebergWorkspace {
             .as_ref()
             .context("Change history requires the OpenDAL-backed SpaceCatalog")?
             .list_changes()
+            .await
+            .map_err(|error| anyhow!(error.to_string()))
+    }
+
+    pub async fn list_changes_page(
+        &self,
+        cursor: Option<ChangeHistoryChainCursor>,
+        publication_budget: usize,
+    ) -> Result<PublishedChangePage> {
+        self.space_catalog
+            .as_ref()
+            .context("Change history requires the OpenDAL-backed SpaceCatalog")?
+            .list_changes_page(cursor, publication_budget)
             .await
             .map_err(|error| anyhow!(error.to_string()))
     }
