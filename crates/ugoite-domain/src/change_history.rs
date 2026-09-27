@@ -52,6 +52,28 @@ pub struct ChangeAffectedEntry {
     pub fields: Vec<FieldChangeEvidence>,
 }
 
+/// Whether an inspection can claim a Change-wide target summary under the
+/// caller's current read scopes.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChangeTargetVisibility {
+    Complete,
+    Partial,
+}
+
+/// A bounded inspection of one committed Change and its affected Entries.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChangeInspection {
+    pub change_id: String,
+    pub change: ChangeDescriptor,
+    pub target_visibility: ChangeTargetVisibility,
+    /// Omitted when current authorization cannot establish complete visibility.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<ChangeHistorySummary>,
+    /// At most ten authorized targets, ordered by stable identity.
+    pub targets: Vec<ChangeAffectedEntry>,
+}
+
 /// Build a stable-ID diff for one committed Entry revision and its parent.
 /// Fields outside a revision's Form version are unavailable; fields in that
 /// version without a stored value are missing. A deleted Entry has no visible

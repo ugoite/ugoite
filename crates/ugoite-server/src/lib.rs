@@ -1618,6 +1618,10 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route("/spaces/{space_id}/changes/page", get(page_changes))
         .route("/spaces/{space_id}/changes/query", get(query_changes))
         .route(
+            "/spaces/{space_id}/changes/{change_id}/inspect",
+            get(inspect_change),
+        )
+        .route(
             "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}",
             get(change_affected_entry),
         )
@@ -9849,6 +9853,34 @@ async fn change_affected_entry(
 }
 
 #[derive(Default, Deserialize)]
+struct ChangeInspectQuery {
+    limit: Option<usize>,
+}
+
+async fn inspect_change(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, change_id)): Path<(String, String)>,
+    Query(query): Query<ChangeInspectQuery>,
+) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    Ok(Json(
+        state
+            .service
+            .inspect_change_authorized_for_principals(
+                &space_id,
+                &change_id,
+                query.limit,
+                &principals,
+            )
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+#[derive(Default, Deserialize)]
 struct ChangeRevertRequest {
     run_id: Option<String>,
     message: Option<String>,
@@ -13006,6 +13038,10 @@ mod authentication_regression_tests {
             .route("/spaces/{space_id}/changes/page", get(page_changes))
             .route("/spaces/{space_id}/changes/query", get(query_changes))
             .route(
+                "/spaces/{space_id}/changes/{change_id}/inspect",
+                get(inspect_change),
+            )
+            .route(
                 "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}",
                 get(change_affected_entry),
             )
@@ -13181,6 +13217,10 @@ mod authentication_regression_tests {
             .route("/spaces/{space_id}/changes/page", get(page_changes))
             .route("/spaces/{space_id}/changes/query", get(query_changes))
             .route(
+                "/spaces/{space_id}/changes/{change_id}/inspect",
+                get(inspect_change),
+            )
+            .route(
                 "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}",
                 get(change_affected_entry),
             )
@@ -13259,6 +13299,24 @@ mod authentication_regression_tests {
         assert_eq!(query_page["changes"].as_array().map(Vec::len), Some(0));
         assert!(query_page["next_cursor"].as_str().is_some());
 
+        let inspect_response = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/{target_change_id}/inspect?limit=10"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(inspect_response.status(), StatusCode::OK);
+        let inspect_body = axum::body::to_bytes(inspect_response.into_body(), usize::MAX).await?;
+        let inspected: Value = serde_json::from_slice(&inspect_body)?;
+        assert_eq!(inspected["change_id"], target_change_id);
+        assert_eq!(inspected["target_visibility"], "complete");
+        assert_eq!(inspected["summary"]["affected_entry_count"], 1);
+        assert_eq!(inspected["targets"].as_array().map(Vec::len), Some(1));
+        assert_eq!(inspected["targets"][0]["entry_id"], entry_id);
+
         let affected_response = route
             .clone()
             .oneshot(
@@ -13327,12 +13385,17 @@ mod authentication_regression_tests {
             .await?;
         let denied_route = Router::new()
             .route(
+                "/spaces/{space_id}/changes/{change_id}/inspect",
+                get(inspect_change),
+            )
+            .route(
                 "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}",
                 get(change_affected_entry),
             )
             .layer(Extension(content_identity(viewer_id, space_uid)))
             .with_state(denied_route_state);
         let denied_response = denied_route
+            .clone()
             .oneshot(
                 Request::get(format!(
                     "/spaces/{space_id}/changes/{target_change_id}/affected/{entry_id}"
@@ -13341,6 +13404,25 @@ mod authentication_regression_tests {
             )
             .await?;
         assert_eq!(denied_response.status(), StatusCode::NOT_FOUND);
+
+        let partially_visible_response = denied_route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/{target_change_id}/inspect"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(partially_visible_response.status(), StatusCode::OK);
+        let partially_visible_body =
+            axum::body::to_bytes(partially_visible_response.into_body(), usize::MAX).await?;
+        let partially_visible: Value = serde_json::from_slice(&partially_visible_body)?;
+        assert_eq!(partially_visible["target_visibility"], "partial");
+        assert!(partially_visible.get("summary").is_none());
+        assert!(partially_visible["targets"]
+            .as_array()
+            .is_some_and(Vec::is_empty));
 
         let cursor = query_page["next_cursor"].as_str().unwrap();
         let mismatched_query_response = route

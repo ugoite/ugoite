@@ -417,9 +417,36 @@ impl IcebergWorkspace {
         entry_scope: EntryScope,
         view: RevisionView,
     ) -> Result<Vec<EntryRevision>> {
+        self.read_revision_view_at_publication_with_scope_and_limit(
+            publication,
+            form_id,
+            entry_scope,
+            view,
+            MAX_NORMAL_READ_ROWS,
+        )
+        .await
+    }
+
+    pub(crate) async fn read_revision_view_at_publication_with_scope_and_limit(
+        &self,
+        publication: &PublicationRef,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        view: RevisionView,
+        max_rows: usize,
+    ) -> Result<Vec<EntryRevision>> {
+        if !(1..=MAX_NORMAL_READ_ROWS).contains(&max_rows) {
+            bail!("revision read limit must be between 1 and {MAX_NORMAL_READ_ROWS}");
+        }
         let checkpoint = self.resolve_publication(publication).await?;
-        self.read_revision_view_at_checkpoint_with_scope(&checkpoint, form_id, entry_scope, view)
-            .await
+        self.read_revision_view_at_checkpoint_with_scope_and_limit(
+            &checkpoint,
+            form_id,
+            entry_scope,
+            view,
+            max_rows,
+        )
+        .await
     }
 
     pub async fn forms_at_publication(
@@ -1014,6 +1041,24 @@ impl IcebergWorkspace {
         entry_scope: EntryScope,
         view: RevisionView,
     ) -> Result<Vec<EntryRevision>> {
+        self.read_revision_view_at_checkpoint_with_scope_and_limit(
+            checkpoint,
+            form_id,
+            entry_scope,
+            view,
+            MAX_NORMAL_READ_ROWS,
+        )
+        .await
+    }
+
+    pub(crate) async fn read_revision_view_at_checkpoint_with_scope_and_limit(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        view: RevisionView,
+        max_rows: usize,
+    ) -> Result<Vec<EntryRevision>> {
         self.validate_checkpoint(checkpoint)?;
         let coordinate = checkpoint
             .tables
@@ -1033,7 +1078,7 @@ impl IcebergWorkspace {
             entry_scope,
             view,
             coordinate.snapshot_id,
-            Some(MAX_NORMAL_READ_ROWS),
+            Some(max_rows),
         )
         .await
         .map_err(checkpoint_query_error)

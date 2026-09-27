@@ -36,6 +36,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "change.list",
     "change.page",
     "change.query",
+    "change.inspect",
     "change.affected.get",
     "change.revert",
     "run.undo",
@@ -579,6 +580,32 @@ pub fn prepare_request(
                         required_string(operation, args, "space_id")?,
                         "changes".into(),
                         "query".into(),
+                    ],
+                    query,
+                )
+            }
+            "change.inspect" => {
+                let mut query = Vec::new();
+                if let Some(limit) = args.get("limit") {
+                    let limit = limit
+                        .as_u64()
+                        .filter(|limit| (1..=10).contains(limit))
+                        .ok_or_else(|| {
+                            ApiProtocolError::invalid_arguments(
+                                operation,
+                                "limit must be an integer between 1 and 10",
+                            )
+                        })?;
+                    query.push(("limit".into(), limit.to_string()));
+                }
+                (
+                    OperationSpec::get("Failed to inspect Knowledge change"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "changes".into(),
+                        required_string(operation, args, "change_id")?,
+                        "inspect".into(),
                     ],
                     query,
                 )
@@ -1492,6 +1519,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to query Knowledge changes",
             RequestBodyKind::None,
         ),
+        "change.inspect" => (
+            HttpMethod::Get,
+            "Failed to inspect Knowledge change",
+            RequestBodyKind::None,
+        ),
         "change.affected.get" => (
             HttpMethod::Get,
             "Failed to get Change target evidence",
@@ -2080,6 +2112,30 @@ mod tests {
         assert!(error
             .to_string()
             .contains("created_after_micros must be an integer"));
+    }
+
+    #[test]
+    fn change_inspect_uses_a_bounded_read_only_route() {
+        let request = prepare_request(
+            "change.inspect",
+            &json!({"space_id": "demo", "change_id": "change-1", "limit": 10}),
+            None,
+        )
+        .expect("change inspect request");
+        assert_eq!(request.method, HttpMethod::Get);
+        assert_eq!(request.body_kind, RequestBodyKind::None);
+        assert_eq!(
+            request.path,
+            "/spaces/demo/changes/change-1/inspect?limit=10"
+        );
+
+        let error = prepare_request(
+            "change.inspect",
+            &json!({"space_id": "demo", "change_id": "change-1", "limit": 11}),
+            None,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("between 1 and 10"));
     }
 
     #[test]
@@ -2810,6 +2866,10 @@ mod tests {
                 "entry_id".into(),
                 json!("01900000-0000-7000-8000-000000000004"),
             );
+        }
+        if operation == "change.inspect" {
+            arguments.insert("change_id".into(), json!("change-1"));
+            arguments.insert("limit".into(), json!(10));
         }
         if operation == "run.undo" {
             arguments.insert("run_id".into(), json!("run-1"));
