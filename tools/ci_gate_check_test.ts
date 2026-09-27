@@ -16,6 +16,11 @@ function environment(
     WEB_RESULT: "success",
     ARTIFACTS_RESULT: "success",
     DOCSITE_NAV_RESULT: "success",
+    PLAN_RUST_CHECK: "true",
+    PLAN_RUST_TEST: "true",
+    PLAN_WEB: "true",
+    PLAN_ARTIFACTS: "true",
+    PLAN_DOCSITE_NAV: "true",
     PR_CONTEXT_RESULT: "skipped",
     ...overrides,
   };
@@ -41,6 +46,24 @@ Deno.test("required gate accepts all successful lanes and event-specific report 
   );
 });
 
+Deno.test("required gate accepts only the lanes planned for a docs-only pull request", async () => {
+  assertEquals(
+    await check(environment({
+      EVENT_NAME: "pull_request",
+      IMPACT_PLAN_SCOPE: "scoped",
+      IMPACT_JOBS_SKIPPED: "true",
+      RUST_CHECK_RESULT: "skipped",
+      RUST_TEST_RESULT: "skipped",
+      ARTIFACTS_RESULT: "skipped",
+      PLAN_RUST_CHECK: "false",
+      PLAN_RUST_TEST: "false",
+      PLAN_ARTIFACTS: "false",
+      PR_CONTEXT_RESULT: "success",
+    })),
+    true,
+  );
+});
+
 Deno.test("required gate rejects lane failures, cancellation, and invalid plans", async () => {
   const cases: Record<string, string>[] = [
     { RUST_CHECK_RESULT: "failure" },
@@ -52,7 +75,15 @@ Deno.test("required gate rejects lane failures, cancellation, and invalid plans"
     { IMPACT_PLAN_STATUS: "" },
     { IMPACT_PLAN_SCOPE: "unknown" },
     { IMPACT_JOBS_SKIPPED: "true" },
+    { PLAN_RUST_CHECK: "false" },
+    { PLAN_ARTIFACTS: "maybe" },
+    { PLAN_WEB: "false", IMPACT_JOBS_SKIPPED: "true" },
     { EVENT_NAME: "merge_group", IMPACT_PLAN_SCOPE: "scoped" },
+    {
+      EVENT_NAME: "push",
+      PLAN_RUST_CHECK: "false",
+      IMPACT_JOBS_SKIPPED: "true",
+    },
     { EVENT_NAME: "pull_request", PR_CONTEXT_RESULT: "skipped" },
     { EVENT_NAME: "push", PR_CONTEXT_RESULT: "failure" },
   ];
