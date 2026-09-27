@@ -139,6 +139,16 @@ pub async fn ensure_form_tables(
     workspace_path: &str,
     form_definition: &Value,
 ) -> Result<()> {
+    ensure_form_tables_with_receipt(operator, workspace_path, form_definition)
+        .await
+        .map(|_| ())
+}
+
+pub(crate) async fn ensure_form_tables_with_receipt(
+    operator: &Operator,
+    workspace_path: &str,
+    form_definition: &Value,
+) -> Result<Option<String>> {
     crate::authorization::Authorizer::new(operator.clone())
         .ensure_authoritative_mutation_contract()?;
     let form = crate::form::to_domain_form(form_definition)?;
@@ -147,15 +157,19 @@ pub async fn ensure_form_tables(
     // bypass the request's authorization write fence.
     crate::authorization::ensure_authorization_write_fence().await?;
     let workspace = native_mutation_workspace(operator, workspace_path).await?;
-    if !workspace.has_form(form.id).await? {
-        let command = crate::system_publication_context(
-            format!("form-create:{}", form.id),
-            "form.create",
-            &form,
-        )?;
-        workspace.commit(command)?.create_form(&form).await?;
+    if workspace.has_form(form.id).await? {
+        return Ok(None);
     }
-    Ok(())
+    let command = crate::system_publication_context(
+        format!("form-create:{}", form.id),
+        "form.create",
+        &form,
+    )?;
+    let change_id = workspace
+        .commit(command)?
+        .create_form_with_receipt(&form)
+        .await?;
+    Ok(Some(change_id))
 }
 
 async fn domain_form_by_name(

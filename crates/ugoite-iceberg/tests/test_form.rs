@@ -36,6 +36,118 @@ async fn test_form_req_form_002_upsert_and_list_forms() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn form_upsert_receipt_tracks_create_evolve_noop_and_concurrent_writers() -> anyhow::Result<()>
+{
+    let op = setup_operator()?;
+    space::create_space(&op, "form-receipt-outcome", "/tmp").await?;
+    let ws_path = "spaces/form-receipt-outcome";
+    let initial = serde_json::json!({
+        "name": "ReceiptForm",
+        "fields": {"Subject": {"type": "string", "required": true}}
+    });
+
+    let workspace = ugoite_iceberg::iceberg_store::native_workspace(&op, ws_path).await?;
+    let changes_before_create = workspace.list_changes().await?;
+    let created = form::upsert_form_result(&op, ws_path, &initial).await?;
+    assert!(created.applied);
+    assert_eq!(created.form_version.get(), 1);
+    let persisted = form::get_form(&op, ws_path, "ReceiptForm").await?;
+    let created_form_id = created.form_id.to_string();
+    assert_eq!(persisted["id"].as_str(), Some(created_form_id.as_str()));
+    assert_eq!(
+        persisted["version"].as_u64(),
+        Some(u64::from(created.form_version.get()))
+    );
+    let changes_after_create = workspace.list_changes().await?;
+    assert_eq!(changes_after_create.len(), changes_before_create.len() + 1);
+    let created_change = changes_after_create
+        .iter()
+        .find(|change| Some(change.change_id.as_str()) == created.change_id.as_deref())
+        .expect("the receipt identifies the created Form Change");
+    assert_eq!(
+        created.change_id.as_deref(),
+        Some(created_change.change_id.as_str())
+    );
+
+    let noop = form::upsert_form_result(&op, ws_path, &initial).await?;
+    assert!(!noop.applied);
+    assert_eq!(noop.form_id, created.form_id);
+    assert_eq!(noop.form_version, created.form_version);
+    assert_eq!(noop.change_id, None);
+    assert_eq!(
+        workspace.list_changes().await?.len(),
+        changes_after_create.len()
+    );
+
+    let evolved = serde_json::json!({
+        "name": "ReceiptForm",
+        "fields": {
+            "Subject": {"type": "string", "required": true},
+            "Body": {"type": "markdown"}
+        }
+    });
+    let evolution = form::upsert_form_result(&op, ws_path, &evolved).await?;
+    assert!(evolution.applied);
+    assert_eq!(evolution.form_id, created.form_id);
+    assert_eq!(evolution.form_version.get(), 2);
+    let changes_after_evolution = workspace.list_changes().await?;
+    assert_eq!(
+        changes_after_evolution.len(),
+        changes_after_create.len() + 1
+    );
+    assert_eq!(
+        evolution.change_id.as_deref(),
+        Some(changes_after_evolution.last().unwrap().change_id.as_str())
+    );
+
+    // Start two distinct same-version metadata edits together. Whether the
+    // storage serializes them or one must re-evaluate after a publication
+    // collision, each receipt must identify its own committed Change. Both
+    // payloads retain the full current field map, as required by Form upsert.
+    let with_alpha = serde_json::json!({
+        "name": "ReceiptForm",
+        "fields": {
+            "Subject": {"type": "string", "required": true, "label": "Alpha"},
+            "Body": {"type": "markdown"}
+        }
+    });
+    let with_beta = serde_json::json!({
+        "name": "ReceiptForm",
+        "fields": {
+            "Subject": {"type": "string", "required": true, "label": "Beta"},
+            "Body": {"type": "markdown"}
+        }
+    });
+    let (alpha, beta) = tokio::join!(
+        form::upsert_form_result(&op, ws_path, &with_alpha),
+        form::upsert_form_result(&op, ws_path, &with_beta),
+    );
+    let alpha = alpha?;
+    let beta = beta?;
+    assert!(alpha.applied && beta.applied);
+    assert_eq!(alpha.form_id, created.form_id);
+    assert_eq!(beta.form_id, created.form_id);
+    let alpha_change = alpha.change_id.expect("Alpha Change ID");
+    let beta_change = beta.change_id.expect("Beta Change ID");
+    assert_ne!(alpha_change, beta_change);
+    let all_changes = workspace.list_changes().await?;
+    assert!(all_changes
+        .iter()
+        .any(|change| change.change_id == alpha_change));
+    assert!(all_changes
+        .iter()
+        .any(|change| change.change_id == beta_change));
+    let final_form = form::get_form(&op, ws_path, "ReceiptForm").await?;
+    assert!(
+        final_form["fields"]["Subject"]["label"] == "Alpha"
+            || final_form["fields"]["Subject"]["label"] == "Beta"
+    );
+    assert!(final_form["fields"]["Body"].is_object());
+    assert_eq!(final_form["version"], 4);
+    Ok(())
+}
+
+#[tokio::test]
 async fn sql_columns_remain_stable_when_pre_v1_renames_are_rejected() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "stable-sql-columns", "/tmp").await?;

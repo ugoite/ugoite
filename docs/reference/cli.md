@@ -83,6 +83,9 @@ ANSI emphasis is limited to human-facing TTY output. Pipes, JSON, `NO_COLOR`,
 and `TERM=dumb` remain plain and stable. Mutation receipts expose the resource
 identifier, revision, Change, and Run metadata when the operation commits;
 these durable IDs are the values to record or pass to a later recovery task.
+Form save receipts also include the immutable Form ID, saved schema version,
+and whether the definition changed; remote saves against older servers mark
+that identity as unverified.
 
 The CLI does not promise that human styling is a machine contract. Scripts
 should consume the documented JSON shape and stderr/exit behavior, and should

@@ -526,6 +526,59 @@ pub struct AssetUploadReceipt {
     pub asset_reference: ugoite_domain::entry::AssetReference,
 }
 
+/// Form-specific receipt that retains the common mutation identity while
+/// exposing the persisted schema identity and whether this call changed it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormSaveReceipt {
+    #[serde(flatten)]
+    pub mutation: MutationReceipt,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied: Option<bool>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub identity_unverified: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
+impl FormSaveReceipt {
+    pub fn verified(
+        name: String,
+        form_id: String,
+        form_version: u32,
+        applied: bool,
+        change_id: Option<String>,
+    ) -> Self {
+        let mut mutation = MutationReceipt::form(name.clone());
+        mutation.change_id = change_id;
+        Self {
+            mutation,
+            name,
+            form_id: Some(form_id),
+            form_version: Some(form_version),
+            applied: Some(applied),
+            identity_unverified: false,
+        }
+    }
+
+    pub fn unverified(name: String) -> Self {
+        Self {
+            mutation: MutationReceipt::form(name.clone()),
+            name,
+            form_id: None,
+            form_version: None,
+            applied: None,
+            identity_unverified: true,
+        }
+    }
+}
+
 impl AssetUploadReceipt {
     pub fn new(asset_reference: ugoite_domain::entry::AssetReference) -> Self {
         let mutation = MutationReceipt::asset(asset_reference.asset_id.clone());
@@ -714,6 +767,26 @@ mod tests {
             })
         );
         assert!(receipt.human().contains("entry note-1"));
+    }
+
+    #[test]
+    fn old_server_form_receipt_is_explicitly_unverified_without_invented_ids() {
+        let receipt = FormSaveReceipt::unverified("AuditNote".to_string());
+        assert_eq!(
+            serde_json::to_value(&receipt).expect("serialize fallback receipt"),
+            serde_json::json!({
+                "kind": "form",
+                "id": "AuditNote",
+                "revision_id": null,
+                "change_id": null,
+                "run_id": null,
+                "name": "AuditNote",
+                "identity_unverified": true
+            })
+        );
+        assert!(receipt.form_id.is_none());
+        assert!(receipt.form_version.is_none());
+        assert!(receipt.applied.is_none());
     }
 
     #[test]

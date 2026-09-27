@@ -304,6 +304,10 @@ requirements:
         kind: behavior
         statement: Form definitions can be created or updated through the service and operator surfaces.
         governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-005#rule.governance, POL-006#rule.governance, POL-007#rule.governance]
+      - id: upsert-receipt
+        kind: behavior
+        statement: A Form save result identifies the persisted immutable Form ID and version, whether the operation applied a change, and the exact committed Change ID when it did; a no-op identifies the existing Form and version without claiming a Change.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-005#rule.governance, POL-006#rule.governance, POL-007#rule.governance]
       - id: types-operation
         kind: behavior
         statement: Available Form column types can be discovered through the service and operator surfaces.
@@ -327,6 +331,20 @@ requirements:
                 criterion: REQ-FORM-010#criterion.core-types
                 covers: [FEAT-FORM-001#binding.core/target.list-column-types]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: test_form_req_form_001_list_column_types } }
+      - id: upsert-receipt-test
+        role: verification
+        facet: verification
+        responsibility: Verify that Form create, evolution, no-op, and concurrent writers report the actual committed publication identity.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_form.rs
+            selector: { kind: test, name: form_upsert_receipt_tracks_create_evolve_noop_and_concurrent_writers }
+            claims:
+              - kind: verifies
+                criterion: REQ-FORM-010#criterion.upsert-receipt
+                covers: [FEAT-FORM-001#binding.core/target.upsert-form]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_form, test: form_upsert_receipt_tracks_create_evolve_noop_and_concurrent_writers } }
   - id: REQ-FORM-011
     title: Typed Markdown property conversion
     description: Form-aware property processing converts Markdown-derived values to the declared column types and reports validation warnings for values outside the declared type contract.

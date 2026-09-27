@@ -16,6 +16,16 @@ use uuid::Uuid;
 
 const EXTRA_ATTRIBUTES_POLICY_METADATA: &str = "ugoite.extra_attributes_policy";
 
+/// The exact persisted result of one Form upsert operation.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FormUpsertOutcome {
+    pub form_id: FormId,
+    pub form_name: String,
+    pub form_version: FormVersion,
+    pub applied: bool,
+    pub change_id: Option<String>,
+}
+
 fn invalid_form_input(message: impl Into<String>) -> anyhow::Error {
     AppError::invalid_input(ErrorCode::InvalidInput, message).into()
 }
@@ -89,43 +99,89 @@ pub async fn get_form(op: &Operator, ws_path: &str, form_name: &str) -> Result<V
 }
 
 pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Result<()> {
+    upsert_form_result(op, ws_path, form_def).await.map(|_| ())
+}
+
+pub async fn upsert_form_result(
+    op: &Operator,
+    ws_path: &str,
+    form_def: &Value,
+) -> Result<FormUpsertOutcome> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let form_name = form_def
         .get("name")
         .and_then(|value| value.as_str())
         .ok_or_else(|| invalid_form_input("Form definition missing 'name' field"))?
         .to_string();
-    let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
-    let known_forms = workspace.list_forms().await?;
-    let existing_domain = known_forms
-        .iter()
-        .find(|form| form.name == form_name)
-        .cloned();
-    let mut normalized = normalize_form_definition(form_def)?;
-    if let Some(existing_domain) = &existing_domain {
-        // Resolve the persisted identity before translating authoring names
-        // into target UUIDs. In particular, a self-reference must never point
-        // at normalize_form_definition's transient UUID.
-        let existing_def = from_domain_form(existing_domain);
-        preserve_stable_identities(&mut normalized, &existing_def)?;
-    }
-    validate_row_reference_targets(&form_name, &mut normalized, &known_forms)?;
-    if let Some(current_domain) = existing_domain {
+    for _ in 0..3 {
+        // Re-open on a conflict so every retry compares against a fresh
+        // authoritative Catalog Head instead of reusing a stale workspace.
+        let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
+        let known_forms = workspace.list_forms().await?;
+        let existing_domain = known_forms
+            .iter()
+            .find(|form| form.name == form_name)
+            .cloned();
+        let mut normalized = normalize_form_definition(form_def)?;
+        if let Some(existing_domain) = &existing_domain {
+            // Resolve the persisted identity before translating authoring names
+            // into target UUIDs. In particular, a self-reference must never
+            // point at normalize_form_definition's transient UUID.
+            let existing_def = from_domain_form(existing_domain);
+            preserve_stable_identities(&mut normalized, &existing_def)?;
+        }
+        validate_row_reference_targets(&form_name, &mut normalized, &known_forms)?;
         let desired_domain =
             to_domain_form(&normalized).map_err(|error| invalid_form_input(error.to_string()))?;
-        let changes = form_changes(&current_domain, &desired_domain)?;
-        if !changes.is_empty() {
-            commit_form_evolution(op, ws_path, &current_domain, changes).await?;
+        if let Some(current_domain) = existing_domain {
+            let changes = form_changes(&current_domain, &desired_domain)?;
+            if changes.is_empty() {
+                return Ok(FormUpsertOutcome {
+                    form_id: current_domain.id,
+                    form_name: current_domain.name,
+                    form_version: current_domain.version,
+                    applied: false,
+                    change_id: None,
+                });
+            }
+            match commit_form_evolution(op, ws_path, &current_domain, changes).await {
+                Ok(change_id) => {
+                    return Ok(FormUpsertOutcome {
+                        form_id: current_domain.id,
+                        form_name: desired_domain.name,
+                        form_version: current_domain.version.next(),
+                        applied: true,
+                        change_id: Some(change_id),
+                    });
+                }
+                Err(error) if is_form_version_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            }
         }
-        return Ok(());
+
+        // Validate before entering the storage mutation path. This keeps
+        // malformed user input typed while leaving storage failures internal.
+        crate::authorization::ensure_authorization_write_fence().await?;
+        match iceberg_store::ensure_form_tables_with_receipt(op, ws_path, &normalized).await {
+            Ok(Some(change_id)) => {
+                return Ok(FormUpsertOutcome {
+                    form_id: desired_domain.id,
+                    form_name: desired_domain.name,
+                    form_version: desired_domain.version,
+                    applied: true,
+                    change_id: Some(change_id),
+                });
+            }
+            // A concurrent create may have installed the Form after our
+            // initial listing. Reopen from the new Head and classify it as
+            // either a no-op or a real evolution; never inspect a stale view.
+            Ok(None) => continue,
+            Err(error) if is_form_version_conflict(&error) => continue,
+            Err(error) => return Err(error),
+        }
     }
 
-    // Validate the authoring payload before entering the storage mutation path.
-    // This keeps malformed user input typed while leaving storage failures internal.
-    to_domain_form(&normalized).map_err(|error| invalid_form_input(error.to_string()))?;
-    crate::authorization::ensure_authorization_write_fence().await?;
-    iceberg_store::ensure_form_tables(op, ws_path, &normalized).await?;
-    Ok(())
+    Err(form_version_conflict(&form_name))
 }
 
 async fn commit_form_evolution(
@@ -133,7 +189,8 @@ async fn commit_form_evolution(
     ws_path: &str,
     current: &FormDefinition,
     changes: Vec<FormChange>,
-) -> Result<()> {
+) -> Result<String> {
+    let form_name = current.name.clone();
     let command = crate::system_publication_context(
         format!("form-evolve:{}:{}", current.id, current.version.get()),
         "form.evolve",
@@ -141,15 +198,39 @@ async fn commit_form_evolution(
     )?;
     crate::authorization::ensure_authorization_write_fence().await?;
     let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
-    workspace
+    let result = workspace
         .commit(command)?
-        .evolve_form(&FormChangeSet {
+        .evolve_form_with_receipt(&FormChangeSet {
             form_id: current.id,
             expected_version: Some(current.version),
             changes,
         })
-        .await?;
-    Ok(())
+        .await;
+    match result {
+        Ok((_, change_id)) => Ok(change_id),
+        Err(error) if is_form_version_conflict(&error) => Err(form_version_conflict(&form_name)),
+        Err(error) => Err(error),
+    }
+}
+
+fn form_version_conflict(form_name: &str) -> anyhow::Error {
+    AppError::conflict(
+        ErrorCode::FormVersionConflict,
+        format!("Form changed while saving '{form_name}'; the save was re-evaluated against the latest version"),
+    )
+    .into()
+}
+
+fn is_form_version_conflict(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<AppError>()
+        .is_some_and(|error| error.code() == ErrorCode::FormVersionConflict)
+        || error.chain().any(|cause| {
+            let message = cause.to_string();
+            message.contains("Form version conflict")
+                || message
+                    .contains("publication command id was reused with different command content")
+        })
 }
 
 fn form_changes(current: &FormDefinition, desired: &FormDefinition) -> Result<Vec<FormChange>> {

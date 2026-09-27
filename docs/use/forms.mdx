@@ -42,6 +42,12 @@ ugoite form get Meeting
 Run `ugoite form <command> --help` for the exact JSON shape of the installed
 version.
 
+With `-o json`, `form save` keeps the Form name in `id` and adds the persisted
+`form_id`, `form_version`, and `applied` result. A committed save includes its
+actual `change_id`; a no-op has `applied: false` and `change_id: null`. When a
+remote server predates these receipt headers, the CLI reports
+`identity_unverified: true` rather than guessing the Form or Change identity.
+
 </TabItem>
 </Tabs>
 

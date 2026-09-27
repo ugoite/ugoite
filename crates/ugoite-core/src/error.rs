@@ -48,6 +48,7 @@ pub enum ErrorCode {
     CheckpointAlreadyExists,
     FormDefinitionReadFailed,
     SpaceDiscoveryFailed,
+    FormVersionConflict,
 }
 
 impl ErrorCode {
@@ -86,6 +87,7 @@ impl ErrorCode {
             Self::CheckpointAlreadyExists => "CHECKPOINT_ALREADY_EXISTS",
             Self::FormDefinitionReadFailed => "FORM_DEFINITION_READ_FAILED",
             Self::SpaceDiscoveryFailed => "SPACE_DISCOVERY_FAILED",
+            Self::FormVersionConflict => "FORM_VERSION_CONFLICT",
         }
     }
 }

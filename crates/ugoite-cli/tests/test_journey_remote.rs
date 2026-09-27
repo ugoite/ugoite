@@ -1644,7 +1644,7 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         parity_form_fields.insert(name.to_string(), serde_json::Value::Object(field));
     }
     let parity_form_file = staging.path().join("parity-form.json");
-    let parity_form = json!({
+    let mut parity_form = json!({
         "name": "ParityRemote",
         "version": 1,
         "template": "# ParityRemote",
@@ -1661,6 +1661,8 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
             "form",
             "save",
             parity_form_file.to_str().expect("parity form path"),
+            "-o",
+            "json",
         ],
     )
     .await;
@@ -1669,11 +1671,94 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
         "parity form save failed: {}",
         String::from_utf8_lossy(&form_update.stderr)
     );
+    let form_receipt = serde_json::from_slice::<serde_json::Value>(&form_update.stdout)
+        .expect("remote Form save receipt");
     let parity_form_read = stdout_json(
         &run_cli(&fixture.config_path, &["form", "get", "ParityRemote"]).await,
         "get remote parity form",
     );
     assert!(parity_form_read["id"].as_str().is_some());
+    assert_eq!(form_receipt["id"], "ParityRemote");
+    assert_eq!(form_receipt["name"], "ParityRemote");
+    assert_eq!(form_receipt["form_id"], parity_form_read["id"]);
+    assert_eq!(form_receipt["form_version"], parity_form_read["version"]);
+    assert_eq!(form_receipt["applied"], true);
+    let form_change_id = form_receipt["change_id"]
+        .as_str()
+        .expect("remote committed Form Change ID");
+    let form_changes = stdout_json(
+        &run_cli(&fixture.config_path, &["change", "list", "-o", "json"]).await,
+        "list remote Form changes",
+    );
+    assert!(form_changes
+        .as_array()
+        .expect("change list")
+        .iter()
+        .any(|change| change["change_id"] == form_change_id));
+
+    let noop_save = run_cli(
+        &fixture.config_path,
+        &[
+            "form",
+            "save",
+            parity_form_file.to_str().expect("parity form path"),
+            "-o",
+            "json",
+        ],
+    )
+    .await;
+    assert!(
+        noop_save.status.success(),
+        "remote Form no-op save failed: {}",
+        String::from_utf8_lossy(&noop_save.stderr)
+    );
+    let noop_receipt = serde_json::from_slice::<serde_json::Value>(&noop_save.stdout)
+        .expect("remote Form no-op receipt");
+    assert_eq!(noop_receipt["form_id"], form_receipt["form_id"]);
+    assert_eq!(noop_receipt["form_version"], form_receipt["form_version"]);
+    assert_eq!(noop_receipt["applied"], false);
+    assert_eq!(noop_receipt["change_id"], serde_json::Value::Null);
+
+    parity_form["fields"]["ReceiptMarker"] = json!({"type": "string"});
+    std::fs::write(
+        &parity_form_file,
+        serde_json::to_vec(&parity_form).expect("serialize evolved parity form"),
+    )
+    .expect("write evolved parity form");
+    let form_evolution = run_cli(
+        &fixture.config_path,
+        &[
+            "form",
+            "save",
+            parity_form_file.to_str().expect("parity form path"),
+            "-o",
+            "json",
+        ],
+    )
+    .await;
+    assert!(
+        form_evolution.status.success(),
+        "remote Form evolution failed: {}",
+        String::from_utf8_lossy(&form_evolution.stderr)
+    );
+    let evolution_receipt = serde_json::from_slice::<serde_json::Value>(&form_evolution.stdout)
+        .expect("remote Form evolution receipt");
+    assert_eq!(evolution_receipt["form_id"], form_receipt["form_id"]);
+    assert_eq!(evolution_receipt["form_version"], 2);
+    assert_eq!(evolution_receipt["applied"], true);
+    let evolution_change_id = evolution_receipt["change_id"]
+        .as_str()
+        .expect("remote Form evolution Change ID");
+    let evolved_changes = stdout_json(
+        &run_cli(&fixture.config_path, &["change", "list", "-o", "json"]).await,
+        "list changes after remote Form evolution",
+    );
+    assert!(evolved_changes
+        .as_array()
+        .expect("change list")
+        .iter()
+        .any(|change| change["change_id"] == evolution_change_id));
+
     assert_eq!(
         parity_form_read["fields"]["Ref"]["target_form"],
         task_form_id

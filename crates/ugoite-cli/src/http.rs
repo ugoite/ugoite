@@ -2,8 +2,8 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::sync::OnceLock;
 use ugoite_api_client::{
-    decode_response, prepare_request, ApiResponse, Header, HttpMethod, PreparedRequest,
-    RequestBodyKind,
+    decode_response, parse_form_upsert_metadata, prepare_request, ApiResponse,
+    FormUpsertResponseMetadata, Header, HttpMethod, PreparedRequest, RequestBodyKind,
 };
 
 /// Execute against an explicit [`crate::cli_config::SpaceTarget`].
@@ -37,6 +37,60 @@ pub async fn execute_for_target(
         body,
     )
     .await
+}
+
+/// Execute `form.upsert` and preserve its additive response receipt headers.
+/// An older server that returns none of the headers is represented as
+/// `None`; malformed or partial metadata is an error so the CLI cannot invent
+/// an identity or Change ID after a successful write.
+pub async fn execute_form_upsert_for_target(
+    target: &crate::cli_config::SpaceTarget,
+    arguments: Value,
+    body: Value,
+) -> Result<(Value, Option<FormUpsertResponseMetadata>)> {
+    let (base, connection, credential) = match target {
+        crate::cli_config::SpaceTarget::Core { .. } => {
+            bail!("operation form.upsert does not use the remote transport")
+        }
+        crate::cli_config::SpaceTarget::Remote {
+            base,
+            connection,
+            credential,
+            ..
+        } => (base.clone(), connection.clone(), credential.clone()),
+    };
+    let form_name = body
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .context("Form definition missing 'name' field")?
+        .to_owned();
+    let prepared = prepare_request("form.upsert", &arguments, Some(&body))?;
+    let (result, headers) = execute_prepared_for_target_with_headers(
+        &base,
+        &connection,
+        credential.as_deref(),
+        prepared,
+    )
+    .await?;
+    if result.get("name").and_then(Value::as_str) != Some(form_name.as_str()) {
+        anyhow::bail!(
+            "Form save response is unconfirmed: the server returned an unexpected Form name. Check `form get {form_name}` and `change list` before retrying."
+        );
+    }
+    let metadata = parse_form_upsert_metadata(&headers, 201).map_err(|error| {
+        anyhow::anyhow!(
+            "Form save succeeded but its receipt metadata could not be verified. Check `form get {form_name}` and `change list` before retrying. Details: {error}"
+        )
+    })?;
+    if let Some(metadata) = &metadata {
+        if uuid::Uuid::parse_str(&metadata.form_id).is_err() {
+            anyhow::bail!(
+                "Form save succeeded but its receipt contains an invalid Form ID. Check `form get {form_name}` and `change list` before retrying."
+            );
+        }
+    }
+    Ok((result, metadata))
 }
 
 /// Execute a remote operation for a named connection before a Space context
@@ -200,6 +254,17 @@ async fn execute_prepared_for_target(
     credential: Option<&str>,
     prepared: PreparedRequest,
 ) -> Result<Value> {
+    execute_prepared_for_target_with_headers(base_url, connection, credential, prepared)
+        .await
+        .map(|(value, _)| value)
+}
+
+async fn execute_prepared_for_target_with_headers(
+    base_url: &str,
+    connection: &str,
+    credential: Option<&str>,
+    prepared: PreparedRequest,
+) -> Result<(Value, Vec<Header>)> {
     let operation = prepared.operation.clone();
     let (_, mut request) =
         authenticated_request_for_target(base_url, connection, credential, &prepared).await?;
@@ -209,7 +274,7 @@ async fn execute_prepared_for_target(
         (RequestBodyKind::Json, None) => bail!("operation {operation} requires a JSON body"),
         (RequestBodyKind::None, _) => request,
     };
-    send_and_decode(&operation, request).await
+    send_and_decode_with_headers(&operation, request).await
 }
 
 /// Context-first authentication: resolve `credential` for exactly
@@ -295,14 +360,17 @@ pub(crate) async fn named_session_for_target(
     Ok(Some(session))
 }
 
-async fn send_and_decode(operation: &str, request: reqwest::RequestBuilder) -> Result<Value> {
+async fn send_and_decode_with_headers(
+    operation: &str,
+    request: reqwest::RequestBuilder,
+) -> Result<(Value, Vec<Header>)> {
     let response = request
         .send()
         .await
         .with_context(|| format!("send {operation} request"))?;
     let status = response.status();
     let status_text = status.canonical_reason().unwrap_or_default().to_string();
-    let headers = response
+    let headers: Vec<Header> = response
         .headers()
         .iter()
         .filter_map(|(name, value)| {
@@ -313,16 +381,17 @@ async fn send_and_decode(operation: &str, request: reqwest::RequestBuilder) -> R
         })
         .collect();
     let body = response.text().await?;
-    decode_response(
+    let decoded = decode_response(
         operation,
         ApiResponse {
             status: status.as_u16(),
             status_text,
-            headers,
+            headers: headers.clone(),
             body,
         },
     )
-    .map_err(anyhow::Error::from)
+    .map_err(anyhow::Error::from)?;
+    Ok((decoded, headers))
 }
 
 fn client() -> &'static reqwest::Client {
