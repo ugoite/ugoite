@@ -3,7 +3,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use ugoite_cli::commands;
-use ugoite_cli::output::{project_error, render_error, stderr_style};
+use ugoite_cli::output::{project_error, project_mutation_error, render_error, stderr_style};
 
 const QUIET_ACCENT_STYLES: clap::builder::Styles = clap::builder::Styles::styled()
     .header(anstyle::Style::new().bold())
@@ -33,6 +33,53 @@ struct Cli {
     context: Option<String>,
     #[command(subcommand)]
     command: Commands,
+}
+
+impl Cli {
+    fn is_mutation_command(&self) -> bool {
+        use ugoite_cli::commands::{
+            asset::AssetSubCmd, change::ChangeSubCmd, entry::EntrySubCmd, form::FormSubCmd,
+            pin::PinSubCmd, run::RunSubCmd, sql::SavedSqlSubCmd,
+        };
+
+        match &self.command {
+            Commands::Entry(command) => matches!(
+                &command.sub,
+                EntrySubCmd::Create { .. }
+                    | EntrySubCmd::Update { .. }
+                    | EntrySubCmd::Delete { .. }
+                    | EntrySubCmd::Restore { .. }
+            ),
+            Commands::Form(command) => matches!(&command.sub, FormSubCmd::Save { .. }),
+            Commands::Asset(command) => matches!(
+                &command.sub,
+                AssetSubCmd::Upload { .. } | AssetSubCmd::Delete { .. }
+            ),
+            Commands::Change(command) => matches!(&command.sub, ChangeSubCmd::Revert { .. }),
+            Commands::Run(command) => matches!(&command.sub, RunSubCmd::Undo { .. }),
+            Commands::Pin(command) => matches!(
+                &command.sub,
+                PinSubCmd::Create { .. } | PinSubCmd::Delete { .. }
+            ),
+            Commands::Sql(command) => matches!(
+                &command.sub,
+                ugoite_cli::commands::sql::SqlSubCmd::Saved(
+                    SavedSqlSubCmd::Create { .. }
+                        | SavedSqlSubCmd::Update { .. }
+                        | SavedSqlSubCmd::Delete { .. }
+                )
+            ),
+            Commands::Auth(_)
+            | Commands::Config(_)
+            | Commands::Context(_)
+            | Commands::Space(_)
+            | Commands::Index(_) => false,
+            // Konase can fail during a read-only model/tool phase as well as
+            // during a write. Its executor emits its own unconfirmed-write
+            // diagnostic, so blanket classification here would be false.
+            Commands::Konase(_) => false,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -77,6 +124,7 @@ enum Commands {
 
 fn main() {
     let cli = Cli::parse();
+    let mutation_command = cli.is_mutation_command();
     let rt = tokio::runtime::Runtime::new().unwrap();
     let result = rt.block_on(async {
         // Derived refreshes are best-effort and process-local. A one-shot core
@@ -85,7 +133,11 @@ fn main() {
         run(cli).await
     });
     if let Err(error) = result {
-        let projected = project_error(&error);
+        let projected = if mutation_command {
+            project_mutation_error(&error)
+        } else {
+            project_error(&error)
+        };
         if ugoite_cli::output::is_machine_stderr() {
             eprintln!("{}", projected.envelope());
         } else {

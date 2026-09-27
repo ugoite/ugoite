@@ -56,4 +56,40 @@ describe("formatUserFacingError", () => {
       .toContain("必要なサービスを利用できません。");
   });
 
+  it("gives an unknown write outcome a no-blind-retry instruction", () => {
+    setLocale("ja");
+    const error = new UgoiteApiError({
+      kind: "transport",
+      operation: "entry.update",
+      message: "connection reset",
+    });
+
+    expect(error.mutationOutcome).toBe("unknown");
+    expect(error.mutationCode).toBe("MUTATION_OUTCOME_UNKNOWN");
+    expect(formatUserFacingError(error, "entryDetail.saveFailed"))
+      .toContain("再試行する前に履歴または対象の項目を確認してください。");
+  });
+
+  it("distinguishes invalid success receipts from rejected writes", () => {
+    const error = new UgoiteApiError({
+      kind: "invalid_response",
+      operation: "form.upsert",
+      status: 200,
+      message: "invalid receipt",
+    });
+    expect(error.mutationOutcome).toBe("receipt_invalid");
+    expect(error.mutationCode).toBe("MUTATION_RECEIPT_INVALID");
+    expect(formatUserFacingError(error, "entryDetail.saveFailed"))
+      .toContain("invalid receipt");
+  });
+
+  it("uses the same error boundary for Konase outcome errors", () => {
+    setLocale("ja");
+    const error = Object.assign(new Error("unconfirmed"), {
+      mutationOutcome: "unknown" as const,
+      mutationCode: "MUTATION_OUTCOME_UNKNOWN",
+    });
+    expect(formatUserFacingError(error, "konase.error"))
+      .toContain("再試行する前に履歴または対象の項目を確認してください。");
+  });
 });

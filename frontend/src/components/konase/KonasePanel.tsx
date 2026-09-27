@@ -998,7 +998,7 @@ const konaseErrorMessage = (cause: unknown): string => {
   }
   if (cause instanceof KonaseWriteDeniedError) return t("konase.writeDenied");
   if (cause instanceof KonaseMutationUnconfirmedError) {
-    return t("konase.unconfirmed");
+    return formatUserFacingError(cause, "konase.error");
   }
   return formatUserFacingError(cause, "konase.error");
 };

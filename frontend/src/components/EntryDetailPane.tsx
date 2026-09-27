@@ -791,6 +791,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       ),
       tags: JSON.stringify(draftTags()),
     });
+    let mutationConfirmed = false;
     try {
       const result = context.create
         ? await entryApi.create(context.wsId, {
@@ -804,6 +805,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           fields,
           parent_revision_id: context.revisionId!,
         });
+      mutationConfirmed = true;
       setCurrentRevisionId(result.revision_id);
       setServerRevisionId(null);
       setLatestEntry(null);
@@ -835,7 +837,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         props.onCreated?.(result);
       }
     } catch (error) {
-      handleSaveError(error);
+      if (mutationConfirmed) {
+        // Refresh/navigation callbacks happen after the server confirmed the
+        // write. Their failure must not turn a saved result into "unknown".
+        flashSaveNotice(t("entryDetail.saved"));
+      } else {
+        handleSaveError(error);
+      }
     } finally {
       setIsSaving(false);
     }

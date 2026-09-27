@@ -1,12 +1,22 @@
 import { createSignal } from "solid-js";
 import { createResource } from "./recoverable-resource";
 import { formatUserFacingError } from "./user-facing-error";
+import type { MutationOutcome } from "./mutation-outcome";
 import { type TranslationKey } from "./i18n";
 import type { Entry, EntryRecord, EntryUpdatePayload } from "./types";
 import { entryApi, RevisionConflictError } from "./ugoite-client";
 import { pageFromArray } from "./pagination";
 
 export const ENTRY_PAGE_SIZE = 100;
+
+const mutationOutcomeOf = (error: unknown): MutationOutcome | null => {
+  if (!error || typeof error !== "object") return null;
+  const outcome = (error as { mutationOutcome?: unknown }).mutationOutcome;
+  return outcome === "rejected" || outcome === "unknown" ||
+      outcome === "receipt_invalid" || outcome === "confirmed"
+    ? outcome
+    : null;
+};
 
 export interface EntryStoreState {
   entries: EntryRecord[];
@@ -175,15 +185,17 @@ export function createEntryStore(spaceId: () => string) {
 
       return result;
     } catch (e) {
-      // Rollback on failure
+      const outcome = mutationOutcomeOf(e);
+      // Preserve the user's optimistic draft when the server may have saved
+      // it. A definite rejection is safe to roll back.
       /* v8 ignore start */
       const pending = pendingUpdates.get(entryId);
-      if (pending) {
+      if (pending && outcome !== "unknown" && outcome !== "receipt_invalid") {
         setEntries((prev) =>
           prev.map((n) => (n.id === entryId ? pending.original : n))
         );
-        pendingUpdates.delete(entryId);
       }
+      pendingUpdates.delete(entryId);
       /* v8 ignore stop */
 
       if (e instanceof RevisionConflictError) {
@@ -218,10 +230,19 @@ export function createEntryStore(spaceId: () => string) {
     try {
       await entryApi.delete(spaceId(), entryId);
     } catch (e) {
-      // Rollback on failure
+      const outcome = mutationOutcomeOf(e);
       /* v8 ignore start */
-      if (entryToDelete) {
+      if (outcome === "unknown" || outcome === "receipt_invalid") {
+        // Reconcile with the authoritative list without repeating the write.
+        await loadEntries();
+      } else if (entryToDelete) {
         setEntries((prev) => [...prev, entryToDelete]);
+      }
+      if (
+        selectedEntryId() === null && entryToDelete &&
+        entries().some((entry) => entry.id === entryId)
+      ) {
+        setSelectedEntryId(entryId);
       }
       /* v8 ignore stop */
       /* v8 ignore start */

@@ -1,4 +1,5 @@
 import { invokeKonase } from "../ugoite-client/protocol";
+import { MUTATION_ERROR_CODES } from "../mutation-outcome";
 import type {
   ModelHost,
   ModelMessage,
@@ -169,6 +170,9 @@ export type WritePreview = {
 };
 
 export class KonaseWriteDeniedError extends Error {
+  readonly mutationOutcome = "rejected" as const;
+  readonly mutationCode = MUTATION_ERROR_CODES.rejected;
+
   constructor() {
     super("Konase write was not approved");
     this.name = "KonaseWriteDeniedError";
@@ -176,6 +180,9 @@ export class KonaseWriteDeniedError extends Error {
 }
 
 export class KonaseMutationUnconfirmedError extends Error {
+  readonly mutationOutcome = "unknown" as const;
+  readonly mutationCode = MUTATION_ERROR_CODES.unknown;
+
   constructor() {
     super("Ugoite could not confirm the mutation result");
     this.name = "KonaseMutationUnconfirmedError";

@@ -1,6 +1,11 @@
 import initializeWasm from "../generated/ugoite_wasm.wasm?init";
 import { apiFetch, type ApiFetchOptions } from "../api";
 import type { AssetReference } from "../types";
+import {
+  classifyMutationOutcome,
+  MUTATION_ERROR_CODES,
+  type MutationOutcome,
+} from "../mutation-outcome";
 
 export const UGOITE_API_OPERATIONS = [
   "auth.get_config",
@@ -238,6 +243,8 @@ export class UgoiteApiError extends Error {
   readonly status?: number;
   readonly detail?: unknown;
   readonly payload?: unknown;
+  readonly mutationOutcome: MutationOutcome | null;
+  readonly mutationCode?: string;
 
   constructor(error: ProtocolErrorPayload) {
     super(error.message);
@@ -249,6 +256,11 @@ export class UgoiteApiError extends Error {
     this.status = error.status;
     this.detail = error.detail;
     this.payload = error.payload;
+    this.mutationOutcome = classifyMutationOutcome(error);
+    this.mutationCode = this.mutationOutcome &&
+        this.mutationOutcome !== "confirmed"
+      ? MUTATION_ERROR_CODES[this.mutationOutcome]
+      : undefined;
   }
 }
 
@@ -274,7 +286,18 @@ const decodeApiResponse = async <T>(
   operation: UgoiteApiOperation,
   response: Response,
 ): Promise<T> => {
-  const body = await response.text();
+  let body: string;
+  try {
+    body = await response.text();
+  } catch (error) {
+    throw new UgoiteApiError({
+      kind: "transport",
+      operation,
+      status: response.status,
+      message: error instanceof Error ? error.message : String(error),
+      detail: { cause: error instanceof Error ? error.name : "unknown" },
+    });
+  }
   return await invokeProtocol<T>({
     action: "decode",
     operation,
@@ -322,12 +345,30 @@ const executeProtocolRequest = async (
   const requestBody = prepared.body_kind === "json"
     ? prepared.body
     : options.body;
-  return await apiFetch(prepared.path, {
-    ...options,
-    method: prepared.method,
-    headers,
-    body: requestBody,
-  });
+  try {
+    return await apiFetch(prepared.path, {
+      ...options,
+      method: prepared.method,
+      headers,
+      body: requestBody,
+    });
+  } catch (error) {
+    if (
+      options.signal?.aborted &&
+      classifyMutationOutcome({ operation, kind: "transport" }) === null
+    ) {
+      throw error;
+    }
+    // Once fetch has begun, a transport failure cannot establish whether the
+    // server committed the write. Keep the operation attached for all shared
+    // UI and machine-readable result handling.
+    throw new UgoiteApiError({
+      kind: "transport",
+      operation,
+      message: error instanceof Error ? error.message : String(error),
+      detail: { cause: error instanceof Error ? error.name : "unknown" },
+    });
+  }
 };
 
 /**
