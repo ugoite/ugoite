@@ -78,35 +78,35 @@ disconnect stops SQL engine work after server execution begins.
 
 On 2026-09-27, the lifecycle checks were repeated with the same fixed
 6,000-entry and 4,000-entry Space seeds. This supplemental run used source
-`78e7c0f79881c3db5915199e2a77ec1f31f6a56e`, a local filesystem Space root, a
+`6c6160d576075dde099e781c52539d5a5bf8a418`, a local filesystem Space root, a
 loopback browser/server connection, a 1280×720 viewport, and Chromium
 `148.0.7778.96` in headless mode. It ran five first-visible-row trials per
 Space and surface; these pooled values are current-build observations, not a
-new paired comparison with the pre-QRY-02 frontend. Server startup took 132 s.
+new paired comparison with the pre-QRY-02 frontend. Server startup took 96 s.
 
 | Surface | Samples | p50 | p95 |
 | ------- | ------: | --: | --: |
-| EntryQuery first visible row | 10 | 1,846 ms | 2,359 ms |
-| Saved SQL first visible row | 10 | 1,345 ms | 1,358 ms |
+| EntryQuery first visible row | 10 | 2,349 ms | 2,393 ms |
+| Saved SQL first visible row | 10 | 1,337 ms | 1,851 ms |
 
-The extended run observed two superseded keyword searches and one Space switch;
-each old EntryQuery signal aborted and settled, with no residual pending fetch.
+The extended run observed one superseded keyword-search fetch and one Space
+switch; each old EntryQuery signal aborted in flight and settled, with no
+residual pending fetch.
 Space A to B left no stale A IDs in the visible B rows. SQL page identity
 change, parameter value change, parameter-type change during explicit Count,
 and route disposal each settled the superseded request after abort. Previous
 pagination issued the expected Next and Previous page requests. Both Spaces
 issued zero automatic Count requests. A deliberately failed explicit Count
 was followed by a successful Count retry; the result-page query count remained
-zero before and after that retry. Every lifecycle observation ended with zero
-pending fetches.
+zero before and after that retry. The failed Count request had settled before
+the retry, so the retry recorded no in-flight abort. Every lifecycle
+observation ended with zero pending fetches.
 
 The sanitized per-trial records and request events are preserved in
-[`query-surfaces-lifecycle-78e7c0f7.json`](measurements/query-surfaces-lifecycle-78e7c0f7.json).
+[`query-surfaces-lifecycle-6c6160d5.json`](measurements/query-surfaces-lifecycle-6c6160d5.json).
 The run uses 400 ms route delays for selected lifecycle requests; performance
-trials themselves are not delayed. The JSON's `lifecycle_interception` label
-predates the SQL-specific delay cases, so this report describes the actual
-coverage. As above, an aborted browser request does not prove that SQL engine
-work stopped on the server.
+trials themselves are not delayed. As above, an aborted browser request does
+not prove that SQL engine work stopped on the server.
 
 ## Reproduction
 
