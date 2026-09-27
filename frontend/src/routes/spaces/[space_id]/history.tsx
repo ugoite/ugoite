@@ -403,13 +403,14 @@ export default function SpaceHistoryRoute() {
       changeId: row.change_id,
       runId: row.change.run_id,
     };
+    let successNotice: string | null = null;
     try {
       if (kind === "revert") {
-        const result = await changeApi.revert(spaceId(), row.change_id, recoveryMessage().trim() ? { message: recoveryMessage().trim() } : {});
-        setRecoveryNotice(t("spaceHistory.revertSuccess"));
+        await changeApi.revert(spaceId(), row.change_id, recoveryMessage().trim() ? { message: recoveryMessage().trim() } : {});
+        successNotice = t("spaceHistory.revertSuccess");
       } else if (row.change.run_id) {
         const result = await changeApi.undoRun(spaceId(), row.change.run_id);
-        setRecoveryNotice(t("spaceHistory.undoSuccess", { count: result.reverted_change_count }));
+        successNotice = t("spaceHistory.undoSuccess", { count: result.reverted_change_count });
       }
       setPendingRecovery(null);
       setRecoveryMessage("");
@@ -423,6 +424,7 @@ export default function SpaceHistoryRoute() {
       } catch {
         setRecoveryFailure(t("spaceHistory.refreshFailedAfterSave"));
       }
+      if (successNotice) setRecoveryNotice(successNotice);
     } catch (error) {
       if (isDefiniteRevisionConflict(error)) {
         setPendingRecovery(null);
