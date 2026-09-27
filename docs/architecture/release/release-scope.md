@@ -5,7 +5,9 @@ sidebar:
 ---
 
 This page records the capability boundary of published v0.2.0 so packaging,
-support, and product claims stay aligned with the implementation.
+support, and product claims stay aligned with the implementation. The next
+v0.2.1 release is not prepared; its acceptance and claim status is tracked in
+the [product journey and evidence index](v0.2.1-product-journeys.md).
 
 ## Included
 

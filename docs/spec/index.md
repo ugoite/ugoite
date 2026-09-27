@@ -5,8 +5,8 @@ sidebar:
   order: 1
 ---
 
-**Updated:** 2026-09-12\
-**Implementation status:** Rust/Deno v0.1.1 published
+**Updated:** 2026-09-27\
+**Implementation status:** Rust/Deno v0.2.0 published; v0.2.1 unprepared
 
 Ugoite is a private, portable Knowledge Space for humans and AI. Its foundation
 is expressed as three boundaries: **Knowledge persists**, **Work may
@@ -37,11 +37,11 @@ derived or disposable.
   [user stories](stories/index.md).
 - [Features and implementation bindings](features/index.md).
 - [Policies](policies/index.md) for governance traceability.
-- [Architecture](../architecture/index.md) for boundaries, contracts,
-  data model, security, and testing.
+- [Architecture](../architecture/index.md) for boundaries, contracts, data
+  model, security, and testing.
 - [Vision](../vision/index.md) for the product promise and the
-  [Current Product and Target State](../vision/current-and-target.md) that
-  keeps Current, Planned, and North Star apart.
+  [Current Product and Target State](../vision/current-and-target.md) that keeps
+  Current, Planned, and North Star apart.
 
 The specification is organized by the question it answers. Behavior changes ship
 with implementation and verification evidence; incomplete evidence stays an

@@ -22,9 +22,10 @@ Ugoite is a private, portable Knowledge Space for humans and AI. Knowledge lives
 in an operator-owned Space, where it remains recoverable and independent of any
 server, browser session, model provider, or generated experience.
 
-The v0.1.1 release line is a compatible product patch: existing Space
-compatibility remains `0.1`. Product, Space, and interface versions are
-independent by design.
+The latest published product release is v0.2.0. The v0.2.x product line keeps
+Space compatibility at `0.1`; product, Space, and interface versions are
+independent by design. The next v0.2.1 scope remains unprepared and has no
+completed candidate evidence yet.
 
 The product promise has three parts: durable Knowledge belongs to the operator;
 human and agent Work can use that Knowledge without owning it; and the same
@@ -34,9 +35,9 @@ second system of record.
 ## What you can own
 
 Authoritative Entries, Forms, Assets, saved SQL, Changes, and portable history
-live in a Space. Search indexes and other acceleration structures
-are derived data that can be rebuilt. Node accounts and sessions are separate
-node-local control state, not a replacement for Space ownership.
+live in a Space. Search indexes and other acceleration structures are derived
+data that can be rebuilt. Node accounts and sessions are separate node-local
+control state, not a replacement for Space ownership.
 
 ## What humans and AI can do
 
@@ -48,8 +49,8 @@ Change/Run/Undo rules.
 
 ## Where Ugoite is going
 
-:::note[Target, not a v0.1 feature] Knowledge can become portable, inspectable
-views and task-specific tools. The current v0.1 release establishes the
+:::note[Target, not a shipped feature] Knowledge can become portable,
+inspectable views and task-specific tools. Current releases establish the
 authority boundary only: browser-local persistence, optional synchronization,
 View/Application definitions, and renderers remain future work. No general
 application builder or arbitrary code runtime is shipped. :::
@@ -60,16 +61,18 @@ Task pages cover every surface together: the same task page shows the Browser
 and CLI steps for one outcome. No separate Browser, CLI, or REST trees are
 maintained.
 
-- [Get started](get-started/index.md): understand the model and complete a
-  first durable workflow.
+- [Get started](get-started/index.md): understand the model and complete a first
+  durable workflow.
 - [Knowledge tasks](use/index.md): create, edit, search, and recover Knowledge.
 - [Operations](operate/index.md): install, configure, secure, and recover a
   deployment.
-- [Reference](reference/index.md): find exact CLI, REST, MCP, configuration,
-  and compatibility authorities.
+- [Reference](reference/index.md): find exact CLI, REST, MCP, configuration, and
+  compatibility authorities.
 - [Development](develop/index.md): build and extend the repository.
 - [Architecture & Specification](spec/index.md): inspect architecture, vision,
   requirements, policies, and evidence.
+- [Product journey evidence](architecture/testing/cross-surface-acceptance.md#product-journeys-for-the-v021-candidate):
+  see observable outcomes and current verification gaps.
 
 ## Current product boundary
 
@@ -87,16 +90,17 @@ remain planned work. :::
   membership/ACL enforcement, authenticated MCP access, authorized audit reads,
   and invitation-gated OIDC authentication/account linking.
 - Administrator recovery, agent/service-account flows, generic OAuth client
-  compatibility, and audit CRUD remain outside the
-  supported v0.1 release contract. TOTP is recovery-only.
+  compatibility, and audit CRUD remain outside the supported v0.1 release
+  contract. TOTP is recovery-only.
 
 ## Source-of-truth rules
 
 1. Product and engineering prose lives under `docs/` and is rendered directly by
    Starlight. Docs explain; they do not duplicate protocol semantics.
-2. CLI behavior is authoritative in the current binary: `ugoite <command>
-   --help` (Clap). REST behavior is authoritative in `crates/ugoite-server`
-   and the server-generated `/openapi.json`.
+2. CLI behavior is authoritative in the current binary:
+   `ugoite <command>
+   --help` (Clap). REST behavior is authoritative in
+   `crates/ugoite-server` and the server-generated `/openapi.json`.
 3. Requirements and evidence are authoritative in Mitase-declared relationships
    under `docs/spec` and `docs/mitase`. No second protocol registry is
    maintained in prose.
