@@ -169,7 +169,7 @@ describe("space history route", () => {
     expect(changeApi.list).toHaveBeenCalledTimes(2);
   });
 
-  it("audit_baseline_revert_success_retains_confirmation_dialog", async () => {
+  it("closes the revert dialog after exactly one committed Change", async () => {
     vi.mocked(changeApi.list)
       .mockResolvedValueOnce([
         {
@@ -213,7 +213,6 @@ describe("space history route", () => {
     });
     expect(await screen.findByText("Reverted as Change audit-change-inverse."))
       .toBeInTheDocument();
-    await waitFor(() => expect(confirm).toBeEnabled());
     expect(changeApi.revert).toHaveBeenCalledTimes(1);
     expect(changeApi.revert).toHaveBeenCalledWith(
       "default",
@@ -222,10 +221,49 @@ describe("space history route", () => {
     );
     expect(changeApi.list).toHaveBeenCalledTimes(2);
 
-    // F05 baseline defect, not the desired contract: the successful operation
-    // must remove this dialog so its confirmation cannot be submitted again.
-    // This mocked response does not prove an actual Change was committed.
-    expect(screen.getByRole("dialog")).toBe(dialog);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(dialog).not.toBeInTheDocument();
+  });
+
+  it("keeps success when history refetch fails", async () => {
+    vi.mocked(changeApi.list)
+      .mockResolvedValueOnce([
+        {
+          change_id: "change-before-refresh-error",
+          generation: 1,
+          actor_principal_id: "human:owner",
+          message: null,
+          reverts_change_id: null,
+          run_id: null,
+          created_at_micros: 1767225600000000,
+        },
+      ])
+      .mockRejectedValueOnce(new Error("offline after save"));
+    vi.mocked(changeApi.revert).mockResolvedValue({
+      change_id: "change-saved",
+      reverts_change_id: "change-before-refresh-error",
+      run_id: null,
+    });
+
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Revert this change" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Append new Change" }),
+    );
+
+    expect(await screen.findByText("Reverted as Change change-saved."))
+      .toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "The change was saved, but the history could not be refreshed.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Recovery failed/)).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(changeApi.revert).toHaveBeenCalledTimes(1);
+    expect(changeApi.list).toHaveBeenCalledTimes(2);
   });
 
   it("offers Run undo only when the response carries a Run ID", async () => {
@@ -267,9 +305,10 @@ describe("space history route", () => {
     expect(await screen.findByText("Undid 1 change(s) for this run."))
       .toBeInTheDocument();
     expect(changeApi.undoRun).toHaveBeenCalledWith("default", "run-7");
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("leaves Knowledge unchanged when recovery fails", async () => {
+  it("reports a definite revision conflict without claiming it was saved", async () => {
     vi.mocked(changeApi.list).mockResolvedValue([
       {
         change_id: "change-1",
@@ -281,7 +320,12 @@ describe("space history route", () => {
         created_at_micros: 1767225600000000,
       },
     ]);
-    vi.mocked(changeApi.revert).mockRejectedValue(new Error("conflict"));
+    vi.mocked(changeApi.revert).mockRejectedValue(
+      Object.assign(new Error("revision conflict"), {
+        code: "REVISION_CONFLICT",
+        status: 409,
+      }),
+    );
 
     render(() => <SpaceHistoryRoute />);
     fireEvent.click(
@@ -291,10 +335,105 @@ describe("space history route", () => {
       await screen.findByRole("button", { name: "Append new Change" }),
     );
 
-    expect(await screen.findByText(/Knowledge is unchanged/))
+    expect(await screen.findByText(/conflicts with newer history/))
       .toBeInTheDocument();
-    // No refresh: the failed operation appended nothing.
+    // The stale timeline is refreshed after a typed conflict.
+    expect(changeApi.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps typed API rejections distinct from an unknown result", async () => {
+    vi.mocked(changeApi.list).mockResolvedValue([
+      {
+        change_id: "change-forbidden",
+        generation: 1,
+        actor_principal_id: "human:owner",
+        message: null,
+        reverts_change_id: null,
+        run_id: null,
+        created_at_micros: 1767225600000000,
+      },
+    ]);
+    vi.mocked(changeApi.revert).mockRejectedValue(
+      Object.assign(new Error("forbidden"), {
+        kind: "forbidden",
+        status: 403,
+      }),
+    );
+
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Revert this change" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Append new Change" }),
+    );
+
+    expect(await screen.findByText(/recovery request was rejected/))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/result is unknown/)).toBeNull();
     expect(changeApi.list).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a lost recovery response as unknown and refreshes history", async () => {
+    vi.mocked(changeApi.list)
+      .mockResolvedValueOnce([
+        {
+          change_id: "change-uncertain",
+          generation: 1,
+          actor_principal_id: "human:owner",
+          message: null,
+          reverts_change_id: null,
+          run_id: null,
+          created_at_micros: 1767225600000000,
+        },
+      ])
+      .mockRejectedValueOnce(new Error("history offline"))
+      .mockResolvedValueOnce([
+        {
+          change_id: "change-uncertain",
+          generation: 1,
+          actor_principal_id: "human:owner",
+          message: null,
+          reverts_change_id: null,
+          run_id: null,
+          created_at_micros: 1767225600000000,
+        },
+      ]);
+    vi.mocked(changeApi.revert).mockRejectedValue(
+      new TypeError("network lost"),
+    );
+
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Revert this change" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Append new Change" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "The result is unknown. The server may have saved the change. Review the refreshed history before trying again.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "The history could not be refreshed to determine whether the change was saved.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(changeApi.revert).toHaveBeenCalledTimes(1);
+    expect(changeApi.list).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "Revert this change" }))
+      .toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry history refresh" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Revert this change" }),
+      ).toBeEnabled()
+    );
   });
 
   it("renders a recoverable error state", async () => {

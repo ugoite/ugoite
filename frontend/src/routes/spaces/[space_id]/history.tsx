@@ -11,7 +11,7 @@ import {
 import { changeApi, spaceApi, type SpaceChange } from "~/lib/ugoite-client";
 import type { SpaceMember } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
-import { t } from "~/lib/i18n";
+import { t, type TranslationKey } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
@@ -27,6 +27,21 @@ const changeKind = (change: SpaceChange): string =>
 type PendingRecovery =
   | { kind: "revert"; change: SpaceChange }
   | { kind: "undo"; change: SpaceChange };
+
+const isDefiniteRevisionConflict = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") return false;
+  const diagnostic = error as { code?: unknown; status?: unknown };
+  return diagnostic.code === "REVISION_CONFLICT" && diagnostic.status === 409;
+};
+
+const isDefiniteApiRejection = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") return false;
+  const diagnostic = error as { kind?: unknown; status?: unknown };
+  return typeof diagnostic.kind === "string" &&
+    typeof diagnostic.status === "number" &&
+    diagnostic.status >= 400 && diagnostic.status < 500 &&
+    diagnostic.status !== 408 && diagnostic.status !== 425;
+};
 
 export default function SpaceHistoryRoute() {
   const params = useParams<{ space_id: string }>();
@@ -67,13 +82,43 @@ export default function SpaceHistoryRoute() {
   const [working, setWorking] = createSignal(false);
   const [notice, setNotice] = createSignal<string | null>(null);
   const [failure, setFailure] = createSignal<string | null>(null);
+  const [refreshWarning, setRefreshWarning] = createSignal<string | null>(null);
+  const [refreshWarningKey, setRefreshWarningKey] = createSignal<
+    TranslationKey | null
+  >(null);
+  const [historyNeedsReview, setHistoryNeedsReview] = createSignal(false);
 
   const pendingOpen = () => pending() !== null;
 
-  const closeConfirm = () => {
+  const cancelConfirm = () => {
     if (working()) return;
     setPending(null);
     setMessage("");
+  };
+
+  // A server-confirmed Change closes the dialog even though the request is
+  // still marked busy while the timeline is refreshed.
+  const finishConfirm = () => {
+    setPending(null);
+    setMessage("");
+  };
+
+  const refreshHistory = async (warningKey: TranslationKey) => {
+    setHistoryNeedsReview(true);
+    try {
+      await refetch();
+      if (history.state === "errored") {
+        setRefreshWarning(t(warningKey));
+        setRefreshWarningKey(warningKey);
+      } else {
+        setRefreshWarning(null);
+        setRefreshWarningKey(null);
+        setHistoryNeedsReview(false);
+      }
+    } catch {
+      setRefreshWarning(t(warningKey));
+      setRefreshWarningKey(warningKey);
+    }
   };
 
   const confirmRecovery = async () => {
@@ -82,6 +127,7 @@ export default function SpaceHistoryRoute() {
     setWorking(true);
     setNotice(null);
     setFailure(null);
+    setRefreshWarning(null);
     try {
       // Revert and undo append new Changes; past states are never rewritten.
       // The UI only reports success after the server-confirmed result.
@@ -103,15 +149,23 @@ export default function SpaceHistoryRoute() {
           }),
         );
       }
-      closeConfirm();
-      await refetch();
+      finishConfirm();
+      await refreshHistory("spaceHistory.refreshFailedAfterSave");
     } catch (err) {
-      // The dialog closes and the single page-level failure reports that
-      // Knowledge is unchanged; the optional message is kept for retry.
-      setPending(null);
-      setFailure(
-        formatUserFacingError(err, "spaceHistory.operationFailed"),
-      );
+      finishConfirm();
+      if (isDefiniteRevisionConflict(err)) {
+        setFailure(t("spaceHistory.conflict"));
+        await refreshHistory("spaceHistory.refreshFailedAfterConflict");
+      } else if (isDefiniteApiRejection(err)) {
+        setFailure(
+          formatUserFacingError(err, "spaceHistory.operationFailed"),
+        );
+      } else {
+        // A lost response can happen after the server committed. Re-read the
+        // timeline before the user decides whether another operation is safe.
+        setFailure(t("spaceHistory.operationResultUnknown"));
+        await refreshHistory("spaceHistory.refreshFailedAfterUnknownResult");
+      }
     } finally {
       setWorking(false);
     }
@@ -124,7 +178,7 @@ export default function SpaceHistoryRoute() {
       <Show when={history.loading}>
         <LocalBusyIndicator label={t("spaceHistory.loading")} />
       </Show>
-      <Show when={history.error}>
+      <Show when={history.error && !refreshWarning()}>
         <p class="ui-alert ui-alert-error">{t("spaceHistory.loadError")}</p>
       </Show>
       <Show when={notice()}>
@@ -132,6 +186,22 @@ export default function SpaceHistoryRoute() {
       </Show>
       <Show when={failure()}>
         <p class="ui-alert ui-alert-error">{failure()}</p>
+      </Show>
+      <Show when={refreshWarning()}>
+        <div class="ui-alert ui-alert-warning">
+          <p>{refreshWarning()}</p>
+          <button
+            type="button"
+            class="ui-button ui-button-secondary mt-2 text-sm"
+            disabled={history.loading}
+            onClick={() => {
+              const key = refreshWarningKey();
+              if (key) void refreshHistory(key);
+            }}
+          >
+            {t("spaceHistory.retryHistoryRefresh")}
+          </button>
+        </div>
       </Show>
       <Show when={history()}>
         {(data) => (
@@ -176,10 +246,11 @@ export default function SpaceHistoryRoute() {
                             <button
                               type="button"
                               class="ui-button ui-button-secondary text-sm"
-                              disabled={working()}
+                              disabled={working() || historyNeedsReview()}
                               onClick={() => {
                                 setNotice(null);
                                 setFailure(null);
+                                setRefreshWarning(null);
                                 setPending({ kind: "revert", change });
                               }}
                             >
@@ -189,10 +260,11 @@ export default function SpaceHistoryRoute() {
                               <button
                                 type="button"
                                 class="ui-button ui-button-secondary text-sm"
-                                disabled={working()}
+                                disabled={working() || historyNeedsReview()}
                                 onClick={() => {
                                   setNotice(null);
                                   setFailure(null);
+                                  setRefreshWarning(null);
                                   setPending({ kind: "undo", change });
                                 }}
                               >
@@ -253,7 +325,7 @@ export default function SpaceHistoryRoute() {
         confirmLabel={t("spaceHistory.confirmAppend")}
         busy={working()}
         onConfirm={() => void confirmRecovery()}
-        onClose={closeConfirm}
+        onClose={cancelConfirm}
       >
         <Show when={pending()?.kind === "revert" && pending()?.change}>
           {(change) => (
