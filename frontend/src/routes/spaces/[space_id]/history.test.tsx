@@ -1,20 +1,27 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { changeApi, formApi, spaceApi } from "~/lib/ugoite-client";
 import SpaceHistoryRoute from "./history";
 
 const searchParams = vi.hoisted(() => ({ value: {} as Record<string, string> }));
-const setSearchParams = vi.hoisted(() => vi.fn((value: Record<string, string | undefined>) => {
+const locationState = vi.hoisted(() => ({ value: null as { historyRecoveryNotice?: unknown } | null }));
+const setSearchParams = vi.hoisted(() => vi.fn((
+  value: Record<string, string | undefined>,
+  options?: { state?: unknown },
+) => {
   for (const [key, item] of Object.entries(value)) {
     if (item === undefined) delete searchParams.value[key];
     else searchParams.value[key] = item;
   }
+  if (options?.state && typeof options.state === "object") {
+    locationState.value = options.state as typeof locationState.value;
+  }
 }));
 vi.mock("@solidjs/router", () => ({
   useParams: () => ({ space_id: "default" }),
-  useLocation: () => ({ state: null }),
+  useLocation: () => ({ state: locationState.value }),
   useSearchParams: () => [searchParams.value, setSearchParams],
 }));
 vi.mock("~/lib/ugoite-client", () => ({
@@ -55,10 +62,14 @@ describe("space history list", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     searchParams.value = {};
-    setSearchParams.mockImplementation((value) => {
+    locationState.value = null;
+    setSearchParams.mockImplementation((value, options) => {
       for (const [key, item] of Object.entries(value)) {
         if (item === undefined) delete searchParams.value[key];
         else searchParams.value[key] = item;
+      }
+      if (options?.state && typeof options.state === "object") {
+        locationState.value = options.state as typeof locationState.value;
       }
     });
     setLocale("en");
@@ -134,6 +145,10 @@ describe("space history list", () => {
       { state: { historyRecoveryNotice: "Revert added to history." } },
     );
     expect(changeApi.query).toHaveBeenCalledTimes(3);
+
+    cleanup();
+    render(() => <SpaceHistoryRoute />);
+    expect(await screen.findByText("Revert added to history.")).toBeInTheDocument();
   });
 
   it("traps focus in the detail dialog and restores it when closed with Escape", async () => {
