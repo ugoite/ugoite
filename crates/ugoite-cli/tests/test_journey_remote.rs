@@ -1399,13 +1399,15 @@ async fn test_parity_remote_delete_without_approval_rejected_without_mutation() 
     assert_eq!(revision_ids(&history).len(), 1);
 }
 
-/// Remote asset upload returns a sanitized reference (M03).
+/// Remote upload receipt is a complete typed value that round-trips through an Entry.
 #[tokio::test]
 async fn test_remote_asset_upload_returns_reference() {
     let fixture = setup_remote().await;
     let dir = tempdir().expect("asset staging directory");
     let file = dir.path().join("remote-note.txt");
-    std::fs::write(&file, b"remote upload bytes").expect("stage asset file");
+    let bytes = b"audit proof: 0123456789\n";
+    assert_eq!(bytes.len(), 24);
+    std::fs::write(&file, bytes).expect("stage asset file");
     let output = run_cli(
         &fixture.config_path,
         &["asset", "upload", file.to_str().expect("asset path")],
@@ -1413,10 +1415,89 @@ async fn test_remote_asset_upload_returns_reference() {
     .await;
     let asset = stdout_json(&output, "remote asset upload");
     assert_eq!(asset["kind"].as_str(), Some("asset"));
+    assert_eq!(asset.as_object().unwrap().len(), 6);
+    for key in ["revision_id", "change_id", "run_id"] {
+        assert_eq!(asset.get(key), Some(&serde_json::Value::Null));
+    }
     assert!(
         asset["id"].as_str().is_some_and(|id| !id.is_empty()),
         "upload returns the asset id: {asset}"
     );
+    let reference = &asset["asset_reference"];
+    assert_eq!(reference.as_object().unwrap().len(), 5);
+    assert_eq!(reference["asset_id"], asset["id"]);
+    assert_eq!(reference["name"], "remote-note.txt");
+    assert_eq!(reference["media_type"], "application/octet-stream");
+    assert_eq!(reference["size_bytes"], bytes.len());
+    use sha2::{Digest, Sha256};
+    assert_eq!(
+        reference["sha256"],
+        Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+
+    setup_parity_form(
+        &fixture,
+        r#"{"File":{"type":"asset_reference"}}"#,
+        "AuditRemoteAssetForm",
+    )
+    .await;
+    let fields = dir.path().join("asset-fields.json");
+    std::fs::write(
+        &fields,
+        serde_json::to_vec(&serde_json::json!({"File": reference})).unwrap(),
+    )
+    .expect("write asset field value");
+    let created = run_cli(
+        &fixture.config_path,
+        &[
+            "entry",
+            "create",
+            "--id",
+            "remote-asset-entry",
+            "--form",
+            "AuditRemoteAssetForm",
+            "--fields-file",
+            fields.to_str().unwrap(),
+        ],
+    )
+    .await;
+    assert!(
+        created.status.success(),
+        "entry create stderr: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let read = run_cli(
+        &fixture.config_path,
+        &["entry", "get", "remote-asset-entry"],
+    )
+    .await;
+    let read = stdout_json(&read, "remote asset entry read");
+    assert_eq!(read["fields"]["File"]["asset_id"], asset["id"]);
+    let downloaded = dir.path().join("remote-downloaded.txt");
+    let download = run_cli(
+        &fixture.config_path,
+        &[
+            "asset",
+            "download",
+            asset["id"].as_str().unwrap(),
+            "--entry",
+            "remote-asset-entry",
+            "--field",
+            "File",
+            "--out",
+            downloaded.to_str().unwrap(),
+        ],
+    )
+    .await;
+    assert!(
+        download.status.success(),
+        "download stderr: {}",
+        String::from_utf8_lossy(&download.stderr)
+    );
+    assert_eq!(std::fs::read(downloaded).unwrap(), bytes);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         !stdout.contains(dir.path().to_str().unwrap_or("\0")),

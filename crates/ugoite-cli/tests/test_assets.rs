@@ -281,7 +281,9 @@ fn test_asset_read_side_shares_core_semantics() {
     );
 
     let asset_file = dir.path().join("note.bin");
-    std::fs::write(&asset_file, b"binary-bytes").unwrap();
+    let asset_bytes = b"audit proof: 0123456789\n";
+    assert_eq!(asset_bytes.len(), 24);
+    std::fs::write(&asset_file, asset_bytes).unwrap();
     let upload = run_cli(
         &config_path,
         &["asset", "upload", asset_file.to_str().unwrap()],
@@ -294,12 +296,31 @@ fn test_asset_read_side_shares_core_semantics() {
     let receipt = json_of(&upload);
     assert_eq!(receipt["kind"].as_str(), Some("asset"));
     let asset_id = receipt["id"].as_str().expect("asset id").to_string();
-    let asset = asset_reference(&receipt, "note.bin", b"binary-bytes");
+    assert_eq!(receipt["asset_reference"]["asset_id"], asset_id);
+    assert_eq!(receipt["asset_reference"]["name"], "note.bin");
+    assert_eq!(
+        receipt["asset_reference"]["media_type"],
+        "application/octet-stream"
+    );
+    assert_eq!(receipt["asset_reference"]["size_bytes"], asset_bytes.len());
+    assert_eq!(
+        receipt["asset_reference"]["sha256"].as_str().unwrap().len(),
+        64
+    );
+    use sha2::{Digest, Sha256};
+    assert_eq!(
+        receipt["asset_reference"]["sha256"],
+        Sha256::digest(asset_bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
 
     let fields_file = dir.path().join("fields.json");
     std::fs::write(
         &fields_file,
-        serde_json::to_string(&serde_json::json!({"Document": asset})).unwrap(),
+        serde_json::to_string(&serde_json::json!({"Document": receipt["asset_reference"]}))
+            .unwrap(),
     )
     .unwrap();
     let create = run_cli(
@@ -372,7 +393,7 @@ fn test_asset_read_side_shares_core_semantics() {
         "stderr: {}",
         String::from_utf8_lossy(&download.stderr)
     );
-    assert_eq!(std::fs::read(&out_path).unwrap(), b"binary-bytes");
+    assert_eq!(std::fs::read(&out_path).unwrap(), asset_bytes);
 
     // Wrong entry and wrong field contexts fail closed with a stable code.
     for args in [
@@ -609,26 +630,7 @@ fn setup_core_space(dir: &tempfile::TempDir, slug: &str, form_json: &str) -> Pat
 /// Upload machine output is the stable receipt (`kind`/`id`); the attach
 /// path needs the stored reference object, whose metadata the caller knows
 /// (filename given, octet-stream media type, content bytes).
-fn asset_reference(receipt: &serde_json::Value, name: &str, bytes: &[u8]) -> serde_json::Value {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let digest: Vec<String> = hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    serde_json::json!({
-        "asset_id": receipt["id"],
-        "name": name,
-        "media_type": "application/octet-stream",
-        "size_bytes": bytes.len(),
-        "sha256": digest.join(""),
-    })
-}
-
 fn upload_core(config_path: &Path, file: &Path, filename: &str) -> serde_json::Value {
-    let bytes = std::fs::read(file).expect("read asset file");
     let file = file.to_str().unwrap();
     let output = run_cli(
         config_path,
@@ -646,7 +648,10 @@ fn upload_core(config_path: &Path, file: &Path, filename: &str) -> serde_json::V
         receipt["id"].as_str().is_some_and(|id| !id.is_empty()),
         "upload receipt carries the asset id: {receipt}"
     );
-    asset_reference(&receipt, filename, &bytes)
+    assert_eq!(receipt["asset_reference"]["asset_id"], receipt["id"]);
+    assert_eq!(receipt["asset_reference"]["name"], filename);
+    assert_eq!(receipt["asset_reference"].as_object().unwrap().len(), 5);
+    receipt["asset_reference"].clone()
 }
 
 fn create_entry_with_fields(
@@ -936,6 +941,47 @@ fn test_asset_upload_missing_file_fails_closed_without_mutation() {
     assert_eq!(json_of(&list).as_array().expect("array").len(), 0);
 }
 
+/// A successful HTTP status with malformed upload metadata is not projected
+/// as a success receipt because bytes may already have been persisted.
+#[test]
+fn test_asset_upload_invalid_remote_reference_has_no_success_receipt() {
+    let asset_id = uuid::Uuid::now_v7().to_string();
+    let malformed = serde_json::json!({
+        "asset_id": asset_id,
+        "name": "proof.txt",
+        "media_type": "application/octet-stream",
+        "size_bytes": 24,
+        "sha256": "not-a-checksum",
+    });
+    let harness = spawn_stub(
+        start_stub(
+            malformed,
+            b"audit proof: 0123456789\n".to_vec(),
+            vec![],
+            serde_json::json!([]),
+        ),
+        1,
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("proof.txt");
+    std::fs::write(&file, b"audit proof: 0123456789\n").unwrap();
+
+    let output = run_cli(
+        &harness.config_path,
+        &["asset", "upload", file.to_str().unwrap(), "-o", "json"],
+    );
+    assert!(!output.status.success());
+    assert!(
+        output.stdout.is_empty(),
+        "unexpected success receipt: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("result is unconfirmed"), "{stderr}");
+    assert!(stderr.contains("Do not retry blindly"), "{stderr}");
+    harness.handle.join().unwrap();
+}
+
 /// Minimal stub backend serving the portable asset/entry routes over
 /// the same REST paths the api-client protocol owns.
 struct StubBackend {
@@ -1144,10 +1190,7 @@ fn stub_asset(asset_id: &str, name: &str, size: u64) -> serde_json::Value {
         "name": name,
         "media_type": "text/plain",
         "size_bytes": size,
-        "sha256": "abc",
-        "form": "Doc",
-        "entry_id": "doc-1",
-        "field": "Document",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     })
 }
 
@@ -1260,13 +1303,7 @@ fn test_asset_attach_create_reads_name_back_remote() {
     let uploaded: serde_json::Value = serde_json::from_slice(&upload.stdout).unwrap();
     assert_eq!(uploaded["kind"].as_str(), Some("asset"));
     assert_eq!(uploaded["id"].as_str(), Some(asset_id));
-    let attached = serde_json::json!({
-        "asset_id": asset_id,
-        "name": "report.txt",
-        "media_type": "text/plain",
-        "size_bytes": asset_bytes.len(),
-        "sha256": "abc",
-    });
+    let attached = uploaded["asset_reference"].clone();
 
     let fields_file = dir.path().join("fields.json");
     std::fs::write(
@@ -1437,6 +1474,7 @@ fn test_asset_multi_attachment_full_update_preserves_both_remote() {
     std::fs::write(&first_file, b"first-bytes").unwrap();
     let second_file = dir.path().join("second.txt");
     std::fs::write(&second_file, b"second-bytes!").unwrap();
+    let mut uploaded_references = Vec::new();
     for file in [&first_file, &second_file] {
         let upload = run_cli(
             &harness.config_path,
@@ -1447,11 +1485,18 @@ fn test_asset_multi_attachment_full_update_preserves_both_remote() {
             "upload stderr: {}",
             String::from_utf8_lossy(&upload.stderr)
         );
+        let receipt = json_of(&upload);
+        assert_eq!(receipt["asset_reference"]["asset_id"], receipt["id"]);
+        uploaded_references.push(receipt["asset_reference"].clone());
     }
-    let uploaded_first: serde_json::Value =
-        serde_json::from_str(&format!("{{\"asset_id\": \"{first_id}\"}}")).unwrap();
-    let uploaded_second: serde_json::Value =
-        serde_json::from_str(&format!("{{\"asset_id\": \"{second_id}\"}}")).unwrap();
+    let uploaded_first = uploaded_references[0].clone();
+    let uploaded_second = serde_json::json!({
+        "asset_id": second_id,
+        "name": "second.txt",
+        "media_type": "text/plain",
+        "size_bytes": 12,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    });
     let fields_file = dir.path().join("fields.json");
     std::fs::write(
         &fields_file,
@@ -1620,16 +1665,18 @@ fn test_asset_acceptance_matrix_core_remote_parity() {
     let remote_dir = tempfile::tempdir().unwrap();
     let remote_file = remote_dir.path().join("matrix.txt");
     std::fs::write(&remote_file, b"matrix bytes").unwrap();
-    assert!(run_cli(
+    let remote_upload = run_cli(
         &harness.config_path,
         &["asset", "upload", remote_file.to_str().unwrap()],
-    )
-    .status
-    .success());
+    );
+    assert!(remote_upload.status.success());
+    let remote_receipt = json_of(&remote_upload);
+    assert_eq!(remote_receipt["asset_reference"]["asset_id"], remote_id);
     let remote_fields = remote_dir.path().join("fields.json");
     std::fs::write(
         &remote_fields,
-        serde_json::to_string(&serde_json::json!({"Document": {"asset_id": remote_id}})).unwrap(),
+        serde_json::to_string(&serde_json::json!({"Document": remote_receipt["asset_reference"]}))
+            .unwrap(),
     )
     .unwrap();
     assert!(run_cli(

@@ -44,15 +44,24 @@ ugoite asset upload 019f1234-5678-7abc-8def-0123456789ab ./diagram.png
 ugoite asset delete 019f1234-5678-7abc-8def-0123456789ab asset-id
 ```
 
-Use `--filename` to choose the logical filename where the selected command
-supports it. There is no dedicated attach flag: to attach, place the
-returned asset object (`asset_id`, `name`, `media_type`, `size_bytes`,
-`sha256`) as the field value through `entry create --fields-file` or
-`entry update --fields-file`; `--field KEY=VALUE` stays a string and cannot
-carry an asset object. An uploaded-but-unreferenced object is not
-Space-visible Knowledge and never appears in `asset list`. Run
-`ugoite asset --help` and `ugoite entry create --help` for exact flags and
-mode requirements.
+Use `--filename` to choose the logical filename. For machine-readable output,
+save the upload receipt and pass only its `asset_reference` object to the
+Entry field:
+
+```bash
+ugoite asset upload proof.txt -o json > upload.json
+jq '{File: .asset_reference}' upload.json > asset-fields.json
+ugoite entry create --form AuditAsset --fields-file asset-fields.json
+```
+
+If `jq` is unavailable, copy the `asset_reference` object from `upload.json`
+into `asset-fields.json` as the value of `File`. Do not paste the whole upload
+receipt: `--field File=...` is a string option and cannot carry an object.
+Upload stores bytes; saving an Entry reference is a separate operation. If
+Entry creation fails, the uploaded bytes may remain stored without a reference
+and will not appear in `asset list`; keep `upload.json` so you retain the
+reference metadata. Run `ugoite asset --help` and `ugoite entry create --help`
+for exact flags and mode requirements.
 
 </TabItem>
 </Tabs>
