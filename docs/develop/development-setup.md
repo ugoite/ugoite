@@ -54,9 +54,11 @@ to retain the fixture, `UGOITE_STARTUP_MEASURE_OUTPUT` to change the report
 path, or `UGOITE_STARTUP_MEASURE_RUNS` to change the number of process starts.
 Set `UGOITE_STARTUP_MEASURE_TIMEOUT_SECONDS` to change the readiness timeout.
 When reusing a retained fixture, set `UGOITE_STARTUP_MEASURE_REUSE_ROOT=true`
-with the same `UGOITE_STARTUP_MEASURE_ROOT`. The report distinguishes the first
-process from later processes; it does not control the operating system's file
-cache.
+with the same `UGOITE_STARTUP_MEASURE_ROOT`; the script also retains a mode-600
+Node secret sidecar beside that root so identity state opens consistently.
+Delete the root and its `.node-secret` sidecar when finished. The report
+distinguishes the first process from later processes; it does not control the
+operating system's file cache.
 
 ## Development authentication
 

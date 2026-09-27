@@ -15,7 +15,7 @@ if [[ -n "${UGOITE_STARTUP_MEASURE_ROOT:-}" ]]; then
   mkdir -p "$MEASURE_ROOT"
   if [[ -n "$(find "$MEASURE_ROOT" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
     if [[ "$REUSE_ROOT" != true || ! -f "$MEASURE_ROOT/.ugoite-startup-measurement-fixture.json" ]] || \
-      [[ "$(cat "$MEASURE_ROOT/.ugoite-startup-measurement-fixture.json")" != "$FIXTURE_MARKER_CONTENT" ]]; then
+      [[ ! -s "$MEASURE_ROOT/.ugoite-startup-measurement-fixture.json" ]]; then
       echo "Refusing to reuse an unrecognized startup measurement root: $MEASURE_ROOT" >&2
       exit 1
     fi
@@ -32,8 +32,10 @@ if [[ "$OUTPUT_FILE" != /* ]]; then
 fi
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ugoite-startup-logs.XXXXXX")"
+SECRET_FILE="${UGOITE_STARTUP_MEASURE_SECRET_FILE:-$MEASURE_ROOT.node-secret}"
 cleanup() {
   if [[ "$KEEP_ROOT" == false ]]; then rm -rf "$MEASURE_ROOT"; fi
+  if [[ "$KEEP_ROOT" == false ]]; then rm -f "$SECRET_FILE"; fi
   rm -rf "$LOG_DIR"
 }
 trap cleanup EXIT INT TERM
@@ -48,16 +50,68 @@ if [[ "$REUSE_ROOT" != true ]]; then
     --root "$MEASURE_ROOT" --space-id startup-space-b \
     --owner "Startup Measurement Owner" --scenario renewable-ops \
     --entry-count 4000 --seed 3144001
-  printf '%s' "$FIXTURE_MARKER_CONTENT" >"$MEASURE_ROOT/.ugoite-startup-measurement-fixture.json"
 fi
+python3 - "$MEASURE_ROOT" "$FIXTURE_MARKER_CONTENT" "$REUSE_ROOT" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+expected = json.loads(sys.argv[2])
+reuse = sys.argv[3] == "true"
+marker_path = root / ".ugoite-startup-measurement-fixture.json"
+digest = hashlib.sha256()
+for path in sorted((root / "spaces").rglob("*")):
+    if path.is_file():
+        digest.update(path.relative_to(root).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+actual_digest = digest.hexdigest()
+if reuse:
+    marker = json.loads(marker_path.read_text())
+    if any(marker.get(key) != value for key, value in expected.items()):
+        raise SystemExit("Retained startup fixture does not match the expected seeds and counts")
+    if marker.get("space_contents_sha256") != actual_digest:
+        raise SystemExit("Retained startup fixture contents changed since it was seeded")
+else:
+    marker = {**expected, "space_contents_sha256": actual_digest}
+    marker_path.write_text(json.dumps(marker, sort_keys=True) + "\n")
+PY
+
+if [[ "$REUSE_ROOT" == true && ! -f "$SECRET_FILE" ]]; then
+  echo "A retained Node secret file is required to reuse the startup fixture: $SECRET_FILE" >&2
+  exit 1
+fi
+if [[ ! -f "$SECRET_FILE" ]]; then
+  (umask 077; head -c 32 /dev/urandom | base64 >"$SECRET_FILE")
+fi
+chmod 600 "$SECRET_FILE"
+NODE_SECRET_KEY="$(cat "$SECRET_FILE")"
+
+SOURCE_COMMIT_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+SOURCE_STATUS="$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)"
+if [[ -n "$SOURCE_STATUS" ]]; then
+  if [[ "${UGOITE_STARTUP_MEASURE_ALLOW_DIRTY:-false}" != true ]] || \
+    ! git -C "$ROOT_DIR" diff --quiet -- || \
+    [[ -n "$(git -C "$ROOT_DIR" ls-files --others --exclude-standard)" ]]; then
+    echo "Startup measurements require a clean tree. To measure a fully staged source tree, set UGOITE_STARTUP_MEASURE_ALLOW_DIRTY=true." >&2
+    exit 1
+  fi
+  SOURCE_SHA="$(git -C "$ROOT_DIR" write-tree)"
+  SOURCE_ID_KIND="git_tree"
+else
+  SOURCE_SHA="$SOURCE_COMMIT_SHA"
+  SOURCE_ID_KIND="git_commit"
+fi
+SOURCE_TREE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD^{tree})"
+if [[ "$SOURCE_ID_KIND" == git_tree ]]; then SOURCE_TREE_SHA="$SOURCE_SHA"; fi
 
 echo "Building server from source..." >&2
 cargo build --locked -p ugoite-server
-SOURCE_SHA="${UGOITE_SOURCE_SHA:-$(git -C "$ROOT_DIR" rev-parse HEAD)}"
 TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 if [[ "$TARGET_DIR" != /* ]]; then TARGET_DIR="$ROOT_DIR/$TARGET_DIR"; fi
 SERVER="$TARGET_DIR/debug/ugoite-server"
-NODE_SECRET_KEY="$(head -c 32 /dev/urandom | base64)"
 
 for ((run = 1; run <= RUNS; run++)); do
   port=$((18400 + run))
@@ -90,14 +144,16 @@ for ((run = 1; run <= RUNS; run++)); do
   wait "$server_pid" || true
 done
 
-python3 - "$OUTPUT_FILE" "$SOURCE_SHA" "$RUNS" "$MEASURE_ROOT" "$LOG_DIR" <<'PY'
+python3 - "$OUTPUT_FILE" "$SOURCE_SHA" "$RUNS" "$MEASURE_ROOT" "$LOG_DIR" "$SOURCE_COMMIT_SHA" "$SOURCE_TREE_SHA" "$SOURCE_ID_KIND" <<'PY'
 import json
 import platform
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-output, source_sha, runs, root, log_dir = sys.argv[1:]
+args = sys.argv[1:]
+output, source_sha, runs, root, log_dir = args[:5]
+source_commit_sha, source_tree_sha, source_id_kind = args[5:]
 measurements = []
 audit_event_count = 0
 audit_event_counts_by_space = {}
@@ -125,6 +181,9 @@ report = {
     "measured_at": datetime.now(timezone.utc).isoformat(),
     "command": "mise run measure:startup",
     "source_sha": source_sha,
+    "source_commit_sha": source_commit_sha,
+    "source_tree_sha": source_tree_sha,
+    "source_id_kind": source_id_kind,
     "fixture": {
         "seed": {"startup-space-a": 3146001, "startup-space-b": 3144001},
         "entries": 10000,
