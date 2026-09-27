@@ -109,3 +109,31 @@ adding an internal service operation.
 Each authenticated `tools/call` credential is limited to 60 calls per rolling
 minute. Excess calls receive HTTP 429 with a JSON-RPC rate-limit error and
 `Retry-After`; read/list operations are not charged against this limit.
+
+## Protocol conformance coverage
+
+The protocol target is MCP `2026-07-28`. The official
+`@modelcontextprotocol/conformance` CLI added frozen `--requirements
+2026-07-28`
+support in `0.2.0-alpha.11`; its requirement inventory includes 69 server and
+client scenarios. Use the versioned command below to inspect that inventory
+rather than relying on the package's mutable `latest` tag:
+
+```sh
+npx --yes @modelcontextprotocol/conformance@0.2.0-alpha.11 list --requirements 2026-07-28 --server
+```
+
+That full inventory also covers protocol capabilities Ugoite does not advertise,
+including prompts, completions, sampling, elicitation, and subscription streams.
+The inventory is not evidence that Ugoite implements or passes those
+capabilities. CI runs the official `tools-list` and `resources-list` scenarios
+against the integrated server at the pinned 2026-07-28 wire version. The
+test-only proxy adds a read-only test credential; MCP requests and responses
+still go through Ugoite. Run the same focused scenarios locally with
+`cargo test -p ugoite-cli --test test_mcp_conformance`.
+
+Those scenario results cover only the advertised listing surface. Separate
+repository tests cover stateless per-request metadata, standard header/body
+binding, JSON-RPC errors, cache hints, Origin handling, and authorization
+boundaries. The complete official inventory has not been claimed as passing. MCP
+Tasks and MCP Apps remain outside this implementation.

@@ -65,6 +65,45 @@ async fn json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&bytes).expect("json")
 }
 
+fn mcp_test_request(
+    id: &str,
+    method: &str,
+    header_method: &str,
+    header_version: &str,
+    meta_version: &str,
+    name_body: Option<(&str, &str)>,
+    name_header: Option<&str>,
+) -> Request<Body> {
+    let mut params = serde_json::json!({
+        "_meta": {
+            "io.modelcontextprotocol/protocolVersion": meta_version,
+            "io.modelcontextprotocol/clientCapabilities": {}
+        }
+    });
+    if let Some((key, value)) = name_body {
+        params[key] = serde_json::json!(value);
+    }
+    let mut builder = Request::post("/mcp")
+        .header("content-type", "application/json")
+        .header("accept", "application/json, text/event-stream")
+        .header("mcp-protocol-version", header_version)
+        .header("mcp-method", header_method);
+    if let Some(name) = name_header {
+        builder = builder.header("mcp-name", name);
+    }
+    builder
+        .body(Body::from(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": method,
+                "params": params
+            })
+            .to_string(),
+        ))
+        .expect("MCP test request")
+}
+
 fn assert_common_security_headers(response: &axum::response::Response, hsts: bool) {
     let headers = response.headers();
     assert_eq!(
@@ -341,6 +380,90 @@ async fn mcp_v1_transport_rejects_legacy_methods_and_validates_the_wire_shape() 
 }
 
 #[tokio::test]
+async fn mcp_v1_header_routing_reports_body_mismatches_and_unsupported_versions() {
+    let app = initialized_app("mcp-v1-header-routing").await;
+
+    let mismatched_version = app
+        .clone()
+        .oneshot(mcp_test_request(
+            "version-mismatch",
+            "server/discover",
+            "server/discover",
+            "2026-07-28",
+            "v999.0.0",
+            None,
+            None,
+        ))
+        .await
+        .expect("version mismatch response");
+    assert_eq!(mismatched_version.status(), StatusCode::BAD_REQUEST);
+    let body = json(mismatched_version).await;
+    assert_eq!(body["id"], "version-mismatch");
+    assert_eq!(body["error"]["code"], -32020);
+    assert_eq!(body["error"]["data"]["header"], "mcp-protocol-version");
+    assert_eq!(body["error"]["data"]["expected"], "v999.0.0");
+
+    let unsupported_version = app
+        .clone()
+        .oneshot(mcp_test_request(
+            "unsupported-version",
+            "server/discover",
+            "server/discover",
+            "v999.0.0",
+            "v999.0.0",
+            None,
+            None,
+        ))
+        .await
+        .expect("unsupported version response");
+    assert_eq!(unsupported_version.status(), StatusCode::BAD_REQUEST);
+    let body = json(unsupported_version).await;
+    assert_eq!(body["id"], "unsupported-version");
+    assert_eq!(body["error"]["code"], -32022);
+    assert_eq!(body["error"]["data"]["supported"][0], "2026-07-28");
+    assert_eq!(body["error"]["data"]["requested"], "v999.0.0");
+
+    let mismatched_method = app
+        .clone()
+        .oneshot(mcp_test_request(
+            "method-mismatch",
+            "server/discover",
+            "tools/list",
+            "2026-07-28",
+            "2026-07-28",
+            None,
+            None,
+        ))
+        .await
+        .expect("method mismatch response");
+    assert_eq!(mismatched_method.status(), StatusCode::BAD_REQUEST);
+    let body = json(mismatched_method).await;
+    assert_eq!(body["id"], "method-mismatch");
+    assert_eq!(body["error"]["code"], -32020);
+    assert_eq!(body["error"]["data"]["header"], "mcp-method");
+    assert_eq!(body["error"]["data"]["expected"], "server/discover");
+
+    let mismatched_name = app
+        .oneshot(mcp_test_request(
+            "name-mismatch",
+            "resources/read",
+            "resources/read",
+            "2026-07-28",
+            "2026-07-28",
+            Some(("uri", "ugoite://entry/right")),
+            Some("ugoite://entry/wrong"),
+        ))
+        .await
+        .expect("name mismatch response");
+    assert_eq!(mismatched_name.status(), StatusCode::BAD_REQUEST);
+    let body = json(mismatched_name).await;
+    assert_eq!(body["id"], "name-mismatch");
+    assert_eq!(body["error"]["code"], -32020);
+    assert_eq!(body["error"]["data"]["header"], "mcp-name");
+    assert_eq!(body["error"]["data"]["expected"], "ugoite://entry/right");
+}
+
+#[tokio::test]
 async fn mcp_accepts_configured_cross_origin_clients_and_preflight_headers() {
     let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
     let _cors_origins = EnvVarGuard::set("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");
@@ -388,6 +511,24 @@ async fn mcp_accepts_configured_cross_origin_clients_and_preflight_headers() {
         actual.headers().get("access-control-allow-origin"),
         Some(&"https://frontend.example".parse().unwrap())
     );
+}
+
+#[tokio::test]
+async fn mcp_rejects_unconfigured_origins_before_authentication() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let _cors_origins = EnvVarGuard::unset("UGOITE_CORS_ALLOWED_ORIGINS");
+    let app = initialized_app_without_env_lock("mcp-reject-origin").await;
+    let response = app
+        .oneshot(
+            Request::post("/mcp")
+                .header("origin", "https://attacker.example")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(json(response).await["code"], "ORIGIN_NOT_ALLOWED");
 }
 
 #[tokio::test]
