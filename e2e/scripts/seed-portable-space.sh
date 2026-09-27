@@ -158,7 +158,7 @@ for AUTH_CASE in corrupt foreign; do
     EXPECTED_DETAIL="decode Space authorization state"
   else
     cat > "$CASE_ROOT/spaces/$SPACE_UID/security/principals.json" <<EOF
-{"schema_version":1,"space_uid":"00000000-0000-0000-0000-000000000001","revision":1}
+{"schema_version":1,"space_uid":"00000000-0000-0000-0000-000000000001","principals":{"00000000-0000-0000-0000-000000000002":{"principal_id":"00000000-0000-0000-0000-000000000002","kind":"human","display_name":"Foreign owner","state":"active","created_at":"2026-01-01T00:00:00Z"}},"memberships":{"00000000-0000-0000-0000-000000000002":{"principal_id":"00000000-0000-0000-0000-000000000002","role":"owner","created_at":"2026-01-01T00:00:00Z"}},"principal_lifecycle_epochs":{"00000000-0000-0000-0000-000000000002":1},"revision":1}
 EOF
     EXPECTED_DETAIL="different space_uid"
   fi
