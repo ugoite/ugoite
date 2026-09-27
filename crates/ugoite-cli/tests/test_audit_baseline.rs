@@ -86,7 +86,7 @@ impl AuditFixture {
 }
 
 #[test]
-fn audit_baseline_f03_upload_receipt_omits_asset_reference() {
+fn audit_baseline_f03_upload_reference_attaches_and_downloads() {
     let fixture = AuditFixture::new();
     let form = fixture.write_json(
         "audit-asset.json",
@@ -106,26 +106,47 @@ fn audit_baseline_f03_upload_receipt_omits_asset_reference() {
     for key in ["revision_id", "change_id", "run_id"] {
         assert_eq!(receipt.get(key), Some(&Value::Null));
     }
-    // F03 desired invariant: asset_reference must carry the upload's complete
-    // AssetReference. Today only an opaque ID survives CLI projection.
-    assert!(receipt.get("asset_reference").is_none());
-    assert_eq!(receipt.as_object().unwrap().len(), 5);
-    let fields = fixture.write_json("asset-fields.json", &json!({"File": receipt}));
-    let rejected = fixture.run(&[
+    let reference = receipt.get("asset_reference").expect("complete reference");
+    assert_eq!(reference.as_object().unwrap().len(), 5);
+    assert_eq!(reference["asset_id"], receipt["id"]);
+    assert_eq!(reference["name"], "proof.txt");
+    assert_eq!(reference["media_type"], "application/octet-stream");
+    assert_eq!(reference["size_bytes"], bytes.len());
+    let checksum = reference["sha256"].as_str().expect("sha256");
+    assert_eq!(checksum.len(), 64);
+    assert!(checksum
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+    assert_eq!(receipt.as_object().unwrap().len(), 6);
+    // Upload alone persists bytes but does not create a Knowledge reference.
+    assert_eq!(fixture.json(&["asset", "list", "-o", "json"]), json!([]));
+    let fields = fixture.write_json("asset-fields.json", &json!({"File": reference}));
+    fixture.success(&[
         "entry",
         "create",
+        "--id",
+        "audit-asset-1",
         "--form",
         "AuditAsset",
         "--fields-file",
         fields.to_str().unwrap(),
     ]);
-    assert!(
-        !rejected.status.success(),
-        "receipt is not an AssetReference"
-    );
-    // Upload persists bytes but is not an Entry save; unreferenced assets do
-    // not become discoverable by listing Form-owned references.
-    assert_eq!(fixture.json(&["asset", "list", "-o", "json"]), json!([]));
+    let downloaded = fixture.dir.path().join("proof-downloaded.txt");
+    fixture.success(&[
+        "asset",
+        "download",
+        receipt["id"].as_str().unwrap(),
+        "--entry",
+        "audit-asset-1",
+        "--field",
+        "File",
+        "--out",
+        downloaded.to_str().unwrap(),
+    ]);
+    assert_eq!(std::fs::read(downloaded).unwrap(), bytes);
+    let listed = fixture.json(&["asset", "list", "-o", "json"]);
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["asset_id"], receipt["id"]);
 }
 
 #[test]

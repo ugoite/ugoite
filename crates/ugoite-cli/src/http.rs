@@ -150,7 +150,48 @@ pub async fn execute_multipart_for_target(
         .mime_str("application/octet-stream")
         .with_context(|| format!("prepare {operation} upload"))?;
     let form = reqwest::multipart::Form::new().part("file", part);
-    send_and_decode(&prepared.operation, request.multipart(form)).await
+    send_multipart_upload_and_decode(&prepared.operation, request.multipart(form)).await
+}
+
+async fn send_multipart_upload_and_decode(
+    operation: &str,
+    request: reqwest::RequestBuilder,
+) -> Result<Value> {
+    let response = request.send().await.map_err(|error| {
+        anyhow::anyhow!(
+            "asset upload result is unconfirmed; the server may have stored the bytes. Do not retry blindly; check the Space before uploading again. Details: send {operation} request: {error}"
+        )
+    })?;
+    let status = response.status();
+    let status_text = status.canonical_reason().unwrap_or_default().to_string();
+    let headers = response
+        .headers()
+        .iter()
+        .filter_map(|(name, value)| {
+            value.to_str().ok().map(|value| Header {
+                name: name.as_str().to_string(),
+                value: value.to_string(),
+            })
+        })
+        .collect();
+    let body = response.text().await.map_err(|error| {
+        anyhow::anyhow!(
+            "asset upload result is unconfirmed; the server may have stored the bytes. Do not retry blindly; check the Space before uploading again. Details: read {operation} response: {error}"
+        )
+    })?;
+    let response = ApiResponse {
+        status: status.as_u16(),
+        status_text,
+        headers,
+        body,
+    };
+    match decode_response(operation, response) {
+        Ok(value) => Ok(value),
+        Err(error) if status.is_success() => Err(anyhow::anyhow!(
+            "asset upload result is unconfirmed; the server may have stored the bytes. Do not retry blindly; check the Space before uploading again. Details: {error}"
+        )),
+        Err(error) => Err(error.into()),
+    }
 }
 
 async fn execute_prepared_for_target(
@@ -303,12 +344,48 @@ fn join_base_and_path(base_url: &str, path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::join_base_and_path;
+    use super::{client, join_base_and_path, send_multipart_upload_and_decode};
     #[test]
     fn joins_prepared_paths_without_double_slashes() {
         assert_eq!(
             join_base_and_path("https://example.com/api/", "/spaces/demo"),
             "https://example.com/api/spaces/demo"
         );
+    }
+
+    #[tokio::test]
+    async fn malformed_successful_upload_response_is_unconfirmed() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request).await.unwrap();
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\nnot-json",
+                )
+                .await
+                .unwrap();
+        });
+
+        let form = reqwest::multipart::Form::new().part(
+            "file",
+            reqwest::multipart::Part::bytes(b"proof".to_vec()).file_name("proof.txt"),
+        );
+        let error = send_multipart_upload_and_decode(
+            "asset.upload",
+            client()
+                .post(format!("http://{address}/assets"))
+                .multipart(form),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        server.await.unwrap();
+        assert!(error.contains("result is unconfirmed"), "{error}");
+        assert!(error.contains("Do not retry blindly"), "{error}");
     }
 }

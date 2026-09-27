@@ -517,6 +517,25 @@ pub struct MutationReceipt {
     pub run_id: Option<String>,
 }
 
+/// Upload receipt retains the canonical domain reference so callers can pass
+/// `asset_reference` directly to an Entry's typed asset field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetUploadReceipt {
+    #[serde(flatten)]
+    pub mutation: MutationReceipt,
+    pub asset_reference: ugoite_domain::entry::AssetReference,
+}
+
+impl AssetUploadReceipt {
+    pub fn new(asset_reference: ugoite_domain::entry::AssetReference) -> Self {
+        let mutation = MutationReceipt::asset(asset_reference.asset_id.clone());
+        Self {
+            mutation,
+            asset_reference,
+        }
+    }
+}
+
 impl MutationReceipt {
     pub fn entry(id: String, revision_id: Option<String>, change_id: Option<String>) -> Self {
         Self {

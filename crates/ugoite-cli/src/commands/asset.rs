@@ -1,7 +1,8 @@
 use crate::cli_config::{resolve_command_target, SpaceTarget};
 use crate::http;
 use crate::output::{
-    effective_format, emit_mutation, print_json, print_json_table, Format, MutationReceipt,
+    effective_format, emit_mutation, emit_success, print_json, print_json_table,
+    AssetUploadReceipt, Format, MutationReceipt,
 };
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -113,13 +114,11 @@ pub async fn run(
                     data,
                 )
                 .await?;
-                let asset_id = result
-                    .get("asset_id")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or_default()
-                    .to_string();
-                let receipt = MutationReceipt::asset(asset_id.clone());
-                emit_mutation(&receipt, &fmt, Some(format!("uploaded asset {asset_id}")));
+                let asset_reference =
+                    parse_upload_reference(result).map_err(unconfirmed_upload_result)?;
+                let receipt = AssetUploadReceipt::new(asset_reference);
+                let asset_id = receipt.asset_reference.asset_id.clone();
+                emit_success(&receipt, &fmt, Some(format!("uploaded asset {asset_id}")));
                 return Ok(());
             }
             let SpaceTarget::Core { root, space_id } = &target else {
@@ -127,11 +126,14 @@ pub async fn run(
             };
             let service = UgoiteService::new_without_background_refresh(root)?;
             let asset = service.save_asset(space_id, &name, &data).await?;
-            let receipt = MutationReceipt::asset(asset.asset_id.clone());
-            emit_mutation(
+            let receipt = AssetUploadReceipt::new(asset);
+            emit_success(
                 &receipt,
                 &fmt,
-                Some(format!("uploaded asset {}", asset.asset_id)),
+                Some(format!(
+                    "uploaded asset {}",
+                    receipt.asset_reference.asset_id
+                )),
             );
         }
         AssetSubCmd::Delete {
@@ -255,6 +257,20 @@ pub async fn run(
         }
     }
     Ok(())
+}
+
+fn parse_upload_reference(
+    value: serde_json::Value,
+) -> Result<ugoite_domain::entry::AssetReference> {
+    let reference: ugoite_domain::entry::AssetReference = serde_json::from_value(value)?;
+    reference.validate()?;
+    Ok(reference)
+}
+
+fn unconfirmed_upload_result(error: anyhow::Error) -> anyhow::Error {
+    anyhow::anyhow!(
+        "asset upload result is unconfirmed; the server may have stored the bytes. Do not retry blindly; check the Space before uploading again. Details: {error}"
+    )
 }
 
 /// Entry-field context resolved to the shared read authority plus bytes.
@@ -445,7 +461,9 @@ fn print_read_table(context: &AssetContext, preview: Option<&TextPreview>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{inline_text, INLINE_TEXT_PREVIEW_BYTES};
+    use super::{
+        inline_text, parse_upload_reference, unconfirmed_upload_result, INLINE_TEXT_PREVIEW_BYTES,
+    };
 
     #[test]
     fn inline_preview_is_gated_by_declared_media_type() {
@@ -466,5 +484,28 @@ mod tests {
         assert!(preview.text.len() <= INLINE_TEXT_PREVIEW_BYTES);
         assert!(preview.text.ends_with('é'));
         assert!(preview.truncated_bytes > 0);
+    }
+
+    #[test]
+    fn upload_reference_requires_all_valid_domain_fields() {
+        let valid = serde_json::json!({
+            "asset_id": uuid::Uuid::now_v7().to_string(),
+            "name": "proof.txt",
+            "media_type": "application/octet-stream",
+            "size_bytes": 24,
+            "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        });
+        assert!(parse_upload_reference(valid.clone()).is_ok());
+
+        let mut missing = valid.clone();
+        missing.as_object_mut().unwrap().remove("size_bytes");
+        assert!(parse_upload_reference(missing).is_err());
+
+        let mut invalid_checksum = valid;
+        invalid_checksum["sha256"] = serde_json::Value::String("not-a-checksum".to_string());
+        let error = parse_upload_reference(invalid_checksum).unwrap_err();
+        let diagnostic = unconfirmed_upload_result(error).to_string();
+        assert!(diagnostic.contains("result is unconfirmed"));
+        assert!(diagnostic.contains("Do not retry blindly"));
     }
 }
