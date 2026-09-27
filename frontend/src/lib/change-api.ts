@@ -59,6 +59,12 @@ export type SpaceChangeQueryFilters = {
   text?: string;
   created_after_micros?: number;
   created_before_micros?: number;
+  sort?: SpaceChangeSort[];
+};
+
+export type SpaceChangeSort = {
+  field: "created_at_micros" | "actor_principal_id" | "run_id";
+  direction: "asc" | "desc";
 };
 
 export type SpaceChangeQueryPage = {
