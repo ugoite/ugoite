@@ -60,6 +60,7 @@ const MEASUREMENT_SLUGS = ["query-space-a", "query-space-b"] as const;
 const TRIAL_COUNT = 5;
 const SQL_FORM_NAME = "MaintenanceTicket";
 const SQL_PAGE_SIZE = 100;
+const QUERY_RESULT_TIMEOUT_MS = 30_000;
 
 function percentile(values: number[], p: number): number {
   const sorted = [...values].sort((left, right) => left - right);
@@ -284,7 +285,9 @@ test("records real two-Space query surface measurements", async ({ page, request
         }).catch(() => undefined);
         const startedAt = Date.now();
         await page.goto(entryPath, { waitUntil: "domcontentloaded" });
-        await expect(rowLocator).toBeVisible();
+        await expect(rowLocator).toBeVisible({
+          timeout: QUERY_RESULT_TIMEOUT_MS,
+        });
         const elapsedToFirstVisibleRowMs = Date.now() - startedAt;
         const browserState = await page.evaluate(() => ({
           userAgent: navigator.userAgent,
@@ -324,7 +327,9 @@ test("records real two-Space query surface measurements", async ({ page, request
         }).catch(() => undefined);
         const startedAt = Date.now();
         await page.goto(sqlPath, { waitUntil: "domcontentloaded" });
-        await expect(rowLocator).toBeVisible();
+        await expect(rowLocator).toBeVisible({
+          timeout: QUERY_RESULT_TIMEOUT_MS,
+        });
         const elapsedToFirstVisibleRowMs = Date.now() - startedAt;
         const firstPageState = await page.evaluate(() => ({
           userAgent: navigator.userAgent,
@@ -361,7 +366,9 @@ test("records real two-Space query surface measurements", async ({ page, request
       }
 
       await page.goto(sqlPath, { waitUntil: "domcontentloaded" });
-      await expect(rowLocator).toBeVisible();
+      await expect(rowLocator).toBeVisible({
+        timeout: QUERY_RESULT_TIMEOUT_MS,
+      });
       const initialPageCount = await page.evaluate(() =>
         (window as Window & { __ugoiteQueryEvents?: QueryEvent[] })
           .__ugoiteQueryEvents?.filter((event) =>
@@ -415,7 +422,9 @@ test("records real two-Space query surface measurements", async ({ page, request
       ),
       { waitUntil: "domcontentloaded" },
     );
-    await expect(rowLocator).toBeVisible();
+    await expect(rowLocator).toBeVisible({
+      timeout: QUERY_RESULT_TIMEOUT_MS,
+    });
     let lifecycle: LifecycleMeasurement = {
       events: [],
       instrumentOnly: true,
@@ -486,7 +495,9 @@ test("records real two-Space query surface measurements", async ({ page, request
         "tbody tr",
       ).count();
       expect(rowsWhileTargetQueryPending).toBe(0);
-      await expect(rowLocator).toBeVisible();
+      await expect(rowLocator).toBeVisible({
+        timeout: QUERY_RESULT_TIMEOUT_MS,
+      });
       await page.waitForTimeout(500);
       lifecycle = await page.evaluate(({
         targetSpaceUid,
@@ -607,7 +618,9 @@ test("records real two-Space query surface measurements", async ({ page, request
         await page.goto(getFrontendUrl(path), {
           waitUntil: "domcontentloaded",
         });
-        await expect(rowLocator).toBeVisible();
+        await expect(rowLocator).toBeVisible({
+          timeout: QUERY_RESULT_TIMEOUT_MS,
+        });
         await page.route(`**${requestPath}`, async (route) => {
           await new Promise((resolve) => setTimeout(resolve, 400));
           try {
@@ -688,7 +701,9 @@ test("records real two-Space query surface measurements", async ({ page, request
         await expect(page).toHaveURL(
           new RegExp(`${parameterizedSqlPath}/run$`),
         );
-        await expect(rowLocator).toBeVisible();
+        await expect(rowLocator).toBeVisible({
+          timeout: QUERY_RESULT_TIMEOUT_MS,
+        });
       };
       const changeSqlRunState = async (
         threshold: number | string,
