@@ -75,6 +75,8 @@ async function assertAggregateWorkflow(
   const rustTestJob = workflowJobBlock(workflow, "rust-test");
   const webJob = workflowJobBlock(workflow, "web");
   const artifactsJob = workflowJobBlock(workflow, "artifacts");
+  const impactJob = workflowJobBlock(workflow, "impact");
+  const docsiteNavJob = workflowJobBlock(workflow, "docsite-nav");
   const requiredJob = workflowJobBlock(workflow, "required");
   const rustCheckCargoCache = workflowStepBlock(
     rustCheckJob,
@@ -401,11 +403,56 @@ async function assertAggregateWorkflow(
     workflow.match(/mise run [A-Za-z0-9:_-]+/g)?.sort().join("\n"),
     [
       "mise run ci:artifacts",
+      "mise run ci:impact",
+      "mise run ci:lane:docsite-nav",
       "mise run ci:lane:rust-check",
       "mise run ci:lane:rust-test",
       "mise run ci:lane:web",
     ].sort().join("\n"),
     "CI must invoke only Hosted lane and artifact Mise entrypoints",
+  );
+  assertContainsAll(
+    impactJob,
+    [
+      "name: ci-impact-shadow",
+      "fetch-depth: 0",
+      "CI_IMPACT_EVENT: ${{ github.event_name }}",
+      "github.event.pull_request.base.sha || github.event.before",
+      "github.event.pull_request.head.sha || github.sha",
+      "install_args: deno",
+      "run: mise run ci:impact",
+    ],
+    "impact shadow lane",
+  );
+  assertContainsAll(
+    docsiteNavJob,
+    [
+      "name: ci-docsite-nav",
+      "scripts/measure-step.sh docsite-nav mise run ci:lane:docsite-nav",
+      "test-results/docsite-navigation-junit.xml",
+      "install_args: deno",
+    ],
+    "standalone docsite navigation lane",
+  );
+  assertEquals(
+    docsiteNavJob.includes("Install Rust CI components"),
+    false,
+    "docsite navigation lane must not install the Rust toolchain",
+  );
+  assertEquals(
+    docsiteNavJob.includes("actions/cache/save"),
+    false,
+    "docsite navigation lane must not race canonical cache writers",
+  );
+  assertContainsAll(
+    taskBlock(mise, "ci:lane:docsite-nav"),
+    ['{ task = "test:docsite:e2e:navigation" }'],
+    "docsite navigation mise lane",
+  );
+  assertContainsAll(
+    taskBlock(mise, "ci:impact"),
+    ["deno run -A tools/ci-impact.ts"],
+    "standalone CI impact mise task",
   );
   assertEquals(
     workflow.includes("mise run test:frontend:coverage"),
@@ -423,24 +470,30 @@ async function assertAggregateWorkflow(
     [
       "name: ci-required",
       "if: ${{ always() }}",
-      "needs: [rust-check, rust-test, web, artifacts, pr-context-report]",
+      "needs: [impact, rust-check, rust-test, web, artifacts, docsite-nav, pr-context-report]",
+      "runs-on: ubuntu-slim",
+      "IMPACT_RESULT: ${{ needs.impact.result }}",
+      "IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}",
+      "IMPACT_PLAN_SCOPE: ${{ needs.impact.outputs.plan_scope }}",
+      "IMPACT_JOBS_SKIPPED: ${{ needs.impact.outputs.jobs_skipped }}",
       "RUST_CHECK_RESULT: ${{ needs.rust-check.result }}",
       "RUST_TEST_RESULT: ${{ needs.rust-test.result }}",
       "WEB_RESULT: ${{ needs.web.result }}",
       "ARTIFACTS_RESULT: ${{ needs.artifacts.result }}",
+      "DOCSITE_NAV_RESULT: ${{ needs.docsite-nav.result }}",
       "PR_CONTEXT_RESULT: ${{ needs.pr-context-report.result }}",
-      'test "$RUST_CHECK_RESULT" = success',
-      'test "$RUST_TEST_RESULT" = success',
-      'test "$WEB_RESULT" = success',
-      'test "$ARTIFACTS_RESULT" = success',
-      'test "$PR_CONTEXT_RESULT" = success || test "$PR_CONTEXT_RESULT" = skipped',
+      "run: scripts/ci-gate-check.sh",
     ],
     "required CI aggregator",
   );
-  assertEquals(
-    requiredJob.includes("actions/checkout"),
-    false,
-    "required CI aggregator must not duplicate a lane",
+  assertContainsAll(
+    requiredJob,
+    [
+      "actions/checkout@",
+      "sparse-checkout: scripts/ci-gate-check.sh",
+      "sparse-checkout-cone-mode: false",
+    ],
+    "minimal required CI checkout",
   );
 
   assertMainTrigger(workflow, "pull_request");

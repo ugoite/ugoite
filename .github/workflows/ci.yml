@@ -19,6 +19,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  impact:
+    name: ci-impact-shadow
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      plan_status: ${{ steps.plan.outputs.plan_status }}
+      plan_scope: ${{ steps.plan.outputs.plan_scope }}
+      jobs_skipped: ${{ steps.plan.outputs.jobs_skipped }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          install_args: deno
+          cache: true
+
+      - name: Report conservative change impact
+        id: plan
+        env:
+          CI_IMPACT_EVENT: ${{ github.event_name }}
+          CI_IMPACT_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_IMPACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: mise run ci:impact
+
   rust-check:
     name: ci-rust-check
     runs-on: ubuntu-24.04
@@ -551,6 +579,67 @@ jobs:
             echo "- target/artifacts: \`${artifact_size_bytes}\` bytes"
           } >>"$GITHUB_STEP_SUMMARY"
 
+  docsite-nav:
+    name: ci-docsite-nav
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure Deno and Playwright cache paths
+        run: |
+          echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          install_args: deno
+          cache: true
+
+      - name: Resolve Deno version
+        id: deno-version
+        run: echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
+
+      - name: Restore Deno cache
+        id: deno-cache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-
+
+      - name: Restore Playwright browser cache
+        id: playwright-cache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-browsers
+          key: playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('e2e/deno.json', 'deno.lock') }}
+          restore-keys: |
+            playwright-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Run docsite navigation and link checks
+        id: docsite-nav
+        run: scripts/measure-step.sh docsite-nav mise run ci:lane:docsite-nav
+
+      - name: Summarize docsite navigation
+        if: always()
+        env:
+          DURATION_SECONDS: ${{ steps.docsite-nav.outputs.duration_seconds }}
+        run: |
+          echo "- docsite navigation duration: ${DURATION_SECONDS:-n/a}s" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload docsite navigation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: docsite-navigation-evidence-${{ github.run_id }}
+          path: e2e/test-results/docsite-navigation-junit.xml
+          if-no-files-found: ignore
+
   pr-context-report:
     name: ci-pr-context-report
     if: github.event_name == 'pull_request'
@@ -583,20 +672,27 @@ jobs:
   required:
     name: ci-required
     if: ${{ always() }}
-    needs: [rust-check, rust-test, web, artifacts, pr-context-report]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    needs: [impact, rust-check, rust-test, web, artifacts, docsite-nav, pr-context-report]
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
     steps:
-      - name: Require all CI lanes
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci-gate-check.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Validate the shadow plan and required lane results
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          IMPACT_RESULT: ${{ needs.impact.result }}
+          IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}
+          IMPACT_PLAN_SCOPE: ${{ needs.impact.outputs.plan_scope }}
+          IMPACT_JOBS_SKIPPED: ${{ needs.impact.outputs.jobs_skipped }}
           RUST_CHECK_RESULT: ${{ needs.rust-check.result }}
           RUST_TEST_RESULT: ${{ needs.rust-test.result }}
           WEB_RESULT: ${{ needs.web.result }}
           ARTIFACTS_RESULT: ${{ needs.artifacts.result }}
+          DOCSITE_NAV_RESULT: ${{ needs.docsite-nav.result }}
           PR_CONTEXT_RESULT: ${{ needs.pr-context-report.result }}
-        run: |
-          test "$RUST_CHECK_RESULT" = success
-          test "$RUST_TEST_RESULT" = success
-          test "$WEB_RESULT" = success
-          test "$ARTIFACTS_RESULT" = success
-          test "$PR_CONTEXT_RESULT" = success || test "$PR_CONTEXT_RESULT" = skipped
+        run: scripts/ci-gate-check.sh
