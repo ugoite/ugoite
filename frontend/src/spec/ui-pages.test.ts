@@ -11,6 +11,7 @@ type PageSpec = {
     title?: string;
     route?: string;
     implementation?: string;
+    visible_heading?: string;
   };
   components?: {
     shared?: Array<Record<string, unknown>>;
@@ -357,7 +358,10 @@ describe("UI spec YAML registry", () => {
         count: "explicit-only",
       },
       columns: { system_timestamps: { order: ["created_at", "updated_at"] } },
-      selection: { row_click: "select-only", open_action: { control: "native-button" } },
+      selection: {
+        row_click: "select-only",
+        open_action: { control: "native-button" },
+      },
       responsive: {
         page_horizontal_overflow: false,
         trailing_action: "remains-at-right-edge",
@@ -368,5 +372,64 @@ describe("UI spec YAML registry", () => {
       spec.page?.id === "space-entries-object"
     );
     expect(compat?.spec.page?.implementation).not.toBe("implemented");
+  });
+
+  it("REQ-SRCH-006: specifies Search-owned submit and saved-query toolbar slots", () => {
+    const search = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-search"
+    );
+    expect(search?.spec.page).toMatchObject({
+      implementation: "implemented",
+      visible_heading: "screen-reader-only",
+    });
+    const results = search?.spec.components?.body?.find(({ id }) =>
+      id === "keyword-result-list"
+    );
+    expect(results).toMatchObject({
+      type: "query-results",
+      reference: "../components/entry-browser.yaml",
+      toolbar: {
+        search_control: {
+          owner: "search-page",
+          role: "search",
+          commit: "explicit-submit",
+          deep_link: "query.q",
+        },
+        result_actions: [
+          "columns-dialog",
+          "filters-dialog",
+          "multi-sort-dialog",
+        ],
+        navigation: {
+          control: "icon-link",
+          icon: "UiIcon.sql",
+          accessible_name: "searchPage.openSavedQueries",
+          target: "/spaces/{space_id}/sql",
+        },
+      },
+    });
+
+    const componentPath = path.resolve(
+      path.dirname(search!.filePath),
+      String(results?.reference),
+    );
+    const entryBrowser = parse(readFileSync(componentPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    expect(entryBrowser.components?.find(({ id }) => id === "form-entry-table"))
+      .toMatchObject({
+        toolbar: {
+          built_in_search: { default: "visible", update: "input" },
+          search_control: {
+            prop: "searchControl",
+            behavior: "replaces-built-in-search",
+          },
+          navigation: {
+            prop: "toolbarNavigation",
+            behavior: "render-caller-owned-content-when-supplied",
+            position: "after-display-actions",
+          },
+        },
+      });
   });
 });

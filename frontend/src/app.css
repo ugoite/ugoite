@@ -1390,9 +1390,6 @@ textarea {
   margin-left: auto;
   color: var(--brand-ink) !important;
 }
-.searchControls {
-  min-width: 0;
-}
 .searchResults {
   min-width: 0;
   margin-top: 32px;
@@ -1458,6 +1455,11 @@ textarea {
   gap: 12px;
   padding: 0 15px;
   margin-bottom: 0;
+}
+.searchBox:focus-within {
+  border-color: var(--brand);
+  outline: 2px solid var(--focus, var(--brand));
+  outline-offset: 2px;
 }
 .searchBox input {
   border: 0;
@@ -2968,13 +2970,6 @@ a.tool {
   margin-bottom: 18px;
 }
 
-/* PR4 query lane: submit button with a small panel-local spinner. */
-.queryLane {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
 /* PR4 spaces table: only the wrapper scrolls horizontally so the page
    never overflows at 390px. */
 .tablewrap {
@@ -3253,20 +3248,70 @@ a.tool {
 .entry-browser-search .ui-input {
   width: 100%;
 }
-.entry-browser-display-actions {
+.entry-browser-search-form {
   display: flex;
+  flex: 1 1 320px;
   align-items: center;
   gap: 8px;
+  min-width: min(100%, 200px);
+}
+.entry-browser-search-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.entry-browser-search-field input {
+  min-width: 0;
+}
+.entry-browser-search-submit {
+  display: grid;
+  flex: 0 0 44px;
+  place-items: center;
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+.entry-browser-display-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
   margin-left: auto;
 }
 .entry-browser-display-button {
   position: relative;
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
   padding: 0;
 }
 .entry-browser-display-button .icon {
+  width: 20px;
+  height: 20px;
+}
+.entry-browser-toolbar-navigation {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: 4px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+.entry-browser-sql-link {
+  display: grid;
+  flex: 0 0 44px;
+  place-items: center;
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+.entry-browser-sql-link:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.entry-browser-sql-link .icon {
   width: 20px;
   height: 20px;
 }
@@ -3285,6 +3330,13 @@ a.tool {
   color: #FFFFFF;
   font-size: 10px;
   line-height: 1;
+}
+@media (max-width: 640px) {
+  .entry-browser-toolbar-navigation {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+  }
 }
 .entry-browser-query-chips {
   display: flex;

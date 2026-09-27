@@ -103,6 +103,10 @@ describe("/spaces/:space_id/forms/:form_ref/entries", () => {
 
     expect(screen.getByRole("heading", { name: "Notes" })).toBeInTheDocument();
     const toolbar = screen.getByRole("toolbar", { name: "Entry browser" });
+    expect(within(toolbar).getAllByRole("searchbox")).toHaveLength(1);
+    expect(
+      within(toolbar).queryByRole("link", { name: "Open saved queries" }),
+    ).not.toBeInTheDocument();
     fireEvent.click(within(toolbar).getByRole("button", { name: "Columns" }));
     expect(screen.getByRole("checkbox", { name: "title" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));

@@ -161,8 +161,17 @@ async function runMobileRegression(
       assert: async () => {
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
         await expect(page.getByLabel("Search keywords")).toBeVisible();
-        await expect(page.getByRole("link", { name: "Saved" }))
+        await expect(page.getByRole("link", { name: "Open saved queries" }))
           .toHaveAttribute("href", `/spaces/${spaceId}/sql`);
+        const toolbarControls = page.locator(
+          ".entry-browser-display-button, .entry-browser-sql-link",
+        );
+        await expect(toolbarControls).toHaveCount(4);
+        for (const control of await toolbarControls.all()) {
+          const bounds = await control.boundingBox();
+          expect(bounds?.width).toBeGreaterThanOrEqual(44);
+          expect(bounds?.height).toBeGreaterThanOrEqual(44);
+        }
         await expect(page.getByRole("heading", { name: "Search history" }))
           .not.toBeAttached();
         await expect(page.locator(".topbarMore")).toHaveCount(0);

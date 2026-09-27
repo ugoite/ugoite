@@ -16,8 +16,14 @@ vi.mock("@solidjs/router", () => ({
     class?: string;
     children: unknown;
     "aria-label"?: string;
+    title?: string;
   }) => (
-    <a href={props.href} class={props.class} aria-label={props["aria-label"]}>
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+      title={props.title}
+    >
       {props.children}
     </a>
   ),
@@ -53,6 +59,29 @@ describe("/spaces/:space_id/search", () => {
     vi.spyOn(formApi, "list").mockResolvedValue([]);
   });
 
+  it("keeps one explicit-submit search field and exposes saved queries as an icon link", () => {
+    const { container } = render(() => <SpaceSearchRoute />);
+
+    expect(screen.getAllByRole("textbox", { name: "Search keywords" }))
+      .toHaveLength(1);
+    expect(container.querySelectorAll('form[role="search"]')).toHaveLength(1);
+    expect(container.querySelector("h1:not(.ui-sr-only)"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("Saved SQL")).not.toBeInTheDocument();
+
+    const savedQueries = screen.getByRole("link", {
+      name: "Open saved queries",
+    });
+    expect(savedQueries).toHaveAttribute("href", "/spaces/default/sql");
+    expect(savedQueries).toHaveAttribute("title", "Open saved queries");
+    expect(savedQueries.querySelector("svg")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(container.querySelectorAll(".entry-browser-display-button"))
+      .toHaveLength(3);
+  });
+
   it("keeps typed text in the field while the committed query waits for submit", async () => {
     render(() => <SpaceSearchRoute />);
     const field = screen.getByRole("textbox", {
@@ -81,6 +110,23 @@ describe("/spaces/:space_id/search", () => {
       }) as HTMLInputElement)
         .value,
     ).toBe("hello world");
+  });
+
+  it("submits on Enter without losing the search field focus", async () => {
+    render(() => <SpaceSearchRoute />);
+    const field = screen.getByRole("textbox", {
+      name: "Search keywords",
+    }) as HTMLInputElement;
+    field.focus();
+    fireEvent.input(field, { target: { value: "keyboard query" } });
+    expect(entryApi.query).not.toHaveBeenCalled();
+
+    fireEvent.submit(screen.getByRole("search"));
+    await waitFor(() => expect(entryApi.query).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(entryApi.query).mock.calls[0][1].query.text).toBe(
+      "keyboard query",
+    );
+    expect(document.activeElement).toBe(field);
   });
 
   it("commits surrounding whitespace once at the submit boundary", async () => {
