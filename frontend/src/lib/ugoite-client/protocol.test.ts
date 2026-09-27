@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSpreadsheetCsvRequest,
   encodeSpreadsheetCsv,
@@ -25,6 +25,8 @@ const validReference = {
 };
 
 describe("portable Ugoite API protocol WASM", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it("uses the shared spreadsheet-safe CSV encoder", async () => {
     await expect(
       encodeSpreadsheetCsv([["=SUM(A1:A2)", "a,b", "line\nbreak", "日本語"]]),
@@ -382,4 +384,55 @@ describe("portable Ugoite API protocol WASM", () => {
       }),
     ).rejects.toMatchObject({ name: "UgoiteApiError", status: 404 });
   });
+
+  it.each([
+    [new TypeError("connection reset"), "connection reset", "TypeError"],
+    ["response stream failed", "response stream failed", "unknown"],
+  ])(
+    "classifies a failed response-body read as an unknown write outcome (%s)",
+    async (readFailure, message, cause) => {
+      server.use(
+        http.post(
+          testApiUrl("/spaces/demo/entries"),
+          () => HttpResponse.json({ id: "entry-1", revision_id: "rev-1" }),
+        ),
+      );
+      vi.spyOn(Response.prototype, "text").mockRejectedValueOnce(readFailure);
+
+      await expect(
+        protocolFetch("entry.create", { space_id: "demo" }, { id: "entry-1" }),
+      ).rejects.toMatchObject({
+        name: "UgoiteApiError",
+        kind: "transport",
+        operation: "entry.create",
+        status: 200,
+        message,
+        detail: { cause },
+        mutationOutcome: "unknown",
+        mutationCode: "MUTATION_OUTCOME_UNKNOWN",
+      });
+    },
+  );
+
+  it.each([
+    [new TypeError("network offline"), "network offline", "TypeError"],
+    ["socket closed", "socket closed", "unknown"],
+  ])(
+    "classifies a failed write fetch as an unknown outcome (%s)",
+    async (fetchFailure, message, cause) => {
+      vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(fetchFailure);
+
+      await expect(
+        protocolFetch("entry.create", { space_id: "demo" }, { id: "entry-1" }),
+      ).rejects.toMatchObject({
+        name: "UgoiteApiError",
+        kind: "transport",
+        operation: "entry.create",
+        message,
+        detail: { cause },
+        mutationOutcome: "unknown",
+        mutationCode: "MUTATION_OUTCOME_UNKNOWN",
+      });
+    },
+  );
 });
