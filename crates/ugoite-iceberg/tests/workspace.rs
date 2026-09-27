@@ -419,6 +419,7 @@ async fn publication_coordinates_are_portable_for_uri_like_command_ids() -> anyh
 
     let first_page = workspace.list_changes_page(None, 1).await?;
     assert!(first_page.changes.is_empty());
+    let snapshot_start = first_page.start.clone().expect("immutable history start");
     let continuation = first_page.next.expect("older Change cursor");
 
     let third_change_id = "change:history/3";
@@ -443,6 +444,22 @@ async fn publication_coordinates_are_portable_for_uri_like_command_ids() -> anyh
         )?)?
         .append_revisions(form.id, vec![third_revision])
         .await?;
+
+    let snapshot_page = workspace
+        .list_changes_page(Some(snapshot_start), 10)
+        .await?;
+    assert_eq!(
+        snapshot_page
+            .changes
+            .iter()
+            .map(|change| change.change_id.as_str())
+            .collect::<Vec<_>>(),
+        vec![second_change_id, change_id]
+    );
+    assert!(!snapshot_page
+        .changes
+        .iter()
+        .any(|change| change.change_id == third_change_id));
 
     let second_page = workspace.list_changes_page(Some(continuation), 1).await?;
     assert_eq!(second_page.changes.len(), 1);

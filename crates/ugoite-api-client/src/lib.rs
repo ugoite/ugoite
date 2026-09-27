@@ -573,6 +573,45 @@ pub fn prepare_request(
                         query.push((key.into(), value.to_string()));
                     }
                 }
+                if let Some(sort) = args.get("sort") {
+                    let sort = sort.as_array().ok_or_else(|| {
+                        ApiProtocolError::invalid_arguments(operation, "sort must be an array")
+                    })?;
+                    let mut sort_keys = Vec::with_capacity(sort.len());
+                    for item in sort {
+                        let field = item.get("field").and_then(Value::as_str).ok_or_else(|| {
+                            ApiProtocolError::invalid_arguments(
+                                operation,
+                                "each sort item must have a string field",
+                            )
+                        })?;
+                        if !["created_at_micros", "actor_principal_id", "run_id"].contains(&field) {
+                            return Err(ApiProtocolError::invalid_arguments(
+                                operation,
+                                "sort field is unsupported",
+                            ));
+                        }
+                        let direction =
+                            item.get("direction")
+                                .and_then(Value::as_str)
+                                .ok_or_else(|| {
+                                    ApiProtocolError::invalid_arguments(
+                                        operation,
+                                        "each sort item must have a string direction",
+                                    )
+                                })?;
+                        if !["asc", "desc"].contains(&direction) {
+                            return Err(ApiProtocolError::invalid_arguments(
+                                operation,
+                                "sort direction is unsupported",
+                            ));
+                        }
+                        sort_keys.push(format!("{field}:{direction}"));
+                    }
+                    if !sort_keys.is_empty() {
+                        query.push(("sort".into(), sort_keys.join(",")));
+                    }
+                }
                 (
                     OperationSpec::get("Failed to query Knowledge changes"),
                     vec![
@@ -2105,6 +2144,10 @@ mod tests {
                 "text": "Travel",
                 "created_after_micros": -10,
                 "created_before_micros": 100,
+                "sort": [
+                    {"field": "actor_principal_id", "direction": "asc"},
+                    {"field": "created_at_micros", "direction": "desc"}
+                ],
             }),
             None,
         )
@@ -2112,7 +2155,7 @@ mod tests {
         assert_eq!(request.method, HttpMethod::Get);
         assert_eq!(
             request.path,
-            "/spaces/demo/changes/query?limit=20&cursor=opaque%2Btoken&actor_principal_id=actor+1&run_id=run-1&text=Travel&created_after_micros=-10&created_before_micros=100"
+            "/spaces/demo/changes/query?limit=20&cursor=opaque%2Btoken&actor_principal_id=actor+1&run_id=run-1&text=Travel&created_after_micros=-10&created_before_micros=100&sort=actor_principal_id%3Aasc%2Ccreated_at_micros%3Adesc"
         );
 
         let error = prepare_request(
