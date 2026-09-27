@@ -841,6 +841,24 @@ mod name_field_tests {
     use super::*;
     use crate::integrity::FakeIntegrityProvider;
 
+    #[test]
+    fn saved_sql_metadata_reader_fails_closed_on_unknown_binding_fields() {
+        let legacy: SqlMetadata = serde_json::from_value(serde_json::json!({
+            "searchCriteria": null,
+            "generatedName": "untitled",
+        }))
+        .expect("legacy metadata remains readable");
+        assert!(legacy.search_criteria.is_none());
+
+        let bound = serde_json::json!({
+            "searchCriteria": null,
+            "generatedName": "untitled",
+            "bindingVersion": 1,
+            "formBindings": [],
+        });
+        assert!(serde_json::from_value::<SqlMetadata>(bound).is_err());
+    }
+
     fn row_with_saved_query_name(name: &str, fields: Value) -> entry::EntryRow {
         entry::EntryRow {
             entry_id: "sql-legacy".to_string(),
