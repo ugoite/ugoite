@@ -30,6 +30,7 @@ export const UGOITE_API_OPERATIONS = [
   "change.list",
   "change.page",
   "change.query",
+  "change.inspect",
   "change.affected.get",
   "change.revert",
   "run.undo",

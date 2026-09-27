@@ -4475,6 +4475,50 @@
         }
       }
     },
+    "/spaces/{space_id}/changes/{change_id}/inspect": {
+      "get": {
+        "summary": "Inspect one committed Change with a bounded target page",
+        "parameters": [
+          { "$ref": "#/components/parameters/SpaceId" },
+          {
+            "name": "change_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 128 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 10, "default": 10 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Committed Change descriptor, complete summary only when current read scopes cover every target, and at most ten authorized target diffs.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JsonValue" }
+              }
+            }
+          },
+          "403": {
+            "description": "Space read permission is required"
+          },
+          "404": {
+            "description": "Change is not available"
+          },
+          "422": {
+            "description": "Invalid Change identifier, target limit, or inspection read window",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}": {
       "get": {
         "summary": "Read typed evidence for one Entry affected by a committed Change",
