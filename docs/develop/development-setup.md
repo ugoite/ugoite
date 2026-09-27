@@ -60,6 +60,14 @@ Delete the root and its `.node-secret` sidecar when finished. The report
 distinguishes the first process from later processes; it does not control the
 operating system's file cache.
 
+The committed [L06 profile](../architecture/release/measurements/startup-profile-candidate-9b47ccc.json)
+records the initial fixture-opening audit backfill at 104.3 s and two later
+starts over the persisted audit chain at 4.0 s on macOS arm64. Marker
+reconciliation and commit dominate the backfill. The startup path has no
+verified persistent audit checkpoint, so the 15 s checkpoint-backed cold-start
+target was not measured. Do not describe the first-process result as a
+checkpoint measurement.
+
 ## Development authentication
 
 Open the local server's one-use setup URL from the server output, register the

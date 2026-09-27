@@ -1,0 +1,569 @@
+{
+  "schema_version": 1,
+  "measured_at": "2026-09-27T17:16:25.373822+00:00",
+  "command": "mise run measure:startup",
+  "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+  "source_commit_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+  "source_tree_sha": "943d970d8690eea28530cc266afefa5309f5d139",
+  "source_id_kind": "git_commit",
+  "fixture": {
+    "seed": {
+      "startup-space-a": 3146001,
+      "startup-space-b": 3144001
+    },
+    "entries": 10000,
+    "space_entry_counts": {
+      "startup-space-a": 6000,
+      "startup-space-b": 4000
+    },
+    "audit_event_count": 9000,
+    "audit_event_counts_by_space_uid": {
+      "01a0e3da-bdef-7013-b258-71bedeba05f4": 4000,
+      "01a0e3d9-5662-779e-b957-04d9c89914fb": 5000
+    }
+  },
+  "runner": {
+    "os": "macOS-26.6.1-arm64-arm-64bit",
+    "architecture": "arm64"
+  },
+  "process_runs": [
+    {
+      "run": 1,
+      "cache_state": "first_process",
+      "phases": [
+        {
+          "duration_ms": 35.156082999999995,
+          "event": "ugoite.startup.phase",
+          "phase": "bootstrap_auth",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 3.803,
+          "event": "ugoite.startup.phase",
+          "phase": "claim_recovery",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 86.583667,
+          "event": "ugoite.startup.phase",
+          "phase": "space_onboarding_validation",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "spaces": 2
+        },
+        {
+          "duration_ms": 722.610875,
+          "entries": 6000,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_target_enumeration",
+          "process_id": 61004,
+          "saved_sql": 0,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 0.13325,
+          "event": "ugoite.startup.phase",
+          "events": 0,
+          "phase": "audit_chain_verification",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 0.430125,
+          "event": "ugoite.startup.phase",
+          "markers": 0,
+          "phase": "audit_marker_prefetch",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 34107.99725,
+          "event": "ugoite.startup.phase",
+          "new_events": 6000,
+          "payloads": 6000,
+          "phase": "audit_marker_reconciliation",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 183.73937500000002,
+          "event": "ugoite.startup.phase",
+          "events": 5000,
+          "phase": "audit_chain_write",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 26370.944708,
+          "event": "ugoite.startup.phase",
+          "markers": 6000,
+          "phase": "audit_marker_commit",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 60967.735625,
+          "event": "ugoite.startup.phase",
+          "events": 6000,
+          "phase": "audit_reconcile_append",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "targets": 6000
+        },
+        {
+          "duration_ms": 540.004708,
+          "entries": 4000,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_target_enumeration",
+          "process_id": 61004,
+          "saved_sql": 0,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 0.062375,
+          "event": "ugoite.startup.phase",
+          "events": 0,
+          "phase": "audit_chain_verification",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 0.197709,
+          "event": "ugoite.startup.phase",
+          "markers": 0,
+          "phase": "audit_marker_prefetch",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 21646.697125,
+          "event": "ugoite.startup.phase",
+          "new_events": 4000,
+          "payloads": 4000,
+          "phase": "audit_marker_reconciliation",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 106.251208,
+          "event": "ugoite.startup.phase",
+          "events": 4000,
+          "phase": "audit_chain_write",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 19339.238542,
+          "event": "ugoite.startup.phase",
+          "markers": 4000,
+          "phase": "audit_marker_commit",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 41144.978625,
+          "event": "ugoite.startup.phase",
+          "events": 4000,
+          "phase": "audit_reconcile_append",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "targets": 4000
+        },
+        {
+          "duration_ms": 104284.989333,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_recovery",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "spaces": 2,
+          "targets_converged": 10000
+        },
+        {
+          "duration_ms": 0.06525,
+          "event": "ugoite.startup.phase",
+          "phase": "derived_rebuild_scheduling",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "spaces": 2
+        },
+        {
+          "address": "127.0.0.1:18401",
+          "duration_ms": 104651.549333,
+          "event": "ugoite.startup.phase",
+          "phase": "listen_ready",
+          "process_id": 61004,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "cache_state": "subsequent_process",
+      "phases": [
+        {
+          "duration_ms": 0.590083,
+          "event": "ugoite.startup.phase",
+          "phase": "bootstrap_auth",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 1.285333,
+          "event": "ugoite.startup.phase",
+          "phase": "claim_recovery",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 67.772208,
+          "event": "ugoite.startup.phase",
+          "phase": "space_onboarding_validation",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "spaces": 2
+        },
+        {
+          "duration_ms": 600.85175,
+          "entries": 6000,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_target_enumeration",
+          "process_id": 64350,
+          "saved_sql": 0,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 264.032333,
+          "event": "ugoite.startup.phase",
+          "events": 5000,
+          "phase": "audit_chain_verification",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 418.719375,
+          "event": "ugoite.startup.phase",
+          "markers": 5000,
+          "phase": "audit_marker_prefetch",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 486.22700000000003,
+          "event": "ugoite.startup.phase",
+          "new_events": 0,
+          "payloads": 6000,
+          "phase": "audit_marker_reconciliation",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 0.003208,
+          "event": "ugoite.startup.phase",
+          "markers": 0,
+          "phase": "audit_marker_commit",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 1218.794875,
+          "event": "ugoite.startup.phase",
+          "events": 6000,
+          "phase": "audit_reconcile_append",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "targets": 6000
+        },
+        {
+          "duration_ms": 516.453459,
+          "entries": 4000,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_target_enumeration",
+          "process_id": 64350,
+          "saved_sql": 0,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 208.511833,
+          "event": "ugoite.startup.phase",
+          "events": 4000,
+          "phase": "audit_chain_verification",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 336.29820900000004,
+          "event": "ugoite.startup.phase",
+          "markers": 4000,
+          "phase": "audit_marker_prefetch",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 241.387833,
+          "event": "ugoite.startup.phase",
+          "new_events": 0,
+          "payloads": 4000,
+          "phase": "audit_marker_reconciliation",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 0.003083,
+          "event": "ugoite.startup.phase",
+          "markers": 0,
+          "phase": "audit_marker_commit",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 821.64,
+          "event": "ugoite.startup.phase",
+          "events": 4000,
+          "phase": "audit_reconcile_append",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "targets": 4000
+        },
+        {
+          "duration_ms": 3962.204625,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_recovery",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "spaces": 2,
+          "targets_converged": 10000
+        },
+        {
+          "duration_ms": 0.031292,
+          "event": "ugoite.startup.phase",
+          "phase": "derived_rebuild_scheduling",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "spaces": 2
+        },
+        {
+          "address": "127.0.0.1:18402",
+          "duration_ms": 4206.180834000001,
+          "event": "ugoite.startup.phase",
+          "phase": "listen_ready",
+          "process_id": 64350,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        }
+      ]
+    },
+    {
+      "run": 3,
+      "cache_state": "subsequent_process",
+      "phases": [
+        {
+          "duration_ms": 0.35145800000000005,
+          "event": "ugoite.startup.phase",
+          "phase": "bootstrap_auth",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 1.0015,
+          "event": "ugoite.startup.phase",
+          "phase": "claim_recovery",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 63.76950000000001,
+          "event": "ugoite.startup.phase",
+          "phase": "space_onboarding_validation",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "spaces": 2
+        },
+        {
+          "duration_ms": 611.115375,
+          "entries": 6000,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_target_enumeration",
+          "process_id": 64473,
+          "saved_sql": 0,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 264.98024999999996,
+          "event": "ugoite.startup.phase",
+          "events": 5000,
+          "phase": "audit_chain_verification",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 419.583833,
+          "event": "ugoite.startup.phase",
+          "markers": 5000,
+          "phase": "audit_marker_prefetch",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 469.542125,
+          "event": "ugoite.startup.phase",
+          "new_events": 0,
+          "payloads": 6000,
+          "phase": "audit_marker_reconciliation",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 0.002791,
+          "event": "ugoite.startup.phase",
+          "markers": 0,
+          "phase": "audit_marker_commit",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 1204.4070419999998,
+          "event": "ugoite.startup.phase",
+          "events": 6000,
+          "phase": "audit_reconcile_append",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "targets": 6000
+        },
+        {
+          "duration_ms": 512.54975,
+          "entries": 4000,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_target_enumeration",
+          "process_id": 64473,
+          "saved_sql": 0,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 208.21520900000002,
+          "event": "ugoite.startup.phase",
+          "events": 4000,
+          "phase": "audit_chain_verification",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 331.430791,
+          "event": "ugoite.startup.phase",
+          "markers": 4000,
+          "phase": "audit_marker_prefetch",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 239.975916,
+          "event": "ugoite.startup.phase",
+          "new_events": 0,
+          "payloads": 4000,
+          "phase": "audit_marker_reconciliation",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 0.003292,
+          "event": "ugoite.startup.phase",
+          "markers": 0,
+          "phase": "audit_marker_commit",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        },
+        {
+          "duration_ms": 815.490542,
+          "event": "ugoite.startup.phase",
+          "events": 4000,
+          "phase": "audit_reconcile_append",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "targets": 4000
+        },
+        {
+          "duration_ms": 3951.292291,
+          "event": "ugoite.startup.phase",
+          "phase": "audit_recovery",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "spaces": 2,
+          "targets_converged": 10000
+        },
+        {
+          "duration_ms": 0.038459,
+          "event": "ugoite.startup.phase",
+          "phase": "derived_rebuild_scheduling",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf",
+          "spaces": 2
+        },
+        {
+          "address": "127.0.0.1:18403",
+          "duration_ms": 4189.531167,
+          "event": "ugoite.startup.phase",
+          "phase": "listen_ready",
+          "process_id": 64473,
+          "schema_version": 1,
+          "source_sha": "9b47ccc38387837ef318801db701e7eeaa7f35bf"
+        }
+      ]
+    }
+  ],
+  "scope": "Process-cold and subsequent-process timings; OS page cache is not controlled."
+}
