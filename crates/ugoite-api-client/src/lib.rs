@@ -2804,6 +2804,13 @@ mod tests {
         if operation == "change.revert" {
             arguments.insert("change_id".into(), json!("change-1"));
         }
+        if operation == "change.affected.get" {
+            arguments.insert("change_id".into(), json!("change-1"));
+            arguments.insert(
+                "entry_id".into(),
+                json!("01900000-0000-7000-8000-000000000004"),
+            );
+        }
         if operation == "run.undo" {
             arguments.insert("run_id".into(), json!("run-1"));
         }
