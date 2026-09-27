@@ -61,11 +61,11 @@ distinguishes the first process from later processes; it does not control the
 operating system's file cache.
 
 The committed [pre-checkpoint profile](../architecture/release/measurements/startup-profile-candidate-9b47ccc.json)
-and [checkpoint profile](../architecture/release/measurements/startup-profile-candidate-684f6bf7.json)
+and [checkpoint profile](../architecture/release/measurements/startup-profile-candidate-1aa25564.json)
 record the same 6,000 + 4,000 Entry fixture on macOS arm64. The first process
-backfilled 10,000 audit targets in 104.0 s. Two subsequent process-cold starts
-verified the persisted Node-local checkpoints and became ready in 3.90 s and
-3.93 s. Their audit-chain verification phases totaled about 234–236 ms,
+backfilled 10,000 audit targets in 103.8 s. Two subsequent process-cold starts
+verified the persisted Node-local checkpoints and became ready in 3.92 s and
+3.94 s. Their audit-chain verification phases totaled about 235–237 ms,
 compared with 472–473 ms in the pre-checkpoint profile. Both later starts were
 below the 15 s checkpoint-start reference target in this run. The OS page cache
 was not controlled, so these are not disk-cold timings. Initial backfill

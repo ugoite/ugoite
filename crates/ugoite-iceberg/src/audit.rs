@@ -1654,8 +1654,14 @@ mod tests {
             "target_id": "entry-1",
             "metadata": {"revision_id": "revision-1"}
         });
-        append_audit_events_with_checkpoint(&op, "demo", &space_uid, &[first.clone()], &config)
-            .await?;
+        append_audit_events_with_checkpoint(
+            &op,
+            "demo",
+            &space_uid,
+            std::slice::from_ref(&first),
+            &config,
+        )
+        .await?;
 
         let path = audit_file_path("demo");
         let (prefix, _) = crate::read_object_exact_optional_with_etag(&op, &path)
@@ -1721,8 +1727,14 @@ mod tests {
             "target_id": "entry-1",
             "metadata": {"revision_id": "revision-1"}
         });
-        append_audit_events_with_checkpoint(&op, "demo", &space_uid, &[event.clone()], &config)
-            .await?;
+        append_audit_events_with_checkpoint(
+            &op,
+            "demo",
+            &space_uid,
+            std::slice::from_ref(&event),
+            &config,
+        )
+        .await?;
 
         let key = audit_checkpoint_key("demo");
         let mut stored = store.get(&key).await?.expect("signed checkpoint");
@@ -1791,7 +1803,7 @@ mod tests {
             &op,
             "demo",
             &space_uid,
-            &[event.clone()],
+            std::slice::from_ref(&event),
             &first_config,
         )
         .await?;
