@@ -1,5 +1,5 @@
-import { useParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { useParams, useSearchParams } from "@solidjs/router";
+import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
 import { PagedResultTable, type ResultColumn } from "~/components/PagedResultTable";
@@ -32,6 +32,7 @@ const userValue = (value: { state: string; value?: unknown }): string => {
 
 export default function SpaceHistoryRoute() {
   const params = useParams<{ space_id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const spaceId = () => params.space_id;
   const [text, setText] = createSignal("");
   const [actorId, setActorId] = createSignal("");
@@ -46,6 +47,14 @@ export default function SpaceHistoryRoute() {
   const [cursors, setCursors] = createSignal<(string | undefined)[]>([undefined]);
   const [selectedChange, setSelectedChange] = createSignal<string>();
   const [openChange, setOpenChange] = createSignal<string>();
+  const [targetRows, setTargetRows] = createSignal<NonNullable<Awaited<ReturnType<typeof changeApi.inspect>>>["targets"]>([]);
+  const [targetCursor, setTargetCursor] = createSignal<string>();
+  const [targetLoading, setTargetLoading] = createSignal(false);
+  const [targetError, setTargetError] = createSignal(false);
+  const [selectedEntryId, setSelectedEntryId] = createSignal<string>();
+  const [relatedChanges, setRelatedChanges] = createSignal<SpaceChangeQueryRow[]>([]);
+  const [relatedCursor, setRelatedCursor] = createSignal<string>();
+  const [relatedLoading, setRelatedLoading] = createSignal(false);
   const [pendingRecovery, setPendingRecovery] = createSignal<"revert" | "undo" | null>(null);
   const [recoveryMessage, setRecoveryMessage] = createSignal("");
   const [recoveryBusy, setRecoveryBusy] = createSignal(false);
@@ -59,6 +68,16 @@ export default function SpaceHistoryRoute() {
   } | null>(null);
   let detailOpener: HTMLButtonElement | undefined;
   let detailCloseButton: HTMLButtonElement | undefined;
+  const [inspection] = createResource(openChange, (changeId) =>
+    changeId ? changeApi.inspect(spaceId(), changeId, { limit: 10 }) : undefined
+  );
+  const [affectedEntry] = createResource(
+    () => openChange() && selectedEntryId() ? `${openChange()}\n${selectedEntryId()}` : undefined,
+    async (key) => {
+      const [changeId, entryId] = key.split("\n");
+      return await changeApi.affectedEntry(spaceId(), changeId, entryId);
+    },
+  );
   const cursor = () => cursors()[cursors().length - 1];
   const queryKey = createMemo(() => JSON.stringify({
     spaceId: spaceId(),
@@ -152,13 +171,96 @@ export default function SpaceHistoryRoute() {
       : t("spaceHistory.unknownTarget");
     return `${targetName} · ${t("spaceHistory.targetCount", { count: row.summary.affected_entry_count })}`;
   };
+  const changeTitle = (row: SpaceChangeQueryRow) =>
+    row.change.message?.trim() || targetLabel(row);
   const openedRow = () => currentRows().find((row) => row.change_id === openChange());
+  const detailRow = () => {
+    const row = openedRow();
+    const inspected = inspection();
+    if (row || !inspected) return row;
+    return {
+      change_id: inspected.change_id,
+      generation: 0,
+      change: inspected.change,
+      publication: { generation: 0, publication_uri: { space_uid: "", key: "" }, publication_checksum: "" },
+      target_visibility: inspected.target_visibility,
+      summary: inspected.summary,
+    } satisfies SpaceChangeQueryRow;
+  };
+  const setDetail = (changeId?: string) => {
+    if (changeId) {
+      setOpenChange(changeId);
+      setSearchParams({ change: changeId });
+    } else {
+      setOpenChange(undefined);
+      setSelectedEntryId(undefined);
+      setSearchParams({ change: undefined });
+    }
+  };
+  createEffect(on(
+    () => searchParams.change,
+    (value) => setOpenChange(typeof value === "string" && value ? value : undefined),
+  ));
+  createEffect(() => {
+    const current = inspection();
+    if (!current || current.change_id !== openChange()) return;
+    setTargetRows(current.targets);
+    setTargetCursor(current.next_cursor ?? undefined);
+    setTargetError(false);
+    setSelectedEntryId(current.targets[0]?.entry_id);
+    setRelatedChanges([]);
+    setRelatedCursor(undefined);
+    if (current.change.run_id) {
+      const runId = current.change.run_id;
+      void changeApi.query(spaceId(), { limit: 10, run_id: runId })
+        .then((page) => {
+          if (openChange() !== current.change_id) return;
+          setRelatedChanges(page.changes);
+          setRelatedCursor(page.next_cursor ?? undefined);
+        })
+        .catch(() => { if (openChange() === current.change_id) setRelatedChanges([]); });
+    }
+  });
+  const loadMoreTargets = async () => {
+    const changeId = openChange();
+    const cursor = targetCursor();
+    if (!changeId || !cursor || targetLoading()) return;
+    setTargetLoading(true);
+    setTargetError(false);
+    try {
+      const next = await changeApi.inspect(spaceId(), changeId, { limit: 10, cursor });
+      if (openChange() !== changeId) return;
+      setTargetRows((current) => [...current, ...next.targets]);
+      setTargetCursor(next.next_cursor ?? undefined);
+    } catch {
+      setTargetError(true);
+    } finally {
+      setTargetLoading(false);
+    }
+  };
+  const loadMoreRelatedChanges = async () => {
+    const runId = inspection()?.change.run_id;
+    const changeId = openChange();
+    const cursor = relatedCursor();
+    if (!runId || !changeId || !cursor || relatedLoading()) return;
+    setRelatedLoading(true);
+    try {
+      const next = await changeApi.query(spaceId(), { limit: 10, run_id: runId, cursor });
+      if (openChange() !== changeId) return;
+      setRelatedChanges((current) => [...current, ...next.changes]);
+      setRelatedCursor(next.next_cursor ?? undefined);
+    } catch {
+      // The initial Change detail remains available if related history cannot be read.
+    } finally {
+      setRelatedLoading(false);
+    }
+  };
   const closeDetail = () => {
-    setOpenChange(undefined);
+    setDetail(undefined);
     queueMicrotask(() => detailOpener?.focus());
   };
   createEffect(() => {
-    if (!openedRow()) return;
+    if (!openChange()) return;
     const appRoot = document.getElementById("app");
     appRoot?.setAttribute("inert", "");
     queueMicrotask(() => detailCloseButton?.focus());
@@ -283,7 +385,7 @@ export default function SpaceHistoryRoute() {
     return typeof diagnostic.kind === "string" && typeof diagnostic.status === "number" && diagnostic.status >= 400 && diagnostic.status < 500 && diagnostic.status !== 408 && diagnostic.status !== 425;
   };
   const confirmRecovery = async () => {
-    const row = openedRow();
+    const row = detailRow();
     const kind = pendingRecovery();
     if (!row || !kind || recoveryBusy()) return;
     setRecoveryBusy(true);
@@ -418,7 +520,7 @@ export default function SpaceHistoryRoute() {
           onNext={() => { const next = page()?.next_cursor; if (next) { setCursors((current) => [...current, next]); setSelectedChange(undefined); } }}
           selectedRowKey={selectedChange()}
           onRowSelect={(row) => setSelectedChange(row.change_id)}
-          renderTrailingAction={(row) => <button type="button" class="entry-browser-open" aria-label={t("spaceHistory.openChange")} title={t("spaceHistory.openChange")} onClick={(event) => { event.stopPropagation(); detailOpener = event.currentTarget; setSelectedChange(row.change_id); setOpenChange(row.change_id); }}><RowListChevron /></button>}
+          renderTrailingAction={(row) => <button type="button" class="entry-browser-open" aria-label={t("spaceHistory.openChange")} title={t("spaceHistory.openChange")} onClick={(event) => { event.stopPropagation(); detailOpener = event.currentTarget; setSelectedChange(row.change_id); setDetail(row.change_id); }}><RowListChevron /></button>}
           trailingActionLabel={t("spaceHistory.openChange")}
           trailingActionClassName="entry-browser-trailing-cell"
           trailingHeaderClassName="entry-browser-trailing-header"
@@ -426,22 +528,42 @@ export default function SpaceHistoryRoute() {
           classNames={{ table: "entry-browser-table history-change-table", scroll: "entry-browser-table-scroll" }}
         />
       </Show>
-      <Show when={openedRow()}>
+      <Show when={openChange()}>
         {(row) => (
           <Portal>
           <div class="ui-backdrop history-detail-backdrop" onClick={(event) => { if (event.target === event.currentTarget) closeDetail(); }}>
             <section class="ui-dialog history-detail" role="dialog" aria-modal="true" aria-labelledby="history-detail-title" onKeyDown={handleDetailKeyDown}>
-              <h2 id="history-detail-title">{targetLabel(row())}</h2>
-              <p>{formatDateTimeLabel(row().change.created_at_micros / 1000)} · {actorName(row().change.actor_principal_id)}</p>
-              <h3>{t("spaceHistory.summary")}</h3>
-              <p>{showSummary(row())}</p>
-              <div class="ui-dialog-actions">
+              <header class="history-detail-header">
+                <div><h2 id="history-detail-title">{detailRow() ? changeTitle(detailRow()!) : t("spaceHistory.detailTitle")}</h2>
+                  <p>{inspection() ? formatDateTimeLabel(inspection()!.change.created_at_micros / 1000) : t("spaceHistory.loading")}{inspection() ? ` · ${actorName(inspection()!.change.actor_principal_id)}` : ""}</p></div>
                 <button ref={detailCloseButton} type="button" class="ui-button ui-button-secondary" onClick={closeDetail}>{t("common.back")}</button>
-                <button type="button" class="ui-button ui-button-secondary" disabled={historyNeedsReview() || recoveryBusy()} onClick={() => { setRecoveryNotice(null); setRecoveryFailure(null); setPendingRecovery("revert"); }}>{t("spaceHistory.revertAction")}</button>
-                <Show when={row().change.run_id}>
-                  <button type="button" class="ui-button ui-button-secondary" disabled={historyNeedsReview() || recoveryBusy()} onClick={() => { setRecoveryNotice(null); setRecoveryFailure(null); setPendingRecovery("undo"); }}>{t("spaceHistory.undoRunAction")}</button>
+              </header>
+              <div class="history-detail-content">
+                <Show when={inspection.error}><p class="ui-alert ui-alert-error" role="alert">{t("spaceHistory.loadError")}</p></Show>
+                <Show when={inspection.loading}><p>{t("spaceHistory.loading")}</p></Show>
+                <Show when={inspection()}>
+                  <section><h3>{t("spaceHistory.confirmedBreakdown")}</h3>
+                    <Show when={inspection()!.target_visibility === "complete" && inspection()!.summary} fallback={<p>{t("spaceHistory.restrictedSummary")}</p>}>
+                      <ul class="history-summary-list"><For each={inspection()!.summary!.field_groups}>{(group) => <li>{fieldName(group.form_id, group.field_id)}: {userValue(group.before)} → {userValue(group.after)} <span>({t("spaceHistory.targetCount", { count: group.affected_entry_count })})</span></li>}</For></ul>
+                    </Show>
+                  </section>
+                  <section class="history-affected-layout"><div><h3>{t("spaceHistory.affectedEntries")}</h3>
+                    <ul class="history-affected-list"><For each={targetRows()}>{(target, index) => <li><button type="button" classList={{ selected: selectedEntryId() === target.entry_id }} onClick={() => setSelectedEntryId(target.entry_id)}><span>{formName(target.form_id)} · {t("spaceHistory.entryNumber", { count: index() + 1 })}</span><span aria-hidden="true">›</span></button></li>}</For></ul>
+                    <Show when={targetError()}><p role="alert">{t("spaceHistory.loadError")}</p></Show>
+                    <Show when={targetCursor()}><button type="button" class="ui-button ui-button-secondary" disabled={targetLoading()} onClick={() => void loadMoreTargets()}>{targetLoading() ? t("spaceHistory.loading") : t("common.next")}</button></Show>
+                  </div><div class="history-entry-diff"><h3>{t("spaceHistory.selectedEntry")}</h3>
+                    <Show when={affectedEntry.loading}><p>{t("spaceHistory.loading")}</p></Show>
+                    <Show when={affectedEntry.error}><p role="alert">{t("spaceHistory.loadError")}</p></Show>
+                    <Show when={affectedEntry()}><dl><For each={affectedEntry()!.fields}>{(field) => <><dt>{fieldName(affectedEntry()!.form_id, field.field_id)}</dt><dd><span>{userValue(field.before)}</span><span aria-hidden="true"> → </span><span>{userValue(field.after)}</span></dd></>}</For></dl></Show>
+                  </div></section>
+                  <Show when={inspection()!.change.run_id}><section><h3>{t("spaceHistory.relatedChanges")}</h3><ul class="history-related-list"><For each={relatedChanges().filter((change) => change.change_id !== openChange())}>{(change) => <li><button type="button" onClick={() => setDetail(change.change_id)}>{formatDateTimeLabel(change.change.created_at_micros / 1000)} · {showSummary(change)}</button></li>}</For></ul><Show when={relatedCursor()}><button type="button" class="ui-button ui-button-secondary" disabled={relatedLoading()} onClick={() => void loadMoreRelatedChanges()}>{relatedLoading() ? t("spaceHistory.loading") : t("common.next")}</button></Show></section></Show>
+                  <details class="history-technical-info"><summary>{t("spaceHistory.technicalInfo")}</summary><dl><dt>Change ID</dt><dd>{inspection()!.change_id}</dd><Show when={inspection()!.change.run_id}><dt>Run ID</dt><dd>{inspection()!.change.run_id}</dd></Show><Show when={selectedEntryId()}><dt>Entry ID</dt><dd>{selectedEntryId()}</dd></Show></dl></details>
                 </Show>
               </div>
+              <footer class="ui-dialog-actions history-detail-actions">
+                <button type="button" class="ui-button ui-button-secondary" disabled={!inspection() || historyNeedsReview() || recoveryBusy()} onClick={() => { setRecoveryNotice(null); setRecoveryFailure(null); setPendingRecovery("revert"); }}>{t("spaceHistory.revertAction")}</button>
+                <Show when={inspection()?.change.run_id}><button type="button" class="ui-button ui-button-secondary" disabled={historyNeedsReview() || recoveryBusy()} onClick={() => { setRecoveryNotice(null); setRecoveryFailure(null); setPendingRecovery("undo"); }}>{t("spaceHistory.undoRunAction")}</button></Show>
+              </footer>
             </section>
           </div>
           </Portal>
@@ -459,8 +581,8 @@ export default function SpaceHistoryRoute() {
       <ConfirmDestructiveAction
         open={pendingRecovery() !== null}
         title={pendingRecovery() === "undo" ? t("spaceHistory.undoRunAction") : t("spaceHistory.revertAction")}
-        body={t("spaceHistory.appendOnlyNotice")}
-        confirmLabel={t("spaceHistory.confirmAppend")}
+        body={pendingRecovery() === "undo" ? t("spaceHistory.undoConfirmScope") : t("spaceHistory.revertConfirmScope")}
+        confirmLabel={pendingRecovery() === "undo" ? t("spaceHistory.confirmUndoRun") : t("spaceHistory.confirmRevert")}
         busy={recoveryBusy()}
         error={null}
         onConfirm={() => void confirmRecovery()}

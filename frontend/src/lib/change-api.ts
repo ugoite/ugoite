@@ -72,6 +72,28 @@ export type SpaceChangeQueryPage = {
   next_cursor: string | null;
 };
 
+export type SpaceChangeAffectedEntry = {
+  form_id: string;
+  entry_id: string;
+  before_revision_id: string | null;
+  after_revision_id: string;
+  operation: string;
+  fields: Array<{
+    field_id: number;
+    before: SpaceChangeComparedValue;
+    after: SpaceChangeComparedValue;
+  }>;
+};
+
+export type SpaceChangeInspection = {
+  change_id: string;
+  change: SpaceChangeDescriptor;
+  target_visibility: "complete" | "partial";
+  summary: SpaceChangeSummary | null;
+  targets: SpaceChangeAffectedEntry[];
+  next_cursor: string | null;
+};
+
 const asRecord = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
@@ -168,11 +190,17 @@ const decodeQueryRow = (value: unknown): SpaceChangeQueryRow => {
       ),
     },
     publication: {
-      generation: requiredNumber(publication.generation, "publication.generation"),
+      generation: requiredNumber(
+        publication.generation,
+        "publication.generation",
+      ),
       publication_uri: (() => {
         const uri = asRecord(publication.publication_uri);
         return {
-          space_uid: requiredString(uri.space_uid, "publication.publication_uri.space_uid"),
+          space_uid: requiredString(
+            uri.space_uid,
+            "publication.publication_uri.space_uid",
+          ),
           key: requiredString(uri.key, "publication.publication_uri.key"),
         };
       })(),
@@ -183,6 +211,63 @@ const decodeQueryRow = (value: unknown): SpaceChangeQueryRow => {
     },
     target_visibility: targetVisibility,
     summary: decodeSummary(row.summary),
+  };
+};
+
+const decodeAffectedEntry = (value: unknown): SpaceChangeAffectedEntry => {
+  const row = asRecord(value);
+  if (!Array.isArray(row.fields)) {
+    throw new Error("Invalid Change target evidence");
+  }
+  return {
+    form_id: requiredString(row.form_id, "target.form_id"),
+    entry_id: requiredString(row.entry_id, "target.entry_id"),
+    before_revision_id: asString(row.before_revision_id),
+    after_revision_id: requiredString(
+      row.after_revision_id,
+      "target.after_revision_id",
+    ),
+    operation: requiredString(row.operation, "target.operation"),
+    fields: row.fields.map((item) => {
+      const field = asRecord(item);
+      return {
+        field_id: requiredFieldId(field.field_id, "target.fields.field_id"),
+        before: decodeComparedValue(field.before),
+        after: decodeComparedValue(field.after),
+      };
+    }),
+  };
+};
+
+const decodeInspection = (value: unknown): SpaceChangeInspection => {
+  const row = asRecord(value);
+  const change = asRecord(row.change);
+  const targetVisibility = asString(row.target_visibility);
+  if (targetVisibility !== "complete" && targetVisibility !== "partial") {
+    throw new Error("Invalid Change inspection visibility");
+  }
+  if (!Array.isArray(row.targets)) {
+    throw new Error("Invalid Change inspection targets");
+  }
+  return {
+    change_id: requiredString(row.change_id, "change_id"),
+    change: {
+      actor_principal_id: requiredString(
+        change.actor_principal_id,
+        "change.actor_principal_id",
+      ),
+      message: asString(change.message),
+      reverts_change_id: asString(change.reverts_change_id),
+      run_id: asString(change.run_id),
+      created_at_micros: requiredNumber(
+        change.created_at_micros,
+        "change.created_at_micros",
+      ),
+    },
+    target_visibility: targetVisibility,
+    summary: decodeSummary(row.summary ?? null),
+    targets: row.targets.map(decodeAffectedEntry),
+    next_cursor: asString(row.next_cursor),
   };
 };
 
@@ -247,6 +332,35 @@ export const changeApi = {
       changes: value.changes.map(decodeQueryRow),
       next_cursor: asString(value.next_cursor),
     };
+  },
+
+  async inspect(
+    spaceId: string,
+    changeId: string,
+    options: { limit?: number; cursor?: string } = {},
+  ): Promise<SpaceChangeInspection> {
+    return decodeInspection(
+      await protocolFetch<unknown>("change.inspect", {
+        space_id: spaceId,
+        change_id: changeId,
+        limit: options.limit ?? 10,
+        cursor: options.cursor,
+      }),
+    );
+  },
+
+  async affectedEntry(
+    spaceId: string,
+    changeId: string,
+    entryId: string,
+  ): Promise<SpaceChangeAffectedEntry> {
+    return decodeAffectedEntry(
+      await protocolFetch<unknown>("change.affected.get", {
+        space_id: spaceId,
+        change_id: changeId,
+        entry_id: entryId,
+      }),
+    );
   },
 
   async revert(

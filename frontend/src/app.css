@@ -1559,6 +1559,55 @@ textarea {
 }
 .history-detail-backdrop {
   z-index: 60;
+  padding: 0;
+  place-items: stretch end;
+  background: rgba(21, 21, 21, 0.24);
+}
+.ui-dialog.history-detail {
+  width: min(760px, 92vw);
+  height: 100%;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-radius: 20px 0 0 20px;
+  padding: 24px;
+}
+.history-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex: 0 0 auto;
+}
+.history-detail-header h2 { margin: 0; }
+.history-detail-header p { margin: 6px 0 0; color: var(--muted); }
+.history-detail-content { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.history-detail-content h3 { margin: 0 0 10px; font-size: 16px; }
+.history-detail-content section { margin-bottom: 22px; }
+.history-summary-list, .history-affected-list, .history-related-list { list-style: none; padding: 0; margin: 0; }
+.history-summary-list li, .history-affected-list li, .history-related-list li { border-bottom: 1px solid var(--line); padding: 10px 0; }
+.history-affected-layout { display: grid; grid-template-columns: minmax(200px, .85fr) minmax(0, 1.15fr); gap: 20px; }
+.history-affected-list button, .history-related-list button { width: 100%; display: flex; justify-content: space-between; text-align: left; border: 0; background: transparent; padding: 6px 4px; color: inherit; cursor: pointer; }
+.history-affected-list button.selected { border-radius: 8px; background: var(--surface-soft, #f3f4f6); }
+.history-entry-diff { min-width: 0; }
+.history-entry-diff dl, .history-technical-info dl { margin: 0; }
+.history-entry-diff dt, .history-technical-info dt { font-weight: 600; margin-top: 10px; }
+.history-entry-diff dd, .history-technical-info dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.history-detail-actions { flex: 0 0 auto; border-top: 1px solid var(--line); padding-top: 14px; }
+.history-technical-info { margin: 16px 0; color: var(--muted); }
+.history-technical-info summary { cursor: pointer; }
+@media (max-width: 640px) {
+  .ui-dialog.history-detail {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  }
+  .history-affected-layout { grid-template-columns: 1fr; gap: 16px; }
+  .history-detail-actions { flex-wrap: wrap; }
+  .history-detail-actions .ui-button { flex: 1 1 auto; }
 }
 .ui-row-reference-dialog {
   width: min(760px, calc(100vw - 32px));
