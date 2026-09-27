@@ -150,7 +150,7 @@ fn audit_baseline_f03_upload_reference_attaches_and_downloads() {
 }
 
 #[test]
-fn audit_baseline_f04_update_replaces_fields_without_help_warning() {
+fn audit_f04_update_help_and_full_replacement_workflow_are_explicit() {
     let fixture = AuditFixture::new();
     fixture.save_form(&fixture.note_form());
     let entry_id = uuid::Uuid::now_v7().to_string();
@@ -183,8 +183,70 @@ fn audit_baseline_f04_update_replaces_fields_without_help_warning() {
     assert_eq!(current["fields"]["Subject"], "監査後");
     assert!(current["fields"].get("Body").is_none());
     assert!(current["fields"].get("Status").is_none());
+
+    // A one-field edit is safe only after resending the full field map.
+    let full_fields = fixture.write_json(
+        "all-fields.json",
+        &json!({
+            "Subject": "監査後",
+            "Body": "保持する本文",
+            "Status": "published"
+        }),
+    );
+    let complete = fixture.json(&[
+        "entry",
+        "update",
+        &entry_id,
+        "--fields-file",
+        full_fields.to_str().unwrap(),
+        "--parent-revision-id",
+        after["revision_id"].as_str().unwrap(),
+    ]);
+    let complete_entry = fixture.json(&["entry", "get", &entry_id]);
+    assert_eq!(complete_entry["fields"]["Subject"], "監査後");
+    assert_eq!(complete_entry["fields"]["Body"], "保持する本文");
+    assert_eq!(complete_entry["fields"]["Status"], "published");
+
+    // Required-field validation rejects an incomplete map without appending.
+    let missing_required = fixture.write_json(
+        "missing-required.json",
+        &json!({
+            "Body": "本文だけでは保存できない"
+        }),
+    );
+    let changes_before_invalid = fixture.json(&["change", "list", "-o", "json"]);
+    let invalid = fixture.run(&[
+        "entry",
+        "update",
+        &entry_id,
+        "--fields-file",
+        missing_required.to_str().unwrap(),
+        "--parent-revision-id",
+        complete["revision_id"].as_str().unwrap(),
+    ]);
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("required"));
+    assert_eq!(
+        fixture.json(&["change", "list", "-o", "json"]),
+        changes_before_invalid
+    );
+
+    // An explicitly stale revision conflicts and leaves the current Entry intact.
+    let stale = fixture.run(&[
+        "entry",
+        "update",
+        &entry_id,
+        "--fields-file",
+        full_fields.to_str().unwrap(),
+        "--parent-revision-id",
+        parent,
+    ]);
+    assert_eq!(stale.status.code(), Some(5));
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("REVISION_CONFLICT"));
+    assert_eq!(fixture.json(&["entry", "get", &entry_id]), complete_entry);
+
     let history = fixture.json(&["entry", "history", &entry_id]);
-    assert_eq!(history["revisions"].as_array().unwrap().len(), 2);
+    assert_eq!(history["revisions"].as_array().unwrap().len(), 3);
     fixture.success(&["entry", "restore", &entry_id, parent]);
     let restored = fixture.json(&["entry", "get", &entry_id]);
     assert_eq!(restored["fields"]["Body"], "変更前の本文");
@@ -193,10 +255,11 @@ fn audit_baseline_f04_update_replaces_fields_without_help_warning() {
     let help = fixture.success(&["entry", "update", "--help"]);
     let help = String::from_utf8(help.stdout).unwrap();
     assert!(help.contains("--field") && help.contains("--fields-file"));
-    // F04 keeps these complete-replacement semantics, but requires the real
-    // help output to explain omitted-field deletion before users execute it.
-    assert!(!help.contains("complete post-update"));
-    assert!(!help.contains("omitted fields are removed"));
+    assert!(help.contains("Complete replacement"));
+    assert!(help.contains("unspecified existing Form fields are removed"));
+    assert!(help.contains("get all fields with `entry get`"));
+    assert!(help.contains("resend the full map with `--fields-file`"));
+    assert!(help.contains("`--parent-revision-id`"));
 }
 
 #[test]
