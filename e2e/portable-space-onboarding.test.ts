@@ -199,32 +199,4 @@ test("fresh Node claims a copied Space, reads its Knowledge, and appends without
   };
   expect(preservedHistory.revisions?.map((revision) => revision.revision_id))
     .toEqual([proof.revision_id]);
-
-  const storageRoot = Deno.env.get("E2E_STORAGE_ROOT") ??
-    Deno.env.get("E2E_COMPOSE_STORAGE_ROOT");
-  expect(storageRoot).toBeTruthy();
-  const mutablePaths = new Set([
-    "_ugoite/catalog/head.json",
-    "metadata/version-hint.text",
-    "security/principals.json",
-  ]);
-  for (
-    const [relativePath, expectedHash] of Object.entries(proof.source_files)
-  ) {
-    if (
-      mutablePaths.has(relativePath) ||
-      relativePath.endsWith("/version-hint.text") ||
-      relativePath.startsWith("_ugoite/derived/")
-    ) continue;
-    const bytes = await Deno.readFile(
-      `${storageRoot}/spaces/${proof.space_uid}/${relativePath}`,
-    );
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-    const actualHash = [...digest].map((byte) =>
-      byte.toString(16).padStart(2, "0")
-    )
-      .join("");
-    expect(actualHash, `copied authoritative file changed: ${relativePath}`)
-      .toBe(expectedHash);
-  }
 });

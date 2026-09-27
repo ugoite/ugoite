@@ -394,6 +394,9 @@ case "$TEST_TYPE" in
     # the composed service is stopped.
     "${compose_cmd[@]}" run --rm --no-deps --user 0:0 --entrypoint /bin/sh ugoite \
       -c "chown -R $(id -u):$(id -g) /data"
+    echo "Verifying copied authoritative file hashes..."
+    deno run -A "$SCRIPT_DIR/verify-portable-space-hashes.ts" \
+      "$E2E_COMPOSE_STORAGE_ROOT" "$E2E_PORTABLE_PROOF_FILE"
     echo "Verifying the claimed copied Space with the local CLI..."
     cargo run -q --manifest-path "$ROOT_DIR/Cargo.toml" -p ugoite-cli --locked \
       -- --config "$PORTABLE_CLI_CONFIG" space verify --deep --format json > "$E2E_COMPOSE_STORAGE_ROOT/verify-after-claim.json"

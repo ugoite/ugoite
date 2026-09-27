@@ -341,6 +341,9 @@ case "$TEST_TYPE" in
     ;;
   portable-space)
     run_e2e_task portable-space "$base_report_file"
+    echo "Verifying copied authoritative file hashes..."
+    deno run -A "$SCRIPT_DIR/verify-portable-space-hashes.ts" \
+      "$E2E_STORAGE_ROOT" "$E2E_PORTABLE_PROOF_FILE"
     echo "Verifying the claimed copied Space with the local CLI..."
     cargo run -q --manifest-path "$ROOT_DIR/Cargo.toml" -p ugoite-cli --locked \
       -- --config "$PORTABLE_CLI_CONFIG" space verify --deep --format json > "$E2E_STORAGE_ROOT/verify-after-claim.json"
