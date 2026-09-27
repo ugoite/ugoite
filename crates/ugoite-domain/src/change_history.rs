@@ -4,6 +4,7 @@
 //! revisions. They are not a second history store and do not infer a Change
 //! from a Run or from user-authored messages.
 
+use crate::change::ChangeDescriptor;
 use crate::entry::FieldValue;
 use crate::id::{EntryId, FieldId, FormId};
 use serde::{Deserialize, Serialize};
@@ -60,6 +61,98 @@ pub struct ChangeHistorySummary {
     /// Common field deltas supported by revision evidence.
     pub field_groups: Vec<ChangeFieldGroup>,
 }
+
+/// Filters that can be evaluated from the committed Change descriptor alone.
+/// Text searches only the optional message; it never guesses at Entry values.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ChangeHistoryQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_principal_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_after_micros: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_before_micros: Option<i64>,
+}
+
+impl ChangeHistoryQuery {
+    /// Trim string filters and reject values this protocol cannot search
+    /// consistently. The normalized form is also what cursors bind to.
+    pub fn normalize(mut self) -> Result<Self, ChangeHistoryQueryError> {
+        self.actor_principal_id = normalize_query_text(self.actor_principal_id, 128)?;
+        self.run_id = normalize_query_text(self.run_id, 128)?;
+        self.text = normalize_query_text(self.text, 256)?;
+        self.text = self.text.map(|text| text.to_lowercase());
+        if matches!(
+            (self.created_after_micros, self.created_before_micros),
+            (Some(after), Some(before)) if after > before
+        ) {
+            return Err(ChangeHistoryQueryError::InvalidTimeRange);
+        }
+        Ok(self)
+    }
+
+    pub fn matches(&self, change: &ChangeDescriptor) -> bool {
+        self.actor_principal_id
+            .as_deref()
+            .is_none_or(|actor| change.actor_principal_id == actor)
+            && self.run_id.as_deref().is_none_or(|run_id| {
+                change
+                    .run_id
+                    .as_ref()
+                    .is_some_and(|value| value.as_str() == run_id)
+            })
+            && self.text.as_deref().is_none_or(|query| {
+                change
+                    .message
+                    .as_deref()
+                    .is_some_and(|message| message.to_lowercase().contains(query))
+            })
+            && self
+                .created_after_micros
+                .is_none_or(|after| change.created_at_micros >= after)
+            && self
+                .created_before_micros
+                .is_none_or(|before| change.created_at_micros <= before)
+    }
+}
+
+fn normalize_query_text(
+    value: Option<String>,
+    max_bytes: usize,
+) -> Result<Option<String>, ChangeHistoryQueryError> {
+    value
+        .map(|value| {
+            let value = value.trim().to_owned();
+            if value.is_empty() || value.chars().count() > max_bytes {
+                return Err(ChangeHistoryQueryError::InvalidFilter);
+            }
+            Ok(value)
+        })
+        .transpose()
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ChangeHistoryQueryError {
+    InvalidFilter,
+    InvalidTimeRange,
+}
+
+impl std::fmt::Display for ChangeHistoryQueryError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidFilter => formatter.write_str("Change history filter is invalid"),
+            Self::InvalidTimeRange => {
+                formatter.write_str("created_after_micros must not exceed created_before_micros")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ChangeHistoryQueryError {}
 
 /// Summarize one Change from verified revision evidence.
 ///
@@ -149,6 +242,7 @@ impl std::error::Error for ChangeSummaryError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::change::RunId;
     use crate::id::{EntryId, FieldId, FormId};
     use uuid::Uuid;
 
@@ -179,6 +273,77 @@ mod tests {
                 after: ComparedFieldValue::Value(FieldValue::String(after.to_owned())),
             }],
         }
+    }
+
+    fn descriptor() -> ChangeDescriptor {
+        ChangeDescriptor {
+            run_id: Some(RunId::new("run-1").unwrap()),
+            actor_principal_id: "actor-1".into(),
+            message: Some("Travel 交通費の更新".into()),
+            reverts_change_id: None,
+            created_at_micros: 1_000,
+        }
+    }
+
+    #[test]
+    fn query_filters_committed_metadata_and_normalizes_text() {
+        let query = ChangeHistoryQuery {
+            actor_principal_id: Some(" actor-1 ".into()),
+            run_id: Some("run-1".into()),
+            text: Some("  TRAVEL  ".into()),
+            created_after_micros: Some(1_000),
+            created_before_micros: Some(1_000),
+        }
+        .normalize()
+        .unwrap();
+        assert_eq!(query.text.as_deref(), Some("travel"));
+        assert!(query.matches(&descriptor()));
+
+        let other = ChangeHistoryQuery {
+            text: Some("lunch".into()),
+            ..query
+        }
+        .normalize()
+        .unwrap();
+        assert!(!other.matches(&descriptor()));
+    }
+
+    #[test]
+    fn query_rejects_blank_oversized_and_inverted_filters() {
+        assert_eq!(
+            ChangeHistoryQuery {
+                text: Some("  ".into()),
+                ..ChangeHistoryQuery::default()
+            }
+            .normalize()
+            .unwrap_err(),
+            ChangeHistoryQueryError::InvalidFilter
+        );
+        assert_eq!(
+            ChangeHistoryQuery {
+                text: Some("x".repeat(257)),
+                ..ChangeHistoryQuery::default()
+            }
+            .normalize()
+            .unwrap_err(),
+            ChangeHistoryQueryError::InvalidFilter
+        );
+        assert!(ChangeHistoryQuery {
+            text: Some("界".repeat(256)),
+            ..ChangeHistoryQuery::default()
+        }
+        .normalize()
+        .is_ok());
+        assert_eq!(
+            ChangeHistoryQuery {
+                created_after_micros: Some(2),
+                created_before_micros: Some(1),
+                ..ChangeHistoryQuery::default()
+            }
+            .normalize()
+            .unwrap_err(),
+            ChangeHistoryQueryError::InvalidTimeRange
+        );
     }
 
     #[test]

@@ -30,6 +30,8 @@ struct ChangeHistoryPageToken {
     version: u32,
     space_id: String,
     position: crate::ChangeHistoryChainCursor,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    query_hash: Option<String>,
 }
 
 fn change_history_page_limit(requested: Option<usize>) -> Result<usize> {
@@ -70,6 +72,7 @@ use ugoite_core::sql_query::{
     SqlContinuation, SqlQueryCountRequest, SqlQueryError, SqlQueryPage, SqlQueryRequest,
 };
 use ugoite_domain::change::{ChangeCommand, RunId};
+use ugoite_domain::change_history::ChangeHistoryQuery;
 use ugoite_domain::form::{sql_relation_name, FormDefinition};
 use ugoite_domain::id::{
     validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
@@ -2306,7 +2309,16 @@ impl UgoiteService {
                 )
             })
             .transpose()?
-            .map(|token| token.position);
+            .map(|token| {
+                if token.query_hash.is_some() {
+                    bail!("Change query cursor cannot be used for unfiltered paging");
+                }
+                Ok(token.position)
+            })
+            .transpose()
+            .map_err(|error: anyhow::Error| {
+                AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
+            })?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         let page = workspace.list_changes_page(position, limit).await?;
@@ -2318,12 +2330,72 @@ impl UgoiteService {
                         version: 1,
                         space_id: space_id.to_string(),
                         position,
+                        query_hash: None,
                     },
                     &signing_key,
                 )
             })
             .transpose()?;
         Ok(json!({ "changes": page.changes, "next_cursor": next_cursor }))
+    }
+
+    pub async fn query_changes(
+        &self,
+        space_id: &str,
+        requested_limit: Option<usize>,
+        cursor: Option<&str>,
+        query: ChangeHistoryQuery,
+    ) -> Result<Value> {
+        let limit = change_history_page_limit(requested_limit)?;
+        let query = query
+            .normalize()
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+        let query_hash = Sha256::digest(serde_json::to_vec(&query)?)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        self.validate_complete_space(space_id).await?;
+        let signing_key = self.sql_query_signing_key(space_id).await?;
+        let position = cursor
+            .map(|cursor| {
+                Self::decode_change_page_cursor(cursor, space_id, &signing_key)
+                    .map_err(|error| -> anyhow::Error {
+                        AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()).into()
+                    })
+                    .and_then(|token| {
+                        if token.query_hash.as_deref() != Some(query_hash.as_str()) {
+                            bail!("Change query cursor does not match the requested filters");
+                        }
+                        Ok(token.position)
+                    })
+            })
+            .transpose()
+            .map_err(|error: anyhow::Error| {
+                AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
+            })?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let page = workspace.list_changes_page(position, limit).await?;
+        let changes = page
+            .changes
+            .into_iter()
+            .filter(|change| query.matches(&change.change))
+            .collect::<Vec<_>>();
+        let next_cursor = page
+            .next
+            .map(|position| {
+                Self::encode_change_page_cursor(
+                    &ChangeHistoryPageToken {
+                        version: 1,
+                        space_id: space_id.to_string(),
+                        position,
+                        query_hash: Some(query_hash),
+                    },
+                    &signing_key,
+                )
+            })
+            .transpose()?;
+        Ok(json!({ "changes": changes, "next_cursor": next_cursor }))
     }
 
     /// Reopen hook: converge commit-coupled audit evidence after a Space is
@@ -7293,6 +7365,7 @@ mod tests {
                 publication_path: "spaces/test/_ugoite/catalog/publications/3-646566.json".into(),
                 expected_next_head_checksum: "b".repeat(64),
             },
+            query_hash: None,
         };
         let encoded = UgoiteService::encode_change_page_cursor(&token, signing_key.as_bytes())?;
         assert_eq!(
