@@ -231,10 +231,10 @@ async function runMobileRegression(
     {
       name: "history",
       path: `/spaces/${spaceId}/history`,
-      ready: ".historyTable",
+      ready: ".history-change-table",
       assert: async () => {
         // Mitase evidence: REQ-E2E-003#criterion.responsive-mobile-workflows.
-        await expect(page.locator(".historyTable tbody tr").first())
+        await expect(page.locator(".history-change-table tbody tr").first())
           .toBeVisible();
       },
     },
