@@ -10,7 +10,17 @@ export type * from "./types";
 export { assetApi, type AssetListItem } from "../asset-api";
 export { auditApi } from "../audit-api";
 export { authApi } from "../auth-api";
-export { changeApi, type SpaceChange } from "../change-api";
+export {
+  changeApi,
+  type SpaceChange,
+  type SpaceChangeComparedValue,
+  type SpaceChangeDescriptor,
+  type SpaceChangeFieldGroup,
+  type SpaceChangeQueryFilters,
+  type SpaceChangeQueryPage,
+  type SpaceChangeQueryRow,
+  type SpaceChangeSummary,
+} from "../change-api";
 export { entryApi } from "../entry-api";
 export { formApi } from "../form-api";
 export { preferencesApi } from "../preferences-api";

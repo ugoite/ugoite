@@ -4443,7 +4443,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Matching Changes from up to limit publications in newest-first publication order. Fewer than limit matches, including an empty page, may be returned with next_cursor set.",
+            "description": "A bounded page of matching Changes in newest-first publication order. Each Change includes target_visibility and the shared evidence-backed summary when current read scopes cover every Form; partial visibility returns a null summary without hidden counts or field groups. Summary work is bounded per Change to the normal inspection revision limit (10,000 rows), multiplied by the requested page limit. Fewer than limit matches, including an empty page, may be returned with next_cursor set.",
             "content": {
               "application/json": {
                 "schema": {
