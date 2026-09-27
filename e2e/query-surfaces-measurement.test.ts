@@ -205,7 +205,7 @@ test("records real two-Space query surface measurements", async ({ page, request
       };
       signal?.addEventListener("abort", () => {
         event.aborted = true;
-        event.abortedAt = performance.now();
+        event.abortedAt ??= performance.now();
       }, { once: true });
       measured.__ugoiteQueryEvents!.push(event);
       try {
