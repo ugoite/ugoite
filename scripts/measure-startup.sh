@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT_FILE="${UGOITE_STARTUP_MEASURE_OUTPUT:-$ROOT_DIR/target/startup-measurement.json}"
 RUNS="${UGOITE_STARTUP_MEASURE_RUNS:-3}"
 STARTUP_TIMEOUT_SECONDS="${UGOITE_STARTUP_MEASURE_TIMEOUT_SECONDS:-900}"
+TARGET_DIR="${UGOITE_STARTUP_MEASURE_TARGET_DIR:-${CARGO_TARGET_DIR:-target}}"
 KEEP_ROOT=false
 REUSE_ROOT="${UGOITE_STARTUP_MEASURE_REUSE_ROOT:-false}"
 FIXTURE_MARKER_CONTENT='{"seed":{"startup-space-a":3146001,"startup-space-b":3144001},"entries":{"startup-space-a":6000,"startup-space-b":4000},"scenario":"renewable-ops","version":1}'
@@ -108,8 +109,8 @@ SOURCE_TREE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD^{tree})"
 if [[ "$SOURCE_ID_KIND" == git_tree ]]; then SOURCE_TREE_SHA="$SOURCE_SHA"; fi
 
 echo "Building server from source..." >&2
-cargo build --locked -p ugoite-server
-TARGET_DIR="${CARGO_TARGET_DIR:-target}"
+env -u CARGO_BUILD_BUILD_DIR \
+  cargo build --locked --target-dir "$TARGET_DIR" -p ugoite-server
 if [[ "$TARGET_DIR" != /* ]]; then TARGET_DIR="$ROOT_DIR/$TARGET_DIR"; fi
 SERVER="$TARGET_DIR/debug/ugoite-server"
 
@@ -168,9 +169,21 @@ for path in sorted(Path(log_dir).glob("run-*.log")):
             continue
         if value.get("event") == "ugoite.startup.phase":
             events.append(value)
+    checkpoint_phase = next(
+        (event for event in events if event.get("phase") == "audit_chain_verification"),
+        None,
+    )
+    checkpoint_used = (
+        checkpoint_phase.get("checkpoint_used") if checkpoint_phase else None
+    )
     measurements.append({
         "run": run_number,
         "cache_state": "first_process" if run_number == 1 else "subsequent_process",
+        "audit_checkpoint": (
+            "verified" if checkpoint_used is True else
+            "full_verification" if checkpoint_used is False else
+            "not_reported"
+        ),
         "phases": events,
     })
 for audit_path in Path(root).glob("spaces/*/audit/events.jsonl"):

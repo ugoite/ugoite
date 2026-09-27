@@ -2,8 +2,10 @@ use anyhow::{anyhow, bail, Result};
 use chrono::{SecondsFormat, Utc};
 use fs2::FileExt;
 use futures::stream::{self, StreamExt, TryStreamExt};
+use hmac::{Hmac, KeyInit, Mac};
 use opendal::Operator;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, OnceLock};
@@ -20,6 +22,60 @@ const DEFAULT_AUDIT_LIMIT: usize = 100;
 const MAX_AUDIT_LIMIT: usize = 500;
 const DEFAULT_AUDIT_RETENTION: usize = 5000;
 const MAX_AUDIT_RETENTION: usize = 50000;
+const AUDIT_CHECKPOINT_VERSION: u32 = 1;
+const AUDIT_CHECKPOINT_KEY_PREFIX: &str = "audit-verification-checkpoints/v1/";
+
+#[derive(Debug, Clone)]
+pub struct AuditCheckpointRecord {
+    pub value: Vec<u8>,
+    pub version: String,
+}
+
+#[async_trait::async_trait]
+pub trait AuditCheckpointStore: Send + Sync {
+    async fn get(&self, key: &str) -> Result<Option<AuditCheckpointRecord>>;
+    async fn create_if_absent(&self, key: &str, value: Vec<u8>) -> Result<String>;
+    async fn compare_and_swap(
+        &self,
+        key: &str,
+        expected_version: &str,
+        value: Vec<u8>,
+    ) -> Result<String>;
+}
+
+#[derive(Clone)]
+pub struct AuditCheckpointConfig {
+    store: Arc<dyn AuditCheckpointStore>,
+    node_secret: Arc<[u8]>,
+}
+
+impl AuditCheckpointConfig {
+    pub fn new(store: Arc<dyn AuditCheckpointStore>, node_secret: Arc<[u8]>) -> Self {
+        Self { store, node_secret }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AuditCheckpointClaims {
+    version: u32,
+    space_id: String,
+    space_uid: String,
+    // Signed provenance for the storage generation when this checkpoint was
+    // written. Appends change an object's ETag, so reuse is established by
+    // the exact prefix digest and verified tail rather than ETag equality.
+    audit_version: String,
+    event_count: usize,
+    prefix_len: usize,
+    prefix_sha256: String,
+    last_event_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredAuditCheckpoint {
+    #[serde(flatten)]
+    claims: AuditCheckpointClaims,
+    signature: String,
+}
 
 pub(crate) fn emit_startup_audit_measurement(phase: &str, duration: Duration, fields: Value) {
     if !matches!(
@@ -205,8 +261,15 @@ fn audit_event_fingerprint(value: &Value) -> Result<String> {
 }
 
 fn verify_chain(events: &[Value]) -> Result<()> {
+    verify_chain_from(events, 0, "root")
+}
+
+fn verify_chain_from(events: &[Value], start: usize, prior_hash: &str) -> Result<()> {
     let mut prev_hash = "root".to_string();
-    for event in events {
+    if start > 0 {
+        prev_hash = prior_hash.to_string();
+    }
+    for event in events.iter().skip(start) {
         let mut candidate = event.clone();
         let object = candidate
             .as_object_mut()
@@ -229,6 +292,143 @@ fn verify_chain(events: &[Value]) -> Result<()> {
         prev_hash = expected_hash;
     }
     Ok(())
+}
+
+fn audit_checkpoint_key(space_id: &str) -> String {
+    let digest = Sha256::digest(space_id.as_bytes());
+    format!("{AUDIT_CHECKPOINT_KEY_PREFIX}{}.json", hex::encode(digest))
+}
+
+fn checkpoint_signature(claims: &AuditCheckpointClaims, node_secret: &[u8]) -> Result<Vec<u8>> {
+    let payload = serde_json::to_vec(claims)?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(node_secret)
+        .map_err(|_| anyhow!("invalid audit checkpoint signing key"))?;
+    mac.update(b"ugoite/audit-verification-checkpoint/v1\0");
+    mac.update(&payload);
+    Ok(mac.finalize().into_bytes().to_vec())
+}
+
+fn valid_checkpoint_prefix(
+    checkpoint: &StoredAuditCheckpoint,
+    node_secret: &[u8],
+    space_id: &str,
+    space_uid: &str,
+    audit_bytes: &[u8],
+    events: &[Value],
+) -> bool {
+    let claims = &checkpoint.claims;
+    if claims.version != AUDIT_CHECKPOINT_VERSION
+        || claims.space_id != space_id
+        || claims.space_uid != space_uid
+        || claims.event_count > events.len()
+        || claims.prefix_len > audit_bytes.len()
+        || claims.audit_version.is_empty()
+    {
+        return false;
+    }
+    if claims.prefix_len > 0 && audit_bytes.get(claims.prefix_len - 1) != Some(&b'\n') {
+        return false;
+    }
+    let prefix = &audit_bytes[..claims.prefix_len];
+    if hex::encode(Sha256::digest(prefix)) != claims.prefix_sha256 {
+        return false;
+    }
+    let prefix_event_count = prefix
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.iter().all(|byte| byte.is_ascii_whitespace()))
+        .count();
+    if prefix_event_count != claims.event_count {
+        return false;
+    }
+    let actual_last_hash = claims
+        .event_count
+        .checked_sub(1)
+        .and_then(|index| events.get(index))
+        .and_then(|event| event.get("event_hash"))
+        .and_then(Value::as_str)
+        .unwrap_or("root");
+    if actual_last_hash != claims.last_event_hash {
+        return false;
+    }
+    let Ok(signature) = hex::decode(&checkpoint.signature) else {
+        return false;
+    };
+    let Ok(payload) = serde_json::to_vec(claims) else {
+        return false;
+    };
+    let Ok(mut mac) = Hmac::<Sha256>::new_from_slice(node_secret) else {
+        return false;
+    };
+    mac.update(b"ugoite/audit-verification-checkpoint/v1\0");
+    mac.update(&payload);
+    mac.verify_slice(&signature).is_ok()
+}
+
+fn checkpoint_for_audit(
+    space_id: &str,
+    space_uid: &str,
+    audit_version: &str,
+    audit_bytes: &[u8],
+    events: &[Value],
+    node_secret: &[u8],
+) -> Result<StoredAuditCheckpoint> {
+    let last_event_hash = events
+        .last()
+        .and_then(|event| event.get("event_hash"))
+        .and_then(Value::as_str)
+        .unwrap_or("root")
+        .to_string();
+    let claims = AuditCheckpointClaims {
+        version: AUDIT_CHECKPOINT_VERSION,
+        space_id: space_id.to_string(),
+        space_uid: space_uid.to_string(),
+        audit_version: audit_version.to_string(),
+        event_count: events.len(),
+        prefix_len: audit_bytes.len(),
+        prefix_sha256: hex::encode(Sha256::digest(audit_bytes)),
+        last_event_hash,
+    };
+    let signature = hex::encode(checkpoint_signature(&claims, node_secret)?);
+    Ok(StoredAuditCheckpoint { claims, signature })
+}
+
+async fn read_audit_checkpoint(
+    config: &AuditCheckpointConfig,
+    space_id: &str,
+) -> Option<StoredAuditCheckpoint> {
+    let record = config
+        .store
+        .get(&audit_checkpoint_key(space_id))
+        .await
+        .ok()??;
+    let checkpoint = serde_json::from_slice::<StoredAuditCheckpoint>(&record.value).ok()?;
+    let signed_payload = serde_json::to_vec(&checkpoint.claims).ok()?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(&config.node_secret).ok()?;
+    mac.update(b"ugoite/audit-verification-checkpoint/v1\0");
+    mac.update(&signed_payload);
+    let signature = hex::decode(&checkpoint.signature).ok()?;
+    mac.verify_slice(&signature).ok()?;
+    Some(checkpoint)
+}
+
+async fn write_audit_checkpoint(
+    config: &AuditCheckpointConfig,
+    space_id: &str,
+    checkpoint: &StoredAuditCheckpoint,
+) -> bool {
+    let Ok(bytes) = serde_json::to_vec(checkpoint) else {
+        return false;
+    };
+    let key = audit_checkpoint_key(space_id);
+    match config.store.get(&key).await {
+        Ok(Some(existing)) => config
+            .store
+            .compare_and_swap(&key, &existing.version, bytes)
+            .await
+            .is_ok(),
+        Ok(None) => config.store.create_if_absent(&key, bytes).await.is_ok(),
+        Err(_) => false,
+    }
 }
 
 fn rehash_chain(events: &mut [Value]) -> Result<()> {
@@ -256,7 +456,11 @@ async fn read_events(op: &Operator, space_id: &str) -> Result<Vec<Value>> {
     let Some(bytes) = crate::read_object_exact_optional(op, &path).await? else {
         return Ok(Vec::new());
     };
-    let content = String::from_utf8(bytes)?;
+    parse_audit_events(&bytes)
+}
+
+fn parse_audit_events(bytes: &[u8]) -> Result<Vec<Value>> {
+    let content = std::str::from_utf8(bytes)?;
     let mut events = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
@@ -290,15 +494,7 @@ async fn write_events(
     let dir_path = format!("spaces/{space_id}/audit/");
     op.create_dir(&dir_path).await?;
     let path = audit_file_path(space_id);
-    let mut lines = Vec::with_capacity(events.len());
-    for item in events {
-        lines.push(serde_json::to_string(item)?);
-    }
-    let mut payload = lines.join("\n");
-    if !payload.is_empty() {
-        payload.push('\n');
-    }
-    let bytes = payload.into_bytes();
+    let bytes = serialize_audit_events(events)?;
     if let Some(version) = expected_version {
         op.write_with(&path, bytes).if_match(version).await?;
     } else if op.info().capability().write_with_if_not_exists && !op.exists(&path).await? {
@@ -309,6 +505,18 @@ async fn write_events(
         bail!("audit append requires conditional storage capabilities");
     }
     Ok(())
+}
+
+fn serialize_audit_events(events: &[Value]) -> Result<Vec<u8>> {
+    let mut lines = Vec::with_capacity(events.len());
+    for item in events {
+        lines.push(serde_json::to_string(item)?);
+    }
+    let mut payload = lines.join("\n");
+    if !payload.is_empty() {
+        payload.push('\n');
+    }
+    Ok(payload.into_bytes())
 }
 
 fn local_audit_lock(op: &Operator, space_id: &str) -> Result<Option<std::fs::File>> {
@@ -490,7 +698,26 @@ pub(crate) async fn append_audit_events(
     space_id: &str,
     payloads: &[Value],
 ) -> Result<Vec<Value>> {
-    if payloads.is_empty() {
+    append_audit_events_inner(op, space_id, payloads, None).await
+}
+
+pub(crate) async fn append_audit_events_with_checkpoint(
+    op: &Operator,
+    space_id: &str,
+    space_uid: &str,
+    payloads: &[Value],
+    checkpoint: &AuditCheckpointConfig,
+) -> Result<Vec<Value>> {
+    append_audit_events_inner(op, space_id, payloads, Some((space_uid, checkpoint))).await
+}
+
+async fn append_audit_events_inner(
+    op: &Operator,
+    space_id: &str,
+    payloads: &[Value],
+    checkpoint: Option<(&str, &AuditCheckpointConfig)>,
+) -> Result<Vec<Value>> {
+    if payloads.is_empty() && checkpoint.is_none() {
         return Ok(Vec::new());
     }
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
@@ -499,7 +726,7 @@ pub(crate) async fn append_audit_events(
         .map_err(crate::iceberg_store::storage_mutation_unavailable)?;
     let mut last_conflict = None;
     for _attempt in 0..3 {
-        match append_audit_events_once(op, space_id, payloads).await {
+        match append_audit_events_once(op, space_id, payloads, checkpoint).await {
             Ok(events) => return Ok(events),
             Err(error)
                 if {
@@ -521,6 +748,7 @@ async fn append_audit_events_once(
     op: &Operator,
     space_id: &str,
     payloads: &[Value],
+    checkpoint: Option<(&str, &AuditCheckpointConfig)>,
 ) -> Result<Vec<Value>> {
     let safe_space_id = validate_space_id(space_id)?;
     let lock = space_lock(&safe_space_id).await;
@@ -537,22 +765,52 @@ async fn append_audit_events_once(
     {
         bail!("audit append requires conditional storage capabilities");
     }
+    let (mut audit_bytes, audit_version) = if path_exists {
+        crate::read_object_exact_optional_with_etag(op, &path)
+            .await?
+            .ok_or_else(|| anyhow!("audit log disappeared during exact read"))?
+    } else {
+        (Vec::new(), None)
+    };
     let expected_version = if path_exists && capabilities.write_with_if_match {
-        let metadata = op.stat(&path).await?;
-        metadata
-            .etag()
-            .or_else(|| metadata.version())
-            .map(str::to_string)
+        audit_version.clone()
     } else {
         None
     };
     let chain_verify_started = Instant::now();
-    let mut events = read_events(op, &safe_space_id).await?;
-    verify_chain(&events)?;
+    let mut events = parse_audit_events(&audit_bytes)?;
+    let stored_checkpoint =
+        match checkpoint {
+            Some((space_uid, config)) => read_audit_checkpoint(config, &safe_space_id)
+                .await
+                .filter(|checkpoint| {
+                    valid_checkpoint_prefix(
+                        checkpoint,
+                        &config.node_secret,
+                        &safe_space_id,
+                        space_uid,
+                        &audit_bytes,
+                        &events,
+                    )
+                }),
+            None => None,
+        };
+    if let Some(verified) = stored_checkpoint.as_ref() {
+        verify_chain_from(
+            &events,
+            verified.claims.event_count,
+            &verified.claims.last_event_hash,
+        )?;
+    } else {
+        verify_chain(&events)?;
+    }
     emit_startup_audit_measurement(
         "audit_chain_verification",
         chain_verify_started.elapsed(),
-        json!({"events": events.len()}),
+        json!({
+            "events": events.len(),
+            "checkpoint_used": stored_checkpoint.is_some()
+        }),
     );
     let persisted_event_count = events.len();
     let mut event_indexes = HashMap::with_capacity(events.len() + payloads.len());
@@ -826,6 +1084,7 @@ async fn append_audit_events_once(
         }
         let write_chain_started = Instant::now();
         write_events(op, &safe_space_id, &events, expected_version.as_deref()).await?;
+        audit_bytes = serialize_audit_events(&events)?;
         emit_startup_audit_measurement(
             "audit_chain_write",
             write_chain_started.elapsed(),
@@ -849,6 +1108,48 @@ async fn append_audit_events_once(
         commit_markers_started.elapsed(),
         json!({"markers": committed_marker_count}),
     );
+    if let Some((space_uid, config)) = checkpoint {
+        let checkpoint_started = Instant::now();
+        let audit_version = op
+            .stat(&path)
+            .await
+            .ok()
+            .and_then(|metadata| {
+                metadata
+                    .etag()
+                    .or_else(|| metadata.version())
+                    .map(str::to_string)
+            })
+            .or_else(|| {
+                matches!(op.info().scheme(), "memory" | "fs" | "file")
+                    .then(|| format!("sha256:{}", hex::encode(Sha256::digest(&audit_bytes))))
+            });
+        let persisted = if let Some(audit_version) = audit_version {
+            let checkpoint = checkpoint_for_audit(
+                &safe_space_id,
+                space_uid,
+                &audit_version,
+                &audit_bytes,
+                &events,
+                &config.node_secret,
+            )
+            .ok();
+            // The checkpoint is a cache. If its write fails, the next startup
+            // performs full-chain verification and remains correct.
+            if let Some(checkpoint) = checkpoint {
+                write_audit_checkpoint(config, &safe_space_id, &checkpoint).await
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        emit_startup_audit_measurement(
+            "audit_checkpoint_update",
+            checkpoint_started.elapsed(),
+            json!({"persisted": persisted, "events": events.len()}),
+        );
+    }
     Ok(output)
 }
 
@@ -1275,8 +1576,59 @@ pub fn default_retention_from_env() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{env, process::Command};
+    use std::{collections::BTreeMap, env, process::Command, sync::Mutex as StdMutex};
     use ugoite_storage::operator_from_uri;
+
+    fn test_node_secret() -> Arc<[u8]> {
+        Arc::from(uuid::Uuid::new_v4().as_bytes().to_vec())
+    }
+
+    #[derive(Clone, Default)]
+    struct MemoryCheckpointStore(Arc<StdMutex<BTreeMap<String, AuditCheckpointRecord>>>);
+
+    #[async_trait::async_trait]
+    impl AuditCheckpointStore for MemoryCheckpointStore {
+        async fn get(&self, key: &str) -> Result<Option<AuditCheckpointRecord>> {
+            Ok(self.0.lock().unwrap().get(key).cloned())
+        }
+
+        async fn create_if_absent(&self, key: &str, value: Vec<u8>) -> Result<String> {
+            let mut records = self.0.lock().unwrap();
+            if records.contains_key(key) {
+                bail!("checkpoint already exists");
+            }
+            let version = uuid::Uuid::now_v7().to_string();
+            records.insert(
+                key.to_string(),
+                AuditCheckpointRecord {
+                    value,
+                    version: version.clone(),
+                },
+            );
+            Ok(version)
+        }
+
+        async fn compare_and_swap(
+            &self,
+            key: &str,
+            expected_version: &str,
+            value: Vec<u8>,
+        ) -> Result<String> {
+            let mut records = self.0.lock().unwrap();
+            let Some(record) = records.get_mut(key) else {
+                bail!("checkpoint is missing");
+            };
+            if record.version != expected_version {
+                bail!("checkpoint version changed");
+            }
+            let version = uuid::Uuid::now_v7().to_string();
+            *record = AuditCheckpointRecord {
+                value,
+                version: version.clone(),
+            };
+            Ok(version)
+        }
+    }
 
     #[test]
     fn audit_page_normalizes_before_usize_conversion() {
@@ -1288,6 +1640,204 @@ mod tests {
         // The largest protocol integer clamps to 500 without overflowing
         // before the cap applies.
         assert_eq!(normalize_audit_page(u64::MAX, u64::MAX), (500, usize::MAX));
+    }
+
+    #[tokio::test]
+    async fn checkpointed_recovery_verifies_tail_and_refreshes_checkpoint() -> Result<()> {
+        let op = operator_from_uri("memory://audit-checkpoint-tail")?;
+        let store = MemoryCheckpointStore::default();
+        let config = AuditCheckpointConfig::new(Arc::new(store.clone()), test_node_secret());
+        let space_uid = uuid::Uuid::now_v7().to_string();
+        let first = json!({
+            "event_id": uuid::Uuid::now_v7(),
+            "action": "entry.updated",
+            "space_uid": &space_uid,
+            "subject_principal_id": uuid::Uuid::now_v7(),
+            "actor_principal_id": uuid::Uuid::now_v7(),
+            "target_type": "entry",
+            "target_id": "entry-1",
+            "metadata": {"revision_id": "revision-1"}
+        });
+        append_audit_events_with_checkpoint(
+            &op,
+            "demo",
+            &space_uid,
+            std::slice::from_ref(&first),
+            &config,
+        )
+        .await?;
+
+        let path = audit_file_path("demo");
+        let (prefix, _) = crate::read_object_exact_optional_with_etag(&op, &path)
+            .await?
+            .expect("persisted audit chain");
+        let events = parse_audit_events(&prefix)?;
+        let key = audit_checkpoint_key("demo");
+        let stored = store.get(&key).await?.expect("signed checkpoint");
+        let checkpoint: StoredAuditCheckpoint = serde_json::from_slice(&stored.value)?;
+        assert!(valid_checkpoint_prefix(
+            &checkpoint,
+            &config.node_secret,
+            "demo",
+            &space_uid,
+            &prefix,
+            &events,
+        ));
+        assert_eq!(checkpoint.claims.event_count, 1);
+
+        let second = json!({
+            "event_id": uuid::Uuid::now_v7(),
+            "action": "entry.updated",
+            "space_uid": &space_uid,
+            "subject_principal_id": uuid::Uuid::now_v7(),
+            "actor_principal_id": uuid::Uuid::now_v7(),
+            "target_type": "entry",
+            "target_id": "entry-2",
+            "metadata": {"revision_id": "revision-2"}
+        });
+        append_audit_event(&op, "demo", &second, None).await?;
+        // A replay of the original deterministic payload uses the signed
+        // prefix, verifies the appended tail, and refreshes the checkpoint.
+        append_audit_events_with_checkpoint(&op, "demo", &space_uid, &[first], &config).await?;
+        let (current, current_version) = crate::read_object_exact_optional_with_etag(&op, &path)
+            .await?
+            .expect("audit chain after tail verification");
+        let current_events = parse_audit_events(&current)?;
+        assert_eq!(current_events.len(), 2);
+        let refreshed = store.get(&key).await?.expect("refreshed checkpoint");
+        let refreshed: StoredAuditCheckpoint = serde_json::from_slice(&refreshed.value)?;
+        assert_eq!(refreshed.claims.event_count, 2);
+        assert_eq!(
+            refreshed.claims.audit_version,
+            current_version
+                .unwrap_or_else(|| { format!("sha256:{}", hex::encode(Sha256::digest(&current))) })
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn invalid_checkpoint_falls_back_to_full_chain_verification() -> Result<()> {
+        let op = operator_from_uri("memory://audit-checkpoint-corrupt")?;
+        let store = MemoryCheckpointStore::default();
+        let config = AuditCheckpointConfig::new(Arc::new(store.clone()), test_node_secret());
+        let space_uid = uuid::Uuid::now_v7().to_string();
+        let event = json!({
+            "event_id": uuid::Uuid::now_v7(),
+            "action": "entry.updated",
+            "space_uid": space_uid,
+            "subject_principal_id": uuid::Uuid::now_v7(),
+            "actor_principal_id": uuid::Uuid::now_v7(),
+            "target_type": "entry",
+            "target_id": "entry-1",
+            "metadata": {"revision_id": "revision-1"}
+        });
+        append_audit_events_with_checkpoint(
+            &op,
+            "demo",
+            &space_uid,
+            std::slice::from_ref(&event),
+            &config,
+        )
+        .await?;
+
+        let key = audit_checkpoint_key("demo");
+        let mut stored = store.get(&key).await?.expect("signed checkpoint");
+        stored.value[0] ^= 0x01;
+        let old_version = stored.version.clone();
+        store
+            .compare_and_swap(&key, &old_version, stored.value)
+            .await?;
+
+        // An invalid cache is discarded as a trust input; the authoritative
+        // chain remains fully checked and the duplicate event is not appended.
+        append_audit_events_with_checkpoint(&op, "demo", &space_uid, &[event], &config).await?;
+        assert_eq!(
+            parse_audit_events(
+                &crate::read_object_exact_optional(&op, &audit_file_path("demo"))
+                    .await?
+                    .unwrap()
+            )?
+            .len(),
+            1
+        );
+
+        let path = audit_file_path("demo");
+        let mut bytes = crate::read_object_exact(&op, &path).await?;
+        let needle = b"entry-1";
+        let offset = bytes
+            .windows(needle.len())
+            .position(|window| window == needle)
+            .unwrap();
+        bytes[offset] = b'X';
+        op.write(&path, bytes).await?;
+        let error = append_audit_events_with_checkpoint(
+            &op,
+            "demo",
+            &space_uid,
+            &[json!({"event_id": uuid::Uuid::now_v7(), "action": "entry.updated", "space_uid": space_uid, "subject_principal_id": uuid::Uuid::now_v7(), "actor_principal_id": uuid::Uuid::now_v7(), "target_type": "entry", "target_id": "entry-2", "metadata": {"revision_id": "revision-2"}})],
+            &config,
+        )
+        .await
+        .expect_err("tampered authoritative chain must fail closed");
+        assert!(error.to_string().contains("integrity check failed"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn missing_or_foreign_node_checkpoint_falls_back_to_full_verification() -> Result<()> {
+        let op = operator_from_uri("memory://audit-checkpoint-new-node")?;
+        let first_store = MemoryCheckpointStore::default();
+        let first_config =
+            AuditCheckpointConfig::new(Arc::new(first_store.clone()), test_node_secret());
+        let new_node_store = MemoryCheckpointStore::default();
+        let new_node_config =
+            AuditCheckpointConfig::new(Arc::new(new_node_store.clone()), test_node_secret());
+        let space_uid = uuid::Uuid::now_v7().to_string();
+        let event = json!({
+            "event_id": uuid::Uuid::now_v7(),
+            "action": "entry.updated",
+            "space_uid": &space_uid,
+            "subject_principal_id": uuid::Uuid::now_v7(),
+            "actor_principal_id": uuid::Uuid::now_v7(),
+            "target_type": "entry",
+            "target_id": "entry-1",
+            "metadata": {"revision_id": "revision-1"}
+        });
+        append_audit_events_with_checkpoint(
+            &op,
+            "demo",
+            &space_uid,
+            std::slice::from_ref(&event),
+            &first_config,
+        )
+        .await?;
+
+        // Copy both the portable audit chain and the old Node's cache. The
+        // fresh Node must reject that foreign signature and verify the copied
+        // Space chain before creating its own local cache.
+        let path = audit_file_path("demo");
+        let copied_op = operator_from_uri("memory://audit-checkpoint-copied-space")?;
+        let audit_bytes = crate::read_object_exact(&op, &path).await?;
+        copied_op.write(&path, audit_bytes).await?;
+        let key = audit_checkpoint_key("demo");
+        let foreign_checkpoint = first_store
+            .get(&key)
+            .await?
+            .expect("source Node checkpoint");
+        new_node_store
+            .create_if_absent(&key, foreign_checkpoint.value)
+            .await?;
+        assert!(read_audit_checkpoint(&new_node_config, "demo")
+            .await
+            .is_none());
+
+        append_audit_events_with_checkpoint(&copied_op, "demo", &space_uid, &[], &new_node_config)
+            .await?;
+        assert_eq!(
+            parse_audit_events(&crate::read_object_exact(&copied_op, &path).await?)?.len(),
+            1
+        );
+        Ok(())
     }
 
     #[tokio::test]

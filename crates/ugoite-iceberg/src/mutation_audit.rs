@@ -745,9 +745,19 @@ impl UgoiteService {
         );
         let target_count = converged;
         let append_started = Instant::now();
-        crate::audit::append_audit_events(self.operator(), space_id, &audit_events)
+        if let Some(checkpoint) = self.audit_checkpoint_config() {
+            crate::audit::append_audit_events_with_checkpoint(
+                self.operator(),
+                space_id,
+                &space_uid.to_string(),
+                &audit_events,
+                checkpoint,
+            )
             .await
-            .with_context(|| format!("reconcile audit events for Space {space_id}"))?;
+        } else {
+            crate::audit::append_audit_events(self.operator(), space_id, &audit_events).await
+        }
+        .with_context(|| format!("reconcile audit events for Space {space_id}"))?;
         crate::audit::emit_startup_audit_measurement(
             "audit_reconcile_append",
             append_started.elapsed(),

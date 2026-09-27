@@ -60,13 +60,19 @@ Delete the root and its `.node-secret` sidecar when finished. The report
 distinguishes the first process from later processes; it does not control the
 operating system's file cache.
 
-The committed [L06 profile](../architecture/release/measurements/startup-profile-candidate-9b47ccc.json)
-records the initial fixture-opening audit backfill at 104.3 s and two later
-starts over the persisted audit chain at 4.0 s on macOS arm64. Marker
-reconciliation and commit dominate the backfill. The startup path has no
-verified persistent audit checkpoint, so the 15 s checkpoint-backed cold-start
-target was not measured. Do not describe the first-process result as a
-checkpoint measurement.
+The committed [pre-checkpoint profile](../architecture/release/measurements/startup-profile-candidate-9b47ccc.json)
+the [checkpoint profile](../architecture/release/measurements/startup-profile-candidate-1aa25564.json), and the [checkpoint rerun tied to the final test commit](../architecture/release/measurements/startup-profile-candidate-f69f2aed.json)
+record the same 6,000 + 4,000 Entry fixture on macOS arm64. The first process
+backfilled 10,000 audit targets in 103.8 s. Two subsequent process-cold starts
+verified the persisted Node-local checkpoints and became ready in 3.92 s and
+3.94 s. Their audit-chain verification phases totaled about 235–237 ms,
+compared with 472–473 ms in the pre-checkpoint profile. Both later starts were
+below the 15 s checkpoint-start reference target in the first run. A rerun on
+the final test commit measured 7.23 s and 8.07 s for those later starts. That
+variation exceeded the 5 s warm reference target in the rerun; the OS page cache
+was not controlled, so these are not disk-cold timings. Initial backfill
+remains dominated by marker reconciliation and commit; do not describe it as a
+checkpoint-backed startup.
 
 ## Development authentication
 
