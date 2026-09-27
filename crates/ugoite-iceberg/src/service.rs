@@ -7275,6 +7275,7 @@ mod tests {
         use ugoite_domain::space_key::{SpaceKey, SpaceUri};
 
         let space_uid = Uuid::now_v7();
+        let signing_key = Uuid::now_v7();
         let boundary = PublicationRef::new(
             4,
             SpaceUri::new(
@@ -7293,22 +7294,32 @@ mod tests {
                 expected_next_head_checksum: "b".repeat(64),
             },
         };
-        let encoded = UgoiteService::encode_change_page_cursor(&token, &[7; 32])?;
+        let encoded = UgoiteService::encode_change_page_cursor(&token, signing_key.as_bytes())?;
         assert_eq!(
-            UgoiteService::decode_change_page_cursor(&encoded, &token.space_id, &[7; 32])?,
+            UgoiteService::decode_change_page_cursor(
+                &encoded,
+                &token.space_id,
+                signing_key.as_bytes()
+            )?,
             token
         );
-        assert!(
-            UgoiteService::decode_change_page_cursor(&encoded, "another-space", &[7; 32]).is_err()
-        );
+        assert!(UgoiteService::decode_change_page_cursor(
+            &encoded,
+            "another-space",
+            signing_key.as_bytes()
+        )
+        .is_err());
 
         let mut parts: Vec<_> = encoded.split('.').map(str::to_string).collect();
         let first_payload_byte = parts[1].remove(0);
         parts[1].insert(0, if first_payload_byte == 'A' { 'B' } else { 'A' });
         let tampered = parts.join(".");
-        assert!(
-            UgoiteService::decode_change_page_cursor(&tampered, &token.space_id, &[7; 32]).is_err()
-        );
+        assert!(UgoiteService::decode_change_page_cursor(
+            &tampered,
+            &token.space_id,
+            signing_key.as_bytes()
+        )
+        .is_err());
         Ok(())
     }
 
