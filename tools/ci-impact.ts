@@ -3,6 +3,7 @@ export type ImpactCategories = {
   frontend: boolean;
   rust: boolean;
   global: boolean;
+  cp1Acceptance: boolean;
 };
 
 export type ImpactReport = {
@@ -25,6 +26,7 @@ const ALL_LANES = [
   "web",
   "artifacts",
   "docsite-nav",
+  "cp1-acceptance",
 ] as const;
 
 const ZERO_SHA = /^0{40}$/;
@@ -37,9 +39,31 @@ export function classifyPaths(paths: string[]): ImpactCategories {
     frontend: false,
     rust: false,
     global: false,
+    cp1Acceptance: false,
   };
 
   for (const path of paths) {
+    if (
+      path === "e2e/query-surfaces-measurement.test.ts" ||
+      path === "scripts/measure-query-surfaces.sh" ||
+      path === "scripts/measure-sql-export.sh" ||
+      path === "crates/ugoite-core/src/entry_query.rs" ||
+      path === "crates/ugoite-core/src/sql_query.rs" ||
+      path === "crates/ugoite-iceberg/src/index.rs" ||
+      path === "crates/ugoite-iceberg/src/service.rs" ||
+      path === "crates/ugoite-cli/src/commands/sql.rs" ||
+      path === "crates/ugoite-cli/tests/test_sql_stateless_cli.rs" ||
+      path === "crates/ugoite-server/src/lib.rs" ||
+      path === "frontend/src/lib/entry-query.ts" ||
+      path === "frontend/src/lib/entry-query.test.ts" ||
+      path === "frontend/src/lib/sql-api.ts" ||
+      path === "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx" ||
+      path ===
+        "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx"
+    ) {
+      categories.cp1Acceptance = true;
+    }
+
     if (
       path.startsWith(".github/") || path === "mise.toml" ||
       path === "mise.lock" || path === ".mise.toml" ||
@@ -80,7 +104,13 @@ export function classifyPaths(paths: string[]): ImpactCategories {
 }
 
 function allCategories(): ImpactCategories {
-  return { docs: true, frontend: true, rust: true, global: true };
+  return {
+    docs: true,
+    frontend: true,
+    rust: true,
+    global: true,
+    cp1Acceptance: true,
+  };
 }
 
 export function makeImpactReport(input: {
@@ -148,6 +178,7 @@ export function makeImpactReport(input: {
         candidateLanes.add(lane);
       }
     }
+    if (categories.cp1Acceptance) candidateLanes.add("cp1-acceptance");
   }
 
   // Main pushes must retain the artifact lane for the docsite Pages payload and

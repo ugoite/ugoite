@@ -85,6 +85,7 @@ test("records real two-Space query surface measurements", async ({ page, request
   const measuredSpaces: Array<{
     slug: string;
     space_uid: string;
+    expected_entries: number;
     saved_sql_id?: string;
     parameterized_sql_id?: string;
   }> = MEASUREMENT_SLUGS.map((slug) => {
@@ -93,8 +94,27 @@ test("records real two-Space query surface measurements", async ({ page, request
     );
     expect(space, `seeded Space ${slug} is visible to the test account`)
       .toBeTruthy();
-    return { slug, space_uid: space!.space_uid };
+    return {
+      slug,
+      space_uid: space!.space_uid,
+      expected_entries: slug === MEASUREMENT_SLUGS[0] ? 6_000 : 4_000,
+    };
   });
+
+  for (const space of measuredSpaces) {
+    const countResponse = await request.post(
+      getBackendUrl(`/spaces/${space.space_uid}/entries/query/count`),
+      {
+        data: {
+          query: { scope: { kind: "all" }, filters: [], sort: [] },
+        },
+      },
+    );
+    expect(countResponse.ok()).toBeTruthy();
+    expect(await countResponse.json()).toEqual({
+      count: space.expected_entries,
+    });
+  }
 
   const sqlBySpace = new Map<string, string>();
   const formMetadata: Record<string, { id?: string; relation: string }> = {};
@@ -130,6 +150,15 @@ test("records real two-Space query surface measurements", async ({ page, request
     const savedSql = await createSqlResponse.json() as { id: string };
     sqlBySpace.set(space.space_uid, sql);
     space.saved_sql_id = savedSql.id;
+
+    const sqlCountResponse = await request.post(
+      getBackendUrl(`/spaces/${space.space_uid}/sql/query/count`),
+      { data: { sql } },
+    );
+    expect(sqlCountResponse.ok()).toBeTruthy();
+    expect(await sqlCountResponse.json()).toEqual({
+      count: space.expected_entries / 4,
+    });
 
     if (space === measuredSpaces[0]) {
       const parameterizedSql =
@@ -419,19 +448,21 @@ test("records real two-Space query surface measurements", async ({ page, request
         }
       });
       const searchbox = page.getByRole("searchbox");
-      const firstRapidRequest = page.waitForRequest((request) =>
-        request.url().includes("/entries/query")
-      );
+      const waitForSearchRequest = (text: string) =>
+        page.waitForRequest((request) => {
+          if (!request.url().includes("/entries/query")) return false;
+          const body = request.postDataJSON() as {
+            query?: { text?: unknown };
+          } | null;
+          return body?.query?.text === text;
+        });
+      const firstRapidRequest = waitForSearchRequest("solar");
       await searchbox.fill("solar");
       await firstRapidRequest;
-      const secondRapidRequest = page.waitForRequest((request) =>
-        request.url().includes("/entries/query")
-      );
+      const secondRapidRequest = waitForSearchRequest("energy");
       await searchbox.fill("energy");
       await secondRapidRequest;
-      const switchingRequest = page.waitForRequest((request) =>
-        request.url().includes("/entries/query")
-      );
+      const switchingRequest = waitForSearchRequest("inspection");
       await searchbox.fill("inspection");
       await switchingRequest;
       await page.getByLabel("Space", { exact: true }).selectOption(
@@ -744,7 +775,10 @@ test("records real two-Space query surface measurements", async ({ page, request
       await openParameterizedSql("200");
       await resetEvents();
       await page.route("**/sql/query/count", async (route) => {
-        await new Promise((resolve) => setTimeout(resolve, 400));
+        // Keep the count request in flight while the SQL identity changes.
+        // A short delay can expire during browser scheduling and turn this
+        // cancellation check into a race against a completed count response.
+        await new Promise((resolve) => setTimeout(resolve, 10_000));
         try {
           await route.continue();
         } catch {

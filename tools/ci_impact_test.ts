@@ -12,6 +12,7 @@ Deno.test("CI impact classifier maps the declared top-level categories", () => {
       frontend: false,
       rust: false,
       global: false,
+      cp1Acceptance: false,
     },
   );
   assertEquals(classifyPaths(["frontend/src/routes.tsx", "shared/query.ts"]), {
@@ -19,19 +20,41 @@ Deno.test("CI impact classifier maps the declared top-level categories", () => {
     frontend: true,
     rust: false,
     global: false,
+    cp1Acceptance: false,
   });
   assertEquals(classifyPaths(["crates/ugoite-core/src/lib.rs", "Cargo.toml"]), {
     docs: false,
     frontend: false,
     rust: true,
     global: false,
+    cp1Acceptance: false,
   });
   assertEquals(classifyPaths([".github/workflows/ci.yml"]), {
     docs: false,
     frontend: false,
     rust: false,
     global: true,
+    cp1Acceptance: false,
   });
+});
+
+Deno.test("CP1 query and export paths select the acceptance lane", () => {
+  const report = makeImpactReport({
+    event: "pull_request",
+    baseSha,
+    headSha,
+    paths: ["frontend/src/lib/entry-query.ts"],
+  });
+  assertEquals(report.categories.cp1Acceptance, true);
+  assertEquals(report.candidateLanes, ["artifacts", "cp1-acceptance", "web"]);
+
+  const docsOnly = makeImpactReport({
+    event: "pull_request",
+    baseSha,
+    headSha,
+    paths: ["docs/use/search.mdx"],
+  });
+  assertEquals(docsOnly.candidateLanes.includes("cp1-acceptance"), false);
 });
 
 Deno.test("docs and frontend diffs select only their required lanes", () => {
@@ -47,6 +70,7 @@ Deno.test("docs and frontend diffs select only their required lanes", () => {
     frontend: true,
     rust: false,
     global: false,
+    cp1Acceptance: false,
   });
   assertEquals(report.candidateLanes, ["artifacts", "docsite-nav", "web"]);
   assertEquals(report.executionMode, "selective-pr");
@@ -79,6 +103,7 @@ Deno.test("main pushes retain every lane and merge groups remain unconditional",
   assertEquals(push.scope, "all");
   assertEquals(push.candidateLanes, [
     "artifacts",
+    "cp1-acceptance",
     "docsite-nav",
     "rust-check",
     "rust-test",
@@ -122,6 +147,7 @@ Deno.test("merge groups, uncertain inputs, large diffs, and global paths plan al
     assertEquals(report.scope, "all");
     assertEquals(report.candidateLanes, [
       "artifacts",
+      "cp1-acceptance",
       "docsite-nav",
       "rust-check",
       "rust-test",

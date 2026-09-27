@@ -126,6 +126,31 @@ deno eval --quiet '
   console.log(JSON.stringify({ rows: small.rows, canonical_sha256: small.sha256 }));
 ' -- "$OUTPUT_DIR/page-100.ndjson" "$OUTPUT_DIR/page-1000.ndjson" >"$OUTPUT_DIR/equivalence.json"
 
+# A byte-bound failure must be explicit and must not publish a partial file.
+BYTE_LIMIT_OUTPUT="$OUTPUT_DIR/byte-limited.ndjson"
+if "$BIN" --config "$CONFIG" sql export "$SQL_FILE" \
+  --max-rows 10000 --max-bytes 1024 --page-size 1000 \
+  --output "$BYTE_LIMIT_OUTPUT" \
+  2>"$OUTPUT_DIR/byte-limit.stderr"; then
+  echo "Expected the fixed fixture to exceed the 1,024-byte export bound" >&2
+  exit 1
+fi
+if [[ -e "$BYTE_LIMIT_OUTPUT" ]]; then
+  echo "A byte-limited export must not publish a partial destination" >&2
+  exit 1
+fi
+if grep -q "max-bytes would be exceeded" "$OUTPUT_DIR/byte-limit.stderr"; then
+  :
+else
+  echo "Byte-limited export failed for an unexpected reason" >&2
+  cat "$OUTPUT_DIR/byte-limit.stderr" >&2
+  exit 1
+fi
+if find "$OUTPUT_DIR" -maxdepth 1 -name '.ugoite-export-*' -print -quit | grep -q .; then
+  echo "A failed byte-limited export left a temporary output file" >&2
+  exit 1
+fi
+
 SOURCE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 deno eval --quiet '
   const [output, sourceSha, spaceUid, dataRoot] = Deno.args;
@@ -145,6 +170,12 @@ deno eval --quiet '
     query_file: "query.sql",
     query_semantics: "SELECT _ugoite_id from every seeded Form, UNION ALL, ordered by _ugoite_id",
     max_rows: 10000,
+    byte_limit_failure: {
+      max_bytes: 1024,
+      expected_error: "serialized NDJSON byte bound exceeded",
+      published_partial_file: false,
+      temporary_file_left: false,
+    },
     runs: [
       { page_size: 100, summary: await readSummary(100), output: "page-100.ndjson", peak_rss_raw_log: "page-100.time.txt" },
       { page_size: 1000, summary: await readSummary(1000), output: "page-1000.ndjson", peak_rss_raw_log: "page-1000.time.txt" },

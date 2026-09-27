@@ -41,6 +41,10 @@ run = "bash scripts/dev-seed.sh"
 description = "Seed two local Spaces and measure EntryQuery and SQL browser reads"
 run = "bash scripts/measure-query-surfaces.sh"
 
+[tasks."measure:sql-export"]
+description = "Verify complete bounded SQL export over a fixed 10,000-entry Space"
+run = "bash scripts/measure-sql-export.sh"
+
 [tasks."measure:startup"]
 description = "Seed two local Spaces and measure server startup phases"
 run = "bash scripts/measure-startup.sh"
@@ -343,6 +347,13 @@ run = "deno run -A tools/ci-impact.ts"
 [tasks."ci:lane:docsite-nav"]
 description = "Run standalone docsite navigation and link E2E checks"
 run = [{ task = "test:docsite:e2e:navigation" }]
+
+[tasks."ci:lane:cp1-acceptance"]
+description = "Run fixed 10k/two-Space query lifecycle and bounded SQL export acceptance"
+run = [
+  { task = "measure:query-surfaces", env = { E2E_ENFORCE_CI_GATES = "true" } },
+  { task = "measure:sql-export" },
+]
 
 [tasks.test]
 depends = ["build:wasm:debug"]

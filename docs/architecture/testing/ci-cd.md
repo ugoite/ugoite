@@ -48,6 +48,9 @@ Root task composition:
   `ci:lane:e2e-portable`: separate hosted E2E groups that consume the prepared
   build artifact;
 - `ci:merge`: `ci` plus `ci:artifacts`;
+- `ci:lane:cp1-acceptance`: fixed 6,000 + 4,000 Entry, two-Space browser
+  query-lifecycle assertions with the separate bounded 10,000-row SQL export
+  acceptance check; its Playwright report fails when any test is skipped;
 - `ci:impact`: a standalone, conservative diff planner used by hosted CI to
   select pull-request lanes while preserving full main-push and merge-group
   validation;
@@ -117,6 +120,13 @@ and are refreshed only after successful pushes to `main`. Successful `main` runs
 upload the verified artifact set using the logical names `ugoite-docsite-pages`,
 `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and
 `ugoite-artifact-manifest`.
+
+The `ci:impact` planner selects CP1 acceptance for changes to EntryQuery, SQL
+query/count, or SQL export implementation and acceptance paths. Merge groups
+and main pushes run it unconditionally. It uses a fixed-seed 6,000/4,000
+two-Space browser fixture for stale-result, count, cancellation, retry, and
+pagination assertions, then checks bounded 10,000-row export completion. Its
+100,000-row/RSS/p95 performance measurements stay outside the required lane.
 
 The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies
 the canonical frontend and Rust release outputs into the image instead of
@@ -206,10 +216,11 @@ build Mitase from Git; `MITASE_BIN` remains available as an explicit local
 development override.
 
 The required `ci-required` aggregator runs after all quality, artifact,
-docsite-navigation, and impact-report lanes on pull requests, merge queues, and
-pushes to `main`. It checks the planned results for `ci-rust-check`,
-`ci-rust-test`, `ci-web`, `artifact-build`, the three E2E consumer jobs, and
-`ci-docsite-nav`, and fails on unexpected skips or executions. The PR
+docsite-navigation, CP1 acceptance, and impact-report lanes on pull requests,
+merge queues, and pushes to `main`. It checks the planned results for
+`ci-rust-check`, `ci-rust-test`, `ci-web`, `artifact-build`, the three E2E
+consumer jobs, `ci-docsite-nav`, and `ci-cp1-acceptance`, and fails on
+unexpected skips or executions. The PR
 context report must succeed for pull requests and is accepted as skipped for
 other events. The canonical
 `test` Mise task and `ci:lane:web` run the normal docsite test suite; only
