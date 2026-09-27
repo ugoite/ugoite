@@ -4475,6 +4475,55 @@
         }
       }
     },
+    "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}": {
+      "get": {
+        "summary": "Read typed evidence for one Entry affected by a committed Change",
+        "parameters": [
+          { "$ref": "#/components/parameters/SpaceId" },
+          {
+            "name": "change_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 128 }
+          },
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Typed before and after values for this Change target, resolved by stable Form and Field identities.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JsonValue" }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid Change identifier or non-UUID Entry identity",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Space read permission is required"
+          },
+          "404": {
+            "description": "Entry is not visible or is not affected by this Change",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/spaces/{space_id}/changes/{change_id}/revert": {
       "post": {
         "summary": "Append a selective inverse for a committed Change",

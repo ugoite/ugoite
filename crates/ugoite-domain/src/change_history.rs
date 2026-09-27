@@ -5,8 +5,9 @@
 //! from a Run or from user-authored messages.
 
 use crate::change::ChangeDescriptor;
-use crate::entry::FieldValue;
-use crate::id::{EntryId, FieldId, FormId};
+use crate::entry::{EntryOperation, EntryRevision, FieldValue};
+use crate::form::FormDefinition;
+use crate::id::{EntryId, FieldId, FormId, RevisionId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -38,6 +39,86 @@ pub struct EntryChangeEvidence {
     pub form_id: FormId,
     pub entry_id: EntryId,
     pub fields: Vec<FieldChangeEvidence>,
+}
+
+/// Typed evidence for one Entry revision published by a Change.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChangeAffectedEntry {
+    pub form_id: FormId,
+    pub entry_id: EntryId,
+    pub before_revision_id: Option<RevisionId>,
+    pub after_revision_id: RevisionId,
+    pub operation: EntryOperation,
+    pub fields: Vec<FieldChangeEvidence>,
+}
+
+/// Build a stable-ID diff for one committed Entry revision and its parent.
+/// Fields outside a revision's Form version are unavailable; fields in that
+/// version without a stored value are missing. A deleted Entry has no visible
+/// field values for the side of the comparison where it is deleted.
+pub fn diff_entry_change(
+    before: Option<&EntryRevision>,
+    after: &EntryRevision,
+    before_form: Option<&FormDefinition>,
+    after_form: &FormDefinition,
+) -> Result<ChangeAffectedEntry, ChangeSummaryError> {
+    if before
+        .is_some_and(|before| before.form_id != after.form_id || before.entry_id != after.entry_id)
+        || before_form.is_some_and(|form| form.id != after.form_id)
+        || after_form.id != after.form_id
+    {
+        return Err(ChangeSummaryError::ConflictingEntryEvidence);
+    }
+
+    let mut field_ids = BTreeMap::<FieldId, ()>::new();
+    if let Some(form) = before_form {
+        field_ids.extend(form.fields.iter().map(|field| (field.id, ())));
+    }
+    field_ids.extend(after_form.fields.iter().map(|field| (field.id, ())));
+
+    let fields = field_ids
+        .into_keys()
+        .filter_map(|field_id| {
+            let before_value = compared_revision_value(before, before_form, field_id);
+            let after_value = compared_revision_value(Some(after), Some(after_form), field_id);
+            (before_value != after_value).then_some(FieldChangeEvidence {
+                field_id,
+                before: before_value,
+                after: after_value,
+            })
+        })
+        .collect();
+
+    Ok(ChangeAffectedEntry {
+        form_id: after.form_id,
+        entry_id: after.entry_id,
+        before_revision_id: before.map(|revision| revision.revision_id),
+        after_revision_id: after.revision_id,
+        operation: after.operation,
+        fields,
+    })
+}
+
+fn compared_revision_value(
+    revision: Option<&EntryRevision>,
+    form: Option<&FormDefinition>,
+    field_id: FieldId,
+) -> ComparedFieldValue {
+    let Some(revision) = revision else {
+        return ComparedFieldValue::Missing;
+    };
+    if revision.operation == EntryOperation::Delete {
+        return ComparedFieldValue::Missing;
+    }
+    if !form.is_some_and(|form| form.fields.iter().any(|field| field.id == field_id)) {
+        return ComparedFieldValue::Unavailable;
+    }
+    revision
+        .values
+        .get(&field_id)
+        .cloned()
+        .map(ComparedFieldValue::Value)
+        .unwrap_or(ComparedFieldValue::Missing)
 }
 
 /// A group of Entries with identical, fully available field changes.
@@ -243,6 +324,8 @@ impl std::error::Error for ChangeSummaryError {}
 mod tests {
     use super::*;
     use crate::change::RunId;
+    use crate::entry::EntryMetadata;
+    use crate::form::{FieldType as FormFieldType, FormField, FormVersion};
     use crate::id::{EntryId, FieldId, FormId};
     use uuid::Uuid;
 
@@ -256,6 +339,63 @@ mod tests {
 
     fn field() -> FieldId {
         FieldId::new(100).expect("field id")
+    }
+
+    fn form_definition(version: u32, fields: &[FieldId]) -> FormDefinition {
+        FormDefinition {
+            id: form(1),
+            version: FormVersion::new(version).unwrap(),
+            name: "Expenses".into(),
+            description: None,
+            fields: fields
+                .iter()
+                .map(|id| FormField {
+                    id: *id,
+                    name: format!("field-{}", id.get()),
+                    field_type: FormFieldType::String,
+                    required: false,
+                    label: None,
+                    description: None,
+                    semantic_role: None,
+                    reference_form: None,
+                    list_item: None,
+                    validation: None,
+                    enum_values: Vec::new(),
+                    deprecated: false,
+                })
+                .collect(),
+            allow_extra_attributes: false,
+            extension_metadata: BTreeMap::new(),
+        }
+    }
+
+    fn revision(
+        version: u32,
+        revision_id: u128,
+        parent_revision_id: Option<u128>,
+        change_id: &str,
+        values: BTreeMap<FieldId, FieldValue>,
+    ) -> EntryRevision {
+        EntryRevision {
+            form_id: form(1),
+            entry_id: entry(1),
+            revision_id: RevisionId::from(Uuid::from_u128(revision_id)),
+            parent_revision_id: parent_revision_id
+                .map(|parent| RevisionId::from(Uuid::from_u128(parent))),
+            entry_version: version.into(),
+            change_id: change_id.into(),
+            expected_version: parent_revision_id.map(|_| u64::from(version.saturating_sub(1))),
+            operation: EntryOperation::Upsert,
+            committed_at_micros: i64::from(version),
+            author_id: "actor".into(),
+            form_version: FormVersion::new(version).unwrap(),
+            source_kind: "api".into(),
+            source_id: None,
+            entry: EntryMetadata::default(),
+            values,
+            extra_attributes: BTreeMap::new(),
+            extension_metadata: BTreeMap::new(),
+        }
     }
 
     fn changed(
@@ -352,6 +492,73 @@ mod tests {
         assert_eq!(summary.affected_entry_count, 1);
         assert_eq!(summary.field_groups.len(), 1);
         assert_eq!(summary.field_groups[0].affected_entry_count, 1);
+    }
+
+    #[test]
+    fn target_diff_uses_field_identity_and_distinguishes_missing_from_null() {
+        let field = field();
+        let before_form = form_definition(1, &[field]);
+        let after_form = form_definition(2, &[field]);
+        let before = revision(
+            1,
+            10,
+            None,
+            "create",
+            BTreeMap::from([(field, FieldValue::String("old".into()))]),
+        );
+        let after = revision(
+            2,
+            11,
+            Some(10),
+            "update",
+            BTreeMap::from([(field, FieldValue::Null)]),
+        );
+
+        let diff =
+            diff_entry_change(Some(&before), &after, Some(&before_form), &after_form).unwrap();
+        assert_eq!(diff.before_revision_id, Some(before.revision_id));
+        assert_eq!(diff.after_revision_id, after.revision_id);
+        assert_eq!(diff.fields.len(), 1);
+        assert_eq!(
+            diff.fields[0].before,
+            ComparedFieldValue::Value(FieldValue::String("old".into()))
+        );
+        assert_eq!(
+            diff.fields[0].after,
+            ComparedFieldValue::Value(FieldValue::Null)
+        );
+
+        let created = diff_entry_change(None, &before, None, &before_form).unwrap();
+        assert_eq!(created.fields[0].before, ComparedFieldValue::Missing);
+    }
+
+    #[test]
+    fn target_diff_marks_fields_outside_a_revision_schema_unavailable() {
+        let old_field = field();
+        let new_field = FieldId::new(101).unwrap();
+        let before_form = form_definition(1, &[old_field]);
+        let after_form = form_definition(2, &[old_field, new_field]);
+        let before = revision(
+            1,
+            20,
+            None,
+            "create",
+            BTreeMap::from([(old_field, FieldValue::String("same".into()))]),
+        );
+        let after = revision(
+            2,
+            21,
+            Some(20),
+            "update",
+            BTreeMap::from([(old_field, FieldValue::String("same".into()))]),
+        );
+
+        let diff =
+            diff_entry_change(Some(&before), &after, Some(&before_form), &after_form).unwrap();
+        assert_eq!(diff.fields.len(), 1);
+        assert_eq!(diff.fields[0].field_id, new_field);
+        assert_eq!(diff.fields[0].before, ComparedFieldValue::Unavailable);
+        assert_eq!(diff.fields[0].after, ComparedFieldValue::Missing);
     }
 
     #[test]
