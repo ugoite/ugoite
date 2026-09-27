@@ -149,6 +149,7 @@ trap cleanup EXIT INT TERM
 if [ "$TEST_TYPE" = "portable-space" ]; then
   echo "Seeding a CLI-core Space before Node startup..."
   PORTABLE_CLI_CONFIG="${E2E_STORAGE_ROOT}.cli-config.toml"
+  export E2E_PORTABLE_RUNNER_COMMAND="bash e2e/scripts/run-e2e.sh portable-space"
   bash "$SCRIPT_DIR/seed-portable-space.sh" "$E2E_STORAGE_ROOT" >/dev/null
   export E2E_PORTABLE_PROOF_FILE="$E2E_STORAGE_ROOT/portable-space-proof.json"
 fi
@@ -340,6 +341,17 @@ case "$TEST_TYPE" in
     ;;
   portable-space)
     run_e2e_task portable-space "$base_report_file"
+    echo "Verifying copied authoritative file hashes..."
+    deno run -A "$SCRIPT_DIR/verify-portable-space-hashes.ts" \
+      "$E2E_STORAGE_ROOT" "$E2E_PORTABLE_PROOF_FILE"
+    echo "Verifying the claimed copied Space with the local CLI..."
+    cargo run -q --manifest-path "$ROOT_DIR/Cargo.toml" -p ugoite-cli --locked \
+      -- --config "$PORTABLE_CLI_CONFIG" space verify --deep --format json > "$E2E_STORAGE_ROOT/verify-after-claim.json"
+    deno eval '
+      const report = JSON.parse(await Deno.readTextFile(Deno.args[0]));
+      if (!["valid", "valid_with_rebuildable_derived_state"].includes(report.status)) throw new Error(`post-claim Space status was ${report.status}`);
+      if (report.sections.authorization.status !== "valid") throw new Error(`post-claim authorization status was ${report.sections.authorization.status}`);
+    ' "$E2E_STORAGE_ROOT/verify-after-claim.json"
     ;;
   screenshot)
     run_e2e_task screenshot "$base_report_file"

@@ -2523,11 +2523,21 @@ async fn auth_setup_finish(
             &initial_claims,
         )
         .await
-        .map_err(recovery_aware_auth_error)?;
+        .map_err(|error| {
+            if std::env::var_os("UGOITE_E2E_DIAGNOSTICS").is_some() {
+                eprintln!("initial setup registration failed: {error:#}");
+            }
+            recovery_aware_auth_error(error)
+        })?;
     let claims = state
         .complete_pending_initial_space_claims()
         .await
-        .map_err(auth_error)?;
+        .map_err(|error| {
+            if std::env::var_os("UGOITE_E2E_DIAGNOSTICS").is_some() {
+                eprintln!("initial Space claims could not be completed: {error:#}");
+            }
+            auth_error(error)
+        })?;
     let claimed_space_uids = claims
         .iter()
         .map(|(space_uid, _)| *space_uid)

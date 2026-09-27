@@ -655,6 +655,15 @@ async fn acquire_local_space_slug_claim_lock(
         return Ok(None);
     };
     let file = tokio::task::spawn_blocking(move || -> Result<File> {
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow!("Space slug claim lock has no parent directory"))?;
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "create Space slug claim lock directory {}",
+                parent.display()
+            )
+        })?;
         let file = OpenOptions::new()
             .create(true)
             .truncate(false)
@@ -6769,6 +6778,24 @@ mod tests {
                 slug
             }
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn portable_space_claim_creates_missing_local_claim_lock_directory() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let service = UgoiteService::new(format!("file://{}", root.path().display()))?;
+        let slug = format!("portable-{}", Uuid::now_v7());
+
+        service
+            .bind_initial_space_slug_claim_owner(&slug, Uuid::now_v7(), Uuid::now_v7())
+            .await?;
+
+        let lock_path = root
+            .path()
+            .join(SPACE_SLUG_CLAIMS_DIR)
+            .join(format!("{slug}.lock"));
+        assert!(lock_path.is_file());
         Ok(())
     }
 

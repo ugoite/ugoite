@@ -46,7 +46,11 @@ async function setupDiagnostics(
     "<unavailable>"
   );
   const errors = browserErrors.length > 0 ? browserErrors.join(" | ") : "none";
-  return `url=${page.url()}; browserErrors=${errors.slice(0, 2000)}; body=${
+  const diagnosticUrl = page.url().replace(
+    /([#&]secret=)[^&]*/g,
+    "$1[redacted]",
+  );
+  return `url=${diagnosticUrl}; browserErrors=${errors.slice(0, 2000)}; body=${
     body.slice(0, 2000)
   }`;
 }
