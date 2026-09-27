@@ -605,13 +605,7 @@ pub(crate) async fn verify_history_integrity(
     let mut asset_references = Vec::new();
     for form_value in forms {
         let current_form = crate::form::to_domain_form(&form_value)?;
-        // Saved SQL is stored as rows in its own system Form, but its
-        // integrity payload covers canonical SQL metadata rather than the
-        // Markdown rendered for ordinary Entry revisions. Do not classify
-        // those rows as corrupt Entry history here.
-        if !has_markdown_entry_history(&current_form.name) {
-            continue;
-        }
+        let is_saved_sql = current_form.name == crate::saved_sql::SQL_FORM_NAME_FOR_AUDIT;
         let (_, form_history, mut rows) =
             revision_rows_for_form_read_only(op, ws_path, &current_form.name).await?;
         rows.sort_by(|left, right| {
@@ -631,12 +625,21 @@ pub(crate) async fn verify_history_integrity(
                     row.revision_id
                 )
             })?;
-            let expected = integrity_for_domain_revision(form, &revision, &provider)?;
-            if expected.checksum != revision.entry.integrity.checksum
-                || expected.signature != revision.entry.integrity.signature
-            {
+            let integrity_result = if is_saved_sql {
+                crate::saved_sql::verify_revision_integrity(row, &provider)
+            } else {
+                let expected = integrity_for_domain_revision(form, &revision, &provider)?;
+                if expected.checksum == revision.entry.integrity.checksum
+                    && expected.signature == revision.entry.integrity.signature
+                {
+                    Ok(())
+                } else {
+                    Err(anyhow!("integrity mismatch"))
+                }
+            };
+            if let Err(error) = integrity_result {
                 anyhow::bail!(
-                    "Entry {} revision {} integrity mismatch",
+                    "Entry {} revision {} integrity verification failed: {error}",
                     row.entry_id,
                     row.revision_id
                 );
@@ -661,10 +664,6 @@ pub(crate) async fn verify_history_integrity(
         entry_count = entry_count.saturating_add(previous.len());
     }
     Ok((entry_count, revision_count, asset_references))
-}
-
-fn has_markdown_entry_history(form_name: &str) -> bool {
-    form_name != crate::saved_sql::SQL_FORM_NAME_FOR_AUDIT
 }
 
 fn restore_revision_payload(
@@ -2852,14 +2851,6 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
 mod input_conversion_tests {
     use super::*;
     use ugoite_domain::form::{FormDefinition, FormField, FormVersion, ListItemDefinition};
-
-    #[test]
-    fn saved_sql_form_is_not_treated_as_markdown_entry_history() {
-        assert!(!has_markdown_entry_history(
-            crate::saved_sql::SQL_FORM_NAME_FOR_AUDIT
-        ));
-        assert!(has_markdown_entry_history("PortableAudit"));
-    }
 
     fn field(field_type: FieldType, list_item: Option<FieldType>) -> FormField {
         FormField {
