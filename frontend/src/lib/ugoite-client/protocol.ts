@@ -34,6 +34,7 @@ export const UGOITE_API_OPERATIONS = [
   "change.affected.get",
   "change.revert.preview",
   "change.revert",
+  "run.inspect",
   "run.undo.preview",
   "run.undo",
   "ugoite.apply",
