@@ -1359,6 +1359,8 @@ fn issue_2037_openapi_publishes_the_public_knowledge_contract() {
             description.contains("target_visibility")
                 && description.contains("evidence-backed summary")
                 && description.contains("null summary")
+                && description.contains("page-wide budget of 10,000 revision rows")
+                && description.contains("complete target_visibility")
         }));
     assert!(change_query["parameters"]
         .as_array()
