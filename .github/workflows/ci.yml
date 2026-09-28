@@ -1042,7 +1042,7 @@ jobs:
 
       - name: Verify and load the exact CLI artifact
         id: cli-load
-        run: scripts/measure-process-resources.sh target/cp1-profiling/sql-export-cli-load.time.txt mise run ci:artifacts:load
+        run: bash scripts/measure-process-resources.sh target/cp1-profiling/sql-export-cli-load.time.txt mise run ci:artifacts:load
 
       - name: Record SQL export CLI artifact evidence
         env:

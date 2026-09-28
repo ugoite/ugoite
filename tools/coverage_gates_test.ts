@@ -547,7 +547,7 @@ async function assertAggregateWorkflow(
       "name: ugoite-artifact-manifest",
       "name: ugoite-cli-linux",
       "downloaded_logical_bytes=",
-      "scripts/measure-process-resources.sh target/cp1-profiling/sql-export-cli-load.time.txt mise run ci:artifacts:load",
+      "bash scripts/measure-process-resources.sh target/cp1-profiling/sql-export-cli-load.time.txt mise run ci:artifacts:load",
       "scripts/measure-step.sh cp1-acceptance mise run ci:lane:cp1-acceptance",
       "target/cp1-profiling/",
       "target/cp1-profiling/sql-export-cli-transfer.json",
