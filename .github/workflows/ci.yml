@@ -398,24 +398,9 @@ jobs:
           UGOITE_CI_RUN_ID: ${{ github.run_id }}
         run: scripts/measure-step.sh artifact-prepare mise run ci:artifacts:prepare
 
-      - name: Upload verified build inputs for E2E jobs
-        id: upload-e2e-inputs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ugoite-ci-e2e-inputs
-          path: |
-            target/artifacts/manifest.json
-            target/artifacts/image/ugoite-e2e-docker.tar.gz
-            target/artifacts/cli/*.tar.gz
-            target/artifacts/cli/*.sha256
-          if-no-files-found: error
-          compression-level: 0
-          overwrite: true
-          retention-days: 1
-
-      - name: Measure E2E input bundle
+      - name: Measure E2E artifact inputs
         id: e2e-input-size
-        run: echo "bytes=$(du -sb target/artifacts/image target/artifacts/cli target/artifacts/manifest.json | awk '{sum += $1} END {print sum}')" >>"$GITHUB_OUTPUT"
+        run: echo "bytes=$(du -sb target/artifacts/image/ugoite-e2e-docker.tar.gz target/artifacts/cli target/artifacts/manifest.json target/artifacts/SHA256SUMS | awk '{sum += $1} END {print sum}')" >>"$GITHUB_OUTPUT"
 
       - name: Show sccache stats
         if: always()
@@ -432,7 +417,7 @@ jobs:
 
       - name: Upload runtime image artifact
         id: upload-image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ugoite-runtime-image
@@ -442,7 +427,7 @@ jobs:
 
       - name: Upload CLI artifact
         id: upload-cli
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ugoite-cli-linux
@@ -462,7 +447,7 @@ jobs:
 
       - name: Upload artifact manifest
         id: upload-manifest
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ugoite-artifact-manifest
@@ -479,7 +464,7 @@ jobs:
           DOCSITE_BASE: ${{ steps.ci-config.outputs.docsite_base }}
           CACHE_SAVE_ALLOWED: ${{ steps.ci-config.outputs.cache_save_allowed }}
           ARTIFACT_PREPARE_DURATION_SECONDS: ${{ steps.artifacts.outputs.duration_seconds }}
-          E2E_INPUT_BUNDLE_BYTES: ${{ steps.e2e-input-size.outputs.bytes }}
+          E2E_ARTIFACT_INPUT_BYTES: ${{ steps.e2e-input-size.outputs.bytes }}
           DOCKER_CACHE_SCOPE: ${{ steps.ci-config.outputs.docker_cache_scope }}
           DOCKER_CACHE_MODE: ${{ steps.ci-config.outputs.docker_cache_mode }}
           DOCKER_CACHE_FROM: ${{ steps.ci-config.outputs.docker_cache_from }}
@@ -536,7 +521,7 @@ jobs:
             echo "- DOCSITE_ORIGIN: \`${DOCSITE_ORIGIN}\`"
             echo "- DOCSITE_BASE: \`${DOCSITE_BASE}\`"
             echo "- Artifact preparation duration: ${ARTIFACT_PREPARE_DURATION_SECONDS:-n/a}s"
-            echo "- E2E input bundle size: ${E2E_INPUT_BUNDLE_BYTES:-n/a} bytes"
+            echo "- E2E artifact inputs: ${E2E_ARTIFACT_INPUT_BYTES:-n/a} bytes"
             echo "- total artifact lane duration: ${total_duration_seconds}s"
             echo
             echo "### Artifact Digests"
@@ -571,6 +556,7 @@ jobs:
     env:
       UGOITE_SOURCE_SHA: ${{ github.sha }}
       UGOITE_CI_RUN_ID: ${{ github.run_id }}
+      UGOITE_ARTIFACT_SELECTION: runtime
       UGOITE_IMAGE_TAG: ugoite:e2e
       UGOITE_IMAGE_PLATFORM: linux/amd64
       UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
@@ -618,8 +604,12 @@ jobs:
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: ugoite-ci-e2e-inputs
+          name: ugoite-artifact-manifest
           path: target/artifacts
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-runtime-image
+          path: target/artifacts/image
 
       - name: Record artifact transfer measurement
         id: transfer
@@ -686,6 +676,7 @@ jobs:
     env:
       UGOITE_SOURCE_SHA: ${{ github.sha }}
       UGOITE_CI_RUN_ID: ${{ github.run_id }}
+      UGOITE_ARTIFACT_SELECTION: runtime
       UGOITE_IMAGE_TAG: ugoite:e2e
       UGOITE_IMAGE_PLATFORM: linux/amd64
       UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
@@ -726,8 +717,12 @@ jobs:
         run: echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: ugoite-ci-e2e-inputs
+          name: ugoite-artifact-manifest
           path: target/artifacts
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-runtime-image
+          path: target/artifacts/image
       - name: Record artifact transfer measurement
         id: transfer
         env:
@@ -780,6 +775,7 @@ jobs:
     env:
       UGOITE_SOURCE_SHA: ${{ github.sha }}
       UGOITE_CI_RUN_ID: ${{ github.run_id }}
+      UGOITE_ARTIFACT_SELECTION: both
       UGOITE_IMAGE_TAG: ugoite:e2e
       UGOITE_IMAGE_PLATFORM: linux/amd64
       UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
@@ -820,8 +816,16 @@ jobs:
         run: echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: ugoite-ci-e2e-inputs
+          name: ugoite-artifact-manifest
           path: target/artifacts
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-runtime-image
+          path: target/artifacts/image
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-cli-linux
+          path: target/artifacts/cli
       - name: Record artifact transfer measurement
         id: transfer
         env:

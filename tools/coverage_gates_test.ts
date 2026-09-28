@@ -363,17 +363,32 @@ async function assertAggregateWorkflow(
     [
       "name: artifact-build",
       "scripts/measure-step.sh artifact-prepare mise run ci:artifacts:prepare",
-      "name: Upload verified build inputs for E2E jobs",
-      "name: ugoite-ci-e2e-inputs",
-      "E2E_INPUT_BUNDLE_BYTES",
+      "name: Upload runtime image artifact",
+      "name: ugoite-runtime-image",
+      "name: Upload CLI artifact",
+      "name: ugoite-cli-linux",
+      "name: Upload artifact manifest",
+      "name: ugoite-artifact-manifest",
+      "github.event_name == 'pull_request'",
+      "github.event_name == 'merge_group'",
+      "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+      "E2E_ARTIFACT_INPUT_BYTES",
     ],
     "artifact build CI lane",
+  );
+  assertEquals(
+    artifactBuildJob.includes("ugoite-ci-e2e-inputs"),
+    false,
+    "artifact build must not upload a duplicate combined E2E bundle",
   );
   assertContainsAll(
     e2eSmokeMobileJob,
     [
       "name: ci-e2e-smoke-mobile",
       "needs: [impact, artifact-build]",
+      "UGOITE_ARTIFACT_SELECTION: runtime",
+      "name: ugoite-artifact-manifest",
+      "name: ugoite-runtime-image",
       "name: Configure Deno and Playwright cache paths",
       'echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"',
       "actions/download-artifact@",
@@ -387,6 +402,9 @@ async function assertAggregateWorkflow(
     e2eOwnerJob,
     [
       "name: ci-e2e-owner",
+      "UGOITE_ARTIFACT_SELECTION: runtime",
+      "name: ugoite-artifact-manifest",
+      "name: ugoite-runtime-image",
       "name: Configure Deno and Playwright cache paths",
       "actions/download-artifact@",
       "scripts/measure-step.sh owner-recovery mise run ci:lane:e2e-owner",
@@ -397,6 +415,10 @@ async function assertAggregateWorkflow(
     e2ePortableJob,
     [
       "name: ci-e2e-portable",
+      "UGOITE_ARTIFACT_SELECTION: both",
+      "name: ugoite-artifact-manifest",
+      "name: ugoite-runtime-image",
+      "name: ugoite-cli-linux",
       "name: Configure Deno and Playwright cache paths",
       "actions/download-artifact@",
       "scripts/measure-step.sh portable-space mise run ci:lane:e2e-portable",
