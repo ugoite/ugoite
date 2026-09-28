@@ -178,7 +178,10 @@ export function makeImpactReport(input: {
         candidateLanes.add(lane);
       }
     }
-    if (categories.cp1Acceptance) candidateLanes.add("cp1-acceptance");
+    if (categories.cp1Acceptance) {
+      candidateLanes.add("artifacts");
+      candidateLanes.add("cp1-acceptance");
+    }
   }
 
   // Main pushes must retain the artifact lane for the docsite Pages payload and

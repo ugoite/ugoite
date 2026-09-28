@@ -134,6 +134,41 @@ async function main(): Promise<void> {
     name: step.name,
     process: await parseTimeResourceFile(step.resourcePath),
   })));
+  const cliSource = mode === "export"
+    ? Deno.env.get("UGOITE_SQL_EXPORT_CLI_BINARY")?.trim()
+      ? "verified-artifact"
+      : "local-build"
+    : null;
+  const cliTransferReportPath = mode === "export"
+    ? Deno.env.get("UGOITE_SQL_EXPORT_CLI_TRANSFER_REPORT")?.trim() || null
+    : null;
+  const cliArtifactTransfer = cliTransferReportPath
+    ? await readJsonOrNull(cliTransferReportPath)
+    : null;
+  if (
+    exitCode === 0 && cliSource === "verified-artifact" &&
+    cliTransferReportPath && cliArtifactTransfer === null
+  ) {
+    throw new Error(
+      "successful SQL export is missing its CLI artifact transfer report",
+    );
+  }
+  const notMeasured = [
+    "cold Cargo compile time separated from cargo run and seed runtime",
+    "Cargo incremental rebuild count and sccache hit/miss when unavailable",
+    "per-Form read/convert, normalization/signing, batch validation, audit, and publication subspans inside the production mutation API",
+    "storage read/write byte counts",
+    "GitHub lane queue time, runner-minutes, and ci-required wall time",
+  ];
+  if (cliSource === "verified-artifact") {
+    notMeasured.push(
+      "CLI artifact archive compression CPU and upload duration; runtime image transfer and Docker load",
+    );
+  } else {
+    notMeasured.push(
+      "artifact archive size, compression CPU, upload/download duration, and extraction duration",
+    );
+  }
   const stageMicros = seedProfiles.flatMap((fixture) => {
     if (!isCompleteSampleProfile(fixture.generator)) return [];
     const profile = fixture.generator as Record<string, unknown>;
@@ -206,6 +241,13 @@ async function main(): Promise<void> {
     fixtures: seedProfiles,
     export_runs: exportRuns,
     process_steps: processSteps,
+    cli: mode === "export"
+      ? {
+        source: cliSource,
+        source_sha: Deno.env.get("UGOITE_SQL_EXPORT_CLI_SOURCE_SHA") ?? null,
+        artifact_transfer: cliArtifactTransfer,
+      }
+      : null,
     acceptance_evidence: evidencePath
       ? await readJsonOrNull(evidencePath)
       : null,
@@ -224,14 +266,7 @@ async function main(): Promise<void> {
         ? generatorMicros - knownStageMicros
         : null,
     },
-    not_measured: [
-      "cold Cargo compile time separated from cargo run and seed runtime",
-      "Cargo incremental rebuild count and sccache hit/miss when unavailable",
-      "per-Form read/convert, normalization/signing, batch validation, audit, and publication subspans inside the production mutation API",
-      "storage read/write byte counts",
-      "artifact archive size, compression CPU, upload/download duration, and extraction duration",
-      "GitHub lane queue time, runner-minutes, and ci-required wall time",
-    ],
+    not_measured: notMeasured,
   };
 
   if (!SHA.test(report.source_sha)) {

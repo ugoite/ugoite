@@ -48,6 +48,16 @@ Deno.test("CP1 query and export paths select the acceptance lane", () => {
   assertEquals(report.categories.cp1Acceptance, true);
   assertEquals(report.candidateLanes, ["artifacts", "cp1-acceptance", "web"]);
 
+  const queryE2e = makeImpactReport({
+    event: "pull_request",
+    baseSha,
+    headSha,
+    paths: ["e2e/query-surfaces-measurement.test.ts"],
+  });
+  assertEquals(queryE2e.categories.cp1Acceptance, true);
+  assertEquals(queryE2e.candidateLanes.includes("artifacts"), true);
+  assertEquals(queryE2e.candidateLanes.includes("cp1-acceptance"), true);
+
   const docsOnly = makeImpactReport({
     event: "pull_request",
     baseSha,

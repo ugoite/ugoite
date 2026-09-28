@@ -209,6 +209,115 @@ Deno.test("successful CP1 profile aggregation keeps fixture, resource, and sourc
   }
 });
 
+Deno.test("CP1 SQL export profiles identify the verified CLI and artifact transfer", async () => {
+  const directory = await Deno.makeTempDir();
+  try {
+    const rowsPath = `${directory}/rows.ndjson`;
+    const summaryPath = `${directory}/summary.json`;
+    const exportResourcePath = `${directory}/export.time.txt`;
+    const cliLoadResourcePath = `${directory}/cli-load.time.txt`;
+    const transferReportPath = `${directory}/cli-transfer.json`;
+    const outputPath = `${directory}/report.json`;
+    const source = await new Deno.Command("git", {
+      args: ["rev-parse", "HEAD"],
+      stdout: "piped",
+    }).output();
+    const sourceSha = new TextDecoder().decode(source.stdout).trim();
+
+    await Deno.writeTextFile(rowsPath, '{"_ugoite_id":"entry-1"}\n');
+    await Deno.writeTextFile(
+      summaryPath,
+      JSON.stringify({ rows_exported: 1, pages_fetched: 1 }),
+    );
+    await Deno.writeTextFile(
+      exportResourcePath,
+      [
+        "User time (seconds): 0.2",
+        "System time (seconds): 0.1",
+        "Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.4",
+        "Maximum resident set size (kbytes): 1024",
+      ].join("\n"),
+    );
+    await Deno.writeTextFile(
+      cliLoadResourcePath,
+      [
+        "User time (seconds): 0.1",
+        "System time (seconds): 0.1",
+        "Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.2",
+        "Maximum resident set size (kbytes): 2048",
+      ].join("\n"),
+    );
+    const transferReport = {
+      selection: "cli",
+      download_action_seconds: 5,
+      downloaded_logical_bytes: 4096,
+      verification_seconds: 1,
+      extraction_seconds: 1,
+    };
+    await Deno.writeTextFile(
+      transferReportPath,
+      JSON.stringify(transferReport),
+    );
+
+    const command = new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "-A",
+        new URL("./cp1_profile.ts", import.meta.url).pathname,
+        "export",
+        "--output",
+        outputPath,
+        "--root",
+        directory,
+        "--started-ms",
+        String(Date.now() - 500),
+        "--exit-code",
+        "0",
+        "--export-run",
+        "100",
+        rowsPath,
+        summaryPath,
+        exportResourcePath,
+        "--timed-step",
+        "cli-artifact-load",
+        cliLoadResourcePath,
+      ],
+      env: {
+        UGOITE_SQL_EXPORT_CLI_BINARY: `${directory}/ugoite`,
+        UGOITE_SQL_EXPORT_CLI_SOURCE_SHA: sourceSha,
+        UGOITE_SQL_EXPORT_CLI_TRANSFER_REPORT: transferReportPath,
+      },
+      stdout: "piped",
+      stderr: "piped",
+    });
+    const result = await command.output();
+    assertEquals(
+      result.success,
+      true,
+      new TextDecoder().decode(result.stderr),
+    );
+    const report = JSON.parse(await Deno.readTextFile(outputPath));
+    assertEquals(report.cli, {
+      source: "verified-artifact",
+      source_sha: sourceSha,
+      artifact_transfer: transferReport,
+    });
+    assertEquals(report.process_steps[0].name, "cli-artifact-load");
+    assertEquals(
+      report.process_steps[0].process.elapsed_wall_seconds,
+      0.2,
+    );
+    assertEquals(
+      report.not_measured.includes(
+        "CLI artifact archive compression CPU and upload duration; runtime image transfer and Docker load",
+      ),
+      true,
+    );
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});
+
 Deno.test("CP1 wall reconciliation reports remainder and timer excess separately", () => {
   assertEquals(reconcileWallDurations(120, 100), {
     unaccounted_script_wall_micros: 20,
