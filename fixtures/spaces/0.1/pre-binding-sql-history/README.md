@@ -45,7 +45,7 @@ not alter the operator's normal CLI config:
 export GENERATION_ROOT="$(mktemp -d)"
 export GENERATION_CONFIG="$GENERATION_ROOT/ugoite.toml"
 export INPUT="$GENERATION_ROOT/inputs"
-cp -R fixtures/spaces/pre-binding-sql-history/inputs "$INPUT"
+cp -R fixtures/spaces/0.1/pre-binding-sql-history/inputs "$INPUT"
 ugoite --config "$GENERATION_CONFIG" config init
 ugoite --config "$GENERATION_CONFIG" config connection set local --type core --root "$GENERATION_ROOT"
 SPACE_UID="$(ugoite --config "$GENERATION_CONFIG" space create prebinding-sql-history --name 'Pre-binding SQL history' | python3 -c 'import json,sys; print(json.load(sys.stdin)["space"]["space_uid"])')"

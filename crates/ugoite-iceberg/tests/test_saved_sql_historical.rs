@@ -16,7 +16,7 @@ use ugoite_iceberg::{entry, service::UgoiteService, space};
 use uuid::Uuid;
 
 const EXPECTED: &str =
-    include_str!("../../../fixtures/spaces/pre-binding-sql-history/expected.json");
+    include_str!("../../../fixtures/spaces/0.1/pre-binding-sql-history/expected.json");
 
 #[derive(Debug, Deserialize)]
 struct FixtureExpected {
@@ -184,7 +184,7 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
     assert_eq!(expected.space_version, "0.1");
 
     let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/spaces/pre-binding-sql-history");
+        .join("../../fixtures/spaces/0.1/pre-binding-sql-history");
     verify_fixture(&fixture_root, &expected)?;
 
     let source_space = fixture_root.join("spaces").join(&expected.space_id);
