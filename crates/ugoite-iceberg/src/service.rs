@@ -3014,7 +3014,12 @@ impl UgoiteService {
                 .into());
             }
             let offset = cursor_token.as_ref().map_or(0, |token| token.offset);
-            let forms = workspace.forms_at_publication(&publication).await?;
+            // Pin the immutable publication once, then share its checkpoint
+            // across every Form read in this inspection. Resolving the same
+            // publication for each Form repeats catalog validation and can
+            // dominate inspection cost in Spaces with many Forms.
+            let checkpoint = workspace.resolve_publication(&publication).await?;
+            let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
             let mut complete_visibility = true;
             let mut revision_rows = 0usize;
             let mut targets = BTreeMap::new();
@@ -3039,8 +3044,8 @@ impl UgoiteService {
                     scope => scope.clone(),
                 };
                 let revisions = workspace
-                    .read_revision_view_at_publication_with_scope_and_limit(
-                        &publication,
+                    .read_revision_view_at_checkpoint_with_scope_and_limit(
+                        &checkpoint,
                         form.id,
                         bounded_scope,
                         RevisionView::All,
@@ -3057,7 +3062,7 @@ impl UgoiteService {
                 }
 
                 let form_history = workspace
-                    .form_history_at_publication(&publication, form.id)
+                    .form_history_at_checkpoint(&checkpoint, form.id)
                     .await?
                     .into_iter()
                     .map(|form| (form.version.get(), form))
@@ -8209,6 +8214,16 @@ mod tests {
                 &json!({
                     "name": "Entry",
                     "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Other",
+                    "fields": {"Title": {"type": "string"}},
                     "allow_extra_attributes": "deny"
                 }),
             )
