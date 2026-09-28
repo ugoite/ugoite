@@ -20,6 +20,10 @@ use tokio::process::Command;
 use tokio::task::JoinHandle;
 use ugoite_cli::cli_config::{ConfigFile, ConnectionConfig, ContextConfig};
 use ugoite_cli::config::AuthSession;
+use ugoite_domain::{change::ChangeCommand, id::RevisionId};
+use ugoite_iceberg::{
+    iceberg_store::native_workspace, publication_context_for_change, service::UgoiteService,
+};
 use ugoite_server::{app, AppState};
 
 struct ServerGuard(JoinHandle<()>);
@@ -150,6 +154,7 @@ async fn journey_cli_remote_locate_recover_reaches_durable_outcome() {
 struct RemoteFixture {
     config_path: std::path::PathBuf,
     space_id: String,
+    storage_root: String,
     api_base: String,
     access_token: String,
     session: AuthSession,
@@ -166,14 +171,12 @@ async fn setup_remote() -> RemoteFixture {
     // Without UGOITE_STATIC_DIR the app merges API routes at the root, so
     // the API base is the bare server URL (no /api prefix).
     let api_base = server_url.clone();
-    let state = AppState::new_for_tests_with_origin(
-        format!(
-            "memory://cli-locate-recover-remote-{}",
-            uuid::Uuid::now_v7()
-        ),
-        &server_url,
-    )
-    .expect("server state");
+    let storage_root = format!(
+        "memory://cli-locate-recover-remote-{}",
+        uuid::Uuid::now_v7()
+    );
+    let state = AppState::new_for_tests_with_origin(storage_root.clone(), &server_url)
+        .expect("server state");
     state.initialize_node().await.expect("initialize server");
     let (key, public_key_jwk) = test_key_and_jwk();
     let access = state_issue_rest_access(&state, public_key_jwk.clone()).await;
@@ -257,6 +260,7 @@ async fn setup_remote() -> RemoteFixture {
     RemoteFixture {
         config_path,
         space_id: access.space_uid.to_string(),
+        storage_root,
         api_base,
         access_token: access.access_token,
         session,
@@ -405,6 +409,120 @@ async fn journey_cli_remote_locate_recover() {
     );
     assert_eq!(target["change_id"], update_change_id);
     assert_eq!(target["target"]["fields"].as_array().unwrap().len(), 1);
+
+    // Seed one committed Change with two targets through the same Space store,
+    // then exercise cursor forwarding through the authenticated remote CLI.
+    for entry_id in ["cursor-target-a", "cursor-target-b"] {
+        let output = run_cli(
+            config_path,
+            &[
+                "entry",
+                "create",
+                "--id",
+                entry_id,
+                "--form",
+                form_name,
+                "--field",
+                "status=closed",
+                "--field",
+                "priority=1",
+            ],
+        )
+        .await;
+        assert!(
+            output.status.success(),
+            "remote cursor fixture Entry create failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let service = UgoiteService::new(fixture.storage_root.clone()).unwrap();
+    let workspace = native_workspace(
+        service.operator(),
+        &service.workspace_path(&fixture.space_id),
+    )
+    .await
+    .unwrap();
+    let form = workspace
+        .list_forms()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|form| form.name == form_name)
+        .unwrap();
+    let revisions = workspace.read_revisions(form.id).await.unwrap();
+    let committed_at_micros = Utc::now().timestamp_micros();
+    let cursor_change_id = uuid::Uuid::now_v7().to_string();
+    let mut grouped = Vec::new();
+    for external_id in ["cursor-target-a", "cursor-target-b"] {
+        let mut revision = revisions
+            .iter()
+            .filter(|revision| revision.entry.external_id == external_id)
+            .max_by_key(|revision| revision.entry_version)
+            .cloned()
+            .expect("remote cursor fixture Entry has a current revision");
+        revision.parent_revision_id = Some(revision.revision_id);
+        revision.revision_id = RevisionId::from_uuid(uuid::Uuid::now_v7());
+        revision.entry_version += 1;
+        revision.expected_version = Some(revision.entry_version - 1);
+        revision.change_id = cursor_change_id.clone();
+        revision.committed_at_micros = committed_at_micros;
+        revision.source_kind = "cli_cursor_test".to_string();
+        revision.entry.updated_at_micros = committed_at_micros;
+        grouped.push(revision);
+    }
+    let command = ChangeCommand {
+        change_id: cursor_change_id.clone(),
+        run_id: None,
+        actor_principal_id: grouped[0].author_id.clone(),
+        message: Some("Remote CLI cursor continuation fixture".to_string()),
+        reverts_change_id: None,
+        created_at_micros: committed_at_micros,
+    };
+    let publication =
+        publication_context_for_change(&command, "test.cli.cursor", &grouped[0]).unwrap();
+    workspace
+        .commit(publication)
+        .unwrap()
+        .append_revisions(form.id, grouped)
+        .await
+        .unwrap();
+
+    let first_page = stdout_json(
+        &run_cli(
+            config_path,
+            &["change", "show", &cursor_change_id, "--limit", "1"],
+        )
+        .await,
+        "remote change show first committed target page",
+    );
+    assert_eq!(first_page["change_id"], cursor_change_id);
+    assert_eq!(first_page["summary"]["affected_entry_count"], 2);
+    assert_eq!(first_page["targets"].as_array().unwrap().len(), 1);
+    let cursor = first_page["next_cursor"]
+        .as_str()
+        .expect("remote first target page exposes its opaque continuation");
+    let first_target_id = first_page["targets"][0]["entry_id"].as_str().unwrap();
+
+    let second_page = stdout_json(
+        &run_cli(
+            config_path,
+            &[
+                "change",
+                "show",
+                &cursor_change_id,
+                "--limit",
+                "1",
+                "--cursor",
+                cursor,
+            ],
+        )
+        .await,
+        "remote change show continuation target page",
+    );
+    assert_eq!(second_page["change_id"], cursor_change_id);
+    assert_eq!(second_page["targets"].as_array().unwrap().len(), 1);
+    assert_eq!(second_page["next_cursor"], serde_json::Value::Null);
+    assert_ne!(second_page["targets"][0]["entry_id"], first_target_id);
 
     // Space History observes the timeline.
     let changes = stdout_json(
