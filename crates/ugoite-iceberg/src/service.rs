@@ -1849,7 +1849,7 @@ impl UgoiteService {
 
             if claim.space_id != claim.slug {
                 if let Ok(space_uid) = Uuid::parse_str(&claim.space_id) {
-                    space::repair_space_with_identity(
+                    space::repair_space_scaffold_with_identity(
                         &self.operator,
                         space_uid,
                         slug,
@@ -1858,11 +1858,17 @@ impl UgoiteService {
                     )
                     .await?;
                 } else {
-                    space::repair_space(&self.operator, &claim.space_id, slug, &self.root_uri)
-                        .await?;
+                    space::repair_space_scaffold(
+                        &self.operator,
+                        &claim.space_id,
+                        slug,
+                        &self.root_uri,
+                    )
+                    .await?;
                 }
             } else if space::space_exists(&self.operator, &claim.space_id).await? {
-                space::repair_space(&self.operator, &claim.space_id, slug, &self.root_uri).await?;
+                space::repair_space_scaffold(&self.operator, &claim.space_id, slug, &self.root_uri)
+                    .await?;
             } else {
                 // A legacy create can crash after claiming but before writing
                 // meta.json. No authoritative object exists in that case, so
@@ -1871,8 +1877,12 @@ impl UgoiteService {
                     .await?;
                 return Ok(None);
             }
-            space::validate_complete_bootstrap(&self.operator, &claim.space_id).await?;
+            // Repair only restores the Space scaffold. The owner snapshot is
+            // then ensured before the missing starter Form is published under
+            // that snapshot's authorization lease.
             self.ensure_claimed_space_owner(&claim).await?;
+            space::ensure_starter_form_authorized(&self.operator, &claim.space_id).await?;
+            space::validate_complete_bootstrap(&self.operator, &claim.space_id).await?;
             lease.ensure_held()?;
             self.commit_space_slug_claim(slug, &claim.space_id, claim.claim_id)
                 .await?;
@@ -1977,7 +1987,7 @@ impl UgoiteService {
             )
             .await?;
         let lease = self.start_space_slug_claim_heartbeat(&claim);
-        space::create_space_with_identity_and_name(
+        space::create_space_scaffold_with_identity_and_name(
             &self.operator,
             space_uid,
             slug,
@@ -1988,6 +1998,7 @@ impl UgoiteService {
         Authorizer::new(self.operator.clone())
             .initialize_owner(&space_id, space_uid, principal_id, owner_display_name)
             .await?;
+        space::ensure_starter_form_authorized(&self.operator, &space_id).await?;
         lease.ensure_held()?;
         self.commit_space_slug_claim(slug, &space_id, claim.claim_id)
             .await?;

@@ -408,6 +408,25 @@ pub async fn create_space_with_identity_and_name(
     display_name: &str,
     root_path: &str,
 ) -> Result<()> {
+    create_space_scaffold_with_identity_and_name(op, space_id, slug, display_name, root_path)
+        .await?;
+    let directory_id = space_id.to_string();
+    let ws_path = format!("spaces/{directory_id}");
+    form::upsert_form(op, &ws_path, &starter_entry_form_definition()).await?;
+    Ok(())
+}
+
+/// Creates the immutable Space scaffold without publishing its starter Form.
+/// Principal-backed creation uses this split so it can persist the initial
+/// owner authorization snapshot before the Form is published under that
+/// snapshot's authorization fence.
+pub(crate) async fn create_space_scaffold_with_identity_and_name(
+    op: &Operator,
+    space_id: uuid::Uuid,
+    slug: &str,
+    display_name: &str,
+    root_path: &str,
+) -> Result<()> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     if space_id.get_version() != Some(uuid::Version::SortRand) {
         return Err(anyhow!("UUID-addressed Space identity must be a UUIDv7"));
@@ -424,17 +443,56 @@ pub async fn create_space_with_identity_and_name(
         root_path,
     )
     .await?;
-    let ws_path = format!("spaces/{directory_id}");
-    form::upsert_form(op, &ws_path, &starter_entry_form_definition()).await?;
     apply_local_space_permissions(op, &directory_id)?;
     Ok(())
 }
 
+/// Publishes the starter Form while holding the initial/current authorization
+/// lease. This is also used by claim recovery after the claimed owner has been
+/// restored.
+pub(crate) async fn ensure_starter_form_authorized(op: &Operator, space_id: &str) -> Result<()> {
+    let authorizer = crate::authorization::Authorizer::new(op.clone());
+    let (_, lease) = authorizer.acquire_state_lease(space_id).await?;
+    lease.prepare_mutation().await?;
+    let form_result = crate::authorization::with_authorization_write_fence(
+        lease.write_fence(),
+        form::upsert_form(
+            op,
+            &format!("spaces/{space_id}"),
+            &starter_entry_form_definition(),
+        ),
+    )
+    .await;
+    let release_result = lease.release().await;
+    match (form_result, release_result) {
+        (Ok(_), Ok(())) => Ok(()),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+        (Err(error), Err(release_error)) => Err(error.context(format!(
+            "release starter Form authorization lease: {release_error:#}"
+        ))),
+    }
+}
+
 /// Completes a UUID-addressed Space whose durable slug claim was written but
 /// whose bootstrap was interrupted. The immutable metadata is never
-/// regenerated: recovery only creates missing scaffold objects and the
-/// starter Form, then reapplies local permissions.
+/// regenerated. The caller must restore the owner authorization snapshot
+/// before the starter Form is published under its authorization lease.
 pub async fn repair_space_with_identity(
+    op: &Operator,
+    space_uid: uuid::Uuid,
+    slug: &str,
+    display_name: &str,
+    root_path: &str,
+) -> Result<()> {
+    repair_space_scaffold_with_identity(op, space_uid, slug, display_name, root_path).await?;
+    ensure_starter_form_authorized(op, &space_uid.to_string()).await
+}
+
+/// Restores only the immutable scaffold for an interrupted UUID-addressed
+/// Space bootstrap. The caller must ensure its owner authorization state and
+/// publish the starter Form separately.
+pub(crate) async fn repair_space_scaffold_with_identity(
     op: &Operator,
     space_uid: uuid::Uuid,
     slug: &str,
@@ -456,8 +514,14 @@ pub async fn repair_space_with_identity(
     }
     crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{directory_id}")).await?;
     if !metadata_exists {
-        return create_space_with_identity_and_name(op, space_uid, slug, display_name, root_path)
-            .await;
+        return create_space_scaffold_with_identity_and_name(
+            op,
+            space_uid,
+            slug,
+            display_name,
+            root_path,
+        )
+        .await;
     }
 
     let meta = ensure_space_identity(&storage, &directory_id).await?;
@@ -477,13 +541,35 @@ pub async fn repair_space_with_identity(
         ));
     }
 
-    repair_space_scaffold(op, &directory_id, slug, root_path).await
+    repair_space_layout(op, &directory_id, slug, root_path).await
 }
 
-/// Repairs a slug-addressed Space after reading its already durable metadata.
-/// This is used only for legacy `spaces/{slug}` directories; a claim-only
-/// record without metadata is safe to release and recreate instead.
+/// Completes a slug-addressed Space after reading its durable metadata. The
+/// caller must restore its authorization state before the starter Form is
+/// published under an authorization lease.
 pub async fn repair_space(
+    op: &Operator,
+    directory_id: &str,
+    slug: &str,
+    root_path: &str,
+) -> Result<()> {
+    repair_space_objects(op, directory_id, slug, root_path).await?;
+    ensure_starter_form_authorized(op, directory_id).await
+}
+
+/// Restores a legacy slug-addressed scaffold without publishing the starter
+/// Form. The caller is responsible for establishing the authorization lease
+/// before completing the bootstrap.
+pub(crate) async fn repair_space_scaffold(
+    op: &Operator,
+    directory_id: &str,
+    slug: &str,
+    root_path: &str,
+) -> Result<()> {
+    repair_space_objects(op, directory_id, slug, root_path).await
+}
+
+async fn repair_space_objects(
     op: &Operator,
     directory_id: &str,
     slug: &str,
@@ -500,10 +586,10 @@ pub async fn repair_space(
             "Space slug claim does not match immutable Space metadata"
         ));
     }
-    repair_space_scaffold(op, directory_id, slug, root_path).await
+    repair_space_layout(op, directory_id, slug, root_path).await
 }
 
-async fn repair_space_scaffold(
+async fn repair_space_layout(
     op: &Operator,
     directory_id: &str,
     _slug: &str,
@@ -542,21 +628,6 @@ async fn repair_space_scaffold(
         .write_json(&binding_path, &space_binding_value(_root_path))
         .await?;
     storage.set_private(&binding_path).await?;
-    match form::get_form(op, &ws_path, "Entry").await {
-        Ok(_) => {}
-        Err(error)
-            if error.chain().any(|cause| {
-                cause
-                    .downcast_ref::<opendal::Error>()
-                    .is_some_and(|error| error.kind() == ErrorKind::NotFound)
-            }) =>
-        {
-            form::upsert_form(op, &ws_path, &starter_entry_form_definition()).await?;
-        }
-        Err(error) => {
-            return Err(error.context("read authoritative Entry Form during Space repair"))
-        }
-    }
     apply_local_space_permissions(op, directory_id)?;
     Ok(())
 }
