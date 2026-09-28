@@ -9289,20 +9289,30 @@ mod tests {
             .as_str()
             .expect("first page has a cursor");
 
-        let second = service
-            .inspect_run(&space_id, "run-inspect-run", Some(1), Some(cursor))
-            .await?;
-        assert_eq!(second["changes"].as_array().map(Vec::len), Some(1));
-        assert!(second["next_cursor"].is_null());
-        assert_ne!(
-            first["changes"][0]["change_id"],
-            second["changes"][0]["change_id"]
-        );
+        let mut inspected = first["changes"]
+            .as_array()
+            .expect("first page has changes")
+            .clone();
+        let mut next_cursor = Some(cursor.to_string());
+        let mut pages = 1;
+        while let Some(cursor) = next_cursor {
+            let page = service
+                .inspect_run(&space_id, "run-inspect-run", Some(1), Some(&cursor))
+                .await?;
+            let changes = page["changes"].as_array().expect("page has changes");
+            assert!(changes.len() <= 1);
+            inspected.extend(changes.iter().cloned());
+            next_cursor = page["next_cursor"].as_str().map(str::to_string);
+            pages += 1;
+            assert!(pages <= 16, "Run inspection cursor did not terminate");
+        }
+        assert_eq!(inspected.len(), 2);
+        assert_ne!(inspected[0]["change_id"], inspected[1]["change_id"]);
         assert!(
-            first["changes"][0]["generation"]
+            inspected[0]["generation"]
                 .as_u64()
                 .expect("generation is numeric")
-                > second["changes"][0]["generation"]
+                > inspected[1]["generation"]
                     .as_u64()
                     .expect("generation is numeric")
         );
