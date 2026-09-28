@@ -1130,8 +1130,7 @@ impl IcebergWorkspace {
             entry_scope,
             view,
             coordinate.snapshot_id,
-            Some(max_rows),
-            truncate_at_limit,
+            Some((max_rows, truncate_at_limit)),
         )
         .await
         .map_err(checkpoint_query_error)
@@ -2416,7 +2415,6 @@ impl IcebergWorkspace {
                     view,
                     None,
                     None,
-                    false,
                 )
                 .await;
         }
@@ -2438,7 +2436,7 @@ impl IcebergWorkspace {
         }
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        self.read_revision_view_from_table(&form, table, entry_scope, view, None, None, false)
+        self.read_revision_view_from_table(&form, table, entry_scope, view, None, None)
             .await
     }
 
@@ -2470,7 +2468,6 @@ impl IcebergWorkspace {
             view,
             snapshot_id,
             None,
-            false,
         )
         .await
     }
@@ -2482,8 +2479,7 @@ impl IcebergWorkspace {
         entry_scope: EntryScope,
         view: RevisionView,
         snapshot_id: Option<i64>,
-        checkpoint_history_limit: Option<usize>,
-        truncate_at_limit: bool,
+        checkpoint_history_limit: Option<(usize, bool)>,
     ) -> Result<Vec<EntryRevision>> {
         let batches = match view {
             RevisionView::All if entry_scope == EntryScope::AllCurrent => {
@@ -2494,7 +2490,7 @@ impl IcebergWorkspace {
                     &table,
                     &entry_scope,
                     snapshot_id,
-                    checkpoint_history_limit.map_or(usize::MAX, |limit| {
+                    checkpoint_history_limit.map_or(usize::MAX, |(limit, truncate_at_limit)| {
                         if truncate_at_limit {
                             limit
                         } else {
@@ -2520,7 +2516,7 @@ impl IcebergWorkspace {
         for batch in &batches {
             revisions.extend(revisions_from_batch(batch, form, &schema)?);
         }
-        if let Some(limit) = checkpoint_history_limit {
+        if let Some((limit, truncate_at_limit)) = checkpoint_history_limit {
             if !truncate_at_limit && matches!(view, RevisionView::All) && revisions.len() > limit {
                 return Err(anyhow!(
                     "checkpoint history exceeds the configured {limit}-revision response limit"
