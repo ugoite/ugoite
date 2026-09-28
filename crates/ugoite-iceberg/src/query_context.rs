@@ -1650,10 +1650,12 @@ fn validate_form_name(name: &str) -> Result<()> {
 }
 
 fn is_legacy_relation_name(name: &str) -> bool {
-    let Some(id) = name.strip_prefix("form_") else {
+    let Some((prefix, id)) = name.split_at_checked("form_".len()) else {
         return false;
     };
-    id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
+    prefix.eq_ignore_ascii_case("form_")
+        && id.len() == 32
+        && id.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn resolve_form_name_references(sql: &str, aliases: &BTreeMap<String, String>) -> Result<String> {
@@ -1960,6 +1962,7 @@ mod form_name_resolution_tests {
     #[test]
     fn rejects_legacy_relation_shape_as_a_form_name() {
         assert!(is_legacy_relation_name(&format!("form_{}", "a".repeat(32))));
+        assert!(is_legacy_relation_name(&format!("FORM_{}", "A".repeat(32))));
         assert!(!is_legacy_relation_name("form_not-a-uuid"));
     }
 }
