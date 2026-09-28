@@ -567,13 +567,16 @@ async fn journey_cli_remote_locate_recover() {
         "change list before Run preview",
     ))
     .len();
-    let history_counts_before = ["run-preview-remote-a", "run-preview-remote-b"].map(|entry_id| {
-        revision_ids(&stdout_json(
-            &run_cli(config_path, &["entry", "history", entry_id]).await,
-            "entry history before Run preview",
-        ))
-        .len()
-    });
+    let mut history_counts_before = Vec::new();
+    for entry_id in ["run-preview-remote-a", "run-preview-remote-b"] {
+        history_counts_before.push(
+            revision_ids(&stdout_json(
+                &run_cli(config_path, &["entry", "history", entry_id]).await,
+                "entry history before Run preview",
+            ))
+            .len(),
+        );
+    }
     let preview = stdout_json(
         &run_cli(config_path, &["run", "undo", run_id, "--dry-run"]).await,
         "remote run undo dry-run",
@@ -596,13 +599,16 @@ async fn journey_cli_remote_locate_recover() {
         "change list after Run preview",
     ))
     .len();
-    let history_counts_after = ["run-preview-remote-a", "run-preview-remote-b"].map(|entry_id| {
-        revision_ids(&stdout_json(
-            &run_cli(config_path, &["entry", "history", entry_id]).await,
-            "entry history after Run preview",
-        ))
-        .len()
-    });
+    let mut history_counts_after = Vec::new();
+    for entry_id in ["run-preview-remote-a", "run-preview-remote-b"] {
+        history_counts_after.push(
+            revision_ids(&stdout_json(
+                &run_cli(config_path, &["entry", "history", entry_id]).await,
+                "entry history after Run preview",
+            ))
+            .len(),
+        );
+    }
     assert_eq!(change_count_after, change_count_before);
     assert_eq!(history_counts_after, history_counts_before);
 }
