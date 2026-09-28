@@ -465,9 +465,7 @@ async fn run_undo_dry_run_is_read_only_and_reports_authoritative_states() {
         revision.expected_version = Some(revision.entry_version - 1);
         revision.change_id = change_id.clone();
         revision.committed_at_micros = chrono::Utc::now().timestamp_micros();
-        revision.author_id = "cli-run-preview-test".to_string();
         revision.source_kind = "cli_test".to_string();
-        revision.entry.updated_by = revision.author_id.clone();
         revision.entry.updated_at_micros = revision.committed_at_micros;
         let command = ChangeCommand {
             change_id: change_id.clone(),

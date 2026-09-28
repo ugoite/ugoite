@@ -152,6 +152,7 @@ struct RemoteFixture {
     space_id: String,
     api_base: String,
     access_token: String,
+    session: AuthSession,
     _config_dir: tempfile::TempDir,
     _server: ServerGuard,
 }
@@ -258,6 +259,7 @@ async fn setup_remote() -> RemoteFixture {
         space_id: access.space_uid.to_string(),
         api_base,
         access_token: access.access_token,
+        session,
         _config_dir: config_dir,
         _server,
     }
@@ -513,12 +515,13 @@ async fn journey_cli_remote_locate_recover() {
     let run_id = "run-undo-preview-remote-1";
     let http = reqwest::Client::new();
     for entry_id in ["run-preview-remote-a", "run-preview-remote-b"] {
+        let apply_url = format!("{}/spaces/{}/apply", fixture.api_base, fixture.space_id);
+        let proof = ugoite_cli::commands::auth::dpop_proof(&fixture.session, "POST", &apply_url)
+            .expect("sign DPoP proof for Run fixture apply");
         let response = http
-            .post(format!(
-                "{}/spaces/{}/apply",
-                fixture.api_base, fixture.space_id
-            ))
-            .bearer_auth(&fixture.access_token)
+            .post(apply_url)
+            .header("Authorization", format!("DPoP {}", fixture.access_token))
+            .header("DPoP", proof)
             .json(&json!({
                 "run_id": run_id,
                 "operations": [{
