@@ -594,6 +594,36 @@ impl IcebergWorkspace {
         .await
     }
 
+    /// Registers a checkpoint-pinned revision source for narrow internal
+    /// lookups whose predicates are supplied by trusted callers. Unlike the
+    /// general history context, this does not build a full latest-head
+    /// invariant scan; callers must always include their Entry scope in the
+    /// relation predicates before materialization.
+    pub(crate) async fn authorized_revision_lookup_context(
+        &self,
+        provider: Arc<dyn TableProvider>,
+        table_uuid: String,
+        snapshot_id: Option<i64>,
+        limits: ugoite_core::query::QueryLimits,
+    ) -> Result<AuthorizedQueryContext> {
+        let context = bounded_session_context(&limits)?;
+        context.register_table("revisions", provider.clone())?;
+        let permits = self.shared_query_permits(limits.max_concurrency);
+        Ok(AuthorizedQueryContext {
+            context,
+            limits,
+            permits,
+            authorized_relations: BTreeSet::from(["revisions".to_string()]),
+            form_name_aliases: BTreeMap::new(),
+            authorized_scans: BTreeSet::from([AuthorizedScan {
+                table_uuid,
+                snapshot_id,
+            }]),
+            duplicate_head_checks: Vec::new(),
+            duplicate_head_checks_validated: Arc::new(AsyncMutex::new(BTreeSet::new())),
+        })
+    }
+
     pub(crate) async fn authorized_revision_query_context_with_permits(
         &self,
         provider: Arc<dyn TableProvider>,

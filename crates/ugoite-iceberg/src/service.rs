@@ -52,6 +52,8 @@ struct ChangeInspectPageToken {
     scope_fingerprint: String,
     limit: usize,
     offset: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    after_target: Option<(FormId, EntryId)>,
 }
 
 fn change_history_page_limit(requested: Option<usize>) -> Result<usize> {
@@ -2742,6 +2744,7 @@ impl UgoiteService {
                     scope_fingerprint: scope_fingerprint.clone(),
                     limit: 1,
                     offset: 0,
+                    after_target: None,
                 },
                 &signing_key,
             )?;
@@ -2849,6 +2852,7 @@ impl UgoiteService {
                         scope_fingerprint: scope_fingerprint.clone(),
                         limit: 1,
                         offset: 0,
+                        after_target: None,
                     },
                     &signing_key,
                 )?;
@@ -3065,7 +3069,8 @@ impl UgoiteService {
             // publication for each Form repeats catalog validation and can
             // dominate inspection cost in Spaces with many Forms.
             let checkpoint = workspace.resolve_publication(&publication).await?;
-            let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+            let mut forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+            forms.sort_by_key(|form| form.id);
             let complete_visibility = forms.iter().all(|form| {
                 scopes
                     .get(&form.name.to_ascii_lowercase())
@@ -3075,8 +3080,152 @@ impl UgoiteService {
             let mut revision_budget_exhausted = false;
             let mut targets = BTreeMap::new();
             let mut evidence = Vec::new();
+            let mut paged_after_target = None;
+            let mut page_has_more = false;
+
+            let use_keyset_page = !complete_visibility
+                && query_revision_read_budget.is_none()
+                && (offset == 0
+                    || cursor_token
+                        .as_ref()
+                        .is_some_and(|token| token.after_target.is_some()));
+            if use_keyset_page {
+                let after_target = cursor_token.as_ref().and_then(|token| token.after_target);
+                let mut selected = Vec::with_capacity(target_limit.saturating_add(1));
+                for form in &forms {
+                    let Some(authorized_scope) = scopes.get(&form.name.to_ascii_lowercase()) else {
+                        continue;
+                    };
+                    if after_target.is_some_and(|(after_form_id, _)| form.id < after_form_id) {
+                        continue;
+                    }
+                    let after_entry_id = after_target
+                        .filter(|(after_form_id, _)| *after_form_id == form.id)
+                        .map(|(_, after_entry_id)| after_entry_id);
+                    let remaining = target_limit
+                        .saturating_add(1)
+                        .saturating_sub(selected.len());
+                    if remaining == 0 {
+                        break;
+                    }
+                    let bounded_scope = match authorized_scope {
+                        EntryScope::AllCurrent => EntryScope::AllExcept(BTreeSet::new()),
+                        scope => scope.clone(),
+                    };
+                    let page = workspace
+                        .read_change_target_revisions_at_checkpoint(
+                            &checkpoint,
+                            form.id,
+                            bounded_scope,
+                            change_id,
+                            after_entry_id,
+                            remaining,
+                        )
+                        .await?;
+                    for revision in page {
+                        selected.push((form.id, revision));
+                        if selected.len() > target_limit {
+                            break;
+                        }
+                    }
+                    if selected.len() > target_limit {
+                        break;
+                    }
+                }
+                if selected
+                    .windows(2)
+                    .any(|pair| pair[0].0 == pair[1].0 && pair[0].1.entry_id == pair[1].1.entry_id)
+                {
+                    bail!("Change has conflicting target revisions for one Entry");
+                }
+                page_has_more = selected.len() > target_limit;
+                selected.truncate(target_limit);
+                let mut revisions_by_form = BTreeMap::<FormId, Vec<_>>::new();
+                for (form_id, revision) in &selected {
+                    revisions_by_form
+                        .entry(*form_id)
+                        .or_default()
+                        .push(revision.clone());
+                }
+                for (form_id, target_revisions) in revisions_by_form {
+                    let entry_ids = target_revisions
+                        .iter()
+                        .map(|revision| revision.entry_id)
+                        .collect::<BTreeSet<_>>();
+                    let revision_ids = target_revisions
+                        .iter()
+                        .flat_map(|revision| {
+                            std::iter::once(revision.revision_id).chain(revision.parent_revision_id)
+                        })
+                        .collect::<BTreeSet<_>>()
+                        .into_iter()
+                        .collect::<Vec<_>>();
+                    let history = workspace
+                        .read_revision_ids_at_checkpoint_with_scope(
+                            &checkpoint,
+                            form_id,
+                            EntryScope::Only(entry_ids),
+                            &revision_ids,
+                        )
+                        .await?;
+                    revision_rows = revision_rows.saturating_add(history.len());
+                    if revision_rows > crate::MAX_NORMAL_READ_ROWS {
+                        return Err(AppError::invalid_input(
+                            ErrorCode::InvalidInput,
+                            "Change revision history exceeds the inspection read limit",
+                        )
+                        .into());
+                    }
+                    let form_history = workspace
+                        .form_history_at_checkpoint(&checkpoint, form_id)
+                        .await?
+                        .into_iter()
+                        .map(|form| (form.version.get(), form))
+                        .collect::<BTreeMap<_, _>>();
+                    for after in target_revisions {
+                        let selected_after = history
+                            .iter()
+                            .find(|revision| revision.revision_id == after.revision_id)
+                            .ok_or_else(|| {
+                                anyhow!("Change target revision disappeared at checkpoint")
+                            })?;
+                        let before = selected_after.parent_revision_id.and_then(|parent_id| {
+                            history.iter().find(|revision| {
+                                revision.entry_id == selected_after.entry_id
+                                    && revision.revision_id == parent_id
+                            })
+                        });
+                        if selected_after.parent_revision_id.is_some() && before.is_none() {
+                            bail!("Change target is missing its committed parent revision");
+                        }
+                        let after_form = form_history
+                            .get(&selected_after.form_version.get())
+                            .ok_or_else(|| {
+                                anyhow!("Change target Form version is missing history")
+                            })?;
+                        let before_form =
+                            before
+                                .map(|revision| {
+                                    form_history.get(&revision.form_version.get()).ok_or_else(
+                                        || anyhow!("Change parent Form version is missing history"),
+                                    )
+                                })
+                                .transpose()?;
+                        let target =
+                            diff_entry_change(before, selected_after, before_form, after_form)
+                                .map_err(|error| anyhow!(error.to_string()))?;
+                        targets.insert((target.form_id, target.entry_id), target);
+                    }
+                }
+                if page_has_more {
+                    paged_after_target = targets.keys().next_back().copied();
+                }
+            }
 
             for form in forms {
+                if use_keyset_page {
+                    continue;
+                }
                 let Some(authorized_scope) = scopes.get(&form.name.to_ascii_lowercase()) else {
                     continue;
                 };
@@ -3198,10 +3347,13 @@ impl UgoiteService {
             } else {
                 None
             };
-            let (target_page, next_offset) =
+            let (target_page, next_offset) = if use_keyset_page {
+                (targets.into_values().collect(), page_has_more.then_some(0))
+            } else {
                 change_inspect_target_page(targets, offset, target_limit).map_err(|error| {
                     AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
-                })?;
+                })?
+            };
             let next_cursor = if let Some(next_offset) = next_offset {
                 Some(Self::encode_change_inspect_cursor(
                     &ChangeInspectPageToken {
@@ -3213,6 +3365,11 @@ impl UgoiteService {
                         scope_fingerprint,
                         limit: target_limit,
                         offset: next_offset,
+                        after_target: if use_keyset_page {
+                            paged_after_target
+                        } else {
+                            None
+                        },
                     },
                     &signing_key,
                 )?)
@@ -8288,6 +8445,7 @@ mod tests {
                 scope_fingerprint: UgoiteService::change_inspect_scope_fingerprint(&scopes),
                 limit: 10,
                 offset: 0,
+                after_target: None,
             },
             &signing_key,
         )?;
@@ -8485,6 +8643,184 @@ mod tests {
             .map(|target| target["entry_id"].as_str().unwrap().to_string())
             .collect::<BTreeSet<_>>();
         assert_eq!(returned_ids, expected_ids);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn partial_change_inspection_pages_only_visible_targets_across_forms() -> Result<()> {
+        let service = UgoiteService::new(format!(
+            "memory://change-inspect-partial-{}",
+            Uuid::now_v7()
+        ))?;
+        let owner_id = Uuid::now_v7();
+        let viewer_id = Uuid::now_v7();
+        let space_id = service
+            .create_space_for_principal("change-inspect-partial", owner_id, "Owner")
+            .await?
+            .to_string();
+        Authorizer::new(service.operator.clone())
+            .add_human_member(
+                &space_id,
+                owner_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "History viewer".into(),
+                    state: PrincipalState::Active,
+                    created_at: Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        for (name, field) in [("Visible", "Body"), ("Hidden", "Secret")] {
+            service
+                .upsert_form(
+                    &space_id,
+                    &json!({
+                        "name": name,
+                        "fields": {(field): {"type": "string"}},
+                        "allow_extra_attributes": "deny"
+                    }),
+                )
+                .await?;
+        }
+        let change_id = Uuid::now_v7().to_string();
+        let hidden_change_id = Uuid::now_v7().to_string();
+        let append_targets = |form_name: &'static str,
+                              field_name: &'static str,
+                              form_version: u32,
+                              change_id: &str,
+                              ids: Vec<Uuid>| {
+            let rows = ids
+                .into_iter()
+                .enumerate()
+                .map(|(index, entry_id)| crate::entry::RevisionRow {
+                    revision_id: Uuid::now_v7().to_string(),
+                    change_id: change_id.to_owned(),
+                    entry_id: entry_id.to_string(),
+                    parent_revision_id: None,
+                    timestamp: Utc::now().timestamp_micros() as f64 / 1_000_000.0,
+                    author: owner_id.to_string(),
+                    updated_by: owner_id.to_string(),
+                    deleted_by: None,
+                    fields: json!({(field_name): format!("{form_name}-{index}")}),
+                    extra_attributes: json!({}),
+                    markdown_checksum: String::new(),
+                    integrity: crate::entry::IntegrityPayload::default(),
+                    restored_from: None,
+                    form_version,
+                    state: None,
+                    entry_version: 1,
+                    operation: "upsert".into(),
+                    source_kind: "api".into(),
+                    source_id: None,
+                    extension_metadata: json!({}),
+                })
+                .collect::<Vec<_>>();
+            (form_name, rows)
+        };
+        let visible_version = service.get_form(&space_id, "Visible").await?["version"]
+            .as_u64()
+            .unwrap() as u32;
+        let hidden_version = service.get_form(&space_id, "Hidden").await?["version"]
+            .as_u64()
+            .unwrap() as u32;
+        let visible_ids = [Uuid::from_u128(40_001), Uuid::from_u128(40_002)];
+        let hidden_id = Uuid::from_u128(50_001);
+        for (form_name, rows) in [
+            append_targets(
+                "Visible",
+                "Body",
+                visible_version,
+                &change_id,
+                visible_ids.to_vec(),
+            ),
+            append_targets(
+                "Hidden",
+                "Secret",
+                hidden_version,
+                &hidden_change_id,
+                vec![hidden_id],
+            ),
+        ] {
+            crate::entry::append_revision_batch_for_form(
+                service.operator(),
+                &service.workspace_path(&space_id),
+                form_name,
+                &rows,
+            )
+            .await?;
+        }
+        Authorizer::new(service.operator.clone())
+            .set_policy(
+                &space_id,
+                owner_id,
+                &ResourceRef {
+                    kind: ResourceKind::Form,
+                    id: "Hidden".into(),
+                    parent: None,
+                },
+                ugoite_domain::identity::AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
+
+        let first = service
+            .inspect_change_authorized_for_principals(
+                &space_id,
+                &change_id,
+                Some(1),
+                None,
+                &[viewer_id],
+            )
+            .await?;
+        assert_eq!(first["target_visibility"], "partial");
+        assert!(first.get("summary").is_none());
+        assert_eq!(first["targets"].as_array().map(Vec::len), Some(1));
+        assert_ne!(first["targets"][0]["entry_id"], hidden_id.to_string());
+        let cursor = first["next_cursor"]
+            .as_str()
+            .expect("visible target continues");
+        service
+            .create_structured_entry_authorized_for_principals(
+                &space_id,
+                &Uuid::now_v7().to_string(),
+                "Visible".into(),
+                Vec::new(),
+                BTreeMap::from([("Body".into(), json!("later unrelated Change"))]),
+                BTreeMap::new(),
+                &owner_id.to_string(),
+                &[owner_id],
+            )
+            .await?;
+        let second = service
+            .inspect_change_authorized_for_principals(
+                &space_id,
+                &change_id,
+                Some(1),
+                Some(cursor),
+                &[viewer_id],
+            )
+            .await?;
+        assert_eq!(second["targets"].as_array().map(Vec::len), Some(1));
+        assert!(second.get("next_cursor").is_none());
+        let returned = first["targets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(second["targets"].as_array().unwrap())
+            .map(|target| target["entry_id"].as_str().unwrap().to_owned())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            returned,
+            visible_ids.iter().map(ToString::to_string).collect()
+        );
+        assert!(serde_json::to_string(&[first, second])?
+            .find("Hidden")
+            .is_none());
         Ok(())
     }
 
