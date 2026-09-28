@@ -162,6 +162,11 @@ fn validate_sql_metadata(payload: &SqlPayload) -> Result<()> {
         SqlKind::UserQuery => match (&payload.name, &payload.metadata) {
             (Some(_), None) => {}
             (Some(_), Some(metadata))
+                if metadata.generated_name.is_none()
+                    && metadata.search_criteria.is_none()
+                    && (metadata.binding_version.is_some() || metadata.form_bindings.is_some()) => {
+            }
+            (Some(_), Some(metadata))
                 if metadata.generated_name.is_none() && metadata.search_criteria.is_none() =>
             {
                 return Err(validation_error(
@@ -1115,6 +1120,41 @@ mod name_field_tests {
         let metadata = payload.metadata.expect("metadata");
         assert_eq!(metadata.binding_version, Some(1));
         assert_eq!(metadata.form_bindings, Some(server));
+    }
+
+    #[test]
+    fn named_query_accepts_binding_echo_but_rejects_generated_metadata() {
+        let mut payload = SqlPayload {
+            name: Some("query".into()),
+            kind: SqlKind::UserQuery,
+            metadata: Some(SqlMetadata {
+                search_criteria: None,
+                generated_name: None,
+                binding_version: Some(999),
+                form_bindings: Some(vec![SqlFormBinding {
+                    name: "Task".into(),
+                    form_id: "client-controlled".into(),
+                }]),
+            }),
+            sql: "SELECT * FROM \"Task\"".into(),
+            variables: Value::Array(Vec::new()),
+        };
+        assert!(validate_sql_metadata(&payload).is_ok());
+
+        let server_bindings = vec![SqlFormBinding {
+            name: "Task".into(),
+            form_id: "01900000-0000-7000-8000-000000000001".into(),
+        }];
+        with_server_bindings(&mut payload, server_bindings.clone());
+        assert_eq!(
+            payload.metadata.as_ref().unwrap().form_bindings.as_ref(),
+            Some(&server_bindings)
+        );
+
+        let mut invalid = payload;
+        let metadata = invalid.metadata.as_mut().expect("metadata");
+        metadata.generated_name = Some(SqlGeneratedName::Untitled);
+        assert!(validate_sql_metadata(&invalid).is_err());
     }
 
     fn row_with_saved_query_name(name: &str, fields: Value) -> entry::EntryRow {

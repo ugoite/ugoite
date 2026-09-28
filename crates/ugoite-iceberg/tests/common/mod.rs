@@ -1,8 +1,8 @@
 #![allow(dead_code, unused_imports)]
 
 use anyhow::{Context, Result};
-use opendal::Operator;
 use opendal::services::Memory;
+use opendal::Operator;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use ugoite_core::entry::StructuredEntryDraft;
@@ -260,12 +260,12 @@ pub async fn legacy_create_entries<I: IntegrityProvider>(
 /// adapters above.
 pub mod legacy_entry {
     pub use super::{
-        LegacyEntryCreateRequest as EntryCreateRequest, legacy_create_entries as create_entries,
-        legacy_create_entry as create_entry,
+        legacy_create_entries as create_entries, legacy_create_entry as create_entry,
         legacy_create_entry_with_scopes as create_entry_with_scopes,
         legacy_create_entry_with_scopes_and_change as create_entry_with_scopes_and_change,
         legacy_update_entry as update_entry,
         legacy_update_entry_authorized_with_change as update_entry_authorized_with_change,
+        LegacyEntryCreateRequest as EntryCreateRequest,
     };
     pub use ugoite_iceberg::entry::*;
 }

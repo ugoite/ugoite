@@ -190,7 +190,7 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
             &SqlPayload {
                 name: Some("Tasks".into()),
                 kind: SqlKind::UserQuery,
-                metadata: None,
+                metadata: Some(serde_json::from_value(saved["metadata"].clone())?),
                 sql: format!(
                 "SELECT \"_ugoite_id\" FROM \"{}\" WHERE \"{}\" = 'open' ORDER BY \"_ugoite_id\"",
                 space.form_name, space.status_column
@@ -208,6 +208,11 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
             .context("updated revision id")?
             .into(),
     };
+    assert_eq!(updated["metadata"]["bindingVersion"], 1);
+    assert_eq!(
+        updated["metadata"]["formBindings"], saved["metadata"]["formBindings"],
+        "the update persists server-derived Form bindings from the edited SQL"
+    );
     let second = space
         .service
         .query_sql(

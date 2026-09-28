@@ -1,5 +1,5 @@
-use anyhow::{Context, Result, anyhow, bail};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use anyhow::{anyhow, bail, Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use fs2::FileExt;
 use futures::TryStreamExt;
@@ -7,7 +7,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use opendal::options::WriteOptions;
 use opendal::{EntryMode, ErrorKind, Operator};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{File, OpenOptions};
@@ -94,16 +94,16 @@ fn canonical_entry_id(requested_id: Option<&str>) -> String {
 }
 
 use crate::integrity::RealIntegrityProvider;
-use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef, RevisionView};
 use crate::{
     asset,
     audit::AuditCheckpointConfig,
     authorization::{
-        AuthorizationLease, AuthorizationState, Authorizer, ResourceKind, ResourceRef,
-        effective_actions_for_state,
+        effective_actions_for_state, AuthorizationLease, AuthorizationState, Authorizer,
+        ResourceKind, ResourceRef,
     },
     entry, form, iceberg_store, index, preferences, saved_sql, space,
 };
+use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef, RevisionView};
 use ugoite_core::entry_query::{
     EntryCount, EntryCountRequest, EntryCursor, EntryFieldRef, EntryPage, EntryPageRequest,
     EntryProjection, EntryQueryError, EntryQueryScope, EntryResult,
@@ -115,18 +115,18 @@ use ugoite_core::sql_query::{
 };
 use ugoite_domain::change::{ChangeCommand, RunId};
 use ugoite_domain::change_history::{
-    ChangeHistoryQuery, ChangeInspection, ChangeTargetVisibility, EntryChangeEvidence,
-    diff_entry_change, summarize_change,
+    diff_entry_change, summarize_change, ChangeHistoryQuery, ChangeInspection,
+    ChangeTargetVisibility, EntryChangeEvidence,
 };
-use ugoite_domain::form::{FormDefinition, sql_relation_name};
+use ugoite_domain::form::{sql_relation_name, FormDefinition};
 use ugoite_domain::id::{
-    EntryId, FormId, validate_asset_id, validate_entry_id, validate_form_name,
-    validate_revision_id, validate_space_id, validate_sql_id,
+    validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
+    validate_space_id, validate_sql_id, EntryId, FormId,
 };
 use ugoite_domain::identity::{Action, PrincipalKind, PrincipalState, SpaceRole};
 use ugoite_storage::{
-    OpendalStorage, SpaceCatalogStore, StorageBackend, is_local_operator, operator_from_uri,
-    operator_from_uri_with_endpoint,
+    is_local_operator, operator_from_uri, operator_from_uri_with_endpoint, OpendalStorage,
+    SpaceCatalogStore, StorageBackend,
 };
 
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
@@ -7483,7 +7483,7 @@ pub fn validate_public_space_patch(patch: &Value) -> Result<()> {
 
 #[cfg(test)]
 mod public_space_patch_validation_tests {
-    use super::{ALLOWED_PUBLIC_SPACE_PATCH_FIELDS, validate_public_space_patch};
+    use super::{validate_public_space_patch, ALLOWED_PUBLIC_SPACE_PATCH_FIELDS};
     use ugoite_core::error::{ErrorCode, ErrorKind};
 
     fn typed_error(patch: serde_json::Value) -> ugoite_core::error::AppError {
@@ -7843,46 +7843,38 @@ mod tests {
             },
             &signing_key,
         )?;
-        assert!(
-            UgoiteService::decode_change_inspect_cursor(
-                &cursor,
-                "another-space",
-                &change_id,
-                10,
-                &signing_key,
-            )
-            .is_err()
-        );
-        assert!(
-            UgoiteService::decode_change_inspect_cursor(
-                &cursor,
-                &space_id,
-                "another-change",
-                10,
-                &signing_key,
-            )
-            .is_err()
-        );
-        assert!(
-            UgoiteService::decode_change_inspect_cursor(
-                &format!("{cursor}x"),
-                &space_id,
-                &change_id,
-                10,
-                &signing_key,
-            )
-            .is_err()
-        );
-        assert!(
-            UgoiteService::decode_change_inspect_cursor(
-                &cursor,
-                &space_id,
-                &change_id,
-                5,
-                &signing_key,
-            )
-            .is_err()
-        );
+        assert!(UgoiteService::decode_change_inspect_cursor(
+            &cursor,
+            "another-space",
+            &change_id,
+            10,
+            &signing_key,
+        )
+        .is_err());
+        assert!(UgoiteService::decode_change_inspect_cursor(
+            &cursor,
+            &space_id,
+            "another-change",
+            10,
+            &signing_key,
+        )
+        .is_err());
+        assert!(UgoiteService::decode_change_inspect_cursor(
+            &format!("{cursor}x"),
+            &space_id,
+            &change_id,
+            10,
+            &signing_key,
+        )
+        .is_err());
+        assert!(UgoiteService::decode_change_inspect_cursor(
+            &cursor,
+            &space_id,
+            &change_id,
+            5,
+            &signing_key,
+        )
+        .is_err());
         let first_page = service
             .inspect_change_authorized_for_principals(
                 &space_id,
@@ -9171,13 +9163,11 @@ mod tests {
         assert_eq!(completed_preview["ready"], false);
         assert_eq!(completed_preview["pending_change_count"], 0);
         assert_eq!(completed_preview["already_reverted_count"], 2);
-        assert!(
-            completed_preview["changes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|change| change["state"] == "already_reverted")
-        );
+        assert!(completed_preview["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|change| change["state"] == "already_reverted"));
         Ok(())
     }
 
@@ -9401,27 +9391,23 @@ mod tests {
             )?,
             token
         );
-        assert!(
-            UgoiteService::decode_change_page_cursor(
-                &encoded,
-                "another-space",
-                signing_key.as_bytes()
-            )
-            .is_err()
-        );
+        assert!(UgoiteService::decode_change_page_cursor(
+            &encoded,
+            "another-space",
+            signing_key.as_bytes()
+        )
+        .is_err());
 
         let mut parts: Vec<_> = encoded.split('.').map(str::to_string).collect();
         let first_payload_byte = parts[1].remove(0);
         parts[1].insert(0, if first_payload_byte == 'A' { 'B' } else { 'A' });
         let tampered = parts.join(".");
-        assert!(
-            UgoiteService::decode_change_page_cursor(
-                &tampered,
-                &token.space_id,
-                signing_key.as_bytes()
-            )
-            .is_err()
-        );
+        assert!(UgoiteService::decode_change_page_cursor(
+            &tampered,
+            &token.space_id,
+            signing_key.as_bytes()
+        )
+        .is_err());
         Ok(())
     }
 

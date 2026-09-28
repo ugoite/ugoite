@@ -6,7 +6,7 @@ use common::LegacyServiceEntryExt;
 
 use anyhow::Result;
 use chrono::Utc;
-use serde_json::{Map, json};
+use serde_json::{json, Map};
 use std::collections::BTreeMap;
 use ugoite_core::entry_query::{EntryPageRequest, EntryProjection, EntryQuery, EntryQueryScope};
 use ugoite_core::error::{AppError, ErrorCode};
@@ -439,43 +439,37 @@ async fn authorized_entry_writes_apply_form_entry_and_delegated_principal_polici
             },
         )
         .await?;
-    assert!(
-        service
-            .create_entry_authorized_for_principals(
-                &space_id,
-                "denied-note",
-                "---\nform: Note\n---\n# Denied",
-                "editor",
-                &[editor],
-            )
-            .await
-            .is_err()
-    );
-    assert!(
-        service
-            .update_entry_authorized_for_principals(
-                &space_id,
-                "note-1",
-                "---\nform: Note\n---\n# Denied",
-                None,
-                "editor",
-                &[editor],
-            )
-            .await
-            .is_err()
-    );
-    assert!(
-        service
-            .restore_entry_authorized_for_principals(
-                &space_id,
-                "note-1",
-                &initial_revision,
-                "editor",
-                &[editor],
-            )
-            .await
-            .is_err()
-    );
+    assert!(service
+        .create_entry_authorized_for_principals(
+            &space_id,
+            "denied-note",
+            "---\nform: Note\n---\n# Denied",
+            "editor",
+            &[editor],
+        )
+        .await
+        .is_err());
+    assert!(service
+        .update_entry_authorized_for_principals(
+            &space_id,
+            "note-1",
+            "---\nform: Note\n---\n# Denied",
+            None,
+            "editor",
+            &[editor],
+        )
+        .await
+        .is_err());
+    assert!(service
+        .restore_entry_authorized_for_principals(
+            &space_id,
+            "note-1",
+            &initial_revision,
+            "editor",
+            &[editor],
+        )
+        .await
+        .is_err());
 
     authorizer
         .set_policy(
@@ -509,19 +503,17 @@ async fn authorized_entry_writes_apply_form_entry_and_delegated_principal_polici
             },
         )
         .await?;
-    assert!(
-        service
-            .update_entry_authorized_for_principals(
-                &space_id,
-                "note-1",
-                "---\nform: Note\n---\n# Entry denied",
-                None,
-                "owner",
-                &[owner, editor],
-            )
-            .await
-            .is_err()
-    );
+    assert!(service
+        .update_entry_authorized_for_principals(
+            &space_id,
+            "note-1",
+            "---\nform: Note\n---\n# Entry denied",
+            None,
+            "owner",
+            &[owner, editor],
+        )
+        .await
+        .is_err());
 
     authorizer
         .set_policy(
@@ -698,38 +690,34 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
             },
         )
         .await?;
-    assert!(
-        service
-            .query_sql_authorized_for_principals(
-                &space_id,
-                &[viewer],
-                SqlQueryRequest {
-                    sql: String::new(),
-                    parameters: Map::new(),
-                    parameter_types: BTreeMap::new(),
-                    limit: 10,
-                    continuation: None,
-                    saved_sql: Some(visible_source.clone()),
-                },
-            )
-            .await
-            .is_err()
-    );
-    assert!(
-        service
-            .count_sql_authorized_for_principals(
-                &space_id,
-                &[viewer],
-                SqlQueryCountRequest {
-                    sql: String::new(),
-                    parameters: Map::new(),
-                    parameter_types: BTreeMap::new(),
-                    saved_sql: Some(visible_source),
-                },
-            )
-            .await
-            .is_err()
-    );
+    assert!(service
+        .query_sql_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            SqlQueryRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                limit: 10,
+                continuation: None,
+                saved_sql: Some(visible_source.clone()),
+            },
+        )
+        .await
+        .is_err());
+    assert!(service
+        .count_sql_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            SqlQueryCountRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                saved_sql: Some(visible_source),
+            },
+        )
+        .await
+        .is_err());
 
     Ok(())
 }
