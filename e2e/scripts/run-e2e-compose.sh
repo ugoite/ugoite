@@ -186,6 +186,7 @@ else
 fi
 STORAGE_ROOT_OWNERSHIP_ATTEMPTED=false
 PORTABLE_CLI_CONFIG=""
+PORTABLE_PROOF_HOST_FILE=""
 export E2E_COMPOSE_STORAGE_ROOT
 
 # Never clobber a pre-existing dev provenance file: back it up around any dev
@@ -232,6 +233,9 @@ cleanup() {
   if [ -n "$PORTABLE_CLI_CONFIG" ]; then
     rm -f "$PORTABLE_CLI_CONFIG" || cleanup_status=1
   fi
+  if [ -n "$PORTABLE_PROOF_HOST_FILE" ]; then
+    rm -f "$PORTABLE_PROOF_HOST_FILE" || cleanup_status=1
+  fi
   if [ -n "${DEV_BUILD_INFO_BACKUP:-}" ] && [ -f "$DEV_BUILD_INFO_BACKUP" ]; then
     mv "$DEV_BUILD_INFO_BACKUP" "$DEV_BUILD_INFO_PATH" || cleanup_status=1
   fi
@@ -246,9 +250,14 @@ trap cleanup EXIT INT TERM
 if [ "$TEST_TYPE" = "portable-space" ]; then
   echo "Seeding a CLI-core Space before Node startup..."
   PORTABLE_CLI_CONFIG="${E2E_COMPOSE_STORAGE_ROOT}.cli-config.toml"
+  PORTABLE_PROOF_HOST_FILE="$(mktemp "${TMPDIR:-/tmp}/ugoite-portable-proof.XXXXXX")"
   export E2E_PORTABLE_RUNNER_COMMAND="bash e2e/scripts/run-e2e-compose.sh portable-space"
   bash "$SCRIPT_DIR/seed-portable-space.sh" "$E2E_COMPOSE_STORAGE_ROOT" >/dev/null
-  export E2E_PORTABLE_PROOF_FILE="$E2E_COMPOSE_STORAGE_ROOT/portable-space-proof.json"
+  # The proof is read by the host Playwright process. Keep it outside the
+  # private Space tree so runtime ownership can stay restricted to ugoite.
+  cp "$E2E_COMPOSE_STORAGE_ROOT/portable-space-proof.json" "$PORTABLE_PROOF_HOST_FILE"
+  chmod 600 "$PORTABLE_PROOF_HOST_FILE"
+  export E2E_PORTABLE_PROOF_FILE="$PORTABLE_PROOF_HOST_FILE"
 fi
 
 if [ "$BUILD_IMAGES" = "true" ]; then

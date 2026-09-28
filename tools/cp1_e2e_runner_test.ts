@@ -80,6 +80,20 @@ Deno.test("Compose query fixtures retain caller ownership and private modes", ()
     composeRunner.includes("chown -R $(id -u):$(id -g) /data"),
     true,
   );
+  assertEquals(
+    composeRunner.includes('PORTABLE_PROOF_HOST_FILE="$(mktemp'),
+    true,
+  );
+  assertEquals(
+    composeRunner.includes(
+      'export E2E_PORTABLE_PROOF_FILE="$PORTABLE_PROOF_HOST_FILE"',
+    ),
+    true,
+  );
+  assertEquals(
+    composeRunner.includes('rm -f "$PORTABLE_PROOF_HOST_FILE"'),
+    true,
+  );
 });
 
 Deno.test("Compose query runner leaves a caller-owned fixture root in place", async () => {
