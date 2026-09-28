@@ -147,6 +147,98 @@ test.describe("Search UI", () => {
 		}
 	});
 
+	test("REQ-SRCH-007: a late superseded query cannot replace current results", async ({ page, request }) => {
+		test.setTimeout(120_000);
+		const runId = Date.now();
+		const formName = `SearchRaceForm${runId}`;
+		let oldEntryId: string | null = null;
+		let newEntryId: string | null = null;
+		let releaseOldResponse!: () => void;
+		let oldRequestObserved!: () => void;
+		let oldResponseObserved!: () => void;
+		const oldResponseReleased = new Promise<void>((resolve) => {
+			releaseOldResponse = resolve;
+		});
+		const oldRequestStarted = new Promise<void>((resolve) => {
+			oldRequestObserved = resolve;
+		});
+		const oldResponseFinished = new Promise<void>((resolve) => {
+			oldResponseObserved = resolve;
+		});
+
+		try {
+			await ensureSearchForm(request, formName, spaceId);
+			oldEntryId = await createEntry(request, spaceId, {
+				form: formName,
+				fields: { Body: `stale-result-${runId}` },
+			});
+			newEntryId = await createEntry(request, spaceId, {
+				form: formName,
+				fields: { Body: `current-result-${runId}` },
+			});
+
+			// Model an abort-insensitive transport: let both network responses reach
+			// the application so the controller's request-generation fence is tested.
+			await page.addInitScript(() => {
+				const nativeFetch = window.fetch.bind(window);
+				window.fetch = (input, init) => {
+					const url = typeof input === "string"
+						? input
+						: input instanceof URL
+						? input.href
+						: input.url;
+					if (url.includes("/entries/query") && init?.signal) {
+						const { signal: _signal, ...transportInit } = init;
+						return nativeFetch(input, transportInit);
+					}
+					return nativeFetch(input, init);
+				};
+			});
+			await page.route(`**/api/spaces/${spaceId}/entries/query`, async (route) => {
+				const payload = route.request().postDataJSON() as {
+					query?: { text?: string };
+				};
+				const isStaleQuery = payload.query?.text === `stale-result-${runId}`;
+				if (isStaleQuery) {
+					oldRequestObserved();
+					await oldResponseReleased;
+				}
+				const response = await route.fetch();
+				await route.fulfill({ response });
+				if (isStaleQuery) oldResponseObserved();
+			});
+
+			await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
+				waitUntil: "domcontentloaded",
+			});
+			const search = page.getByLabel("Search keywords");
+			const submit = page.getByRole("button", { name: "Search entries" });
+			await search.fill(`stale-result-${runId}`);
+			await submit.click();
+			await oldRequestStarted;
+
+			await search.fill(`current-result-${runId}`);
+			await submit.click();
+			await expect(page.getByText(`current-result-${runId}`)).toBeVisible();
+			expect(oldEntryId).not.toBeNull();
+			expect(newEntryId).not.toBeNull();
+			await expect(page.getByText(`stale-result-${runId}`)).toHaveCount(0);
+
+			releaseOldResponse();
+			await oldResponseFinished;
+			await expect(page.getByText(`current-result-${runId}`)).toBeVisible();
+			await expect(page.getByText(`stale-result-${runId}`)).toHaveCount(0);
+		} finally {
+			releaseOldResponse?.();
+			if (oldEntryId) {
+				await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${oldEntryId}`));
+			}
+			if (newEntryId) {
+				await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${newEntryId}`));
+			}
+		}
+	});
+
 });
 
 async function ensureSearchForm(
