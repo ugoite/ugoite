@@ -3149,6 +3149,35 @@ impl UgoiteService {
         }))
     }
 
+    /// Read-only, all-target validation for a trusted local core caller.
+    pub async fn preview_revert_change(
+        &self,
+        space_id: &str,
+        target_change_id: &str,
+        actor_principal_id: &str,
+    ) -> Result<Value> {
+        self.validate_complete_space(space_id).await?;
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let command = ChangeCommand {
+            change_id: Uuid::new_v4().to_string(),
+            run_id: None,
+            actor_principal_id: actor_principal_id.to_owned(),
+            message: None,
+            reverts_change_id: Some(target_change_id.to_owned()),
+            created_at_micros: Utc::now().timestamp_micros(),
+        };
+        let target_count = workspace
+            .preview_revert_change(target_change_id, &command, &integrity)
+            .await?;
+        Ok(json!({
+            "change_id": target_change_id,
+            "ready": true,
+            "target_entry_count": target_count,
+        }))
+    }
+
     /// Undo every Change correlated to a Run in reverse publication order.
     /// Each inverse is its own append-only Change; the Run itself has no
     /// durable status record and can be resumed by repeating this request.
@@ -3187,6 +3216,28 @@ impl UgoiteService {
         principal_ids: &[Uuid],
     ) -> Result<Value> {
         require_nonempty_authorized_principals(principal_ids)?;
+        self.preview_undo_run_inner(space_id, run_id, actor_principal_id, Some(principal_ids))
+            .await
+    }
+
+    /// Read-only Run undo summary for a trusted local core caller.
+    pub async fn preview_undo_run(
+        &self,
+        space_id: &str,
+        run_id: &str,
+        actor_principal_id: &str,
+    ) -> Result<Value> {
+        self.preview_undo_run_inner(space_id, run_id, actor_principal_id, None)
+            .await
+    }
+
+    async fn preview_undo_run_inner(
+        &self,
+        space_id: &str,
+        run_id: &str,
+        actor_principal_id: &str,
+        principal_ids: Option<&[Uuid]>,
+    ) -> Result<Value> {
         let run_id = RunId::new(run_id)
             .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
         self.validate_complete_space(space_id).await?;
@@ -3234,14 +3285,16 @@ impl UgoiteService {
         for change in originals.iter().take(RUN_UNDO_PREVIEW_MAX_CHANGES) {
             let reverted = already_reverted.contains(change.change_id.as_str());
             let target_entries = workspace.change_target_entries(&change.change_id).await?;
-            for entry_id in &target_entries {
-                self.require_action_for_principals_in_state(
-                    &state,
-                    entry_id,
-                    ResourceKind::Entry,
-                    Action::Update,
-                    principal_ids,
-                )?;
+            if let Some(principal_ids) = principal_ids {
+                for entry_id in &target_entries {
+                    self.require_action_for_principals_in_state(
+                        &state,
+                        entry_id,
+                        ResourceKind::Entry,
+                        Action::Update,
+                        principal_ids,
+                    )?;
+                }
             }
             if reverted {
                 preview_changes.push(json!({

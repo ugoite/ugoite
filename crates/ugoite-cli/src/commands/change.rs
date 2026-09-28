@@ -27,6 +27,9 @@ pub enum ChangeSubCmd {
     Revert {
         #[arg(value_name = "CHANGE_ID")]
         change_id: String,
+        /// Validate the complete revert without appending a Change
+        #[arg(long)]
+        dry_run: bool,
         #[arg(long, value_name = "MESSAGE")]
         message: Option<String>,
         #[arg(
@@ -130,6 +133,7 @@ pub async fn run(
         }
         ChangeSubCmd::Revert {
             change_id,
+            dry_run,
             message,
             author,
         } => {
@@ -138,6 +142,41 @@ pub async fn run(
             }
             let target =
                 resolve_command_target(explicit_config, context_override, "change revert")?;
+            if matches!(&target, SpaceTarget::Remote { .. }) && author != "cli" {
+                return Err(UsageError(
+                    "change revert --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
+                        .to_string(),
+                )
+                .into());
+            }
+            if dry_run {
+                let preview = if let SpaceTarget::Remote { space_uid, .. } = &target {
+                    http::execute_for_target(
+                        &target,
+                        "change.revert.preview",
+                        serde_json::json!({"space_id": space_uid, "change_id": change_id}),
+                        None,
+                    )
+                    .await?
+                } else if let SpaceTarget::Core { root, space_id } = &target {
+                    UgoiteService::new_without_background_refresh(root)?
+                        .preview_revert_change(space_id, &change_id, &author)
+                        .await?
+                } else {
+                    anyhow::bail!(
+                        "operation change.revert.preview does not use the remote transport"
+                    )
+                };
+                let human = preview
+                    .get("target_entry_count")
+                    .and_then(|count| count.as_u64())
+                    .map(|count| {
+                        let noun = if count == 1 { "Entry" } else { "Entries" };
+                        format!("Ready to revert {count} {noun} in Change {change_id}.")
+                    });
+                emit_success(&preview, &fmt, human);
+                return Ok(());
+            }
             if let SpaceTarget::Remote { space_uid, .. } = &target {
                 if author != "cli" {
                     return Err(UsageError(
