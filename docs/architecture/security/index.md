@@ -15,3 +15,6 @@ with the data it protects.
   agents, ACLs, and audit state.
 - The normative API and security contracts are grouped under the
   [security overview](overview.md).
+- The
+  [shared authorization and content publication ADR](shared-authorization-publication.md)
+  defines the selected S1 coordination contract and release evidence gate.
