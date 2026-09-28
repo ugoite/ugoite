@@ -38,7 +38,9 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "change.query",
     "change.inspect",
     "change.affected.get",
+    "change.revert.preview",
     "change.revert",
+    "run.undo.preview",
     "run.undo",
     "ugoite.apply",
     "pin.list",
@@ -673,6 +675,18 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "change.revert.preview" => (
+                OperationSpec::get("Failed to preview Knowledge change revert"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "changes".into(),
+                    required_string(operation, args, "change_id")?,
+                    "revert".into(),
+                    "preview".into(),
+                ],
+                vec![],
+            ),
             "change.revert" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to revert Knowledge change"),
                 vec![
@@ -681,6 +695,18 @@ pub fn prepare_request(
                     "changes".into(),
                     required_string(operation, args, "change_id")?,
                     "revert".into(),
+                ],
+                vec![],
+            ),
+            "run.undo.preview" => (
+                OperationSpec::get("Failed to preview Run undo"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "runs".into(),
+                    required_string(operation, args, "run_id")?,
+                    "undo".into(),
+                    "preview".into(),
                 ],
                 vec![],
             ),
@@ -1580,10 +1606,20 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to get Change target evidence",
             RequestBodyKind::None,
         ),
+        "change.revert.preview" => (
+            HttpMethod::Get,
+            "Failed to preview Knowledge change revert",
+            RequestBodyKind::None,
+        ),
         "change.revert" => (
             HttpMethod::Post,
             "Failed to revert Knowledge change",
             RequestBodyKind::Json,
+        ),
+        "run.undo.preview" => (
+            HttpMethod::Get,
+            "Failed to preview Run undo",
+            RequestBodyKind::None,
         ),
         "run.undo" => (
             HttpMethod::Post,
@@ -2338,6 +2374,18 @@ mod tests {
         .expect("change revert request");
         assert_eq!(revert.path, "/spaces/demo/changes/change-1/revert");
 
+        let revert_preview = prepare_request(
+            "change.revert.preview",
+            &json!({"space_id": "demo", "change_id": "change-1"}),
+            None,
+        )
+        .expect("change revert preview request");
+        assert_eq!(revert_preview.method, HttpMethod::Get);
+        assert_eq!(
+            revert_preview.path,
+            "/spaces/demo/changes/change-1/revert/preview"
+        );
+
         let undo = prepare_request(
             "run.undo",
             &json!({"space_id": "demo", "run_id": "run-1"}),
@@ -2346,6 +2394,15 @@ mod tests {
         .expect("run undo request");
         assert_eq!(undo.body_kind, RequestBodyKind::Json);
         assert_eq!(undo.path, "/spaces/demo/runs/run-1/undo");
+
+        let undo_preview = prepare_request(
+            "run.undo.preview",
+            &json!({"space_id": "demo", "run_id": "run-1"}),
+            None,
+        )
+        .expect("Run undo preview request");
+        assert_eq!(undo_preview.method, HttpMethod::Get);
+        assert_eq!(undo_preview.path, "/spaces/demo/runs/run-1/undo/preview");
     }
 
     #[test]
@@ -2865,7 +2922,7 @@ mod tests {
         let needs_space_id = operation.starts_with("space.")
             || operation.starts_with("change.")
             || operation.starts_with("pin.")
-            || operation == "run.undo"
+            || matches!(operation, "run.undo" | "run.undo.preview")
             || operation == "ugoite.apply"
             || operation.starts_with("form.")
             || operation.starts_with("entry.")
@@ -2937,7 +2994,7 @@ mod tests {
         if operation == "pin.delete" {
             arguments.insert("pin_name".into(), json!("release-current"));
         }
-        if operation == "change.revert" {
+        if matches!(operation, "change.revert" | "change.revert.preview") {
             arguments.insert("change_id".into(), json!("change-1"));
         }
         if operation == "change.affected.get" {
@@ -2952,7 +3009,7 @@ mod tests {
             arguments.insert("limit".into(), json!(10));
             arguments.insert("cursor".into(), json!("v1.page.sig"));
         }
-        if operation == "run.undo" {
+        if matches!(operation, "run.undo" | "run.undo.preview") {
             arguments.insert("run_id".into(), json!("run-1"));
         }
         if operation == "ugoite.apply" {

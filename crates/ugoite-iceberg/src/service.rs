@@ -27,6 +27,7 @@ const CHANGE_PAGE_MAX_LIMIT: usize = 100;
 const CHANGE_INSPECT_DEFAULT_TARGET_LIMIT: usize = 10;
 const CHANGE_INSPECT_MAX_PUBLICATIONS: usize = 10_000;
 const CHANGE_QUERY_SORT_MAX_PUBLICATIONS: usize = 10_000;
+const RUN_UNDO_PREVIEW_MAX_CHANGES: usize = 100;
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct ChangeHistoryPageToken {
@@ -3104,6 +3105,50 @@ impl UgoiteService {
         .await
     }
 
+    /// Read-only, all-target validation for a server-facing Change revert.
+    pub async fn preview_revert_change_authorized_for_principals(
+        &self,
+        space_id: &str,
+        target_change_id: &str,
+        actor_principal_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let targets = workspace.change_target_entries(target_change_id).await?;
+        for entry_id in &targets {
+            self.require_action_for_principals_in_state(
+                &state,
+                entry_id,
+                ResourceKind::Entry,
+                Action::Update,
+                principal_ids,
+            )?;
+        }
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let command = ChangeCommand {
+            change_id: Uuid::new_v4().to_string(),
+            run_id: None,
+            actor_principal_id: actor_principal_id.to_owned(),
+            message: None,
+            reverts_change_id: Some(target_change_id.to_owned()),
+            created_at_micros: Utc::now().timestamp_micros(),
+        };
+        let target_count = workspace
+            .preview_revert_change(target_change_id, &command, &integrity)
+            .await?;
+        Ok(json!({
+            "change_id": target_change_id,
+            "ready": true,
+            "target_entry_count": target_count,
+        }))
+    }
+
     /// Undo every Change correlated to a Run in reverse publication order.
     /// Each inverse is its own append-only Change; the Run itself has no
     /// durable status record and can be resumed by repeating this request.
@@ -3129,6 +3174,149 @@ impl UgoiteService {
         require_nonempty_authorized_principals(principal_ids)?;
         self.undo_run_inner(space_id, run_id, actor_principal_id, Some(principal_ids))
             .await
+    }
+
+    /// Build a bounded, read-only Run undo summary from committed Changes.
+    /// Every returned pending Change is checked against current Entry ACLs,
+    /// revisions, and Form schema before it can be marked ready.
+    pub async fn preview_undo_run_authorized_for_principals(
+        &self,
+        space_id: &str,
+        run_id: &str,
+        actor_principal_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        let run_id = RunId::new(run_id)
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+        self.validate_complete_space(space_id).await?;
+        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let changes = workspace.list_changes().await?;
+        let has_run = changes
+            .iter()
+            .any(|change| change.change.run_id.as_ref() == Some(&run_id));
+        if !has_run {
+            return Err(AppError::not_found(
+                ErrorCode::RevisionNotFound,
+                format!("Run was not found: {run_id}"),
+            )
+            .into());
+        }
+        let already_reverted = changes
+            .iter()
+            .filter_map(|change| change.change.reverts_change_id.clone())
+            .collect::<std::collections::HashSet<_>>();
+        let mut originals = changes
+            .into_iter()
+            .filter(|change| {
+                change.change.run_id.as_ref() == Some(&run_id)
+                    && change.change.reverts_change_id.is_none()
+            })
+            .collect::<Vec<_>>();
+        originals.sort_by(|left, right| right.generation.cmp(&left.generation));
+        let committed_change_count = originals.len();
+        let already_reverted_count = originals
+            .iter()
+            .filter(|change| already_reverted.contains(change.change_id.as_str()))
+            .count();
+        let pending_change_count = committed_change_count - already_reverted_count;
+        let complete = committed_change_count <= RUN_UNDO_PREVIEW_MAX_CHANGES;
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let mut preview_changes =
+            Vec::with_capacity(committed_change_count.min(RUN_UNDO_PREVIEW_MAX_CHANGES));
+        let mut all_pending_ready = true;
+        let mut stopped_after_conflict = false;
+        let mut projected_heads = BTreeMap::new();
+        for change in originals.iter().take(RUN_UNDO_PREVIEW_MAX_CHANGES) {
+            let reverted = already_reverted.contains(change.change_id.as_str());
+            let target_entries = workspace.change_target_entries(&change.change_id).await?;
+            for entry_id in &target_entries {
+                self.require_action_for_principals_in_state(
+                    &state,
+                    entry_id,
+                    ResourceKind::Entry,
+                    Action::Update,
+                    principal_ids,
+                )?;
+            }
+            if reverted {
+                preview_changes.push(json!({
+                    "change_id": change.change_id,
+                    "generation": change.generation,
+                    "state": "already_reverted",
+                    "target_entry_count": target_entries.len(),
+                }));
+                continue;
+            }
+            if stopped_after_conflict {
+                preview_changes.push(json!({
+                    "change_id": change.change_id,
+                    "generation": change.generation,
+                    "state": "not_reached",
+                    "target_entry_count": target_entries.len(),
+                }));
+                continue;
+            }
+            let command = ChangeCommand {
+                change_id: Uuid::new_v4().to_string(),
+                run_id: Some(run_id.clone()),
+                actor_principal_id: actor_principal_id.to_owned(),
+                message: Some("Undo Run".into()),
+                reverts_change_id: Some(change.change_id.clone()),
+                created_at_micros: Utc::now().timestamp_micros(),
+            };
+            match workspace
+                .preview_revert_change_after_heads(
+                    &change.change_id,
+                    &command,
+                    &integrity,
+                    &projected_heads,
+                )
+                .await
+            {
+                Ok(inverse_revisions) => {
+                    for inverse in &inverse_revisions {
+                        projected_heads.insert(inverse.entry_id, inverse.clone());
+                    }
+                    preview_changes.push(json!({
+                        "change_id": change.change_id,
+                        "generation": change.generation,
+                        "state": "ready",
+                        "target_entry_count": inverse_revisions.len(),
+                    }));
+                }
+                Err(error)
+                    if error
+                        .downcast_ref::<AppError>()
+                        .is_some_and(|error| error.code() == ErrorCode::RevisionConflict) =>
+                {
+                    all_pending_ready = false;
+                    stopped_after_conflict = true;
+                    preview_changes.push(json!({
+                        "change_id": change.change_id,
+                        "generation": change.generation,
+                        "state": "blocked",
+                        "target_entry_count": target_entries.len(),
+                        "reason": "REVISION_CONFLICT",
+                    }));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(json!({
+            "run_id": run_id,
+            "ready": complete && pending_change_count > 0 && all_pending_ready,
+            "complete": complete,
+            "change_limit": RUN_UNDO_PREVIEW_MAX_CHANGES,
+            "committed_change_count": committed_change_count,
+            "pending_change_count": pending_change_count,
+            "already_reverted_count": already_reverted_count,
+            "changes": preview_changes,
+        }))
     }
 
     async fn undo_run_inner(
@@ -8411,6 +8599,29 @@ mod tests {
                 )
                 .await?;
         }
+        let before_preview = service.list_changes(&space_id).await?;
+        let preview = service
+            .preview_undo_run_authorized_for_principals(
+                &space_id,
+                "run-batch-undo",
+                &principal.to_string(),
+                &[principal],
+            )
+            .await?;
+        assert_eq!(preview["ready"], true);
+        assert_eq!(preview["complete"], true);
+        assert_eq!(preview["committed_change_count"], 2);
+        assert_eq!(preview["pending_change_count"], 2);
+        assert_eq!(preview["already_reverted_count"], 0);
+        let preview_changes = preview["changes"].as_array().unwrap();
+        assert_eq!(preview_changes.len(), 2);
+        assert_eq!(preview_changes[0]["state"], "ready");
+        assert_eq!(preview_changes[1]["state"], "ready");
+        assert!(
+            preview_changes[0]["generation"].as_u64().unwrap()
+                > preview_changes[1]["generation"].as_u64().unwrap()
+        );
+        assert_eq!(service.list_changes(&space_id).await?, before_preview);
         let undone = service
             .undo_run(&space_id, "run-batch-undo", &principal.to_string())
             .await?;
@@ -8425,6 +8636,95 @@ mod tests {
             resumed.get("reverted_change_count").and_then(Value::as_u64),
             Some(0)
         );
+        let completed_preview = service
+            .preview_undo_run_authorized_for_principals(
+                &space_id,
+                "run-batch-undo",
+                &principal.to_string(),
+                &[principal],
+            )
+            .await?;
+        assert_eq!(completed_preview["ready"], false);
+        assert_eq!(completed_preview["pending_change_count"], 0);
+        assert_eq!(completed_preview["already_reverted_count"], 2);
+        assert!(completed_preview["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|change| change["state"] == "already_reverted"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_undo_preview_stops_after_a_conflict_without_writes() -> anyhow::Result<()> {
+        let (service, space_id, principal) = batch_test_space("run-preview-conflict").await?;
+        let run_id = "run-preview-conflict";
+        let created = service
+            .apply_operations(
+                &space_id,
+                vec![batch_create("preview-entry")],
+                &principal.to_string(),
+                &[principal],
+                Some(run_id),
+                Some("create in Run"),
+            )
+            .await?;
+        let create_revision = created["operations"][0]["revision_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let update = |version_token: String, body: &str| ApplyOperation::Update {
+            id: "preview-entry".into(),
+            version_token,
+            form: Some("Entry".into()),
+            tags: Some(Vec::new()),
+            fields: [("Body".into(), Value::String(body.into()))]
+                .into_iter()
+                .collect(),
+            extra_attributes: Default::default(),
+        };
+        let updated = service
+            .apply_operations(
+                &space_id,
+                vec![update(create_revision, "Run update")],
+                &principal.to_string(),
+                &[principal],
+                Some(run_id),
+                Some("update in Run"),
+            )
+            .await?;
+        let update_revision = updated["operations"][0]["revision_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        service
+            .apply_operations(
+                &space_id,
+                vec![update(update_revision, "external update")],
+                &principal.to_string(),
+                &[principal],
+                Some("run-outside-preview"),
+                Some("conflicting later update"),
+            )
+            .await?;
+
+        let before_preview = service.list_changes(&space_id).await?;
+        let preview = service
+            .preview_undo_run_authorized_for_principals(
+                &space_id,
+                run_id,
+                &principal.to_string(),
+                &[principal],
+            )
+            .await?;
+        assert_eq!(preview["ready"], false);
+        assert_eq!(preview["complete"], true);
+        assert_eq!(preview["pending_change_count"], 2);
+        let planned = preview["changes"].as_array().unwrap();
+        assert_eq!(planned.len(), 2);
+        assert_eq!(planned[0]["state"], "blocked");
+        assert_eq!(planned[1]["state"], "not_reached");
+        assert_eq!(service.list_changes(&space_id).await?, before_preview);
         Ok(())
     }
 
@@ -8461,6 +8761,10 @@ mod tests {
             .as_str()
             .expect("create returns canonical Change identity")
             .to_owned();
+        service
+            .undo_run(&space_id, "run-revert-auth", &editor.to_string())
+            .await?;
+        let changes_before_revocation = service.list_changes(&space_id).await?;
         Authorizer::new(service.operator.clone())
             .set_policy(
                 &space_id,
@@ -8478,6 +8782,22 @@ mod tests {
             )
             .await?;
 
+        let preview_error = service
+            .preview_revert_change_authorized_for_principals(
+                &space_id,
+                &change_id,
+                &editor.to_string(),
+                &[editor],
+            )
+            .await
+            .expect_err("resource-level Update revocation blocks preview");
+        assert_eq!(
+            preview_error
+                .downcast_ref::<AppError>()
+                .expect("typed preview authorization error")
+                .code(),
+            ErrorCode::Forbidden
+        );
         let error = service
             .revert_change_authorized_for_principals(
                 &space_id,
@@ -8496,12 +8816,26 @@ mod tests {
                 .code(),
             ErrorCode::Forbidden
         );
-        let changes = service.list_changes(&space_id).await?;
-        assert!(!changes
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|change| { change["change"]["reverts_change_id"] == change_id }));
+        let run_preview_error = service
+            .preview_undo_run_authorized_for_principals(
+                &space_id,
+                "run-revert-auth",
+                &editor.to_string(),
+                &[editor],
+            )
+            .await
+            .expect_err("resource-level Update revocation blocks already-reverted preview rows");
+        assert_eq!(
+            run_preview_error
+                .downcast_ref::<AppError>()
+                .expect("typed Run preview authorization error")
+                .code(),
+            ErrorCode::Forbidden
+        );
+        assert_eq!(
+            service.list_changes(&space_id).await?,
+            changes_before_revocation
+        );
         Ok(())
     }
 

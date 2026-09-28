@@ -1356,6 +1356,44 @@ impl IcebergWorkspace {
         self.list_forms_bounded(usize::MAX, usize::MAX).await
     }
 
+    /// Read-only validation for reverting a complete committed Change.
+    /// Returns the number of distinct Entry targets only after every target
+    /// has been validated against current revisions and Form schema.
+    pub async fn preview_revert_change<I: crate::integrity::IntegrityProvider + Sync>(
+        &self,
+        target_change_id: &str,
+        command: &ChangeCommand,
+        integrity_provider: &I,
+    ) -> Result<usize> {
+        let (_, inverse_revisions) = self
+            .prepare_revert_change(target_change_id, command, integrity_provider)
+            .await?;
+        Ok(inverse_revisions.len())
+    }
+
+    /// Prepare one inverse using projected heads from earlier Change previews.
+    /// This is crate-private so Run preview can simulate reverse-order
+    /// recovery without persisting any revisions.
+    pub(crate) async fn preview_revert_change_after_heads<
+        I: crate::integrity::IntegrityProvider + Sync,
+    >(
+        &self,
+        target_change_id: &str,
+        command: &ChangeCommand,
+        integrity_provider: &I,
+        projected_heads: &BTreeMap<ugoite_domain::id::EntryId, EntryRevision>,
+    ) -> Result<Vec<EntryRevision>> {
+        let (_, inverse_revisions) = self
+            .prepare_revert_change_with_heads(
+                target_change_id,
+                command,
+                integrity_provider,
+                Some(projected_heads),
+            )
+            .await?;
+        Ok(inverse_revisions)
+    }
+
     /// Append a selective inverse for one committed Change. The operation is
     /// intentionally scoped to one Form publication: cross-Form atomicity is
     /// a separate capability and must not be implied by the public API.
@@ -1365,6 +1403,33 @@ impl IcebergWorkspace {
         command: &ChangeCommand,
         integrity_provider: &I,
     ) -> Result<CommitReceipt> {
+        let (form_id, inverse_revisions) = self
+            .prepare_revert_change(target_change_id, command, integrity_provider)
+            .await?;
+        let publication =
+            publication_context_for_change(command, "change.revert", &inverse_revisions)?;
+        self.commit(publication)?
+            .append_revisions(form_id, inverse_revisions)
+            .await
+    }
+
+    async fn prepare_revert_change<I: crate::integrity::IntegrityProvider + Sync>(
+        &self,
+        target_change_id: &str,
+        command: &ChangeCommand,
+        integrity_provider: &I,
+    ) -> Result<(FormId, Vec<EntryRevision>)> {
+        self.prepare_revert_change_with_heads(target_change_id, command, integrity_provider, None)
+            .await
+    }
+
+    async fn prepare_revert_change_with_heads<I: crate::integrity::IntegrityProvider + Sync>(
+        &self,
+        target_change_id: &str,
+        command: &ChangeCommand,
+        integrity_provider: &I,
+        projected_heads: Option<&BTreeMap<ugoite_domain::id::EntryId, EntryRevision>>,
+    ) -> Result<(FormId, Vec<EntryRevision>)> {
         command
             .validate()
             .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
@@ -1408,10 +1473,14 @@ impl IcebergWorkspace {
                     )
                     .into());
                 }
-                let current = revisions
-                    .iter()
-                    .filter(|revision| revision.entry_id == target.entry_id)
-                    .max_by_key(|revision| revision.entry_version)
+                let current = projected_heads
+                    .and_then(|heads| heads.get(&target.entry_id))
+                    .or_else(|| {
+                        revisions
+                            .iter()
+                            .filter(|revision| revision.entry_id == target.entry_id)
+                            .max_by_key(|revision| revision.entry_version)
+                    })
                     .ok_or_else(|| {
                         AppError::conflict(
                             ErrorCode::RevisionConflict,
@@ -1515,11 +1584,7 @@ impl IcebergWorkspace {
                 format!("target Change was not found: {target_change_id}"),
             )
         })?;
-        let publication =
-            publication_context_for_change(command, "change.revert", &inverse_revisions)?;
-        self.commit(publication)?
-            .append_revisions(form_id, inverse_revisions)
-            .await
+        Ok((form_id, inverse_revisions))
     }
 
     /// Returns the committed Entry identities touched by a Change. Callers

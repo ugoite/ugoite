@@ -1333,8 +1333,10 @@ fn issue_2037_openapi_publishes_the_public_knowledge_contract() {
         "/spaces/{space_id}/changes/query",
         "/spaces/{space_id}/changes/{change_id}/inspect",
         "/spaces/{space_id}/changes/{change_id}/affected/{entry_id}",
+        "/spaces/{space_id}/changes/{change_id}/revert/preview",
         "/spaces/{space_id}/changes/{change_id}/revert",
         "/spaces/{space_id}/runs/{run_id}/undo",
+        "/spaces/{space_id}/runs/{run_id}/undo/preview",
         "/spaces/{space_id}/apply",
         "/spaces/{space_id}/pins",
         "/spaces/{space_id}/pins/{pin_name}",
@@ -1378,6 +1380,18 @@ fn issue_2037_openapi_publishes_the_public_knowledge_contract() {
         paths["/spaces/{space_id}/changes/{change_id}/revert"]["post"]["responses"]["409"]
             ["content"]["application/json"]["schema"]["$ref"],
         "#/components/schemas/ErrorResponse"
+    );
+
+    let change_revert_preview =
+        &paths["/spaces/{space_id}/changes/{change_id}/revert/preview"]["get"];
+    assert_eq!(
+        change_revert_preview["responses"]["409"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/ErrorResponse"
+    );
+    assert_eq!(
+        paths["/spaces/{space_id}/runs/{run_id}/undo/preview"]["get"]["responses"]["200"]
+            ["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/JsonValue"
     );
 
     let apply = &paths["/spaces/{space_id}/apply"]["post"]["requestBody"];

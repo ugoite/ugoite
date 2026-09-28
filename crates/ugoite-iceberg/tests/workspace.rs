@@ -663,6 +663,17 @@ async fn revert_change_handles_one_hundred_targets_atomically() -> anyhow::Resul
         reverts_change_id: Some("change-100".into()),
         created_at_micros: 3,
     };
+    assert_eq!(
+        workspace
+            .preview_revert_change(
+                "change-100",
+                &success,
+                &ugoite_domain::integrity::FakeIntegrityProvider,
+            )
+            .await?,
+        100
+    );
+    assert_eq!(workspace.list_changes().await?.len(), 2);
     let receipt = workspace
         .revert_change(
             "change-100",
@@ -724,6 +735,21 @@ async fn revert_change_handles_one_hundred_targets_atomically() -> anyhow::Resul
         reverts_change_id: Some("change-conflicted-100".into()),
         created_at_micros: 6,
     };
+    let preview_error = workspace
+        .preview_revert_change(
+            "change-conflicted-100",
+            &rejected,
+            &ugoite_domain::integrity::FakeIntegrityProvider,
+        )
+        .await
+        .expect_err("one conflicting target must prevent a ready preview");
+    assert_eq!(
+        preview_error
+            .downcast_ref::<AppError>()
+            .expect("typed preview conflict")
+            .code(),
+        ErrorCode::RevisionConflict
+    );
     let error = workspace
         .revert_change(
             "change-conflicted-100",
