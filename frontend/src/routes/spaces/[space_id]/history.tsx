@@ -169,7 +169,7 @@ export default function SpaceHistoryRoute() {
     if (row.target_visibility !== "complete" || !row.summary) {
       return t("spaceHistory.restrictedTarget");
     }
-    const formIds = [...new Set(row.summary.field_groups.map((group) => group.form_id))];
+    const formIds = row.summary.target_form_ids;
     const targetName = formIds.length === 1
       ? formName(formIds[0])
       : formIds.length > 1

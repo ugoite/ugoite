@@ -28,6 +28,7 @@ describe("changeApi.query", () => {
       target_visibility: "complete",
       summary: {
         affected_entry_count: 2,
+        target_form_ids: ["form-1"],
         field_groups: [{
           form_id: "form-1",
           field_id: 100,
@@ -64,6 +65,7 @@ describe("changeApi.query", () => {
         ...row,
         summary: {
           affected_entry_count: 2,
+          target_form_ids: ["form-1"],
           field_groups: [{
             form_id: "form-1",
             field_id: 100,
