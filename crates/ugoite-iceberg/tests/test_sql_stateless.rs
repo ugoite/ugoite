@@ -19,6 +19,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Context, Result};
 use serde_json::{json, Map, Value};
 use ugoite_core::sql_query::{SavedSqlRevisionRef, SqlQueryCountRequest, SqlQueryRequest};
+use ugoite_iceberg::entry;
+use ugoite_iceberg::integrity::RealIntegrityProvider;
 use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
 
@@ -346,24 +348,58 @@ fn query_request(sql: String, limit: usize) -> SqlQueryRequest {
 /// First page + continuation union the full ordered result on the real
 /// backend, with the `has_more`/`next` protocol holding on every page.
 #[tokio::test]
-async fn legacy_id_relation_saved_sql_runs_without_rebinding() -> Result<()> {
+async fn legacy_saved_sql_revision_runs_without_implicit_rewrite() -> Result<()> {
     let space = setup_sql_space("memory://sql-legacy-saved-relation", "sqllegacysaved").await?;
-    let saved = space
+    // Create the current Saved SQL Form, then insert an old-format Entry row
+    // that predates binding metadata, as an existing reader would encounter it.
+    space
         .service
         .create_saved_sql(
             &space.space_id,
-            Some("legacy-id-query"),
+            Some("bootstrap-sql-form"),
             &SqlPayload {
-                name: Some("Legacy ID query".into()),
+                name: Some("Bootstrap".into()),
                 kind: SqlKind::UserQuery,
                 metadata: None,
-                sql: base_sql(&space),
+                sql: "SELECT 1".into(),
                 variables: json!([]),
             },
             "owner",
         )
         .await?;
-    assert_eq!(saved["metadata"]["formBindings"], json!([]));
+    let fields = BTreeMap::from([
+        ("name".to_string(), json!("Legacy ID query")),
+        ("sql".to_string(), Value::String(base_sql(&space))),
+        ("variables".to_string(), json!([])),
+    ]);
+    let attributes = BTreeMap::from([
+        ("kind".to_string(), json!("user-query")),
+        ("metadata".to_string(), Value::Null),
+    ]);
+    let operator = space.service.operator();
+    let workspace_path = space.service.workspace_path(&space.space_id);
+    let integrity = RealIntegrityProvider::from_space(operator, &space.space_id).await?;
+    entry::create_structured_entry_with_scopes_and_change(
+        operator,
+        &workspace_path,
+        "legacy-id-query",
+        "SQL".to_string(),
+        Vec::new(),
+        fields,
+        attributes,
+        "owner",
+        &integrity,
+        None,
+        None,
+    )
+    .await?;
+    let existing = space
+        .service
+        .get_saved_sql(&space.space_id, "legacy-id-query")
+        .await?;
+    assert!(existing["metadata"].is_null());
+    let original_revision_id = existing["revision_id"].as_str().context("revision id")?;
+
     let page = space
         .service
         .query_sql(
@@ -376,15 +412,20 @@ async fn legacy_id_relation_saved_sql_runs_without_rebinding() -> Result<()> {
                 continuation: None,
                 saved_sql: Some(SavedSqlRevisionRef {
                     id: "legacy-id-query".into(),
-                    revision_id: saved["revision_id"].as_str().context("revision id")?.into(),
+                    revision_id: original_revision_id.into(),
                 }),
             },
         )
         .await?;
     assert_eq!(page.rows.len(), 5);
+    let after = space
+        .service
+        .get_saved_sql(&space.space_id, "legacy-id-query")
+        .await?;
+    assert_eq!(after["revision_id"], original_revision_id);
+    assert!(after["metadata"].is_null());
     Ok(())
 }
-
 #[tokio::test]
 async fn stateless_first_page_and_continuation_cover_full_result() -> Result<()> {
     let space = setup_sql_space("memory://sql-stateless-pages", "sqlpages").await?;

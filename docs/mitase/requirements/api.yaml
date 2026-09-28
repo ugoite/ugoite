@@ -932,7 +932,7 @@ requirements:
             path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
             selector: {
               kind: test,
-              name: legacy_id_relation_saved_sql_runs_without_rebinding,
+              name: legacy_saved_sql_revision_runs_without_implicit_rewrite,
             }
             claims:
               - kind: verifies
@@ -945,6 +945,6 @@ requirements:
                   arguments: {
                     package: ugoite-iceberg,
                     harness: test_sql_stateless,
-                    test: legacy_id_relation_saved_sql_runs_without_rebinding,
+                    test: legacy_saved_sql_revision_runs_without_implicit_rewrite,
                   },
                 }
