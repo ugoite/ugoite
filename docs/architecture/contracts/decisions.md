@@ -172,3 +172,34 @@ execution path. A continuation remains pinned to its Publication and SQL
 fingerprint and additionally carries the saved revision identity and resolved
 bindings when the request executes Saved SQL. Authorization is reevaluated on
 each continuation request.
+
+## ADR-015 — Shared authorization and content publication coordination
+
+**Accepted target; implementation is a release blocker.** S1 is selected for
+shared multi-process Space writes. A per-Space coordinator Head updated by one
+backend-enforced exact CAS is the linearization point for both authorization
+snapshot changes and protected content publication. Prepared content remains
+unreachable until that CAS. Permission evaluation uses the authorization
+snapshot referenced by the exact Head being advanced. A single-use approval
+consumed by a content operation advances with that content root in the same CAS.
+Per-object CAS between separate authorization and content objects is
+insufficient.
+
+Every `Authorizer` state writer must publish through the coordinator boundary.
+The maintained inventory covers owner initialization; approval issue,
+consumption, audit queue, and delivery acknowledgement; recovery-fence reserve,
+complete, and release; policy, membership, role, and principal changes; and
+agent create, recovery, revoke, and use. A boundary test must detect a writer
+that bypasses the shared authorization-state publication helper.
+
+The exact Head revision is the fencing token; owner lease expiry, heartbeat
+loss, timeout, or cleanup cannot authorize a stale Head replacement. An unknown
+publication outcome is reconciled from the exact Head and canonical receipt; if
+it remains unknown, the write stops without automatic resend. This prioritizes
+safety over availability when a writer cannot establish its outcome. The
+supported-backend matrix and S1 acceptance contract are maintained in
+[`shared-authorization-publication.md`](../security/shared-authorization-publication.md).
+
+Local CLI operator authority remains distinct from remote Server principal
+authorization. The storage layer supplies conditional publication mechanics;
+`ugoite-iceberg::authorization` remains the owner of ACL state and decisions.
