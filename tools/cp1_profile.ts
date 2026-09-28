@@ -100,6 +100,7 @@ async function main(): Promise<void> {
       process_attempted: await fileExists(seed.profilePath) ||
         await fileExists(seed.resourcePath),
       generator,
+      profile_complete: isCompleteSampleProfile(generator),
       mutation_batch_summary: summarizeMutationBatches(generator),
       process: await parseTimeResourceFile(seed.resourcePath),
       filesystem: await fileMetrics(await findSpacePath(root, seed.slug)),
@@ -120,11 +121,8 @@ async function main(): Promise<void> {
     process: await parseTimeResourceFile(step.resourcePath),
   })));
   const stageMicros = seedProfiles.flatMap((fixture) => {
-    const profile =
-      fixture.generator !== null && typeof fixture.generator === "object"
-        ? fixture.generator as Record<string, unknown>
-        : null;
-    if (!profile) return [];
+    if (!isCompleteSampleProfile(fixture.generator)) return [];
+    const profile = fixture.generator as Record<string, unknown>;
     return [
       profile.space_creation_micros,
       profile.owner_initialization_micros,
@@ -139,7 +137,7 @@ async function main(): Promise<void> {
     );
   });
   const profilesComplete = seedProfiles.every((fixture) =>
-    fixture.generator !== null
+    isCompleteSampleProfile(fixture.generator)
   );
   const knownStageMicros = profilesComplete
     ? stageMicros.reduce((total, value) => total + value, 0)
@@ -399,6 +397,28 @@ export function summarizeMutationBatches(generator: unknown): {
     p50_micros: percentile(sorted, 0.5),
     p95_micros: percentile(sorted, 0.95),
   };
+}
+
+export function isCompleteSampleProfile(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return false;
+  const profile = value as Record<string, unknown>;
+  const isNumber = (item: unknown): item is number =>
+    typeof item === "number" && Number.isFinite(item) && item >= 0;
+  const batchTimes = profile.mutation_batch_micros;
+  const batchEntries = profile.mutation_batch_entry_counts;
+  return profile.schema_version === 1 &&
+    isNumber(profile.space_creation_micros) &&
+    (profile.owner_initialization_micros === null ||
+      isNumber(profile.owner_initialization_micros)) &&
+    isNumber(profile.form_upsert_micros) &&
+    isNumber(profile.markdown_render_micros) &&
+    isNumber(profile.markdown_render_count) &&
+    isNumber(profile.draft_conversion_micros) &&
+    isNumber(profile.draft_conversion_count) &&
+    isNumber(profile.total_wall_micros) &&
+    Array.isArray(batchTimes) && batchTimes.every(isNumber) &&
+    Array.isArray(batchEntries) && batchEntries.every(isNumber) &&
+    batchTimes.length === batchEntries.length;
 }
 
 function percentile(sortedValues: number[], quantile: number): number | null {

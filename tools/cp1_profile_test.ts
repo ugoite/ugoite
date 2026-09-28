@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert/equals";
 import {
   fileMetrics,
+  isCompleteSampleProfile,
   parseTimeResourceFile,
   summarizeMutationBatches,
 } from "./cp1_profile.ts";
@@ -78,6 +79,7 @@ Deno.test("CP1 profiling reports mutation batch p50 and p95 and keeps missing da
     p50_micros: null,
     p95_micros: null,
   });
+  assertEquals(isCompleteSampleProfile({ total_wall_micros: 0 }), false);
 });
 
 Deno.test("successful CP1 profile aggregation keeps fixture, resource, and source evidence", async () => {
@@ -105,8 +107,11 @@ Deno.test("successful CP1 profile aggregation keeps fixture, resource, and sourc
         owner_initialization_micros: 3,
         form_upsert_micros: 4,
         markdown_render_micros: 5,
+        markdown_render_count: 1,
         draft_conversion_micros: 6,
+        draft_conversion_count: 1,
         mutation_batch_micros: [7, 9],
+        mutation_batch_entry_counts: [1, 0],
         total_wall_micros: 50,
       }),
     );
@@ -161,6 +166,7 @@ Deno.test("successful CP1 profile aggregation keeps fixture, resource, and sourc
     assertEquals(report.source_sha.length, 40);
     assertEquals(report.result, { exit_code: 0, successful: true });
     assertEquals(report.seed_process_invocations, 1);
+    assertEquals(report.fixtures[0].profile_complete, true);
     assertEquals(report.fixtures[0].filesystem, {
       file_count: 1,
       logical_bytes: new TextEncoder().encode(

@@ -1158,7 +1158,7 @@ async fn generate_renewable_ops(
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
     let profile = progress.sample_profile().cloned();
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1366,7 +1366,7 @@ async fn generate_supply_chain(
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
     let profile = progress.sample_profile().cloned();
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1557,7 +1557,7 @@ async fn generate_municipal_infra(
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
     let profile = progress.sample_profile().cloned();
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1705,7 +1705,7 @@ async fn generate_fleet_ops(
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
     let profile = progress.sample_profile().cloned();
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1868,7 +1868,7 @@ async fn generate_lab_qa(
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
     let profile = progress.sample_profile().cloned();
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -2019,7 +2019,7 @@ async fn generate_retail_ops(
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
     let profile = progress.sample_profile().cloned();
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
