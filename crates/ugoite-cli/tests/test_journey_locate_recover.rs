@@ -140,15 +140,20 @@ fn revision_ids(history: &serde_json::Value) -> Vec<String> {
 fn test_journey_cli_core_locate_recover_durable_outcome() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("cli-config.toml");
-    let space_id = "locate-recover-core";
+    let root = dir.path().to_string_lossy().into_owned();
+    let space_slug = "locate-recover-core";
 
     // 1. Create the canonical Space.
-    let output = run_cli(&config_path, &["space", "create", space_id]);
+    let output = run_cli(&config_path, &["space", "create", space_slug]);
     assert!(
         output.status.success(),
         "space create failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let space_uid = stdout_json(&output, "space create")["space"]["space_uid"]
+        .as_str()
+        .expect("space create returns its canonical UID")
+        .to_string();
 
     // 2. Create multiple Form-backed Entries sharing one Form.
     let form_file = dir.path().join("locate-recover-form.json");
@@ -271,6 +276,122 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
     );
     assert_eq!(target["change_id"], update_change_id);
     assert_eq!(target["target"]["fields"].as_array().unwrap().len(), 1);
+
+    // A real two-target Change lets the CLI exercise an opaque continuation.
+    for entry_id in ["cursor-target-a", "cursor-target-b"] {
+        let output = run_cli(
+            &config_path,
+            &[
+                "entry",
+                "create",
+                "--id",
+                entry_id,
+                "--form",
+                "Task",
+                "--field",
+                "status=closed",
+                "--field",
+                "priority=1",
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "cursor fixture Entry create failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let cursor_change_id = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let service = UgoiteService::new(root.clone()).unwrap();
+            let workspace =
+                native_workspace(service.operator(), &service.workspace_path(&space_uid))
+                    .await
+                    .unwrap();
+            let form = workspace
+                .list_forms()
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|form| form.name == "Task")
+                .unwrap();
+            let revisions = workspace.read_revisions(form.id).await.unwrap();
+            let committed_at_micros = chrono::Utc::now().timestamp_micros();
+            let cursor_change_id = uuid::Uuid::now_v7().to_string();
+            let mut grouped = Vec::new();
+            for external_id in ["cursor-target-a", "cursor-target-b"] {
+                let mut revision = revisions
+                    .iter()
+                    .filter(|revision| revision.entry.external_id == external_id)
+                    .max_by_key(|revision| revision.entry_version)
+                    .cloned()
+                    .expect("cursor fixture Entry has a current revision");
+                revision.parent_revision_id = Some(revision.revision_id);
+                revision.revision_id = RevisionId::from_uuid(uuid::Uuid::now_v7());
+                revision.entry_version += 1;
+                revision.expected_version = Some(revision.entry_version - 1);
+                revision.change_id = cursor_change_id.clone();
+                revision.committed_at_micros = committed_at_micros;
+                revision.source_kind = "cli_cursor_test".to_string();
+                revision.entry.updated_at_micros = committed_at_micros;
+                grouped.push(revision);
+            }
+            let command = ChangeCommand {
+                change_id: cursor_change_id.clone(),
+                run_id: None,
+                actor_principal_id: grouped[0].author_id.clone(),
+                message: Some("CLI cursor continuation fixture".to_string()),
+                reverts_change_id: None,
+                created_at_micros: committed_at_micros,
+            };
+            let publication =
+                publication_context_for_change(&command, "test.cli.cursor", &grouped[0]).unwrap();
+            workspace
+                .commit(publication)
+                .unwrap()
+                .append_revisions(form.id, grouped)
+                .await
+                .unwrap();
+            cursor_change_id
+        });
+
+    let first_page = stdout_json(
+        &run_cli(
+            &config_path,
+            &["change", "show", &cursor_change_id, "--limit", "1"],
+        ),
+        "change show first committed target page",
+    );
+    assert_eq!(first_page["change_id"], cursor_change_id);
+    assert_eq!(first_page["summary"]["affected_entry_count"], 2);
+    assert_eq!(first_page["targets"].as_array().unwrap().len(), 1);
+    let cursor = first_page["next_cursor"]
+        .as_str()
+        .expect("first target page exposes its opaque continuation");
+    let first_target_id = first_page["targets"][0]["entry_id"].as_str().unwrap();
+
+    let second_page = stdout_json(
+        &run_cli(
+            &config_path,
+            &[
+                "change",
+                "show",
+                &cursor_change_id,
+                "--limit",
+                "1",
+                "--cursor",
+                cursor,
+            ],
+        ),
+        "change show continuation target page",
+    );
+    assert_eq!(second_page["change_id"], cursor_change_id);
+    assert_eq!(second_page["summary"]["affected_entry_count"], 2);
+    assert_eq!(second_page["targets"].as_array().unwrap().len(), 1);
+    assert_eq!(second_page["next_cursor"], serde_json::Value::Null);
+    assert_ne!(second_page["targets"][0]["entry_id"], first_target_id);
 
     // Narrowing reflects the updated state: open no longer matches task-a.
     let results = stdout_json(
