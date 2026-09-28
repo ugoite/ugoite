@@ -7,7 +7,8 @@ use ugoite_iceberg::authorization::Authorizer;
 use ugoite_iceberg::entry;
 use ugoite_iceberg::sample_data::{
     create_sample_space, create_sample_space_job, create_sample_space_job_and_wait,
-    get_sample_space_job, list_sample_scenarios, SampleDataJob, SampleDataOptions, SampleJobStatus,
+    create_sample_space_with_terminal_progress_profiled, get_sample_space_job,
+    list_sample_scenarios, SampleDataJob, SampleDataOptions, SampleJobStatus,
 };
 use uuid::Uuid;
 
@@ -34,6 +35,46 @@ async fn test_sample_data_req_api_009_create_sample_space() -> anyhow::Result<()
 
     let entries = entry::list_entries(&op, &format!("spaces/{}", summary.space_id)).await?;
     assert_eq!(entries.len(), 120);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn sample_seed_profile_records_aggregate_phases_without_changing_seed_output(
+) -> anyhow::Result<()> {
+    let tempdir = tempfile::tempdir()?;
+    let root_uri = temp_root_uri(&tempdir);
+    let space_id = unique_space_id("sample-space-profile");
+    let op = setup_operator()?;
+    let options = SampleDataOptions {
+        space_id,
+        scenario: "renewable-ops".to_string(),
+        entry_count: 10,
+        seed: Some(17),
+        owner_display_name: Some("Profile Owner".to_string()),
+    };
+
+    let (summary, profile) =
+        create_sample_space_with_terminal_progress_profiled(&op, &root_uri, &options).await?;
+    let entries = entry::list_entries(&op, &format!("spaces/{}", summary.space_id)).await?;
+
+    assert_eq!(summary.entry_count, 10);
+    assert_eq!(entries.len(), 10);
+    assert_eq!(profile.space_slug, options.space_id);
+    assert_eq!(profile.scenario, "renewable-ops");
+    assert_eq!(profile.seed, Some(17));
+    assert_eq!(profile.entry_count, 10);
+    assert_eq!(profile.form_count, summary.form_count);
+    assert!(profile.space_creation_micros.is_some());
+    assert!(profile.owner_initialization_micros.is_some());
+    assert!(profile.form_upsert_micros.is_some());
+    assert_eq!(profile.markdown_render_count, 10);
+    assert_eq!(profile.draft_conversion_count, 10);
+    assert_eq!(
+        profile.mutation_batch_entry_counts.iter().sum::<usize>(),
+        10
+    );
+    assert!(profile.total_wall_micros.is_some());
 
     Ok(())
 }

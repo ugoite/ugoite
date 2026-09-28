@@ -1017,6 +1017,7 @@ jobs:
         with:
           name: ugoite-cp1-acceptance-${{ github.run_id }}
           path: |
+            target/cp1-profiling/
             target/query-surfaces-measurement.json
             target/sql-export-measurement/
             e2e/test-results/

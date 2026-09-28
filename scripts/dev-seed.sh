@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 usage() {
   cat <<'EOF'
-Usage: bash scripts/dev-seed.sh [--root PATH] [--space-id ID] [--scenario NAME] [--entry-count N] [--seed VALUE] [--owner NAME]
+Usage: bash scripts/dev-seed.sh [--root PATH] [--space-id ID] [--scenario NAME] [--entry-count N] [--seed VALUE] [--owner NAME] [--profile-output PATH]
 
 Create local sample data with the xtask dev seed command and
 visible terminal progress.
@@ -22,6 +24,7 @@ Environment variable overrides:
   UGOITE_SEED_SCENARIO
   UGOITE_SEED_ENTRY_COUNT
   UGOITE_SEED_VALUE
+  UGOITE_SEED_PROFILE_OUTPUT
 EOF
 }
 
@@ -31,6 +34,7 @@ SCENARIO="${UGOITE_SEED_SCENARIO:-renewable-ops}"
 ENTRY_COUNT="${UGOITE_SEED_ENTRY_COUNT:-50}"
 SEED_VALUE="${UGOITE_SEED_VALUE:-}"
 OWNER_DISPLAY_NAME="${UGOITE_SEED_OWNER:-}"
+PROFILE_OUTPUT="${UGOITE_SEED_PROFILE_OUTPUT:-}"
 CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target/rust}"
 
 while (($# > 0)); do
@@ -57,6 +61,10 @@ while (($# > 0)); do
       ;;
     --owner)
       OWNER_DISPLAY_NAME="${2:?missing value for --owner}"
+      shift 2
+      ;;
+    --profile-output)
+      PROFILE_OUTPUT="${2:?missing value for --profile-output}"
       shift 2
       ;;
     -h | --help)
@@ -167,8 +175,17 @@ fi
 if [[ -n "$OWNER_DISPLAY_NAME" ]]; then
   command+=(--owner "$OWNER_DISPLAY_NAME")
 fi
+if [[ -n "$PROFILE_OUTPUT" ]]; then
+  command+=(--profile-output "$PROFILE_OUTPUT")
+fi
 
-"${command[@]}"
+if [[ -n "$PROFILE_OUTPUT" ]]; then
+  RESOURCE_OUTPUT="${UGOITE_SEED_RESOURCE_OUTPUT:-${PROFILE_OUTPUT%.json}.time.txt}"
+  bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
+    "$RESOURCE_OUTPUT" "${command[@]}"
+else
+  "${command[@]}"
+fi
 
 if ! created_space="$(space_path_for_slug true)"; then
   echo "Seed command finished but no Space with slug '$SPACE_ID' was found below: $SEED_ROOT/spaces" >&2

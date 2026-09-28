@@ -34,6 +34,7 @@ fn seed(args: Vec<String>) -> Result<()> {
     let mut entry_count = 50_usize;
     let mut seed_value: Option<u64> = None;
     let mut owner: Option<String> = None;
+    let mut profile_output: Option<String> = None;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
@@ -78,6 +79,13 @@ fn seed(args: Vec<String>) -> Result<()> {
                         .clone(),
                 );
             }
+            "--profile-output" => {
+                profile_output = Some(
+                    iter.next()
+                        .context("seed: --profile-output requires a value")?
+                        .clone(),
+                );
+            }
             other => bail!("seed: unknown argument: {other}"),
         }
     }
@@ -110,15 +118,36 @@ fn seed(args: Vec<String>) -> Result<()> {
             .map(|name| name.trim().to_string())
             .filter(|name| !name.is_empty()),
     };
-    let summary = tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .context("seed: start async runtime")?
-        .block_on(
-            ugoite_iceberg::sample_data::create_sample_space_with_terminal_progress(
+        .context("seed: start async runtime")?;
+    let (summary, profile) = runtime.block_on(async {
+        if profile_output.is_some() {
+            let (summary, profile) =
+                ugoite_iceberg::sample_data::create_sample_space_with_terminal_progress_profiled(
+                    &op, &root_uri, &options,
+                )
+                .await?;
+            Ok::<_, anyhow::Error>((summary, Some(serde_json::to_value(profile)?)))
+        } else {
+            let summary = ugoite_iceberg::sample_data::create_sample_space_with_terminal_progress(
                 &op, &root_uri, &options,
-            ),
-        )?;
+            )
+            .await?;
+            Ok((summary, None))
+        }
+    })?;
+    if let (Some(path), Some(profile)) = (profile_output, profile) {
+        if let Some(parent) = Path::new(&path)
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            fs::create_dir_all(parent).with_context(|| format!("create {parent:?}"))?;
+        }
+        fs::write(&path, serde_json::to_vec_pretty(&profile)?)
+            .with_context(|| format!("write seed profile {path}"))?;
+    }
     println!(
         "{}",
         serde_json::json!({

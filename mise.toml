@@ -38,11 +38,11 @@ description = "Seed local sample data with the development helper"
 run = "bash scripts/dev-seed.sh"
 
 [tasks."measure:query-surfaces"]
-description = "Seed two local Spaces and measure EntryQuery and SQL browser reads"
+description = "Seed two local Spaces, profile fixture generation, and measure EntryQuery and SQL browser reads"
 run = "bash scripts/measure-query-surfaces.sh"
 
 [tasks."measure:sql-export"]
-description = "Verify complete bounded SQL export over a fixed 10,000-entry Space"
+description = "Profile fixture generation and verify complete bounded SQL export over a fixed 10,000-entry Space"
 run = "bash scripts/measure-sql-export.sh"
 
 [tasks."measure:startup"]
