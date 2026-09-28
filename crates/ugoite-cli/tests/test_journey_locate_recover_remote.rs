@@ -585,8 +585,10 @@ async fn journey_cli_remote_locate_recover() {
     assert_eq!(preview["ready"], true);
     let changes = preview["changes"].as_array().unwrap();
     assert_eq!(changes.len(), 2);
+    assert_eq!(changes[0]["change_id"], run_changes[1]);
     assert_eq!(changes[0]["state"], "ready");
     assert_eq!(changes[0]["target_entry_count"], 1);
+    assert_eq!(changes[1]["change_id"], run_changes[0]);
     assert_eq!(changes[1]["state"], "already_reverted");
     assert_eq!(changes[1]["target_entry_count"], 1);
     let change_count_after = change_ids(&stdout_json(
