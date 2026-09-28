@@ -35,9 +35,16 @@ Create and edit an Entry in [Create and Edit Entries](entries.mdx).
 ugoite entry history meeting-2026-09-12
 ugoite entry revision meeting-2026-09-12 <revision-id>
 ugoite change list
+ugoite change show <change-id> --limit 10
+ugoite change show <change-id> --cursor <cursor> --limit 10
+ugoite change target <change-id> <entry-id>
 ugoite change revert <change-id> --dry-run
 ugoite run undo <run-id> --dry-run
 ```
+
+`change show` reads one Change and a bounded page of its affected Entries.
+Use its opaque cursor to continue paging, then pass a canonical Entry ID to
+`change target` for the typed before/after field evidence.
 
 Take `<revision-id>`, Change IDs, and Run IDs from the list output. Run
 `ugoite entry history --help` and `ugoite change --help` for exact flags.

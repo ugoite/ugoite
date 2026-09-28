@@ -2726,6 +2726,36 @@ impl UgoiteService {
         principal_ids: &[Uuid],
     ) -> Result<Value> {
         require_nonempty_authorized_principals(principal_ids)?;
+        self.inspect_change_inner(
+            space_id,
+            change_id,
+            requested_target_limit,
+            cursor,
+            Some(principal_ids),
+        )
+        .await
+    }
+
+    /// Inspect a committed Change for a trusted local core caller.
+    pub async fn inspect_change(
+        &self,
+        space_id: &str,
+        change_id: &str,
+        requested_target_limit: Option<usize>,
+        cursor: Option<&str>,
+    ) -> Result<Value> {
+        self.inspect_change_inner(space_id, change_id, requested_target_limit, cursor, None)
+            .await
+    }
+
+    async fn inspect_change_inner(
+        &self,
+        space_id: &str,
+        change_id: &str,
+        requested_target_limit: Option<usize>,
+        cursor: Option<&str>,
+        principal_ids: Option<&[Uuid]>,
+    ) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
         if change_id.trim().is_empty() || change_id.len() > 128 {
             return Err(
@@ -2767,212 +2797,229 @@ impl UgoiteService {
         }
 
         let authorizer = Authorizer::new(self.operator.clone());
-        authorizer
-            .with_state_lock(space_id, |state| async move {
-                let scopes = self
-                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+        let inspect = |state: Option<AuthorizationState>| async move {
+            let workspace =
+                iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
                     .await?;
-                let scope_fingerprint = Self::change_inspect_scope_fingerprint(&scopes);
-                if cursor_token
-                    .as_ref()
-                    .is_some_and(|token| token.scope_fingerprint != scope_fingerprint)
-                {
-                    return Err(AppError::invalid_input(
-                        ErrorCode::InvalidInput,
-                        "Change inspection cursor does not match the current read scope",
+            let scopes = if let Some(principal_ids) = principal_ids {
+                let state = state.ok_or_else(|| anyhow!("authorization state is missing"))?;
+                self.authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?
+            } else {
+                workspace
+                    .list_forms_bounded(
+                        MAX_AUTHORIZED_SCOPE_FORMS,
+                        MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
                     )
-                    .into());
+                    .await?
+                    .into_iter()
+                    .map(|form| (form.name.to_ascii_lowercase(), EntryScope::AllCurrent))
+                    .collect()
+            };
+            let scope_fingerprint = Self::change_inspect_scope_fingerprint(&scopes);
+            if cursor_token
+                .as_ref()
+                .is_some_and(|token| token.scope_fingerprint != scope_fingerprint)
+            {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Change inspection cursor does not match the current read scope",
+                )
+                .into());
+            }
+            let published_change = if let Some(token) = &cursor_token {
+                // The signed cursor carries the immutable Change metadata
+                // found on the first page. Avoid searching from the moving
+                // Head again: unrelated later publications must not push
+                // this Change out of the bounded lookup window.
+                crate::PublishedChange {
+                    change_id: token.change_id.clone(),
+                    generation: token.publication.generation,
+                    change: token.change.clone(),
+                    publication: token.publication.clone(),
                 }
-                let workspace =
-                    iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
-                        .await?;
-                let published_change = if let Some(token) = &cursor_token {
-                    // The signed cursor carries the immutable Change metadata
-                    // found on the first page. Avoid searching from the moving
-                    // Head again: unrelated later publications must not push
-                    // this Change out of the bounded lookup window.
-                    crate::PublishedChange {
-                        change_id: token.change_id.clone(),
-                        generation: token.publication.generation,
-                        change: token.change.clone(),
-                        publication: token.publication.clone(),
-                    }
-                } else {
-                    let mut cursor = None;
-                    let mut scanned_publications = 0usize;
-                    loop {
-                        let remaining =
-                            CHANGE_INSPECT_MAX_PUBLICATIONS.saturating_sub(scanned_publications);
-                        if remaining == 0 {
-                            return Err(AppError::invalid_input(
-                                ErrorCode::InvalidInput,
-                                "Change is outside the supported inspection window",
-                            )
-                            .into());
-                        }
-                        let page_limit = remaining.min(CHANGE_PAGE_MAX_LIMIT);
-                        let page = workspace.list_changes_page(cursor, page_limit).await?;
-                        scanned_publications += page_limit;
-                        if let Some(found) = page
-                            .changes
-                            .into_iter()
-                            .find(|published| published.change_id == change_id)
-                        {
-                            break found;
-                        }
-                        cursor = page.next;
-                        if cursor.is_none() {
-                            return Err(AppError::not_found(
-                                ErrorCode::EntryNotFound,
-                                format!("Change not found: {change_id}"),
-                            )
-                            .into());
-                        }
-                    }
-                };
-                let publication = published_change.publication.clone();
-                if cursor_token
-                    .as_ref()
-                    .is_some_and(|token| token.publication != publication)
-                {
-                    return Err(AppError::invalid_input(
-                        ErrorCode::InvalidInput,
-                        "Change inspection cursor does not match the committed publication",
-                    )
-                    .into());
-                }
-                let offset = cursor_token.as_ref().map_or(0, |token| token.offset);
-                let forms = workspace.forms_at_publication(&publication).await?;
-                let mut complete_visibility = true;
-                let mut revision_rows = 0usize;
-                let mut targets = BTreeMap::new();
-                let mut evidence = Vec::new();
-
-                for form in forms {
-                    let Some(authorized_scope) = scopes.get(&form.name.to_ascii_lowercase()) else {
-                        complete_visibility = false;
-                        continue;
-                    };
-                    if !matches!(authorized_scope, EntryScope::AllCurrent) {
-                        complete_visibility = false;
-                    }
-                    let remaining_rows = crate::MAX_NORMAL_READ_ROWS
-                        .saturating_sub(revision_rows)
-                        .max(1);
-                    // Route even an all-entry grant through the scoped
-                    // reader so the provider applies the read-row limit
-                    // before revision rows are decoded.
-                    let bounded_scope = match authorized_scope {
-                        EntryScope::AllCurrent => EntryScope::AllExcept(BTreeSet::new()),
-                        scope => scope.clone(),
-                    };
-                    let revisions = workspace
-                        .read_revision_view_at_publication_with_scope_and_limit(
-                            &publication,
-                            form.id,
-                            bounded_scope,
-                            RevisionView::All,
-                            remaining_rows,
-                        )
-                        .await?;
-                    revision_rows = revision_rows.saturating_add(revisions.len());
-                    if revision_rows > crate::MAX_NORMAL_READ_ROWS {
+            } else {
+                let mut cursor = None;
+                let mut scanned_publications = 0usize;
+                loop {
+                    let remaining =
+                        CHANGE_INSPECT_MAX_PUBLICATIONS.saturating_sub(scanned_publications);
+                    if remaining == 0 {
                         return Err(AppError::invalid_input(
                             ErrorCode::InvalidInput,
-                            "Change revision history exceeds the inspection read limit",
+                            "Change is outside the supported inspection window",
                         )
                         .into());
                     }
-
-                    let form_history = workspace
-                        .form_history_at_publication(&publication, form.id)
-                        .await?
+                    let page_limit = remaining.min(CHANGE_PAGE_MAX_LIMIT);
+                    let page = workspace.list_changes_page(cursor, page_limit).await?;
+                    scanned_publications += page_limit;
+                    if let Some(found) = page
+                        .changes
                         .into_iter()
-                        .map(|form| (form.version.get(), form))
-                        .collect::<BTreeMap<_, _>>();
-                    let mut matching_by_entry = BTreeMap::new();
-                    for after in revisions
-                        .iter()
-                        .filter(|revision| revision.change_id == change_id)
+                        .find(|published| published.change_id == change_id)
                     {
-                        if matching_by_entry.insert(after.entry_id, after).is_some() {
-                            bail!("Change has conflicting target revisions for one Entry");
-                        }
+                        break found;
                     }
+                    cursor = page.next;
+                    if cursor.is_none() {
+                        return Err(AppError::not_found(
+                            ErrorCode::EntryNotFound,
+                            format!("Change not found: {change_id}"),
+                        )
+                        .into());
+                    }
+                }
+            };
+            let publication = published_change.publication.clone();
+            if cursor_token
+                .as_ref()
+                .is_some_and(|token| token.publication != publication)
+            {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    "Change inspection cursor does not match the committed publication",
+                )
+                .into());
+            }
+            let offset = cursor_token.as_ref().map_or(0, |token| token.offset);
+            let forms = workspace.forms_at_publication(&publication).await?;
+            let mut complete_visibility = true;
+            let mut revision_rows = 0usize;
+            let mut targets = BTreeMap::new();
+            let mut evidence = Vec::new();
 
-                    for (entry_id, after) in matching_by_entry {
-                        let before = after.parent_revision_id.and_then(|parent_id| {
-                            revisions.iter().find(|revision| {
-                                revision.entry_id == entry_id && revision.revision_id == parent_id
-                            })
-                        });
-                        if after.parent_revision_id.is_some() && before.is_none() {
-                            bail!("Change target is missing its committed parent revision");
-                        }
-                        let after_form =
-                            form_history.get(&after.form_version.get()).ok_or_else(|| {
-                                anyhow!("Change target Form version is missing history")
-                            })?;
-                        let before_form =
-                            before
-                                .map(|revision| {
-                                    form_history.get(&revision.form_version.get()).ok_or_else(
-                                        || anyhow!("Change parent Form version is missing history"),
-                                    )
-                                })
-                                .transpose()?;
-                        let target = diff_entry_change(before, after, before_form, after_form)
-                            .map_err(|error| anyhow!(error.to_string()))?;
-                        evidence.push(EntryChangeEvidence {
-                            form_id: target.form_id,
-                            entry_id: target.entry_id,
-                            fields: target.fields.clone(),
-                        });
-                        targets.insert((target.form_id, target.entry_id), target);
+            for form in forms {
+                let Some(authorized_scope) = scopes.get(&form.name.to_ascii_lowercase()) else {
+                    complete_visibility = false;
+                    continue;
+                };
+                if !matches!(authorized_scope, EntryScope::AllCurrent) {
+                    complete_visibility = false;
+                }
+                let remaining_rows = crate::MAX_NORMAL_READ_ROWS
+                    .saturating_sub(revision_rows)
+                    .max(1);
+                // Route even an all-entry grant through the scoped
+                // reader so the provider applies the read-row limit
+                // before revision rows are decoded.
+                let bounded_scope = match authorized_scope {
+                    EntryScope::AllCurrent => EntryScope::AllExcept(BTreeSet::new()),
+                    scope => scope.clone(),
+                };
+                let revisions = workspace
+                    .read_revision_view_at_publication_with_scope_and_limit(
+                        &publication,
+                        form.id,
+                        bounded_scope,
+                        RevisionView::All,
+                        remaining_rows,
+                    )
+                    .await?;
+                revision_rows = revision_rows.saturating_add(revisions.len());
+                if revision_rows > crate::MAX_NORMAL_READ_ROWS {
+                    return Err(AppError::invalid_input(
+                        ErrorCode::InvalidInput,
+                        "Change revision history exceeds the inspection read limit",
+                    )
+                    .into());
+                }
+
+                let form_history = workspace
+                    .form_history_at_publication(&publication, form.id)
+                    .await?
+                    .into_iter()
+                    .map(|form| (form.version.get(), form))
+                    .collect::<BTreeMap<_, _>>();
+                let mut matching_by_entry = BTreeMap::new();
+                for after in revisions
+                    .iter()
+                    .filter(|revision| revision.change_id == change_id)
+                {
+                    if matching_by_entry.insert(after.entry_id, after).is_some() {
+                        bail!("Change has conflicting target revisions for one Entry");
                     }
                 }
 
-                let summary = if complete_visibility {
-                    Some(summarize_change(&evidence).map_err(|error| anyhow!(error.to_string()))?)
-                } else {
-                    None
-                };
-                let (target_page, next_offset) =
-                    change_inspect_target_page(targets, offset, target_limit).map_err(|error| {
-                        AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
-                    })?;
-                let next_cursor = if let Some(next_offset) = next_offset {
-                    Some(Self::encode_change_inspect_cursor(
-                        &ChangeInspectPageToken {
-                            version: 1,
-                            space_id: space_id.to_string(),
-                            change_id: change_id.to_string(),
-                            publication: publication.clone(),
-                            change: published_change.change.clone(),
-                            scope_fingerprint,
-                            limit: target_limit,
-                            offset: next_offset,
-                        },
-                        &signing_key,
-                    )?)
-                } else {
-                    None
-                };
-                let inspection = ChangeInspection {
-                    change_id: published_change.change_id,
-                    change: published_change.change,
-                    target_visibility: if complete_visibility {
-                        ChangeTargetVisibility::Complete
-                    } else {
-                        ChangeTargetVisibility::Partial
+                for (entry_id, after) in matching_by_entry {
+                    let before = after.parent_revision_id.and_then(|parent_id| {
+                        revisions.iter().find(|revision| {
+                            revision.entry_id == entry_id && revision.revision_id == parent_id
+                        })
+                    });
+                    if after.parent_revision_id.is_some() && before.is_none() {
+                        bail!("Change target is missing its committed parent revision");
+                    }
+                    let after_form = form_history
+                        .get(&after.form_version.get())
+                        .ok_or_else(|| anyhow!("Change target Form version is missing history"))?;
+                    let before_form = before
+                        .map(|revision| {
+                            form_history
+                                .get(&revision.form_version.get())
+                                .ok_or_else(|| {
+                                    anyhow!("Change parent Form version is missing history")
+                                })
+                        })
+                        .transpose()?;
+                    let target = diff_entry_change(before, after, before_form, after_form)
+                        .map_err(|error| anyhow!(error.to_string()))?;
+                    evidence.push(EntryChangeEvidence {
+                        form_id: target.form_id,
+                        entry_id: target.entry_id,
+                        fields: target.fields.clone(),
+                    });
+                    targets.insert((target.form_id, target.entry_id), target);
+                }
+            }
+
+            let summary = if complete_visibility {
+                Some(summarize_change(&evidence).map_err(|error| anyhow!(error.to_string()))?)
+            } else {
+                None
+            };
+            let (target_page, next_offset) =
+                change_inspect_target_page(targets, offset, target_limit).map_err(|error| {
+                    AppError::invalid_input(ErrorCode::InvalidInput, error.to_string())
+                })?;
+            let next_cursor = if let Some(next_offset) = next_offset {
+                Some(Self::encode_change_inspect_cursor(
+                    &ChangeInspectPageToken {
+                        version: 1,
+                        space_id: space_id.to_string(),
+                        change_id: change_id.to_string(),
+                        publication: publication.clone(),
+                        change: published_change.change.clone(),
+                        scope_fingerprint,
+                        limit: target_limit,
+                        offset: next_offset,
                     },
-                    summary,
-                    targets: target_page,
-                    next_cursor,
-                };
-                Ok(serde_json::to_value(inspection)?)
-            })
-            .await
+                    &signing_key,
+                )?)
+            } else {
+                None
+            };
+            let inspection = ChangeInspection {
+                change_id: published_change.change_id,
+                change: published_change.change,
+                target_visibility: if complete_visibility {
+                    ChangeTargetVisibility::Complete
+                } else {
+                    ChangeTargetVisibility::Partial
+                },
+                summary,
+                targets: target_page,
+                next_cursor,
+            };
+            Ok(serde_json::to_value(inspection)?)
+        };
+        if principal_ids.is_some() {
+            authorizer
+                .with_state_lock(space_id, |state| inspect(Some(state)))
+                .await
+        } else {
+            inspect(None).await
+        }
     }
 
     /// Reopen hook: converge commit-coupled audit evidence after a Space is
@@ -4636,6 +4683,29 @@ impl UgoiteService {
         principal_ids: &[Uuid],
     ) -> Result<Value> {
         require_nonempty_authorized_principals(principal_ids)?;
+        self.change_affected_entry_inner(space_id, change_id, entry_id, Some(principal_ids))
+            .await
+    }
+
+    /// Get one affected Entry's typed before/after evidence for a trusted
+    /// local core caller.
+    pub async fn change_affected_entry(
+        &self,
+        space_id: &str,
+        change_id: &str,
+        entry_id: &str,
+    ) -> Result<Value> {
+        self.change_affected_entry_inner(space_id, change_id, entry_id, None)
+            .await
+    }
+
+    async fn change_affected_entry_inner(
+        &self,
+        space_id: &str,
+        change_id: &str,
+        entry_id: &str,
+        principal_ids: Option<&[Uuid]>,
+    ) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         if change_id.trim().is_empty() || change_id.len() > 128 {
@@ -4649,88 +4719,104 @@ impl UgoiteService {
                 AppError::invalid_input(ErrorCode::InvalidInput, "entry_id must be a UUID")
             })?;
         let authorizer = Authorizer::new(self.operator.clone());
-        authorizer
-            .with_state_lock(space_id, |state| async move {
-                let scopes = self
-                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+        let read_target = |state: Option<AuthorizationState>| async move {
+            let workspace =
+                iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
                     .await?;
-                let workspace =
-                    iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
-                        .await?;
-                let publication = workspace.current_publication().await?;
-                let forms = workspace.forms_at_publication(&publication).await?;
-                let target_scope = EntryScope::Only(BTreeSet::from([entry_uuid]));
+            let scopes = if let Some(principal_ids) = principal_ids {
+                let state = state.ok_or_else(|| anyhow!("authorization state is missing"))?;
+                self.authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?
+            } else {
+                workspace
+                    .list_forms_bounded(
+                        MAX_AUTHORIZED_SCOPE_FORMS,
+                        MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
+                    )
+                    .await?
+                    .into_iter()
+                    .map(|form| (form.name.to_ascii_lowercase(), EntryScope::AllCurrent))
+                    .collect()
+            };
+            let publication = workspace.current_publication().await?;
+            let forms = workspace.forms_at_publication(&publication).await?;
+            let target_scope = EntryScope::Only(BTreeSet::from([entry_uuid]));
 
-                for form in forms {
-                    let Some(authorized_scope) = scopes.get(&form.name.to_ascii_lowercase()) else {
-                        continue;
-                    };
-                    let entry_is_readable = match authorized_scope {
-                        EntryScope::AllCurrent => true,
-                        EntryScope::Only(entry_ids) => entry_ids.contains(&entry_uuid),
-                        EntryScope::AllExcept(entry_ids) => !entry_ids.contains(&entry_uuid),
-                    };
-                    if !entry_is_readable {
-                        continue;
-                    }
-                    let revisions = workspace
-                        .read_revision_view_at_publication_with_scope(
-                            &publication,
-                            form.id,
-                            target_scope.clone(),
-                            RevisionView::All,
-                        )
-                        .await?;
-                    let matching = revisions
-                        .iter()
-                        .filter(|revision| revision.change_id == change_id)
-                        .collect::<Vec<_>>();
-                    if matching.is_empty() {
-                        continue;
-                    }
-                    if matching.len() != 1 {
-                        bail!("Change has conflicting target revisions for one Entry");
-                    }
-                    let after = matching[0];
-                    let before = after.parent_revision_id.and_then(|parent_id| {
-                        revisions
-                            .iter()
-                            .find(|revision| revision.revision_id == parent_id)
-                    });
-                    if after.parent_revision_id.is_some() && before.is_none() {
-                        bail!("Change target is missing its committed parent revision");
-                    }
-                    let form_history = workspace
-                        .form_history_at_publication(&publication, form.id)
-                        .await?
-                        .into_iter()
-                        .map(|form| (form.version.get(), form))
-                        .collect::<BTreeMap<_, _>>();
-                    let after_form =
-                        form_history.get(&after.form_version.get()).ok_or_else(|| {
-                            anyhow!("Change target Form version is missing from history")
-                        })?;
-                    let before_form = before
-                        .map(|revision| {
-                            form_history
-                                .get(&revision.form_version.get())
-                                .ok_or_else(|| {
-                                    anyhow!("Change parent Form version is missing from history")
-                                })
-                        })
-                        .transpose()?;
-                    let evidence = diff_entry_change(before, after, before_form, after_form)
-                        .map_err(|error| anyhow!(error.to_string()))?;
-                    return Ok(json!({ "change_id": change_id, "target": evidence }));
+            for form in forms {
+                let Some(authorized_scope) = scopes.get(&form.name.to_ascii_lowercase()) else {
+                    continue;
+                };
+                let entry_is_readable = match authorized_scope {
+                    EntryScope::AllCurrent => true,
+                    EntryScope::Only(entry_ids) => entry_ids.contains(&entry_uuid),
+                    EntryScope::AllExcept(entry_ids) => !entry_ids.contains(&entry_uuid),
+                };
+                if !entry_is_readable {
+                    continue;
                 }
+                let revisions = workspace
+                    .read_revision_view_at_publication_with_scope(
+                        &publication,
+                        form.id,
+                        target_scope.clone(),
+                        RevisionView::All,
+                    )
+                    .await?;
+                let matching = revisions
+                    .iter()
+                    .filter(|revision| revision.change_id == change_id)
+                    .collect::<Vec<_>>();
+                if matching.is_empty() {
+                    continue;
+                }
+                if matching.len() != 1 {
+                    bail!("Change has conflicting target revisions for one Entry");
+                }
+                let after = matching[0];
+                let before = after.parent_revision_id.and_then(|parent_id| {
+                    revisions
+                        .iter()
+                        .find(|revision| revision.revision_id == parent_id)
+                });
+                if after.parent_revision_id.is_some() && before.is_none() {
+                    bail!("Change target is missing its committed parent revision");
+                }
+                let form_history = workspace
+                    .form_history_at_publication(&publication, form.id)
+                    .await?
+                    .into_iter()
+                    .map(|form| (form.version.get(), form))
+                    .collect::<BTreeMap<_, _>>();
+                let after_form = form_history
+                    .get(&after.form_version.get())
+                    .ok_or_else(|| anyhow!("Change target Form version is missing from history"))?;
+                let before_form = before
+                    .map(|revision| {
+                        form_history
+                            .get(&revision.form_version.get())
+                            .ok_or_else(|| {
+                                anyhow!("Change parent Form version is missing from history")
+                            })
+                    })
+                    .transpose()?;
+                let evidence = diff_entry_change(before, after, before_form, after_form)
+                    .map_err(|error| anyhow!(error.to_string()))?;
+                return Ok(json!({ "change_id": change_id, "target": evidence }));
+            }
 
-                Err(AppError::not_found(
-                    ErrorCode::EntryNotFound,
-                    format!("Entry not found: {entry_id}"),
-                )
-                .into())
-            })
-            .await
+            Err(AppError::not_found(
+                ErrorCode::EntryNotFound,
+                format!("Entry not found: {entry_id}"),
+            )
+            .into())
+        };
+        if principal_ids.is_some() {
+            authorizer
+                .with_state_lock(space_id, |state| read_target(Some(state)))
+                .await
+        } else {
+            read_target(None).await
+        }
     }
 
     pub async fn entry_revision_authorized_for_principals(

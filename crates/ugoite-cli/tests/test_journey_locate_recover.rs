@@ -242,6 +242,28 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
         .expect("update returns durable change_id")
         .to_string();
 
+    let inspection = stdout_json(
+        &run_cli(
+            &config_path,
+            &["change", "show", &update_change_id, "--limit", "1"],
+        ),
+        "change show pages committed targets",
+    );
+    assert_eq!(inspection["summary"]["affected_entry_count"], 1);
+    assert_eq!(inspection["targets"].as_array().unwrap().len(), 1);
+    let target_id = inspection["targets"][0]["entry_id"]
+        .as_str()
+        .expect("inspection returns the canonical target ID");
+    let target = stdout_json(
+        &run_cli(
+            &config_path,
+            &["change", "target", &update_change_id, target_id],
+        ),
+        "change target returns typed evidence",
+    );
+    assert_eq!(target["change_id"], update_change_id);
+    assert_eq!(target["target"]["fields"].as_array().unwrap().len(), 1);
+
     // Narrowing reflects the updated state: open no longer matches task-a.
     let results = stdout_json(
         &run_cli(
