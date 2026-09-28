@@ -227,9 +227,9 @@ async fn saved_sql_name_is_a_normal_field() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-/// REQ-API-006 saved-sql-name-field: reading a pre-name SQL Form evolves only
-/// the Form schema; the old row remains readable and new rows use `name` as a
-/// normal field without a table rewrite.
+/// REQ-API-006 saved-sql-name-field: reading a pre-name SQL Form does not
+/// evolve it; explicit creation evolves only the Form schema, leaves the old
+/// row readable, and stores `name` as a normal field without a table rewrite.
 async fn saved_sql_evolves_legacy_form_without_rewriting_entries() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "sql-name-field-legacy", "/tmp").await?;
@@ -284,12 +284,9 @@ async fn saved_sql_evolves_legacy_form_without_rewriting_entries() -> anyhow::Re
     assert!(legacy["name"].is_null());
     assert_eq!(legacy["revision_id"], legacy_revision);
 
-    let evolved_form = form::get_form(&op, ws_path, "SQL").await?;
-    assert!(
-        evolved_form["fields"].get("name").is_some(),
-        "evolved SQL Form: {evolved_form}"
-    );
-    assert_eq!(evolved_form["version"], json!(2));
+    let unchanged_form = form::get_form(&op, ws_path, "SQL").await?;
+    assert!(unchanged_form["fields"].get("name").is_none());
+    assert_eq!(unchanged_form["version"], json!(1));
 
     let new_payload = SqlPayload {
         name: Some("Current SQL".to_string()),
@@ -307,6 +304,13 @@ async fn saved_sql_evolves_legacy_form_without_rewriting_entries() -> anyhow::Re
         &integrity,
     )
     .await?;
+    let evolved_form = form::get_form(&op, ws_path, "SQL").await?;
+    assert!(
+        evolved_form["fields"].get("name").is_some(),
+        "evolved SQL Form: {evolved_form}"
+    );
+    assert_eq!(evolved_form["version"], json!(2));
+
     let current_entry = entry::get_entry(&op, ws_path, "current-sql").await?;
     assert_eq!(current_entry["fields"]["name"], json!("Current SQL"));
 
