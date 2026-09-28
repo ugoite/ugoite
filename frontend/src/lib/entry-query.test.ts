@@ -197,6 +197,206 @@ describe("EntryQueryController", () => {
     );
   });
 
+  it("preserves the current Space/query/projection/page when an aborted query resolves last", async () => {
+    let resolveOld:
+      | ((page: { rows: ReturnType<typeof row>[]; has_more: boolean }) => void)
+      | undefined;
+    let setSpace!: (space: string) => void;
+    let currentSpace!: () => string;
+    let controller!: ReturnType<typeof createEntryQueryController>;
+    let oldRead!: Promise<void>;
+    let dispose = () => {};
+    const nextProjection = {
+      kind: "fields" as const,
+      fields: [{ kind: "updated_at" as const }],
+    };
+    queryMock
+      .mockImplementationOnce(() =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        })
+      )
+      .mockResolvedValueOnce({
+        rows: [row("new-space-old-query")],
+        has_more: true,
+        next: "new-space-next",
+      })
+      .mockResolvedValueOnce({
+        rows: [row("new-query-preview")],
+        has_more: true,
+        next: "new-query-preview-next",
+      })
+      .mockResolvedValueOnce({
+        rows: [row("new-projection-first-page")],
+        has_more: true,
+        next: "projection-next",
+      })
+      .mockResolvedValueOnce({
+        rows: [row("new-projection-current-page")],
+        has_more: true,
+        next: "projection-page-two-next",
+      });
+
+    createRoot((stop) => {
+      dispose = stop;
+      const [spaceId, updateSpace] = createSignal("space-old");
+      currentSpace = spaceId;
+      setSpace = updateSpace;
+      controller = createEntryQueryController(
+        spaceId,
+        {
+          scope: { kind: "all" },
+          text: "late-old",
+          filters: [],
+          sort: [],
+        },
+        previewProjection(),
+        50,
+        queryMock,
+      );
+      oldRead = controller.load();
+    });
+    const oldSignal = queryMock.mock.calls[0][2] as AbortSignal;
+    setSpace("space-new");
+
+    await vi.waitFor(() => {
+      expect(queryMock).toHaveBeenCalledTimes(2);
+      expect(controller.rows().map((entry) => entry.id)).toEqual([
+        "new-space-old-query",
+      ]);
+      expect(controller.loading()).toBe(false);
+    });
+    expect(oldSignal.aborted).toBe(true);
+
+    controller.setText("current-new");
+    await vi.waitFor(() => {
+      expect(queryMock).toHaveBeenCalledTimes(3);
+      expect(controller.rows().map((entry) => entry.id)).toEqual([
+        "new-query-preview",
+      ]);
+      expect(controller.loading()).toBe(false);
+    });
+
+    controller.setProjection(nextProjection);
+    await vi.waitFor(() => {
+      expect(queryMock).toHaveBeenCalledTimes(4);
+      expect(controller.rows().map((entry) => entry.id)).toEqual([
+        "new-projection-first-page",
+      ]);
+      expect(controller.loading()).toBe(false);
+    });
+    await controller.next();
+    expect(queryMock).toHaveBeenCalledTimes(5);
+    expect(queryMock.mock.calls[3][0]).toBe("space-new");
+    expect(queryMock.mock.calls[3][1]).toMatchObject({
+      query: { scope: { kind: "all" }, text: "current-new" },
+      projection: nextProjection,
+    });
+    expect(queryMock.mock.calls[4][1]).toMatchObject({
+      query: { scope: { kind: "all" }, text: "current-new" },
+      projection: nextProjection,
+      after: "projection-next",
+    });
+
+    const currentState = {
+      spaceId: currentSpace(),
+      query: controller.query(),
+      projection: controller.projection(),
+      rows: controller.rows(),
+      hasMore: controller.hasMore(),
+      nextCursor: controller.nextCursor(),
+      currentStart: controller.currentStart(),
+      cursorStack: controller.cursorStack(),
+      loading: controller.loading(),
+      error: controller.error(),
+    };
+    expect(currentState).toMatchObject({
+      spaceId: "space-new",
+      query: { text: "current-new" },
+      projection: nextProjection,
+      rows: [row("new-projection-current-page")],
+      hasMore: true,
+      nextCursor: "projection-page-two-next",
+      currentStart: "projection-next",
+      cursorStack: [undefined, "projection-next"],
+      loading: false,
+      error: null,
+    });
+
+    resolveOld?.({ rows: [row("late-old")], has_more: false });
+    await oldRead;
+
+    expect({
+      spaceId: currentSpace(),
+      query: controller.query(),
+      projection: controller.projection(),
+      rows: controller.rows(),
+      hasMore: controller.hasMore(),
+      nextCursor: controller.nextCursor(),
+      currentStart: controller.currentStart(),
+      cursorStack: controller.cursorStack(),
+      loading: controller.loading(),
+      error: controller.error(),
+    }).toEqual(currentState);
+    dispose();
+  });
+
+  it("does not let an aborted query rejection clear or replace the current page", async () => {
+    let rejectOld: ((reason: Error) => void) | undefined;
+    queryMock
+      .mockImplementationOnce(() =>
+        new Promise((_, reject) => {
+          rejectOld = reject;
+        })
+      )
+      .mockResolvedValueOnce({
+        rows: [row("current")],
+        has_more: true,
+        next: "current-next",
+      });
+
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    const oldRead = controller.load();
+    const oldSignal = queryMock.mock.calls[0][2] as AbortSignal;
+    controller.setText("current-new");
+
+    await vi.waitFor(() => {
+      expect(queryMock).toHaveBeenCalledTimes(2);
+      expect(controller.rows().map((entry) => entry.id)).toEqual(["current"]);
+      expect(controller.loading()).toBe(false);
+    });
+    expect(oldSignal.aborted).toBe(true);
+    const currentState = {
+      rows: controller.rows(),
+      hasMore: controller.hasMore(),
+      nextCursor: controller.nextCursor(),
+      currentStart: controller.currentStart(),
+      cursorStack: controller.cursorStack(),
+      loading: controller.loading(),
+      error: controller.error(),
+    };
+
+    rejectOld?.(new Error("late old query failed"));
+    await oldRead;
+
+    expect({
+      rows: controller.rows(),
+      hasMore: controller.hasMore(),
+      nextCursor: controller.nextCursor(),
+      currentStart: controller.currentStart(),
+      cursorStack: controller.cursorStack(),
+      loading: controller.loading(),
+      error: controller.error(),
+    }).toEqual(currentState);
+    expect(controller.error()).toBeNull();
+  });
+
   it("returns one first page from the measurement dataset without extra reads", async () => {
     const dataset = Array.from(
       { length: 120 },

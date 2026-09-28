@@ -3,7 +3,7 @@
 # fallback via `run-e2e-parity.sh`.
 #
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
-#   test-type: "smoke", "asset-owned", "smoke-and-asset-owned",
+#   test-type: "smoke", "late-query-response", "asset-owned", "smoke-and-asset-owned",
 #     "owner-recovery", "mobile-ui", "query-measurement",
 #     "sql-export-remote-auth", "portable-space",
 #     "entries", "screenshot", or "full"
@@ -317,6 +317,9 @@ validate_junit_report() {
 case "$TEST_TYPE" in
   smoke)
     run_e2e_task smoke "$base_report_file"
+    ;;
+  late-query-response)
+    run_e2e_task late-query-response "$base_report_file"
     ;;
   entries)
     run_e2e_task entries "$base_report_file"
