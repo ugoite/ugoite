@@ -1,0 +1,12 @@
+{
+  "created_at": 1790611773.582,
+  "hmac_key": "cHVibGljLXByZWJpbmRpbmctZml4dHVyZS1rZXktMjAyNg==",
+  "hmac_key_id": "public-test-fixture-2026",
+  "id": "01a0e8c7-586d-732e-9a7f-375ac47836f9",
+  "last_rotation": "2026-09-28T16:09:33.583095+00:00",
+  "name": "Pre-binding SQL history",
+  "slug": "prebinding-sql-history",
+  "space_id": "01a0e8c7-586d-732e-9a7f-375ac47836f9",
+  "space_uid": "01a0e8c7-586d-732e-9a7f-375ac47836f9",
+  "space_version": "0.1"
+}
