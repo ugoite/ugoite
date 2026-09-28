@@ -219,6 +219,11 @@ uses the Form IDs bound to that revision.
   null or an explicitly typed scalar.
 - Continuation rejected: start a fresh query when SQL, parameters, or current
   authorization no longer match the continuation.
+- `LEGACY_SQL_BINDING_UNAVAILABLE`: this pre-binding revision contains a quoted
+  Form name but does not record the Form ID that name identified when saved.
+  `sql saved get <SQL_ID>` can inspect the stored SQL. Explicitly edit and save
+  a new revision to bind the current Form before running it; the old revision
+  stays unchanged.
 
 ## Related concepts
 

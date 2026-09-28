@@ -7273,7 +7273,7 @@ fn bound_sql_for_revision(
         if !index::quoted_form_name_references(sql)?.is_empty() {
             return Err(AppError::invalid_input(
                 ErrorCode::InvalidInput,
-                "Legacy Saved SQL cannot resolve Form names without a saved binding revision",
+                "LEGACY_SQL_BINDING_UNAVAILABLE: this pre-binding Saved SQL revision cannot resolve quoted Form names without a saved Form ID. Inspect or export the stored SQL, then explicitly edit and save a new revision to bind its Forms.",
             )
             .into());
         }
@@ -7863,6 +7863,26 @@ mod saved_sql_binding_execution_tests {
             result.is_err(),
             "same-name replacement cannot satisfy a missing Form ID binding"
         );
+    }
+
+    #[test]
+    fn prebinding_saved_sql_with_quoted_form_name_has_explicit_diagnostic() {
+        let revision = saved_sql::ResolvedSavedSqlRevision {
+            sql: "SELECT * FROM \"Expense\"".into(),
+            variables: json!([]),
+            binding_version: None,
+            bindings: Vec::new(),
+        };
+        let error = bound_sql_for_revision(&revision, &[], &BTreeMap::new(), &revision.sql)
+            .expect_err("an old Form name cannot be guessed from the current Space");
+        let app_error = error
+            .downcast_ref::<AppError>()
+            .expect("the compatibility boundary should be a typed input error");
+        assert_eq!(app_error.code(), ErrorCode::InvalidInput);
+        assert!(app_error
+            .message()
+            .contains("LEGACY_SQL_BINDING_UNAVAILABLE"));
+        assert!(app_error.message().contains("edit and save a new revision"));
     }
 }
 

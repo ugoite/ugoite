@@ -53,6 +53,24 @@ and `generatedName` only, plus a bound metadata object containing
 must fail in a reader that does not define those fields. Both forms are covered
 by the Saved SQL focused tests.
 
+`synthetic_prebinding_revision` is a focused Layer A fixture. It inserts a
+generic SQL Form Entry with null metadata and no binding fields, then verifies
+that the exact `form_<UUID>` SQL and revision can be read, queried, counted,
+continued, and integrity-checked without changing the row or SQL Form. It
+bypasses `create_saved_sql` for the synthetic row. The test appends a later
+bound revision and still selects the old revision by exact ID. This proves the
+current reader contract, not the provenance of an artifact written by an older
+release. A frozen Space written
+through the normal Save path by a pre-binding binary remains a separate Layer B
+evidence item.
+
+For a pre-binding revision containing `FROM "Expense"`, the historical Form ID
+cannot be recovered from the SQL or current Form name. Execution fails with
+`LEGACY_SQL_BINDING_UNAVAILABLE`; the stored SQL remains available to inspect
+or export. To run it, explicitly edit the SQL and save a new revision so the
+current service records Form IDs. Reads do not upsert or evolve the internal
+SQL Form.
+
 ## Focused acceptance fixtures
 
 | Case | Expected result |

@@ -17,8 +17,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
+use chrono::Utc;
 use serde_json::{json, Map, Value};
 use ugoite_core::sql_query::{SavedSqlRevisionRef, SqlQueryCountRequest, SqlQueryRequest};
+use ugoite_iceberg::entry::{self, IntegrityPayload};
+use ugoite_iceberg::integrity::{IntegrityProvider, RealIntegrityProvider};
 use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
 
@@ -344,51 +347,259 @@ fn query_request(sql: String, limit: usize) -> SqlQueryRequest {
 }
 
 #[tokio::test]
-async fn legacy_id_relation_saved_sql_revision_runs_without_rewrite() -> Result<()> {
-    let space = setup_sql_space("memory://sql-legacy-saved-relation", "sqllegacysaved").await?;
-    let legacy_sql = base_sql(&space);
-    let saved = space
+async fn listing_empty_saved_sql_does_not_create_its_form() -> Result<()> {
+    let service = UgoiteService::new("memory://sql-read-only-list")?;
+    service.create_space("sqlreadonlylist").await?;
+
+    let saved_sql = service
+        .list_saved_sql_operator_unscoped("sqlreadonlylist")
+        .await?;
+    assert!(saved_sql.is_empty());
+    assert!(service.get_form("sqlreadonlylist", "SQL").await.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Result<()> {
+    let space = setup_sql_space(
+        "memory://sql-synthetic-prebinding",
+        "sqlsyntheticprebinding",
+    )
+    .await?;
+    // This row models the pre-binding generic Entry representation directly.
+    // It intentionally bypasses create_saved_sql, which writes current bindings.
+    let bootstrap = space
         .service
         .create_saved_sql(
             &space.space_id,
-            Some("legacy-id-query"),
+            Some("bootstrap_sql_form"),
             &SqlPayload {
-                name: Some("Legacy ID query".into()),
+                name: Some("Bootstrap".into()),
                 kind: SqlKind::UserQuery,
                 metadata: None,
-                sql: legacy_sql.clone(),
+                sql: "SELECT 1".into(),
                 variables: json!([]),
             },
             "owner",
         )
         .await?;
-    assert_eq!(saved["metadata"]["formBindings"], json!([]));
-    let revision_id = saved["revision_id"].as_str().context("revision id")?;
-    let page = space
+    let legacy_sql = format!(
+        "SELECT \"_ugoite_id\" FROM \"{}\" WHERE \"{}\" >= $minimum \
+         ORDER BY \"_ugoite_id\"",
+        space.relation, space.priority_column
+    );
+    let operator = space.service.operator();
+    let workspace_path = space.service.workspace_path(&space.space_id);
+    let integrity = RealIntegrityProvider::from_space(operator, &space.space_id).await?;
+    let bootstrap_revision_id = bootstrap["revision_id"].as_str().context("revision id")?;
+    let mut legacy_revision: entry::RevisionRow = serde_json::from_value(
+        entry::get_entry_revision(
+            operator,
+            &workspace_path,
+            "bootstrap_sql_form",
+            bootstrap_revision_id,
+        )
+        .await?,
+    )?;
+    let legacy_variables = json!([{
+        "name": "minimum",
+        "type": "integer",
+        "description": ""
+    }]);
+    let canonical_payload = json!({
+        "name": "Historical query",
+        "kind": "user-query",
+        "metadata": null,
+        "sql": legacy_sql.clone(),
+        "variables": legacy_variables.clone(),
+    });
+    let canonical_payload = serde_json::to_string(&canonical_payload)?;
+    let revision_integrity = IntegrityPayload {
+        checksum: integrity.checksum(&canonical_payload),
+        signature: integrity.signature(&canonical_payload),
+    };
+    let revision_id = "01900000-0000-7000-8000-000000000123".to_string();
+    legacy_revision.revision_id = revision_id.clone();
+    legacy_revision.change_id = "01900000-0000-7000-8000-000000000124".into();
+    legacy_revision.entry_id = "synthetic_prebinding_revision".into();
+    legacy_revision.parent_revision_id = None;
+    legacy_revision.timestamp = Utc::now().timestamp_millis() as f64;
+    legacy_revision.author = "owner".into();
+    legacy_revision.updated_by = "owner".into();
+    legacy_revision.deleted_by = None;
+    legacy_revision.fields = json!({
+        "name": "Historical query",
+        "sql": legacy_sql.clone(),
+        "variables": legacy_variables.clone(),
+    });
+    legacy_revision.extra_attributes = json!({"kind":"user-query", "metadata":null});
+    legacy_revision.markdown_checksum = revision_integrity.checksum.clone();
+    legacy_revision.integrity = revision_integrity.clone();
+    legacy_revision.entry_version = 1;
+    legacy_revision.operation = "upsert".into();
+    if let Some(state) = legacy_revision.state.as_mut() {
+        state.entry_id = "synthetic_prebinding_revision".into();
+        state.revision_id = revision_id.clone();
+        state.parent_revision_id = None;
+        state.fields = legacy_revision.fields.clone();
+        state.extra_attributes = legacy_revision.extra_attributes.clone();
+        state.integrity = revision_integrity;
+        state.created_at = legacy_revision.timestamp;
+        state.updated_at = legacy_revision.timestamp;
+        state.author = "owner".into();
+        state.updated_by = "owner".into();
+        state.deleted_by = None;
+        state.deleted = false;
+        state.deleted_at = None;
+        state.entry_version = 1;
+    }
+    entry::append_revision_batch_for_form(operator, &workspace_path, "SQL", &[legacy_revision])
+        .await?;
+    let saved = space
+        .service
+        .get_saved_sql(&space.space_id, "synthetic_prebinding_revision")
+        .await?;
+    let saved_revision_id = saved["revision_id"].as_str().context("revision id")?;
+    assert_eq!(saved_revision_id, revision_id);
+    let before_entry = entry::get_entry_revision(
+        operator,
+        &workspace_path,
+        "synthetic_prebinding_revision",
+        saved_revision_id,
+    )
+    .await?;
+    assert_eq!(saved["sql"], legacy_sql);
+    assert_eq!(
+        saved["variables"],
+        json!([{"name":"minimum","type":"integer","description":""}])
+    );
+    assert!(saved["metadata"].is_null());
+
+    let appended = space
+        .service
+        .update_saved_sql(
+            &space.space_id,
+            "synthetic_prebinding_revision",
+            &SqlPayload {
+                name: Some("Historical query".into()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: legacy_sql.clone(),
+                variables: legacy_variables.clone(),
+            },
+            saved_revision_id,
+            "owner",
+        )
+        .await?;
+    assert_ne!(appended["revision_id"], saved_revision_id);
+
+    let before_form = space.service.get_form(&space.space_id, "SQL").await?;
+    let before_space = space.service.get_space(&space.space_id).await?;
+    let before_pins = space.service.list_pins(&space.space_id).await?;
+    let first = space
         .service
         .query_sql(
             &space.space_id,
             SqlQueryRequest {
                 sql: String::new(),
-                parameters: Map::new(),
+                parameters: Map::from_iter([("minimum".into(), json!(3))]),
                 parameter_types: BTreeMap::new(),
-                limit: 10,
+                limit: 2,
                 continuation: None,
                 saved_sql: Some(SavedSqlRevisionRef {
-                    id: "legacy-id-query".into(),
-                    revision_id: revision_id.into(),
+                    id: "synthetic_prebinding_revision".into(),
+                    revision_id: saved_revision_id.into(),
                 }),
             },
         )
         .await?;
-    assert_eq!(page.rows.len(), 5);
+    assert_eq!(first.rows.len(), 2);
+    assert!(first.has_more);
+    let second = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                sql: String::new(),
+                parameters: Map::from_iter([("minimum".into(), json!(3))]),
+                parameter_types: BTreeMap::new(),
+                limit: 2,
+                continuation: first.next,
+                saved_sql: Some(SavedSqlRevisionRef {
+                    id: "synthetic_prebinding_revision".into(),
+                    revision_id: saved_revision_id.into(),
+                }),
+            },
+        )
+        .await?;
+    assert_eq!(
+        first
+            .rows
+            .iter()
+            .chain(&second.rows)
+            .map(|row| row["_ugoite_id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["sql-02", "sql-03", "sql-04"]
+    );
+    let count = space
+        .service
+        .count_sql(
+            &space.space_id,
+            SqlQueryCountRequest {
+                sql: String::new(),
+                parameters: Map::from_iter([("minimum".into(), json!(3))]),
+                parameter_types: BTreeMap::new(),
+                saved_sql: Some(SavedSqlRevisionRef {
+                    id: "synthetic_prebinding_revision".into(),
+                    revision_id: saved_revision_id.into(),
+                }),
+            },
+        )
+        .await?;
+    assert_eq!(count, 3);
+    assert!(space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                saved_sql: Some(SavedSqlRevisionRef {
+                    id: "synthetic_prebinding_revision".into(),
+                    revision_id: "wrong-revision".into(),
+                }),
+                ..query_request(String::new(), 2)
+            }
+        )
+        .await
+        .is_err());
+
     let after = space
         .service
-        .get_saved_sql(&space.space_id, "legacy-id-query")
+        .get_saved_sql(&space.space_id, "synthetic_prebinding_revision")
         .await?;
-    assert_eq!(after["revision_id"], revision_id);
-    assert_eq!(after["sql"], legacy_sql);
-    assert_eq!(after["metadata"]["formBindings"], json!([]));
+    assert_eq!(after["revision_id"], appended["revision_id"]);
+    assert_eq!(after["sql"], saved["sql"]);
+    assert_eq!(after["variables"], saved["variables"]);
+    assert_eq!(after["metadata"]["bindingVersion"], 1);
+    assert_eq!(before_entry["extra_attributes"]["metadata"], Value::Null);
+    let after_entry = entry::get_entry_revision(
+        operator,
+        &workspace_path,
+        "synthetic_prebinding_revision",
+        saved_revision_id,
+    )
+    .await?;
+    assert_eq!(after_entry["revision_id"], before_entry["revision_id"]);
+    assert_eq!(after_entry["integrity"], before_entry["integrity"]);
+    assert_eq!(after_entry["fields"], before_entry["fields"]);
+    assert_eq!(
+        space.service.get_form(&space.space_id, "SQL").await?,
+        before_form
+    );
+    assert_eq!(
+        space.service.get_space(&space.space_id).await?,
+        before_space
+    );
+    assert_eq!(space.service.list_pins(&space.space_id).await?, before_pins);
     Ok(())
 }
 /// First page + continuation union the full ordered result on the real
