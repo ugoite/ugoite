@@ -1721,6 +1721,7 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             get(preview_revert_change),
         )
         .route("/spaces/{space_id}/runs/{run_id}/undo", post(undo_run))
+        .route("/spaces/{space_id}/runs/{run_id}/inspect", get(inspect_run))
         .route(
             "/spaces/{space_id}/runs/{run_id}/undo/preview",
             get(preview_undo_run),
@@ -10037,6 +10038,30 @@ async fn inspect_change(
     ))
 }
 
+async fn inspect_run(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, run_id)): Path<(String, String)>,
+    Query(query): Query<ChangeInspectQuery>,
+) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    Ok(Json(
+        state
+            .service
+            .inspect_run_authorized_for_principals(
+                &space_id,
+                &run_id,
+                query.limit,
+                query.cursor.as_deref(),
+                &principals,
+            )
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
 #[derive(Default, Deserialize)]
 struct ChangeRevertRequest {
     run_id: Option<String>,
@@ -13287,6 +13312,7 @@ mod authentication_regression_tests {
                 get(preview_revert_change),
             )
             .route("/spaces/{space_id}/runs/{run_id}/undo", post(undo_run))
+            .route("/spaces/{space_id}/runs/{run_id}/inspect", get(inspect_run))
             .route(
                 "/spaces/{space_id}/runs/{run_id}/undo/preview",
                 get(preview_undo_run),
@@ -19509,6 +19535,66 @@ mod authentication_regression_tests {
         assert_eq!(status, StatusCode::CONFLICT, "{conflict_body}");
         assert_eq!(conflict_body["code"], "REVISION_CONFLICT");
         assert!(conflict_body["message"].as_str().is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authenticated_rest_run_inspection_returns_committed_changes() -> anyhow::Result<()> {
+        let state =
+            AppState::new_for_tests(format!("memory://server-run-inspect-{}", Uuid::now_v7()))?;
+        let principal_id = Uuid::from_u128(33311);
+        let space_id = state
+            .service
+            .create_space_for_principal("run-inspect", principal_id, "Route test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state,
+            reversible_knowledge_identity(principal_id, space_uid),
+        );
+
+        let created = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [knowledge_create_operation("run-inspect-entry", "created")],
+                    "run_id": "run-inspect-route"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(created.0, StatusCode::OK, "{}", created.1);
+
+        let inspected = route_json(
+            route,
+            Request::get(format!(
+                "/spaces/{space_id}/runs/run-inspect-route/inspect?limit=1"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(inspected.0, StatusCode::OK, "{}", inspected.1);
+        assert_eq!(inspected.1["run_id"], "run-inspect-route");
+        assert_eq!(inspected.1["changes"].as_array().map(Vec::len), Some(1));
+        assert_eq!(
+            inspected.1["changes"][0]["change"]["run_id"],
+            "run-inspect-route"
+        );
+        assert!(inspected.1["changes"][0].get("target_visibility").is_some());
         Ok(())
     }
 

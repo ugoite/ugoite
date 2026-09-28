@@ -40,6 +40,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "change.affected.get",
     "change.revert.preview",
     "change.revert",
+    "run.inspect",
     "run.undo.preview",
     "run.undo",
     "ugoite.apply",
@@ -710,6 +711,44 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "run.inspect" => {
+                let mut query = Vec::new();
+                if let Some(limit) = args.get("limit") {
+                    let limit = limit
+                        .as_u64()
+                        .filter(|limit| (1..=10).contains(limit))
+                        .ok_or_else(|| {
+                            ApiProtocolError::invalid_arguments(
+                                operation,
+                                "limit must be an integer between 1 and 10",
+                            )
+                        })?;
+                    query.push(("limit".into(), limit.to_string()));
+                }
+                if let Some(cursor) = args.get("cursor") {
+                    let cursor = cursor
+                        .as_str()
+                        .filter(|cursor| !cursor.is_empty() && cursor.len() <= 16_384)
+                        .ok_or_else(|| {
+                            ApiProtocolError::invalid_arguments(
+                                operation,
+                                "cursor must be a non-empty string no longer than 16384 bytes",
+                            )
+                        })?;
+                    query.push(("cursor".into(), cursor.to_string()));
+                }
+                (
+                    OperationSpec::get("Failed to inspect Run"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "runs".into(),
+                        required_string(operation, args, "run_id")?,
+                        "inspect".into(),
+                    ],
+                    query,
+                )
+            }
             "run.undo" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to undo Run"),
                 vec![
@@ -1621,6 +1660,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to preview Run undo",
             RequestBodyKind::None,
         ),
+        "run.inspect" => (
+            HttpMethod::Get,
+            "Failed to inspect Run",
+            RequestBodyKind::None,
+        ),
         "run.undo" => (
             HttpMethod::Post,
             "Failed to undo Run",
@@ -2282,6 +2326,29 @@ mod tests {
     }
 
     #[test]
+    fn run_inspect_rejects_unbounded_pages_and_blank_cursors() {
+        for limit in [0, 11] {
+            let error = prepare_request(
+                "run.inspect",
+                &json!({"space_id": "demo", "run_id": "run-1", "limit": limit}),
+                None,
+            )
+            .expect_err("Run inspection page limits are bounded");
+            assert!(error.to_string().contains("between 1 and 10"));
+        }
+
+        let error = prepare_request(
+            "run.inspect",
+            &json!({"space_id": "demo", "run_id": "run-1", "cursor": ""}),
+            None,
+        )
+        .expect_err("Run inspection cursor is non-empty");
+        assert!(error
+            .to_string()
+            .contains("cursor must be a non-empty string"));
+    }
+
+    #[test]
     fn change_affected_get_uses_a_read_only_target_route() {
         let request = prepare_request(
             "change.affected.get",
@@ -2430,6 +2497,23 @@ mod tests {
         .expect("Run undo preview request");
         assert_eq!(undo_preview.method, HttpMethod::Get);
         assert_eq!(undo_preview.path, "/spaces/demo/runs/run-1/undo/preview");
+
+        let run_inspect = prepare_request(
+            "run.inspect",
+            &json!({
+                "space_id": "demo space",
+                "run_id": "run/one",
+                "limit": 2,
+                "cursor": "opaque cursor",
+            }),
+            None,
+        )
+        .expect("Run inspection request");
+        assert_eq!(run_inspect.method, HttpMethod::Get);
+        assert_eq!(
+            run_inspect.path,
+            "/spaces/demo%20space/runs/run%2Fone/inspect?limit=2&cursor=opaque+cursor"
+        );
     }
 
     #[test]
@@ -2949,7 +3033,7 @@ mod tests {
         let needs_space_id = operation.starts_with("space.")
             || operation.starts_with("change.")
             || operation.starts_with("pin.")
-            || matches!(operation, "run.undo" | "run.undo.preview")
+            || matches!(operation, "run.inspect" | "run.undo" | "run.undo.preview")
             || operation == "ugoite.apply"
             || operation.starts_with("form.")
             || operation.starts_with("entry.")
@@ -3038,6 +3122,11 @@ mod tests {
         }
         if matches!(operation, "run.undo" | "run.undo.preview") {
             arguments.insert("run_id".into(), json!("run-1"));
+        }
+        if operation == "run.inspect" {
+            arguments.insert("run_id".into(), json!("run-1"));
+            arguments.insert("limit".into(), json!(10));
+            arguments.insert("cursor".into(), json!("v1.page.sig"));
         }
         if operation == "ugoite.apply" {
             arguments.insert("operations".into(), json!([]));

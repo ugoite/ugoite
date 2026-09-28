@@ -39,6 +39,8 @@ ugoite change show <change-id> --limit 10
 ugoite change show <change-id> --cursor <cursor> --limit 10
 ugoite change target <change-id> <entry-id>
 ugoite change revert <change-id> --dry-run
+ugoite run show <run-id> --limit 10
+ugoite run show <run-id> --cursor <cursor> --limit 10
 ugoite run undo <run-id> --dry-run
 ```
 
@@ -46,8 +48,14 @@ ugoite run undo <run-id> --dry-run
 Use its opaque cursor to continue paging, then pass a canonical Entry ID to
 `change target` for the typed before/after field evidence.
 
+`run show` reads only committed Changes correlated to the Run, in reverse
+publication order. Each page is bounded to 1..=10 Changes; use its opaque
+cursor to continue. Entry counts are included only when current authorization
+allows the complete target summary.
+
 Take `<revision-id>`, Change IDs, and Run IDs from the list output. Run
-`ugoite entry history --help` and `ugoite change --help` for exact flags.
+`ugoite entry history --help`, `ugoite change --help`, and `ugoite run --help`
+for exact flags.
 
 Space audit paging (`ugoite space audit-events --limit/--offset`) stays in
 the effective range 1..=500 after normalization: `0` normalizes to `1`
