@@ -112,6 +112,19 @@ pub(crate) struct ResolvedSavedSqlRevision {
     pub binding_version: Option<u32>,
 }
 
+fn saved_sql_binding_metadata(
+    metadata: Option<SqlMetadata>,
+) -> Result<(Option<u32>, Vec<SqlFormBinding>)> {
+    match metadata {
+        Some(metadata) => match (metadata.binding_version, metadata.form_bindings) {
+            (Some(1), Some(bindings)) => Ok((Some(1), bindings)),
+            (None, None) => Ok((None, Vec::new())),
+            _ => anyhow::bail!("unsupported or incomplete Saved SQL Form binding metadata"),
+        },
+        None => Ok((None, Vec::new())),
+    }
+}
+
 pub(crate) struct SqlUpdateContext<'a, I: IntegrityProvider> {
     pub authorized_forms: &'a BTreeMap<String, ugoite_domain::id::FormId>,
     pub parent_revision_id: &'a str,
@@ -239,6 +252,13 @@ async fn ensure_sql_form(op: &Operator, ws_path: &str) -> Result<Value> {
     let form_def = sql_form_definition();
     form::upsert_metadata_form(op, ws_path, &form_def).await?;
     form::read_form_definition(op, ws_path, SQL_FORM_NAME).await
+}
+
+async fn sql_form_exists_read_only(op: &Operator, ws_path: &str) -> Result<bool> {
+    Ok(form::list_forms_read_only(op, ws_path)
+        .await?
+        .iter()
+        .any(|definition| definition.get("name").and_then(Value::as_str) == Some(SQL_FORM_NAME)))
 }
 
 fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
@@ -568,7 +588,9 @@ fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
 }
 
 pub async fn list_sql(op: &Operator, ws_path: &str, entry_scope: EntryScope) -> Result<Vec<Value>> {
-    ensure_sql_form(op, ws_path).await?;
+    if !sql_form_exists_read_only(op, ws_path).await? {
+        return Ok(Vec::new());
+    }
     let rows = index::query_form_entry_rows_authorized(
         op,
         ws_path,
@@ -590,7 +612,9 @@ pub async fn list_sql(op: &Operator, ws_path: &str, entry_scope: EntryScope) -> 
 }
 
 pub async fn get_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<Value> {
-    ensure_sql_form(op, ws_path).await?;
+    if !sql_form_exists_read_only(op, ws_path).await? {
+        return Err(sql_entry_not_found(sql_id));
+    }
     let mut row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
     if row.deleted {
         return Err(sql_entry_not_found(sql_id));
@@ -606,7 +630,13 @@ pub(crate) async fn read_sql_revision(
     revision_id: &str,
     integrity: &(dyn IntegrityProvider + Send + Sync),
 ) -> Result<ResolvedSavedSqlRevision> {
-    ensure_sql_form(op, ws_path).await?;
+    if !sql_form_exists_read_only(op, ws_path).await? {
+        return Err(AppError::not_found(
+            ErrorCode::EntryNotFound,
+            format!("Saved SQL revision not found: {sql_id}@{revision_id}"),
+        )
+        .into());
+    }
     let (_, _, revisions) =
         entry::revision_rows_for_form_read_only(op, ws_path, SQL_FORM_NAME).await?;
     let row = revisions
@@ -643,14 +673,7 @@ pub(crate) async fn read_sql_revision(
         .map(serde_json::from_value::<SqlMetadata>)
         .transpose()
         .context("SQL revision metadata is invalid")?;
-    let (binding_version, bindings) = match metadata {
-        Some(metadata) => match (metadata.binding_version, metadata.form_bindings) {
-            (Some(1), Some(bindings)) => (Some(1), bindings),
-            (None, None) => (None, Vec::new()),
-            _ => anyhow::bail!("unsupported or incomplete Saved SQL Form binding metadata"),
-        },
-        None => (None, Vec::new()),
-    };
+    let (binding_version, bindings) = saved_sql_binding_metadata(metadata)?;
     if binding_version.is_some() {
         let references = index::quoted_form_name_references(&sql)?;
         let bound_names = bindings
@@ -1087,6 +1110,25 @@ mod name_field_tests {
             .is_err(),
             "old readers fail closed instead of dropping binding metadata"
         );
+
+        let legacy = serde_json::from_value::<SqlMetadata>(serde_json::json!({
+            "searchCriteria": null,
+            "generatedName": null,
+        }))
+        .expect("pre-binding metadata decodes");
+        assert_eq!(
+            saved_sql_binding_metadata(Some(legacy)).unwrap(),
+            (None, Vec::new())
+        );
+        for partial in [
+            serde_json::json!({"bindingVersion": 1}),
+            serde_json::json!({"formBindings": []}),
+            serde_json::json!({"bindingVersion": 2, "formBindings": []}),
+        ] {
+            let metadata = serde_json::from_value::<SqlMetadata>(partial)
+                .expect("known fields decode before semantic version validation");
+            assert!(saved_sql_binding_metadata(Some(metadata)).is_err());
+        }
     }
 
     #[test]
