@@ -60,6 +60,7 @@ const MEASUREMENT_SLUGS = ["query-space-a", "query-space-b"] as const;
 const TRIAL_COUNT = 5;
 const SQL_FORM_NAME = "MaintenanceTicket";
 const SQL_PAGE_SIZE = 100;
+const QUERY_RESULT_TIMEOUT_MS = 30_000;
 
 function percentile(values: number[], p: number): number {
   const sorted = [...values].sort((left, right) => left - right);
@@ -85,6 +86,7 @@ test("records real two-Space query surface measurements", async ({ page, request
   const measuredSpaces: Array<{
     slug: string;
     space_uid: string;
+    expected_entries: number;
     saved_sql_id?: string;
     parameterized_sql_id?: string;
   }> = MEASUREMENT_SLUGS.map((slug) => {
@@ -93,8 +95,27 @@ test("records real two-Space query surface measurements", async ({ page, request
     );
     expect(space, `seeded Space ${slug} is visible to the test account`)
       .toBeTruthy();
-    return { slug, space_uid: space!.space_uid };
+    return {
+      slug,
+      space_uid: space!.space_uid,
+      expected_entries: slug === MEASUREMENT_SLUGS[0] ? 6_000 : 4_000,
+    };
   });
+
+  for (const space of measuredSpaces) {
+    const countResponse = await request.post(
+      getBackendUrl(`/spaces/${space.space_uid}/entries/query/count`),
+      {
+        data: {
+          query: { scope: { kind: "all" }, filters: [], sort: [] },
+        },
+      },
+    );
+    expect(countResponse.ok()).toBeTruthy();
+    expect(await countResponse.json()).toEqual({
+      count: space.expected_entries,
+    });
+  }
 
   const sqlBySpace = new Map<string, string>();
   const formMetadata: Record<string, { id?: string; relation: string }> = {};
@@ -130,6 +151,15 @@ test("records real two-Space query surface measurements", async ({ page, request
     const savedSql = await createSqlResponse.json() as { id: string };
     sqlBySpace.set(space.space_uid, sql);
     space.saved_sql_id = savedSql.id;
+
+    const sqlCountResponse = await request.post(
+      getBackendUrl(`/spaces/${space.space_uid}/sql/query/count`),
+      { data: { sql } },
+    );
+    expect(sqlCountResponse.ok()).toBeTruthy();
+    expect(await sqlCountResponse.json()).toEqual({
+      count: space.expected_entries / 4,
+    });
 
     if (space === measuredSpaces[0]) {
       const parameterizedSql =
@@ -255,7 +285,9 @@ test("records real two-Space query surface measurements", async ({ page, request
         }).catch(() => undefined);
         const startedAt = Date.now();
         await page.goto(entryPath, { waitUntil: "domcontentloaded" });
-        await expect(rowLocator).toBeVisible();
+        await expect(rowLocator).toBeVisible({
+          timeout: QUERY_RESULT_TIMEOUT_MS,
+        });
         const elapsedToFirstVisibleRowMs = Date.now() - startedAt;
         const browserState = await page.evaluate(() => ({
           userAgent: navigator.userAgent,
@@ -295,7 +327,9 @@ test("records real two-Space query surface measurements", async ({ page, request
         }).catch(() => undefined);
         const startedAt = Date.now();
         await page.goto(sqlPath, { waitUntil: "domcontentloaded" });
-        await expect(rowLocator).toBeVisible();
+        await expect(rowLocator).toBeVisible({
+          timeout: QUERY_RESULT_TIMEOUT_MS,
+        });
         const elapsedToFirstVisibleRowMs = Date.now() - startedAt;
         const firstPageState = await page.evaluate(() => ({
           userAgent: navigator.userAgent,
@@ -332,7 +366,9 @@ test("records real two-Space query surface measurements", async ({ page, request
       }
 
       await page.goto(sqlPath, { waitUntil: "domcontentloaded" });
-      await expect(rowLocator).toBeVisible();
+      await expect(rowLocator).toBeVisible({
+        timeout: QUERY_RESULT_TIMEOUT_MS,
+      });
       const initialPageCount = await page.evaluate(() =>
         (window as Window & { __ugoiteQueryEvents?: QueryEvent[] })
           .__ugoiteQueryEvents?.filter((event) =>
@@ -386,7 +422,9 @@ test("records real two-Space query surface measurements", async ({ page, request
       ),
       { waitUntil: "domcontentloaded" },
     );
-    await expect(rowLocator).toBeVisible();
+    await expect(rowLocator).toBeVisible({
+      timeout: QUERY_RESULT_TIMEOUT_MS,
+    });
     let lifecycle: LifecycleMeasurement = {
       events: [],
       instrumentOnly: true,
@@ -410,52 +448,146 @@ test("records real two-Space query surface measurements", async ({ page, request
         rows.flatMap((row) => row.getAttribute("data-entry-id") ?? [])
       );
       expect(sourceEntryIds.length).toBeGreaterThan(0);
+      const searchRouteGates = new Map<string, {
+        reached: Promise<void>;
+        finished: Promise<void>;
+        held: Promise<void>;
+        release: () => void;
+        markReached: () => void;
+        markFinished: () => void;
+        wasReached: boolean;
+      }>();
+      let releaseTargetSpaceQuery!: () => void;
+      let markTargetSpaceQueryReached!: () => void;
+      let markTargetSpaceQueryFinished!: () => void;
+      const targetSpaceQueryHeld = new Promise<void>((resolve) => {
+        releaseTargetSpaceQuery = resolve;
+      });
+      const targetSpaceQueryReached = new Promise<void>((resolve) => {
+        markTargetSpaceQueryReached = resolve;
+      });
+      const targetSpaceQueryFinished = new Promise<void>((resolve) => {
+        markTargetSpaceQueryFinished = resolve;
+      });
+      for (const text of ["solar", "energy", "inspection"]) {
+        let release!: () => void;
+        let markReached!: () => void;
+        let markFinished!: () => void;
+        const held = new Promise<void>((resolve) => release = resolve);
+        const reached = new Promise<void>((resolve) => {
+          markReached = resolve;
+        });
+        const finished = new Promise<void>((resolve) => {
+          markFinished = resolve;
+        });
+        searchRouteGates.set(text, {
+          reached,
+          finished,
+          held,
+          release,
+          markReached,
+          markFinished,
+          wasReached: false,
+        });
+      }
       await page.route("**/entries/query", async (route) => {
-        await new Promise((resolve) => setTimeout(resolve, 400));
+        if (
+          route.request().url().includes(
+            `/spaces/${secondSpace.space_uid}/entries/query`,
+          )
+        ) {
+          markTargetSpaceQueryReached();
+          await targetSpaceQueryHeld;
+          try {
+            await route.continue();
+          } catch {
+            // The browser may cancel the held target request first.
+          } finally {
+            markTargetSpaceQueryFinished();
+          }
+          return;
+        }
+        const body = route.request().postDataJSON() as {
+          query?: { text?: unknown };
+        } | null;
+        const text = body?.query?.text;
+        const gate = typeof text === "string"
+          ? searchRouteGates.get(text)
+          : undefined;
+        if (!gate) {
+          await route.continue();
+          return;
+        }
+        gate.wasReached = true;
+        gate.markReached();
+        await gate.held;
         try {
           await route.continue();
         } catch {
-          // The browser may cancel this deliberately delayed request first.
+          // The browser may cancel the held request before it is continued.
+        } finally {
+          gate.markFinished();
         }
       });
       const searchbox = page.getByRole("searchbox");
-      const firstRapidRequest = page.waitForRequest((request) =>
-        request.url().includes("/entries/query")
+      const waitForSearchRequest = (text: string) =>
+        page.waitForRequest((request) => {
+          if (!request.url().includes("/entries/query")) return false;
+          const body = request.postDataJSON() as {
+            query?: { text?: unknown };
+          } | null;
+          return body?.query?.text === text;
+        });
+      let rowsBeforeTargetQuery = 0;
+      let rowsWhileTargetQueryPending = 0;
+      try {
+        const firstRapidRequest = waitForSearchRequest("solar");
+        await searchbox.fill("solar");
+        await Promise.all([
+          firstRapidRequest,
+          searchRouteGates.get("solar")!.reached,
+        ]);
+        const secondRapidRequest = waitForSearchRequest("energy");
+        await searchbox.fill("energy");
+        await Promise.all([
+          secondRapidRequest,
+          searchRouteGates.get("energy")!.reached,
+        ]);
+        const switchingRequest = waitForSearchRequest("inspection");
+        await searchbox.fill("inspection");
+        await Promise.all([
+          switchingRequest,
+          searchRouteGates.get("inspection")!.reached,
+        ]);
+        await page.getByLabel("Space", { exact: true }).selectOption(
+          secondSpace.space_uid,
+        );
+        await expect(page).toHaveURL(
+          new RegExp(`/spaces/${secondSpace.space_uid}/forms$`),
+        );
+        await page.waitForTimeout(500);
+        rowsBeforeTargetQuery = await page.locator("tbody tr").count();
+        await page.getByText(SQL_FORM_NAME, { exact: true }).click();
+        await targetSpaceQueryReached;
+        rowsWhileTargetQueryPending = await page.locator(
+          "tbody tr",
+        ).count();
+        expect(rowsWhileTargetQueryPending).toBe(0);
+        releaseTargetSpaceQuery();
+        await expect(rowLocator).toBeVisible({
+          timeout: QUERY_RESULT_TIMEOUT_MS,
+        });
+      } finally {
+        releaseTargetSpaceQuery();
+        for (const gate of searchRouteGates.values()) gate.release();
+      }
+      await targetSpaceQueryFinished;
+      await Promise.all(
+        [...searchRouteGates.values()]
+          .filter((gate) => gate.wasReached)
+          .map((gate) => gate.finished),
       );
-      await searchbox.fill("solar");
-      await firstRapidRequest;
-      const secondRapidRequest = page.waitForRequest((request) =>
-        request.url().includes("/entries/query")
-      );
-      await searchbox.fill("energy");
-      await secondRapidRequest;
-      const switchingRequest = page.waitForRequest((request) =>
-        request.url().includes("/entries/query")
-      );
-      await searchbox.fill("inspection");
-      await switchingRequest;
-      await page.getByLabel("Space", { exact: true }).selectOption(
-        secondSpace.space_uid,
-      );
-      await expect(page).toHaveURL(
-        new RegExp(`/spaces/${secondSpace.space_uid}/forms$`),
-      );
-      await page.waitForTimeout(500);
-      const rowsBeforeTargetQuery = await page.locator(
-        "tbody tr",
-      ).count();
-      const targetSpaceRequest = page.waitForRequest((request) =>
-        request.url().includes(
-          `/spaces/${secondSpace.space_uid}/entries/query`,
-        )
-      );
-      await page.getByText(SQL_FORM_NAME, { exact: true }).click();
-      await targetSpaceRequest;
-      const rowsWhileTargetQueryPending = await page.locator(
-        "tbody tr",
-      ).count();
-      expect(rowsWhileTargetQueryPending).toBe(0);
-      await expect(rowLocator).toBeVisible();
+      await page.unroute("**/entries/query");
       await page.waitForTimeout(500);
       lifecycle = await page.evaluate(({
         targetSpaceUid,
@@ -576,7 +708,9 @@ test("records real two-Space query surface measurements", async ({ page, request
         await page.goto(getFrontendUrl(path), {
           waitUntil: "domcontentloaded",
         });
-        await expect(rowLocator).toBeVisible();
+        await expect(rowLocator).toBeVisible({
+          timeout: QUERY_RESULT_TIMEOUT_MS,
+        });
         await page.route(`**${requestPath}`, async (route) => {
           await new Promise((resolve) => setTimeout(resolve, 400));
           try {
@@ -657,7 +791,9 @@ test("records real two-Space query surface measurements", async ({ page, request
         await expect(page).toHaveURL(
           new RegExp(`${parameterizedSqlPath}/run$`),
         );
-        await expect(rowLocator).toBeVisible();
+        await expect(rowLocator).toBeVisible({
+          timeout: QUERY_RESULT_TIMEOUT_MS,
+        });
       };
       const changeSqlRunState = async (
         threshold: number | string,
@@ -743,47 +879,69 @@ test("records real two-Space query surface measurements", async ({ page, request
 
       await openParameterizedSql("200");
       await resetEvents();
+      let releaseCountRoute: (() => void) | undefined;
+      let markCountRouteReached: (() => void) | undefined;
+      let markCountRouteFinished: (() => void) | undefined;
+      const countRouteHeld = new Promise<void>((resolve) => {
+        releaseCountRoute = resolve;
+      });
+      const countRouteReached = new Promise<void>((resolve) => {
+        markCountRouteReached = resolve;
+      });
+      const countRouteFinished = new Promise<void>((resolve) => {
+        markCountRouteFinished = resolve;
+      });
       await page.route("**/sql/query/count", async (route) => {
-        await new Promise((resolve) => setTimeout(resolve, 400));
+        markCountRouteReached?.();
+        await countRouteHeld;
         try {
           await route.continue();
         } catch {
           // The browser may cancel this deliberately delayed request first.
+        } finally {
+          markCountRouteFinished?.();
         }
       });
       const pendingParameterizedCount = page.waitForRequest((request) =>
         new URL(request.url()).pathname.endsWith("/sql/query/count")
       );
-      await page.getByRole("button", { name: "Count rows" }).click();
-      await pendingParameterizedCount;
-      const changedTypePage = page.waitForRequest((request) => {
-        if (
-          !new URL(request.url()).pathname.endsWith("/sql/query")
-        ) return false;
-        const body = request.postDataJSON() as {
-          parameters?: Record<string, unknown>;
-          parameter_types?: Record<string, string>;
-        } | null;
-        return body?.parameters?.threshold === "200" &&
-          body.parameter_types?.threshold === "string";
-      });
-      await changeSqlRunState("200", "string");
-      const changedTypeRequest = await changedTypePage;
-      expect(changedTypeRequest.postDataJSON()).toMatchObject({
-        parameters: { threshold: "200" },
-        parameter_types: { threshold: "string" },
-      });
-      await page.waitForFunction(() =>
-        ((window as Window & {
-          __ugoiteQueryEvents?: QueryEvent[];
-        }).__ugoiteQueryEvents ?? []).some((event) =>
-          event.path.endsWith("/sql/query") && event.endedAt !== undefined &&
-          (event.body as
-              | { parameter_types?: Record<string, string> }
-              | undefined)
-              ?.parameter_types?.threshold === "string"
-        )
-      );
+      try {
+        await page.getByRole("button", { name: "Count rows" }).click();
+        await Promise.all([pendingParameterizedCount, countRouteReached]);
+        const changedTypePage = page.waitForRequest((request) => {
+          if (
+            !new URL(request.url()).pathname.endsWith("/sql/query")
+          ) return false;
+          const body = request.postDataJSON() as {
+            parameters?: Record<string, unknown>;
+            parameter_types?: Record<string, string>;
+          } | null;
+          return body?.parameters?.threshold === "200" &&
+            body.parameter_types?.threshold === "string";
+        });
+        await changeSqlRunState("200", "string");
+        const changedTypeRequest = await changedTypePage;
+        expect(changedTypeRequest.postDataJSON()).toMatchObject({
+          parameters: { threshold: "200" },
+          parameter_types: { threshold: "string" },
+        });
+        await page.waitForFunction(() =>
+          ((window as Window & {
+            __ugoiteQueryEvents?: QueryEvent[];
+          }).__ugoiteQueryEvents ?? []).some((event) =>
+            event.path.endsWith("/sql/query") &&
+            event.endedAt !== undefined &&
+            (event.body as
+                | { parameter_types?: Record<string, string> }
+                | undefined)
+                ?.parameter_types?.threshold === "string"
+          )
+        );
+      } finally {
+        // Let Playwright drain an intercepted request even if an assertion fails.
+        releaseCountRoute?.();
+      }
+      await countRouteFinished;
       await page.unroute("**/sql/query/count");
       lifecycle.sqlParameterTypeChange = summarizeLifecycleEvents(
         await page.evaluate(() =>
@@ -957,7 +1115,7 @@ test("records real two-Space query surface measurements", async ({ page, request
               heap_api:
                 "performance.memory.usedJSHeapSize when Chromium exposes it; otherwise null",
               lifecycle_interception:
-                "400 ms Playwright delays on selected EntryQuery and SQL page/count lifecycle requests; first-visible-row performance trials are not delayed",
+                "Playwright holds selected superseded EntryQuery and SQL page/count requests until identity changes; first-visible-row performance trials are not delayed",
             },
             summaries: {
               entry_query_first_visible_row: summarize(entryTrials),

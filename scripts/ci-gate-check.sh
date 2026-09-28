@@ -30,7 +30,7 @@ any_skipped=false
 for planned in \
   "${PLAN_RUST_CHECK:-missing}" "${PLAN_RUST_TEST:-missing}" \
   "${PLAN_WEB:-missing}" "${PLAN_ARTIFACTS:-missing}" \
-  "${PLAN_DOCSITE_NAV:-missing}"; do
+  "${PLAN_DOCSITE_NAV:-missing}" "${PLAN_CP1_ACCEPTANCE:-missing}"; do
   case "$planned" in
     true) ;;
     false) any_skipped=true ;;
@@ -52,6 +52,7 @@ validate_lane "e2e-smoke-mobile" "${PLAN_ARTIFACTS:-missing}" "${E2E_SMOKE_MOBIL
 validate_lane "e2e-owner" "${PLAN_ARTIFACTS:-missing}" "${E2E_OWNER_RESULT:-missing}"
 validate_lane "e2e-portable" "${PLAN_ARTIFACTS:-missing}" "${E2E_PORTABLE_RESULT:-missing}"
 validate_lane "docsite-nav" "${PLAN_DOCSITE_NAV:-missing}" "${DOCSITE_NAV_RESULT:-missing}"
+validate_lane "cp1-acceptance" "${PLAN_CP1_ACCEPTANCE:-missing}" "${CP1_ACCEPTANCE_RESULT:-missing}"
 
 if [[ "${EVENT_NAME:-}" == "pull_request" ]]; then
   require_success "pr-context-report" "${PR_CONTEXT_RESULT:-missing}"

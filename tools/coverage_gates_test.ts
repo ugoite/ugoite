@@ -80,6 +80,7 @@ async function assertAggregateWorkflow(
   const e2ePortableJob = workflowJobBlock(workflow, "e2e-portable");
   const impactJob = workflowJobBlock(workflow, "impact");
   const docsiteNavJob = workflowJobBlock(workflow, "docsite-nav");
+  const cp1AcceptanceJob = workflowJobBlock(workflow, "cp1-acceptance");
   const requiredJob = workflowJobBlock(workflow, "required");
   const rustCheckCargoCache = workflowStepBlock(
     rustCheckJob,
@@ -119,6 +120,9 @@ async function assertAggregateWorkflow(
   );
   const measureStep = await Deno.readTextFile(
     new URL("../scripts/measure-step.sh", import.meta.url),
+  );
+  const sqlExportMeasure = await Deno.readTextFile(
+    new URL("../scripts/measure-sql-export.sh", import.meta.url),
   );
   const mergeTask = taskBlock(mise, "ci:merge");
 
@@ -462,6 +466,7 @@ async function assertAggregateWorkflow(
       "mise run ci:lane:e2e-portable",
       "mise run ci:lane:e2e-smoke-mobile",
       "mise run ci:lane:docsite-nav",
+      "mise run ci:lane:cp1-acceptance",
       "mise run ci:lane:rust-check",
       "mise run ci:lane:rust-test",
       "mise run ci:lane:web",
@@ -507,6 +512,38 @@ async function assertAggregateWorkflow(
     "docsite navigation mise lane",
   );
   assertContainsAll(
+    cp1AcceptanceJob,
+    [
+      "name: ci-cp1-acceptance",
+      "needs: impact",
+      "needs.impact.outputs.plan_cp1_acceptance == 'true'",
+      'E2E_ENFORCE_CI_GATES: "true"',
+      "scripts/measure-step.sh cp1-acceptance mise run ci:lane:cp1-acceptance",
+      "target/query-surfaces-measurement.json",
+      "target/sql-export-measurement/",
+    ],
+    "CP1 acceptance lane",
+  );
+  assertContainsAll(
+    taskBlock(mise, "ci:lane:cp1-acceptance"),
+    [
+      '{ task = "measure:query-surfaces", env = { E2E_ENFORCE_CI_GATES = "true" } }',
+      '{ task = "measure:sql-export" }',
+    ],
+    "CP1 acceptance mise lane",
+  );
+  assertContainsAll(
+    sqlExportMeasure,
+    [
+      "--max-rows 10000",
+      "--max-bytes 1024",
+      "max-bytes would be exceeded",
+      "A byte-limited export must not publish a partial destination",
+      "A failed byte-limited export left a temporary output file",
+    ],
+    "fixed SQL export acceptance fixture",
+  );
+  assertContainsAll(
     taskBlock(mise, "ci:impact"),
     ["deno run -A tools/ci-impact.ts"],
     "standalone CI impact mise task",
@@ -527,7 +564,7 @@ async function assertAggregateWorkflow(
     [
       "name: ci-required",
       "if: ${{ always() }}",
-      "needs: [impact, rust-check, rust-test, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, pr-context-report]",
+      "needs: [impact, rust-check, rust-test, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, cp1-acceptance, pr-context-report]",
       "runs-on: ubuntu-slim",
       "IMPACT_RESULT: ${{ needs.impact.result }}",
       "IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}",
@@ -538,6 +575,7 @@ async function assertAggregateWorkflow(
       "PLAN_WEB: ${{ needs.impact.outputs.plan_web }}",
       "PLAN_ARTIFACTS: ${{ needs.impact.outputs.plan_artifacts }}",
       "PLAN_DOCSITE_NAV: ${{ needs.impact.outputs.plan_docsite_nav }}",
+      "PLAN_CP1_ACCEPTANCE: ${{ needs.impact.outputs.plan_cp1_acceptance }}",
       "RUST_CHECK_RESULT: ${{ needs.rust-check.result }}",
       "RUST_TEST_RESULT: ${{ needs.rust-test.result }}",
       "WEB_RESULT: ${{ needs.web.result }}",
@@ -546,6 +584,7 @@ async function assertAggregateWorkflow(
       "E2E_OWNER_RESULT: ${{ needs.e2e-owner.result }}",
       "E2E_PORTABLE_RESULT: ${{ needs.e2e-portable.result }}",
       "DOCSITE_NAV_RESULT: ${{ needs.docsite-nav.result }}",
+      "CP1_ACCEPTANCE_RESULT: ${{ needs.cp1-acceptance.result }}",
       "PR_CONTEXT_RESULT: ${{ needs.pr-context-report.result }}",
       "run: scripts/ci-gate-check.sh",
     ],
