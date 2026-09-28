@@ -50,8 +50,10 @@ Use its opaque cursor to continue paging, then pass a canonical Entry ID to
 
 `run show` reads only committed Changes correlated to the Run, in reverse
 publication order. Each page is bounded to 1..=10 Changes; use its opaque
-cursor to continue. Entry counts are included only when current authorization
-allows the complete target summary.
+cursor to continue. Entry counts and the complete target Form set are included
+only when current authorization allows the complete target summary. Target
+Forms remain represented even when their Entries have no comparable field
+changes.
 
 Take `<revision-id>`, Change IDs, and Run IDs from the list output. Run
 `ugoite entry history --help`, `ugoite change --help`, and `ugoite run --help`

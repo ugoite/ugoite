@@ -48,6 +48,7 @@ const row = (id: string, count: number, runId: string | null = null) => ({
   target_visibility: "complete" as const,
   summary: {
     affected_entry_count: count,
+    target_form_ids: ["form-1"],
     field_groups: [{
       form_id: "form-1",
       field_id: 1,
@@ -233,6 +234,45 @@ describe("space history list", () => {
     expect(screen.getByText("Some change details are unavailable")).toBeInTheDocument();
     expect(screen.queryByText(/100 entries/)).toBeNull();
     expect(screen.queryByText(/purpose:/)).toBeNull();
+  });
+
+  it("counts target Forms without comparable field groups", async () => {
+    vi.mocked(changeApi.query).mockResolvedValue({
+      changes: [{
+        ...row("multi-form-change", 2),
+        summary: {
+          affected_entry_count: 2,
+          target_form_ids: ["form-1", "form-2"],
+          field_groups: row("multi-form-change", 2).summary.field_groups,
+        },
+      }],
+      next_cursor: null,
+    });
+
+    render(() => <SpaceHistoryRoute />);
+
+    expect(await screen.findByText("2 Forms · 2 entries")).toBeInTheDocument();
+    expect(screen.queryByText("Expenses · 2 entries")).toBeNull();
+  });
+
+  it("does not infer the complete target Forms from field groups alone", async () => {
+    vi.mocked(changeApi.query).mockResolvedValue({
+      changes: [{
+        ...row("legacy-summary", 2),
+        summary: {
+          affected_entry_count: 2,
+          target_form_ids: [],
+          field_groups: row("legacy-summary", 2).summary.field_groups,
+        },
+      }],
+      next_cursor: null,
+    });
+
+    render(() => <SpaceHistoryRoute />);
+
+    expect(await screen.findByText(/2 entries/)).toBeInTheDocument();
+    expect(screen.queryByText("Expenses · 2 entries")).toBeNull();
+    expect(screen.queryByText("1 Forms · 2 entries")).toBeNull();
   });
 
   it("opens a direct detail URL with related Run Changes and collapsed identifiers", async () => {

@@ -164,6 +164,9 @@ pub struct ChangeFieldGroup {
 pub struct ChangeHistorySummary {
     /// Number of distinct (Form, Entry) identities with verified membership.
     pub affected_entry_count: usize,
+    /// Complete distinct target Forms from verified Change membership,
+    /// including Forms whose Entries have no comparable field changes.
+    pub target_form_ids: Vec<FormId>,
     /// Common field deltas supported by revision evidence.
     pub field_groups: Vec<ChangeFieldGroup>,
 }
@@ -405,6 +408,12 @@ pub fn summarize_change(
 
     Ok(ChangeHistorySummary {
         affected_entry_count: unique.len(),
+        target_form_ids: unique
+            .keys()
+            .map(|(form_id, _)| *form_id)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
         field_groups: groups.into_values().collect(),
     })
 }
@@ -660,8 +669,27 @@ mod tests {
     fn one_entry_is_one_change_target() {
         let summary = summarize_change(&[changed(form(1), entry(1), "850", "1200")]).unwrap();
         assert_eq!(summary.affected_entry_count, 1);
+        assert_eq!(summary.target_form_ids, vec![form(1)]);
         assert_eq!(summary.field_groups.len(), 1);
         assert_eq!(summary.field_groups[0].affected_entry_count, 1);
+    }
+
+    #[test]
+    fn target_forms_include_entries_without_comparable_field_changes() {
+        let summary = summarize_change(&[
+            changed(form(1), entry(1), "old", "new"),
+            EntryChangeEvidence {
+                form_id: form(2),
+                entry_id: entry(2),
+                fields: Vec::new(),
+            },
+        ])
+        .unwrap();
+
+        assert_eq!(summary.affected_entry_count, 2);
+        assert_eq!(summary.target_form_ids, vec![form(1), form(2)]);
+        assert_eq!(summary.field_groups.len(), 1);
+        assert_eq!(summary.field_groups[0].form_id, form(1));
     }
 
     #[test]
