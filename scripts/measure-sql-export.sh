@@ -3,6 +3,13 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT_DIR="${UGOITE_SQL_EXPORT_MEASURE_OUTPUT:-$ROOT_DIR/target/sql-export-measurement}"
+PROFILE_DIR="${UGOITE_CP1_PROFILE_DIR:-$ROOT_DIR/target/cp1-profiling}"
+PROFILE_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+PROFILE_STARTED_MS="$(deno eval --quiet 'console.log(Date.now())')"
+mkdir -p "$PROFILE_DIR"
+PROFILE_REPORT="$PROFILE_DIR/export-${PROFILE_RUN_ID}.json"
+SEED_PROFILE="$PROFILE_DIR/sql-export-measure-${PROFILE_RUN_ID}.json"
+CLI_BUILD_RESOURCE="$PROFILE_DIR/export-cli-build-${PROFILE_RUN_ID}.time.txt"
 mkdir -p "$OUTPUT_DIR"
 if [[ -n "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
   echo "Refusing to overwrite a non-empty export measurement output directory: $OUTPUT_DIR" >&2
@@ -24,9 +31,36 @@ else
 fi
 
 cleanup() {
-  if [[ "$KEEP_ROOT" == false ]]; then rm -rf "$MEASURE_ROOT"; fi
+  local exit_code=$?
+  trap - EXIT INT TERM
+  set +e
+  deno run -A "$ROOT_DIR/tools/cp1_profile.ts" export \
+    --output "$PROFILE_REPORT" \
+    --root "$DATA_ROOT" \
+    --started-ms "$PROFILE_STARTED_MS" \
+    --exit-code "$exit_code" \
+    --evidence-report "$OUTPUT_DIR/measurement.json" \
+    --seed sql-export-measure 3140001 10000 - \
+      "$SEED_PROFILE" "${SEED_PROFILE%.json}.time.txt" \
+    --export-run 100 "$OUTPUT_DIR/page-100.ndjson" \
+      "$OUTPUT_DIR/page-100.summary.json" "$OUTPUT_DIR/page-100.time.txt" \
+    --export-run 1000 "$OUTPUT_DIR/page-1000.ndjson" \
+      "$OUTPUT_DIR/page-1000.summary.json" "$OUTPUT_DIR/page-1000.time.txt" \
+    --timed-step cli-build "$CLI_BUILD_RESOURCE"
+  local profile_exit_code=$?
+  if [[ "$KEEP_ROOT" == false ]]; then
+    rm -rf "$MEASURE_ROOT"
+    local cleanup_exit_code=$?
+    if [[ "$exit_code" -eq 0 && "$cleanup_exit_code" -ne 0 ]]; then
+      exit_code=$cleanup_exit_code
+    fi
+  fi
+  if [[ "$exit_code" -eq 0 && "$profile_exit_code" -ne 0 ]]; then exit_code=1; fi
+  exit "$exit_code"
 }
-trap cleanup EXIT INT TERM
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap cleanup EXIT
 
 BIN="$ROOT_DIR/target/rust/debug/ugoite"
 CONFIG="$MEASURE_ROOT/ugoite.toml"
@@ -35,13 +69,15 @@ SQL_FILE="$OUTPUT_DIR/query.sql"
 SPACE_PATH="$DATA_ROOT/spaces"
 
 echo "Building CLI and preparing fixed 10,000-entry dataset..." >&2
-(cd "$ROOT_DIR" && cargo build --locked -p ugoite-cli)
+bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
+  "$CLI_BUILD_RESOURCE" cargo build --locked -p ugoite-cli
 bash "$ROOT_DIR/scripts/dev-seed.sh" \
   --root "$DATA_ROOT" \
   --space-id sql-export-measure \
   --scenario renewable-ops \
   --entry-count 10000 \
-  --seed 3140001
+  --seed 3140001 \
+  --profile-output "$SEED_PROFILE"
 
 SPACE_UID="$(deno eval --quiet '
   const [spacesRoot] = Deno.args;

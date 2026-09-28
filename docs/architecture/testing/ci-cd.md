@@ -139,6 +139,21 @@ the fixture runs; standalone local E2E continues to build through `cargo run`.
 Seed and measured-step durations and exit status are emitted even when a step
 fails.
 
+The CP1 query and SQL export measurements also write aggregate profiles to
+`target/cp1-profiling/` and upload them with the acceptance evidence. Seed
+profiles split Space creation, optional owner initialization, Form upserts,
+sample Markdown rendering, draft conversion, and mutation batch calls; process
+resource logs report elapsed time, user/system CPU, and maximum RSS where the
+host utility provides them. Reports compare the outer seed process wall with
+the generator wall and sum timed child processes against the script wall, so
+the positive remainder is visible without attributing it to a specific build
+step. If timer resolution makes the summed child duration exceed the script
+wall, the report records that excess separately instead of presenting a
+negative remainder. Reports also include fixture file counts and logical
+bytes. Values that cannot be separated with the current interfaces are marked
+unmeasured in the JSON; these measurements do not add a performance
+pass/fail threshold or change the CP1 acceptance assertions.
+
 ## Release contract
 
 `version.txt` is the only prepared-version authority. `version:sync` updates

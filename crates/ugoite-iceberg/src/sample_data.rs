@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::io::{stderr, IsTerminal, Write};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use ugoite_core::entry::StructuredEntryDraft;
 use ugoite_storage::{OpendalStorage, StorageBackend};
 use uuid::Uuid;
@@ -54,6 +56,128 @@ pub struct SampleDataSummary {
     pub entry_count: usize,
     pub form_count: usize,
     pub forms: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SampleDataProfileSnapshot {
+    pub schema_version: u32,
+    pub space_slug: String,
+    pub scenario: String,
+    pub seed: Option<u64>,
+    pub entry_count: usize,
+    pub form_count: usize,
+    pub space_creation_micros: Option<u64>,
+    pub owner_initialization_micros: Option<u64>,
+    pub form_upsert_micros: Option<u64>,
+    pub markdown_render_micros: u64,
+    pub markdown_render_count: usize,
+    pub draft_conversion_micros: u64,
+    pub draft_conversion_count: usize,
+    pub mutation_batch_micros: Vec<u64>,
+    pub mutation_batch_entry_counts: Vec<usize>,
+    pub total_wall_micros: Option<u64>,
+}
+
+/// Optional aggregate timings for developer seed profiling. Normal sample
+/// generation does not allocate or update this profile.
+#[derive(Clone, Default)]
+pub struct SampleDataProfile {
+    inner: Arc<Mutex<SampleDataProfileSnapshot>>,
+}
+
+impl SampleDataProfile {
+    fn new(
+        space_slug: &str,
+        scenario: &str,
+        seed: u64,
+        entry_count: usize,
+        form_count: usize,
+    ) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(SampleDataProfileSnapshot {
+                schema_version: 1,
+                space_slug: space_slug.to_string(),
+                scenario: scenario.to_string(),
+                seed: Some(seed),
+                entry_count,
+                form_count,
+                ..SampleDataProfileSnapshot::default()
+            })),
+        }
+    }
+
+    pub fn snapshot(&self) -> SampleDataProfileSnapshot {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn record_space_creation(&self, micros: u64) {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .space_creation_micros = Some(micros);
+    }
+
+    fn record_seed(&self, seed: u64) {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .seed = Some(seed);
+    }
+
+    fn record_owner_initialization(&self, micros: u64) {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .owner_initialization_micros = Some(micros);
+    }
+
+    fn record_form_upsert(&self, micros: u64) {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .form_upsert_micros = Some(micros);
+    }
+
+    fn record_markdown_render(&self, micros: u64) {
+        let mut profile = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        profile.markdown_render_micros += micros;
+        profile.markdown_render_count += 1;
+    }
+
+    fn record_draft_conversion(&self, micros: u64) {
+        let mut profile = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        profile.draft_conversion_micros += micros;
+        profile.draft_conversion_count += 1;
+    }
+
+    fn record_mutation_batch(&self, micros: u64, entries: usize) {
+        let mut profile = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        profile.mutation_batch_micros.push(micros);
+        profile.mutation_batch_entry_counts.push(entries);
+    }
+
+    fn record_total_wall(&self, micros: u64) {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .total_wall_micros = Some(micros);
+    }
+}
+
+fn elapsed_micros(started: Instant) -> u64 {
+    started.elapsed().as_micros().min(u64::MAX as u128) as u64
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -113,7 +237,25 @@ struct SampleEntryBatch<'a> {
     op: &'a Operator,
     ws_path: &'a str,
     integrity: &'a RealIntegrityProvider,
+    profile: Option<SampleDataProfile>,
     pending: Vec<EntryDraftRequest>,
+}
+
+fn render_sample_markdown(
+    profile: Option<&SampleDataProfile>,
+    form_name: &str,
+    tags: &[String],
+    fields: &Value,
+    extra_attributes: &Value,
+    form_def: &Value,
+) -> String {
+    let started = profile.map(|_| Instant::now());
+    let markdown =
+        entry::render_markdown_for_form(form_name, tags, fields, extra_attributes, form_def);
+    if let (Some(profile), Some(started)) = (profile, started) {
+        profile.record_markdown_render(elapsed_micros(started));
+    }
+    markdown
 }
 
 /// Sample generation is developer tooling and still emits the historical
@@ -186,19 +328,33 @@ fn sample_content_to_draft(content: &str) -> Result<StructuredEntryDraft> {
 }
 
 impl<'a> SampleEntryBatch<'a> {
-    fn new(op: &'a Operator, ws_path: &'a str, integrity: &'a RealIntegrityProvider) -> Self {
+    fn new(
+        op: &'a Operator,
+        ws_path: &'a str,
+        integrity: &'a RealIntegrityProvider,
+        profile: Option<SampleDataProfile>,
+    ) -> Self {
         Self {
             op,
             ws_path,
             integrity,
+            profile,
             pending: Vec::with_capacity(entry::MAX_ENTRY_CREATE_BATCH_SIZE),
         }
     }
 
     async fn push(&mut self, entry_id: impl Into<String>, content: String) -> Result<()> {
+        let draft = if let Some(profile) = &self.profile {
+            let started = Instant::now();
+            let draft = sample_content_to_draft(&content)?;
+            profile.record_draft_conversion(elapsed_micros(started));
+            draft
+        } else {
+            sample_content_to_draft(&content)?
+        };
         self.pending.push(EntryDraftRequest {
             entry_id: entry_id.into(),
-            draft: sample_content_to_draft(&content)?,
+            draft,
         });
         if self.pending.len() >= entry::MAX_ENTRY_CREATE_BATCH_SIZE {
             self.flush().await?;
@@ -210,6 +366,8 @@ impl<'a> SampleEntryBatch<'a> {
         if self.pending.is_empty() {
             return Ok(());
         }
+        let batch_size = self.pending.len();
+        let started = self.profile.as_ref().map(|_| Instant::now());
         entry::create_draft_entries_with_scopes_and_change(
             self.op,
             self.ws_path,
@@ -220,6 +378,9 @@ impl<'a> SampleEntryBatch<'a> {
             None,
         )
         .await?;
+        if let (Some(profile), Some(started)) = (&self.profile, started) {
+            profile.record_mutation_batch(elapsed_micros(started), batch_size);
+        }
         Ok(())
     }
 }
@@ -890,15 +1051,22 @@ impl TerminalProgressWriter {
 enum ProgressReporter {
     None,
     Job(Box<JobProgressWriter>),
-    Terminal(TerminalProgressWriter),
+    Terminal(TerminalProgressWriter, Option<SampleDataProfile>),
 }
 
 impl ProgressReporter {
+    fn sample_profile(&self) -> Option<&SampleDataProfile> {
+        match self {
+            ProgressReporter::Terminal(_, profile) => profile.as_ref(),
+            ProgressReporter::None | ProgressReporter::Job(_) => None,
+        }
+    }
+
     async fn report(&mut self, processed: usize, message: &str) -> Result<()> {
         match self {
             ProgressReporter::None => {}
             ProgressReporter::Job(writer) => writer.maybe_update(processed, message).await?,
-            ProgressReporter::Terminal(writer) => writer.render(processed, message)?,
+            ProgressReporter::Terminal(writer, _) => writer.render(processed, message)?,
         }
         Ok(())
     }
@@ -907,7 +1075,7 @@ impl ProgressReporter {
         match self {
             ProgressReporter::None => {}
             ProgressReporter::Job(writer) => writer.complete(summary).await?,
-            ProgressReporter::Terminal(writer) => writer.complete(summary)?,
+            ProgressReporter::Terminal(writer, _) => writer.complete(summary)?,
         }
         Ok(())
     }
@@ -916,7 +1084,7 @@ impl ProgressReporter {
         match self {
             ProgressReporter::None => {}
             ProgressReporter::Job(writer) => writer.fail(error).await?,
-            ProgressReporter::Terminal(writer) => writer.fail(error)?,
+            ProgressReporter::Terminal(writer, _) => writer.fail(error)?,
         }
         Ok(())
     }
@@ -989,7 +1157,8 @@ async fn generate_renewable_ops(
     let site_id_refs: Vec<&str> = site_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1006,8 +1175,14 @@ async fn generate_renewable_ops(
         let form_def = forms_map
             .get("Site")
             .ok_or_else(|| anyhow!("Missing Site form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("Site", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "Site",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(site_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Sites").await?;
@@ -1030,8 +1205,14 @@ async fn generate_renewable_ops(
         let form_def = forms_map
             .get("Array")
             .ok_or_else(|| anyhow!("Missing Array form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("Array", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "Array",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Arrays").await?;
@@ -1057,8 +1238,14 @@ async fn generate_renewable_ops(
         let form_def = forms_map
             .get("Inspection")
             .ok_or_else(|| anyhow!("Missing Inspection form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("Inspection", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "Inspection",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Inspections").await?;
@@ -1089,7 +1276,8 @@ async fn generate_renewable_ops(
         let form_def = forms_map
             .get("MaintenanceTicket")
             .ok_or_else(|| anyhow!("Missing MaintenanceTicket form definition"))?;
-        let markdown = entry::render_markdown_for_form(
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
             "MaintenanceTicket",
             &[],
             &fields,
@@ -1120,8 +1308,14 @@ async fn generate_renewable_ops(
         let form_def = forms_map
             .get("EnergyReport")
             .ok_or_else(|| anyhow!("Missing EnergyReport form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("EnergyReport", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "EnergyReport",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1171,7 +1365,8 @@ async fn generate_supply_chain(
     let supplier_refs: Vec<&str> = supplier_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1188,8 +1383,14 @@ async fn generate_supply_chain(
         let form_def = forms_map
             .get("Warehouse")
             .ok_or_else(|| anyhow!("Missing Warehouse form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("Warehouse", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "Warehouse",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(warehouse_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Warehouses").await?;
@@ -1212,8 +1413,14 @@ async fn generate_supply_chain(
         let form_def = forms_map
             .get("Shipment")
             .ok_or_else(|| anyhow!("Missing Shipment form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("Shipment", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "Shipment",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Shipments").await?;
@@ -1235,8 +1442,14 @@ async fn generate_supply_chain(
         let form_def = forms_map
             .get("InventoryCheck")
             .ok_or_else(|| anyhow!("Missing InventoryCheck form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("InventoryCheck", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "InventoryCheck",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1260,8 +1473,14 @@ async fn generate_supply_chain(
         let form_def = forms_map
             .get("SupplierScore")
             .ok_or_else(|| anyhow!("Missing SupplierScore form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("SupplierScore", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "SupplierScore",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1285,8 +1504,14 @@ async fn generate_supply_chain(
         let form_def = forms_map
             .get("PurchaseOrder")
             .ok_or_else(|| anyhow!("Missing PurchaseOrder form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("PurchaseOrder", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "PurchaseOrder",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1331,7 +1556,8 @@ async fn generate_municipal_infra(
     let asset_refs: Vec<&str> = asset_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1348,8 +1574,14 @@ async fn generate_municipal_infra(
         let form_def = forms_map
             .get("Asset")
             .ok_or_else(|| anyhow!("Missing Asset form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("Asset", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "Asset",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(asset_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Assets").await?;
@@ -1370,8 +1602,14 @@ async fn generate_municipal_infra(
         let form_def = forms_map
             .get("Inspection")
             .ok_or_else(|| anyhow!("Missing Inspection form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("Inspection", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "Inspection",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Inspections").await?;
@@ -1391,8 +1629,14 @@ async fn generate_municipal_infra(
         let form_def = forms_map
             .get("WorkOrder")
             .ok_or_else(|| anyhow!("Missing WorkOrder form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("WorkOrder", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "WorkOrder",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Work orders").await?;
@@ -1415,8 +1659,14 @@ async fn generate_municipal_infra(
         let form_def = forms_map
             .get("ServiceReport")
             .ok_or_else(|| anyhow!("Missing ServiceReport form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("ServiceReport", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "ServiceReport",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1454,7 +1704,8 @@ async fn generate_fleet_ops(
     let vehicle_refs: Vec<&str> = vehicle_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1471,8 +1722,14 @@ async fn generate_fleet_ops(
         let form_def = forms_map
             .get("Vehicle")
             .ok_or_else(|| anyhow!("Missing Vehicle form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("Vehicle", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "Vehicle",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(vehicle_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Vehicles").await?;
@@ -1495,8 +1752,14 @@ async fn generate_fleet_ops(
         let form_def = forms_map
             .get("RouteLog")
             .ok_or_else(|| anyhow!("Missing RouteLog form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("RouteLog", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "RouteLog",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Route logs").await?;
@@ -1520,8 +1783,14 @@ async fn generate_fleet_ops(
         let form_def = forms_map
             .get("ServiceTicket")
             .ok_or_else(|| anyhow!("Missing ServiceTicket form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("ServiceTicket", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "ServiceTicket",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1546,8 +1815,14 @@ async fn generate_fleet_ops(
         let form_def = forms_map
             .get("FuelReport")
             .ok_or_else(|| anyhow!("Missing FuelReport form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("FuelReport", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "FuelReport",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1592,7 +1867,8 @@ async fn generate_lab_qa(
     let batch_refs: Vec<&str> = batch_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1610,8 +1886,14 @@ async fn generate_lab_qa(
         let form_def = forms_map
             .get("Batch")
             .ok_or_else(|| anyhow!("Missing Batch form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("Batch", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "Batch",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(batch_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Batches").await?;
@@ -1632,8 +1914,14 @@ async fn generate_lab_qa(
         let form_def = forms_map
             .get("TestRun")
             .ok_or_else(|| anyhow!("Missing TestRun form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("TestRun", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "TestRun",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Test runs").await?;
@@ -1653,8 +1941,14 @@ async fn generate_lab_qa(
         let form_def = forms_map
             .get("Nonconformance")
             .ok_or_else(|| anyhow!("Missing Nonconformance form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("Nonconformance", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "Nonconformance",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1677,7 +1971,8 @@ async fn generate_lab_qa(
         let form_def = forms_map
             .get("CalibrationRecord")
             .ok_or_else(|| anyhow!("Missing CalibrationRecord form definition"))?;
-        let markdown = entry::render_markdown_for_form(
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
             "CalibrationRecord",
             &[],
             &fields,
@@ -1723,7 +2018,8 @@ async fn generate_retail_ops(
     let store_refs: Vec<&str> = store_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1740,8 +2036,14 @@ async fn generate_retail_ops(
         let form_def = forms_map
             .get("Store")
             .ok_or_else(|| anyhow!("Missing Store form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("Store", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "Store",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(store_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Stores").await?;
@@ -1761,8 +2063,14 @@ async fn generate_retail_ops(
         let form_def = forms_map
             .get("StockAlert")
             .ok_or_else(|| anyhow!("Missing StockAlert form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("StockAlert", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "StockAlert",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1786,8 +2094,14 @@ async fn generate_retail_ops(
         let form_def = forms_map
             .get("PriceAudit")
             .ok_or_else(|| anyhow!("Missing PriceAudit form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("PriceAudit", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "PriceAudit",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1812,8 +2126,14 @@ async fn generate_retail_ops(
         let form_def = forms_map
             .get("DailySales")
             .ok_or_else(|| anyhow!("Missing DailySales form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("DailySales", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "DailySales",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Daily sales").await?;
@@ -1834,8 +2154,14 @@ async fn generate_retail_ops(
         let form_def = forms_map
             .get("VendorDelivery")
             .ok_or_else(|| anyhow!("Missing VendorDelivery form definition"))?;
-        let markdown =
-            entry::render_markdown_for_form("VendorDelivery", &[], &fields, &empty_extra, form_def);
+        let markdown = render_sample_markdown(
+            profile.as_ref(),
+            "VendorDelivery",
+            &[],
+            &fields,
+            &empty_extra,
+            form_def,
+        );
         entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
@@ -1935,24 +2261,37 @@ async fn create_sample_space_with_progress(
     plan: &ResolvedSampleDataPlan,
     progress: &mut ProgressReporter,
 ) -> Result<SampleDataSummary> {
+    let profile = progress.sample_profile().cloned();
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{}", options.space_id))
         .await?;
     progress.report(0, "Creating space").await?;
     let service = UgoiteService::from_operator(op.clone(), root_uri);
+    let space_creation_started = profile.as_ref().map(|_| Instant::now());
     let space_uid = service.create_operator_space(&options.space_id).await?;
+    if let (Some(profile), Some(started)) = (&profile, space_creation_started) {
+        profile.record_space_creation(elapsed_micros(started));
+    }
     let actual_space_id = space_uid.to_string();
     if let Some(owner) = normalize_owner_display_name(options.owner_display_name.as_deref()) {
+        let owner_initialization_started = profile.as_ref().map(|_| Instant::now());
         crate::authorization::Authorizer::new(op.clone())
             .initialize_owner(&actual_space_id, space_uid, Uuid::now_v7(), &owner)
             .await?;
+        if let (Some(profile), Some(started)) = (&profile, owner_initialization_started) {
+            profile.record_owner_initialization(elapsed_micros(started));
+        }
     }
 
     let ws_path = format!("spaces/{actual_space_id}");
 
     progress.report(0, "Installing forms").await?;
+    let form_upsert_started = profile.as_ref().map(|_| Instant::now());
     for form_def in &plan.form_defs {
         form::upsert_form(op, &ws_path, form_def).await?;
+    }
+    if let (Some(profile), Some(started)) = (&profile, form_upsert_started) {
+        profile.record_form_upsert(elapsed_micros(started));
     }
 
     let form_names: Vec<String> = plan
@@ -1973,6 +2312,9 @@ async fn create_sample_space_with_progress(
         .collect();
 
     let seed = options.seed.unwrap_or_else(rand::random::<u64>);
+    if let Some(profile) = &profile {
+        profile.record_seed(seed);
+    }
     let mut rng = StdRng::seed_from_u64(seed);
 
     let mut context = ScenarioContext {
@@ -2015,7 +2357,8 @@ pub async fn create_sample_space_with_terminal_progress(
 ) -> Result<SampleDataSummary> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let plan = resolve_sample_data_plan(options)?;
-    let mut progress = ProgressReporter::Terminal(TerminalProgressWriter::new(plan.entry_count));
+    let mut progress =
+        ProgressReporter::Terminal(TerminalProgressWriter::new(plan.entry_count), None);
     match create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress).await {
         Ok(summary) => {
             progress.complete(&summary).await?;
@@ -2024,6 +2367,43 @@ pub async fn create_sample_space_with_terminal_progress(
         Err(err) => {
             let _ = progress.fail(&err.to_string()).await;
             Err(err)
+        }
+    }
+}
+
+pub async fn create_sample_space_with_terminal_progress_profiled(
+    op: &Operator,
+    root_uri: &str,
+    options: &SampleDataOptions,
+) -> Result<(SampleDataSummary, SampleDataProfileSnapshot)> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    let plan = resolve_sample_data_plan(options)?;
+    let seed = options.seed.unwrap_or_else(rand::random::<u64>);
+    let mut profiled_options = options.clone();
+    profiled_options.seed = Some(seed);
+    let profile = SampleDataProfile::new(
+        &options.space_id,
+        &plan.scenario,
+        seed,
+        plan.entry_count,
+        plan.form_count,
+    );
+    let started = Instant::now();
+    let mut progress = ProgressReporter::Terminal(
+        TerminalProgressWriter::new(plan.entry_count),
+        Some(profile.clone()),
+    );
+    match create_sample_space_with_progress(op, root_uri, &profiled_options, &plan, &mut progress)
+        .await
+    {
+        Ok(summary) => {
+            progress.complete(&summary).await?;
+            profile.record_total_wall(elapsed_micros(started));
+            Ok((summary, profile.snapshot()))
+        }
+        Err(error) => {
+            let _ = progress.fail(&error.to_string()).await;
+            Err(error)
         }
     }
 }

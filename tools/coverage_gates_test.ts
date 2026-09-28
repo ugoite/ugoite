@@ -519,6 +519,7 @@ async function assertAggregateWorkflow(
       "needs.impact.outputs.plan_cp1_acceptance == 'true'",
       'E2E_ENFORCE_CI_GATES: "true"',
       "scripts/measure-step.sh cp1-acceptance mise run ci:lane:cp1-acceptance",
+      "target/cp1-profiling/",
       "target/query-surfaces-measurement.json",
       "target/sql-export-measurement/",
     ],
