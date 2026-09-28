@@ -25,6 +25,7 @@ export BROWSERSLIST_IGNORE_OLD_DATA=true
 TEST_TYPE="${1:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$SCRIPT_DIR/run-e2e-task.sh"
 CHECKOUT_SOURCE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 if [ -n "${UGOITE_SOURCE_SHA:-}" ] && [ "$UGOITE_SOURCE_SHA" != "$CHECKOUT_SOURCE_SHA" ]; then
   echo "✗ ERROR: UGOITE_SOURCE_SHA does not match the checkout under test"
@@ -276,71 +277,33 @@ echo "=========================================="
 cd "$ROOT_DIR/e2e"
 base_report_file="${PLAYWRIGHT_JUNIT_OUTPUT_FILE:-test-results/junit.xml}"
 
-TEST_TIMEOUT_ARGS=()
-if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
-  TEST_TIMEOUT_ARGS=(--timeout "${E2E_TEST_TIMEOUT_MS}")
-fi
-run_e2e_task() {
-  local task="$1"
-  local report="$2"
-  if [ "$ENFORCE_CI_GATES" = "true" ]; then
-    export PLAYWRIGHT_JUNIT_OUTPUT_FILE="$report"
-    mkdir -p "$(dirname "$report")"
-    rm -f "$report"
-  fi
-  if [ "${#TEST_TIMEOUT_ARGS[@]}" -gt 0 ]; then
-    deno task "$task" -- "${TEST_TIMEOUT_ARGS[@]}"
-  else
-    deno task "$task"
-  fi
-  if [ "$ENFORCE_CI_GATES" = "true" ]; then
-    validate_junit_report "$report"
-  fi
-}
-
-validate_junit_report() {
-  local report="$1"
-  PLAYWRIGHT_JUNIT_OUTPUT_FILE="$report" deno eval '
-    const report = Deno.env.get("PLAYWRIGHT_JUNIT_OUTPUT_FILE");
-    if (!report) throw new Error("PLAYWRIGHT_JUNIT_OUTPUT_FILE is required");
-    const xml = await Deno.readTextFile(report);
-    const suites = [...xml.matchAll(/<testsuite\b[^>]*>/g)].map((match) => match[0]);
-    const attr = (text, name) => Number(text.match(new RegExp(`${name}="([^"]*)"`))?.[1] ?? 0);
-    const tests = suites.reduce((sum, suite) => sum + attr(suite, "tests"), 0);
-    const skipped = suites.reduce((sum, suite) => sum + attr(suite, "skipped"), 0);
-    if (tests === 0) throw new Error("e2e tests: zero executed tests");
-    if (skipped > 0) throw new Error(`e2e tests: skipped=${skipped} is not allowed`);
-    console.log(`e2e tests OK: tests=${tests}, skipped=${skipped}`);
-  '
-}
-
 case "$TEST_TYPE" in
   smoke)
-    run_e2e_task smoke "$base_report_file"
+    run_e2e_task smoke "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
   entries)
-    run_e2e_task entries "$base_report_file"
+    run_e2e_task entries "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
   asset-owned)
-    run_e2e_task asset-owned "$base_report_file"
+    run_e2e_task asset-owned "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
   smoke-and-asset-owned)
-    run_e2e_task smoke-and-asset-owned "$base_report_file"
+    run_e2e_task smoke-and-asset-owned "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
   owner-recovery)
-    run_e2e_task owner-recovery "$base_report_file"
+    run_e2e_task owner-recovery "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
   mobile-ui)
-    run_e2e_task mobile-ui "$base_report_file"
+    run_e2e_task mobile-ui "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
   query-measurement)
-    run_e2e_task query-measurement "$base_report_file"
+    run_e2e_task query-measurement "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
   sql-export-remote-auth)
-    run_e2e_task sql-export-remote-auth "$base_report_file"
+    run_e2e_task sql-export-remote-auth "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
   portable-space)
-    run_e2e_task portable-space "$base_report_file"
+    run_e2e_task portable-space "$base_report_file" "$ENFORCE_CI_GATES"
     echo "Verifying copied authoritative file hashes..."
     deno run -A "$SCRIPT_DIR/verify-portable-space-hashes.ts" \
       "$E2E_STORAGE_ROOT" "$E2E_PORTABLE_PROOF_FILE"
@@ -354,10 +317,10 @@ case "$TEST_TYPE" in
     ' "$E2E_STORAGE_ROOT/verify-after-claim.json"
     ;;
   screenshot)
-    run_e2e_task screenshot "$base_report_file"
+    run_e2e_task screenshot "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
   full)
-    run_e2e_task full "$base_report_file"
+    run_e2e_task full "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"

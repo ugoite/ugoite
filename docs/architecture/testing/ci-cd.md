@@ -157,6 +157,15 @@ bytes. Values that cannot be separated with the current interfaces are marked
 unmeasured in the JSON; these measurements do not add a performance
 pass/fail threshold or change the CP1 acceptance assertions.
 
+The query measurement can run its existing seeded fixture through either the
+direct host runner (default) or `run-e2e-compose.sh` by setting
+`UGOITE_QUERY_MEASURE_RUNNER=compose`. Compose mode consumes the caller-owned
+fixture root, returns its filesystem ownership to the invoking UID/GID after
+the server stops, and shares the same Playwright task and zero-test/zero-skip
+JUnit gate as the direct runner.
+The required CP1 lane continues to use the direct runner until the later CI
+consumer migration.
+
 ## Release contract
 
 `version.txt` is the only prepared-version authority. `version:sync` updates

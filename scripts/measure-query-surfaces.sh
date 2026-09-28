@@ -14,6 +14,16 @@ WASM_BUILD_RESOURCE="$PROFILE_DIR/query-wasm-build-${PROFILE_RUN_ID}.time.txt"
 SERVER_BUILD_RESOURCE="$PROFILE_DIR/query-server-build-${PROFILE_RUN_ID}.time.txt"
 QUERY_E2E_RESOURCE="$PROFILE_DIR/query-playwright-${PROFILE_RUN_ID}.time.txt"
 KEEP_ROOT=false
+QUERY_MEASURE_RUNNER="${UGOITE_QUERY_MEASURE_RUNNER:-host}"
+QUERY_E2E_PROFILE_STEP="query-playwright"
+case "$QUERY_MEASURE_RUNNER" in
+  host) ;;
+  compose) QUERY_E2E_PROFILE_STEP="query-playwright-compose" ;;
+  *)
+    echo "UGOITE_QUERY_MEASURE_RUNNER must be 'host' or 'compose': $QUERY_MEASURE_RUNNER" >&2
+    exit 1
+    ;;
+esac
 
 if [[ -n "${UGOITE_QUERY_MEASURE_ROOT:-}" ]]; then
   MEASURE_ROOT="$UGOITE_QUERY_MEASURE_ROOT"
@@ -47,7 +57,7 @@ cleanup() {
       "$SEED_B_PROFILE" "${SEED_B_PROFILE%.json}.time.txt" \
     --timed-step wasm-build "$WASM_BUILD_RESOURCE" \
     --timed-step server-build "$SERVER_BUILD_RESOURCE" \
-    --timed-step query-playwright "$QUERY_E2E_RESOURCE"
+    --timed-step "$QUERY_E2E_PROFILE_STEP" "$QUERY_E2E_RESOURCE"
   local profile_exit_code=$?
   if [[ "$KEEP_ROOT" == false ]]; then
     rm -rf "$MEASURE_ROOT"
@@ -82,18 +92,31 @@ bash "$ROOT_DIR/scripts/dev-seed.sh" \
   --profile-output "$SEED_B_PROFILE"
 
 echo "Running the server-backed browser measurement..." >&2
-bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
-  "$WASM_BUILD_RESOURCE" mise run build:wasm
-bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
-  "$SERVER_BUILD_RESOURCE" cargo build -p ugoite-server --locked
-UGOITE_SOURCE_SHA="${UGOITE_SOURCE_SHA:-$(git -C "$ROOT_DIR" rev-parse HEAD)}" \
-UGOITE_QUERY_MEASURE_ENABLED=true \
-UGOITE_QUERY_MEASURE_OUTPUT="$OUTPUT_FILE" \
-UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=300 \
-E2E_ENFORCE_CI_GATES="${E2E_ENFORCE_CI_GATES:-false}" \
-E2E_STORAGE_ROOT="$MEASURE_ROOT" \
+if [[ "$QUERY_MEASURE_RUNNER" == "host" ]]; then
   bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
-    "$QUERY_E2E_RESOURCE" bash "$ROOT_DIR/e2e/scripts/run-e2e.sh" query-measurement
+    "$WASM_BUILD_RESOURCE" mise run build:wasm
+  bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
+    "$SERVER_BUILD_RESOURCE" cargo build -p ugoite-server --locked
+  UGOITE_SOURCE_SHA="${UGOITE_SOURCE_SHA:-$(git -C "$ROOT_DIR" rev-parse HEAD)}" \
+  UGOITE_QUERY_MEASURE_ENABLED=true \
+  UGOITE_QUERY_MEASURE_OUTPUT="$OUTPUT_FILE" \
+  UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=300 \
+  E2E_ENFORCE_CI_GATES="${E2E_ENFORCE_CI_GATES:-false}" \
+  E2E_STORAGE_ROOT="$MEASURE_ROOT" \
+    bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
+      "$QUERY_E2E_RESOURCE" bash "$ROOT_DIR/e2e/scripts/run-e2e.sh" query-measurement
+else
+  UGOITE_SOURCE_SHA="${UGOITE_SOURCE_SHA:-$(git -C "$ROOT_DIR" rev-parse HEAD)}" \
+  UGOITE_QUERY_MEASURE_ENABLED=true \
+  UGOITE_QUERY_MEASURE_OUTPUT="$OUTPUT_FILE" \
+  E2E_BUILD_IMAGES="${E2E_BUILD_IMAGES:-true}" \
+  E2E_BACKEND_START_TIMEOUT_SECONDS=300 \
+  E2E_READINESS_TIMEOUT_SECONDS=300 \
+  E2E_STORAGE_ROOT="$MEASURE_ROOT" \
+    bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
+      "$QUERY_E2E_RESOURCE" bash "$ROOT_DIR/e2e/scripts/run-e2e-compose.sh" \
+        query-measurement --fixture-root "$MEASURE_ROOT"
+fi
 
 echo "Measurement report: $OUTPUT_FILE" >&2
 if [[ "$KEEP_ROOT" == true ]]; then
