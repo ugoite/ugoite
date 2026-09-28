@@ -16,7 +16,7 @@ use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::space;
 use uuid::Uuid;
 
-const EXPECTED: &str = include_str!("../../../fixtures/spaces/pre-binding-sql/expected.json");
+const EXPECTED: &str = include_str!("../../../fixtures/historical-spaces/pre-binding-sql/expected.json");
 
 #[derive(Debug, Deserialize)]
 struct FixtureExpected {
@@ -106,7 +106,7 @@ async fn prebinding_space_saved_sql_reads_executes_and_reopens_without_mutation(
     );
 
     let fixture_root =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/spaces/pre-binding-sql");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/historical-spaces/pre-binding-sql");
     let checksums = std::fs::read(fixture_root.join("SHA256SUMS"))?;
     assert_eq!(sha256(&checksums), expected.fixture_digest);
     for line in std::str::from_utf8(&checksums)?.lines() {
@@ -122,7 +122,7 @@ async fn prebinding_space_saved_sql_reads_executes_and_reopens_without_mutation(
     }
 
     let source_space = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/spaces/pre-binding-sql/spaces")
+        .join("../../fixtures/historical-spaces/pre-binding-sql/spaces")
         .join(&expected.space_id);
     let prefix = format!("spaces/{}", expected.space_id);
     let op = setup_operator()?;
