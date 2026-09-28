@@ -448,12 +448,57 @@ test("records real two-Space query surface measurements", async ({ page, request
         rows.flatMap((row) => row.getAttribute("data-entry-id") ?? [])
       );
       expect(sourceEntryIds.length).toBeGreaterThan(0);
+      const searchRouteGates = new Map<string, {
+        reached: Promise<void>;
+        finished: Promise<void>;
+        held: Promise<void>;
+        release: () => void;
+        markReached: () => void;
+        markFinished: () => void;
+        wasReached: boolean;
+      }>();
+      for (const text of ["solar", "energy", "inspection"]) {
+        let release!: () => void;
+        let markReached!: () => void;
+        let markFinished!: () => void;
+        const held = new Promise<void>((resolve) => release = resolve);
+        const reached = new Promise<void>((resolve) => {
+          markReached = resolve;
+        });
+        const finished = new Promise<void>((resolve) => {
+          markFinished = resolve;
+        });
+        searchRouteGates.set(text, {
+          reached,
+          finished,
+          held,
+          release,
+          markReached,
+          markFinished,
+          wasReached: false,
+        });
+      }
       await page.route("**/entries/query", async (route) => {
-        await new Promise((resolve) => setTimeout(resolve, 400));
+        const body = route.request().postDataJSON() as {
+          query?: { text?: unknown };
+        } | null;
+        const text = body?.query?.text;
+        const gate = typeof text === "string"
+          ? searchRouteGates.get(text)
+          : undefined;
+        if (!gate) {
+          await route.continue();
+          return;
+        }
+        gate.wasReached = true;
+        gate.markReached();
+        await gate.held;
         try {
           await route.continue();
         } catch {
-          // The browser may cancel this deliberately delayed request first.
+          // The browser may cancel the held request before it is continued.
+        } finally {
+          gate.markFinished();
         }
       });
       const searchbox = page.getByRole("searchbox");
@@ -465,39 +510,58 @@ test("records real two-Space query surface measurements", async ({ page, request
           } | null;
           return body?.query?.text === text;
         });
-      const firstRapidRequest = waitForSearchRequest("solar");
-      await searchbox.fill("solar");
-      await firstRapidRequest;
-      const secondRapidRequest = waitForSearchRequest("energy");
-      await searchbox.fill("energy");
-      await secondRapidRequest;
-      const switchingRequest = waitForSearchRequest("inspection");
-      await searchbox.fill("inspection");
-      await switchingRequest;
-      await page.getByLabel("Space", { exact: true }).selectOption(
-        secondSpace.space_uid,
+      let rowsBeforeTargetQuery = 0;
+      let rowsWhileTargetQueryPending = 0;
+      try {
+        const firstRapidRequest = waitForSearchRequest("solar");
+        await searchbox.fill("solar");
+        await Promise.all([
+          firstRapidRequest,
+          searchRouteGates.get("solar")!.reached,
+        ]);
+        const secondRapidRequest = waitForSearchRequest("energy");
+        await searchbox.fill("energy");
+        await Promise.all([
+          secondRapidRequest,
+          searchRouteGates.get("energy")!.reached,
+        ]);
+        const switchingRequest = waitForSearchRequest("inspection");
+        await searchbox.fill("inspection");
+        await Promise.all([
+          switchingRequest,
+          searchRouteGates.get("inspection")!.reached,
+        ]);
+        await page.getByLabel("Space", { exact: true }).selectOption(
+          secondSpace.space_uid,
+        );
+        await expect(page).toHaveURL(
+          new RegExp(`/spaces/${secondSpace.space_uid}/forms$`),
+        );
+        await page.waitForTimeout(500);
+        rowsBeforeTargetQuery = await page.locator("tbody tr").count();
+        const targetSpaceRequest = page.waitForRequest((request) =>
+          request.url().includes(
+            `/spaces/${secondSpace.space_uid}/entries/query`,
+          )
+        );
+        await page.getByText(SQL_FORM_NAME, { exact: true }).click();
+        await targetSpaceRequest;
+        rowsWhileTargetQueryPending = await page.locator(
+          "tbody tr",
+        ).count();
+        expect(rowsWhileTargetQueryPending).toBe(0);
+        await expect(rowLocator).toBeVisible({
+          timeout: QUERY_RESULT_TIMEOUT_MS,
+        });
+      } finally {
+        for (const gate of searchRouteGates.values()) gate.release();
+      }
+      await Promise.all(
+        [...searchRouteGates.values()]
+          .filter((gate) => gate.wasReached)
+          .map((gate) => gate.finished),
       );
-      await expect(page).toHaveURL(
-        new RegExp(`/spaces/${secondSpace.space_uid}/forms$`),
-      );
-      await page.waitForTimeout(500);
-      const rowsBeforeTargetQuery = await page.locator(
-        "tbody tr",
-      ).count();
-      const targetSpaceRequest = page.waitForRequest((request) =>
-        request.url().includes(
-          `/spaces/${secondSpace.space_uid}/entries/query`,
-        )
-      );
-      await page.getByText(SQL_FORM_NAME, { exact: true }).click();
-      await targetSpaceRequest;
-      const rowsWhileTargetQueryPending = await page.locator(
-        "tbody tr",
-      ).count();
-      expect(rowsWhileTargetQueryPending).toBe(0);
-      await expect(rowLocator).toBeVisible({
-        timeout: QUERY_RESULT_TIMEOUT_MS,
-      });
+      await page.unroute("**/entries/query");
       await page.waitForTimeout(500);
       lifecycle = await page.evaluate(({
         targetSpaceUid,
@@ -1025,7 +1089,7 @@ test("records real two-Space query surface measurements", async ({ page, request
               heap_api:
                 "performance.memory.usedJSHeapSize when Chromium exposes it; otherwise null",
               lifecycle_interception:
-                "400 ms Playwright delays on selected EntryQuery and SQL page/count lifecycle requests; first-visible-row performance trials are not delayed",
+                "Playwright holds selected superseded EntryQuery and SQL page/count requests until identity changes; first-visible-row performance trials are not delayed",
             },
             summaries: {
               entry_query_first_visible_row: summarize(entryTrials),
