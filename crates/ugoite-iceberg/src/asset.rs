@@ -362,6 +362,7 @@ pub async fn current_asset_reference_exists_in_workspace(
             form_def.id,
             AuthorizedQueryForm {
                 relation: relation_name,
+                sql_aliases: BTreeSet::new(),
                 entry_scope,
                 columns: form_def
                     .fields

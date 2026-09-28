@@ -27,8 +27,10 @@ pub struct AuthorizedQueryPolicy {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorizedQueryForm {
-    /// The sole SQL relation name exposed for this Form.
+    /// Stable legacy SQL relation name for this Form.
     pub relation: String,
+    /// Exact, quoted Form names accepted as SQL aliases for this Form.
+    pub sql_aliases: BTreeSet<String>,
     /// Entry scope Core authorizes for this Form. The query adapter embeds this
     /// relation-specific boundary in the trusted view before SQL is planned.
     pub entry_scope: EntryScope,

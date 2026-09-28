@@ -98,6 +98,7 @@ fn policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQueryPolicy {
             form.id,
             AuthorizedQueryForm {
                 relation: "tasks".into(),
+                sql_aliases: BTreeSet::new(),
                 entry_scope: EntryScope::Only(
                     readable
                         .iter()

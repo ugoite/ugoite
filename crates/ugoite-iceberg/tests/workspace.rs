@@ -1,6 +1,6 @@
 use opendal::services::Memory;
 use opendal::{EntryMode, Operator};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::query::{
@@ -984,6 +984,7 @@ async fn sql_relation_and_saved_query_survive_form_rename() -> anyhow::Result<()
                 form.id,
                 AuthorizedQueryForm {
                     relation: relation.clone(),
+                    sql_aliases: BTreeSet::new(),
                     entry_scope: EntryScope::AllCurrent,
                     columns: [sql_column_name(form.fields[0].id)].into_iter().collect(),
                     system_columns: [QuerySystemColumn::ExternalId].into_iter().collect(),
