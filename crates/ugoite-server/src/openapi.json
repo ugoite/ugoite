@@ -4463,8 +4463,13 @@
             }
           },
           "400": {
-            "description": "Unknown query parameter or invalid request",
+            "description": "Malformed query values and unknown query parameters are rejected by query deserialization with a plain-text 400 response. Unsupported sort expressions return a JSON error response.",
             "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
@@ -4521,6 +4526,16 @@
           },
           "403": {
             "description": "Space read permission is required"
+          },
+          "400": {
+            "description": "Malformed query parameter values are rejected by query deserialization with a plain-text response.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "description": "Change is not available"

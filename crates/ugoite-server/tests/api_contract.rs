@@ -1345,6 +1345,14 @@ fn issue_2037_openapi_publishes_the_public_knowledge_contract() {
     }
 
     let change_query = &paths["/spaces/{space_id}/changes/query"]["get"];
+    assert!(
+        change_query["responses"]["400"]["content"]["text/plain"]["schema"]["type"] == "string"
+    );
+    assert!(
+        change_query["responses"]["400"]["content"]["application/json"]["schema"]["$ref"]
+            .as_str()
+            .is_some()
+    );
     assert!(change_query["responses"]["200"]["description"]
         .as_str()
         .is_some_and(|description| {
@@ -1364,6 +1372,10 @@ fn issue_2037_openapi_publishes_the_public_knowledge_contract() {
         .any(|p| p["name"] == "text"));
 
     let change_inspect = &paths["/spaces/{space_id}/changes/{change_id}/inspect"]["get"];
+    assert!(
+        change_inspect["responses"]["400"]["content"]["text/plain"]["schema"]["type"] == "string"
+    );
+    assert!(change_inspect["responses"]["422"].is_object());
     assert!(change_inspect["parameters"]
         .as_array()
         .unwrap()
