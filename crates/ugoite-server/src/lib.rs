@@ -1455,6 +1455,15 @@ impl ApiError {
     }
 
     fn from_core(error: anyhow::Error) -> Self {
+        if format!("{error:#}").contains("STORAGE_MUTATION_UNAVAILABLE") {
+            return Self::from_core(
+                AppError::dependency_unavailable(
+                    ErrorCode::StorageMutationUnavailable,
+                    "authoritative storage cannot coordinate this protected mutation",
+                )
+                .into(),
+            );
+        }
         if let Some(app_error) = error
             .chain()
             .find_map(|cause| cause.downcast_ref::<AppError>())
@@ -1514,6 +1523,16 @@ mod api_error_tests {
 
         assert_eq!(api_error.status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(api_error.detail["code"], "FORM_DEFINITION_READ_FAILED");
+    }
+
+    #[test]
+    fn uncoordinated_protected_writes_keep_the_storage_unavailable_code() {
+        let api_error = ApiError::from_core(anyhow::anyhow!(
+            "STORAGE_MUTATION_UNAVAILABLE: shared protected writes require a Server authorization lease"
+        ));
+
+        assert_eq!(api_error.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(api_error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
     }
 }
 
@@ -7415,10 +7434,10 @@ async fn require_resource_action(
     Ok(principal_id)
 }
 
-/// Runs a content mutation under the same authorization lock used by ACL
-/// mutations. Local callers use the process lock; shared operators also hold
-/// a heartbeat-backed object-store lease, so the permission check and the
-/// authoritative write share one cross-process linearization window.
+/// Runs a content mutation under the same authorization snapshot used by ACL
+/// mutations. Shared content publication and ACL updates meet at the per-Space
+/// Catalog Head CAS, so a stale permission check cannot publish after a
+/// revocation advances the Head.
 async fn with_authorized_mutation<T, F, Fut>(
     state: &AppState,
     space_id: &str,

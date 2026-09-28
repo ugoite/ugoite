@@ -175,6 +175,53 @@ jobs:
         if: always()
         run: sccache --show-stats
 
+  s3-shared-authorization:
+    name: ci-s3-shared-authorization
+    needs: impact
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_rust_test == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      UGOITE_S3_TEST_ENDPOINT: http://127.0.0.1:9000
+      UGOITE_S3_TEST_BUCKET: ugoite-test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: true
+          cache: true
+
+      - name: Start pinned Silo S3 test service (MinIO fork)
+        env:
+          MINIO_IMAGE: pgsty/minio@sha256:2b36182f3479c58b5cba920f20479738ee85ce218de0596a244f9a1368268db9
+        run: |
+          docker run --detach --rm --name ugoite-minio \
+            --publish 9000:9000 \
+            --env MINIO_ROOT_USER --env MINIO_ROOT_PASSWORD \
+            "$MINIO_IMAGE" server /data --address 0.0.0.0:9000
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent "$UGOITE_S3_TEST_ENDPOINT/minio/health/live" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+
+      - name: Create isolated S3 test bucket
+        run: aws --endpoint-url "$UGOITE_S3_TEST_ENDPOINT" s3 mb "s3://$UGOITE_S3_TEST_BUCKET"
+
+      - name: Run configured-backend publication acceptance
+        run: mise run test:s3-storage
+
   web:
     name: ci-web
     needs: impact
@@ -1031,7 +1078,7 @@ jobs:
   required:
     name: ci-required
     if: ${{ always() }}
-    needs: [impact, rust-check, rust-test, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, cp1-acceptance, pr-context-report]
+    needs: [impact, rust-check, rust-test, s3-shared-authorization, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, cp1-acceptance, pr-context-report]
     runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
@@ -1056,6 +1103,7 @@ jobs:
           PLAN_CP1_ACCEPTANCE: ${{ needs.impact.outputs.plan_cp1_acceptance }}
           RUST_CHECK_RESULT: ${{ needs.rust-check.result }}
           RUST_TEST_RESULT: ${{ needs.rust-test.result }}
+          S3_SHARED_AUTHORIZATION_RESULT: ${{ needs.s3-shared-authorization.result }}
           WEB_RESULT: ${{ needs.web.result }}
           ARTIFACT_BUILD_RESULT: ${{ needs.artifact-build.result }}
           E2E_SMOKE_MOBILE_RESULT: ${{ needs.e2e-smoke-mobile.result }}

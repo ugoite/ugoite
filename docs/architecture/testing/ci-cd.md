@@ -97,9 +97,11 @@ do not mechanically decide compatibility or replace the PR's Knowledge
 Compatibility Review and its Evidence/Decision.
 
 The required Rust suite covers the memory and filesystem implementations. The
-opt-in `mise run test:s3-storage` task runs against an explicitly configured
-S3-compatible deployment backend; it does not start an emulator or run in the
-required CI merge gate. Set `UGOITE_S3_TEST_ENDPOINT` and
+`mise run test:s3-storage` task also runs as a required CI lane for Rust test
+changes against a pinned Silo S3 endpoint (the community-maintained MinIO fork).
+Locally, it runs against an
+explicitly configured S3-compatible deployment backend and does not start an
+emulator. Set `UGOITE_S3_TEST_ENDPOINT` and
 `UGOITE_S3_TEST_BUCKET`, with credentials supplied through the standard AWS
 environment variables, and use a dedicated test bucket because recovery
 fixtures leave their uniquely scoped objects in place. The task checks the
@@ -236,9 +238,9 @@ development override.
 The required `ci-required` aggregator runs after all quality, artifact,
 docsite-navigation, CP1 acceptance, and impact-report lanes on pull requests,
 merge queues, and pushes to `main`. It checks the planned results for
-`ci-rust-check`, `ci-rust-test`, `ci-web`, `artifact-build`, the three E2E
-consumer jobs, `ci-docsite-nav`, and `ci-cp1-acceptance`, and fails on
-unexpected skips or executions. The PR
+`ci-rust-check`, `ci-rust-test`, `ci-s3-shared-authorization`, `ci-web`,
+`artifact-build`, the three E2E consumer jobs, `ci-docsite-nav`, and
+`ci-cp1-acceptance`, and fails on unexpected skips or executions. The PR
 context report must succeed for pull requests and is accepted as skipped for
 other events. The canonical
 `test` Mise task and `ci:lane:web` run the normal docsite test suite; only
