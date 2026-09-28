@@ -11093,19 +11093,20 @@ async fn create_sql(
     let payload_for_write = payload.clone();
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
-    let value = with_authorized_mutation(
+    let value = with_authorized_service_mutation(
         &state,
         &space_id,
         &identity,
         Action::Create,
         None,
-        |principal_id, _principals| async move {
+        |principal_id, principals| async move {
             service
-                .create_saved_sql(
+                .create_saved_sql_authorized_for_principals(
                     &space_id_for_write,
                     None,
                     &payload_for_write,
                     &principal_id.to_string(),
+                    &principals,
                 )
                 .await
                 .map_err(ApiError::from_core)
@@ -11153,7 +11154,7 @@ async fn update_sql(
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let sql_id_for_write = sql_id.clone();
-    let value = with_authorized_mutation(
+    let value = with_authorized_service_mutation(
         &state,
         &space_id,
         &identity,
@@ -11163,14 +11164,15 @@ async fn update_sql(
             id: sql_id.clone(),
             parent: None,
         }),
-        |principal_id, _principals| async move {
+        |principal_id, principals| async move {
             service
-                .update_saved_sql(
+                .update_saved_sql_authorized_for_principals(
                     &space_id_for_write,
                     &sql_id_for_write,
                     &payload,
                     &parent_revision_id,
                     &principal_id.to_string(),
+                    &principals,
                 )
                 .await
                 .map_err(ApiError::from_core)

@@ -1,11 +1,11 @@
 version: '0.2'
-updated: '2026-09-25'
+updated: '2026-09-28'
 kind: sql
 apis:
 - id: sql.query
   method: POST
   status: implemented
-  description: Execute one read-only SQL SELECT page without persistent SQL execution state. CLI query and bounded export accept SQL text or a SQL file and use this same operation; an explicit ORDER BY is required when the result exceeds the requested page limit. Export is CLI orchestration, not a separate REST operation.
+  description: Execute one read-only SQL SELECT page without persistent SQL execution state. REST may select an exact Saved SQL ID and revision; the stored SQL and Form-ID bindings are authoritative. CLI query and bounded export accept SQL text or a SQL file and use this same operation; an explicit ORDER BY is required when the result exceeds the requested page limit. Export is CLI orchestration, not a separate REST operation.
   backend:
     path: /spaces/{space_id}/sql/query
     file: crates/ugoite-server/src/lib.rs
@@ -20,7 +20,7 @@ apis:
 - id: sql.query.count
   method: POST
   status: implemented
-  description: Explicitly count rows for one read-only SQL SELECT without coupling count to page retrieval. CLI accepts SQL text or a SQL file.
+  description: Explicitly count rows for one read-only SQL SELECT without coupling count to page retrieval. REST may select an exact Saved SQL ID and revision, whose stored SQL and Form-ID bindings are authoritative. CLI accepts SQL text or a SQL file.
   backend:
     path: /spaces/{space_id}/sql/query/count
     file: crates/ugoite-server/src/lib.rs

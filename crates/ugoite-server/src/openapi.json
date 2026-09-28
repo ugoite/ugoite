@@ -5528,7 +5528,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/SqlQueryRequest"
               }
             }
           }
@@ -5570,7 +5570,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/SqlQueryCountRequest"
               }
             }
           }
@@ -12674,6 +12674,38 @@
           "id": {
             "type": "string"
           }
+        },
+        "additionalProperties": false
+      },
+      "SavedSqlRevisionRef": {
+        "type": "object",
+        "required": ["id", "revision_id"],
+        "properties": {
+          "id": {"type": "string", "description": "Saved SQL identity."},
+          "revision_id": {"type": "string", "description": "Exact immutable Saved SQL revision."}
+        },
+        "additionalProperties": false
+      },
+      "SqlQueryRequest": {
+        "type": "object",
+        "properties": {
+          "sql": {"type": "string", "description": "SQL text for a normal query; may be omitted or empty when saved_sql is selected."},
+          "saved_sql": {"$ref": "#/components/schemas/SavedSqlRevisionRef"},
+          "parameters": {"type": "object", "additionalProperties": true},
+          "parameter_types": {"type": "object", "additionalProperties": {"type": "string"}},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+          "continuation": {"type": "string"}
+        },
+        "required": ["limit"],
+        "additionalProperties": false
+      },
+      "SqlQueryCountRequest": {
+        "type": "object",
+        "properties": {
+          "sql": {"type": "string", "description": "SQL text for a normal query; may be omitted or empty when saved_sql is selected."},
+          "saved_sql": {"$ref": "#/components/schemas/SavedSqlRevisionRef"},
+          "parameters": {"type": "object", "additionalProperties": true},
+          "parameter_types": {"type": "object", "additionalProperties": {"type": "string"}}
         },
         "additionalProperties": false
       },

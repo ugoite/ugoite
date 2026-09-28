@@ -792,7 +792,7 @@ async fn revision_rows_for_form(
     revision_rows_for_form_inner(op, ws_path, form_name, false).await
 }
 
-async fn revision_rows_for_form_read_only(
+pub(crate) async fn revision_rows_for_form_read_only(
     op: &Operator,
     ws_path: &str,
     form_name: &str,

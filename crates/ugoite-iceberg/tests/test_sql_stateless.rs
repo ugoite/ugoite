@@ -18,7 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
 use serde_json::{json, Map, Value};
-use ugoite_core::sql_query::{SqlQueryCountRequest, SqlQueryRequest};
+use ugoite_core::sql_query::{SavedSqlRevisionRef, SqlQueryCountRequest, SqlQueryRequest};
+use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
 
 struct SqlSpace {
@@ -113,6 +114,7 @@ async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
                 sql: named_sql,
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
+                saved_sql: None,
             },
         )
         .await
@@ -134,6 +136,150 @@ async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() -> Result<()> {
+    let space = setup_sql_space("memory://sql-saved-binding", "sqlsavedbinding").await?;
+    let sql = format!(
+        "SELECT \"_ugoite_id\" FROM \"{}\" ORDER BY \"_ugoite_id\"",
+        space.form_name
+    );
+    let saved = space
+        .service
+        .create_saved_sql(
+            &space.space_id,
+            Some("saved-by-form-name"),
+            &SqlPayload {
+                name: Some("Tasks".into()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: sql.clone(),
+                variables: json!([]),
+            },
+            "owner",
+        )
+        .await?;
+    let source = SavedSqlRevisionRef {
+        id: "saved-by-form-name".into(),
+        revision_id: saved["revision_id"].as_str().context("revision id")?.into(),
+    };
+    assert_eq!(saved["metadata"]["bindingVersion"], 1);
+    assert_eq!(saved["metadata"]["formBindings"][0]["name"], "Task");
+
+    let first = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                limit: 2,
+                continuation: None,
+                saved_sql: Some(source.clone()),
+            },
+        )
+        .await?;
+    assert_eq!(first.rows.len(), 2);
+    assert!(first.has_more);
+    let next = first.next.clone().context("saved SQL continuation")?;
+    let updated = space
+        .service
+        .update_saved_sql(
+            &space.space_id,
+            "saved-by-form-name",
+            &SqlPayload {
+                name: Some("Tasks".into()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: format!(
+                "SELECT \"_ugoite_id\" FROM \"{}\" WHERE \"{}\" = 'open' ORDER BY \"_ugoite_id\"",
+                space.form_name, space.status_column
+            ),
+                variables: json!([]),
+            },
+            &source.revision_id,
+            "owner",
+        )
+        .await?;
+    let updated_source = SavedSqlRevisionRef {
+        id: source.id.clone(),
+        revision_id: updated["revision_id"]
+            .as_str()
+            .context("updated revision id")?
+            .into(),
+    };
+    let second = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                continuation: Some(next),
+                ..query_request(String::new(), 2)
+            },
+        )
+        .await;
+    assert!(
+        second.is_err(),
+        "continuation without its saved revision must fail closed"
+    );
+    let second = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                continuation: first.next.clone(),
+                saved_sql: Some(source.clone()),
+                ..query_request(String::new(), 2)
+            },
+        )
+        .await?;
+    assert_eq!(second.rows.len(), 2);
+
+    let count = space
+        .service
+        .count_sql(
+            &space.space_id,
+            SqlQueryCountRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                saved_sql: Some(source.clone()),
+            },
+        )
+        .await?;
+    assert_eq!(count, 5);
+    let updated_count = space
+        .service
+        .count_sql(
+            &space.space_id,
+            SqlQueryCountRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                saved_sql: Some(updated_source),
+            },
+        )
+        .await?;
+    assert_eq!(updated_count, 3);
+
+    let mismatched = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                sql: "SELECT 1".into(),
+                saved_sql: Some(source),
+                ..query_request(String::new(), 2)
+            },
+        )
+        .await;
+    assert!(
+        mismatched.is_err(),
+        "caller SQL cannot replace the selected revision"
+    );
+    Ok(())
+}
+
 fn base_sql(space: &SqlSpace) -> String {
     format!(
         "SELECT \"_ugoite_id\" FROM \"{}\" ORDER BY \"_ugoite_id\"",
@@ -148,6 +294,7 @@ fn query_request(sql: String, limit: usize) -> SqlQueryRequest {
         parameter_types: BTreeMap::new(),
         limit,
         continuation: None,
+        saved_sql: None,
     }
 }
 
@@ -217,6 +364,7 @@ async fn stateless_explicit_count_matches_full_result() -> Result<()> {
                 sql: base_sql(&space),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
+                saved_sql: None,
             },
         )
         .await?;
@@ -232,6 +380,7 @@ async fn stateless_explicit_count_matches_full_result() -> Result<()> {
                 ),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
+                saved_sql: None,
             },
         )
         .await?;
@@ -263,6 +412,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                 parameter_types: BTreeMap::from([("status".to_string(), "string".to_string())]),
                 limit: 1_000,
                 continuation: None,
+            saved_sql: None,
             },
         )
         .await?;
@@ -288,6 +438,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                 parameter_types: BTreeMap::new(),
                 limit: 1_000,
                 continuation: None,
+            saved_sql: None,
             },
         )
         .await?;
@@ -311,6 +462,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                 parameter_types: BTreeMap::from([("probe".to_string(), "string".to_string())]),
                 limit: 1_000,
                 continuation: None,
+            saved_sql: None,
             },
         )
         .await?;
@@ -330,6 +482,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                 parameter_types: BTreeMap::new(),
                 limit: 1_000,
                 continuation: None,
+            saved_sql: None,
             },
         )
         .await;
@@ -351,6 +504,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                 parameter_types: BTreeMap::from([("probe".to_string(), "string".to_string())]),
                 limit: 1_000,
                 continuation: None,
+            saved_sql: None,
             },
         )
         .await;
@@ -373,6 +527,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                 parameter_types: BTreeMap::from([("priority".to_string(), "int64".to_string())]),
                 limit: 1_000,
                 continuation: None,
+            saved_sql: None,
             },
         )
         .await;
@@ -437,6 +592,7 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
                 parameter_types: BTreeMap::from([("status".to_string(), "string".to_string())]),
                 limit: 2,
                 continuation: None,
+                saved_sql: None,
             },
         )
         .await?;
@@ -457,6 +613,7 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
                 parameter_types: BTreeMap::from([("status".to_string(), "string".to_string())]),
                 limit: 2,
                 continuation: Some(param_continuation),
+                saved_sql: None,
             },
         )
         .await;
@@ -520,6 +677,7 @@ async fn stateless_sql_stays_read_only_with_opaque_continuation() -> Result<()> 
                     sql,
                     parameters: Map::new(),
                     parameter_types: BTreeMap::new(),
+                    saved_sql: None,
                 },
             )
             .await;

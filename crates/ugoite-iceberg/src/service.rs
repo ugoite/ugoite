@@ -1,5 +1,5 @@
-use anyhow::{anyhow, bail, Context, Result};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use anyhow::{Context, Result, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use fs2::FileExt;
 use futures::TryStreamExt;
@@ -7,7 +7,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use opendal::options::WriteOptions;
 use opendal::{EntryMode, ErrorKind, Operator};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{File, OpenOptions};
@@ -94,16 +94,16 @@ fn canonical_entry_id(requested_id: Option<&str>) -> String {
 }
 
 use crate::integrity::RealIntegrityProvider;
+use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef, RevisionView};
 use crate::{
     asset,
     audit::AuditCheckpointConfig,
     authorization::{
-        effective_actions_for_state, AuthorizationLease, AuthorizationState, Authorizer,
-        ResourceKind, ResourceRef,
+        AuthorizationLease, AuthorizationState, Authorizer, ResourceKind, ResourceRef,
+        effective_actions_for_state,
     },
     entry, form, iceberg_store, index, preferences, saved_sql, space,
 };
-use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef, RevisionView};
 use ugoite_core::entry_query::{
     EntryCount, EntryCountRequest, EntryCursor, EntryFieldRef, EntryPage, EntryPageRequest,
     EntryProjection, EntryQueryError, EntryQueryScope, EntryResult,
@@ -115,18 +115,18 @@ use ugoite_core::sql_query::{
 };
 use ugoite_domain::change::{ChangeCommand, RunId};
 use ugoite_domain::change_history::{
-    diff_entry_change, summarize_change, ChangeHistoryQuery, ChangeInspection,
-    ChangeTargetVisibility, EntryChangeEvidence,
+    ChangeHistoryQuery, ChangeInspection, ChangeTargetVisibility, EntryChangeEvidence,
+    diff_entry_change, summarize_change,
 };
-use ugoite_domain::form::{sql_relation_name, FormDefinition};
+use ugoite_domain::form::{FormDefinition, sql_relation_name};
 use ugoite_domain::id::{
-    validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
-    validate_space_id, validate_sql_id, EntryId, FormId,
+    EntryId, FormId, validate_asset_id, validate_entry_id, validate_form_name,
+    validate_revision_id, validate_space_id, validate_sql_id,
 };
 use ugoite_domain::identity::{Action, PrincipalKind, PrincipalState, SpaceRole};
 use ugoite_storage::{
-    is_local_operator, operator_from_uri, operator_from_uri_with_endpoint, OpendalStorage,
-    SpaceCatalogStore, StorageBackend,
+    OpendalStorage, SpaceCatalogStore, StorageBackend, is_local_operator, operator_from_uri,
+    operator_from_uri_with_endpoint,
 };
 
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
@@ -171,7 +171,7 @@ impl space::StorageConnectionTestConfig {
                     ErrorCode::InvalidInput,
                     "storage_config.endpoint must be a string",
                 )
-                .into())
+                .into());
             }
         };
         Ok(Self {
@@ -342,7 +342,7 @@ async fn probe_storage_backend(operator: &Operator, mode: &str, timeout: Duratio
                     timeout.as_millis()
                 ),
             )
-            .into())
+            .into());
         }
     }
 
@@ -5715,7 +5715,14 @@ impl UgoiteService {
         const LOCAL_AUTHORIZATION_FINGERPRINT: &str = "local-operator";
 
         request.validate().map_err(sql_query_contract_error)?;
-        let normalized_sql = index::normalize_sql_template(&request.sql)?;
+        let saved_revision = self
+            .read_saved_sql_query_revision(space_id, request.saved_sql.as_ref())
+            .await?;
+        let query_sql = saved_revision
+            .as_ref()
+            .map_or(request.sql.as_str(), |revision| revision.sql.as_str());
+        let normalized_sql = index::normalize_sql_template(query_sql)?;
+        validate_saved_sql_client_sql(saved_revision.is_some(), &request.sql, &normalized_sql)?;
         index::validate_read_only_sql(&normalized_sql)?;
         self.validate_complete_space(space_id).await?;
         let signing_key = self.sql_query_signing_key(space_id).await?;
@@ -5726,8 +5733,10 @@ impl UgoiteService {
                 SqlContinuation::decode(value, &signing_key).map_err(sql_query_contract_error)
             })
             .transpose()?;
-        let effective_parameter_types =
-            effective_sql_parameter_types(&request.parameters, &request.parameter_types)?;
+        let effective_parameter_types = effective_sql_parameter_types(
+            &request.parameters,
+            &saved_sql_parameter_types(saved_revision.as_ref(), &request.parameter_types)?,
+        )?;
         let parameter_fingerprint = SqlQueryRequest {
             parameter_types: effective_parameter_types.clone(),
             ..request.clone()
@@ -5755,6 +5764,12 @@ impl UgoiteService {
                 }
                 if cursor.sql_fingerprint != sql_fingerprint
                     || cursor.parameter_fingerprint != parameter_fingerprint
+                    || cursor.saved_sql != request.saved_sql
+                    || cursor.binding_fingerprint
+                        != saved_revision
+                            .as_ref()
+                            .map(saved_sql_binding_fingerprint)
+                            .transpose()?
                 {
                     return Err(AppError::invalid_input(
                         ErrorCode::InvalidInput,
@@ -5780,6 +5795,11 @@ impl UgoiteService {
             .iter()
             .map(|form| (sql_relation_name(form.id), EntryScope::AllCurrent))
             .collect::<BTreeMap<_, _>>();
+        let execution_sql = if let Some(revision) = &saved_revision {
+            bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
+        } else {
+            normalized_sql.clone()
+        };
         let fetch_limit = request
             .limit
             .checked_add(1)
@@ -5788,7 +5808,7 @@ impl UgoiteService {
             index::execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
                 &self.operator,
                 &self.workspace_path(space_id),
-                &normalized_sql,
+                &execution_sql,
                 &relation_scopes,
                 parameters,
                 offset,
@@ -5810,17 +5830,20 @@ impl UgoiteService {
             let next_offset = offset
                 .checked_add(rows.len())
                 .ok_or_else(|| anyhow!("SQL continuation offset overflows"))?;
-            Some(
-                SqlContinuation::new(
-                    space_uid.into(),
-                    publication,
-                    sql_fingerprint,
-                    parameter_fingerprint,
-                    LOCAL_AUTHORIZATION_FINGERPRINT.to_string(),
-                    next_offset,
-                )?
-                .encode(&signing_key)?,
-            )
+            let mut cursor = SqlContinuation::new(
+                space_uid.into(),
+                publication,
+                sql_fingerprint,
+                parameter_fingerprint,
+                LOCAL_AUTHORIZATION_FINGERPRINT.to_string(),
+                next_offset,
+            )?;
+            cursor.saved_sql = request.saved_sql.clone();
+            cursor.binding_fingerprint = saved_revision
+                .as_ref()
+                .map(saved_sql_binding_fingerprint)
+                .transpose()?;
+            Some(cursor.encode(&signing_key)?)
         } else {
             None
         };
@@ -5832,15 +5855,47 @@ impl UgoiteService {
         })
     }
 
+    async fn read_saved_sql_query_revision(
+        &self,
+        space_id: &str,
+        source: Option<&ugoite_core::sql_query::SavedSqlRevisionRef>,
+    ) -> Result<Option<saved_sql::ResolvedSavedSqlRevision>> {
+        let Some(source) = source else {
+            return Ok(None);
+        };
+        validate_storage_id(validate_sql_id(&source.id))?;
+        validate_storage_id(validate_revision_id(&source.revision_id))?;
+        self.validate_complete_space(space_id).await?;
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        saved_sql::read_sql_revision(
+            &self.operator,
+            &self.workspace_path(space_id),
+            &source.id,
+            &source.revision_id,
+            &integrity,
+        )
+        .await
+        .map(Some)
+    }
+
     /// Counts a read-only SQL query for the trusted local operator boundary.
     /// Counting is explicit and never creates query or session state.
     pub async fn count_sql(&self, space_id: &str, request: SqlQueryCountRequest) -> Result<u64> {
         request.validate().map_err(sql_query_contract_error)?;
-        let normalized_sql = index::normalize_sql_template(&request.sql)?;
+        let saved_revision = self
+            .read_saved_sql_query_revision(space_id, request.saved_sql.as_ref())
+            .await?;
+        let query_sql = saved_revision
+            .as_ref()
+            .map_or(request.sql.as_str(), |revision| revision.sql.as_str());
+        let normalized_sql = index::normalize_sql_template(query_sql)?;
+        validate_saved_sql_client_sql(saved_revision.is_some(), &request.sql, &normalized_sql)?;
         index::validate_read_only_sql(&normalized_sql)?;
         self.validate_complete_space(space_id).await?;
-        let effective_parameter_types =
-            effective_sql_parameter_types(&request.parameters, &request.parameter_types)?;
+        let effective_parameter_types = effective_sql_parameter_types(
+            &request.parameters,
+            &saved_sql_parameter_types(saved_revision.as_ref(), &request.parameter_types)?,
+        )?;
         let parameters =
             index::datafusion_parameters(&request.parameters, &effective_parameter_types).map_err(
                 |error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()),
@@ -5854,10 +5909,15 @@ impl UgoiteService {
             .iter()
             .map(|form| (sql_relation_name(form.id), EntryScope::AllCurrent))
             .collect::<BTreeMap<_, _>>();
+        let execution_sql = if let Some(revision) = &saved_revision {
+            bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
+        } else {
+            normalized_sql
+        };
         index::execute_sql_query_authorized_by_form_count_at_checkpoint_stateless(
             &self.operator,
             &self.workspace_path(space_id),
-            &normalized_sql,
+            &execution_sql,
             &relation_scopes,
             parameters,
             forms,
@@ -5877,7 +5937,28 @@ impl UgoiteService {
     ) -> Result<SqlQueryPage> {
         request.validate().map_err(sql_query_contract_error)?;
         require_nonempty_authorized_principals(principal_ids)?;
-        let normalized_sql = index::normalize_sql_template(&request.sql)?;
+        self.validate_complete_space(space_id).await?;
+        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+                return Err(
+                    AppError::forbidden("principal is not authorized to read this Space").into(),
+                );
+            }
+        }
+        if let Some(source) = request.saved_sql.as_ref() {
+            ensure_saved_sql_access(&state, principal_ids, source)?;
+        }
+        let saved_revision = self
+            .read_saved_sql_query_revision(space_id, request.saved_sql.as_ref())
+            .await?;
+        let query_sql = saved_revision
+            .as_ref()
+            .map_or(request.sql.as_str(), |revision| revision.sql.as_str());
+        let normalized_sql = index::normalize_sql_template(query_sql)?;
+        validate_saved_sql_client_sql(saved_revision.is_some(), &request.sql, &normalized_sql)?;
         index::validate_read_only_sql(&normalized_sql)?;
         self.validate_complete_space(space_id).await?;
 
@@ -5889,8 +5970,10 @@ impl UgoiteService {
                 SqlContinuation::decode(value, &signing_key).map_err(sql_query_contract_error)
             })
             .transpose()?;
-        let effective_parameter_types =
-            effective_sql_parameter_types(&request.parameters, &request.parameter_types)?;
+        let effective_parameter_types = effective_sql_parameter_types(
+            &request.parameters,
+            &saved_sql_parameter_types(saved_revision.as_ref(), &request.parameter_types)?,
+        )?;
         let parameter_fingerprint = SqlQueryRequest {
             parameter_types: effective_parameter_types.clone(),
             ..request.clone()
@@ -5905,16 +5988,6 @@ impl UgoiteService {
                 |error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()),
             )?;
 
-        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
-            .acquire_state_lease(space_id)
-            .await?;
-        for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
-                return Err(
-                    AppError::forbidden("principal is not authorized to read this Space").into(),
-                );
-            }
-        }
         let authorization_fingerprint = sql_query_authorization_fingerprint(&state, principal_ids)?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
@@ -5929,10 +6002,16 @@ impl UgoiteService {
                 }
                 if cursor.sql_fingerprint != sql_fingerprint
                     || cursor.parameter_fingerprint != parameter_fingerprint
+                    || cursor.saved_sql != request.saved_sql
+                    || cursor.binding_fingerprint
+                        != saved_revision
+                            .as_ref()
+                            .map(saved_sql_binding_fingerprint)
+                            .transpose()?
                 {
                     return Err(AppError::invalid_input(
                         ErrorCode::InvalidInput,
-                        "SQL or parameter fingerprint does not match the continuation",
+                        "SQL, parameters, or Saved SQL revision does not match the continuation",
                     )
                     .into());
                 }
@@ -5961,6 +6040,11 @@ impl UgoiteService {
                     .map(|scope| (sql_relation_name(form.id), scope))
             })
             .collect::<BTreeMap<_, _>>();
+        let execution_sql = if let Some(revision) = &saved_revision {
+            bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
+        } else {
+            normalized_sql.clone()
+        };
         let fetch_limit = request
             .limit
             .checked_add(1)
@@ -5969,7 +6053,7 @@ impl UgoiteService {
             index::execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
                 &self.operator,
                 &self.workspace_path(space_id),
-                &normalized_sql,
+                &execution_sql,
                 &relation_scopes,
                 parameters,
                 offset,
@@ -5991,17 +6075,20 @@ impl UgoiteService {
             let next_offset = offset
                 .checked_add(rows.len())
                 .ok_or_else(|| anyhow!("SQL continuation offset overflows"))?;
-            Some(
-                SqlContinuation::new(
-                    state.space_uid.into(),
-                    publication,
-                    sql_fingerprint,
-                    parameter_fingerprint,
-                    authorization_fingerprint,
-                    next_offset,
-                )?
-                .encode(&signing_key)?,
-            )
+            let mut cursor = SqlContinuation::new(
+                state.space_uid.into(),
+                publication,
+                sql_fingerprint,
+                parameter_fingerprint,
+                authorization_fingerprint,
+                next_offset,
+            )?;
+            cursor.saved_sql = request.saved_sql.clone();
+            cursor.binding_fingerprint = saved_revision
+                .as_ref()
+                .map(saved_sql_binding_fingerprint)
+                .transpose()?;
+            Some(cursor.encode(&signing_key)?)
         } else {
             None
         };
@@ -6023,15 +6110,7 @@ impl UgoiteService {
     ) -> Result<u64> {
         request.validate().map_err(sql_query_contract_error)?;
         require_nonempty_authorized_principals(principal_ids)?;
-        let normalized_sql = index::normalize_sql_template(&request.sql)?;
-        index::validate_read_only_sql(&normalized_sql)?;
         self.validate_complete_space(space_id).await?;
-        let effective_parameter_types =
-            effective_sql_parameter_types(&request.parameters, &request.parameter_types)?;
-        let parameters =
-            index::datafusion_parameters(&request.parameters, &effective_parameter_types).map_err(
-                |error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()),
-            )?;
         let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
             .acquire_state_lease(space_id)
             .await?;
@@ -6042,6 +6121,27 @@ impl UgoiteService {
                 );
             }
         }
+        if let Some(source) = request.saved_sql.as_ref() {
+            ensure_saved_sql_access(&state, principal_ids, source)?;
+        }
+        let saved_revision = self
+            .read_saved_sql_query_revision(space_id, request.saved_sql.as_ref())
+            .await?;
+        let query_sql = saved_revision
+            .as_ref()
+            .map_or(request.sql.as_str(), |revision| revision.sql.as_str());
+        let normalized_sql = index::normalize_sql_template(query_sql)?;
+        validate_saved_sql_client_sql(saved_revision.is_some(), &request.sql, &normalized_sql)?;
+        index::validate_read_only_sql(&normalized_sql)?;
+        self.validate_complete_space(space_id).await?;
+        let effective_parameter_types = effective_sql_parameter_types(
+            &request.parameters,
+            &saved_sql_parameter_types(saved_revision.as_ref(), &request.parameter_types)?,
+        )?;
+        let parameters =
+            index::datafusion_parameters(&request.parameters, &effective_parameter_types).map_err(
+                |error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()),
+            )?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         let publication = workspace.current_publication().await?;
@@ -6058,10 +6158,20 @@ impl UgoiteService {
                     .map(|scope| (sql_relation_name(form.id), scope))
             })
             .collect::<BTreeMap<_, _>>();
+        let execution_sql = if let Some(revision) = &saved_revision {
+            ensure_saved_sql_access(
+                &state,
+                principal_ids,
+                request.saved_sql.as_ref().expect("loaded source"),
+            )?;
+            bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
+        } else {
+            normalized_sql
+        };
         index::execute_sql_query_authorized_by_form_count_at_checkpoint_stateless(
             &self.operator,
             &self.workspace_path(space_id),
-            &normalized_sql,
+            &execution_sql,
             &relation_scopes,
             parameters,
             forms,
@@ -6485,6 +6595,96 @@ impl UgoiteService {
         payload: &saved_sql::SqlPayload,
         author: &str,
     ) -> Result<Value> {
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let authorized_forms = workspace
+            .forms_at_checkpoint(&checkpoint)
+            .await?
+            .into_iter()
+            .map(|form| (form.name, form.id))
+            .collect::<BTreeMap<_, _>>();
+        self.create_saved_sql_with_forms(
+            space_id,
+            requested_sql_id,
+            payload,
+            author,
+            &authorized_forms,
+        )
+        .await
+    }
+
+    pub async fn create_saved_sql_authorized_for_principals(
+        &self,
+        space_id: &str,
+        requested_sql_id: Option<&str>,
+        payload: &saved_sql::SqlPayload,
+        author: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        let space_id_owned = space_id.to_owned();
+        let principal_ids = principal_ids.to_vec();
+        let requested_sql_id = requested_sql_id.map(str::to_owned);
+        let payload = payload.clone();
+        let author = author.to_owned();
+        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        for principal_id in &principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Create)
+            {
+                return Err(
+                    AppError::forbidden("principal is not authorized to create Saved SQL").into(),
+                );
+            }
+        }
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(&space_id_owned))
+                .await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let mut authorized_forms = BTreeMap::new();
+        for form in forms {
+            let resource = ResourceRef {
+                kind: ResourceKind::Form,
+                id: form.name.clone(),
+                parent: None,
+            };
+            let mut allowed = true;
+            for principal_id in &principal_ids {
+                if !effective_actions_for_state(&state, *principal_id, Some(&resource))?
+                    .contains(&Action::Read)
+                {
+                    allowed = false;
+                    break;
+                }
+            }
+            if allowed {
+                authorized_forms.insert(form.name, form.id);
+            }
+        }
+        self.create_saved_sql_with_forms(
+            &space_id_owned,
+            requested_sql_id.as_deref(),
+            &payload,
+            &author,
+            &authorized_forms,
+        )
+        .await
+    }
+
+    async fn create_saved_sql_with_forms(
+        &self,
+        space_id: &str,
+        requested_sql_id: Option<&str>,
+        payload: &saved_sql::SqlPayload,
+        author: &str,
+        authorized_forms: &BTreeMap<String, FormId>,
+    ) -> Result<Value> {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         let sql_id = requested_sql_id
@@ -6492,11 +6692,12 @@ impl UgoiteService {
             .unwrap_or_else(|| Uuid::new_v4().to_string());
         validate_storage_id(validate_sql_id(&sql_id))?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        let created = saved_sql::create_sql(
+        let created = saved_sql::create_sql_with_bindings(
             &self.operator,
             &self.workspace_path(space_id),
             &sql_id,
             payload,
+            authorized_forms,
             author,
             &integrity,
         )
@@ -6544,12 +6745,126 @@ impl UgoiteService {
             .into());
         }
         validate_storage_id(validate_revision_id(parent_revision_id))?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let authorized_forms = workspace
+            .forms_at_checkpoint(&checkpoint)
+            .await?
+            .into_iter()
+            .map(|form| (form.name, form.id))
+            .collect::<BTreeMap<_, _>>();
+        self.update_saved_sql_with_forms(
+            space_id,
+            sql_id,
+            payload,
+            parent_revision_id,
+            author,
+            &authorized_forms,
+        )
+        .await
+    }
+
+    pub async fn update_saved_sql_authorized_for_principals(
+        &self,
+        space_id: &str,
+        sql_id: &str,
+        payload: &saved_sql::SqlPayload,
+        parent_revision_id: &str,
+        author: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        let space_id_owned = space_id.to_owned();
+        let sql_id = sql_id.to_owned();
+        let payload = payload.clone();
+        let parent_revision_id = parent_revision_id.to_owned();
+        let principal_ids = principal_ids.to_vec();
+        let author = author.to_owned();
+        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        let saved_sql_resource = ResourceRef {
+            kind: ResourceKind::SavedSql,
+            id: sql_id.clone(),
+            parent: None,
+        };
+        for principal_id in &principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, Some(&saved_sql_resource))?
+                .contains(&Action::Update)
+            {
+                return Err(AppError::forbidden(
+                    "principal is not authorized to update this Saved SQL",
+                )
+                .into());
+            }
+        }
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(&space_id_owned))
+                .await?;
+        let publication = workspace.current_publication().await?;
+        let checkpoint = workspace.resolve_publication(&publication).await?;
+        let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
+        let mut authorized_forms = BTreeMap::new();
+        for form in forms {
+            let resource = ResourceRef {
+                kind: ResourceKind::Form,
+                id: form.name.clone(),
+                parent: None,
+            };
+            let mut allowed = true;
+            for principal_id in &principal_ids {
+                if !effective_actions_for_state(&state, *principal_id, Some(&resource))?
+                    .contains(&Action::Read)
+                {
+                    allowed = false;
+                    break;
+                }
+            }
+            if allowed {
+                authorized_forms.insert(form.name, form.id);
+            }
+        }
+        self.update_saved_sql_with_forms(
+            &space_id_owned,
+            &sql_id,
+            &payload,
+            &parent_revision_id,
+            &author,
+            &authorized_forms,
+        )
+        .await
+    }
+
+    async fn update_saved_sql_with_forms(
+        &self,
+        space_id: &str,
+        sql_id: &str,
+        payload: &saved_sql::SqlPayload,
+        parent_revision_id: &str,
+        author: &str,
+        authorized_forms: &BTreeMap<String, FormId>,
+    ) -> Result<Value> {
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_sql_id(sql_id))?;
+        if parent_revision_id.trim().is_empty() {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "parent_revision_id must not be blank",
+            )
+            .into());
+        }
+        validate_storage_id(validate_revision_id(parent_revision_id))?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        let updated = saved_sql::update_sql(
+        let updated = saved_sql::update_sql_with_bindings(
             &self.operator,
             &self.workspace_path(space_id),
             sql_id,
             payload,
+            authorized_forms,
             parent_revision_id,
             author,
             &integrity,
@@ -6644,12 +6959,153 @@ fn sql_query_authorization_fingerprint(
     Ok(format!("sha256:{}", hex::encode(Sha256::digest(canonical))))
 }
 
+fn saved_sql_binding_fingerprint(revision: &saved_sql::ResolvedSavedSqlRevision) -> Result<String> {
+    let bytes = serde_json::to_vec(&(revision.binding_version, &revision.bindings))?;
+    Ok(hex::encode(Sha256::digest(bytes)))
+}
+
+fn ensure_saved_sql_access(
+    state: &AuthorizationState,
+    principal_ids: &[Uuid],
+    source: &ugoite_core::sql_query::SavedSqlRevisionRef,
+) -> Result<()> {
+    let resource = ResourceRef {
+        kind: ResourceKind::SavedSql,
+        id: source.id.clone(),
+        parent: None,
+    };
+    for principal_id in principal_ids {
+        if !effective_actions_for_state(state, *principal_id, Some(&resource))?
+            .contains(&Action::Read)
+        {
+            return Err(
+                AppError::forbidden("principal is not authorized to read this Saved SQL").into(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn bound_sql_for_revision(
+    revision: &saved_sql::ResolvedSavedSqlRevision,
+    forms: &[FormDefinition],
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    sql: &str,
+) -> Result<String> {
+    if revision.binding_version.is_none() {
+        if !index::quoted_form_name_references(sql)?.is_empty() {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "Legacy Saved SQL cannot resolve Form names without a saved binding revision",
+            )
+            .into());
+        }
+        return Ok(sql.to_owned());
+    }
+    let mut aliases = BTreeMap::new();
+    for binding in &revision.bindings {
+        let id =
+            Uuid::parse_str(&binding.form_id).context("Saved SQL Form binding ID is invalid")?;
+        let form = forms
+            .iter()
+            .find(|form| form.id.as_uuid() == id)
+            .ok_or_else(|| {
+                AppError::forbidden(format!(
+                    "Saved SQL Form binding is unavailable: {}",
+                    binding.name
+                ))
+            })?;
+        let relation = sql_relation_name(form.id);
+        if !relation_scopes.contains_key(&relation) {
+            return Err(AppError::forbidden(format!(
+                "Saved SQL Form binding is not authorized: {}",
+                binding.name
+            ))
+            .into());
+        }
+        aliases.insert(binding.name.clone(), relation);
+    }
+    let (resolved_sql, used) = index::resolve_saved_sql_bindings(sql, &aliases)?;
+    let expected = revision
+        .bindings
+        .iter()
+        .map(|binding| binding.name.clone())
+        .collect::<BTreeSet<_>>();
+    if used != expected {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "Saved SQL Form bindings do not match its SQL text",
+        )
+        .into());
+    }
+    Ok(resolved_sql)
+}
+
 fn entry_query_contract_error(error: EntryQueryError) -> anyhow::Error {
     AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()).into()
 }
 
 fn sql_query_contract_error(error: SqlQueryError) -> anyhow::Error {
     AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()).into()
+}
+
+fn validate_saved_sql_client_sql(
+    has_saved_source: bool,
+    client_sql: &str,
+    stored_sql: &str,
+) -> Result<()> {
+    if has_saved_source
+        && !client_sql.trim().is_empty()
+        && index::normalize_sql_template(client_sql)? != stored_sql
+    {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL text does not match the selected Saved SQL revision",
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn saved_sql_parameter_types(
+    revision: Option<&saved_sql::ResolvedSavedSqlRevision>,
+    requested: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>> {
+    let Some(revision) = revision else {
+        return Ok(requested.clone());
+    };
+    let mut stored = BTreeMap::new();
+    for variable in revision.variables.as_array().into_iter().flatten() {
+        let name = variable
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("Saved SQL variable name is missing"))?;
+        let var_type = variable
+            .get("type")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("Saved SQL variable type is missing"))?;
+        stored.insert(name.to_owned(), var_type.to_owned());
+    }
+    for (name, requested_type) in requested {
+        match stored.get(name) {
+            Some(stored_type) if stored_type == requested_type => {}
+            Some(_) => {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    format!("SQL parameter type for {name} does not match its Saved SQL revision"),
+                )
+                .into());
+            }
+            None => {
+                return Err(AppError::invalid_input(
+                    ErrorCode::InvalidInput,
+                    format!("SQL parameter {name} is not declared by the Saved SQL revision"),
+                )
+                .into());
+            }
+        }
+    }
+    Ok(stored)
 }
 
 fn effective_sql_parameter_types(
@@ -6671,14 +7127,14 @@ fn effective_sql_parameter_types(
                     ErrorCode::InvalidInput,
                     format!("SQL null parameter {name} requires a declared parameter type"),
                 )
-                .into())
+                .into());
             }
             Value::Array(_) | Value::Object(_) => {
                 return Err(AppError::invalid_input(
                     ErrorCode::InvalidInput,
                     format!("SQL parameter {name} has an unsupported JSON type"),
                 )
-                .into())
+                .into());
             }
         };
         types.insert(name.clone(), inferred.to_string());
@@ -7027,7 +7483,7 @@ pub fn validate_public_space_patch(patch: &Value) -> Result<()> {
 
 #[cfg(test)]
 mod public_space_patch_validation_tests {
-    use super::{validate_public_space_patch, ALLOWED_PUBLIC_SPACE_PATCH_FIELDS};
+    use super::{ALLOWED_PUBLIC_SPACE_PATCH_FIELDS, validate_public_space_patch};
     use ugoite_core::error::{ErrorCode, ErrorKind};
 
     fn typed_error(patch: serde_json::Value) -> ugoite_core::error::AppError {
@@ -7070,6 +7526,66 @@ mod public_space_patch_validation_tests {
     #[test]
     fn valid_patch_is_accepted() {
         assert!(validate_public_space_patch(&serde_json::json!({"name": "New name"})).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod saved_sql_binding_execution_tests {
+    use super::*;
+
+    #[test]
+    fn saved_sql_binding_tracks_form_id_across_rename_and_rejects_replacement() {
+        let original_id = Uuid::parse_str("01900000-0000-7000-8000-000000000001").unwrap();
+        let replacement_id = Uuid::parse_str("01900000-0000-7000-8000-000000000002").unwrap();
+        let renamed: FormDefinition = serde_json::from_value(json!({
+            "id": original_id.to_string(),
+            "version": 1,
+            "name": "RenamedTask",
+            "fields": [],
+            "allow_extra_attributes": true
+        }))
+        .unwrap();
+        let revision = saved_sql::ResolvedSavedSqlRevision {
+            sql: "SELECT * FROM \"Task\"".into(),
+            variables: json!([]),
+            binding_version: Some(1),
+            bindings: vec![saved_sql::SqlFormBinding {
+                name: "Task".into(),
+                form_id: original_id.to_string(),
+            }],
+        };
+        let relation = sql_relation_name(renamed.id);
+        let sql = bound_sql_for_revision(
+            &revision,
+            &[renamed.clone()],
+            &BTreeMap::from([(relation.clone(), EntryScope::AllCurrent)]),
+            &revision.sql,
+        )
+        .unwrap();
+        assert!(
+            sql.contains(&relation),
+            "the stored alias follows the immutable Form ID"
+        );
+
+        let replacement: FormDefinition = serde_json::from_value(json!({
+            "id": replacement_id.to_string(),
+            "version": 1,
+            "name": "Task",
+            "fields": [],
+            "allow_extra_attributes": true
+        }))
+        .unwrap();
+        let replacement_relation = sql_relation_name(replacement.id);
+        let result = bound_sql_for_revision(
+            &revision,
+            &[replacement.clone()],
+            &BTreeMap::from([(replacement_relation, EntryScope::AllCurrent)]),
+            &revision.sql,
+        );
+        assert!(
+            result.is_err(),
+            "same-name replacement cannot satisfy a missing Form ID binding"
+        );
     }
 }
 
@@ -7327,38 +7843,46 @@ mod tests {
             },
             &signing_key,
         )?;
-        assert!(UgoiteService::decode_change_inspect_cursor(
-            &cursor,
-            "another-space",
-            &change_id,
-            10,
-            &signing_key,
-        )
-        .is_err());
-        assert!(UgoiteService::decode_change_inspect_cursor(
-            &cursor,
-            &space_id,
-            "another-change",
-            10,
-            &signing_key,
-        )
-        .is_err());
-        assert!(UgoiteService::decode_change_inspect_cursor(
-            &format!("{cursor}x"),
-            &space_id,
-            &change_id,
-            10,
-            &signing_key,
-        )
-        .is_err());
-        assert!(UgoiteService::decode_change_inspect_cursor(
-            &cursor,
-            &space_id,
-            &change_id,
-            5,
-            &signing_key,
-        )
-        .is_err());
+        assert!(
+            UgoiteService::decode_change_inspect_cursor(
+                &cursor,
+                "another-space",
+                &change_id,
+                10,
+                &signing_key,
+            )
+            .is_err()
+        );
+        assert!(
+            UgoiteService::decode_change_inspect_cursor(
+                &cursor,
+                &space_id,
+                "another-change",
+                10,
+                &signing_key,
+            )
+            .is_err()
+        );
+        assert!(
+            UgoiteService::decode_change_inspect_cursor(
+                &format!("{cursor}x"),
+                &space_id,
+                &change_id,
+                10,
+                &signing_key,
+            )
+            .is_err()
+        );
+        assert!(
+            UgoiteService::decode_change_inspect_cursor(
+                &cursor,
+                &space_id,
+                &change_id,
+                5,
+                &signing_key,
+            )
+            .is_err()
+        );
         let first_page = service
             .inspect_change_authorized_for_principals(
                 &space_id,
@@ -8647,11 +9171,13 @@ mod tests {
         assert_eq!(completed_preview["ready"], false);
         assert_eq!(completed_preview["pending_change_count"], 0);
         assert_eq!(completed_preview["already_reverted_count"], 2);
-        assert!(completed_preview["changes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|change| change["state"] == "already_reverted"));
+        assert!(
+            completed_preview["changes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|change| change["state"] == "already_reverted")
+        );
         Ok(())
     }
 
@@ -8875,23 +9401,27 @@ mod tests {
             )?,
             token
         );
-        assert!(UgoiteService::decode_change_page_cursor(
-            &encoded,
-            "another-space",
-            signing_key.as_bytes()
-        )
-        .is_err());
+        assert!(
+            UgoiteService::decode_change_page_cursor(
+                &encoded,
+                "another-space",
+                signing_key.as_bytes()
+            )
+            .is_err()
+        );
 
         let mut parts: Vec<_> = encoded.split('.').map(str::to_string).collect();
         let first_payload_byte = parts[1].remove(0);
         parts[1].insert(0, if first_payload_byte == 'A' { 'B' } else { 'A' });
         let tampered = parts.join(".");
-        assert!(UgoiteService::decode_change_page_cursor(
-            &tampered,
-            &token.space_id,
-            signing_key.as_bytes()
-        )
-        .is_err());
+        assert!(
+            UgoiteService::decode_change_page_cursor(
+                &tampered,
+                &token.space_id,
+                signing_key.as_bytes()
+            )
+            .is_err()
+        );
         Ok(())
     }
 
