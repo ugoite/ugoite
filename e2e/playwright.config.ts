@@ -5,6 +5,7 @@ const e2eTestTimeoutEnv = process.env.E2E_TEST_TIMEOUT_MS;
 const ciReporter = process.env.PLAYWRIGHT_CI_REPORTER;
 const junitOutputFile = process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE ??
   "test-results/junit.xml";
+const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? "test-results";
 const usesUgoiteAuthentication = Boolean(process.env.E2E_SETUP_SECRET?.trim());
 const e2eTestTimeoutMs =
   e2eTestTimeoutEnv !== undefined && !Number.isNaN(Number(e2eTestTimeoutEnv))
@@ -23,6 +24,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter,
+  outputDir,
   globalSetup: usesUgoiteAuthentication ? "./global-setup.ts" : undefined,
   use: {
     baseURL: frontendUrl,

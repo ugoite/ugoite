@@ -383,10 +383,12 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:asset-owned"
 
 [tasks."test:e2e:smoke-and-asset-owned"]
+env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/smoke-and-asset-owned-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/smoke-and-asset-owned-results" }
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:smoke-and-asset-owned"
 
 [tasks."test:e2e:mobile-ui"]
 description = "Run the merge-gated mobile browser visual regression suite"
+env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/mobile-ui-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/mobile-ui-results" }
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:mobile-ui"
 
 [tasks."test:e2e:owner-recovery"]
