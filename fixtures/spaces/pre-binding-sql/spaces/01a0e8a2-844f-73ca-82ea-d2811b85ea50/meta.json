@@ -1,0 +1,12 @@
+{
+  "created_at": 1790609359.972,
+  "hmac_key": "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=",
+  "hmac_key_id": "fixture-test-key",
+  "id": "01a0e8a2-844f-73ca-82ea-d2811b85ea50",
+  "last_rotation": "2026-09-28T15:29:19.972797+00:00",
+  "name": "暮らしの記録",
+  "slug": "expenses",
+  "space_id": "01a0e8a2-844f-73ca-82ea-d2811b85ea50",
+  "space_uid": "01a0e8a2-844f-73ca-82ea-d2811b85ea50",
+  "space_version": "0.1"
+}

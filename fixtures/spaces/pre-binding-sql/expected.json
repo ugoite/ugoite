@@ -1,0 +1,35 @@
+{
+  "source_sha": "eaa2b7d7f08e3c1598d1a82d07ae5861c4a86527",
+  "fixture_digest": "d6fc2541e14d5aca45d43128b79cc4748ba59cc6949d2de172055566e16d8703",
+  "space_id": "01a0e8a2-844f-73ca-82ea-d2811b85ea50",
+  "slug": "expenses",
+  "space_name": "暮らしの記録",
+  "form": {
+    "id": "01a0e8a2-bd0e-7359-a0bb-f6027e2a777d",
+    "name": "Expense",
+    "fields": {
+      "AmountJPY": {
+        "type": "long"
+      },
+      "Purpose": {
+        "type": "string"
+      },
+      "PaidOn": {
+        "type": "date"
+      }
+    }
+  },
+  "entries": [
+    "441c42b3-077e-4e56-a5ee-2bdfd297be71",
+    "b20dbbda-94e0-4fb2-8124-057b55546436",
+    "b50fa399-c00b-4e57-8fee-e0aa5447c2c9"
+  ],
+  "saved_sql": {
+    "id": "2f3edee4-1746-4dc6-b4ac-f153d9c36f09",
+    "revision_id": "3c3044ae-1758-40ba-b978-6f8bd0b7299a",
+    "name": "pre-binding-expense-report",
+    "sql": "SELECT \"_ugoite_id\" FROM form_01a0e8a2bd0e7359a0bbf6027e2a777d ORDER BY \"_ugoite_id\"",
+    "metadata": null,
+    "variables": []
+  }
+}
