@@ -1866,6 +1866,7 @@ impl IcebergWorkspace {
                 target_form.id,
                 AuthorizedQueryForm {
                     relation: sql_relation_name(target_form.id),
+                    sql_aliases: BTreeSet::new(),
                     entry_scope,
                     columns: target_form
                         .fields

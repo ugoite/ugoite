@@ -25,6 +25,7 @@ struct SqlSpace {
     service: UgoiteService,
     space_id: String,
     relation: String,
+    form_name: String,
     status_column: String,
     priority_column: String,
 }
@@ -81,9 +82,56 @@ async fn setup_sql_space(uri: &str, slug: &str) -> Result<SqlSpace> {
         service,
         space_id,
         relation: ugoite_domain::form::sql_relation_name(form_id),
+        form_name: "Task".to_string(),
         status_column: format!("field_{}", field_id("Status")?),
         priority_column: format!("field_{}", field_id("Priority")?),
     })
+}
+
+#[tokio::test]
+async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
+    let space = setup_sql_space("memory://sql-stateless-form-name", "sqlformname").await?;
+    let named_sql = format!(
+        "WITH task_rows AS (SELECT \"_ugoite_id\" FROM \"{}\") \
+         SELECT task_rows.\"_ugoite_id\" FROM task_rows \
+         JOIN (SELECT \"_ugoite_id\" FROM \"{}\") AS nested_rows \
+         ON task_rows.\"_ugoite_id\" = nested_rows.\"_ugoite_id\" \
+         ORDER BY task_rows.\"_ugoite_id\"",
+        space.form_name, space.form_name
+    );
+    let page = space
+        .service
+        .query_sql(&space.space_id, query_request(named_sql.clone(), 10))
+        .await
+        .unwrap_or_else(|error| panic!("named Form page failed: {error:#}"));
+    assert_eq!(page.rows.len(), 5);
+    let count = space
+        .service
+        .count_sql(
+            &space.space_id,
+            SqlQueryCountRequest {
+                sql: named_sql,
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+            },
+        )
+        .await
+        .unwrap_or_else(|error| panic!("named Form count failed: {error:#}"));
+    assert_eq!(count, 5);
+
+    let unquoted = format!("SELECT * FROM {}", space.form_name);
+    assert!(space
+        .service
+        .query_sql(&space.space_id, query_request(unquoted, 10))
+        .await
+        .is_err());
+    let wrong_case = format!("SELECT * FROM \"{}\"", space.form_name.to_lowercase());
+    assert!(space
+        .service
+        .query_sql(&space.space_id, query_request(wrong_case, 10))
+        .await
+        .is_err());
+    Ok(())
 }
 
 fn base_sql(space: &SqlSpace) -> String {

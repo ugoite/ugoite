@@ -17,7 +17,7 @@ use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{col, lit, DataFrame, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
 use std::any::Any;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
@@ -158,6 +158,7 @@ pub struct AuthorizedQueryContext {
     limits: ugoite_core::query::QueryLimits,
     permits: Arc<Semaphore>,
     authorized_relations: BTreeSet<String>,
+    form_name_aliases: BTreeMap<String, String>,
     authorized_scans: BTreeSet<AuthorizedScan>,
     duplicate_head_checks: Vec<(Arc<dyn TableProvider>, DataFrame)>,
     duplicate_head_checks_validated: Arc<AsyncMutex<BTreeSet<usize>>>,
@@ -397,6 +398,7 @@ impl IcebergWorkspace {
         // installed.
         let context = bounded_session_context(&policy.limits)?;
         let mut relations = BTreeSet::new();
+        let mut form_name_aliases = BTreeMap::new();
         let mut authorized_scans = BTreeSet::new();
         let mut duplicate_head_checks = Vec::new();
 
@@ -425,6 +427,21 @@ impl IcebergWorkspace {
                     "authorized query policy repeats relation {}",
                     form_policy.relation
                 );
+            }
+            for alias in &form_policy.sql_aliases {
+                validate_form_name(alias)?;
+                if is_legacy_relation_name(alias)
+                    || alias.starts_with(INTERNAL_RELATION_PREFIX)
+                    || relations.contains(alias)
+                {
+                    bail!("Form name {alias} collides with a reserved SQL relation");
+                }
+                if form_name_aliases
+                    .insert(alias.clone(), form_policy.relation.clone())
+                    .is_some()
+                {
+                    bail!("authorized query policy repeats Form name {alias}");
+                }
             }
             let (form, table, expected_snapshot_id) = match &checkpoint {
                 Some(checkpoint) => {
@@ -535,7 +552,7 @@ impl IcebergWorkspace {
                 )?
                 .into_view();
             context.deregister_table(internal.as_str())?;
-            context.register_table(form_policy.relation.as_str(), view)?;
+            context.register_table(form_policy.relation.as_str(), view.clone())?;
         }
 
         let permits = self.shared_query_permits(policy.limits.max_concurrency);
@@ -544,6 +561,7 @@ impl IcebergWorkspace {
             limits: policy.limits,
             permits,
             authorized_relations: relations,
+            form_name_aliases,
             authorized_scans,
             duplicate_head_checks,
             duplicate_head_checks_validated: Arc::new(AsyncMutex::new(BTreeSet::new())),
@@ -607,6 +625,7 @@ impl IcebergWorkspace {
             limits: limits.clone(),
             permits,
             authorized_relations: BTreeSet::from(["revisions".to_string()]),
+            form_name_aliases: BTreeMap::new(),
             authorized_scans: BTreeSet::from([AuthorizedScan {
                 table_uuid,
                 snapshot_id,
@@ -1315,10 +1334,11 @@ impl AuthorizedQueryContext {
         sql: &str,
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     ) -> Result<LogicalPlan> {
+        let sql = resolve_form_name_references(sql, &self.form_name_aliases)?;
         let plan = self
             .context
             .state()
-            .create_logical_plan(sql)
+            .create_logical_plan(&sql)
             .await
             .map_err(AuthorizedQueryError::invalid_query)?;
         let expected = plan
@@ -1624,6 +1644,136 @@ fn validate_relation(relation: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_form_name(name: &str) -> Result<()> {
+    ugoite_domain::id::validate_form_name(name)
+        .map_err(|error| anyhow!("invalid SQL Form name {name}: {error}"))
+}
+
+fn is_legacy_relation_name(name: &str) -> bool {
+    let Some(id) = name.strip_prefix("form_") else {
+        return false;
+    };
+    id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn resolve_form_name_references(sql: &str, aliases: &BTreeMap<String, String>) -> Result<String> {
+    use datafusion::sql::parser::DFParser;
+    use datafusion::sql::sqlparser::ast::{
+        Ident, ObjectName, ObjectNamePart, VisitMut, VisitorMut,
+    };
+    use std::ops::ControlFlow;
+
+    struct AliasReferenceResolver<'a> {
+        aliases: &'a BTreeMap<String, String>,
+        cte_scopes: Vec<BTreeSet<String>>,
+        error: Option<anyhow::Error>,
+        changed: bool,
+    }
+
+    impl VisitorMut for AliasReferenceResolver<'_> {
+        type Break = ();
+
+        fn pre_visit_query(
+            &mut self,
+            query: &mut datafusion::sql::sqlparser::ast::Query,
+        ) -> ControlFlow<Self::Break> {
+            self.cte_scopes.push(
+                query
+                    .with
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(|with| with.cte_tables.iter())
+                    .map(|cte| {
+                        let identifier = &cte.alias.name;
+                        if identifier.quote_style.is_some() {
+                            identifier.value.clone()
+                        } else {
+                            identifier.value.to_ascii_lowercase()
+                        }
+                    })
+                    .collect(),
+            );
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(
+            &mut self,
+            _query: &mut datafusion::sql::sqlparser::ast::Query,
+        ) -> ControlFlow<Self::Break> {
+            self.cte_scopes.pop();
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_relation(&mut self, relation: &mut ObjectName) -> ControlFlow<Self::Break> {
+            let Some(identifier) = relation.0.last().and_then(|part| part.as_ident()) else {
+                return ControlFlow::Continue(());
+            };
+            let name = identifier.value.as_str();
+            let normalized_name = if identifier.quote_style.is_some() {
+                name.to_string()
+            } else {
+                name.to_ascii_lowercase()
+            };
+            if relation.0.len() == 1
+                && self
+                    .cte_scopes
+                    .iter()
+                    .rev()
+                    .any(|scope| scope.contains(&normalized_name))
+            {
+                return ControlFlow::Continue(());
+            }
+            let case_match = self
+                .aliases
+                .keys()
+                .any(|alias| alias.eq_ignore_ascii_case(name));
+            if !case_match {
+                return ControlFlow::Continue(());
+            }
+            if relation.0.len() != 1
+                || identifier.quote_style != Some('"')
+                || !self.aliases.contains_key(name)
+            {
+                self.error = Some(anyhow!(
+                    "Form name {name} must be referenced as a double-quoted SQL relation"
+                ));
+                return ControlFlow::Break(());
+            }
+            let resolved = self.aliases.get(name).expect("checked alias above");
+            relation.0 = vec![ObjectNamePart::Identifier(Ident::new(resolved))];
+            self.changed = true;
+            ControlFlow::Continue(())
+        }
+    }
+
+    let mut statements = DFParser::parse_sql(sql).map_err(AuthorizedQueryError::invalid_query)?;
+    let mut resolver = AliasReferenceResolver {
+        aliases,
+        cte_scopes: Vec::new(),
+        error: None,
+        changed: false,
+    };
+    for statement in &mut statements {
+        let datafusion::sql::parser::Statement::Statement(statement) = statement else {
+            continue;
+        };
+        if statement.as_mut().visit(&mut resolver).is_break() {
+            break;
+        }
+    }
+    if let Some(error) = resolver.error {
+        return Err(AuthorizedQueryError::invalid_query(error).into());
+    }
+    if !resolver.changed {
+        return Ok(sql.to_string());
+    }
+    Ok(statements
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(";\n"))
+}
+
 fn validate_logical_plan(
     plan: &LogicalPlan,
     authorized_relations: &BTreeSet<String>,
@@ -1779,5 +1929,37 @@ mod cancellation_tests {
             !query_active.load(Ordering::SeqCst),
             "query active guard leaked"
         );
+    }
+}
+
+#[cfg(test)]
+mod form_name_resolution_tests {
+    use super::{is_legacy_relation_name, resolve_form_name_references};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn resolves_quoted_form_names_in_nested_sql_ast_relations() {
+        let bindings = BTreeMap::from([("Expense-2026".to_string(), "form_1234".to_string())]);
+        let sql = "WITH recent AS (SELECT * FROM \"Expense-2026\") \
+                   SELECT 'Expense-2026' AS label FROM recent \
+                   JOIN (SELECT * FROM \"Expense-2026\") AS nested ON true";
+        let resolved = resolve_form_name_references(sql, &bindings).unwrap();
+
+        assert_eq!(resolved.matches("form_1234").count(), 2);
+        assert!(resolved.contains("recent JOIN"));
+        assert!(resolved.contains("'Expense-2026'"));
+    }
+
+    #[test]
+    fn rejects_unquoted_or_wrong_case_form_names() {
+        let bindings = BTreeMap::from([("Expense".to_string(), "form_1234".to_string())]);
+        assert!(resolve_form_name_references("SELECT * FROM Expense", &bindings).is_err());
+        assert!(resolve_form_name_references("SELECT * FROM \"expense\"", &bindings).is_err());
+    }
+
+    #[test]
+    fn rejects_legacy_relation_shape_as_a_form_name() {
+        assert!(is_legacy_relation_name(&format!("form_{}", "a".repeat(32))));
+        assert!(!is_legacy_relation_name("form_not-a-uuid"));
     }
 }

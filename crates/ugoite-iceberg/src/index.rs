@@ -3056,6 +3056,7 @@ async fn datafusion_sql_context_with_form_snapshot(
             form.id,
             AuthorizedQueryForm {
                 relation,
+                sql_aliases: [form.name.clone()].into_iter().collect(),
                 entry_scope: relation_entry_scope,
                 columns: form
                     .fields
