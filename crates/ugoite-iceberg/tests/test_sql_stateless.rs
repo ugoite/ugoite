@@ -602,6 +602,200 @@ async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Resul
     assert_eq!(space.service.list_pins(&space.space_id).await?, before_pins);
     Ok(())
 }
+
+#[tokio::test]
+async fn synthetic_prebinding_revision_rejections_fail_closed() -> Result<()> {
+    let space = setup_sql_space(
+        "memory://sql-synthetic-prebinding-rejections",
+        "sqlsyntheticprebindingrejections",
+    )
+    .await?;
+    // Create the SQL Form using the current service, then seed each tested
+    // legacy SQL revision directly as a generic Entry revision.
+    let bootstrap = space
+        .service
+        .create_saved_sql(
+            &space.space_id,
+            Some("bootstrap_sql_form"),
+            &SqlPayload {
+                name: Some("Bootstrap".into()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: "SELECT 1".into(),
+                variables: json!([]),
+            },
+            "owner",
+        )
+        .await?;
+    let operator = space.service.operator();
+    let workspace_path = space.service.workspace_path(&space.space_id);
+    let integrity = RealIntegrityProvider::from_space(operator, &space.space_id).await?;
+    let template: entry::RevisionRow = serde_json::from_value(
+        entry::get_entry_revision(
+            operator,
+            &workspace_path,
+            "bootstrap_sql_form",
+            bootstrap["revision_id"].as_str().context("revision id")?,
+        )
+        .await?,
+    )?;
+
+    let seed_revision = |entry_id: &str,
+                         revision_id: &str,
+                         change_id: &str,
+                         sql: &str,
+                         signed_sql: &str,
+                         metadata: Value|
+     -> Result<entry::RevisionRow> {
+        let variables = json!([]);
+        let fields = json!({
+            "name": "Synthetic pre-binding query",
+            "sql": sql,
+            "variables": variables,
+        });
+        let payload = json!({
+            "name": "Synthetic pre-binding query",
+            "kind": "user-query",
+            "metadata": metadata,
+            "sql": signed_sql,
+            "variables": variables,
+        });
+        let serialized = serde_json::to_string(&payload)?;
+        let revision_integrity = IntegrityPayload {
+            checksum: integrity.checksum(&serialized),
+            signature: integrity.signature(&serialized),
+        };
+        let extra_attributes = json!({"kind": "user-query", "metadata": metadata});
+        let timestamp = Utc::now().timestamp_millis() as f64;
+        let mut row = template.clone();
+        row.revision_id = revision_id.to_string();
+        row.change_id = change_id.to_string();
+        row.entry_id = entry_id.to_string();
+        row.parent_revision_id = None;
+        row.timestamp = timestamp;
+        row.author = "owner".into();
+        row.updated_by = "owner".into();
+        row.deleted_by = None;
+        row.fields = fields.clone();
+        row.extra_attributes = extra_attributes.clone();
+        row.markdown_checksum = revision_integrity.checksum.clone();
+        row.integrity = revision_integrity.clone();
+        row.entry_version = 1;
+        row.operation = "upsert".into();
+        if let Some(state) = row.state.as_mut() {
+            state.entry_id = entry_id.into();
+            state.revision_id = revision_id.into();
+            state.parent_revision_id = None;
+            state.fields = fields;
+            state.extra_attributes = extra_attributes;
+            state.integrity = revision_integrity;
+            state.created_at = timestamp;
+            state.updated_at = timestamp;
+            state.author = "owner".into();
+            state.updated_by = "owner".into();
+            state.deleted_by = None;
+            state.deleted = false;
+            state.deleted_at = None;
+            state.entry_version = 1;
+        }
+        Ok(row)
+    };
+
+    let tampered_id = "synthetic_prebinding_tampered";
+    let tampered_revision_id = "01900000-0000-7000-8000-000000000201";
+    let incomplete_id = "synthetic_prebinding_incomplete";
+    let incomplete_revision_id = "01900000-0000-7000-8000-000000000202";
+    let quoted_id = "synthetic_prebinding_quoted_name";
+    let quoted_revision_id = "01900000-0000-7000-8000-000000000203";
+    let tampered_sql = "SELECT 2";
+    let signed_sql = "SELECT 1";
+    let incomplete_sql = "SELECT 1";
+    let quoted_sql = "SELECT \"_ugoite_id\" FROM \"Task\" ORDER BY \"_ugoite_id\"";
+    let revisions = vec![
+        // The stored body differs from the body covered by its checksum and
+        // signature, so the reader must reject it before execution.
+        seed_revision(
+            tampered_id,
+            tampered_revision_id,
+            "01900000-0000-7000-8000-000000000211",
+            tampered_sql,
+            signed_sql,
+            Value::Null,
+        )?,
+        // A valid integrity envelope does not make a one-sided binding
+        // declaration complete enough to infer an old revision's Form ID.
+        seed_revision(
+            incomplete_id,
+            incomplete_revision_id,
+            "01900000-0000-7000-8000-000000000211",
+            incomplete_sql,
+            incomplete_sql,
+            json!({"bindingVersion": 1}),
+        )?,
+        // The quoted Form name has no historical Form ID evidence and must
+        // not be resolved against today's Form names.
+        seed_revision(
+            quoted_id,
+            quoted_revision_id,
+            "01900000-0000-7000-8000-000000000211",
+            quoted_sql,
+            quoted_sql,
+            Value::Null,
+        )?,
+    ];
+    entry::append_revision_batch_for_form(operator, &workspace_path, "SQL", &revisions).await?;
+
+    let query_saved = |id: &str, revision_id: &str| SqlQueryRequest {
+        sql: String::new(),
+        parameters: Map::new(),
+        parameter_types: BTreeMap::new(),
+        limit: 10,
+        continuation: None,
+        saved_sql: Some(SavedSqlRevisionRef {
+            id: id.into(),
+            revision_id: revision_id.into(),
+        }),
+    };
+    let missing_revision_error = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_saved(tampered_id, "01900000-0000-7000-8000-000000000299"),
+        )
+        .await
+        .expect_err("an exact id@revision_id miss must not select another revision");
+    assert!(format!("{missing_revision_error:#}")
+        .contains("synthetic_prebinding_tampered@01900000-0000-7000-8000-000000000299"));
+
+    let tampered_error = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_saved(tampered_id, tampered_revision_id),
+        )
+        .await
+        .expect_err("tampered legacy SQL integrity must be rejected");
+    assert!(format!("{tampered_error:#}").contains("Saved SQL integrity mismatch"));
+
+    let incomplete_error = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_saved(incomplete_id, incomplete_revision_id),
+        )
+        .await
+        .expect_err("partial Form binding metadata must be rejected");
+    assert!(format!("{incomplete_error:#}")
+        .contains("unsupported or incomplete Saved SQL Form binding metadata"));
+
+    let quoted_error = space
+        .service
+        .query_sql(&space.space_id, query_saved(quoted_id, quoted_revision_id))
+        .await
+        .expect_err("pre-binding quoted Form names must not be rebound");
+    assert!(format!("{quoted_error:#}").contains("LEGACY_SQL_BINDING_UNAVAILABLE"));
+    Ok(())
+}
 /// First page + continuation union the full ordered result on the real
 /// backend, with the `has_more`/`next` protocol holding on every page.
 #[tokio::test]
