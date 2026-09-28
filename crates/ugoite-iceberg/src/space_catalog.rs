@@ -2348,12 +2348,25 @@ impl SpaceCatalog {
         mut head: CatalogHead,
         publication: &PublicationContext,
     ) -> Result<Option<PublicationRecord>> {
-        let mut path = head.publication_location.clone().ok_or_else(|| {
-            Error::new(
+        let Some(mut path) = head.publication_location.clone() else {
+            // Owner initialization can be the first publication for a newly
+            // scaffolded Space. It advances the common Head with only an
+            // authorization snapshot; there is not yet a Catalog publication
+            // record to walk. The first content publication starts the
+            // receipt chain from this valid empty Head.
+            if head.generation == 0
+                && head.publication_command_id.is_none()
+                && head.tables.is_empty()
+                && head.pins.is_empty()
+                && head.authorization_snapshot.is_some()
+            {
+                return Ok(None);
+            }
+            return Err(Error::new(
                 ErrorKind::DataInvalid,
                 "Catalog Head has no publication record while resolving a command outcome",
-            )
-        })?;
+            ));
+        };
         let mut visited = BTreeSet::new();
         loop {
             if !visited.insert(path.clone()) {

@@ -451,16 +451,30 @@ pub(crate) async fn create_space_scaffold_with_identity_and_name(
 /// lease. This is also used by claim recovery after the claimed owner has been
 /// restored.
 pub(crate) async fn ensure_starter_form_authorized(op: &Operator, space_id: &str) -> Result<()> {
+    let form_path = format!("spaces/{space_id}");
+    let starter_form = starter_entry_form_definition();
+    if ugoite_storage::is_local_operator(op) {
+        // A local operator can bootstrap or repair an ownerless Space without
+        // inventing a remote principal or ACL. Filesystem writes still use the
+        // local storage locking and Catalog publication rules.
+        form::upsert_form(op, &form_path, &starter_form).await?;
+        return Ok(());
+    }
+
+    let authorization_path = format!("spaces/{space_id}/security/principals.json");
+    if !op.exists(&authorization_path).await? {
+        return Err(AppError::dependency_unavailable(
+            ErrorCode::StorageMutationUnavailable,
+            "shared Space bootstrap requires a principal-backed owner authorization snapshot",
+        )
+        .into());
+    }
     let authorizer = crate::authorization::Authorizer::new(op.clone());
     let (_, lease) = authorizer.acquire_state_lease(space_id).await?;
     lease.prepare_mutation().await?;
     let form_result = crate::authorization::with_authorization_write_fence(
         lease.write_fence(),
-        form::upsert_form(
-            op,
-            &format!("spaces/{space_id}"),
-            &starter_entry_form_definition(),
-        ),
+        form::upsert_form(op, &form_path, &starter_form),
     )
     .await;
     let release_result = lease.release().await;
