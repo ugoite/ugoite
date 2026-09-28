@@ -124,6 +124,9 @@ async function assertAggregateWorkflow(
   const sqlExportMeasure = await Deno.readTextFile(
     new URL("../scripts/measure-sql-export.sh", import.meta.url),
   );
+  const querySurfaceMeasure = await Deno.readTextFile(
+    new URL("../scripts/measure-query-surfaces.sh", import.meta.url),
+  );
   const mergeTask = taskBlock(mise, "ci:merge");
 
   assertContainsAll(
@@ -559,15 +562,60 @@ async function assertAggregateWorkflow(
   assertContainsAll(
     taskBlock(mise, "ci:lane:cp1-acceptance"),
     [
-      '{ task = "measure:query-surfaces", env = { E2E_ENFORCE_CI_GATES = "true" } }',
-      '{ task = "measure:sql-export" }',
+      '{ task = "ci:cp1:build-seeder" }',
+      '{ task = "measure:query-surfaces", env = { CARGO_TARGET_DIR = "target/rust", E2E_ENFORCE_CI_GATES = "true", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask" } }',
+      '{ task = "measure:sql-export", env = { CARGO_TARGET_DIR = "target/rust", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask" } }',
     ],
     "CP1 acceptance mise lane",
   );
   assertContainsAll(
+    taskBlock(mise, "ci:cp1:build-seeder"),
+    [
+      'CARGO_TARGET_DIR = "target/rust"',
+      "target/cp1-profiling/xtask-build.time.txt",
+      "bash scripts/build-cp1-seeder.sh",
+    ],
+    "single measured CP1 seeder build",
+  );
+  assertContainsAll(
+    querySurfaceMeasure,
+    [
+      'tools/cp1_fixture_spec.ts" query',
+      'QUERY_PROFILE_ARGS+=(--seed "$fixture_slug"',
+      '--scenario "${QUERY_FIXTURE_SCENARIOS[$index]}"',
+      '--entry-count "${QUERY_FIXTURE_COUNTS[$index]}"',
+    ],
+    "query measurement shared fixture specification",
+  );
+  assertContainsAll(
     sqlExportMeasure,
     [
-      "--max-rows 10000",
+      'tools/cp1_fixture_spec.ts" export',
+      '--space-id "$FIXTURE_SLUG"',
+      '--entry-count "$FIXTURE_ENTRY_COUNT"',
+      '--seed "$FIXTURE_SEED"',
+    ],
+    "SQL export shared fixture specification",
+  );
+  assertEquals(
+    [
+      "3134001",
+      "3134002",
+      "3140001",
+      "6000",
+      "4000",
+      "10000",
+      "Query Measurement Owner",
+    ].some((value) =>
+      querySurfaceMeasure.includes(value) || sqlExportMeasure.includes(value)
+    ),
+    false,
+    "CP1 measurement scripts must not duplicate shared fixture values",
+  );
+  assertContainsAll(
+    sqlExportMeasure,
+    [
+      '--max-rows "$FIXTURE_ENTRY_COUNT"',
       "--max-bytes 1024",
       "max-bytes would be exceeded",
       "A byte-limited export must not publish a partial destination",

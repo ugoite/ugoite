@@ -25,6 +25,7 @@ Environment variable overrides:
   UGOITE_SEED_ENTRY_COUNT
   UGOITE_SEED_VALUE
   UGOITE_SEED_PROFILE_OUTPUT
+  UGOITE_SEED_XTASK_BINARY
 EOF
 }
 
@@ -36,6 +37,7 @@ SEED_VALUE="${UGOITE_SEED_VALUE:-}"
 OWNER_DISPLAY_NAME="${UGOITE_SEED_OWNER:-}"
 PROFILE_OUTPUT="${UGOITE_SEED_PROFILE_OUTPUT:-}"
 CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target/rust}"
+XTASK_BINARY="${UGOITE_SEED_XTASK_BINARY:-}"
 
 while (($# > 0)); do
   case "$1" in
@@ -145,29 +147,72 @@ echo "  space: $SPACE_ID" >&2
 echo "  scenario: $SCENARIO" >&2
 echo "  entry_count: $ENTRY_COUNT" >&2
 echo "  cargo_target_dir: $CARGO_TARGET_DIR" >&2
+if [[ -n "$XTASK_BINARY" ]]; then
+  echo "  xtask_binary: $XTASK_BINARY" >&2
+fi
 if [[ -n "$SEED_VALUE" ]]; then
   echo "  seed: $SEED_VALUE" >&2
 fi
 
-command=(
-  env
-  "CARGO_TARGET_DIR=$CARGO_TARGET_DIR"
-  cargo
-  run
-  -q
-  -p
-  xtask
-  --
-  seed
-  --root
-  "$SEED_ROOT"
-  --space-id
-  "$SPACE_ID"
-  --scenario
-  "$SCENARIO"
-  --entry-count
-  "$ENTRY_COUNT"
-)
+if [[ -n "$XTASK_BINARY" ]]; then
+  if [[ "$XTASK_BINARY" != /* ]]; then
+    XTASK_BINARY="$ROOT_DIR/$XTASK_BINARY"
+  fi
+  if [[ ! -f "$XTASK_BINARY" || -L "$XTASK_BINARY" || ! -x "$XTASK_BINARY" ]]; then
+    echo "UGOITE_SEED_XTASK_BINARY must name an executable regular file: $XTASK_BINARY" >&2
+    exit 1
+  fi
+  expected_source_sha="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+  if [[ ! "$expected_source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Could not resolve the checked out source SHA for the explicit xtask binary" >&2
+    exit 1
+  fi
+  if [[ -n "${UGOITE_SOURCE_SHA:-}" && "$UGOITE_SOURCE_SHA" != "$expected_source_sha" ]]; then
+    echo "UGOITE_SOURCE_SHA must match the checked out source before using an explicit xtask binary" >&2
+    exit 1
+  fi
+  if [[ ! -f "$XTASK_BINARY.source-sha" || -L "$XTASK_BINARY.source-sha" ]]; then
+    echo "Explicit xtask binary is missing its source SHA sidecar: $XTASK_BINARY.source-sha" >&2
+    exit 1
+  fi
+  xtask_source_sha="$(tr -d '[:space:]' <"$XTASK_BINARY.source-sha")"
+  if [[ "$xtask_source_sha" != "$expected_source_sha" ]]; then
+    echo "Explicit xtask binary source SHA does not match this checkout" >&2
+    exit 1
+  fi
+  command=(
+    "$XTASK_BINARY"
+    seed
+    --root
+    "$SEED_ROOT"
+    --space-id
+    "$SPACE_ID"
+    --scenario
+    "$SCENARIO"
+    --entry-count
+    "$ENTRY_COUNT"
+  )
+else
+  command=(
+    env
+    "CARGO_TARGET_DIR=$CARGO_TARGET_DIR"
+    cargo
+    run
+    -q
+    -p
+    xtask
+    --
+    seed
+    --root
+    "$SEED_ROOT"
+    --space-id
+    "$SPACE_ID"
+    --scenario
+    "$SCENARIO"
+    --entry-count
+    "$ENTRY_COUNT"
+  )
+fi
 
 if [[ -n "$SEED_VALUE" ]]; then
   command+=(--seed "$SEED_VALUE")
