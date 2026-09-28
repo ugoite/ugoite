@@ -150,6 +150,8 @@ async fn journey_cli_remote_locate_recover_reaches_durable_outcome() {
 struct RemoteFixture {
     config_path: std::path::PathBuf,
     space_id: String,
+    api_base: String,
+    access_token: String,
     _config_dir: tempfile::TempDir,
     _server: ServerGuard,
 }
@@ -209,7 +211,7 @@ async fn setup_remote() -> RemoteFixture {
                     .as_bytes(),
             ),
         ),
-        access_token: access.access_token,
+        access_token: access.access_token.clone(),
         refresh_token: "unused-in-locate-recover-test".to_string(),
         expires_at: Utc::now().timestamp() + 300,
         base_url: api_base.clone(),
@@ -219,7 +221,9 @@ async fn setup_remote() -> RemoteFixture {
     let mut config = ConfigFile::empty();
     config.connections.insert(
         "remote-api".to_string(),
-        ConnectionConfig::Api { url: api_base },
+        ConnectionConfig::Api {
+            url: api_base.clone(),
+        },
     );
     config.contexts.insert(
         "locate-recover".to_string(),
@@ -252,6 +256,8 @@ async fn setup_remote() -> RemoteFixture {
     RemoteFixture {
         config_path,
         space_id: access.space_uid.to_string(),
+        api_base,
+        access_token: access.access_token,
         _config_dir: config_dir,
         _server,
     }
@@ -500,6 +506,103 @@ async fn journey_cli_remote_locate_recover() {
         "entry list --text on reopen",
     );
     assert!(contains_string(&results, "locate-task-a"));
+
+    // Commit two separate Changes in one Run through the portable operation
+    // endpoint, revert one, then confirm CLI preview reports committed facts
+    // and does not append a revision or Change.
+    let run_id = "run-undo-preview-remote-1";
+    let http = reqwest::Client::new();
+    for entry_id in ["run-preview-remote-a", "run-preview-remote-b"] {
+        let response = http
+            .post(format!(
+                "{}/spaces/{}/apply",
+                fixture.api_base, fixture.space_id
+            ))
+            .bearer_auth(&fixture.access_token)
+            .json(&json!({
+                "run_id": run_id,
+                "operations": [{
+                    "kind": "create",
+                    "id": entry_id,
+                    "form": form_name,
+                    "tags": [],
+                    "fields": {"status": "open", "priority": 1},
+                    "extra_attributes": {}
+                }]
+            }))
+            .send()
+            .await
+            .expect("commit Run fixture Change");
+        assert!(
+            response.status().is_success(),
+            "Run fixture apply failed: {}",
+            response.text().await.unwrap_or_default()
+        );
+    }
+    let run_changes = stdout_json(
+        &run_cli(config_path, &["change", "list"]).await,
+        "change list for Run preview fixture",
+    )
+    .as_array()
+    .unwrap()
+    .iter()
+    .filter(|change| {
+        change
+            .get("change")
+            .and_then(|metadata| metadata.get("run_id"))
+            .and_then(|value| value.as_str())
+            == Some(run_id)
+    })
+    .map(|change| change["change_id"].as_str().unwrap().to_string())
+    .collect::<Vec<_>>();
+    assert_eq!(run_changes.len(), 2);
+    let output = run_cli(config_path, &["change", "revert", &run_changes[0]]).await;
+    assert!(
+        output.status.success(),
+        "Run fixture Change revert failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let change_count_before = change_ids(&stdout_json(
+        &run_cli(config_path, &["change", "list"]).await,
+        "change list before Run preview",
+    ))
+    .len();
+    let history_counts_before = ["run-preview-remote-a", "run-preview-remote-b"].map(|entry_id| {
+        revision_ids(&stdout_json(
+            &run_cli(config_path, &["entry", "history", entry_id]).await,
+            "entry history before Run preview",
+        ))
+        .len()
+    });
+    let preview = stdout_json(
+        &run_cli(config_path, &["run", "undo", run_id, "--dry-run"]).await,
+        "remote run undo dry-run",
+    );
+    assert_eq!(preview["run_id"], run_id);
+    assert_eq!(preview["committed_change_count"], 2);
+    assert_eq!(preview["already_reverted_count"], 1);
+    assert_eq!(preview["pending_change_count"], 1);
+    assert_eq!(preview["ready"], true);
+    let changes = preview["changes"].as_array().unwrap();
+    assert_eq!(changes.len(), 2);
+    assert_eq!(changes[0]["state"], "ready");
+    assert_eq!(changes[0]["target_entry_count"], 1);
+    assert_eq!(changes[1]["state"], "already_reverted");
+    assert_eq!(changes[1]["target_entry_count"], 1);
+    let change_count_after = change_ids(&stdout_json(
+        &run_cli(config_path, &["change", "list"]).await,
+        "change list after Run preview",
+    ))
+    .len();
+    let history_counts_after = ["run-preview-remote-a", "run-preview-remote-b"].map(|entry_id| {
+        revision_ids(&stdout_json(
+            &run_cli(config_path, &["entry", "history", entry_id]).await,
+            "entry history after Run preview",
+        ))
+        .len()
+    });
+    assert_eq!(change_count_after, change_count_before);
+    assert_eq!(history_counts_after, history_counts_before);
 }
 
 async fn state_issue_rest_access(
