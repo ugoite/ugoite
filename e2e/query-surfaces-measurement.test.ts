@@ -789,22 +789,34 @@ test("records real two-Space query surface measurements", async ({ page, request
 
       await openParameterizedSql("200");
       await resetEvents();
+      let releaseCountRoute: (() => void) | undefined;
+      let markCountRouteReached: (() => void) | undefined;
+      let markCountRouteFinished: (() => void) | undefined;
+      const countRouteHeld = new Promise<void>((resolve) => {
+        releaseCountRoute = resolve;
+      });
+      const countRouteReached = new Promise<void>((resolve) => {
+        markCountRouteReached = resolve;
+      });
+      const countRouteFinished = new Promise<void>((resolve) => {
+        markCountRouteFinished = resolve;
+      });
       await page.route("**/sql/query/count", async (route) => {
-        // Keep the count request in flight while the SQL identity changes.
-        // A short delay can expire during browser scheduling and turn this
-        // cancellation check into a race against a completed count response.
-        await new Promise((resolve) => setTimeout(resolve, 10_000));
+        markCountRouteReached?.();
+        await countRouteHeld;
         try {
           await route.continue();
         } catch {
           // The browser may cancel this deliberately delayed request first.
+        } finally {
+          markCountRouteFinished?.();
         }
       });
       const pendingParameterizedCount = page.waitForRequest((request) =>
         new URL(request.url()).pathname.endsWith("/sql/query/count")
       );
       await page.getByRole("button", { name: "Count rows" }).click();
-      await pendingParameterizedCount;
+      await Promise.all([pendingParameterizedCount, countRouteReached]);
       const changedTypePage = page.waitForRequest((request) => {
         if (
           !new URL(request.url()).pathname.endsWith("/sql/query")
@@ -833,6 +845,8 @@ test("records real two-Space query surface measurements", async ({ page, request
               ?.parameter_types?.threshold === "string"
         )
       );
+      releaseCountRoute?.();
+      await countRouteFinished;
       await page.unroute("**/sql/query/count");
       lifecycle.sqlParameterTypeChange = summarizeLifecycleEvents(
         await page.evaluate(() =>
@@ -844,7 +858,7 @@ test("records real two-Space query surface measurements", async ({ page, request
         ),
       );
       expect(lifecycle.sqlParameterTypeChange.actualAbortCount)
-        .toBeGreaterThan(0);
+        .toBeGreaterThan(0, JSON.stringify(lifecycle.sqlParameterTypeChange));
       expect(lifecycle.sqlParameterTypeChange.endedAbortCount).toBe(
         lifecycle.sqlParameterTypeChange.actualAbortCount,
       );
