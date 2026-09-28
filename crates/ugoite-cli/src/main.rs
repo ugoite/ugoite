@@ -55,8 +55,12 @@ impl Cli {
                 &command.sub,
                 AssetSubCmd::Upload { .. } | AssetSubCmd::Delete { .. }
             ),
-            Commands::Change(command) => matches!(&command.sub, ChangeSubCmd::Revert { .. }),
-            Commands::Run(command) => matches!(&command.sub, RunSubCmd::Undo { .. }),
+            Commands::Change(command) => {
+                matches!(&command.sub, ChangeSubCmd::Revert { dry_run: false, .. })
+            }
+            Commands::Run(command) => {
+                matches!(&command.sub, RunSubCmd::Undo { dry_run: false, .. })
+            }
             Commands::Pin(command) => matches!(
                 &command.sub,
                 PinSubCmd::Create { .. } | PinSubCmd::Delete { .. }
@@ -205,5 +209,23 @@ mod tests {
         );
         assert_eq!(styles.get_context(), &anstyle::Style::new().dimmed());
         assert_eq!(styles.get_context_value(), &anstyle::Style::new());
+    }
+
+    #[test]
+    fn recovery_dry_runs_are_not_classified_as_mutations() {
+        let change_preview =
+            Cli::try_parse_from(["ugoite", "change", "revert", "change-id", "--dry-run"]).unwrap();
+        assert!(!change_preview.is_mutation_command());
+
+        let run_preview =
+            Cli::try_parse_from(["ugoite", "run", "undo", "run-id", "--dry-run"]).unwrap();
+        assert!(!run_preview.is_mutation_command());
+
+        let change_write =
+            Cli::try_parse_from(["ugoite", "change", "revert", "change-id"]).unwrap();
+        assert!(change_write.is_mutation_command());
+
+        let run_write = Cli::try_parse_from(["ugoite", "run", "undo", "run-id"]).unwrap();
+        assert!(run_write.is_mutation_command());
     }
 }

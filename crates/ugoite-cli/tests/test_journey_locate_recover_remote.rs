@@ -384,6 +384,22 @@ async fn journey_cli_remote_locate_recover() {
 
     // Change revert appends its inverse; the reverted Change is kept.
     let revert_message = "Revert incorrect status edit";
+    let preview = stdout_json(
+        &run_cli(
+            config_path,
+            &["change", "revert", &update_change_id, "--dry-run"],
+        )
+        .await,
+        "remote change revert dry-run",
+    );
+    assert_eq!(preview["ready"], true);
+    assert_eq!(preview["target_entry_count"], 1);
+    let changes_after_preview = stdout_json(
+        &run_cli(config_path, &["change", "list"]).await,
+        "change list after remote dry-run",
+    );
+    assert_eq!(change_ids(&changes_after_preview).len(), before_ids.len());
+
     let reverted = stdout_json(
         &run_cli(
             config_path,
