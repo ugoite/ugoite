@@ -1987,6 +1987,24 @@ mod form_name_resolution_tests {
     }
 
     #[test]
+    fn resolves_exact_case_distinct_and_digit_leading_form_names() {
+        let bindings = BTreeMap::from([
+            ("Expense".to_string(), "form_upper".to_string()),
+            ("expense".to_string(), "form_lower".to_string()),
+            ("2026-Expense".to_string(), "form_dated".to_string()),
+        ]);
+        let resolved = resolve_form_name_references(
+            "SELECT * FROM \"Expense\" JOIN \"expense\" ON true \
+             JOIN \"2026-Expense\" ON true",
+            &bindings,
+        )
+        .unwrap();
+        assert!(resolved.contains("form_upper"));
+        assert!(resolved.contains("form_lower"));
+        assert!(resolved.contains("form_dated"));
+    }
+
+    #[test]
     fn rejects_unquoted_or_wrong_case_form_names() {
         let bindings = BTreeMap::from([("Expense".to_string(), "form_1234".to_string())]);
         assert!(resolve_form_name_references("SELECT * FROM Expense", &bindings).is_err());
