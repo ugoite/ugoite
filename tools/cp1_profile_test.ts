@@ -139,7 +139,7 @@ Deno.test("successful CP1 profile aggregation keeps fixture, resource, and sourc
         "--root",
         root,
         "--started-ms",
-        String(Date.now() - 1500),
+        String(Date.now() - 2500),
         "--exit-code",
         "0",
         "--seed",
@@ -180,6 +180,25 @@ Deno.test("successful CP1 profile aggregation keeps fixture, resource, and sourc
       p95_micros: 9,
     });
     assertEquals(report.process_steps[0].process.elapsed_wall_seconds, 0.5);
+    assertEquals(report.fixtures[0].generator_wall_micros, 50);
+    assertEquals(report.fixtures[0].process_wall_micros, 1_500_000);
+    assertEquals(
+      report.fixtures[0].process_minus_generator_wall_micros,
+      1_499_950,
+    );
+    assertEquals(report.measured_stages.seed_process_wall_micros, 1_500_000);
+    assertEquals(
+      report.measured_stages.all_measured_process_wall_micros,
+      2_000_000,
+    );
+    assertEquals(
+      typeof report.measured_stages.unaccounted_script_wall_micros,
+      "number",
+    );
+    assertEquals(
+      report.measured_stages.process_minus_generator_wall_micros,
+      1_499_950,
+    );
   } finally {
     await Deno.remove(directory, { recursive: true });
   }

@@ -90,6 +90,14 @@ async function main(): Promise<void> {
   const now = Date.now();
   const seedProfiles = await Promise.all(seeds.map(async (seed) => {
     const generator = await readJsonOrNull(seed.profilePath);
+    const profileComplete = isCompleteSampleProfile(generator);
+    const process = await parseTimeResourceFile(seed.resourcePath);
+    const generatorWallMicros = profileComplete
+      ? (generator as Record<string, unknown>).total_wall_micros as number
+      : null;
+    const processWallMicros = process.elapsed_wall_seconds === null
+      ? null
+      : Math.round(process.elapsed_wall_seconds * 1_000_000);
     return {
       expected: {
         slug: seed.slug,
@@ -100,9 +108,15 @@ async function main(): Promise<void> {
       process_attempted: await fileExists(seed.profilePath) ||
         await fileExists(seed.resourcePath),
       generator,
-      profile_complete: isCompleteSampleProfile(generator),
+      profile_complete: profileComplete,
       mutation_batch_summary: summarizeMutationBatches(generator),
-      process: await parseTimeResourceFile(seed.resourcePath),
+      process,
+      generator_wall_micros: generatorWallMicros,
+      process_wall_micros: processWallMicros,
+      process_minus_generator_wall_micros:
+        processWallMicros === null || generatorWallMicros === null
+          ? null
+          : processWallMicros - generatorWallMicros,
       filesystem: await fileMetrics(await findSpacePath(root, seed.slug)),
     };
   }));
@@ -150,6 +164,24 @@ async function main(): Promise<void> {
         (typeof value === "number" && Number.isFinite(value) ? value : 0);
     }, 0)
     : null;
+  const seedProcessWallValues = seedProfiles.map((fixture) =>
+    fixture.process_wall_micros
+  );
+  const processWallMicros = sumMeasurements(seedProcessWallValues);
+  const allProcessWallMicros = sumMeasurements([
+    ...seedProcessWallValues,
+    ...exportRuns.map((run) =>
+      run.process.elapsed_wall_seconds === null
+        ? null
+        : Math.round(run.process.elapsed_wall_seconds * 1_000_000)
+    ),
+    ...processSteps.map((step) =>
+      step.process.elapsed_wall_seconds === null
+        ? null
+        : Math.round(step.process.elapsed_wall_seconds * 1_000_000)
+    ),
+  ]);
+  const scriptWallMicros = Math.max(0, now - startedMs) * 1_000;
   const report = {
     schema_version: 1,
     measurement: mode === "query" ? "cp1-query" : "cp1-export",
@@ -158,7 +190,7 @@ async function main(): Promise<void> {
     checkout_dirty: await checkoutDirty(),
     ci_run_id: Deno.env.get("GITHUB_RUN_ID") ?? null,
     result: { exit_code: exitCode, successful: exitCode === 0 },
-    wall: { elapsed_millis: Math.max(0, now - startedMs) },
+    wall: { elapsed_millis: Math.round(scriptWallMicros / 1_000) },
     environment: {
       os: Deno.build.os,
       arch: Deno.build.arch,
@@ -174,7 +206,16 @@ async function main(): Promise<void> {
       ? await readJsonOrNull(evidencePath)
       : null,
     measured_stages: {
+      seed_process_wall_micros: processWallMicros,
+      all_measured_process_wall_micros: allProcessWallMicros,
+      unaccounted_script_wall_micros: allProcessWallMicros === null
+        ? null
+        : scriptWallMicros - allProcessWallMicros,
       seed_generator_wall_micros: generatorMicros,
+      process_minus_generator_wall_micros:
+        processWallMicros === null || generatorMicros === null
+          ? null
+          : processWallMicros - generatorMicros,
       measured_stage_total_micros: knownStageMicros,
       unaccounted_seed_time_micros: generatorMicros !== null &&
           knownStageMicros !== null && generatorMicros >= knownStageMicros
@@ -426,6 +467,15 @@ function percentile(sortedValues: number[], quantile: number): number | null {
   return sortedValues[
     Math.max(0, Math.ceil(sortedValues.length * quantile) - 1)
   ];
+}
+
+function sumMeasurements(values: Array<number | null>): number | null {
+  if (
+    !values.every((value): value is number =>
+      typeof value === "number" && Number.isFinite(value)
+    )
+  ) return null;
+  return values.reduce((total, value) => total + value, 0);
 }
 
 function firstNumber(text: string, patterns: RegExp[]): number | null {

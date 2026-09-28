@@ -144,10 +144,13 @@ The CP1 query and SQL export measurements also write aggregate profiles to
 profiles split Space creation, optional owner initialization, Form upserts,
 sample Markdown rendering, draft conversion, and mutation batch calls; process
 resource logs report elapsed time, user/system CPU, and maximum RSS where the
-host utility provides them. Reports include fixture file counts and logical
-bytes. Values that cannot be separated with the current interfaces are marked
-unmeasured in the JSON; these measurements do not add a performance pass/fail
-threshold or change the CP1 acceptance assertions.
+host utility provides them. Reports compare the outer seed process wall with
+the generator wall and sum timed child processes against the script wall, so
+their remaining overhead is visible without attributing it to a specific build
+step. Reports also include fixture file counts and logical bytes. Values that
+cannot be separated with the current interfaces are marked unmeasured in the
+JSON; these measurements do not add a performance pass/fail threshold or
+change the CP1 acceptance assertions.
 
 ## Release contract
 
