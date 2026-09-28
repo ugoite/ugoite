@@ -12,6 +12,7 @@ use ugoite_domain::{
     change::{ChangeCommand, RunId},
     id::RevisionId,
 };
+use ugoite_iceberg::authorization::Authorizer;
 use ugoite_iceberg::{
     iceberg_store::native_workspace, publication_context_for_change, service::UgoiteService,
 };
@@ -438,6 +439,15 @@ async fn run_undo_dry_run_is_read_only_and_reports_authoritative_states() {
     }
 
     let service = UgoiteService::new(root).unwrap();
+    Authorizer::new(service.operator().clone())
+        .initialize_owner(
+            &space_id,
+            uuid::Uuid::parse_str(&space_id).unwrap(),
+            uuid::Uuid::now_v7(),
+            "CLI test owner",
+        )
+        .await
+        .unwrap();
     let workspace = native_workspace(service.operator(), &service.workspace_path(&space_id))
         .await
         .unwrap();
