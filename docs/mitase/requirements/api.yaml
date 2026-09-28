@@ -785,7 +785,7 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "preserves a confirmed save and its Undo when a later write is denied" } }
   - id: REQ-API-018
     title: SQL Form-name resolution and Saved SQL bindings
-    description: SQL resolves exact quoted Form names only from the current authorized Publication. New Saved SQL revisions bind those names to server-derived stable Form IDs, and every execution rechecks current authorization without same-name fallback.
+    description: SQL resolves exact quoted Form names only from the current authorized Publication. New Saved SQL revisions bind those names to server-derived stable Form IDs, and every execution rechecks current authorization without same-name fallback. Compatibility for persisted pre-binding revisions remains an explicit evidence gap tracked in Issue #3342.
     priority: high
     status: implemented
     criteria:
@@ -803,7 +803,7 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-011#rule.governance]
       - id: legacy-saved-sql-preservation
         kind: compatibility
-        statement: Existing Saved SQL using legacy form_<UUID> relations remains executable without an implicit rewrite, and explicit edits create a new revision.
+        statement: Saved SQL that uses the existing form_<UUID> relation syntax remains executable, and querying that revision leaves its SQL and revision identity unchanged. Persisted revisions written before Form-binding metadata are an explicit evidence gap.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
     bindings:
       - id: sql-resolution-and-binding-verification
@@ -932,7 +932,7 @@ requirements:
             path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
             selector: {
               kind: test,
-              name: legacy_saved_sql_revision_runs_without_implicit_rewrite,
+              name: legacy_id_relation_saved_sql_revision_runs_without_rewrite,
             }
             claims:
               - kind: verifies
@@ -945,6 +945,6 @@ requirements:
                   arguments: {
                     package: ugoite-iceberg,
                     harness: test_sql_stateless,
-                    test: legacy_saved_sql_revision_runs_without_implicit_rewrite,
+                    test: legacy_id_relation_saved_sql_revision_runs_without_rewrite,
                   },
                 }
