@@ -821,6 +821,78 @@ mod tests {
     }
 
     #[test]
+    fn reordered_duplicate_entry_evidence_produces_the_same_summary() {
+        let first = changed(form(1), entry(1), "old", "new");
+        let second = changed(form(2), entry(2), "draft", "ready");
+
+        let forward = summarize_change(&[first.clone(), second.clone(), first.clone()]).unwrap();
+        let reordered = summarize_change(&[second, first.clone(), first]).unwrap();
+
+        assert_eq!(forward, reordered);
+        assert_eq!(forward.affected_entry_count, 2);
+        assert_eq!(
+            forward
+                .field_groups
+                .iter()
+                .map(|group| group.affected_entry_count)
+                .collect::<Vec<_>>(),
+            vec![1, 1]
+        );
+    }
+
+    #[test]
+    fn partial_visibility_counts_all_targets_but_groups_only_comparable_changes() {
+        let unavailable_field = FieldId::new(101).expect("field id");
+        let mut visible = changed(form(1), entry(1), "old", "new");
+        visible.fields.push(FieldChangeEvidence {
+            field_id: unavailable_field,
+            before: ComparedFieldValue::Redacted,
+            after: ComparedFieldValue::Unavailable,
+        });
+        let partially_visible = EntryChangeEvidence {
+            form_id: form(1),
+            entry_id: entry(2),
+            fields: vec![
+                FieldChangeEvidence {
+                    field_id: field(),
+                    before: ComparedFieldValue::Value(FieldValue::String("old".into())),
+                    after: ComparedFieldValue::Redacted,
+                },
+                FieldChangeEvidence {
+                    field_id: unavailable_field,
+                    before: ComparedFieldValue::Unavailable,
+                    after: ComparedFieldValue::Value(FieldValue::String("hidden".into())),
+                },
+            ],
+        };
+        let summary = summarize_change(&[
+            visible,
+            partially_visible,
+            EntryChangeEvidence {
+                form_id: form(2),
+                entry_id: entry(3),
+                fields: Vec::new(),
+            },
+        ])
+        .unwrap();
+
+        assert_eq!(summary.affected_entry_count, 3);
+        assert_eq!(summary.target_form_ids, vec![form(1), form(2)]);
+        assert_eq!(summary.field_groups.len(), 1);
+        assert_eq!(summary.field_groups[0].form_id, form(1));
+        assert_eq!(summary.field_groups[0].field_id, field());
+        assert_eq!(summary.field_groups[0].affected_entry_count, 1);
+        assert_eq!(
+            summary.field_groups[0].before,
+            ComparedFieldValue::Value(FieldValue::String("old".into()))
+        );
+        assert_eq!(
+            summary.field_groups[0].after,
+            ComparedFieldValue::Value(FieldValue::String("new".into()))
+        );
+    }
+
+    #[test]
     fn unavailable_and_redacted_values_do_not_create_inferred_groups() {
         let summary = summarize_change(&[EntryChangeEvidence {
             form_id: form(1),
