@@ -2,10 +2,11 @@
 # E2E test runner using Docker Compose with locally built or pre-built images.
 # Used by local `mise run e2e` and by GitHub Actions e2e-ci.yml.
 #
-# Usage: ./e2e/scripts/run-e2e-compose.sh [test-type]
+# Usage: ./e2e/scripts/run-e2e-compose.sh [test-type] [--fixture-root PATH]
 #   test-type: "smoke", "asset-owned", "smoke-and-asset-owned",
-#     "owner-recovery", "portable-space", "mobile-ui",
+#     "owner-recovery", "portable-space", "mobile-ui", "query-measurement",
 #     "entries", "screenshot", or "full"
+#   --fixture-root: caller-owned storage root used by query-measurement
 #
 # Environment variables:
 #   E2E_BUILD_IMAGES: "true" (default) to build local images before startup;
@@ -16,10 +17,61 @@
 
 set -e
 
-TEST_TYPE="${1:-full}"
+TEST_TYPE="full"
+FIXTURE_ROOT=""
+if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then
+  TEST_TYPE="$1"
+  shift
+fi
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --fixture-root)
+      FIXTURE_ROOT="${2:?missing value for --fixture-root}"
+      shift 2
+      ;;
+    -h|--help)
+      sed -n '1,14p' "${BASH_SOURCE[0]}"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.e2e.yml"
+source "$SCRIPT_DIR/run-e2e-task.sh"
+
+if [ -n "$FIXTURE_ROOT" ] && [ "$TEST_TYPE" != "query-measurement" ]; then
+  echo "--fixture-root is only valid for query-measurement" >&2
+  exit 1
+fi
+if [ "$TEST_TYPE" = "query-measurement" ] && [ -z "$FIXTURE_ROOT" ]; then
+  echo "query-measurement requires --fixture-root with a preseeded storage root" >&2
+  exit 1
+fi
+if [ -n "$FIXTURE_ROOT" ]; then
+  if [ ! -d "$FIXTURE_ROOT" ] || [ -L "$FIXTURE_ROOT" ]; then
+    echo "Fixture root must be an existing directory and not a symlink: $FIXTURE_ROOT" >&2
+    exit 1
+  fi
+  FIXTURE_ROOT="$(cd "$FIXTURE_ROOT" && pwd -P)"
+  if [ "$FIXTURE_ROOT" = "/" ] || [ "$FIXTURE_ROOT" = "$ROOT_DIR" ] || [ "$FIXTURE_ROOT" = "${HOME:-}" ]; then
+    echo "Refusing an unsafe fixture root: $FIXTURE_ROOT" >&2
+    exit 1
+  fi
+  if [ ! -d "$FIXTURE_ROOT/spaces" ] || [ -L "$FIXTURE_ROOT/spaces" ] \
+    || [ -z "$(find "$FIXTURE_ROOT/spaces" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    echo "Fixture root must contain a non-empty spaces directory: $FIXTURE_ROOT" >&2
+    exit 1
+  fi
+  if find "$FIXTURE_ROOT" -mindepth 1 -type l -print -quit | grep -q .; then
+    echo "Fixture root must not contain symbolic links: $FIXTURE_ROOT" >&2
+    exit 1
+  fi
+fi
 CHECKOUT_SOURCE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 if [ -n "${UGOITE_SOURCE_SHA:-}" ] && [ "$UGOITE_SOURCE_SHA" != "$CHECKOUT_SOURCE_SHA" ]; then
   echo "✗ ERROR: UGOITE_SOURCE_SHA does not match the checkout under test"
@@ -125,8 +177,14 @@ ensure_playwright_browsers() {
 
 ensure_playwright_browsers
 
-E2E_COMPOSE_STORAGE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ugoite-compose-e2e.XXXXXX")"
-chmod 0777 "$E2E_COMPOSE_STORAGE_ROOT"
+STORAGE_ROOT_OWNED=true
+if [ -n "$FIXTURE_ROOT" ]; then
+  E2E_COMPOSE_STORAGE_ROOT="$FIXTURE_ROOT"
+  STORAGE_ROOT_OWNED=false
+else
+  E2E_COMPOSE_STORAGE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ugoite-compose-e2e.XXXXXX")"
+fi
+STORAGE_ROOT_OWNERSHIP_ATTEMPTED=false
 PORTABLE_CLI_CONFIG=""
 export E2E_COMPOSE_STORAGE_ROOT
 
@@ -147,6 +205,7 @@ compose_cmd=(docker compose -f "$COMPOSE_FILE")
 
 cleanup() {
   local exit_status=$?
+  local cleanup_status=0
   if [ "$exit_status" -ne 0 ]; then
     echo ""
     echo "Service diagnostics (setup secrets redacted):"
@@ -157,25 +216,30 @@ cleanup() {
   echo ""
   echo "Stopping services..."
   "${compose_cmd[@]}" down -v 2>/dev/null || true
-  if [ -d "$E2E_COMPOSE_STORAGE_ROOT" ]; then
-    # The runtime image writes Knowledge as its non-root `ugoite` user. Give
-    # the host runner ownership before removing the bind-mounted temp tree.
-    # This keeps cleanup strict without making the fixture world-writable.
+  if [ "$STORAGE_ROOT_OWNERSHIP_ATTEMPTED" = true ] && [ -d "$E2E_COMPOSE_STORAGE_ROOT" ]; then
+    # Restore the caller's ownership without changing private file modes. A
+    # supplied fixture root belongs to its caller and is never removed here.
     docker run --rm \
       --user 0:0 \
       --volume "$E2E_COMPOSE_STORAGE_ROOT:/data" \
       --entrypoint /bin/sh \
       "${UGOITE_IMAGE_TAG:-ugoite:e2e}" \
-      -c "chown -R $(id -u):$(id -g) /data"
+      -c "chown -R $(id -u):$(id -g) /data" || cleanup_status=1
   fi
-  rm -rf "$E2E_COMPOSE_STORAGE_ROOT"
+  if [ "$STORAGE_ROOT_OWNED" = true ] && [ -d "$E2E_COMPOSE_STORAGE_ROOT" ]; then
+    rm -rf "$E2E_COMPOSE_STORAGE_ROOT" || cleanup_status=1
+  fi
   if [ -n "$PORTABLE_CLI_CONFIG" ]; then
-    rm -f "$PORTABLE_CLI_CONFIG"
+    rm -f "$PORTABLE_CLI_CONFIG" || cleanup_status=1
   fi
   if [ -n "${DEV_BUILD_INFO_BACKUP:-}" ] && [ -f "$DEV_BUILD_INFO_BACKUP" ]; then
-    mv "$DEV_BUILD_INFO_BACKUP" "$DEV_BUILD_INFO_PATH"
+    mv "$DEV_BUILD_INFO_BACKUP" "$DEV_BUILD_INFO_PATH" || cleanup_status=1
   fi
   echo "Services stopped."
+  if [ "$exit_status" -eq 0 ] && [ "$cleanup_status" -ne 0 ]; then
+    exit_status=$cleanup_status
+  fi
+  exit "$exit_status"
 }
 trap cleanup EXIT INT TERM
 
@@ -192,14 +256,19 @@ if [ "$BUILD_IMAGES" = "true" ]; then
   "${compose_cmd[@]}" build
 fi
 
+# Preserve owner-only modes while granting the image's existing non-root user
+# access to the bind mount. This changes ownership only; it never chmods Space data.
+STORAGE_ROOT_OWNERSHIP_ATTEMPTED=true
+docker run --rm \
+  --user 0:0 \
+  --volume "$E2E_COMPOSE_STORAGE_ROOT:/data" \
+  --entrypoint /bin/sh \
+  "${UGOITE_IMAGE_TAG:-ugoite:e2e}" \
+  -c 'chown -R ugoite:ugoite /data'
+
 echo "Starting services via docker-compose.e2e.yml..."
 if [ "$TEST_TYPE" = "portable-space" ]; then
   "${compose_cmd[@]}" up --no-start
-  # The CLI seed runs as the host user and preserves Space's private modes.
-  # Hand the mounted fixture to the runtime identity so startup can validate
-  # and reapply its owner-only modes without broadening permissions.
-  "${compose_cmd[@]}" run --rm --no-deps --user 0:0 --entrypoint /bin/sh ugoite \
-    -c 'chown -R ugoite:ugoite /data'
   "${compose_cmd[@]}" start
 else
   "${compose_cmd[@]}" up -d
@@ -320,8 +389,8 @@ done
 
 echo "  [4/4] setup secret uniquely extractable from container log..."
 setup_log="$("${compose_cmd[@]}" logs --no-color ugoite 2>/dev/null || true)"
-secret_count="$(printf '%s' "$setup_log" | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | wc -l | tr -d ' ')"
-distinct_secret_count="$(printf '%s' "$setup_log" | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | sort -u | wc -l | tr -d ' ')"
+secret_count="$(printf '%s\n' "$setup_log" | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | wc -l | tr -d ' ')"
+distinct_secret_count="$(printf '%s\n' "$setup_log" | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | sort -u | wc -l | tr -d ' ')"
 if [ -z "$secret_count" ] || [ "$secret_count" -eq 0 ]; then
   echo "✗ ERROR: setup secret was not present in the container startup log"
   echo "  container log tail (ugoite, last 100 lines):"
@@ -334,7 +403,7 @@ if [ "$distinct_secret_count" -ne 1 ]; then
   "${compose_cmd[@]}" logs --no-color --tail=100 ugoite 2>/dev/null || true
   exit 1
 fi
-E2E_SETUP_SECRET="$(printf '%s' "$setup_log" | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | tail -n 1)"
+E2E_SETUP_SECRET="$(printf '%s\n' "$setup_log" | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | tail -n 1)"
 if [ -z "$E2E_SETUP_SECRET" ]; then
   echo "✗ ERROR: setup secret was not present in the container startup log"
   exit 1
@@ -352,52 +421,21 @@ echo "=========================================="
 cd "$ROOT_DIR/e2e"
 base_report_file="${PLAYWRIGHT_JUNIT_OUTPUT_FILE:-test-results/junit.xml}"
 
-validate_junit_report() {
-  local report="$1"
-  PLAYWRIGHT_JUNIT_OUTPUT_FILE="$report" deno eval '
-    const report = Deno.env.get("PLAYWRIGHT_JUNIT_OUTPUT_FILE");
-    if (!report) throw new Error("PLAYWRIGHT_JUNIT_OUTPUT_FILE is required");
-    const xml = await Deno.readTextFile(report);
-    const suites = [...xml.matchAll(/<testsuite\b[^>]*>/g)].map((match) => match[0]);
-    const attr = (text, name) => Number(text.match(new RegExp(`${name}="([^"]*)"`))?.[1] ?? 0);
-    const tests = suites.reduce((sum, suite) => sum + attr(suite, "tests"), 0);
-    const skipped = suites.reduce((sum, suite) => sum + attr(suite, "skipped"), 0);
-    if (tests === 0) throw new Error("e2e tests: zero executed tests");
-    if (skipped > 0) throw new Error(`e2e tests: skipped=${skipped} is not allowed`);
-    console.log(`e2e tests OK: tests=${tests}, skipped=${skipped}`);
-  '
-}
-
-run_e2e_task() {
-  local task="$1"
-  local report="$2"
-  export PLAYWRIGHT_JUNIT_OUTPUT_FILE="$report"
-  mkdir -p "$(dirname "$report")"
-  rm -f "$report"
-
-  cmd=(deno task "$task" --)
-  if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
-    cmd+=(--timeout "$E2E_TEST_TIMEOUT_MS")
-  fi
-  "${cmd[@]}"
-  validate_junit_report "$report"
-}
-
 case "$TEST_TYPE" in
   smoke)
-    run_e2e_task smoke "$base_report_file"
+    run_e2e_task smoke "$base_report_file" true
     ;;
   asset-owned)
-    run_e2e_task asset-owned "$base_report_file"
+    run_e2e_task asset-owned "$base_report_file" true
     ;;
   smoke-and-asset-owned)
-    run_e2e_task smoke-and-asset-owned "$base_report_file"
+    run_e2e_task smoke-and-asset-owned "$base_report_file" true
     ;;
   owner-recovery)
-    run_e2e_task owner-recovery "$base_report_file"
+    run_e2e_task owner-recovery "$base_report_file" true
     ;;
   portable-space)
-    run_e2e_task portable-space "$base_report_file"
+    run_e2e_task portable-space "$base_report_file" true
     # Let the host CLI read the Space, then restore the runtime owner before
     # the composed service is stopped.
     "${compose_cmd[@]}" run --rm --no-deps --user 0:0 --entrypoint /bin/sh ugoite \
@@ -417,20 +455,23 @@ case "$TEST_TYPE" in
       -c 'chown -R ugoite:ugoite /data'
     ;;
   mobile-ui)
-    run_e2e_task mobile-ui "$base_report_file"
+    run_e2e_task mobile-ui "$base_report_file" true
+    ;;
+  query-measurement)
+    run_e2e_task query-measurement "$base_report_file" true
     ;;
   entries)
-    run_e2e_task entries "$base_report_file"
+    run_e2e_task entries "$base_report_file" true
     ;;
   screenshot)
-    run_e2e_task screenshot "$base_report_file"
+    run_e2e_task screenshot "$base_report_file" true
     ;;
   full)
-    run_e2e_task full "$base_report_file"
+    run_e2e_task full "$base_report_file" true
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./run-e2e-compose.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|portable-space|mobile-ui|entries|screenshot|full]"
+    echo "Usage: ./run-e2e-compose.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|portable-space|mobile-ui|query-measurement|entries|screenshot|full] [--fixture-root PATH]"
     exit 1
     ;;
 esac
