@@ -13571,6 +13571,40 @@ mod authentication_regression_tests {
         assert_eq!(query_page["changes"].as_array().map(Vec::len), Some(0));
         assert!(query_page["next_cursor"].as_str().is_some());
 
+        let malformed_query_limit = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/query?limit=not-a-number"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(malformed_query_limit.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            malformed_query_limit
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/plain; charset=utf-8")
+        );
+        let malformed_query_body =
+            axum::body::to_bytes(malformed_query_limit.into_body(), usize::MAX).await?;
+        assert!(String::from_utf8_lossy(&malformed_query_body)
+            .contains("Failed to deserialize query string"));
+
+        let out_of_range_query_limit = route
+            .clone()
+            .oneshot(
+                Request::get(format!("/spaces/{space_id}/changes/query?limit=101"))
+                    .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(
+            out_of_range_query_limit.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+
         let inspect_response = route
             .clone()
             .oneshot(
@@ -13589,6 +13623,42 @@ mod authentication_regression_tests {
         assert_eq!(inspected["targets"].as_array().map(Vec::len), Some(1));
         assert_eq!(inspected["targets"][0]["entry_id"], entry_id);
         assert!(inspected.get("next_cursor").is_none());
+
+        let malformed_inspect_limit = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/{target_change_id}/inspect?limit=not-a-number"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(malformed_inspect_limit.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            malformed_inspect_limit
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/plain; charset=utf-8")
+        );
+        let malformed_inspect_body =
+            axum::body::to_bytes(malformed_inspect_limit.into_body(), usize::MAX).await?;
+        assert!(String::from_utf8_lossy(&malformed_inspect_body)
+            .contains("Failed to deserialize query string"));
+
+        let out_of_range_inspect_limit = route
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/spaces/{space_id}/changes/{target_change_id}/inspect?limit=11"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(
+            out_of_range_inspect_limit.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
 
         let summary_query_response = route
             .clone()
