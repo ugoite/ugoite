@@ -182,6 +182,10 @@ async function main(): Promise<void> {
     ),
   ]);
   const scriptWallMicros = Math.max(0, now - startedMs) * 1_000;
+  const scriptWallReconciliation = reconcileWallDurations(
+    scriptWallMicros,
+    allProcessWallMicros,
+  );
   const report = {
     schema_version: 1,
     measurement: mode === "query" ? "cp1-query" : "cp1-export",
@@ -208,9 +212,7 @@ async function main(): Promise<void> {
     measured_stages: {
       seed_process_wall_micros: processWallMicros,
       all_measured_process_wall_micros: allProcessWallMicros,
-      unaccounted_script_wall_micros: allProcessWallMicros === null
-        ? null
-        : scriptWallMicros - allProcessWallMicros,
+      ...scriptWallReconciliation,
       seed_generator_wall_micros: generatorMicros,
       process_minus_generator_wall_micros:
         processWallMicros === null || generatorMicros === null
@@ -476,6 +478,26 @@ function sumMeasurements(values: Array<number | null>): number | null {
     )
   ) return null;
   return values.reduce((total, value) => total + value, 0);
+}
+
+export function reconcileWallDurations(
+  scriptWallMicros: number,
+  childProcessWallMicros: number | null,
+): {
+  unaccounted_script_wall_micros: number | null;
+  child_process_wall_excess_micros: number | null;
+} {
+  if (childProcessWallMicros === null) {
+    return {
+      unaccounted_script_wall_micros: null,
+      child_process_wall_excess_micros: null,
+    };
+  }
+  const delta = scriptWallMicros - childProcessWallMicros;
+  return {
+    unaccounted_script_wall_micros: Math.max(0, delta),
+    child_process_wall_excess_micros: Math.max(0, -delta),
+  };
 }
 
 function firstNumber(text: string, patterns: RegExp[]): number | null {

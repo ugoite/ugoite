@@ -3,6 +3,7 @@ import {
   fileMetrics,
   isCompleteSampleProfile,
   parseTimeResourceFile,
+  reconcileWallDurations,
   summarizeMutationBatches,
 } from "./cp1_profile.ts";
 
@@ -196,10 +197,29 @@ Deno.test("successful CP1 profile aggregation keeps fixture, resource, and sourc
       "number",
     );
     assertEquals(
+      report.measured_stages.child_process_wall_excess_micros,
+      0,
+    );
+    assertEquals(
       report.measured_stages.process_minus_generator_wall_micros,
       1_499_950,
     );
   } finally {
     await Deno.remove(directory, { recursive: true });
   }
+});
+
+Deno.test("CP1 wall reconciliation reports remainder and timer excess separately", () => {
+  assertEquals(reconcileWallDurations(120, 100), {
+    unaccounted_script_wall_micros: 20,
+    child_process_wall_excess_micros: 0,
+  });
+  assertEquals(reconcileWallDurations(100, 120), {
+    unaccounted_script_wall_micros: 0,
+    child_process_wall_excess_micros: 20,
+  });
+  assertEquals(reconcileWallDurations(100, null), {
+    unaccounted_script_wall_micros: null,
+    child_process_wall_excess_micros: null,
+  });
 });
