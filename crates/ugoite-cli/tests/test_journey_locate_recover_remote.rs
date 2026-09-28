@@ -374,6 +374,30 @@ async fn journey_cli_remote_locate_recover() {
         .expect("update returns durable change_id")
         .to_string();
 
+    let inspection = stdout_json(
+        &run_cli(
+            config_path,
+            &["change", "show", &update_change_id, "--limit", "1"],
+        )
+        .await,
+        "remote change show pages committed targets",
+    );
+    assert_eq!(inspection["summary"]["affected_entry_count"], 1);
+    assert_eq!(inspection["targets"].as_array().unwrap().len(), 1);
+    let target_id = inspection["targets"][0]["entry_id"]
+        .as_str()
+        .expect("inspection returns the canonical target ID");
+    let target = stdout_json(
+        &run_cli(
+            config_path,
+            &["change", "target", &update_change_id, target_id],
+        )
+        .await,
+        "remote change target returns typed evidence",
+    );
+    assert_eq!(target["change_id"], update_change_id);
+    assert_eq!(target["target"]["fields"].as_array().unwrap().len(), 1);
+
     // Space History observes the timeline.
     let changes = stdout_json(
         &run_cli(config_path, &["change", "list"]).await,

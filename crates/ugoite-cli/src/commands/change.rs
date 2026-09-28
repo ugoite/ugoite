@@ -22,6 +22,26 @@ pub enum ChangeSubCmd {
     /// List Space Change history
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
     List,
+    /// Inspect one committed Change and a bounded page of its targets
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    Show {
+        #[arg(value_name = "CHANGE_ID")]
+        change_id: String,
+        /// Number of affected Entries to show (1..=10)
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+        /// Continue an inspection using its opaque cursor
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// Show typed before/after evidence for one affected Entry
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    Target {
+        #[arg(value_name = "CHANGE_ID")]
+        change_id: String,
+        #[arg(value_name = "ENTRY_ID")]
+        entry_id: String,
+    },
     /// Revert a Change by appending its inverse
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Revert {
@@ -70,6 +90,77 @@ fn change_rows_table(rows: &[serde_json::Value]) -> Vec<serde_json::Value> {
             })
         })
         .collect()
+}
+
+fn render_change_inspection(inspection: &serde_json::Value) -> String {
+    let change_id = inspection
+        .get("change_id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let visibility = inspection
+        .get("target_visibility")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("partial");
+    let count = inspection
+        .get("summary")
+        .and_then(|summary| summary.get("affected_entry_count"))
+        .and_then(serde_json::Value::as_u64)
+        .map(|count| count.to_string())
+        .unwrap_or_else(|| "visible".to_string());
+    let mut lines = vec![format!(
+        "Change {change_id}: {count} affected Entry(s) ({visibility} visibility)"
+    )];
+    if let Some(targets) = inspection
+        .get("targets")
+        .and_then(serde_json::Value::as_array)
+    {
+        for target in targets {
+            let entry_id = target
+                .get("entry_id")
+                .map(|value| value.to_string())
+                .unwrap_or_default();
+            let fields = target
+                .get("fields")
+                .and_then(serde_json::Value::as_array)
+                .map_or(0, Vec::len);
+            lines.push(format!("  Entry {entry_id}: {fields} field change(s)"));
+        }
+    }
+    if inspection.get("next_cursor").is_some() {
+        lines.push("More targets are available with --cursor.".to_string());
+    }
+    lines.join("\n")
+}
+
+fn render_change_target(target: &serde_json::Value) -> String {
+    let entry_id = target
+        .get("target")
+        .and_then(|value| value.get("entry_id"))
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+    let mut lines = vec![format!("Entry {entry_id}")];
+    if let Some(fields) = target
+        .get("target")
+        .and_then(|value| value.get("fields"))
+        .and_then(serde_json::Value::as_array)
+    {
+        for field in fields {
+            let field_id = field
+                .get("field_id")
+                .map(|value| value.to_string())
+                .unwrap_or_default();
+            let before = field
+                .get("before")
+                .map(serde_json::Value::to_string)
+                .unwrap_or_else(|| "null".to_string());
+            let after = field
+                .get("after")
+                .map(serde_json::Value::to_string)
+                .unwrap_or_else(|| "null".to_string());
+            lines.push(format!("  Field {field_id}: {before} -> {after}"));
+        }
+    }
+    lines.join("\n")
 }
 
 pub async fn run(
@@ -130,6 +221,69 @@ pub async fn run(
             } else {
                 emit_success(&changes, &fmt, None);
             }
+        }
+        ChangeSubCmd::Show {
+            change_id,
+            limit,
+            cursor,
+        } => {
+            if change_id.trim().is_empty() {
+                return Err(UsageError("CHANGE_ID must not be blank".to_string()).into());
+            }
+            if !(1..=10).contains(&limit) {
+                return Err(UsageError("--limit must be between 1 and 10".to_string()).into());
+            }
+            let target = resolve_command_target(explicit_config, context_override, "change show")?;
+            let inspection = if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let mut args = serde_json::json!({
+                    "space_id": space_uid,
+                    "change_id": change_id,
+                    "limit": limit,
+                });
+                if let Some(cursor) = &cursor {
+                    args["cursor"] = serde_json::json!(cursor);
+                }
+                http::execute_for_target(&target, "change.inspect", args, None).await?
+            } else if let SpaceTarget::Core { root, space_id } = &target {
+                UgoiteService::new_without_background_refresh(root)?
+                    .inspect_change(space_id, &change_id, Some(limit), cursor.as_deref())
+                    .await?
+            } else {
+                anyhow::bail!("operation change.inspect does not use the remote transport")
+            };
+            let human = (fmt != Format::Json && fmt != Format::Ndjson)
+                .then(|| render_change_inspection(&inspection));
+            emit_success(&inspection, &fmt, human);
+        }
+        ChangeSubCmd::Target {
+            change_id,
+            entry_id,
+        } => {
+            if change_id.trim().is_empty() || entry_id.trim().is_empty() {
+                return Err(
+                    UsageError("CHANGE_ID and ENTRY_ID must not be blank".to_string()).into(),
+                );
+            }
+            let target =
+                resolve_command_target(explicit_config, context_override, "change target")?;
+            let evidence = if let SpaceTarget::Remote { space_uid, .. } = &target {
+                http::execute_for_target(
+                    &target,
+                    "change.affected.get",
+                    serde_json::json!({"space_id": space_uid, "change_id": change_id, "entry_id": entry_id}),
+                    None,
+                )
+                .await?
+            } else if let SpaceTarget::Core { root, space_id } = &target {
+                UgoiteService::new_without_background_refresh(root)?
+                    .change_affected_entry(space_id, &change_id, &entry_id)
+                    .await?
+            } else {
+                anyhow::bail!("operation change.affected.get does not use the remote transport")
+            };
+            let human = (fmt != Format::Json && fmt != Format::Ndjson)
+                .then(|| render_change_target(&evidence));
+            emit_success(&evidence, &fmt, human);
         }
         ChangeSubCmd::Revert {
             change_id,
