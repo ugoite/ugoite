@@ -1,6 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import SpaceSqlDetailRoute from "./[sql_id]/index";
 import { formatDateLabel } from "~/lib/date-format";
 import {
@@ -143,6 +149,40 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       .not.toBeInTheDocument();
   });
 
+  it("shows saved and current Form names for a bound query", async () => {
+    seedForm("default", {
+      id: "form-stable-id",
+      name: "RenamedExpense",
+      sql_relation: entryRelation,
+      version: 1,
+      template: "# Expense\n",
+      fields: {},
+    });
+    seedSqlEntry("default", {
+      id: "saved-query",
+      name: "Expenses",
+      kind: "user-query",
+      sql: 'SELECT * FROM "Expense"',
+      variables: [],
+      metadata: {
+        bindingVersion: 1,
+        formBindings: [{ name: "Expense", formId: "form-stable-id" }],
+      },
+      created_at: "2025-03-01T00:00:00Z",
+      updated_at: "2025-03-02T00:00:00Z",
+      revision_id: "rev-1",
+    });
+
+    render(() => <SpaceSqlDetailRoute />);
+
+    expect(
+      await screen.findByText(
+        "Saved as Expense; current name is RenamedExpense",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("form-stable-id")).toBeInTheDocument();
+  });
+
   it("REQ-FE-062: saved SQL detail routes variable-free queries to stateless results", async () => {
     seedForm("default", {
       name: "Entry",
@@ -205,7 +245,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     });
 
     fireEvent.input(editor, {
-      target: { value: "SELECT * FROM records WHERE title = {{title}} LIMIT 2" },
+      target: {
+        value: "SELECT * FROM records WHERE title = {{title}} LIMIT 2",
+      },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
@@ -240,15 +282,17 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     fireEvent.input(name, { target: { value: "   " } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(update).toHaveBeenCalledWith(
-      "default",
-      "saved-query",
-      expect.objectContaining({
-        name: null,
-        metadata: { generatedName: "untitled" },
-        parent_revision_id: "rev-1",
-      }),
-    ));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(
+        "default",
+        "saved-query",
+        expect.objectContaining({
+          name: null,
+          metadata: { generatedName: "untitled" },
+          parent_revision_id: "rev-1",
+        }),
+      )
+    );
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(name).toHaveValue("   ");
     update.mockRestore();
@@ -268,12 +312,18 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     const remove = vi.spyOn(sqlApi, "delete").mockResolvedValue(undefined);
 
     render(() => <SpaceSqlDetailRoute />);
-    fireEvent.click(await screen.findByRole("button", { name: "Delete query" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete query" }),
+    );
     const dialog = await screen.findByRole("dialog", { name: "Delete query" });
     expect(remove).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete query" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Delete query" }),
+    );
 
-    await waitFor(() => expect(remove).toHaveBeenCalledWith("default", "saved-query"));
+    await waitFor(() =>
+      expect(remove).toHaveBeenCalledWith("default", "saved-query")
+    );
     expect(navigateMock).toHaveBeenCalledWith("/spaces/default/sql");
     remove.mockRestore();
   });

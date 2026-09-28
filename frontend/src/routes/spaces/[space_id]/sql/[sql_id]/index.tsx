@@ -1,5 +1,13 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  Show,
+  Switch,
+} from "solid-js";
 import { ActionIconBar } from "~/components/ActionIconBar";
 import { BackLink } from "~/components/BackLink";
 import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
@@ -48,6 +56,16 @@ export default function SpaceSqlDetailRoute() {
 
   const normalized = createMemo(() => normalizeSqlVariables(sqlInput()));
   const variableCount = createMemo(() => normalized().variables.length);
+  const bindingDiagnostics = createMemo(() => {
+    if (forms.state !== "ready") return [];
+    const bindings = entry()?.metadata?.formBindings ?? [];
+    const available = (forms() ?? []) as Form[];
+    return bindings.map((binding) => ({
+      ...binding,
+      currentName: available.find((form) => form.id === binding.formId)?.name ??
+        null,
+    }));
+  });
   const isDirty = createMemo(() =>
     queryName().trim() !== savedName() || sqlInput() !== savedSql()
   );
@@ -133,9 +151,11 @@ export default function SpaceSqlDetailRoute() {
             fallback={<h1>{t("sqlPage.detail")}</h1>}
           >
             {(data) => (
-              <h1>{data().kind === "search-history"
-                ? displaySqlName(data())
-                : queryName().trim() || t("sqlPage.untitledQuery")}</h1>
+              <h1>
+                {data().kind === "search-history"
+                  ? displaySqlName(data())
+                  : queryName().trim() || t("sqlPage.untitledQuery")}
+              </h1>
             )}
           </Show>
         </div>
@@ -212,6 +232,41 @@ export default function SpaceSqlDetailRoute() {
                         setQueryName(event.currentTarget.value)}
                     />
                   </div>
+                </Show>
+
+                <Show when={bindingDiagnostics().length > 0}>
+                  <section
+                    class="ui-stack-sm"
+                    aria-label={t("sqlPage.formBindings")}
+                  >
+                    <h2 class="text-sm font-semibold">
+                      {t("sqlPage.formBindings")}
+                    </h2>
+                    <ul class="list-disc space-y-1 pl-5 text-sm ui-muted">
+                      <For each={bindingDiagnostics()}>
+                        {(binding) => (
+                          <li>
+                            {binding.currentName === binding.name
+                              ? t("sqlPage.boundForm", { name: binding.name })
+                              : binding.currentName
+                              ? t("sqlPage.renamedBoundForm", {
+                                savedName: binding.name,
+                                currentName: binding.currentName,
+                              })
+                              : t("sqlPage.missingBoundForm", {
+                                name: binding.name,
+                              })}
+                            <code
+                              class="ml-2 text-xs"
+                              title={t("sqlPage.formId")}
+                            >
+                              {binding.formId}
+                            </code>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </section>
                 </Show>
 
                 <div class="ui-stack-sm">

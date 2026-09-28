@@ -1,4 +1,3 @@
-import { autocompletion } from "@codemirror/autocomplete";
 import type { Diagnostic } from "@codemirror/lint";
 import { linter, lintGutter } from "@codemirror/lint";
 import { sql } from "@codemirror/lang-sql";
@@ -7,6 +6,7 @@ import { EditorView } from "@codemirror/view";
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { SqlSchema } from "~/lib/sql";
 import { sqlLintDiagnostics } from "~/lib/sql";
+import { sqlEditorAutocompletion } from "~/lib/sql-completion";
 
 export interface SqlQueryEditorProps {
   id?: string;
@@ -35,9 +35,11 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
     const state = EditorState.create({
       doc: props.value,
       extensions: [
-        autocompletion(),
         lintGutter(),
-        schemaCompartment.of(sql({ schema: props.schema })),
+        schemaCompartment.of([
+          sql({ schema: props.schema }),
+          sqlEditorAutocompletion(props.schema),
+        ]),
         readonlyCompartment.of(
           EditorState.readOnly.of(Boolean(props.disabled)),
         ),
@@ -82,7 +84,10 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
     const editorView = view();
     if (!editorView) return;
     editorView.dispatch({
-      effects: schemaCompartment.reconfigure(sql({ schema: props.schema })),
+      effects: schemaCompartment.reconfigure([
+        sql({ schema: props.schema }),
+        sqlEditorAutocompletion(props.schema),
+      ]),
     });
     /* v8 ignore stop */
   });

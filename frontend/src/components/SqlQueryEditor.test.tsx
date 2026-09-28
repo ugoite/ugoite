@@ -5,7 +5,11 @@ import { SqlQueryEditor } from "./SqlQueryEditor";
 import { buildSqlSchema } from "~/lib/sql";
 
 vi.mock("@codemirror/autocomplete", () => ({
-  autocompletion: () => ({ type: "autocompletion" }),
+  autocompletion: (config: unknown) => ({ type: "autocompletion", config }),
+}));
+
+vi.mock("@codemirror/language", () => ({
+  syntaxTree: () => ({ resolve: () => ({ name: "Identifier" }) }),
 }));
 
 vi.mock("@codemirror/lint", () => ({
@@ -15,6 +19,8 @@ vi.mock("@codemirror/lint", () => ({
 
 vi.mock("@codemirror/lang-sql", () => ({
   sql: (config: unknown) => ({ type: "sql", config }),
+  schemaCompletionSource: () => () => null,
+  keywordCompletionSource: () => () => null,
   StandardSQL: {
     language: {
       parser: {

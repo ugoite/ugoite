@@ -187,6 +187,26 @@ materialize a result relation, or create persistent execution state.
   continuation.
 - `sql count` is a separate explicit read.
 
+The Browser's new-query screen lets you choose a Form and generate a starter
+query using its quoted Form name. The editor completion list shows Form names;
+SQL still uses `field_<FieldId>` for field columns. A Saved SQL run sends its
+exact revision to the shared query operation, so renaming a Form does not move
+the saved query to a different Form. The Saved SQL detail shows the saved name,
+current name, and Form ID when those names differ. To change the reference,
+edit and save the SQL; that creates a new revision.
+
+The CLI can execute the current Saved SQL revision by ID:
+
+```sh
+ugoite sql saved run <SQL_ID> --limit 100
+```
+
+Use `--revision-id <REVISION_ID>` to run a specific earlier revision. Repeat
+`--param NAME=VALUE` and `--param-type NAME=TYPE` for SQL variables. The command
+returns one stateless page in the selected format, including its continuation
+when more rows are available. Each request checks current authorization and
+uses the Form IDs bound to that revision.
+
 ## If it fails
 
 - SQL rejected: check the quoted Form name (or `form_<FormId>` relation), `field_<FieldId>` columns,

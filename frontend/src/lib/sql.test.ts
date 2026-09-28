@@ -133,14 +133,16 @@ describe("sql helpers", () => {
       },
     ];
     const schema = buildSqlSchema(forms);
-    const columns = schema.tables?.form_00000000000000000000000000000001;
+    const columns = schema.tables?.Meeting;
     expect(columns).toEqual([
       "_ugoite_id",
       "_ugoite_created_at",
       "_ugoite_updated_at",
       "field_104",
     ]);
-    expect(schema.tables).not.toHaveProperty("entries");
+    expect(schema.tables).not.toHaveProperty(
+      "form_00000000000000000000000000000001",
+    );
     expect(columns).not.toContain("id");
     expect(columns).not.toContain("title");
     expect(columns).not.toContain("updated_at");
@@ -221,7 +223,7 @@ describe("sql helpers", () => {
 
   it("ignores semicolons and keywords inside string literals (#2319)", () => {
     const diagnostics = sqlLintDiagnostics(
-      'SELECT * FROM "form_00000000000000000000000000000001" WHERE title = \'; DROP TABLE x; INSERT INTO y SELECT * FROM z\'',
+      "SELECT * FROM \"form_00000000000000000000000000000001\" WHERE title = '; DROP TABLE x; INSERT INTO y SELECT * FROM z'",
     );
     expect(
       diagnostics.some((diagnostic) =>

@@ -142,6 +142,66 @@ fn setup_cli_sql_space() -> CliSqlSpace {
     }
 }
 
+#[test]
+fn cli_saved_sql_run_executes_current_or_selected_bound_revision() {
+    let space = setup_cli_sql_space();
+    let original_sql = "SELECT _ugoite_id FROM \"CliSqlForm\" ORDER BY _ugoite_id";
+    let created = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "sql",
+                "saved",
+                "create",
+                "--name",
+                "All CLI entries",
+                "--sql",
+                original_sql,
+            ],
+        ),
+        "create Saved SQL for run",
+    );
+    let sql_id = created["id"].as_str().expect("Saved SQL ID");
+    let original_revision = created["revision_id"]
+        .as_str()
+        .expect("initial Saved SQL revision");
+
+    let updated_sql = format!(
+        "SELECT _ugoite_id FROM \"CliSqlForm\" WHERE {} = 'open' ORDER BY _ugoite_id",
+        space.status_column
+    );
+    let updated = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &["sql", "saved", "update", sql_id, "--sql", &updated_sql],
+        ),
+        "update Saved SQL for run",
+    );
+    assert_ne!(updated["revision_id"].as_str(), Some(original_revision));
+
+    let current = stdout_json(
+        &run_cli(&space.config_path, &["sql", "saved", "run", sql_id]),
+        "run current Saved SQL revision",
+    );
+    assert_eq!(current["rows"].as_array().unwrap().len(), 2);
+
+    let historical = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "sql",
+                "saved",
+                "run",
+                sql_id,
+                "--revision-id",
+                original_revision,
+            ],
+        ),
+        "run selected Saved SQL revision",
+    );
+    assert_eq!(historical["rows"].as_array().unwrap().len(), 3);
+}
+
 fn base_sql(space: &CliSqlSpace) -> String {
     format!(
         "SELECT _ugoite_id FROM \"{}\" ORDER BY _ugoite_id",
