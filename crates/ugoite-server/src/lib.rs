@@ -1716,7 +1716,15 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/changes/{change_id}/revert",
             post(revert_change),
         )
+        .route(
+            "/spaces/{space_id}/changes/{change_id}/revert/preview",
+            get(preview_revert_change),
+        )
         .route("/spaces/{space_id}/runs/{run_id}/undo", post(undo_run))
+        .route(
+            "/spaces/{space_id}/runs/{run_id}/undo/preview",
+            get(preview_undo_run),
+        )
         .route("/spaces/{space_id}/apply", post(apply_operations))
         .route(
             "/spaces/{space_id}/forms",
@@ -10076,6 +10084,42 @@ async fn revert_change(
     Ok(Json(result))
 }
 
+async fn preview_revert_change(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, change_id)): Path<(String, String)>,
+) -> ApiResult<Json<Value>> {
+    if change_id.trim().is_empty() {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "change_id must not be blank",
+        ));
+    }
+    let service = state.service.clone();
+    let space_id_for_preview = space_id.clone();
+    let change_id_for_preview = change_id.clone();
+    let result = with_authorized_service_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Update,
+        None,
+        move |principal_id, principals| async move {
+            service
+                .preview_revert_change_authorized_for_principals(
+                    &space_id_for_preview,
+                    &change_id_for_preview,
+                    &principal_id.to_string(),
+                    &principals,
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
+    Ok(Json(result))
+}
+
 async fn undo_run(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
@@ -10101,6 +10145,42 @@ async fn undo_run(
                 .undo_run_authorized_for_principals(
                     &space_id_for_write,
                     &run_id_for_write,
+                    &principal_id.to_string(),
+                    &principals,
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
+    Ok(Json(result))
+}
+
+async fn preview_undo_run(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, run_id)): Path<(String, String)>,
+) -> ApiResult<Json<Value>> {
+    if run_id.trim().is_empty() {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "run_id must not be blank",
+        ));
+    }
+    let service = state.service.clone();
+    let space_id_for_preview = space_id.clone();
+    let run_id_for_preview = run_id.clone();
+    let result = with_authorized_service_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Update,
+        None,
+        move |principal_id, principals| async move {
+            service
+                .preview_undo_run_authorized_for_principals(
+                    &space_id_for_preview,
+                    &run_id_for_preview,
                     &principal_id.to_string(),
                     &principals,
                 )
@@ -13200,7 +13280,15 @@ mod authentication_regression_tests {
                 "/spaces/{space_id}/changes/{change_id}/revert",
                 post(revert_change),
             )
+            .route(
+                "/spaces/{space_id}/changes/{change_id}/revert/preview",
+                get(preview_revert_change),
+            )
             .route("/spaces/{space_id}/runs/{run_id}/undo", post(undo_run))
+            .route(
+                "/spaces/{space_id}/runs/{run_id}/undo/preview",
+                get(preview_undo_run),
+            )
             .route("/spaces/{space_id}/apply", post(apply_operations))
             .route("/spaces/{space_id}/pins", get(list_pins).post(create_pin))
             .route("/spaces/{space_id}/pins/{pin_name}", delete(delete_pin))
@@ -19310,6 +19398,25 @@ mod authentication_regression_tests {
             assert_publication_coordinate(&change["publication"], space_uid);
         }
 
+        let (status, revert_preview) = route_json(
+            route.clone(),
+            Request::get(format!(
+                "/spaces/{space_id}/changes/{target_change_id}/revert/preview"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{revert_preview}");
+        assert_eq!(revert_preview["ready"], true);
+        assert_eq!(revert_preview["target_entry_count"], 1);
+        let (status, after_preview) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/changes")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{after_preview}");
+        assert_eq!(after_preview.as_array().map(Vec::len), Some(changes.len()));
+
         let (status, revert_body) = route_json(
             route.clone(),
             json_request(
@@ -19376,6 +19483,17 @@ mod authentication_regression_tests {
         )
         .await?;
         assert_eq!(later_update.0, StatusCode::OK, "{}", later_update.1);
+
+        let (status, conflict_preview) = route_json(
+            route.clone(),
+            Request::get(format!(
+                "/spaces/{space_id}/changes/{target_change_id}/revert/preview"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::CONFLICT, "{conflict_preview}");
+        assert_eq!(conflict_preview["code"], "REVISION_CONFLICT");
 
         let (status, conflict_body) = route_json(
             route,
@@ -19460,6 +19578,19 @@ mod authentication_regression_tests {
         .await?;
         assert_eq!(update.0, StatusCode::OK, "{}", update.1);
 
+        let (status, undo_preview) = route_json(
+            route.clone(),
+            Request::get(format!(
+                "/spaces/{space_id}/runs/run-2037-undo/undo/preview"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{undo_preview}");
+        assert_eq!(undo_preview["ready"], true, "{undo_preview}");
+        assert_eq!(undo_preview["committed_change_count"], 2);
+        assert_eq!(undo_preview["pending_change_count"], 2);
+
         let (status, first_undo) = route_json(
             route.clone(),
             Request::post(format!("/spaces/{space_id}/runs/run-2037-undo/undo"))
@@ -19481,6 +19612,19 @@ mod authentication_regression_tests {
         assert_eq!(resumed_undo["run_id"], "run-2037-undo");
         assert_eq!(resumed_undo["reverted_change_count"], 0);
         assert_eq!(resumed_undo["inverses"].as_array().map(Vec::len), Some(0));
+
+        let (status, completed_preview) = route_json(
+            route.clone(),
+            Request::get(format!(
+                "/spaces/{space_id}/runs/run-2037-undo/undo/preview"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{completed_preview}");
+        assert_eq!(completed_preview["ready"], false);
+        assert_eq!(completed_preview["pending_change_count"], 0);
+        assert_eq!(completed_preview["already_reverted_count"], 2);
 
         let (status, changes_body) = route_json(
             route,

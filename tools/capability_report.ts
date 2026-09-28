@@ -369,7 +369,9 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       "entry.update",
       "entry.delete",
       "entry.restore",
+      "change.revert.preview",
       "run.undo",
+      "run.undo.preview",
     ],
     requirement_criterion_refs: [
       "REQ-JOURNEY-001#criterion.entry-create",
