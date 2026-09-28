@@ -457,6 +457,18 @@ test("records real two-Space query surface measurements", async ({ page, request
         markFinished: () => void;
         wasReached: boolean;
       }>();
+      let releaseTargetSpaceQuery!: () => void;
+      let markTargetSpaceQueryReached!: () => void;
+      let markTargetSpaceQueryFinished!: () => void;
+      const targetSpaceQueryHeld = new Promise<void>((resolve) => {
+        releaseTargetSpaceQuery = resolve;
+      });
+      const targetSpaceQueryReached = new Promise<void>((resolve) => {
+        markTargetSpaceQueryReached = resolve;
+      });
+      const targetSpaceQueryFinished = new Promise<void>((resolve) => {
+        markTargetSpaceQueryFinished = resolve;
+      });
       for (const text of ["solar", "energy", "inspection"]) {
         let release!: () => void;
         let markReached!: () => void;
@@ -479,6 +491,22 @@ test("records real two-Space query surface measurements", async ({ page, request
         });
       }
       await page.route("**/entries/query", async (route) => {
+        if (
+          route.request().url().includes(
+            `/spaces/${secondSpace.space_uid}/entries/query`,
+          )
+        ) {
+          markTargetSpaceQueryReached();
+          await targetSpaceQueryHeld;
+          try {
+            await route.continue();
+          } catch {
+            // The browser may cancel the held target request first.
+          } finally {
+            markTargetSpaceQueryFinished();
+          }
+          return;
+        }
         const body = route.request().postDataJSON() as {
           query?: { text?: unknown };
         } | null;
@@ -539,23 +567,21 @@ test("records real two-Space query surface measurements", async ({ page, request
         );
         await page.waitForTimeout(500);
         rowsBeforeTargetQuery = await page.locator("tbody tr").count();
-        const targetSpaceRequest = page.waitForRequest((request) =>
-          request.url().includes(
-            `/spaces/${secondSpace.space_uid}/entries/query`,
-          )
-        );
         await page.getByText(SQL_FORM_NAME, { exact: true }).click();
-        await targetSpaceRequest;
+        await targetSpaceQueryReached;
         rowsWhileTargetQueryPending = await page.locator(
           "tbody tr",
         ).count();
         expect(rowsWhileTargetQueryPending).toBe(0);
+        releaseTargetSpaceQuery();
         await expect(rowLocator).toBeVisible({
           timeout: QUERY_RESULT_TIMEOUT_MS,
         });
       } finally {
+        releaseTargetSpaceQuery();
         for (const gate of searchRouteGates.values()) gate.release();
       }
+      await targetSpaceQueryFinished;
       await Promise.all(
         [...searchRouteGates.values()]
           .filter((gate) => gate.wasReached)
@@ -927,7 +953,7 @@ test("records real two-Space query surface measurements", async ({ page, request
         ),
       );
       expect(lifecycle.sqlParameterTypeChange.actualAbortCount)
-        .toBeGreaterThan(0, JSON.stringify(lifecycle.sqlParameterTypeChange));
+        .toBeGreaterThan(0);
       expect(lifecycle.sqlParameterTypeChange.endedAbortCount).toBe(
         lifecycle.sqlParameterTypeChange.actualAbortCount,
       );
