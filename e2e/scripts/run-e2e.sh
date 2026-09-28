@@ -3,7 +3,7 @@
 # fallback via `run-e2e-parity.sh`.
 #
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
-#   test-type: "smoke", "asset-owned", "smoke-and-asset-owned",
+#   test-type: "smoke", "late-query-response", "asset-owned", "smoke-and-asset-owned",
 #     "owner-recovery", "mobile-ui", "query-measurement",
 #     "sql-export-remote-auth", "portable-space",
 #     "entries", "screenshot", or "full"
@@ -280,6 +280,9 @@ base_report_file="${PLAYWRIGHT_JUNIT_OUTPUT_FILE:-test-results/junit.xml}"
 case "$TEST_TYPE" in
   smoke)
     run_e2e_task smoke "$base_report_file" "$ENFORCE_CI_GATES"
+    ;;
+  late-query-response)
+    run_e2e_task late-query-response "$base_report_file"
     ;;
   entries)
     run_e2e_task entries "$base_report_file" "$ENFORCE_CI_GATES"

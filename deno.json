@@ -26,6 +26,7 @@
     "docsite:e2e:navigation": "deno task --cwd e2e docsite:navigation",
     "e2e:install:browsers": "deno task --cwd e2e install:browsers",
     "e2e:smoke": "bash e2e/scripts/run-e2e-parity.sh smoke",
+    "e2e:late-query-response": "bash e2e/scripts/run-e2e.sh late-query-response",
     "e2e:asset-owned": "bash e2e/scripts/run-e2e-parity.sh asset-owned",
     "e2e:smoke-and-asset-owned": "bash e2e/scripts/run-e2e-parity.sh smoke-and-asset-owned",
     "e2e:owner-recovery": "COMPOSE_PROJECT_NAME=ugoite-owner-recovery E2E_COMPOSE_PORT=18001 PLAYWRIGHT_JUNIT_OUTPUT_FILE=test-results/owner-recovery-junit.xml bash e2e/scripts/run-e2e-parity.sh owner-recovery",
