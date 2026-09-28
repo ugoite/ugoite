@@ -10,6 +10,7 @@ mkdir -p "$PROFILE_DIR"
 PROFILE_REPORT="$PROFILE_DIR/export-${PROFILE_RUN_ID}.json"
 SEED_PROFILE="$PROFILE_DIR/sql-export-measure-${PROFILE_RUN_ID}.json"
 CLI_BUILD_RESOURCE="$PROFILE_DIR/export-cli-build-${PROFILE_RUN_ID}.time.txt"
+CLI_PROFILE_TIMED_STEP_ARGS=()
 mkdir -p "$OUTPUT_DIR"
 if [[ -n "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
   echo "Refusing to overwrite a non-empty export measurement output directory: $OUTPUT_DIR" >&2
@@ -46,7 +47,7 @@ cleanup() {
       "$OUTPUT_DIR/page-100.summary.json" "$OUTPUT_DIR/page-100.time.txt" \
     --export-run 1000 "$OUTPUT_DIR/page-1000.ndjson" \
       "$OUTPUT_DIR/page-1000.summary.json" "$OUTPUT_DIR/page-1000.time.txt" \
-    --timed-step cli-build "$CLI_BUILD_RESOURCE"
+    "${CLI_PROFILE_TIMED_STEP_ARGS[@]}"
   local profile_exit_code=$?
   if [[ "$KEEP_ROOT" == false ]]; then
     rm -rf "$MEASURE_ROOT"
@@ -62,15 +63,64 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap cleanup EXIT
 
-BIN="$ROOT_DIR/target/rust/debug/ugoite"
 CONFIG="$MEASURE_ROOT/ugoite.toml"
 DATA_ROOT="$MEASURE_ROOT/data"
 SQL_FILE="$OUTPUT_DIR/query.sql"
 SPACE_PATH="$DATA_ROOT/spaces"
+SOURCE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 
-echo "Building CLI and preparing fixed 10,000-entry dataset..." >&2
-bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
-  "$CLI_BUILD_RESOURCE" cargo build --locked -p ugoite-cli
+CLI_MODE="local-build"
+if [[ -n "${UGOITE_SQL_EXPORT_CLI_BINARY:-}" ]]; then
+  CLI_MODE="verified-artifact"
+  BIN="$UGOITE_SQL_EXPORT_CLI_BINARY"
+  if [[ "$BIN" != /* ]]; then BIN="$ROOT_DIR/$BIN"; fi
+  if [[ ! -f "$BIN" || -L "$BIN" || ! -x "$BIN" ]]; then
+    echo "UGOITE_SQL_EXPORT_CLI_BINARY must name an executable regular file: $BIN" >&2
+    exit 1
+  fi
+
+  expected_cli_sha="${UGOITE_SOURCE_SHA:-$SOURCE_SHA}"
+  if [[ ! "$expected_cli_sha" =~ ^[0-9a-fA-F]{40}$ || "$expected_cli_sha" != "$SOURCE_SHA" ]]; then
+    echo "UGOITE_SOURCE_SHA must match the checked out source before using a verified CLI artifact" >&2
+    exit 1
+  fi
+  if [[ ! -f "$BIN.source-sha" || -L "$BIN.source-sha" ]]; then
+    echo "Verified SQL export CLI is missing its source SHA sidecar: $BIN.source-sha" >&2
+    exit 1
+  fi
+  cli_source_sha="$(tr -d '[:space:]' <"$BIN.source-sha")"
+  if [[ "$cli_source_sha" != "$expected_cli_sha" ]]; then
+    echo "Verified SQL export CLI source SHA does not match this checkout" >&2
+    exit 1
+  fi
+  export UGOITE_SQL_EXPORT_CLI_SOURCE_SHA="$cli_source_sha"
+
+  if [[ -n "${UGOITE_SQL_EXPORT_CLI_LOAD_RESOURCE:-}" ]]; then
+    if [[ ! -f "$UGOITE_SQL_EXPORT_CLI_LOAD_RESOURCE" || -L "$UGOITE_SQL_EXPORT_CLI_LOAD_RESOURCE" ]]; then
+      echo "SQL export CLI artifact load resource file is missing: $UGOITE_SQL_EXPORT_CLI_LOAD_RESOURCE" >&2
+      exit 1
+    fi
+    CLI_PROFILE_TIMED_STEP_ARGS=(
+      --timed-step cli-artifact-load "$UGOITE_SQL_EXPORT_CLI_LOAD_RESOURCE"
+    )
+  fi
+  if [[ -n "${UGOITE_SQL_EXPORT_CLI_TRANSFER_REPORT:-}" ]] \
+    && [[ ! -f "$UGOITE_SQL_EXPORT_CLI_TRANSFER_REPORT" || -L "$UGOITE_SQL_EXPORT_CLI_TRANSFER_REPORT" ]]; then
+    echo "SQL export CLI artifact transfer report is missing: $UGOITE_SQL_EXPORT_CLI_TRANSFER_REPORT" >&2
+    exit 1
+  fi
+else
+  BIN="$ROOT_DIR/target/rust/debug/ugoite"
+  CLI_PROFILE_TIMED_STEP_ARGS=(--timed-step cli-build "$CLI_BUILD_RESOURCE")
+fi
+
+if [[ "$CLI_MODE" == "local-build" ]]; then
+  echo "Building CLI and preparing fixed 10,000-entry dataset..." >&2
+  bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
+    "$CLI_BUILD_RESOURCE" cargo build --locked -p ugoite-cli
+else
+  echo "Using verified CLI artifact and preparing fixed 10,000-entry dataset..." >&2
+fi
 bash "$ROOT_DIR/scripts/dev-seed.sh" \
   --root "$DATA_ROOT" \
   --space-id sql-export-measure \
@@ -187,7 +237,6 @@ if find "$OUTPUT_DIR" -maxdepth 1 -name '.ugoite-export-*' -print -quit | grep -
   exit 1
 fi
 
-SOURCE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 deno eval --quiet '
   const [output, sourceSha, spaceUid, dataRoot] = Deno.args;
   const readSummary = async (size: number) => JSON.parse(await Deno.readTextFile(`${output}/page-${size}.summary.json`));

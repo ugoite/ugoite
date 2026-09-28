@@ -966,13 +966,19 @@ jobs:
 
   cp1-acceptance:
     name: ci-cp1-acceptance
-    needs: impact
-    if: needs.impact.result == 'success' && needs.impact.outputs.plan_cp1_acceptance == 'true'
+    needs: [impact, artifact-build]
+    if: needs.impact.result == 'success' && needs.impact.outputs.plan_cp1_acceptance == 'true' && needs.artifact-build.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       E2E_ENFORCE_CI_GATES: "true"
       UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
+      UGOITE_SOURCE_SHA: ${{ github.sha }}
+      UGOITE_CI_RUN_ID: ${{ github.run_id }}
+      UGOITE_ARTIFACT_SELECTION: cli
+      UGOITE_SQL_EXPORT_CLI_BINARY: ${{ github.workspace }}/target/rust/release/ugoite
+      UGOITE_SQL_EXPORT_CLI_LOAD_RESOURCE: target/cp1-profiling/sql-export-cli-load.time.txt
+      UGOITE_SQL_EXPORT_CLI_TRANSFER_REPORT: target/cp1-profiling/sql-export-cli-transfer.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1011,6 +1017,50 @@ jobs:
 
       - name: Install Playwright browser dependencies
         run: deno task e2e:install:browsers
+
+      - name: Start SQL export CLI artifact transfer measurement
+        id: cli-transfer-start
+        run: echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-artifact-manifest
+          path: target/artifacts
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-cli-linux
+          path: target/artifacts/cli
+
+      - name: Record SQL export CLI artifact transfer
+        id: cli-transfer
+        env:
+          START_EPOCH: ${{ steps.cli-transfer-start.outputs.epoch }}
+        run: |
+          echo "download_action_seconds=$(( $(date +%s) - START_EPOCH ))" >>"$GITHUB_OUTPUT"
+          echo "downloaded_logical_bytes=$(du -sb target/artifacts/cli target/artifacts/manifest.json target/artifacts/SHA256SUMS | awk '{sum += $1} END {printf "%.0f", sum}')" >>"$GITHUB_OUTPUT"
+
+      - name: Verify and load the exact CLI artifact
+        id: cli-load
+        run: scripts/measure-process-resources.sh target/cp1-profiling/sql-export-cli-load.time.txt mise run ci:artifacts:load
+
+      - name: Record SQL export CLI artifact evidence
+        env:
+          DOWNLOAD_ACTION_SECONDS: ${{ steps.cli-transfer.outputs.download_action_seconds }}
+          DOWNLOADED_LOGICAL_BYTES: ${{ steps.cli-transfer.outputs.downloaded_logical_bytes }}
+          VERIFICATION_SECONDS: ${{ steps.cli-load.outputs.verification_seconds }}
+          EXTRACTION_SECONDS: ${{ steps.cli-load.outputs.cli_extract_seconds }}
+        run: |
+          mkdir -p target/cp1-profiling
+          cat >target/cp1-profiling/sql-export-cli-transfer.json <<EOF
+          {
+            "selection": "cli",
+            "download_action_seconds": ${DOWNLOAD_ACTION_SECONDS},
+            "downloaded_logical_bytes": ${DOWNLOADED_LOGICAL_BYTES},
+            "verification_seconds": ${VERIFICATION_SECONDS},
+            "extraction_seconds": ${EXTRACTION_SECONDS}
+          }
+          EOF
 
       - name: Run fixed 10k/two-Space query and bounded export acceptance
         run: scripts/measure-step.sh cp1-acceptance mise run ci:lane:cp1-acceptance
