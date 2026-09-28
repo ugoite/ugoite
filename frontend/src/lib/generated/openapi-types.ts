@@ -162,6 +162,7 @@ export const OPENAPI_PATHS = [
   "/spaces/{space_id}/pins/diff",
   "/spaces/{space_id}/pins/{pin_name}",
   "/spaces/{space_id}/policies/{kind}/{resource_id}",
+  "/spaces/{space_id}/runs/{run_id}/inspect",
   "/spaces/{space_id}/runs/{run_id}/undo",
   "/spaces/{space_id}/runs/{run_id}/undo/preview",
   "/spaces/{space_id}/sql",

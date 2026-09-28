@@ -18,6 +18,18 @@ pub struct RunCmd {
 
 #[derive(Subcommand)]
 pub enum RunSubCmd {
+    /// Inspect committed Changes correlated to a Run
+    #[command(long_about = "Use the selected context or --context NAME for this command.")]
+    Show {
+        #[arg(value_name = "RUN_ID")]
+        run_id: String,
+        /// Number of committed Changes to show (1..=10)
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+        /// Continue paging using the opaque cursor
+        #[arg(long)]
+        cursor: Option<String>,
+    },
     /// Undo a Run by appending inverses for its Changes
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Undo {
@@ -42,6 +54,43 @@ pub async fn run(
 ) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
+        RunSubCmd::Show {
+            run_id,
+            limit,
+            cursor,
+        } => {
+            if run_id.trim().is_empty() {
+                return Err(UsageError("RUN_ID must not be blank".to_string()).into());
+            }
+            if !(1..=10).contains(&limit) {
+                return Err(UsageError("--limit must be between 1 and 10".to_string()).into());
+            }
+            if cursor
+                .as_deref()
+                .is_some_and(|cursor| cursor.trim().is_empty())
+            {
+                return Err(UsageError("--cursor must not be blank".to_string()).into());
+            }
+            let target = resolve_command_target(explicit_config, context_override, "run show")?;
+            let result = if let SpaceTarget::Remote { space_uid, .. } = &target {
+                let mut args = serde_json::json!({
+                    "space_id": space_uid,
+                    "run_id": run_id,
+                    "limit": limit,
+                });
+                if let Some(cursor) = cursor.as_ref() {
+                    args["cursor"] = serde_json::Value::String(cursor.clone());
+                }
+                http::execute_for_target(&target, "run.inspect", args, None).await?
+            } else if let SpaceTarget::Core { root, space_id } = &target {
+                UgoiteService::new_without_background_refresh(root)?
+                    .inspect_run(space_id, &run_id, Some(limit), cursor.as_deref())
+                    .await?
+            } else {
+                anyhow::bail!("operation run.inspect does not use the remote transport")
+            };
+            emit_success(&result, &fmt, Some(render_run_inspection(&result)));
+        }
         RunSubCmd::Undo {
             run_id,
             dry_run,
@@ -167,4 +216,76 @@ pub async fn run(
         }
     }
     Ok(())
+}
+
+fn render_run_inspection(inspection: &serde_json::Value) -> String {
+    let run_id = inspection
+        .get("run_id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let changes = inspection
+        .get("changes")
+        .and_then(serde_json::Value::as_array);
+    let mut lines = vec![format!(
+        "Run {run_id}: {} committed Change(s) on this page",
+        changes.map_or(0, Vec::len)
+    )];
+    if let Some(changes) = changes {
+        for change in changes {
+            let change_id = change
+                .get("change_id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let generation = change
+                .get("generation")
+                .map(serde_json::Value::to_string)
+                .unwrap_or_else(|| "?".to_string());
+            let visibility = change
+                .get("target_visibility")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("partial");
+            let count = change
+                .get("summary")
+                .and_then(|summary| summary.get("affected_entry_count"))
+                .and_then(serde_json::Value::as_u64)
+                .map(|count| format!("{count} affected Entry(s)"))
+                .unwrap_or_else(|| "affected count unavailable".to_string());
+            lines.push(format!(
+                "  {change_id} (generation {generation}): {count}, {visibility} visibility"
+            ));
+        }
+    }
+    if inspection
+        .get("next_cursor")
+        .and_then(serde_json::Value::as_str)
+        .is_some()
+    {
+        lines.push("More committed Changes are available with --cursor.".to_string());
+    }
+    lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_run_inspection;
+    use serde_json::json;
+
+    #[test]
+    fn run_inspection_hides_counts_without_a_complete_summary() {
+        let rendered = render_run_inspection(&json!({
+            "run_id": "run-1",
+            "changes": [{
+                "change_id": "change-1",
+                "generation": 7,
+                "target_visibility": "partial",
+                "summary": null
+            }],
+            "next_cursor": null
+        }));
+
+        assert!(rendered.contains("Run run-1: 1 committed Change(s) on this page"));
+        assert!(rendered
+            .contains("change-1 (generation 7): affected count unavailable, partial visibility"));
+        assert!(!rendered.contains("More committed Changes"));
+    }
 }

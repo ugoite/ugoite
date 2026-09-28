@@ -134,6 +134,10 @@ portable Catalog boundary:
   and current revisions/schema; it never writes.
 - `POST /spaces/{space_id}/runs/{run_id}/undo` appends inverses for the
   still-unreverted Changes correlated to that Run; Run status is not stored.
+- `GET /spaces/{space_id}/runs/{run_id}/inspect` returns a bounded page of
+  committed Changes correlated to a Run in reverse publication order. It
+  re-evaluates current target visibility for each Change and exposes complete
+  target counts only when the caller can read every target.
 - `GET /spaces/{space_id}/runs/{run_id}/undo/preview` summarizes committed
   Changes in reverse publication order and marks each returned Change as ready,
   blocked, or already reverted. The response is capped at 100 Changes; a

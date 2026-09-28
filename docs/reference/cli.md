@@ -132,7 +132,9 @@ ugoite sql query <SQL_OR_FILE>
 ugoite sql count <SQL_OR_FILE>
 ugoite sql export <SQL_OR_FILE> --max-rows <N> [--page-size <N>] [--output <PATH>]
 ugoite change list
+ugoite change show <CHANGE_ID> [--limit <N>] [--cursor <CURSOR>]
 ugoite change revert <CHANGE_ID> [--message <MESSAGE>]
+ugoite run show <RUN_ID> [--limit <N>] [--cursor <CURSOR>]
 ugoite run undo <RUN_ID>
 ugoite pin create <NAME>
 ugoite pin list

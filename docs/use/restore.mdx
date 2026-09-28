@@ -37,6 +37,7 @@ Change, or Run ID to recover.
 ```bash
 ugoite entry restore meeting-2026-09-12 <revision-id>
 ugoite change revert <change-id> [--dry-run] [--message "Revert incorrect status edit"]
+ugoite run show <run-id> [--limit 10] [--cursor <cursor>]
 ugoite run undo <run-id> [--dry-run]
 ```
 
@@ -48,6 +49,10 @@ stale `--parent-revision-id` conflicts instead of overwriting. Take IDs from
 `entry history` and `change list` output; they are never inferred. Run
 `ugoite entry restore --help`, `ugoite change revert --help`, and
 `ugoite run undo --help` for exact flags.
+
+`run show` lists committed Changes correlated to a Run in reverse publication
+order, with bounded cursor paging. Current read permissions determine whether
+each Change's complete affected Entry count is available.
 
 Add `--dry-run` to `change revert` or `run undo` to validate the recovery
 without writing. The preview reports the complete target count for a Change

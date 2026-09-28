@@ -4647,6 +4647,75 @@
         }
       }
     },
+    "/spaces/{space_id}/runs/{run_id}/inspect": {
+      "get": {
+        "summary": "Inspect committed Changes correlated to a Run",
+        "parameters": [
+          { "$ref": "#/components/parameters/SpaceId" },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 128 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 10, "default": 10 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 16384 },
+            "description": "Opaque continuation cursor bound to this Space and Run filter. Authorization is re-evaluated for every returned Change."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded committed Changes in reverse publication order with current target visibility",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JsonValue" }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid Run identifier, page limit, or cursor",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/spaces/{space_id}/runs/{run_id}/undo": {
       "post": {
         "summary": "Undo the committed Changes correlated to a Run",

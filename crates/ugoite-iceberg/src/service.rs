@@ -27,6 +27,7 @@ const CHANGE_PAGE_MAX_LIMIT: usize = 100;
 const CHANGE_INSPECT_DEFAULT_TARGET_LIMIT: usize = 10;
 const CHANGE_INSPECT_MAX_PUBLICATIONS: usize = 10_000;
 const CHANGE_QUERY_SORT_MAX_PUBLICATIONS: usize = 10_000;
+const RUN_INSPECT_DEFAULT_LIMIT: usize = 10;
 const RUN_UNDO_PREVIEW_MAX_CHANGES: usize = 100;
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -62,6 +63,29 @@ fn change_history_page_limit(requested: Option<usize>) -> Result<usize> {
         .into());
     }
     Ok(limit)
+}
+
+fn run_inspect_page_limit(requested: Option<usize>) -> Result<usize> {
+    let limit = requested.unwrap_or(RUN_INSPECT_DEFAULT_LIMIT);
+    if !(1..=RUN_INSPECT_DEFAULT_LIMIT).contains(&limit) {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            format!("limit must be between 1 and {RUN_INSPECT_DEFAULT_LIMIT}"),
+        )
+        .into());
+    }
+    Ok(limit)
+}
+
+fn validate_run_inspect_cursor(cursor: Option<&str>) -> Result<()> {
+    if cursor.is_some_and(|cursor| cursor.is_empty() || cursor.len() > 16_384) {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "cursor must be a non-empty string no longer than 16384 bytes",
+        )
+        .into());
+    }
+    Ok(())
 }
 
 fn change_inspect_target_page(
@@ -2710,6 +2734,113 @@ impl UgoiteService {
             row["target_visibility"] = inspection["target_visibility"].clone();
             row["summary"] = inspection.get("summary").cloned().unwrap_or(Value::Null);
         }
+        Ok(page)
+    }
+
+    /// Inspect a bounded, reverse-publication page of committed Changes for a
+    /// Run using the caller's current Entry read scopes. Run is grouping
+    /// metadata only; this view is derived exclusively from published Changes.
+    pub async fn inspect_run_authorized_for_principals(
+        &self,
+        space_id: &str,
+        run_id: &str,
+        requested_limit: Option<usize>,
+        cursor: Option<&str>,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        let run_id = RunId::new(run_id)
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+        let limit = run_inspect_page_limit(requested_limit)?;
+        validate_run_inspect_cursor(cursor)?;
+        let query = ChangeHistoryQuery {
+            run_id: Some(run_id.to_string()),
+            ..ChangeHistoryQuery::default()
+        };
+        let mut page = self
+            .query_changes_authorized_for_principals(
+                space_id,
+                Some(limit),
+                cursor,
+                query,
+                principal_ids,
+            )
+            .await?;
+        page["run_id"] = json!(run_id);
+        Ok(page)
+    }
+
+    /// Inspect a bounded, reverse-publication page of committed Changes for a
+    /// trusted local core caller. Local callers see the same evidence summary
+    /// as a fully authorized remote caller, without a server ACL identity.
+    pub async fn inspect_run(
+        &self,
+        space_id: &str,
+        run_id: &str,
+        requested_limit: Option<usize>,
+        cursor: Option<&str>,
+    ) -> Result<Value> {
+        let run_id = RunId::new(run_id)
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+        let limit = run_inspect_page_limit(requested_limit)?;
+        validate_run_inspect_cursor(cursor)?;
+        let query = ChangeHistoryQuery {
+            run_id: Some(run_id.to_string()),
+            ..ChangeHistoryQuery::default()
+        };
+        let mut page = self
+            .query_changes(space_id, Some(limit), cursor, query)
+            .await?;
+        let changes = page
+            .get_mut("changes")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(|| anyhow!("Run inspection page has no changes array"))?;
+        if !changes.is_empty() {
+            self.validate_complete_space(space_id).await?;
+            let workspace =
+                iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
+                    .await?;
+            let scopes = workspace
+                .list_forms_bounded(
+                    MAX_AUTHORIZED_SCOPE_FORMS,
+                    MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
+                )
+                .await?
+                .into_iter()
+                .map(|form| (form.name.to_ascii_lowercase(), EntryScope::AllCurrent))
+                .collect::<BTreeMap<_, _>>();
+            let scope_fingerprint = Self::change_inspect_scope_fingerprint(&scopes);
+            let signing_key = self.sql_query_signing_key(space_id).await?;
+            for row in changes {
+                let published_change: crate::PublishedChange =
+                    serde_json::from_value(row.clone()).context("Run Change row is invalid")?;
+                let cursor = Self::encode_change_inspect_cursor(
+                    &ChangeInspectPageToken {
+                        version: 1,
+                        space_id: space_id.to_string(),
+                        change_id: published_change.change_id.clone(),
+                        publication: published_change.publication.clone(),
+                        change: published_change.change.clone(),
+                        scope_fingerprint: scope_fingerprint.clone(),
+                        limit: 1,
+                        offset: 0,
+                    },
+                    &signing_key,
+                )?;
+                let inspection = self
+                    .inspect_change_inner(
+                        space_id,
+                        &published_change.change_id,
+                        Some(1),
+                        Some(&cursor),
+                        None,
+                    )
+                    .await?;
+                row["target_visibility"] = inspection["target_visibility"].clone();
+                row["summary"] = inspection.get("summary").cloned().unwrap_or(Value::Null);
+            }
+        }
+        page["run_id"] = json!(run_id);
         Ok(page)
     }
 
@@ -9129,6 +9260,90 @@ mod tests {
             .await?
             .to_string();
         Ok((service, space_id, principal))
+    }
+
+    #[tokio::test]
+    async fn run_inspection_is_bounded_and_follows_reverse_publication_order() -> anyhow::Result<()>
+    {
+        let (service, space_id, principal) = batch_test_space("run-inspect").await?;
+        for entry_id in ["run-inspect-first", "run-inspect-second"] {
+            service
+                .apply_operations(
+                    &space_id,
+                    vec![batch_create(entry_id)],
+                    &principal.to_string(),
+                    &[principal],
+                    Some("run-inspect-run"),
+                    None,
+                )
+                .await?;
+        }
+
+        let first = service
+            .inspect_run(&space_id, "run-inspect-run", Some(1), None)
+            .await?;
+        assert_eq!(first["run_id"], "run-inspect-run");
+        assert_eq!(first["changes"].as_array().map(Vec::len), Some(1));
+        assert_eq!(first["changes"][0]["change"]["run_id"], "run-inspect-run");
+        let cursor = first["next_cursor"]
+            .as_str()
+            .expect("first page has a cursor");
+
+        let mut inspected = first["changes"]
+            .as_array()
+            .expect("first page has changes")
+            .clone();
+        let mut next_cursor = Some(cursor.to_string());
+        let mut pages = 1;
+        while let Some(cursor) = next_cursor {
+            let page = service
+                .inspect_run(&space_id, "run-inspect-run", Some(1), Some(&cursor))
+                .await?;
+            let changes = page["changes"].as_array().expect("page has changes");
+            assert!(changes.len() <= 1);
+            inspected.extend(changes.iter().cloned());
+            next_cursor = page["next_cursor"].as_str().map(str::to_string);
+            pages += 1;
+            assert!(pages <= 16, "Run inspection cursor did not terminate");
+        }
+        assert_eq!(inspected.len(), 2);
+        assert_ne!(inspected[0]["change_id"], inspected[1]["change_id"]);
+        assert!(
+            inspected[0]["generation"]
+                .as_u64()
+                .expect("generation is numeric")
+                > inspected[1]["generation"]
+                    .as_u64()
+                    .expect("generation is numeric")
+        );
+
+        let authorized = service
+            .inspect_run_authorized_for_principals(
+                &space_id,
+                "run-inspect-run",
+                Some(10),
+                None,
+                &[principal],
+            )
+            .await?;
+        assert_eq!(authorized["changes"].as_array().map(Vec::len), Some(2));
+        assert!(authorized["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| { row.get("target_visibility").is_some() && row.get("summary").is_some() }));
+        let oversized_cursor = "x".repeat(16_385);
+        let error = service
+            .inspect_run(
+                &space_id,
+                "run-inspect-run",
+                Some(1),
+                Some(&oversized_cursor),
+            )
+            .await
+            .expect_err("oversized Run cursor is rejected before decode");
+        assert!(error.to_string().contains("16384 bytes"));
+        Ok(())
     }
 
     #[tokio::test]
