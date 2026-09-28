@@ -42,8 +42,8 @@ Root task composition:
   validation;
 - `ci:artifacts:prepare`: build, package, verify, and version-check the current
   source without running E2E;
-- `ci:artifacts:load`: verify the same-run manifest, source SHA, CI run ID, CLI
-  and image digests, then load the exact image and extract the portable CLI;
+- `ci:artifacts:load`: verify the same-run manifest, source SHA, CI run ID, and
+  selected CLI or image digests, then selectively load or extract those files;
 - `ci:lane:e2e-smoke-mobile`, `ci:lane:e2e-owner`, and
   `ci:lane:e2e-portable`: separate hosted E2E groups that consume the prepared
   build artifact;
@@ -65,12 +65,15 @@ docsite navigation; frontend-only pull requests run Web and artifact/E2E
 verification; Rust changes also run both Rust lanes. Main pushes and merge
 groups always run every lane. Large diffs, global or unclassified paths,
 missing SHAs, unsupported events, and diff failures fall back to the full lane
-plan. The artifact build runs once and publishes the existing Pages and release
-artifacts on main pushes. Three E2E jobs download the same-run runtime image,
-CLI archive, and manifest; before starting, each verifies the source SHA, run
-ID, and file checksums, then loads the image and CLI. Each job reports download
-bytes and duration, manifest verification, CLI extraction, and Docker image
-load time so transfer overhead can be measured during the pilot. `ci-required` runs on `ubuntu-slim`, checks every
+plan. The artifact build runs once and publishes runtime image, CLI, and
+manifest artifacts for pull requests, merge groups, and main pushes. Smoke /
+mobile and owner E2E download only the manifest and runtime image; portable E2E
+downloads the manifest, image, and CLI. The shared loader verifies the source
+SHA, run ID, selected digests and sizes, and safe paths before loading only the
+requested inputs. The combined E2E artifact is no longer uploaded. Each job
+reports download bytes and duration, manifest verification, CLI extraction
+when selected, and Docker image load time so transfer overhead can be measured
+during the pilot. `ci-required` runs on `ubuntu-slim`, checks every
 planned lane against its result, and fails closed on missing results,
 unexpected skips, and unexpected executions. The three quality lanes run only
 `mise run ci:lane:rust-check`, `mise run ci:lane:rust-test`, and

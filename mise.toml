@@ -398,7 +398,7 @@ description = "Run the required portable Space first-setup E2E"
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:portable-space"
 
 [tasks."ci:artifacts:load"]
-description = "Verify and load the current-run CI image and portable CLI archive"
+description = "Verify and selectively load current-run CI build artifacts"
 run = "deno run -A tools/ci_artifact_bundle.ts load"
 
 [tasks.e2e]
