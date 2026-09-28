@@ -27,7 +27,11 @@ vi.mock("@solidjs/router", async () => {
     A: (props: { href: string; class?: string; children: unknown }) => (
       <a href={props.href} class={props.class}>{props.children}</a>
     ),
-    useLocation: () => ({ get state() { return state(); } }),
+    useLocation: () => ({
+      get state() {
+        return state();
+      },
+    }),
     useNavigate: () => navigateMock,
     useParams: () => ({
       get space_id() {
@@ -103,6 +107,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       parameters: {},
       parameter_types: {},
       limit: 100,
+      saved_sql: { id: "saved-query", revision_id: "rev-1" },
       continuation: "opaque-next",
     }, expect.any(AbortSignal));
     expect(await screen.findByText("second")).toBeInTheDocument();
@@ -118,6 +123,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       parameters: {},
       parameter_types: {},
       limit: 100,
+      saved_sql: { id: "saved-query", revision_id: "rev-1" },
     }, expect.any(AbortSignal));
   });
 
@@ -147,6 +153,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       sql: "SELECT value FROM demo ORDER BY value",
       parameters: {},
       parameter_types: {},
+      saved_sql: { id: "saved-query", revision_id: "rev-1" },
     }, expect.any(AbortSignal));
     expect(screen.getByText("2 rows")).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -237,77 +244,78 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
   it.each(["values", "types"] as const)(
     "aborts page and count reads when SQL parameter %s change",
     async (changedField) => {
-    let resolveNextPage:
-      | ((page: {
-        columns: string[];
-        rows: unknown[][];
-        has_more: boolean;
-      }) => void)
-      | undefined;
-    let resolveCount: ((count: number) => void) | undefined;
-    queryMock.mockReset()
-      .mockResolvedValueOnce({
-        columns: ["value"],
-        rows: [["initial"]],
-        has_more: true,
-        next: "next-page",
-      })
-      .mockImplementationOnce(() =>
-        new Promise((resolve) => {
-          resolveNextPage = resolve;
+      let resolveNextPage:
+        | ((page: {
+          columns: string[];
+          rows: unknown[][];
+          has_more: boolean;
+        }) => void)
+        | undefined;
+      let resolveCount: ((count: number) => void) | undefined;
+      queryMock.mockReset()
+        .mockResolvedValueOnce({
+          columns: ["value"],
+          rows: [["initial"]],
+          has_more: true,
+          next: "next-page",
         })
-      )
-      .mockResolvedValueOnce({
+        .mockImplementationOnce(() =>
+          new Promise((resolve) => {
+            resolveNextPage = resolve;
+          })
+        )
+        .mockResolvedValueOnce({
+          columns: ["value"],
+          rows: [["updated"]],
+          has_more: false,
+        });
+      countMock.mockReset().mockImplementationOnce(() =>
+        new Promise((resolve) => {
+          resolveCount = resolve;
+        })
+      );
+      routeControls.setState({
+        parameters: { threshold: 10 },
+        parameterTypes: { threshold: "integer" },
+      });
+      render(() => <SpaceSqlRunRoute />);
+
+      expect(await screen.findByText("initial")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() => expect(queryMock).toHaveBeenCalledTimes(2));
+      fireEvent.click(screen.getByRole("button", { name: "Count rows" }));
+      await waitFor(() => expect(countMock).toHaveBeenCalledTimes(1));
+      const oldPageSignal = queryMock.mock.calls[1][2] as AbortSignal;
+      const oldCountSignal = countMock.mock.calls[0][2] as AbortSignal;
+
+      routeControls.setState({
+        parameters: { threshold: changedField === "values" ? 11 : 10 },
+        parameterTypes: {
+          threshold: changedField === "types" ? "string" : "integer",
+        },
+      });
+
+      expect(await screen.findByText("updated")).toBeInTheDocument();
+      expect(oldPageSignal.aborted).toBe(true);
+      expect(oldCountSignal.aborted).toBe(true);
+      resolveNextPage?.({
         columns: ["value"],
-        rows: [["updated"]],
+        rows: [["stale-page"]],
         has_more: false,
       });
-    countMock.mockReset().mockImplementationOnce(() =>
-      new Promise((resolve) => {
-        resolveCount = resolve;
-      })
-    );
-    routeControls.setState({
-      parameters: { threshold: 10 },
-      parameterTypes: { threshold: "integer" },
-    });
-    render(() => <SpaceSqlRunRoute />);
-
-    expect(await screen.findByText("initial")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await waitFor(() => expect(queryMock).toHaveBeenCalledTimes(2));
-    fireEvent.click(screen.getByRole("button", { name: "Count rows" }));
-    await waitFor(() => expect(countMock).toHaveBeenCalledTimes(1));
-    const oldPageSignal = queryMock.mock.calls[1][2] as AbortSignal;
-    const oldCountSignal = countMock.mock.calls[0][2] as AbortSignal;
-
-    routeControls.setState({
-      parameters: { threshold: changedField === "values" ? 11 : 10 },
-      parameterTypes: {
-        threshold: changedField === "types" ? "string" : "integer",
-      },
-    });
-
-    expect(await screen.findByText("updated")).toBeInTheDocument();
-    expect(oldPageSignal.aborted).toBe(true);
-    expect(oldCountSignal.aborted).toBe(true);
-    resolveNextPage?.({
-      columns: ["value"],
-      rows: [["stale-page"]],
-      has_more: false,
-    });
-    resolveCount?.(999);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.queryByText("stale-page")).not.toBeInTheDocument();
-    expect(screen.queryByText("999 rows")).not.toBeInTheDocument();
-    expect(queryMock).toHaveBeenLastCalledWith("default", {
-      sql: "SELECT value FROM demo ORDER BY value",
-      parameters: { threshold: changedField === "values" ? 11 : 10 },
-      parameter_types: {
-        threshold: changedField === "types" ? "string" : "integer",
-      },
-      limit: 100,
-    }, expect.any(AbortSignal));
+      resolveCount?.(999);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(screen.queryByText("stale-page")).not.toBeInTheDocument();
+      expect(screen.queryByText("999 rows")).not.toBeInTheDocument();
+      expect(queryMock).toHaveBeenLastCalledWith("default", {
+        sql: "SELECT value FROM demo ORDER BY value",
+        parameters: { threshold: changedField === "values" ? 11 : 10 },
+        parameter_types: {
+          threshold: changedField === "types" ? "string" : "integer",
+        },
+        limit: 100,
+        saved_sql: { id: "saved-query", revision_id: "rev-1" },
+      }, expect.any(AbortSignal));
     },
   );
 
@@ -369,7 +377,11 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     expect(await screen.findByText("first")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Count rows" }));
-    expect(await screen.findByText(/Failed to count query rows.*temporary count failure/))
+    expect(
+      await screen.findByText(
+        /Failed to count query rows.*temporary count failure/,
+      ),
+    )
       .toBeInTheDocument();
     expect(queryMock).toHaveBeenCalledTimes(1);
 

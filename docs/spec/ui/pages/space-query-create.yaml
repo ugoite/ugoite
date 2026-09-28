@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-09-24"
+updated: "2026-09-28"
 page:
   id: space-query-create
   title: New
@@ -18,12 +18,22 @@ components:
       type: text-input
       label: "Query name"
       placeholder: "Untitled query"
+    - id: query-form-select
+      type: select
+      label: Form for this query
+      source: current authorized non-system Forms
+      value: immutable Form ID
+    - id: query-form-generate-action
+      type: button
+      label: Generate SQL from Form
+      behavior: replace editor contents with a quoted Form-name starter query
     - id: query-sql-editor
       type: sql-editor
       features:
         - syntax-highlighting
         - linting
         - completion
+      completion_source: current authorized Form names and public field columns
     - id: query-save-button
       type: button
       variant: primary

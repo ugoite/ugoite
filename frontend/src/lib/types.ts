@@ -373,6 +373,7 @@ export interface SqlQueryRequest {
   parameter_types?: Record<string, string>;
   limit: number;
   continuation?: string;
+  saved_sql?: { id: string; revision_id: string };
 }
 
 /** A page returned by the stateless SQL read surface. */
@@ -387,27 +388,30 @@ export interface SqlQueryCountRequest {
   sql: string;
   parameters?: Record<string, unknown>;
   parameter_types?: Record<string, string>;
+  saved_sql?: { id: string; revision_id: string };
 }
 
-export type SqlMetadata =
-  | {
-    searchCriteria: {
-      formName: string;
-      tags: string[];
-      updatedFrom: string;
-      updatedTo: string;
-      fieldConditions: Array<{
-        field: string;
-        operator: "equals" | "contains" | "lt" | "lte" | "gt" | "gte";
-        value: string;
-      }>;
-    };
-    generatedName?: never;
-  }
-  | {
-    searchCriteria?: never;
-    generatedName: "untitled";
+export interface SqlMetadata {
+  searchCriteria?: {
+    formName: string;
+    tags: string[];
+    updatedFrom: string;
+    updatedTo: string;
+    fieldConditions: Array<{
+      field: string;
+      operator: "equals" | "contains" | "lt" | "lte" | "gt" | "gte";
+      value: string;
+    }>;
   };
+  generatedName?: "untitled";
+  bindingVersion?: number;
+  formBindings?: SqlFormBinding[];
+}
+
+export interface SqlFormBinding {
+  name: string;
+  formId: string;
+}
 
 /** API error response */
 export interface ApiError {

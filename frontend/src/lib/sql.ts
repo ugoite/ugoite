@@ -17,14 +17,12 @@ const SQL_SYSTEM_COLUMNS = [
 export function buildSqlSchema(forms: Form[]): SqlSchema {
   const tables: Record<string, string[]> = {};
   for (const item of forms) {
-    /* v8 ignore start */
-    const relation = item.sql_relation?.trim();
-    if (!relation) continue;
+    const name = item.name.trim();
+    if (!name) continue;
     const columns = Object.values(item.fields ?? {})
       .map((field) => field.sql_column?.trim())
       .filter((column): column is string => Boolean(column));
-    tables[relation] = [...SQL_SYSTEM_COLUMNS, ...columns];
-    /* v8 ignore stop */
+    tables[name] = [...SQL_SYSTEM_COLUMNS, ...columns];
   }
 
   return { tables };

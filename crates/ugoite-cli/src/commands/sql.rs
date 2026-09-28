@@ -11,7 +11,9 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use ugoite_core::sql_query::{SqlQueryCountRequest, SqlQueryPage, SqlQueryRequest};
+use ugoite_core::sql_query::{
+    SavedSqlRevisionRef, SqlQueryCountRequest, SqlQueryPage, SqlQueryRequest,
+};
 use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::{
     index::validate_sql_syntax,
@@ -445,6 +447,26 @@ pub enum SavedSqlSubCmd {
         #[arg(value_name = "SQL_ID")]
         sql_id: String,
     },
+    /// Execute one exact Saved SQL revision as a stateless page
+    #[command(
+        long_about = "Use the current revision unless --revision-id is supplied. Each page rechecks current authorization and keeps the Saved SQL Form bindings fixed."
+    )]
+    Run {
+        #[arg(value_name = "SQL_ID")]
+        sql_id: String,
+        #[arg(long)]
+        revision_id: Option<String>,
+        #[arg(long = "param", value_name = "NAME=VALUE")]
+        parameters: Vec<String>,
+        #[arg(long = "param-type", value_name = "NAME=TYPE")]
+        parameter_types: Vec<String>,
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        #[arg(long)]
+        continuation: Option<String>,
+        #[arg(long, value_enum, default_value_t = Format::Json)]
+        format: Format,
+    },
     /// Create a saved SQL query
     #[command(long_about = "Use the selected context or --context NAME for this command.")]
     Create {
@@ -839,6 +861,46 @@ pub async fn run(
             let target =
                 resolve_command_target(explicit_config, context_override, "sql saved get")?;
             print_json(&get_saved_sql(&target, &sql_id).await?);
+        }
+        SqlSubCmd::Saved(SavedSqlSubCmd::Run {
+            sql_id,
+            revision_id,
+            parameters,
+            parameter_types,
+            limit,
+            continuation,
+            format,
+        }) => {
+            let target =
+                resolve_command_target(explicit_config, context_override, "sql saved run")?;
+            let revision_id = match revision_id {
+                Some(revision_id) => revision_id,
+                None => get_saved_sql(&target, &sql_id)
+                    .await?
+                    .get("revision_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Saved SQL response has no current revision ID")
+                    })?,
+            };
+            let (parameters, parameter_types) = parse_sql_bindings(&parameters, &parameter_types)?;
+            let page = query_sql_page(
+                &target,
+                SqlQueryRequest {
+                    sql: String::new(),
+                    parameters,
+                    parameter_types,
+                    limit,
+                    continuation,
+                    saved_sql: Some(SavedSqlRevisionRef {
+                        id: sql_id,
+                        revision_id,
+                    }),
+                },
+            )
+            .await?;
+            print_sql_page(&page, &format)?;
         }
         SqlSubCmd::Saved(SavedSqlSubCmd::Create {
             name,

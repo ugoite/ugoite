@@ -10,12 +10,20 @@ Ugoite separates SQL execution from Saved SQL persistence:
    read-only execution surface. It does not create a session, result object, or
    query metadata in the Space.
 
-The CLI uses `ugoite sql query`, `ugoite sql count`, and bounded
-`ugoite sql export`. Export repeatedly calls the existing `sql.query` operation
-and streams complete results as NDJSON; it is CLI orchestration, not another
-REST operation. Local Core and remote REST targets use the same request DTOs
-and semantics. `ugoite sql lint` is parser-only: syntax validity does not
-authorize execution or resolve a Form.
+The CLI uses `ugoite sql query`, `ugoite sql count`, `ugoite sql saved run`, and
+bounded `ugoite sql export`. `sql saved run` selects a current or exact Saved
+SQL revision through the existing `sql.query` operation. Export repeatedly
+calls that operation and streams complete results as NDJSON; it is CLI
+orchestration, not another REST operation. Local Core and remote REST targets
+use the same request DTOs and semantics. `ugoite sql lint` is parser-only:
+syntax validity does not authorize execution or resolve a Form.
+
+New SQL can refer to authorized Forms by their quoted names. Ordinary SQL
+resolves those names in the current read publication. A new Saved SQL revision
+stores the server-derived Form IDs behind those names, and execution of that
+revision keeps those IDs fixed across renames while rechecking authorization.
+The Browser editor offers Form-name completions and displays saved/current
+names in Saved SQL diagnostics.
 
 SQL accepts exactly one read-only `SELECT` statement. The authorized query
 context exposes only permitted Form relations, columns, and functions, and

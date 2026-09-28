@@ -107,6 +107,7 @@ export default function SpaceSqlRunRoute() {
       parameters: currentState.parameters ?? {},
       parameter_types: currentState.parameterTypes ?? {},
       limit: 100,
+      saved_sql: { id: current.id, revision_id: current.revision_id },
       ...(continuation() ? { continuation: continuation() } : {}),
     };
   });
@@ -119,6 +120,7 @@ export default function SpaceSqlRunRoute() {
       spaceId: requestedSpace,
       sqlId: requestedSql,
       sql: value?.sql,
+      savedSql: value?.saved_sql,
       parameters: value?.parameters,
       parameter_types: value?.parameter_types,
     });
@@ -260,6 +262,7 @@ export default function SpaceSqlRunRoute() {
         sql: value.sql,
         parameters: value.parameters,
         parameter_types: value.parameter_types,
+        saved_sql: value.saved_sql,
       }, controller.signal);
       if (
         generation !== countGeneration || requestedIdentity !==

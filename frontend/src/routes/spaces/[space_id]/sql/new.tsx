@@ -1,6 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import type { Diagnostic } from "@codemirror/lint";
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { SqlQueryEditor } from "~/components";
@@ -30,17 +30,24 @@ export default function SpaceQueryCreateRoute() {
   const [diagnostics, setDiagnostics] = createSignal<Diagnostic[]>([]);
   const [error, setError] = createSignal<string | null>(null);
   const [isSaving, setIsSaving] = createSignal(false);
+  const [selectedFormId, setSelectedFormId] = createSignal("");
 
   const [forms] = createResource(async () => {
     return await formApi.list(spaceId());
   });
 
+  const selectableForms = createMemo(() =>
+    filterCreatableEntryForms((forms() ?? []) as Form[])
+      .filter((form) => Boolean(form.id && form.name.trim()))
+  );
+
   createEffect(() => {
-    if (hasUserEditedSql()) return;
-    const relation = filterCreatableEntryForms(forms() ?? [])
-      .find((form) => form.sql_relation?.trim())
-      ?.sql_relation?.trim();
-    if (relation) setSqlInput(buildSqlStarterQuery(relation));
+    const available = selectableForms();
+    const selected = available.find((form) => form.id === selectedFormId()) ??
+      available[0];
+    if (!selected) return;
+    if (selected.id !== selectedFormId()) setSelectedFormId(selected.id!);
+    if (!hasUserEditedSql()) setSqlInput(buildSqlStarterQuery(selected.name));
   });
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
@@ -105,6 +112,41 @@ export default function SpaceQueryCreateRoute() {
           value={queryName()}
           onInput={(e) => setQueryName(e.currentTarget.value)}
         />
+
+        <div class="ui-stack-sm">
+          <label class="ui-label" for="query-form">
+            {t("sqlPage.formForQuery")}
+          </label>
+          <div class="flex flex-wrap items-center gap-2">
+            <select
+              id="query-form"
+              class="ui-input"
+              value={selectedFormId()}
+              onChange={(event) => setSelectedFormId(event.currentTarget.value)}
+              disabled={isSaving() || selectableForms().length === 0}
+            >
+              <For each={selectableForms()}>
+                {(form) => <option value={form.id}>{form.name}</option>}
+              </For>
+            </select>
+            <button
+              type="button"
+              class="btn secondary"
+              onClick={() => {
+                const selected = selectableForms().find((form) =>
+                  form.id === selectedFormId()
+                );
+                if (selected) {
+                  setSqlInput(buildSqlStarterQuery(selected.name));
+                  setHasUserEditedSql(false);
+                }
+              }}
+              disabled={isSaving() || !selectedFormId()}
+            >
+              {t("sqlPage.generateFromForm")}
+            </button>
+          </div>
+        </div>
 
         <div>
           <label class="ui-label mb-2" for="query-sql">
