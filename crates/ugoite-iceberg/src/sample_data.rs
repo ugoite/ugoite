@@ -1051,15 +1051,22 @@ impl TerminalProgressWriter {
 enum ProgressReporter {
     None,
     Job(Box<JobProgressWriter>),
-    Terminal(TerminalProgressWriter),
+    Terminal(TerminalProgressWriter, Option<SampleDataProfile>),
 }
 
 impl ProgressReporter {
+    fn sample_profile(&self) -> Option<&SampleDataProfile> {
+        match self {
+            ProgressReporter::Terminal(_, profile) => profile.as_ref(),
+            ProgressReporter::None | ProgressReporter::Job(_) => None,
+        }
+    }
+
     async fn report(&mut self, processed: usize, message: &str) -> Result<()> {
         match self {
             ProgressReporter::None => {}
             ProgressReporter::Job(writer) => writer.maybe_update(processed, message).await?,
-            ProgressReporter::Terminal(writer) => writer.render(processed, message)?,
+            ProgressReporter::Terminal(writer, _) => writer.render(processed, message)?,
         }
         Ok(())
     }
@@ -1068,7 +1075,7 @@ impl ProgressReporter {
         match self {
             ProgressReporter::None => {}
             ProgressReporter::Job(writer) => writer.complete(summary).await?,
-            ProgressReporter::Terminal(writer) => writer.complete(summary)?,
+            ProgressReporter::Terminal(writer, _) => writer.complete(summary)?,
         }
         Ok(())
     }
@@ -1077,7 +1084,7 @@ impl ProgressReporter {
         match self {
             ProgressReporter::None => {}
             ProgressReporter::Job(writer) => writer.fail(error).await?,
-            ProgressReporter::Terminal(writer) => writer.fail(error)?,
+            ProgressReporter::Terminal(writer, _) => writer.fail(error)?,
         }
         Ok(())
     }
@@ -1091,7 +1098,6 @@ struct ScenarioContext<'a> {
     rng: &'a mut StdRng,
     forms_map: &'a std::collections::HashMap<String, Value>,
     progress: &'a mut ProgressReporter,
-    profile: Option<SampleDataProfile>,
 }
 
 fn scenario_forms(scenario: &str) -> Option<Vec<Value>> {
@@ -1114,7 +1120,6 @@ async fn generate_renewable_ops(
     rng: &mut StdRng,
     forms_map: &std::collections::HashMap<String, Value>,
     progress: &mut ProgressReporter,
-    profile: Option<SampleDataProfile>,
 ) -> Result<()> {
     let weights = [0.02, 0.08, 0.2, 0.25, 0.45];
     let counts = allocate_counts(entry_count, &weights);
@@ -1152,7 +1157,8 @@ async fn generate_renewable_ops(
     let site_id_refs: Vec<&str> = site_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1329,7 +1335,6 @@ async fn generate_supply_chain(
     rng: &mut StdRng,
     forms_map: &std::collections::HashMap<String, Value>,
     progress: &mut ProgressReporter,
-    profile: Option<SampleDataProfile>,
 ) -> Result<()> {
     let weights = [0.05, 0.2, 0.2, 0.25, 0.3];
     let counts = allocate_counts(entry_count, &weights);
@@ -1360,7 +1365,8 @@ async fn generate_supply_chain(
     let supplier_refs: Vec<&str> = supplier_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1525,7 +1531,6 @@ async fn generate_municipal_infra(
     rng: &mut StdRng,
     forms_map: &std::collections::HashMap<String, Value>,
     progress: &mut ProgressReporter,
-    profile: Option<SampleDataProfile>,
 ) -> Result<()> {
     let weights = [0.08, 0.25, 0.3, 0.37];
     let counts = allocate_counts(entry_count, &weights);
@@ -1551,7 +1556,8 @@ async fn generate_municipal_infra(
     let asset_refs: Vec<&str> = asset_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1680,7 +1686,6 @@ async fn generate_fleet_ops(
     rng: &mut StdRng,
     forms_map: &std::collections::HashMap<String, Value>,
     progress: &mut ProgressReporter,
-    profile: Option<SampleDataProfile>,
 ) -> Result<()> {
     let weights = [0.06, 0.28, 0.33, 0.33];
     let counts = allocate_counts(entry_count, &weights);
@@ -1699,7 +1704,8 @@ async fn generate_fleet_ops(
     let vehicle_refs: Vec<&str> = vehicle_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1836,7 +1842,6 @@ async fn generate_lab_qa(
     rng: &mut StdRng,
     forms_map: &std::collections::HashMap<String, Value>,
     progress: &mut ProgressReporter,
-    profile: Option<SampleDataProfile>,
 ) -> Result<()> {
     let weights = [0.1, 0.3, 0.3, 0.3];
     let counts = allocate_counts(entry_count, &weights);
@@ -1862,7 +1867,8 @@ async fn generate_lab_qa(
     let batch_refs: Vec<&str> = batch_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1992,7 +1998,6 @@ async fn generate_retail_ops(
     rng: &mut StdRng,
     forms_map: &std::collections::HashMap<String, Value>,
     progress: &mut ProgressReporter,
-    profile: Option<SampleDataProfile>,
 ) -> Result<()> {
     let weights = [0.05, 0.2, 0.2, 0.3, 0.25];
     let counts = allocate_counts(entry_count, &weights);
@@ -2013,7 +2018,8 @@ async fn generate_retail_ops(
     let store_refs: Vec<&str> = store_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
-    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile.clone());
+    let profile = progress.sample_profile().cloned();
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity, profile);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -2181,7 +2187,6 @@ async fn generate_entries_for_scenario(
                 context.rng,
                 context.forms_map,
                 context.progress,
-                context.profile.clone(),
             )
             .await
         }
@@ -2194,7 +2199,6 @@ async fn generate_entries_for_scenario(
                 context.rng,
                 context.forms_map,
                 context.progress,
-                context.profile.clone(),
             )
             .await
         }
@@ -2207,7 +2211,6 @@ async fn generate_entries_for_scenario(
                 context.rng,
                 context.forms_map,
                 context.progress,
-                context.profile.clone(),
             )
             .await
         }
@@ -2220,7 +2223,6 @@ async fn generate_entries_for_scenario(
                 context.rng,
                 context.forms_map,
                 context.progress,
-                context.profile.clone(),
             )
             .await
         }
@@ -2233,7 +2235,6 @@ async fn generate_entries_for_scenario(
                 context.rng,
                 context.forms_map,
                 context.progress,
-                context.profile.clone(),
             )
             .await
         }
@@ -2246,7 +2247,6 @@ async fn generate_entries_for_scenario(
                 context.rng,
                 context.forms_map,
                 context.progress,
-                context.profile.clone(),
             )
             .await
         }
@@ -2260,8 +2260,8 @@ async fn create_sample_space_with_progress(
     options: &SampleDataOptions,
     plan: &ResolvedSampleDataPlan,
     progress: &mut ProgressReporter,
-    profile: Option<SampleDataProfile>,
 ) -> Result<SampleDataSummary> {
+    let profile = progress.sample_profile().cloned();
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::iceberg_store::ensure_mutation_admitted(op, &format!("spaces/{}", options.space_id))
         .await?;
@@ -2325,7 +2325,6 @@ async fn create_sample_space_with_progress(
         rng: &mut rng,
         forms_map: &forms_map,
         progress,
-        profile,
     };
     generate_entries_for_scenario(&plan.scenario, &mut context).await?;
 
@@ -2348,7 +2347,7 @@ pub async fn create_sample_space(
         .await?;
     let plan = resolve_sample_data_plan(options)?;
     let mut progress = ProgressReporter::None;
-    create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress, None).await
+    create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress).await
 }
 
 pub async fn create_sample_space_with_terminal_progress(
@@ -2358,9 +2357,9 @@ pub async fn create_sample_space_with_terminal_progress(
 ) -> Result<SampleDataSummary> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let plan = resolve_sample_data_plan(options)?;
-    let mut progress = ProgressReporter::Terminal(TerminalProgressWriter::new(plan.entry_count));
-    match create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress, None).await
-    {
+    let mut progress =
+        ProgressReporter::Terminal(TerminalProgressWriter::new(plan.entry_count), None);
+    match create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress).await {
         Ok(summary) => {
             progress.complete(&summary).await?;
             Ok(summary)
@@ -2390,16 +2389,12 @@ pub async fn create_sample_space_with_terminal_progress_profiled(
         plan.form_count,
     );
     let started = Instant::now();
-    let mut progress = ProgressReporter::Terminal(TerminalProgressWriter::new(plan.entry_count));
-    match create_sample_space_with_progress(
-        op,
-        root_uri,
-        &profiled_options,
-        &plan,
-        &mut progress,
+    let mut progress = ProgressReporter::Terminal(
+        TerminalProgressWriter::new(plan.entry_count),
         Some(profile.clone()),
-    )
-    .await
+    );
+    match create_sample_space_with_progress(op, root_uri, &profiled_options, &plan, &mut progress)
+        .await
     {
         Ok(summary) => {
             progress.complete(&summary).await?;
@@ -2513,7 +2508,7 @@ async fn run_sample_space_job_with_plan(
     writer.start().await?;
     let mut progress = ProgressReporter::Job(Box::new(writer));
     let summary =
-        create_sample_space_with_progress(op, root_uri, options, plan, &mut progress, None).await;
+        create_sample_space_with_progress(op, root_uri, options, plan, &mut progress).await;
     match summary {
         Ok(summary) => {
             progress.complete(&summary).await?;
