@@ -35,7 +35,6 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
     const state = EditorState.create({
       doc: props.value,
       extensions: [
-        sqlEditorAutocompletion(props.schema),
         lintGutter(),
         schemaCompartment.of([
           sql({ schema: props.schema }),

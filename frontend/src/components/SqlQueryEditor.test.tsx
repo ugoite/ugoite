@@ -21,7 +21,6 @@ vi.mock("@codemirror/lang-sql", () => ({
   sql: (config: unknown) => ({ type: "sql", config }),
   schemaCompletionSource: () => () => null,
   keywordCompletionSource: () => () => null,
-  StandardSQL: {},
   StandardSQL: {
     language: {
       parser: {
