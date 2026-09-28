@@ -1059,7 +1059,59 @@ impl IcebergWorkspace {
         view: RevisionView,
         max_rows: usize,
     ) -> Result<Vec<EntryRevision>> {
+        self.read_revision_view_at_checkpoint_with_scope_and_limit_mode(
+            checkpoint,
+            form_id,
+            entry_scope,
+            view,
+            max_rows,
+            false,
+        )
+        .await
+    }
+
+    /// Reads no more than the supplied number of scoped rows from a checkpoint.
+    /// Reaching the limit is treated by the caller as an incomplete summary,
+    /// without fetching an extra row to distinguish equality from overflow.
+    pub(crate) async fn read_revision_view_at_checkpoint_with_scope_and_budget(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        view: RevisionView,
+        max_rows: usize,
+    ) -> Result<Vec<EntryRevision>> {
+        if !(1..=MAX_NORMAL_READ_ROWS).contains(&max_rows) {
+            bail!("revision read budget must be between 1 and {MAX_NORMAL_READ_ROWS}");
+        }
+        let entry_scope = match entry_scope {
+            EntryScope::AllCurrent => EntryScope::AllExcept(BTreeSet::new()),
+            scope => scope,
+        };
+        self.read_revision_view_at_checkpoint_with_scope_and_limit_mode(
+            checkpoint,
+            form_id,
+            entry_scope,
+            view,
+            max_rows,
+            true,
+        )
+        .await
+    }
+
+    async fn read_revision_view_at_checkpoint_with_scope_and_limit_mode(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        view: RevisionView,
+        max_rows: usize,
+        truncate_at_limit: bool,
+    ) -> Result<Vec<EntryRevision>> {
         self.validate_checkpoint(checkpoint)?;
+        if !(1..=MAX_NORMAL_READ_ROWS).contains(&max_rows) {
+            bail!("revision read limit must be between 1 and {MAX_NORMAL_READ_ROWS}");
+        }
         let coordinate = checkpoint
             .tables
             .iter()
@@ -1078,7 +1130,7 @@ impl IcebergWorkspace {
             entry_scope,
             view,
             coordinate.snapshot_id,
-            Some(max_rows),
+            Some((max_rows, truncate_at_limit)),
         )
         .await
         .map_err(checkpoint_query_error)
@@ -2427,7 +2479,7 @@ impl IcebergWorkspace {
         entry_scope: EntryScope,
         view: RevisionView,
         snapshot_id: Option<i64>,
-        checkpoint_history_limit: Option<usize>,
+        checkpoint_history_limit: Option<(usize, bool)>,
     ) -> Result<Vec<EntryRevision>> {
         let batches = match view {
             RevisionView::All if entry_scope == EntryScope::AllCurrent => {
@@ -2438,7 +2490,13 @@ impl IcebergWorkspace {
                     &table,
                     &entry_scope,
                     snapshot_id,
-                    checkpoint_history_limit.map_or(usize::MAX, |limit| limit.saturating_add(1)),
+                    checkpoint_history_limit.map_or(usize::MAX, |(limit, truncate_at_limit)| {
+                        if truncate_at_limit {
+                            limit
+                        } else {
+                            limit.saturating_add(1)
+                        }
+                    }),
                 )
                 .await?
             }
@@ -2458,8 +2516,8 @@ impl IcebergWorkspace {
         for batch in &batches {
             revisions.extend(revisions_from_batch(batch, form, &schema)?);
         }
-        if let Some(limit) = checkpoint_history_limit {
-            if matches!(view, RevisionView::All) && revisions.len() > limit {
+        if let Some((limit, truncate_at_limit)) = checkpoint_history_limit {
+            if !truncate_at_limit && matches!(view, RevisionView::All) && revisions.len() > limit {
                 return Err(anyhow!(
                     "checkpoint history exceeds the configured {limit}-revision response limit"
                 ));

@@ -26,6 +26,7 @@ const CHANGE_PAGE_DEFAULT_LIMIT: usize = 50;
 const CHANGE_PAGE_MAX_LIMIT: usize = 100;
 const CHANGE_INSPECT_DEFAULT_TARGET_LIMIT: usize = 10;
 const CHANGE_INSPECT_MAX_PUBLICATIONS: usize = 10_000;
+const CHANGE_QUERY_MAX_REVISION_READS: usize = crate::MAX_NORMAL_READ_ROWS;
 const CHANGE_QUERY_SORT_MAX_PUBLICATIONS: usize = 10_000;
 const RUN_INSPECT_DEFAULT_LIMIT: usize = 10;
 const RUN_UNDO_PREVIEW_MAX_CHANGES: usize = 100;
@@ -2690,7 +2691,28 @@ impl UgoiteService {
         query: ChangeHistoryQuery,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        self.query_changes_authorized_for_principals_with_revision_budget(
+            space_id,
+            requested_limit,
+            cursor,
+            query,
+            principal_ids,
+            CHANGE_QUERY_MAX_REVISION_READS,
+        )
+        .await
+    }
+
+    async fn query_changes_authorized_for_principals_with_revision_budget(
+        &self,
+        space_id: &str,
+        requested_limit: Option<usize>,
+        cursor: Option<&str>,
+        query: ChangeHistoryQuery,
+        principal_ids: &[Uuid],
+        revision_read_budget: usize,
+    ) -> Result<Value> {
         require_nonempty_authorized_principals(principal_ids)?;
+        let mut revision_read_budget = revision_read_budget.min(CHANGE_QUERY_MAX_REVISION_READS);
         let mut page = self
             .query_changes(space_id, requested_limit, cursor, query)
             .await?;
@@ -2722,15 +2744,17 @@ impl UgoiteService {
                 },
                 &signing_key,
             )?;
-            let inspection = self
-                .inspect_change_authorized_for_principals(
+            let (inspection, revision_rows) = self
+                .inspect_change_inner_with_revision_budget(
                     space_id,
                     &published_change.change_id,
                     Some(1),
                     Some(&cursor),
-                    principal_ids,
+                    Some(principal_ids),
+                    Some(revision_read_budget),
                 )
                 .await?;
+            revision_read_budget = revision_read_budget.saturating_sub(revision_rows);
             row["target_visibility"] = inspection["target_visibility"].clone();
             row["summary"] = inspection.get("summary").cloned().unwrap_or(Value::Null);
         }
@@ -2887,6 +2911,27 @@ impl UgoiteService {
         cursor: Option<&str>,
         principal_ids: Option<&[Uuid]>,
     ) -> Result<Value> {
+        self.inspect_change_inner_with_revision_budget(
+            space_id,
+            change_id,
+            requested_target_limit,
+            cursor,
+            principal_ids,
+            None,
+        )
+        .await
+        .map(|(inspection, _)| inspection)
+    }
+
+    async fn inspect_change_inner_with_revision_budget(
+        &self,
+        space_id: &str,
+        change_id: &str,
+        requested_target_limit: Option<usize>,
+        cursor: Option<&str>,
+        principal_ids: Option<&[Uuid]>,
+        query_revision_read_budget: Option<usize>,
+    ) -> Result<(Value, usize)> {
         self.validate_complete_space(space_id).await?;
         if change_id.trim().is_empty() || change_id.len() > 128 {
             return Err(
@@ -3020,22 +3065,41 @@ impl UgoiteService {
             // dominate inspection cost in Spaces with many Forms.
             let checkpoint = workspace.resolve_publication(&publication).await?;
             let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
-            let mut complete_visibility = true;
+            let complete_visibility = forms.iter().all(|form| {
+                scopes
+                    .get(&form.name.to_ascii_lowercase())
+                    .is_some_and(|scope| matches!(scope, EntryScope::AllCurrent))
+            });
             let mut revision_rows = 0usize;
+            let mut revision_budget_exhausted = false;
             let mut targets = BTreeMap::new();
             let mut evidence = Vec::new();
 
             for form in forms {
                 let Some(authorized_scope) = scopes.get(&form.name.to_ascii_lowercase()) else {
-                    complete_visibility = false;
                     continue;
                 };
-                if !matches!(authorized_scope, EntryScope::AllCurrent) {
-                    complete_visibility = false;
+                // Query pages only need a complete Change-wide summary. If
+                // visibility is partial, skip revision reads entirely while
+                // retaining the accurate visibility state on every row.
+                if query_revision_read_budget.is_some() && !complete_visibility {
+                    continue;
                 }
-                let remaining_rows = crate::MAX_NORMAL_READ_ROWS
-                    .saturating_sub(revision_rows)
-                    .max(1);
+                if revision_budget_exhausted {
+                    continue;
+                }
+                let per_change_remaining =
+                    crate::MAX_NORMAL_READ_ROWS.saturating_sub(revision_rows);
+                let query_remaining =
+                    query_revision_read_budget.map(|budget| budget.saturating_sub(revision_rows));
+                let remaining_rows = query_remaining.map_or_else(
+                    || per_change_remaining.max(1),
+                    |budget| budget.min(per_change_remaining),
+                );
+                if remaining_rows == 0 {
+                    revision_budget_exhausted = true;
+                    continue;
+                }
                 // Route even an all-entry grant through the scoped
                 // reader so the provider applies the read-row limit
                 // before revision rows are decoded.
@@ -3043,16 +3107,35 @@ impl UgoiteService {
                     EntryScope::AllCurrent => EntryScope::AllExcept(BTreeSet::new()),
                     scope => scope.clone(),
                 };
-                let revisions = workspace
-                    .read_revision_view_at_checkpoint_with_scope_and_limit(
-                        &checkpoint,
-                        form.id,
-                        bounded_scope,
-                        RevisionView::All,
-                        remaining_rows,
-                    )
-                    .await?;
+                let revisions = if query_revision_read_budget.is_some() {
+                    workspace
+                        .read_revision_view_at_checkpoint_with_scope_and_budget(
+                            &checkpoint,
+                            form.id,
+                            bounded_scope,
+                            RevisionView::All,
+                            remaining_rows,
+                        )
+                        .await?
+                } else {
+                    workspace
+                        .read_revision_view_at_checkpoint_with_scope_and_limit(
+                            &checkpoint,
+                            form.id,
+                            bounded_scope,
+                            RevisionView::All,
+                            remaining_rows,
+                        )
+                        .await?
+                };
                 revision_rows = revision_rows.saturating_add(revisions.len());
+                if query_revision_read_budget.is_some() && revisions.len() == remaining_rows {
+                    // The reader did not fetch a lookahead row. A full cap is
+                    // conservatively incomplete because the Change summary
+                    // cannot prove that all history was examined.
+                    revision_budget_exhausted = true;
+                    continue;
+                }
                 if revision_rows > crate::MAX_NORMAL_READ_ROWS {
                     return Err(AppError::invalid_input(
                         ErrorCode::InvalidInput,
@@ -3109,7 +3192,7 @@ impl UgoiteService {
                 }
             }
 
-            let summary = if complete_visibility {
+            let summary = if complete_visibility && !revision_budget_exhausted {
                 Some(summarize_change(&evidence).map_err(|error| anyhow!(error.to_string()))?)
             } else {
                 None
@@ -3147,7 +3230,7 @@ impl UgoiteService {
                 targets: target_page,
                 next_cursor,
             };
-            Ok(serde_json::to_value(inspection)?)
+            Ok((serde_json::to_value(inspection)?, revision_rows))
         };
         if principal_ids.is_some() {
             authorizer
@@ -8334,6 +8417,116 @@ mod tests {
             .map(|target| target["entry_id"].as_str().unwrap().to_string())
             .collect::<BTreeSet<_>>();
         assert_eq!(returned_ids, expected_ids);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn change_query_revision_budget_bounds_full_and_partial_summaries() -> Result<()> {
+        let service =
+            UgoiteService::new(format!("memory://change-query-budget-{}", Uuid::now_v7()))?;
+        let principal_id = Uuid::now_v7();
+        let viewer_id = Uuid::now_v7();
+        let space_id = service
+            .create_space_for_principal("change-query-budget", principal_id, "Owner")
+            .await?
+            .to_string();
+        service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        for index in 0..2 {
+            service
+                .create_structured_entry_authorized_for_principals(
+                    &space_id,
+                    &Uuid::from_u128(50_000 + index).to_string(),
+                    "Entry".into(),
+                    Vec::new(),
+                    BTreeMap::from([("Body".into(), json!(format!("entry-{index}")))]),
+                    BTreeMap::new(),
+                    &principal_id.to_string(),
+                    &[principal_id],
+                )
+                .await?;
+        }
+
+        // The newest publication contains two revision rows, so its summary
+        // fits. The older Change uses the final row of the page-wide budget;
+        // reaching that cap makes its summary explicitly unavailable.
+        let complete_page = service
+            .query_changes_authorized_for_principals_with_revision_budget(
+                &space_id,
+                Some(2),
+                None,
+                ChangeHistoryQuery::default(),
+                &[principal_id],
+                3,
+            )
+            .await?;
+        let complete_changes = complete_page["changes"].as_array().unwrap();
+        assert_eq!(complete_changes.len(), 2);
+        assert_eq!(complete_changes[0]["target_visibility"], "complete");
+        assert_eq!(complete_changes[0]["summary"]["affected_entry_count"], 1);
+        assert_eq!(complete_changes[1]["target_visibility"], "complete");
+        assert!(complete_changes[1]["summary"].is_null());
+        assert!(complete_changes
+            .iter()
+            .all(|change| change.get("targets").is_none()));
+
+        Authorizer::new(service.operator.clone())
+            .add_human_member(
+                &space_id,
+                principal_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "History viewer".into(),
+                    state: PrincipalState::Active,
+                    created_at: Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        Authorizer::new(service.operator.clone())
+            .set_policy(
+                &space_id,
+                principal_id,
+                &ResourceRef {
+                    kind: ResourceKind::Entry,
+                    id: Uuid::from_u128(50_000).to_string(),
+                    parent: None,
+                },
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
+        let partial_page = service
+            .query_changes_authorized_for_principals_with_revision_budget(
+                &space_id,
+                Some(2),
+                None,
+                ChangeHistoryQuery::default(),
+                &[viewer_id],
+                0,
+            )
+            .await?;
+        let partial_changes = partial_page["changes"].as_array().unwrap();
+        assert_eq!(partial_changes.len(), 2);
+        assert!(partial_changes.iter().all(|change| {
+            change["target_visibility"] == "partial"
+                && change["summary"].is_null()
+                && change.get("targets").is_none()
+                && change.get("target_ids").is_none()
+                && change.get("form_ids").is_none()
+        }));
         Ok(())
     }
 
