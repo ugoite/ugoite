@@ -815,37 +815,42 @@ test("records real two-Space query surface measurements", async ({ page, request
       const pendingParameterizedCount = page.waitForRequest((request) =>
         new URL(request.url()).pathname.endsWith("/sql/query/count")
       );
-      await page.getByRole("button", { name: "Count rows" }).click();
-      await Promise.all([pendingParameterizedCount, countRouteReached]);
-      const changedTypePage = page.waitForRequest((request) => {
-        if (
-          !new URL(request.url()).pathname.endsWith("/sql/query")
-        ) return false;
-        const body = request.postDataJSON() as {
-          parameters?: Record<string, unknown>;
-          parameter_types?: Record<string, string>;
-        } | null;
-        return body?.parameters?.threshold === "200" &&
-          body.parameter_types?.threshold === "string";
-      });
-      await changeSqlRunState("200", "string");
-      const changedTypeRequest = await changedTypePage;
-      expect(changedTypeRequest.postDataJSON()).toMatchObject({
-        parameters: { threshold: "200" },
-        parameter_types: { threshold: "string" },
-      });
-      await page.waitForFunction(() =>
-        ((window as Window & {
-          __ugoiteQueryEvents?: QueryEvent[];
-        }).__ugoiteQueryEvents ?? []).some((event) =>
-          event.path.endsWith("/sql/query") && event.endedAt !== undefined &&
-          (event.body as
-              | { parameter_types?: Record<string, string> }
-              | undefined)
-              ?.parameter_types?.threshold === "string"
-        )
-      );
-      releaseCountRoute?.();
+      try {
+        await page.getByRole("button", { name: "Count rows" }).click();
+        await Promise.all([pendingParameterizedCount, countRouteReached]);
+        const changedTypePage = page.waitForRequest((request) => {
+          if (
+            !new URL(request.url()).pathname.endsWith("/sql/query")
+          ) return false;
+          const body = request.postDataJSON() as {
+            parameters?: Record<string, unknown>;
+            parameter_types?: Record<string, string>;
+          } | null;
+          return body?.parameters?.threshold === "200" &&
+            body.parameter_types?.threshold === "string";
+        });
+        await changeSqlRunState("200", "string");
+        const changedTypeRequest = await changedTypePage;
+        expect(changedTypeRequest.postDataJSON()).toMatchObject({
+          parameters: { threshold: "200" },
+          parameter_types: { threshold: "string" },
+        });
+        await page.waitForFunction(() =>
+          ((window as Window & {
+            __ugoiteQueryEvents?: QueryEvent[];
+          }).__ugoiteQueryEvents ?? []).some((event) =>
+            event.path.endsWith("/sql/query") &&
+            event.endedAt !== undefined &&
+            (event.body as
+                | { parameter_types?: Record<string, string> }
+                | undefined)
+                ?.parameter_types?.threshold === "string"
+          )
+        );
+      } finally {
+        // Let Playwright drain an intercepted request even if an assertion fails.
+        releaseCountRoute?.();
+      }
       await countRouteFinished;
       await page.unroute("**/sql/query/count");
       lifecycle.sqlParameterTypeChange = summarizeLifecycleEvents(
