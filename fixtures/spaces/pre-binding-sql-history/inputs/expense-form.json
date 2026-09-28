@@ -1,0 +1,1 @@
+{"name":"Expense","version":1,"template":"# Expense","fields":{"AmountJPY":{"type":"long"},"Purpose":{"type":"string"},"PaidOn":{"type":"date"}}}

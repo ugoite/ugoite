@@ -1,0 +1,56 @@
+{
+  "source_tag": "v0.2.0",
+  "source_commit": "c40905a505f619aeb344ec96dc0f81b07a083bee",
+  "source_binary_sha256": "709d69226f8e41289491b16cab8f66f83636e857307c475f0c07c7e31e1c8901",
+  "space_id": "01a0e8c7-586d-732e-9a7f-375ac47836f9",
+  "space_version": "0.1",
+  "slug": "prebinding-sql-history",
+  "space_name": "Pre-binding SQL history",
+  "form": {
+    "id": "01a0e8c7-9889-741e-a4bd-ae9094c64b0e",
+    "name": "Expense",
+    "relation": "form_01a0e8c79889741ea4bdae9094c64b0e"
+  },
+  "entries": [
+    "expense-01",
+    "expense-02",
+    "expense-03"
+  ],
+  "saved_sql": {
+    "id": "d6ec9949-dbee-446c-b1c8-473372751188",
+    "name": "Expenses over threshold",
+    "metadata": null,
+    "revisions": [
+      {
+        "revision_id": "fc0d0e67-4d2c-4ba2-bb3f-19a4b8f19498",
+        "parent_revision_id": null,
+        "sql": "SELECT \"_ugoite_id\", \"field_100\" FROM \"form_01a0e8c79889741ea4bdae9094c64b0e\" WHERE \"field_100\" >= $minimum ORDER BY \"_ugoite_id\"\n",
+        "variables": [
+          {
+            "name": "minimum",
+            "type": "integer",
+            "description": "Minimum JPY amount"
+          }
+        ],
+        "checksum": "49118697cf73503e5140c40936b8778b128f824a8e8dee48d7e1ea92947e4a3d",
+        "signature": "e28dccc23904b481adf1a27a586bf38cff69297e1c9c7a0b896d9f1b135e20eb"
+      },
+      {
+        "revision_id": "3451c03f-98c5-41f0-934c-10e34cfd6a81",
+        "parent_revision_id": "fc0d0e67-4d2c-4ba2-bb3f-19a4b8f19498",
+        "sql": "SELECT \"_ugoite_id\", \"field_100\" FROM \"form_01a0e8c79889741ea4bdae9094c64b0e\" WHERE \"field_100\" >= $maximum ORDER BY \"_ugoite_id\"\n",
+        "variables": [
+          {
+            "name": "maximum",
+            "type": "integer",
+            "description": "Minimum JPY amount"
+          }
+        ],
+        "checksum": "03f399ef6c30a41bf3c26373e760ee543e4c84c454fb8afe2d90005fa06b68aa",
+        "signature": "b6ee966531b3aa77f308f3bb3483c3c2e0a8b8a5512bee72e7cbf793ed303459"
+      }
+    ]
+  },
+  "manifest_sha256": "a80576cbf9a4703b1fcf5a1c868c5248907e459b96af87b6af60b2969d9d6cd5",
+  "space_payload_sha256": "cac930e711df1fa753ebc8c77228d1761e62467f48201cc1b67b9c01c6b243d6"
+}
