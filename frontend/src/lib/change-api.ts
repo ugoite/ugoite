@@ -139,15 +139,21 @@ const decodeComparedValue = (value: unknown): SpaceChangeComparedValue => {
 const decodeSummary = (value: unknown): SpaceChangeSummary | null => {
   if (value === null) return null;
   const summary = asRecord(value);
-  if (!Array.isArray(summary.target_form_ids) || !Array.isArray(summary.field_groups)) {
+  if (
+    (summary.target_form_ids !== undefined && !Array.isArray(summary.target_form_ids)) ||
+    !Array.isArray(summary.field_groups)
+  ) {
     throw new Error("Invalid Change query summary");
   }
+  const targetFormIds = Array.isArray(summary.target_form_ids)
+    ? summary.target_form_ids
+    : [];
   return {
     affected_entry_count: requiredNumber(
       summary.affected_entry_count,
       "summary.affected_entry_count",
     ),
-    target_form_ids: summary.target_form_ids.map((value) =>
+    target_form_ids: targetFormIds.map((value) =>
       requiredString(value, "summary.target_form_ids")
     ),
     field_groups: summary.field_groups.map((value) => {

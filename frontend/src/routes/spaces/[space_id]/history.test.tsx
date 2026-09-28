@@ -255,6 +255,26 @@ describe("space history list", () => {
     expect(screen.queryByText("Expenses · 2 entries")).toBeNull();
   });
 
+  it("does not infer the complete target Forms from field groups alone", async () => {
+    vi.mocked(changeApi.query).mockResolvedValue({
+      changes: [{
+        ...row("legacy-summary", 2),
+        summary: {
+          affected_entry_count: 2,
+          target_form_ids: [],
+          field_groups: row("legacy-summary", 2).summary.field_groups,
+        },
+      }],
+      next_cursor: null,
+    });
+
+    render(() => <SpaceHistoryRoute />);
+
+    expect(await screen.findByText(/2 entries/)).toBeInTheDocument();
+    expect(screen.queryByText("Expenses · 2 entries")).toBeNull();
+    expect(screen.queryByText("1 Forms · 2 entries")).toBeNull();
+  });
+
   it("opens a direct detail URL with related Run Changes and collapsed identifiers", async () => {
     searchParams.value = { change: "change-1" };
     render(() => <SpaceHistoryRoute />);

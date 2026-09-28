@@ -121,6 +121,45 @@ describe("changeApi.query", () => {
     expect(page.changes[0].summary).toBeNull();
     expect(page.next_cursor).toBeNull();
   });
+
+  it("accepts summaries from servers that do not include target Form identities", async () => {
+    server.use(
+      http.get(
+        testApiUrl("/spaces/space-1/changes/query"),
+        () =>
+          HttpResponse.json({
+            changes: [{
+              change_id: "change-1",
+              generation: 12,
+              change: { actor_principal_id: "principal-1", created_at_micros: 100 },
+              publication: {
+                generation: 12,
+                publication_uri: {
+                  space_uid: "space-1",
+                  key: "_ugoite/catalog/publications/12.json",
+                },
+                publication_checksum: "a".repeat(64),
+              },
+              target_visibility: "complete",
+              summary: {
+                affected_entry_count: 1,
+                field_groups: [{
+                  form_id: "form-1",
+                  field_id: 100,
+                  before: { state: "value", value: "Travel" },
+                  after: { state: "value", value: "Business travel" },
+                  affected_entry_count: 1,
+                }],
+              },
+            }],
+            next_cursor: null,
+          }),
+      ),
+    );
+
+    const page = await changeApi.query("space-1");
+    expect(page.changes[0].summary?.target_form_ids).toEqual([]);
+  });
 });
 
 describe("changeApi inspection", () => {
