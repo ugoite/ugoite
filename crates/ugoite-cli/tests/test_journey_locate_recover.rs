@@ -389,15 +389,19 @@ async fn run_undo_dry_run_is_read_only_and_reports_authoritative_states() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("cli-config.toml");
     let root = dir.path().to_string_lossy().into_owned();
-    let space_id = "run-undo-preview-core";
     let run_id = "run-undo-preview-core-1";
 
-    let output = run_cli(&config_path, &["space", "create", space_id]);
+    let output = run_cli(&config_path, &["space", "create", "run-undo-preview-core"]);
     assert!(
         output.status.success(),
         "space create failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let space_id = stdout_json(&output, "space create for Run preview fixture")["space"]
+        ["space_uid"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let form_file = dir.path().join("run-undo-preview-form.json");
     std::fs::write(
         &form_file,
@@ -434,7 +438,7 @@ async fn run_undo_dry_run_is_read_only_and_reports_authoritative_states() {
     }
 
     let service = UgoiteService::new(root).unwrap();
-    let workspace = native_workspace(service.operator(), &service.workspace_path(space_id))
+    let workspace = native_workspace(service.operator(), &service.workspace_path(&space_id))
         .await
         .unwrap();
     let form = workspace
