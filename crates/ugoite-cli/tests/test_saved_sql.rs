@@ -210,7 +210,8 @@ fn test_saved_sql_req_api_006_crud() {
     let renamed_output = run_cli(&config_path, &["sql", "saved", "get", created_id]);
     let renamed: serde_json::Value = serde_json::from_slice(&renamed_output.stdout).unwrap();
     assert_eq!(renamed["name"], "Planning");
-    assert!(renamed["metadata"].is_null());
+    assert_eq!(renamed["metadata"]["bindingVersion"], 1);
+    assert_eq!(renamed["metadata"]["formBindings"], serde_json::json!([]));
 
     let untitled_output = run_cli(
         &config_path,
