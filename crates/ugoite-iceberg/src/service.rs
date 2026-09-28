@@ -6864,10 +6864,12 @@ impl UgoiteService {
             &self.workspace_path(space_id),
             sql_id,
             payload,
-            authorized_forms,
-            parent_revision_id,
-            author,
-            &integrity,
+            saved_sql::SqlUpdateContext {
+                authorized_forms,
+                parent_revision_id,
+                author,
+                integrity: &integrity,
+            },
         )
         .await?;
         if let Some(revision_id) = updated
@@ -7557,7 +7559,7 @@ mod saved_sql_binding_execution_tests {
         let relation = sql_relation_name(renamed.id);
         let sql = bound_sql_for_revision(
             &revision,
-            &[renamed.clone()],
+            std::slice::from_ref(&renamed),
             &BTreeMap::from([(relation.clone(), EntryScope::AllCurrent)]),
             &revision.sql,
         )
@@ -7578,7 +7580,7 @@ mod saved_sql_binding_execution_tests {
         let replacement_relation = sql_relation_name(replacement.id);
         let result = bound_sql_for_revision(
             &revision,
-            &[replacement.clone()],
+            std::slice::from_ref(&replacement),
             &BTreeMap::from([(replacement_relation, EntryScope::AllCurrent)]),
             &revision.sql,
         );

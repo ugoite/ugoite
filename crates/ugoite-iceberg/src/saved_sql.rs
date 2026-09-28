@@ -112,6 +112,13 @@ pub(crate) struct ResolvedSavedSqlRevision {
     pub binding_version: Option<u32>,
 }
 
+pub(crate) struct SqlUpdateContext<'a, I: IntegrityProvider> {
+    pub authorized_forms: &'a BTreeMap<String, ugoite_domain::id::FormId>,
+    pub parent_revision_id: &'a str,
+    pub author: &'a str,
+    pub integrity: &'a I,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SqlPayload {
@@ -870,10 +877,12 @@ pub async fn update_sql<I: IntegrityProvider>(
         ws_path,
         sql_id,
         payload,
-        &forms,
-        parent_revision_id,
-        author,
-        integrity,
+        SqlUpdateContext {
+            authorized_forms: &forms,
+            parent_revision_id,
+            author,
+            integrity,
+        },
     )
     .await
 }
@@ -883,11 +892,14 @@ pub(crate) async fn update_sql_with_bindings<I: IntegrityProvider>(
     ws_path: &str,
     sql_id: &str,
     payload: &SqlPayload,
-    authorized_forms: &BTreeMap<String, ugoite_domain::id::FormId>,
-    parent_revision_id: &str,
-    author: &str,
-    integrity: &I,
+    context: SqlUpdateContext<'_, I>,
 ) -> Result<Value> {
+    let SqlUpdateContext {
+        authorized_forms,
+        parent_revision_id,
+        author,
+        integrity,
+    } = context;
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     ensure_sql_form(op, ws_path).await?;
     let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
