@@ -704,6 +704,7 @@ pub async fn run(
                     parameter_types,
                     limit,
                     continuation,
+                    saved_sql: None,
                 },
             )
             .await?;
@@ -724,6 +725,7 @@ pub async fn run(
                     sql,
                     parameters,
                     parameter_types,
+                    saved_sql: None,
                 },
             )
             .await?;
@@ -770,6 +772,7 @@ pub async fn run(
                 parameter_types,
                 limit: page_size.min(max_rows),
                 continuation: None,
+                saved_sql: None,
             };
             let mut rows_exported = 0usize;
             let mut bytes_exported = 0usize;
@@ -854,6 +857,8 @@ pub async fn run(
                     Some(SqlMetadata {
                         search_criteria: None,
                         generated_name: Some(SqlGeneratedName::Untitled),
+                        binding_version: None,
+                        form_bindings: None,
                     })
                 } else {
                     None
@@ -937,6 +942,8 @@ pub async fn run(
                 Some(SqlMetadata {
                     search_criteria: None,
                     generated_name: Some(SqlGeneratedName::Untitled),
+                    binding_version: None,
+                    form_bindings: None,
                 })
             } else if rename_requested {
                 None

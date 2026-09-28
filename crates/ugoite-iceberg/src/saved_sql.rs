@@ -91,6 +91,32 @@ pub struct SqlMetadata {
     pub search_criteria: Option<SearchHistoryCriteria>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generated_name: Option<SqlGeneratedName>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_version: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub form_bindings: Option<Vec<SqlFormBinding>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SqlFormBinding {
+    pub name: String,
+    pub form_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ResolvedSavedSqlRevision {
+    pub sql: String,
+    pub variables: Value,
+    pub bindings: Vec<SqlFormBinding>,
+    pub binding_version: Option<u32>,
+}
+
+pub(crate) struct SqlUpdateContext<'a, I: IntegrityProvider> {
+    pub authorized_forms: &'a BTreeMap<String, ugoite_domain::id::FormId>,
+    pub parent_revision_id: &'a str,
+    pub author: &'a str,
+    pub integrity: &'a I,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +168,11 @@ fn validate_sql_metadata(payload: &SqlPayload) -> Result<()> {
     match payload.kind {
         SqlKind::UserQuery => match (&payload.name, &payload.metadata) {
             (Some(_), None) => {}
+            (Some(_), Some(metadata))
+                if metadata.generated_name.is_none()
+                    && metadata.search_criteria.is_none()
+                    && (metadata.binding_version.is_some() || metadata.form_bindings.is_some()) => {
+            }
             (Some(_), Some(metadata))
                 if metadata.generated_name.is_none() && metadata.search_criteria.is_none() =>
             {
@@ -418,6 +449,47 @@ fn sql_extra_attributes(payload: &SqlPayload) -> Value {
     })
 }
 
+fn with_server_bindings(payload: &mut SqlPayload, bindings: Vec<SqlFormBinding>) {
+    let mut metadata = payload.metadata.clone().unwrap_or(SqlMetadata {
+        search_criteria: None,
+        generated_name: None,
+        binding_version: None,
+        form_bindings: None,
+    });
+    metadata.binding_version = Some(1);
+    metadata.form_bindings = Some(bindings);
+    payload.metadata = Some(metadata);
+}
+
+fn derive_form_bindings(
+    sql: &str,
+    authorized_forms: &BTreeMap<String, ugoite_domain::id::FormId>,
+) -> Result<Vec<SqlFormBinding>> {
+    let references = index::quoted_form_name_references(sql).map_err(validation_error)?;
+    for name in &references {
+        if !authorized_forms.contains_key(name) {
+            return Err(validation_error(format!(
+                "SQL Form name {name} is not available to bind in this revision"
+            )));
+        }
+    }
+    let aliases = authorized_forms
+        .iter()
+        .map(|(name, id)| (name.clone(), ugoite_domain::form::sql_relation_name(*id)))
+        .collect::<BTreeMap<_, _>>();
+    let (_, used_names) =
+        index::resolve_saved_sql_bindings(sql, &aliases).map_err(validation_error)?;
+    Ok(used_names
+        .into_iter()
+        .filter_map(|name| {
+            authorized_forms.get(&name).map(|id| SqlFormBinding {
+                name,
+                form_id: id.to_string(),
+            })
+        })
+        .collect())
+}
+
 /// Storage-compatibility boundary: folds the legacy physical
 /// `saved_query_name` carrier (decoded as `legacy_saved_query_name`) into
 /// the in-memory `fields["name"]` for old Saved SQL rows that predate the
@@ -527,6 +599,76 @@ pub async fn get_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<Value
     sql_entry_from_row(&row)
 }
 
+pub(crate) async fn read_sql_revision(
+    op: &Operator,
+    ws_path: &str,
+    sql_id: &str,
+    revision_id: &str,
+    integrity: &(dyn IntegrityProvider + Send + Sync),
+) -> Result<ResolvedSavedSqlRevision> {
+    ensure_sql_form(op, ws_path).await?;
+    let (_, _, revisions) =
+        entry::revision_rows_for_form_read_only(op, ws_path, SQL_FORM_NAME).await?;
+    let row = revisions
+        .into_iter()
+        .find(|row| row.entry_id == sql_id && row.revision_id == revision_id)
+        .ok_or_else(|| {
+            AppError::not_found(
+                ErrorCode::EntryNotFound,
+                format!("Saved SQL revision not found: {sql_id}@{revision_id}"),
+            )
+        })?;
+    if row.operation == "delete" {
+        return Err(sql_entry_not_found(sql_id));
+    }
+    verify_revision_integrity(&row, integrity)?;
+    let fields = row
+        .fields
+        .as_object()
+        .context("SQL revision fields must be an object")?;
+    let extra = row
+        .extra_attributes
+        .as_object()
+        .context("SQL revision metadata must be an object")?;
+    let sql = fields
+        .get("sql")
+        .and_then(Value::as_str)
+        .context("SQL revision text is missing")?
+        .to_owned();
+    let variables = normalize_sql_variables(fields.get("variables"))?;
+    let metadata = extra
+        .get("metadata")
+        .filter(|value| !value.is_null())
+        .cloned()
+        .map(serde_json::from_value::<SqlMetadata>)
+        .transpose()
+        .context("SQL revision metadata is invalid")?;
+    let (binding_version, bindings) = match metadata {
+        Some(metadata) => match (metadata.binding_version, metadata.form_bindings) {
+            (Some(1), Some(bindings)) => (Some(1), bindings),
+            (None, None) => (None, Vec::new()),
+            _ => anyhow::bail!("unsupported or incomplete Saved SQL Form binding metadata"),
+        },
+        None => (None, Vec::new()),
+    };
+    if binding_version.is_some() {
+        let references = index::quoted_form_name_references(&sql)?;
+        let bound_names = bindings
+            .iter()
+            .map(|binding| binding.name.clone())
+            .collect::<BTreeSet<_>>();
+        if references != bound_names {
+            anyhow::bail!("Saved SQL Form bindings do not match the SQL Form-name references");
+        }
+    }
+    Ok(ResolvedSavedSqlRevision {
+        sql,
+        variables,
+        bindings,
+        binding_version,
+    })
+}
+
 /// Reads the committed saved-SQL revision identity for audit reconciliation,
 /// including tombstones. Returns
 /// `(revision_id, parent_revision_id, deleted, committed_actor)` or `None`
@@ -615,6 +757,27 @@ pub async fn create_sql<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let publication = workspace.current_publication().await?;
+    let checkpoint = workspace.resolve_publication(&publication).await?;
+    let forms = workspace
+        .forms_at_checkpoint(&checkpoint)
+        .await?
+        .into_iter()
+        .map(|form| (form.name, form.id))
+        .collect::<BTreeMap<_, _>>();
+    create_sql_with_bindings(op, ws_path, sql_id, payload, &forms, author, integrity).await
+}
+
+pub(crate) async fn create_sql_with_bindings<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    sql_id: &str,
+    payload: &SqlPayload,
+    authorized_forms: &BTreeMap<String, ugoite_domain::id::FormId>,
+    author: &str,
+    integrity: &I,
+) -> Result<Value> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let form_def = ensure_sql_form(op, ws_path).await?;
     let mut normalized_payload = payload.clone();
@@ -623,6 +786,8 @@ pub async fn create_sql<I: IntegrityProvider>(
     validate_sql_metadata(&normalized_payload)?;
     let variables = normalize_sql_variables(Some(&payload.variables))?;
     validate_sql_payload(op, ws_path, &normalized_payload.sql, &variables).await?;
+    let bindings = derive_form_bindings(&normalized_payload.sql, authorized_forms)?;
+    with_server_bindings(&mut normalized_payload, bindings);
 
     let timestamp = entry::now_ts();
     let revision_id = Uuid::new_v4().to_string();
@@ -698,6 +863,43 @@ pub async fn update_sql<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let publication = workspace.current_publication().await?;
+    let checkpoint = workspace.resolve_publication(&publication).await?;
+    let forms = workspace
+        .forms_at_checkpoint(&checkpoint)
+        .await?
+        .into_iter()
+        .map(|form| (form.name, form.id))
+        .collect::<BTreeMap<_, _>>();
+    update_sql_with_bindings(
+        op,
+        ws_path,
+        sql_id,
+        payload,
+        SqlUpdateContext {
+            authorized_forms: &forms,
+            parent_revision_id,
+            author,
+            integrity,
+        },
+    )
+    .await
+}
+
+pub(crate) async fn update_sql_with_bindings<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    sql_id: &str,
+    payload: &SqlPayload,
+    context: SqlUpdateContext<'_, I>,
+) -> Result<Value> {
+    let SqlUpdateContext {
+        authorized_forms,
+        parent_revision_id,
+        author,
+        integrity,
+    } = context;
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     ensure_sql_form(op, ws_path).await?;
     let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
@@ -730,6 +932,8 @@ pub async fn update_sql<I: IntegrityProvider>(
     let variables = normalize_sql_variables(Some(&normalized_payload.variables))?;
     validate_sql_metadata(&normalized_payload)?;
     validate_sql_payload(op, ws_path, &normalized_payload.sql, &variables).await?;
+    let bindings = derive_form_bindings(&normalized_payload.sql, authorized_forms)?;
+    with_server_bindings(&mut normalized_payload, bindings);
     let mut timestamp = entry::now_ts();
     if timestamp <= row.updated_at {
         timestamp = row.updated_at + 0.001;
@@ -842,7 +1046,13 @@ mod name_field_tests {
     use crate::integrity::FakeIntegrityProvider;
 
     #[test]
-    fn saved_sql_metadata_reader_fails_closed_on_unknown_binding_fields() {
+    fn saved_sql_metadata_reader_accepts_versioned_form_bindings() {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct LegacySqlMetadata {
+            search_criteria: Option<Value>,
+            generated_name: Option<Value>,
+        }
         let legacy: SqlMetadata = serde_json::from_value(serde_json::json!({
             "searchCriteria": null,
             "generatedName": "untitled",
@@ -856,7 +1066,107 @@ mod name_field_tests {
             "bindingVersion": 1,
             "formBindings": [],
         });
-        assert!(serde_json::from_value::<SqlMetadata>(bound).is_err());
+        let bound = serde_json::from_value::<SqlMetadata>(bound).expect("supported metadata");
+        assert_eq!(bound.binding_version, Some(1));
+        assert_eq!(bound.form_bindings.unwrap().len(), 0);
+
+        let legacy_reader: LegacySqlMetadata = serde_json::from_value(serde_json::json!({
+            "searchCriteria": null,
+            "generatedName": "untitled",
+        }))
+        .expect("legacy reader can read legacy metadata");
+        assert!(legacy_reader.search_criteria.is_none());
+        assert!(legacy_reader.generated_name.is_some());
+        assert!(
+            serde_json::from_value::<LegacySqlMetadata>(serde_json::json!({
+                "searchCriteria": null,
+                "generatedName": "untitled",
+                "bindingVersion": 1,
+                "formBindings": []
+            }))
+            .is_err(),
+            "old readers fail closed instead of dropping binding metadata"
+        );
+    }
+
+    #[test]
+    fn create_binding_derivation_is_server_side_and_name_scoped() {
+        let form_id = Uuid::parse_str("01900000-0000-7000-8000-000000000001")
+            .expect("uuid")
+            .into();
+        let forms = BTreeMap::from([("Expense".to_string(), form_id)]);
+        let bindings = derive_form_bindings("SELECT * FROM \"Expense\"", &forms).unwrap();
+        assert_eq!(
+            bindings,
+            vec![SqlFormBinding {
+                name: "Expense".into(),
+                form_id: form_id.to_string()
+            }]
+        );
+        assert!(derive_form_bindings("SELECT * FROM \"Missing\"", &forms).is_err());
+        assert!(derive_form_bindings("SELECT * FROM Expense", &forms).is_err());
+    }
+
+    #[test]
+    fn client_binding_metadata_is_replaced_by_server_derived_bindings() {
+        let mut payload = SqlPayload {
+            name: Some("query".into()),
+            kind: SqlKind::UserQuery,
+            metadata: Some(SqlMetadata {
+                search_criteria: None,
+                generated_name: None,
+                binding_version: Some(999),
+                form_bindings: Some(vec![SqlFormBinding {
+                    name: "Secret".into(),
+                    form_id: "client-controlled".into(),
+                }]),
+            }),
+            sql: "SELECT 1".into(),
+            variables: Value::Array(Vec::new()),
+        };
+        let server = vec![SqlFormBinding {
+            name: "Task".into(),
+            form_id: "01900000-0000-7000-8000-000000000001".into(),
+        }];
+        with_server_bindings(&mut payload, server.clone());
+        let metadata = payload.metadata.expect("metadata");
+        assert_eq!(metadata.binding_version, Some(1));
+        assert_eq!(metadata.form_bindings, Some(server));
+    }
+
+    #[test]
+    fn named_query_accepts_binding_echo_but_rejects_generated_metadata() {
+        let mut payload = SqlPayload {
+            name: Some("query".into()),
+            kind: SqlKind::UserQuery,
+            metadata: Some(SqlMetadata {
+                search_criteria: None,
+                generated_name: None,
+                binding_version: Some(999),
+                form_bindings: Some(vec![SqlFormBinding {
+                    name: "Task".into(),
+                    form_id: "client-controlled".into(),
+                }]),
+            }),
+            sql: "SELECT * FROM \"Task\"".into(),
+            variables: Value::Array(Vec::new()),
+        };
+        assert!(validate_sql_metadata(&payload).is_ok());
+
+        let server_bindings = vec![SqlFormBinding {
+            name: "Task".into(),
+            form_id: "01900000-0000-7000-8000-000000000001".into(),
+        }];
+        with_server_bindings(&mut payload, server_bindings.clone());
+        assert_eq!(
+            payload.metadata.as_ref().unwrap().form_bindings.as_ref(),
+            Some(&server_bindings)
+        );
+
+        let mut invalid = payload;
+        let metadata = invalid.metadata.as_mut().expect("metadata");
+        metadata.generated_name = Some(SqlGeneratedName::Untitled);
+        assert!(validate_sql_metadata(&invalid).is_err());
     }
 
     fn row_with_saved_query_name(name: &str, fields: Value) -> entry::EntryRow {
@@ -905,7 +1215,15 @@ mod name_field_tests {
         let payload = SqlPayload {
             name: Some("portable-recovery".into()),
             kind: SqlKind::UserQuery,
-            metadata: None,
+            metadata: Some(SqlMetadata {
+                search_criteria: None,
+                generated_name: None,
+                binding_version: Some(1),
+                form_bindings: Some(vec![SqlFormBinding {
+                    name: "Task".into(),
+                    form_id: "01900000-0000-7000-8000-000000000001".into(),
+                }]),
+            }),
             sql: "SELECT 1 AS recovery_check".into(),
             variables: variables.clone(),
         };
@@ -924,7 +1242,7 @@ mod name_field_tests {
             updated_by: "test".into(),
             deleted_by: None,
             fields: Value::Object(fields),
-            extra_attributes: serde_json::json!({"kind": "user-query", "metadata": null}),
+            extra_attributes: serde_json::json!({"kind": "user-query", "metadata": payload.metadata.clone()}),
             markdown_checksum: integrity.checksum.clone(),
             integrity,
             restored_from: None,
@@ -942,6 +1260,13 @@ mod name_field_tests {
         assert!(verify_revision_integrity(&row, &provider).is_err());
 
         row.fields["sql"] = Value::String(payload.sql.clone());
+        row.extra_attributes["metadata"]["formBindings"][0]["formId"] =
+            Value::String("tampered-form-id-with-a-different-length".into());
+        assert!(
+            verify_revision_integrity(&row, &provider).is_err(),
+            "Form bindings are covered by revision integrity"
+        );
+        row.extra_attributes["metadata"] = serde_json::json!(payload.metadata);
         let state = entry::EntryRow {
             entry_id: row.entry_id.clone(),
             legacy_saved_query_name: String::new(),

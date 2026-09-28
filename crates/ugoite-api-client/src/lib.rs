@@ -2141,6 +2141,33 @@ mod tests {
     }
 
     #[test]
+    fn sql_query_accepts_an_exact_saved_revision_selector_without_sql_text() {
+        let body = json!({
+            "saved_sql": {"id": "saved-1", "revision_id": "revision-2"},
+            "parameters": {},
+            "limit": 100
+        });
+        let request = prepare_request("sql.query", &json!({"space_id": "demo"}), Some(&body))
+            .expect("saved SQL query request");
+        assert_eq!(request.path, "/spaces/demo/sql/query");
+        assert_eq!(
+            request.body.expect("body"),
+            serde_json::to_string(&body).unwrap()
+        );
+    }
+
+    #[test]
+    fn sql_count_accepts_an_exact_saved_revision_selector_without_sql_text() {
+        let body = json!({
+            "saved_sql": {"id": "saved-1", "revision_id": "revision-2"},
+            "parameters": {}
+        });
+        let request = prepare_request("sql.query.count", &json!({"space_id": "demo"}), Some(&body))
+            .expect("saved SQL count request");
+        assert_eq!(request.path, "/spaces/demo/sql/query/count");
+    }
+
+    #[test]
     fn entry_list_encodes_an_optional_offset_for_paging() {
         let request = prepare_request(
             "entry.list",

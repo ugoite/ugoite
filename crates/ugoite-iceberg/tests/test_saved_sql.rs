@@ -113,6 +113,8 @@ async fn advanced_search_sql_is_saved_and_materialized() -> anyhow::Result<()> {
                 field_conditions: vec![],
             }),
             generated_name: None,
+            binding_version: None,
+            form_bindings: None,
         }),
         sql: format!(
             "SELECT * FROM \"{FORM_RELATION}\" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50"
@@ -209,6 +211,8 @@ async fn saved_sql_name_is_a_normal_field() -> anyhow::Result<()> {
                 field_conditions: vec![],
             }),
             generated_name: None,
+            binding_version: None,
+            form_bindings: None,
         }),
         sql: format!("SELECT * FROM \"{FORM_RELATION}\" LIMIT 1"),
         variables: json!([]),
@@ -372,6 +376,8 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
         metadata: Some(SqlMetadata {
             search_criteria: None,
             generated_name: Some(SqlGeneratedName::Untitled),
+            binding_version: None,
+            form_bindings: None,
         }),
         sql: "SELECT 1".to_string(),
         variables: json!([]),
@@ -396,6 +402,8 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
         metadata: Some(SqlMetadata {
             search_criteria: None,
             generated_name: None,
+            binding_version: None,
+            form_bindings: None,
         }),
         sql: "SELECT 1".to_string(),
         variables: json!([]),
@@ -426,6 +434,8 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
                 field_conditions: vec![],
             }),
             generated_name: Some(SqlGeneratedName::Untitled),
+            binding_version: None,
+            form_bindings: None,
         }),
         sql: "SELECT 1".to_string(),
         variables: json!([]),

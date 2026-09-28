@@ -6,10 +6,11 @@ use common::LegacyServiceEntryExt;
 
 use anyhow::Result;
 use chrono::Utc;
-use serde_json::json;
+use serde_json::{json, Map};
 use std::collections::BTreeMap;
 use ugoite_core::entry_query::{EntryPageRequest, EntryProjection, EntryQuery, EntryQueryScope};
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::sql_query::{SavedSqlRevisionRef, SqlQueryCountRequest, SqlQueryRequest};
 use ugoite_domain::identity::{
     AccessPolicy, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
@@ -552,14 +553,34 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
         .create_space_for_principal("saved-sql-acl", owner, "Owner")
         .await?
         .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &json!({
+                "name": "Note",
+                "fields": {"Body": {"type": "string"}}
+            }),
+        )
+        .await?;
+    service
+        .create_entry(
+            &space_id,
+            "saved-sql-acl-entry",
+            "---\nform: Note\n---\n# Note\n\n## Body\nHello",
+            "owner",
+        )
+        .await?;
+    let form: ugoite_domain::id::FormId =
+        serde_json::from_value(service.get_form(&space_id, "Note").await?["id"].clone())?;
+    let relation = ugoite_domain::form::sql_relation_name(form);
     let payload = |name: &str| SqlPayload {
         name: Some(name.to_string()),
         kind: SqlKind::UserQuery,
         metadata: None,
-        sql: "SELECT 1".to_string(),
+        sql: format!("SELECT \"_ugoite_id\" FROM \"{relation}\""),
         variables: json!([]),
     };
-    service
+    let visible = service
         .create_saved_sql(&space_id, Some("visible"), &payload("Visible"), "owner")
         .await?;
     service
@@ -602,6 +623,43 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
         )
         .await?;
 
+    let visible_source = SavedSqlRevisionRef {
+        id: "visible".to_string(),
+        revision_id: visible["revision_id"]
+            .as_str()
+            .expect("saved SQL revision id")
+            .to_string(),
+    };
+    let visible_page = service
+        .query_sql_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            SqlQueryRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                limit: 10,
+                continuation: None,
+                saved_sql: Some(visible_source.clone()),
+            },
+        )
+        .await?;
+    assert_eq!(visible_page.rows.len(), 1);
+    assert_eq!(
+        service
+            .count_sql_authorized_for_principals(
+                &space_id,
+                &[viewer],
+                SqlQueryCountRequest {
+                    sql: String::new(),
+                    parameters: Map::new(),
+                    parameter_types: BTreeMap::new(),
+                    saved_sql: Some(visible_source.clone()),
+                },
+            )
+            .await?,
+        1
+    );
     let scope = service
         .authorized_saved_sql_entry_scope_for_principals(&space_id, &[viewer])
         .await?;
@@ -615,6 +673,52 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
         .await?;
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0]["id"], "visible");
+
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::SavedSql,
+                id: "visible".to_string(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+    assert!(service
+        .query_sql_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            SqlQueryRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                limit: 10,
+                continuation: None,
+                saved_sql: Some(visible_source.clone()),
+            },
+        )
+        .await
+        .is_err());
+    assert!(service
+        .count_sql_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            SqlQueryCountRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                saved_sql: Some(visible_source),
+            },
+        )
+        .await
+        .is_err());
+
     Ok(())
 }
 

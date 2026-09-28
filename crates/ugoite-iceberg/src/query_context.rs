@@ -1659,6 +1659,25 @@ fn is_legacy_relation_name(name: &str) -> bool {
 }
 
 fn resolve_form_name_references(sql: &str, aliases: &BTreeMap<String, String>) -> Result<String> {
+    resolve_form_name_references_with_used(sql, aliases).map(|(sql, _)| sql)
+}
+
+pub(crate) fn resolve_form_name_references_with_used(
+    sql: &str,
+    aliases: &BTreeMap<String, String>,
+) -> Result<(String, BTreeSet<String>)> {
+    let (sql, used, _) = resolve_form_name_references_with_references(sql, aliases)?;
+    Ok((sql, used))
+}
+
+pub(crate) fn collect_quoted_form_name_references(sql: &str) -> Result<BTreeSet<String>> {
+    resolve_form_name_references_with_references(sql, &BTreeMap::new()).map(|(_, _, refs)| refs)
+}
+
+fn resolve_form_name_references_with_references(
+    sql: &str,
+    aliases: &BTreeMap<String, String>,
+) -> Result<(String, BTreeSet<String>, BTreeSet<String>)> {
     use datafusion::sql::parser::DFParser;
     use datafusion::sql::sqlparser::ast::{
         Ident, ObjectName, ObjectNamePart, VisitMut, VisitorMut,
@@ -1670,6 +1689,8 @@ fn resolve_form_name_references(sql: &str, aliases: &BTreeMap<String, String>) -
         cte_scopes: Vec<BTreeSet<String>>,
         error: Option<anyhow::Error>,
         changed: bool,
+        used: BTreeSet<String>,
+        references: BTreeSet<String>,
     }
 
     impl VisitorMut for AliasReferenceResolver<'_> {
@@ -1725,6 +1746,12 @@ fn resolve_form_name_references(sql: &str, aliases: &BTreeMap<String, String>) -
             {
                 return ControlFlow::Continue(());
             }
+            if relation.0.len() == 1
+                && identifier.quote_style == Some('"')
+                && !is_legacy_relation_name(name)
+            {
+                self.references.insert(name.to_string());
+            }
             let case_match = self
                 .aliases
                 .keys()
@@ -1742,6 +1769,7 @@ fn resolve_form_name_references(sql: &str, aliases: &BTreeMap<String, String>) -
                 return ControlFlow::Break(());
             }
             let resolved = self.aliases.get(name).expect("checked alias above");
+            self.used.insert(name.to_string());
             relation.0 = vec![ObjectNamePart::Identifier(Ident::new(resolved))];
             self.changed = true;
             ControlFlow::Continue(())
@@ -1754,6 +1782,8 @@ fn resolve_form_name_references(sql: &str, aliases: &BTreeMap<String, String>) -
         cte_scopes: Vec::new(),
         error: None,
         changed: false,
+        used: BTreeSet::new(),
+        references: BTreeSet::new(),
     };
     for statement in &mut statements {
         let datafusion::sql::parser::Statement::Statement(statement) = statement else {
@@ -1767,13 +1797,17 @@ fn resolve_form_name_references(sql: &str, aliases: &BTreeMap<String, String>) -
         return Err(AuthorizedQueryError::invalid_query(error).into());
     }
     if !resolver.changed {
-        return Ok(sql.to_string());
+        return Ok((sql.to_string(), resolver.used, resolver.references));
     }
-    Ok(statements
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(";\n"))
+    Ok((
+        statements
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(";\n"),
+        resolver.used,
+        resolver.references,
+    ))
 }
 
 fn validate_logical_plan(

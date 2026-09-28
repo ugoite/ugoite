@@ -29,6 +29,7 @@ type HmacSha256 = Hmac<Sha256>;
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SqlQueryRequest {
+    #[serde(default)]
     pub sql: String,
     #[serde(default)]
     pub parameters: Map<String, Value>,
@@ -37,11 +38,24 @@ pub struct SqlQueryRequest {
     pub limit: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continuation: Option<String>,
+    /// Selects an exact immutable Saved SQL revision while retaining the
+    /// stateless page execution contract. `sql` must match that revision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saved_sql: Option<SavedSqlRevisionRef>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SavedSqlRevisionRef {
+    pub id: String,
+    pub revision_id: String,
 }
 
 impl SqlQueryRequest {
     pub fn validate(&self) -> Result<(), SqlQueryError> {
-        if self.sql.trim().is_empty() || self.sql.len() > MAX_SQL_QUERY_BYTES {
+        if (self.saved_sql.is_none() && self.sql.trim().is_empty())
+            || self.sql.len() > MAX_SQL_QUERY_BYTES
+        {
             return Err(SqlQueryError::Invalid(
                 "SQL query must be non-empty and within the configured byte limit".to_string(),
             ));
@@ -76,11 +90,14 @@ impl SqlQueryRequest {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SqlQueryCountRequest {
+    #[serde(default)]
     pub sql: String,
     #[serde(default)]
     pub parameters: Map<String, Value>,
     #[serde(default)]
     pub parameter_types: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saved_sql: Option<SavedSqlRevisionRef>,
 }
 
 impl SqlQueryCountRequest {
@@ -91,6 +108,7 @@ impl SqlQueryCountRequest {
             parameter_types: self.parameter_types.clone(),
             limit: 1,
             continuation: None,
+            saved_sql: self.saved_sql.clone(),
         }
         .validate()
     }
@@ -116,6 +134,10 @@ pub struct SqlContinuation {
     pub parameter_fingerprint: String,
     pub authorization_fingerprint: String,
     pub offset: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saved_sql: Option<SavedSqlRevisionRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_fingerprint: Option<String>,
 }
 
 impl SqlContinuation {
@@ -146,6 +168,8 @@ impl SqlContinuation {
             parameter_fingerprint,
             authorization_fingerprint,
             offset,
+            saved_sql: None,
+            binding_fingerprint: None,
         })
     }
 

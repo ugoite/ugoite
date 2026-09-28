@@ -21,9 +21,10 @@ the same request contract in local and remote mode.
 ## Before you begin
 
 Create an Entry in [Create and Edit Entries](entries.mdx) and confirm the Form
-name with `ugoite form get`. Each Form is exposed as the backend-provided
-`form_<FormId>` relation (the Form UUID without dashes, as returned in the
-`id` field of `ugoite form get`) with `field_<FieldId>` columns plus
+name with `ugoite form get`. SQL can refer to a Form by its exact, quoted name,
+such as `"Task"`, or keep using the stable `form_<FormId>` relation (the Form
+UUID without dashes, as returned in the `id` field of `ugoite form get`). Both
+forms expose `field_<FieldId>` columns plus
 `_ugoite_id`, `_ugoite_created_at`, and `_ugoite_updated_at` columns. Entry
 identity is `_ugoite_id`; human-readable labels are ordinary Form-defined
 fields.
@@ -43,7 +44,7 @@ read-only; saving the definition is the explicit Knowledge operation.
 # Durable SQL definition
 ugoite sql saved create \
   --name planning \
-  --sql 'SELECT field_<FieldId> FROM form_<FormId> ORDER BY _ugoite_id'
+  --sql 'SELECT field_<FieldId> FROM "Task" ORDER BY _ugoite_id'
 
 # Or leave the name unset to create an Untitled Saved SQL.
 ugoite sql saved create \
@@ -58,7 +59,7 @@ ugoite sql saved update <SQL_ID> --untitled
 
 # Stateless page query
 ugoite sql query \
-  'SELECT field_<FieldId> FROM form_<FormId> ORDER BY _ugoite_id' \
+  'SELECT field_<FieldId> FROM "Task" ORDER BY _ugoite_id' \
   --limit 100
 
 # SQL from a file, with repeatable typed parameters
@@ -148,7 +149,10 @@ The SQL must use an explicit `ORDER BY` when more than one page is needed. For
 repeatable ordering, include a unique tie-breaker such as
 `ORDER BY updated_at, _ugoite_id`. A fixed publication does not define the
 relative order of rows tied on every sort key. Export accepts SQL text or a
-SQL file; a Saved SQL ID is not an executable input.
+SQL file. The REST page and count operations can also select a Saved SQL ID
+and revision with `saved_sql: { "id": "...", "revision_id": "..." }`; the
+stored SQL is the execution source and the same binding remains fixed across
+pagination.
 
 With `--output PATH`, rows are written to a temporary file beside the target,
 then synced and published only after the final page and flush succeed. The
@@ -185,7 +189,7 @@ materialize a result relation, or create persistent execution state.
 
 ## If it fails
 
-- SQL rejected: check the `form_<FormId>` relation, `field_<FieldId>` columns,
+- SQL rejected: check the quoted Form name (or `form_<FormId>` relation), `field_<FieldId>` columns,
   and statement kind; only authorized read-only selects run.
 - Parameter rejected: check `NAME=VALUE` syntax and add `--param-type` for
   null or an explicitly typed scalar.

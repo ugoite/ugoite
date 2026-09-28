@@ -163,6 +163,16 @@ reads a fixed `PublicationRef`, returns bounded rows or a count, and keeps any
 continuation only with the client. Query execution does not create a session,
 result relation, or metadata file in the Space.
 
+New Saved SQL revisions retain the authored SQL text and persist a versioned
+name-to-Form-ID binding set in integrity-protected revision metadata. The
+service derives these bindings from the caller's query-authorized Forms; they
+are not accepted from the client. Execution may select an exact Saved SQL ID
+and revision through the stateless query operation. It rechecks Saved SQL and
+Form authorization on every request, including continuation requests, and
+never substitutes a same-name Form when a bound ID is unavailable. Older
+revisions without bindings remain readable; quoted Form-name execution
+requires an explicitly saved revision with bindings.
+
 ## Assets and integrity
 
 Asset bytes have a low-level lifecycle independent of Form definitions. Upload

@@ -2688,6 +2688,20 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     ))
 }
 
+/// Resolves quoted Form-name table references for Saved SQL using bindings
+/// already captured in a Saved SQL revision. The resulting SQL still passes
+/// through the ordinary authorized query planner.
+pub(crate) fn resolve_saved_sql_bindings(
+    sql: &str,
+    bindings: &BTreeMap<String, String>,
+) -> Result<(String, BTreeSet<String>)> {
+    crate::query_context::resolve_form_name_references_with_used(sql, bindings)
+}
+
+pub(crate) fn quoted_form_name_references(sql: &str) -> Result<BTreeSet<String>> {
+    crate::query_context::collect_quoted_form_name_references(sql)
+}
+
 /// Executes the explicit count operation against the same kind of
 /// checkpoint-pinned authorized context used by stateless pages.
 pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint_stateless(
