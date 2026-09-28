@@ -4,12 +4,23 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT_DIR="${UGOITE_SQL_EXPORT_MEASURE_OUTPUT:-$ROOT_DIR/target/sql-export-measurement}"
 PROFILE_DIR="${UGOITE_CP1_PROFILE_DIR:-$ROOT_DIR/target/cp1-profiling}"
+EXPORT_FIXTURE_ROW="$(deno run --quiet "$ROOT_DIR/tools/cp1_fixture_spec.ts" export)"
+if [[ "$EXPORT_FIXTURE_ROW" == *$'\n'* ]]; then
+  echo "CP1 export fixture specification must contain exactly one fixture" >&2
+  exit 1
+fi
+IFS=$'\t' read -r FIXTURE_SLUG FIXTURE_SCENARIO FIXTURE_SEED FIXTURE_ENTRY_COUNT FIXTURE_OWNER_DISPLAY_NAME <<<"$EXPORT_FIXTURE_ROW"
+if [[ -z "$FIXTURE_SLUG" || -z "$FIXTURE_SCENARIO" ]] \
+  || ! [[ "$FIXTURE_SEED" =~ ^[0-9]+$ && "$FIXTURE_ENTRY_COUNT" =~ ^[0-9]+$ ]]; then
+  echo "Invalid CP1 export fixture specification" >&2
+  exit 1
+fi
 PROFILE_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 PROFILE_STARTED_MS="$(deno eval --quiet 'console.log(Date.now())')"
 mkdir -p "$PROFILE_DIR"
 PROFILE_REPORT="$PROFILE_DIR/export-${PROFILE_RUN_ID}.json"
-SEED_PROFILE="$PROFILE_DIR/sql-export-measure-${PROFILE_RUN_ID}.json"
 CLI_BUILD_RESOURCE="$PROFILE_DIR/export-cli-build-${PROFILE_RUN_ID}.time.txt"
+SEED_PROFILE="$PROFILE_DIR/${FIXTURE_SLUG}-${PROFILE_RUN_ID}.json"
 CLI_PROFILE_TIMED_STEP_ARGS=()
 mkdir -p "$OUTPUT_DIR"
 if [[ -n "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
@@ -41,8 +52,7 @@ cleanup() {
     --started-ms "$PROFILE_STARTED_MS" \
     --exit-code "$exit_code" \
     --evidence-report "$OUTPUT_DIR/measurement.json" \
-    --seed sql-export-measure 3140001 10000 - \
-      "$SEED_PROFILE" "${SEED_PROFILE%.json}.time.txt" \
+    --seed "$FIXTURE_SLUG" "$SEED_PROFILE" "${SEED_PROFILE%.json}.time.txt" \
     --export-run 100 "$OUTPUT_DIR/page-100.ndjson" \
       "$OUTPUT_DIR/page-100.summary.json" "$OUTPUT_DIR/page-100.time.txt" \
     --export-run 1000 "$OUTPUT_DIR/page-1000.ndjson" \
@@ -115,35 +125,40 @@ else
 fi
 
 if [[ "$CLI_MODE" == "local-build" ]]; then
-  echo "Building CLI and preparing fixed 10,000-entry dataset..." >&2
+  echo "Building CLI and preparing the fixed ${FIXTURE_ENTRY_COUNT}-entry dataset..." >&2
   bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
     "$CLI_BUILD_RESOURCE" cargo build --locked -p ugoite-cli
 else
-  echo "Using verified CLI artifact and preparing fixed 10,000-entry dataset..." >&2
+  echo "Using verified CLI artifact and preparing the fixed ${FIXTURE_ENTRY_COUNT}-entry dataset..." >&2
 fi
-bash "$ROOT_DIR/scripts/dev-seed.sh" \
-  --root "$DATA_ROOT" \
-  --space-id sql-export-measure \
-  --scenario renewable-ops \
-  --entry-count 10000 \
-  --seed 3140001 \
+seed_args=(
+  --root "$DATA_ROOT"
+  --space-id "$FIXTURE_SLUG"
+  --scenario "$FIXTURE_SCENARIO"
+  --entry-count "$FIXTURE_ENTRY_COUNT"
+  --seed "$FIXTURE_SEED"
+)
+if [[ -n "$FIXTURE_OWNER_DISPLAY_NAME" ]]; then
+  seed_args+=(--owner "$FIXTURE_OWNER_DISPLAY_NAME")
+fi
+bash "$ROOT_DIR/scripts/dev-seed.sh" "${seed_args[@]}" \
   --profile-output "$SEED_PROFILE"
 
 SPACE_UID="$(deno eval --quiet '
-  const [spacesRoot] = Deno.args;
+  const [spacesRoot, expectedSlug] = Deno.args;
   for await (const entry of Deno.readDir(spacesRoot)) {
     if (!entry.isDirectory) continue;
     try {
       const path = `${spacesRoot}/${entry.name}`;
       const meta = JSON.parse(await Deno.readTextFile(`${path}/meta.json`));
-      if (meta.slug === "sql-export-measure" && meta.space_uid === entry.name) {
+      if (meta.slug === expectedSlug && meta.space_uid === entry.name) {
         console.log(meta.space_uid);
         Deno.exit(0);
       }
     } catch { /* skip incomplete seed artifacts */ }
   }
   Deno.exit(1);
-' -- "$SPACE_PATH")"
+' -- "$SPACE_PATH" "$FIXTURE_SLUG")"
 if [[ -z "$SPACE_UID" ]]; then
   echo "Seed command did not create a UUID-matched Space below $SPACE_PATH" >&2
   exit 1
@@ -180,23 +195,25 @@ for PAGE_SIZE in 100 1000; do
   echo "Exporting with page size $PAGE_SIZE..." >&2
   /usr/bin/time "${TIME_ARGS[@]}" -o "$TIME_LOG" \
     "$BIN" --config "$CONFIG" sql export "$SQL_FILE" \
-      --max-rows 10000 --page-size "$PAGE_SIZE" --output "$RESULT" >"$SUMMARY"
+      --max-rows "$FIXTURE_ENTRY_COUNT" --page-size "$PAGE_SIZE" --output "$RESULT" >"$SUMMARY"
   ROWS="$(wc -l <"$RESULT" | tr -d '[:space:]')"
-  EXPECTED_PAGES=$(( (10000 + PAGE_SIZE - 1) / PAGE_SIZE ))
+  EXPECTED_PAGES=$(( (FIXTURE_ENTRY_COUNT + PAGE_SIZE - 1) / PAGE_SIZE ))
   deno eval --quiet '
-    const [summaryPath, rows, expectedPages] = Deno.args;
+    const [summaryPath, rows, expectedPages, expectedRowsText] = Deno.args;
+    const expectedRows = Number(expectedRowsText);
     const summary = JSON.parse(await Deno.readTextFile(summaryPath));
-    if (Number(rows) !== 10000) throw new Error(`expected 10000 rows, got ${rows}`);
-    if (summary.rows_exported !== 10000) throw new Error(`summary row count: ${summary.rows_exported}`);
+    if (Number(rows) !== expectedRows) throw new Error("expected " + expectedRows + " rows, got " + rows);
+    if (summary.rows_exported !== expectedRows) throw new Error("summary row count: " + summary.rows_exported);
     if (summary.pages_fetched !== Number(expectedPages)) {
       throw new Error(`expected ${expectedPages} pages, got ${summary.pages_fetched}`);
     }
-  ' -- "$SUMMARY" "$ROWS" "$EXPECTED_PAGES"
+  ' -- "$SUMMARY" "$ROWS" "$EXPECTED_PAGES" "$FIXTURE_ENTRY_COUNT"
 done
 
 # Compare content independent of the order in which the engine returns equal keys.
 deno eval --quiet '
-  const paths = Deno.args;
+  const [smallPath, largePath, expectedRowsText] = Deno.args;
+  const expectedRows = Number(expectedRowsText);
   const canonical = async (path: string) => {
     const rows = (await Deno.readTextFile(path)).trimEnd().split("\n").filter(Boolean);
     const normalized = rows.map((row) => JSON.stringify(JSON.parse(row))).sort();
@@ -204,18 +221,18 @@ deno eval --quiet '
     const digest = await crypto.subtle.digest("SHA-256", bytes);
     return { rows: rows.length, sha256: [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("") };
   };
-  const small = await canonical(paths[0]);
-  const large = await canonical(paths[1]);
-  if (small.rows !== 10000 || large.rows !== 10000 || small.sha256 !== large.sha256) {
-    throw new Error(`page-size exports differ: ${JSON.stringify({ small, large })}`);
+  const small = await canonical(smallPath);
+  const large = await canonical(largePath);
+  if (small.rows !== expectedRows || large.rows !== expectedRows || small.sha256 !== large.sha256) {
+    throw new Error("page-size exports differ: " + JSON.stringify({ small, large }));
   }
   console.log(JSON.stringify({ rows: small.rows, canonical_sha256: small.sha256 }));
-' -- "$OUTPUT_DIR/page-100.ndjson" "$OUTPUT_DIR/page-1000.ndjson" >"$OUTPUT_DIR/equivalence.json"
+' -- "$OUTPUT_DIR/page-100.ndjson" "$OUTPUT_DIR/page-1000.ndjson" "$FIXTURE_ENTRY_COUNT" >"$OUTPUT_DIR/equivalence.json"
 
 # A byte-bound failure must be explicit and must not publish a partial file.
 BYTE_LIMIT_OUTPUT="$OUTPUT_DIR/byte-limited.ndjson"
 if "$BIN" --config "$CONFIG" sql export "$SQL_FILE" \
-  --max-rows 10000 --max-bytes 1024 --page-size 1000 \
+  --max-rows "$FIXTURE_ENTRY_COUNT" --max-bytes 1024 --page-size 1000 \
   --output "$BYTE_LIMIT_OUTPUT" \
   2>"$OUTPUT_DIR/byte-limit.stderr"; then
   echo "Expected the fixed fixture to exceed the 1,024-byte export bound" >&2
@@ -238,23 +255,26 @@ if find "$OUTPUT_DIR" -maxdepth 1 -name '.ugoite-export-*' -print -quit | grep -
 fi
 
 deno eval --quiet '
-  const [output, sourceSha, spaceUid, dataRoot] = Deno.args;
+  const [output, sourceSha, spaceUid, dataRoot, fixtureSlug, scenario, seedText, entryCountText] = Deno.args;
+  const seed = Number(seedText);
+  const entryCount = Number(entryCountText);
   const readSummary = async (size: number) => JSON.parse(await Deno.readTextFile(`${output}/page-${size}.summary.json`));
   const equivalence = JSON.parse(await Deno.readTextFile(`${output}/equivalence.json`));
   const report = {
     source_sha: sourceSha,
     generated_at: new Date().toISOString(),
     fixture: {
-      seed: 3140001,
-      scenario: "renewable-ops",
-      entry_count: 10000,
+      slug: fixtureSlug,
+      seed,
+      scenario,
+      entry_count: entryCount,
       space_uid: spaceUid,
       space_root: dataRoot,
       forms: "all forms listed by `ugoite form list`",
     },
     query_file: "query.sql",
     query_semantics: "SELECT _ugoite_id from every seeded Form, UNION ALL, ordered by _ugoite_id",
-    max_rows: 10000,
+    max_rows: entryCount,
     byte_limit_failure: {
       max_bytes: 1024,
       expected_error: "serialized NDJSON byte bound exceeded",
@@ -273,7 +293,7 @@ deno eval --quiet '
     ],
   };
   await Deno.writeTextFile(`${output}/measurement.json`, JSON.stringify(report, null, 2) + "\n");
-' -- "$OUTPUT_DIR" "$SOURCE_SHA" "$SPACE_UID" "$DATA_ROOT"
+' -- "$OUTPUT_DIR" "$SOURCE_SHA" "$SPACE_UID" "$DATA_ROOT" "$FIXTURE_SLUG" "$FIXTURE_SCENARIO" "$FIXTURE_SEED" "$FIXTURE_ENTRY_COUNT"
 
 echo "Measurement completed: $OUTPUT_DIR/measurement.json" >&2
 echo "Raw outputs and platform time logs are retained in: $OUTPUT_DIR" >&2

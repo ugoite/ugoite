@@ -4,8 +4,10 @@ import {
   isCompleteSampleProfile,
   parseTimeResourceFile,
   reconcileWallDurations,
+  sampleProfileMatchesFixture,
   summarizeMutationBatches,
 } from "./cp1_profile.ts";
+import { cp1FixtureBySlug } from "./cp1_fixture_spec.ts";
 
 Deno.test("CP1 profiling parses GNU time CPU and RSS without inventing missing values", async () => {
   const directory = await Deno.makeTempDir();
@@ -83,26 +85,63 @@ Deno.test("CP1 profiling reports mutation batch p50 and p95 and keeps missing da
   assertEquals(isCompleteSampleProfile({ total_wall_micros: 0 }), false);
 });
 
+Deno.test("CP1 seed profile identity is checked against the shared fixture spec", () => {
+  const fixture = cp1FixtureBySlug("query-space-a");
+  const profile = {
+    schema_version: 1,
+    space_slug: fixture.slug,
+    scenario: fixture.scenario,
+    seed: fixture.seed,
+    entry_count: fixture.entryCount,
+    total_wall_micros: 50,
+    space_creation_micros: 1,
+    owner_initialization_micros: 1,
+    form_upsert_micros: 1,
+    markdown_render_micros: 1,
+    markdown_render_count: 1,
+    draft_conversion_micros: 1,
+    draft_conversion_count: 1,
+    mutation_batch_micros: [1],
+    mutation_batch_entry_counts: [1],
+  };
+  assertEquals(sampleProfileMatchesFixture(profile, fixture), true);
+  assertEquals(
+    sampleProfileMatchesFixture(
+      { ...profile, seed: fixture.seed + 1 },
+      fixture,
+    ),
+    false,
+  );
+  assertEquals(
+    sampleProfileMatchesFixture(
+      { ...profile, space_slug: "sql-export-measure" },
+      fixture,
+    ),
+    false,
+  );
+});
+
 Deno.test("successful CP1 profile aggregation keeps fixture, resource, and source evidence", async () => {
   const directory = await Deno.makeTempDir();
   try {
+    const fixture = cp1FixtureBySlug("query-space-a");
     const root = `${directory}/fixture-root`;
     const spaceUid = "019f0000-0000-7000-8000-000000000001";
     const spacePath = `${root}/spaces/${spaceUid}`;
     await Deno.mkdir(spacePath, { recursive: true });
     await Deno.writeTextFile(
       `${spacePath}/meta.json`,
-      JSON.stringify({ slug: "query-space-a", space_uid: spaceUid }),
+      JSON.stringify({ slug: fixture.slug, space_uid: spaceUid }),
     );
     const seedProfile = `${directory}/seed.json`;
     await Deno.writeTextFile(
       seedProfile,
       JSON.stringify({
         schema_version: 1,
-        space_slug: "query-space-a",
-        scenario: "renewable-ops",
-        seed: 3134001,
-        entry_count: 6000,
+        space_slug: fixture.slug,
+        scenario: fixture.scenario,
+        seed: fixture.seed,
+        entry_count: fixture.entryCount,
         form_count: 5,
         space_creation_micros: 2,
         owner_initialization_micros: 3,
@@ -144,10 +183,7 @@ Deno.test("successful CP1 profile aggregation keeps fixture, resource, and sourc
         "--exit-code",
         "0",
         "--seed",
-        "query-space-a",
-        "3134001",
-        "6000",
-        "Query Measurement Owner",
+        fixture.slug,
         seedProfile,
         seedResources,
         "--timed-step",
@@ -168,10 +204,17 @@ Deno.test("successful CP1 profile aggregation keeps fixture, resource, and sourc
     assertEquals(report.result, { exit_code: 0, successful: true });
     assertEquals(report.seed_process_invocations, 1);
     assertEquals(report.fixtures[0].profile_complete, true);
+    assertEquals(report.fixtures[0].profile_matches_fixture, true);
+    assertEquals(report.fixtures[0].expected, {
+      slug: fixture.slug,
+      seed: fixture.seed,
+      entry_count: fixture.entryCount,
+      owner_display_name: fixture.ownerDisplayName,
+    });
     assertEquals(report.fixtures[0].filesystem, {
       file_count: 1,
       logical_bytes: new TextEncoder().encode(
-        JSON.stringify({ slug: "query-space-a", space_uid: spaceUid }),
+        JSON.stringify({ slug: fixture.slug, space_uid: spaceUid }),
       ).length,
     });
     assertEquals(report.fixtures[0].mutation_batch_summary, {

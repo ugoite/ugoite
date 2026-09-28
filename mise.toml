@@ -351,9 +351,15 @@ run = [{ task = "test:docsite:e2e:navigation" }]
 [tasks."ci:lane:cp1-acceptance"]
 description = "Run fixed 10k/two-Space query lifecycle and bounded SQL export acceptance"
 run = [
-  { task = "measure:query-surfaces", env = { E2E_ENFORCE_CI_GATES = "true" } },
-  { task = "measure:sql-export" },
+  { task = "ci:cp1:build-seeder" },
+  { task = "measure:query-surfaces", env = { CARGO_TARGET_DIR = "target/rust", E2E_ENFORCE_CI_GATES = "true", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask" } },
+  { task = "measure:sql-export", env = { CARGO_TARGET_DIR = "target/rust", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask" } },
 ]
+
+[tasks."ci:cp1:build-seeder"]
+description = "Build the CP1 fixture seeder once and record its process resources"
+env = { CARGO_TARGET_DIR = "target/rust" }
+run = "bash scripts/measure-process-resources.sh target/cp1-profiling/xtask-build.time.txt bash scripts/build-cp1-seeder.sh"
 
 [tasks.test]
 depends = ["build:wasm:debug"]

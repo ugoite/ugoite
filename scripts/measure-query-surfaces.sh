@@ -8,11 +8,35 @@ PROFILE_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 PROFILE_STARTED_MS="$(deno eval --quiet 'console.log(Date.now())')"
 mkdir -p "$PROFILE_DIR"
 PROFILE_REPORT="$PROFILE_DIR/query-${PROFILE_RUN_ID}.json"
-SEED_A_PROFILE="$PROFILE_DIR/query-space-a-${PROFILE_RUN_ID}.json"
-SEED_B_PROFILE="$PROFILE_DIR/query-space-b-${PROFILE_RUN_ID}.json"
 WASM_BUILD_RESOURCE="$PROFILE_DIR/query-wasm-build-${PROFILE_RUN_ID}.time.txt"
 SERVER_BUILD_RESOURCE="$PROFILE_DIR/query-server-build-${PROFILE_RUN_ID}.time.txt"
 QUERY_E2E_RESOURCE="$PROFILE_DIR/query-playwright-${PROFILE_RUN_ID}.time.txt"
+QUERY_FIXTURE_ROWS="$(deno run --quiet "$ROOT_DIR/tools/cp1_fixture_spec.ts" query)"
+declare -a QUERY_FIXTURE_SLUGS=()
+declare -a QUERY_FIXTURE_SCENARIOS=()
+declare -a QUERY_FIXTURE_SEEDS=()
+declare -a QUERY_FIXTURE_COUNTS=()
+declare -a QUERY_FIXTURE_OWNERS=()
+declare -a QUERY_PROFILE_ARGS=()
+while IFS=$'\t' read -r fixture_slug scenario seed entry_count owner_display_name; do
+  [[ -n "$fixture_slug" ]] || continue
+  if ! [[ "$seed" =~ ^[0-9]+$ && "$entry_count" =~ ^[0-9]+$ ]]; then
+    echo "Invalid numeric values in CP1 query fixture spec for $fixture_slug" >&2
+    exit 1
+  fi
+  fixture_profile="$PROFILE_DIR/${fixture_slug}-${PROFILE_RUN_ID}.json"
+  fixture_resource="${fixture_profile%.json}.time.txt"
+  QUERY_FIXTURE_SLUGS+=("$fixture_slug")
+  QUERY_FIXTURE_SCENARIOS+=("$scenario")
+  QUERY_FIXTURE_SEEDS+=("$seed")
+  QUERY_FIXTURE_COUNTS+=("$entry_count")
+  QUERY_FIXTURE_OWNERS+=("$owner_display_name")
+  QUERY_PROFILE_ARGS+=(--seed "$fixture_slug" "$fixture_profile" "$fixture_resource")
+done <<<"$QUERY_FIXTURE_ROWS"
+if [[ "${#QUERY_FIXTURE_SLUGS[@]}" -eq 0 ]]; then
+  echo "CP1 query fixture specification is empty" >&2
+  exit 1
+fi
 KEEP_ROOT=false
 QUERY_MEASURE_RUNNER="${UGOITE_QUERY_MEASURE_RUNNER:-host}"
 QUERY_E2E_PROFILE_STEP="query-playwright"
@@ -51,10 +75,7 @@ cleanup() {
     --started-ms "$PROFILE_STARTED_MS" \
     --exit-code "$exit_code" \
     --evidence-report "$OUTPUT_FILE" \
-    --seed query-space-a 3134001 6000 "Query Measurement Owner" \
-      "$SEED_A_PROFILE" "${SEED_A_PROFILE%.json}.time.txt" \
-    --seed query-space-b 3134002 4000 "Query Measurement Owner" \
-      "$SEED_B_PROFILE" "${SEED_B_PROFILE%.json}.time.txt" \
+    "${QUERY_PROFILE_ARGS[@]}" \
     --timed-step wasm-build "$WASM_BUILD_RESOURCE" \
     --timed-step server-build "$SERVER_BUILD_RESOURCE" \
     --timed-step "$QUERY_E2E_PROFILE_STEP" "$QUERY_E2E_RESOURCE"
@@ -74,22 +95,23 @@ trap 'exit 143' TERM
 trap cleanup EXIT
 
 echo "Preparing fixed query measurement dataset..." >&2
-bash "$ROOT_DIR/scripts/dev-seed.sh" \
-  --root "$MEASURE_ROOT" \
-  --space-id query-space-a \
-  --owner "Query Measurement Owner" \
-  --scenario renewable-ops \
-  --entry-count 6000 \
-  --seed 3134001 \
-  --profile-output "$SEED_A_PROFILE"
-bash "$ROOT_DIR/scripts/dev-seed.sh" \
-  --root "$MEASURE_ROOT" \
-  --space-id query-space-b \
-  --owner "Query Measurement Owner" \
-  --scenario renewable-ops \
-  --entry-count 4000 \
-  --seed 3134002 \
-  --profile-output "$SEED_B_PROFILE"
+for ((index = 0; index < ${#QUERY_FIXTURE_SLUGS[@]}; index++)); do
+  fixture_slug="${QUERY_FIXTURE_SLUGS[$index]}"
+  fixture_profile="$PROFILE_DIR/${fixture_slug}-${PROFILE_RUN_ID}.json"
+  seed_args=(
+    --root "$MEASURE_ROOT"
+    --space-id "$fixture_slug"
+    --scenario "${QUERY_FIXTURE_SCENARIOS[$index]}"
+    --entry-count "${QUERY_FIXTURE_COUNTS[$index]}"
+    --seed "${QUERY_FIXTURE_SEEDS[$index]}"
+  )
+  if [[ -n "${QUERY_FIXTURE_OWNERS[$index]}" ]]; then
+    seed_args+=(--owner "${QUERY_FIXTURE_OWNERS[$index]}")
+  fi
+  bash "$ROOT_DIR/scripts/dev-seed.sh" \
+    "${seed_args[@]}" \
+    --profile-output "$fixture_profile"
+done
 
 echo "Running the server-backed browser measurement..." >&2
 if [[ "$QUERY_MEASURE_RUNNER" == "host" ]]; then

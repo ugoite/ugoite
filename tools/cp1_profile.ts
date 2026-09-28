@@ -1,8 +1,7 @@
+import { type Cp1Fixture, cp1FixtureBySlug } from "./cp1_fixture_spec.ts";
+
 type SeedInput = {
-  slug: string;
-  seed: number;
-  count: number;
-  owner: string | null;
+  fixture: Cp1Fixture;
   profilePath: string;
   resourcePath: string;
 };
@@ -36,18 +35,14 @@ async function main(): Promise<void> {
   while (args.length > 0) {
     const key = args.shift();
     if (key === "--seed") {
-      const [slug, seedText, countText, ownerText, profilePath, resourcePath] =
-        args.splice(0, 6);
-      if (!slug || !seedText || !countText || !profilePath || !resourcePath) {
+      const [slug, profilePath, resourcePath] = args.splice(0, 3);
+      if (!slug || !profilePath || !resourcePath) {
         throw new Error(
-          "--seed requires slug, seed, count, owner, profile path, and resource path",
+          "--seed requires fixture slug, profile path, and resource path",
         );
       }
       seeds.push({
-        slug,
-        seed: Number(seedText),
-        count: Number(countText),
-        owner: ownerText === "-" ? null : ownerText,
+        fixture: cp1FixtureBySlug(slug),
         profilePath,
         resourcePath,
       });
@@ -91,8 +86,12 @@ async function main(): Promise<void> {
   const seedProfiles = await Promise.all(seeds.map(async (seed) => {
     const generator = await readJsonOrNull(seed.profilePath);
     const profileComplete = isCompleteSampleProfile(generator);
+    const profileMatchesFixture = sampleProfileMatchesFixture(
+      generator,
+      seed.fixture,
+    );
     const process = await parseTimeResourceFile(seed.resourcePath);
-    const generatorWallMicros = profileComplete
+    const generatorWallMicros = profileComplete && profileMatchesFixture
       ? (generator as Record<string, unknown>).total_wall_micros as number
       : null;
     const processWallMicros = process.elapsed_wall_seconds === null
@@ -100,15 +99,16 @@ async function main(): Promise<void> {
       : Math.round(process.elapsed_wall_seconds * 1_000_000);
     return {
       expected: {
-        slug: seed.slug,
-        seed: seed.seed,
-        entry_count: seed.count,
-        owner_display_name: seed.owner,
+        slug: seed.fixture.slug,
+        seed: seed.fixture.seed,
+        entry_count: seed.fixture.entryCount,
+        owner_display_name: seed.fixture.ownerDisplayName,
       },
       process_attempted: await fileExists(seed.profilePath) ||
         await fileExists(seed.resourcePath),
       generator,
       profile_complete: profileComplete,
+      profile_matches_fixture: profileMatchesFixture,
       mutation_batch_summary: summarizeMutationBatches(generator),
       process,
       generator_wall_micros: generatorWallMicros,
@@ -117,7 +117,9 @@ async function main(): Promise<void> {
         processWallMicros === null || generatorWallMicros === null
           ? null
           : processWallMicros - generatorWallMicros,
-      filesystem: await fileMetrics(await findSpacePath(root, seed.slug)),
+      filesystem: await fileMetrics(
+        await findSpacePath(root, seed.fixture.slug),
+      ),
     };
   }));
 
@@ -170,7 +172,10 @@ async function main(): Promise<void> {
     );
   }
   const stageMicros = seedProfiles.flatMap((fixture) => {
-    if (!isCompleteSampleProfile(fixture.generator)) return [];
+    if (
+      !isCompleteSampleProfile(fixture.generator) ||
+      !fixture.profile_matches_fixture
+    ) return [];
     const profile = fixture.generator as Record<string, unknown>;
     return [
       profile.space_creation_micros,
@@ -186,7 +191,8 @@ async function main(): Promise<void> {
     );
   });
   const profilesComplete = seedProfiles.every((fixture) =>
-    isCompleteSampleProfile(fixture.generator)
+    isCompleteSampleProfile(fixture.generator) &&
+    fixture.profile_matches_fixture
   );
   const knownStageMicros = profilesComplete
     ? stageMicros.reduce((total, value) => total + value, 0)
@@ -273,8 +279,14 @@ async function main(): Promise<void> {
     throw new Error("could not resolve a valid source SHA for CP1 profile");
   }
   if (exitCode === 0) {
-    if (seedProfiles.some((fixture) => fixture.generator === null)) {
-      throw new Error("a successful CP1 measurement is missing a seed profile");
+    if (
+      seedProfiles.some((fixture) =>
+        fixture.generator === null || !fixture.profile_matches_fixture
+      )
+    ) {
+      throw new Error(
+        "a successful CP1 measurement is missing or mismatching a declared fixture seed profile",
+      );
     }
     if (mode === "export" && exportRuns.some((run) => run.summary === null)) {
       throw new Error("a successful CP1 export is missing an export summary");
@@ -497,6 +509,18 @@ export function isCompleteSampleProfile(value: unknown): boolean {
     Array.isArray(batchTimes) && batchTimes.every(isNumber) &&
     Array.isArray(batchEntries) && batchEntries.every(isNumber) &&
     batchTimes.length === batchEntries.length;
+}
+
+export function sampleProfileMatchesFixture(
+  value: unknown,
+  fixture: Cp1Fixture,
+): boolean {
+  if (!isCompleteSampleProfile(value)) return false;
+  const profile = value as Record<string, unknown>;
+  return profile.space_slug === fixture.slug &&
+    profile.scenario === fixture.scenario &&
+    profile.seed === fixture.seed &&
+    profile.entry_count === fixture.entryCount;
 }
 
 function percentile(sortedValues: number[], quantile: number): number | null {
