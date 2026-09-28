@@ -193,7 +193,11 @@ SQL still uses `field_<FieldId>` for field columns. A Saved SQL run sends its
 exact revision to the shared query operation, so renaming a Form does not move
 the saved query to a different Form. The Saved SQL detail shows the saved name,
 current name, and Form ID when those names differ. To change the reference,
-edit and save the SQL; that creates a new revision.
+edit and save the SQL; that creates a new revision. Form-name references are
+exact and case-sensitive: quote names such as `"Expense"`, `"expense"`, or
+`"2026-Expense"`. Legacy `form_<UUID>` SQL keeps working. Existing Saved SQL
+is not rewritten when read; editing and saving it creates a revision with
+bindings resolved by the server.
 
 The CLI can execute the current Saved SQL revision by ID:
 

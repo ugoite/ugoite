@@ -723,6 +723,134 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
 }
 
 #[tokio::test]
+async fn saved_sql_form_authorization_is_rechecked_for_continuation_and_count() -> Result<()> {
+    let service = UgoiteService::new("memory://saved-sql-form-auth-recheck")?;
+    let owner = Uuid::from_u128(311);
+    let viewer = Uuid::from_u128(312);
+    let space_id = service
+        .create_space_for_principal("saved-sql-form-auth", owner, "Owner")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &json!({"name": "Note", "fields": {"Body": {"type": "string"}}}),
+        )
+        .await?;
+    for id in ["first", "second"] {
+        service
+            .create_entry(
+                &space_id,
+                &format!("saved-sql-{id}"),
+                &format!("---\nform: Note\n---\n# Note\n\n## Body\n{id}"),
+                "owner",
+            )
+            .await?;
+    }
+    let authorizer = Authorizer::new(service.operator().clone());
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    let saved = service
+        .create_saved_sql(
+            &space_id,
+            Some("bound-note-query"),
+            &SqlPayload {
+                name: Some("Notes".into()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: "SELECT \"_ugoite_id\" FROM \"Note\" ORDER BY \"_ugoite_id\"".into(),
+                variables: json!([]),
+            },
+            "owner",
+        )
+        .await?;
+    let source = SavedSqlRevisionRef {
+        id: "bound-note-query".into(),
+        revision_id: saved["revision_id"].as_str().unwrap().into(),
+    };
+    let first = service
+        .query_sql_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            SqlQueryRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                limit: 1,
+                continuation: None,
+                saved_sql: Some(source.clone()),
+            },
+        )
+        .await?;
+    let continuation = first.next.expect("second page continuation");
+    assert!(first.has_more);
+
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Form,
+                id: "Note".to_string(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+    assert!(
+        service
+            .query_sql_authorized_for_principals(
+                &space_id,
+                &[viewer],
+                SqlQueryRequest {
+                    sql: String::new(),
+                    parameters: Map::new(),
+                    parameter_types: BTreeMap::new(),
+                    limit: 1,
+                    continuation: Some(continuation),
+                    saved_sql: Some(source.clone()),
+                },
+            )
+            .await
+            .is_err(),
+        "a continuation must recheck current Form authorization"
+    );
+    assert!(
+        service
+            .count_sql_authorized_for_principals(
+                &space_id,
+                &[viewer],
+                SqlQueryCountRequest {
+                    sql: String::new(),
+                    parameters: Map::new(),
+                    parameter_types: BTreeMap::new(),
+                    saved_sql: Some(source),
+                },
+            )
+            .await
+            .is_err(),
+        "count must recheck current Form authorization"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn saved_sql_identity_is_generated_by_the_shared_service() -> Result<()> {
     let service = UgoiteService::new("memory://saved-sql-generated-id")?;
     let owner = Uuid::from_u128(303);

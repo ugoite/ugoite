@@ -37,6 +37,8 @@ features:
             selector: { kind: symbol, name: create_sql }
             claims:
               - kind: satisfies
+                criterion: REQ-API-018#criterion.saved-sql-revision-binding
+              - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
               - kind: satisfies
                 criterion: REQ-API-007#criterion.declared-template-bindings
@@ -48,6 +50,8 @@ features:
             selector: { kind: symbol, name: update_sql }
             claims:
               - kind: satisfies
+                criterion: REQ-API-018#criterion.saved-sql-revision-binding
+              - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-name-field
@@ -58,6 +62,20 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
+      - id: sql-name-resolution
+        role: implementation
+        facet: core
+        responsibility: Resolve exact quoted Form names through parsed SQL relation references while preserving authorized Form views and legacy relation identifiers.
+        targets:
+          - id: resolve-form-name-references
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: resolve_form_name_references_with_used }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-018#criterion.quoted-form-name-resolution
+              - kind: satisfies
+                criterion: REQ-API-018#criterion.legacy-saved-sql-preservation
       - id: service
         role: operation
         facet: service
@@ -111,6 +129,31 @@ features:
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
             selector: { kind: symbol, name: delete_saved_sql }
+      - id: sql-service-implementation
+        role: implementation
+        facet: service
+        responsibility: Resolve and execute authorized SQL and revision-bound Saved SQL through the shared Iceberg service.
+        targets:
+          - id: query-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: query_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-018#criterion.quoted-form-name-resolution
+              - kind: satisfies
+                criterion: REQ-API-018#criterion.saved-sql-revision-binding
+              - kind: satisfies
+                criterion: REQ-API-018#criterion.current-form-authorization
+              - kind: satisfies
+                criterion: REQ-API-018#criterion.legacy-saved-sql-preservation
+          - id: count-sql
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: count_sql }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-018#criterion.current-form-authorization
       - id: space-service-implementation
         role: implementation
         facet: service
@@ -368,6 +411,8 @@ features:
             selector: { kind: symbol, name: run }
             claims:
               - kind: satisfies
+                criterion: REQ-API-018#criterion.saved-sql-revision-binding
+              - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-lifecycle
               - kind: satisfies
                 criterion: REQ-API-006#criterion.saved-sql-name-field
@@ -524,7 +569,51 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: delete, path: '/spaces/{space_id}/sql/{sql_id}' }
+          - id: query-sql
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/sql/query' }
+          - id: count-sql
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces/{space_id}/sql/query/count' }
     contracts:
+      - id: query-sql
+        kind: http
+        source: FEAT-API-001#binding.contract/target.query-sql
+        participants:
+          - target: FEAT-API-001#binding.sql-service-implementation/target.query-sql
+            role: service
+          - target: FEAT-API-001#binding.sql-name-resolution/target.resolve-form-name-references
+            role: service
+          - target: FEAT-API-001#binding.core/target.create-sql
+            role: service
+          - target: FEAT-API-001#binding.core/target.update-sql
+            role: service
+          - target: FEAT-API-001#binding.backend-implementation/target.query-sql
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.sql-api
+            role: client
+          - target: FEAT-API-001#binding.cli-implementation/target.sql-command
+            role: operator
+        guarantees:
+          - REQ-API-018#criterion.quoted-form-name-resolution
+          - REQ-API-018#criterion.saved-sql-revision-binding
+          - REQ-API-018#criterion.current-form-authorization
+          - REQ-API-018#criterion.legacy-saved-sql-preservation
+      - id: count-sql
+        kind: http
+        source: FEAT-API-001#binding.contract/target.count-sql
+        participants:
+          - target: FEAT-API-001#binding.sql-service-implementation/target.count-sql
+            role: service
+          - target: FEAT-API-001#binding.backend-implementation/target.count-sql
+            role: backend
+          - target: FEAT-API-001#binding.frontend/target.sql-api
+            role: client
+          - target: FEAT-API-001#binding.cli-implementation/target.sql-command
+            role: operator
+        guarantees: [REQ-API-018#criterion.current-form-authorization]
       - id: list-spaces
         kind: http
         source: FEAT-API-001#binding.contract/target.list-spaces

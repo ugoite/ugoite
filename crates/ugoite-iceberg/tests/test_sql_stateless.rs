@@ -32,6 +32,14 @@ struct SqlSpace {
 }
 
 async fn setup_sql_space(uri: &str, slug: &str) -> Result<SqlSpace> {
+    setup_sql_space_with_form_name(uri, slug, "Task").await
+}
+
+async fn setup_sql_space_with_form_name(
+    uri: &str,
+    slug: &str,
+    form_name: &str,
+) -> Result<SqlSpace> {
     let service = UgoiteService::new(uri)?;
     service.create_space(slug).await?;
     let space_id = slug.to_string();
@@ -39,7 +47,7 @@ async fn setup_sql_space(uri: &str, slug: &str) -> Result<SqlSpace> {
         .upsert_form(
             &space_id,
             &json!({
-                "name": "Task",
+                "name": form_name,
                 "fields": {
                     "Status": {"type": "string"},
                     "Priority": {"type": "long"},
@@ -58,7 +66,7 @@ async fn setup_sql_space(uri: &str, slug: &str) -> Result<SqlSpace> {
             .create_structured_entry_with_receipt(
                 &space_id,
                 entry_id,
-                "Task".to_string(),
+                form_name.to_string(),
                 Vec::new(),
                 BTreeMap::from([
                     ("Status".to_string(), Value::String(status.to_string())),
@@ -69,7 +77,7 @@ async fn setup_sql_space(uri: &str, slug: &str) -> Result<SqlSpace> {
             )
             .await?;
     }
-    let form_json = service.get_form(&space_id, "Task").await?;
+    let form_json = service.get_form(&space_id, form_name).await?;
     let form_id: ugoite_domain::id::FormId =
         serde_json::from_value(form_json["id"].clone()).context("Form id")?;
     let field_id = |name: &str| -> Result<i32> {
@@ -83,7 +91,7 @@ async fn setup_sql_space(uri: &str, slug: &str) -> Result<SqlSpace> {
         service,
         space_id,
         relation: ugoite_domain::form::sql_relation_name(form_id),
-        form_name: "Task".to_string(),
+        form_name: form_name.to_string(),
         status_column: format!("field_{}", field_id("Status")?),
         priority_column: format!("field_{}", field_id("Priority")?),
     })
@@ -133,6 +141,38 @@ async fn quoted_form_name_resolves_for_page_and_count() -> Result<()> {
         .query_sql(&space.space_id, query_request(wrong_case, 10))
         .await
         .is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn quoted_form_name_with_digits_hyphen_and_parameter_resolves() -> Result<()> {
+    let space = setup_sql_space_with_form_name(
+        "memory://sql-stateless-form-name-special",
+        "sqlformnamespecial",
+        "2026-Expense",
+    )
+    .await?;
+    let sql = format!(
+        "SELECT \"_ugoite_id\" FROM \"{}\" WHERE \"{}\" = $priority \
+         AND '2026-Expense' = '2026-Expense' -- FROM \"missing\"\n         ORDER BY \"_ugoite_id\"",
+        space.form_name, space.priority_column
+    );
+    let page = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                sql,
+                parameters: Map::from_iter([("priority".into(), json!(3))]),
+                parameter_types: BTreeMap::new(),
+                limit: 10,
+                continuation: None,
+                saved_sql: None,
+            },
+        )
+        .await?;
+    assert_eq!(page.rows.len(), 1);
+    assert_eq!(page.rows[0]["_ugoite_id"], "sql-02");
     Ok(())
 }
 
@@ -303,6 +343,54 @@ fn query_request(sql: String, limit: usize) -> SqlQueryRequest {
     }
 }
 
+#[tokio::test]
+async fn legacy_id_relation_saved_sql_revision_runs_without_rewrite() -> Result<()> {
+    let space = setup_sql_space("memory://sql-legacy-saved-relation", "sqllegacysaved").await?;
+    let legacy_sql = base_sql(&space);
+    let saved = space
+        .service
+        .create_saved_sql(
+            &space.space_id,
+            Some("legacy-id-query"),
+            &SqlPayload {
+                name: Some("Legacy ID query".into()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: legacy_sql.clone(),
+                variables: json!([]),
+            },
+            "owner",
+        )
+        .await?;
+    assert_eq!(saved["metadata"]["formBindings"], json!([]));
+    let revision_id = saved["revision_id"].as_str().context("revision id")?;
+    let page = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                sql: String::new(),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                limit: 10,
+                continuation: None,
+                saved_sql: Some(SavedSqlRevisionRef {
+                    id: "legacy-id-query".into(),
+                    revision_id: revision_id.into(),
+                }),
+            },
+        )
+        .await?;
+    assert_eq!(page.rows.len(), 5);
+    let after = space
+        .service
+        .get_saved_sql(&space.space_id, "legacy-id-query")
+        .await?;
+    assert_eq!(after["revision_id"], revision_id);
+    assert_eq!(after["sql"], legacy_sql);
+    assert_eq!(after["metadata"]["formBindings"], json!([]));
+    Ok(())
+}
 /// First page + continuation union the full ordered result on the real
 /// backend, with the `has_more`/`next` protocol holding on every page.
 #[tokio::test]
