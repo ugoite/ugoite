@@ -388,6 +388,7 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
         "change show continuation target page",
     );
     assert_eq!(second_page["change_id"], cursor_change_id);
+    assert_eq!(second_page["summary"]["affected_entry_count"], 2);
     assert_eq!(second_page["targets"].as_array().unwrap().len(), 1);
     assert_eq!(second_page["next_cursor"], serde_json::Value::Null);
     assert_ne!(second_page["targets"][0]["entry_id"], first_target_id);
