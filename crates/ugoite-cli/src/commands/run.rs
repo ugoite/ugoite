@@ -123,62 +123,8 @@ pub async fn run(
                 } else {
                     anyhow::bail!("operation run.undo.preview does not use the remote transport")
                 };
-                let mut lines =
-                    vec![format!(
-                    "Run {run_id}: {} committed Change(s), {} already reverted, {} pending; {}.",
-                    preview
-                        .get("committed_change_count")
-                        .and_then(|count| count.as_u64())
-                        .unwrap_or_default(),
-                    preview
-                        .get("already_reverted_count")
-                        .and_then(|count| count.as_u64())
-                        .unwrap_or_default(),
-                    preview
-                        .get("pending_change_count")
-                        .and_then(|count| count.as_u64())
-                        .unwrap_or_default(),
-                    if preview.get("ready").and_then(|ready| ready.as_bool()) == Some(true) {
-                        "ready to undo"
-                    } else if preview.get("complete").and_then(|complete| complete.as_bool())
-                        == Some(false)
-                    {
-                        "preview incomplete"
-                    } else {
-                        "not ready to undo"
-                    }
-                )];
-                if preview
-                    .get("complete")
-                    .and_then(|complete| complete.as_bool())
-                    == Some(false)
-                {
-                    let limit = preview
-                        .get("change_limit")
-                        .and_then(|limit| limit.as_u64())
-                        .unwrap_or_default();
-                    lines.push(format!("Only the first {limit} Changes are shown."));
-                }
-                if let Some(changes) = preview.get("changes").and_then(|value| value.as_array()) {
-                    for change in changes {
-                        let change_id = change
-                            .get("change_id")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or_default();
-                        let count = change
-                            .get("target_entry_count")
-                            .and_then(|value| value.as_u64())
-                            .unwrap_or_default();
-                        let noun = if count == 1 { "Entry" } else { "Entries" };
-                        let state = change
-                            .get("state")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or("unknown");
-                        lines.push(format!("  {change_id}: {count} {noun}, {state}"));
-                    }
-                }
-                let human = Some(lines.join("\n"));
-                emit_success(&preview, &fmt, human);
+                let human = render_run_undo_preview(&run_id, &preview);
+                emit_success(&preview, &fmt, Some(human));
                 return Ok(());
             }
             if let SpaceTarget::Remote { space_uid, .. } = &target {
@@ -216,6 +162,65 @@ pub async fn run(
         }
     }
     Ok(())
+}
+
+fn render_run_undo_preview(run_id: &str, preview: &serde_json::Value) -> String {
+    let mut lines = vec![format!(
+        "Run {run_id}: {} committed Change(s), {} already reverted, {} pending; {}.",
+        preview
+            .get("committed_change_count")
+            .and_then(|count| count.as_u64())
+            .unwrap_or_default(),
+        preview
+            .get("already_reverted_count")
+            .and_then(|count| count.as_u64())
+            .unwrap_or_default(),
+        preview
+            .get("pending_change_count")
+            .and_then(|count| count.as_u64())
+            .unwrap_or_default(),
+        if preview.get("ready").and_then(|ready| ready.as_bool()) == Some(true) {
+            "ready to undo"
+        } else if preview
+            .get("complete")
+            .and_then(|complete| complete.as_bool())
+            == Some(false)
+        {
+            "preview incomplete"
+        } else {
+            "not ready to undo"
+        }
+    )];
+    if preview
+        .get("complete")
+        .and_then(|complete| complete.as_bool())
+        == Some(false)
+    {
+        let limit = preview
+            .get("change_limit")
+            .and_then(|limit| limit.as_u64())
+            .unwrap_or_default();
+        lines.push(format!("Only the first {limit} Changes are shown."));
+    }
+    if let Some(changes) = preview.get("changes").and_then(|value| value.as_array()) {
+        for change in changes {
+            let change_id = change
+                .get("change_id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            let count = change
+                .get("target_entry_count")
+                .and_then(|value| value.as_u64())
+                .unwrap_or_default();
+            let noun = if count == 1 { "Entry" } else { "Entries" };
+            let state = change
+                .get("state")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown");
+            lines.push(format!("  {change_id}: {count} {noun}, {state}"));
+        }
+    }
+    lines.join("\n")
 }
 
 fn render_run_inspection(inspection: &serde_json::Value) -> String {
@@ -267,7 +272,7 @@ fn render_run_inspection(inspection: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::render_run_inspection;
+    use super::{render_run_inspection, render_run_undo_preview};
     use serde_json::json;
 
     #[test]
@@ -287,5 +292,32 @@ mod tests {
         assert!(rendered
             .contains("change-1 (generation 7): affected count unavailable, partial visibility"));
         assert!(!rendered.contains("More committed Changes"));
+    }
+
+    #[test]
+    fn run_undo_summary_discloses_bounded_preview() {
+        let rendered = render_run_undo_preview(
+            "run-1",
+            &json!({
+                "committed_change_count": 3,
+                "already_reverted_count": 1,
+                "pending_change_count": 2,
+                "ready": false,
+                "complete": false,
+                "change_limit": 2,
+                "changes": [
+                    {"change_id": "change-3", "target_entry_count": 2, "state": "ready"},
+                    {"change_id": "change-2", "target_entry_count": 1, "state": "already_reverted"}
+                ]
+            }),
+        );
+
+        assert!(rendered.contains(
+            "Run run-1: 3 committed Change(s), 1 already reverted, 2 pending; preview incomplete."
+        ));
+        assert!(rendered.contains("Only the first 2 Changes are shown."));
+        assert!(rendered.contains("change-3: 2 Entries, ready"));
+        assert!(rendered.contains("change-2: 1 Entry, already_reverted"));
+        assert_eq!(rendered.matches(": 1 Entry").count(), 1);
     }
 }

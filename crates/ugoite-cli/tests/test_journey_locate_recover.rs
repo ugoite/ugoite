@@ -8,6 +8,14 @@
 //! compared; only exit status and the returned durable state matter.
 
 use std::process::{Command, Output};
+use ugoite_domain::{
+    change::{ChangeCommand, RunId},
+    id::RevisionId,
+};
+use ugoite_iceberg::authorization::Authorizer;
+use ugoite_iceberg::{
+    iceberg_store::native_workspace, publication_context_for_change, service::UgoiteService,
+};
 
 fn ugoite_bin() -> std::path::PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
@@ -375,4 +383,168 @@ fn test_journey_cli_core_locate_recover_durable_outcome() {
         "change list on reopen",
     );
     assert_eq!(change_ids(&changes).len(), after_ids.len());
+}
+
+#[tokio::test]
+async fn run_undo_dry_run_is_read_only_and_reports_authoritative_states() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.toml");
+    let root = dir.path().to_string_lossy().into_owned();
+    let run_id = "run-undo-preview-core-1";
+
+    let output = run_cli(&config_path, &["space", "create", "run-undo-preview-core"]);
+    assert!(
+        output.status.success(),
+        "space create failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let space_id = stdout_json(&output, "space create for Run preview fixture")["space"]
+        ["space_uid"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let form_file = dir.path().join("run-undo-preview-form.json");
+    std::fs::write(
+        &form_file,
+        "{\"name\":\"Task\",\"version\":1,\"template\":\"# Task\\n\\n## status\\n\\n## priority\\n\",\"fields\":{\"status\":{\"type\":\"string\",\"required\":true},\"priority\":{\"type\":\"integer\",\"required\":false}}}",
+    )
+    .unwrap();
+    let output = run_cli(&config_path, &["form", "save", form_file.to_str().unwrap()]);
+    assert!(
+        output.status.success(),
+        "form save failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for entry_id in ["run-preview-a", "run-preview-b"] {
+        let output = run_cli(
+            &config_path,
+            &[
+                "entry",
+                "create",
+                "--id",
+                entry_id,
+                "--form",
+                "Task",
+                "--field",
+                "status=open",
+                "--field",
+                "priority=1",
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "entry create failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let service = UgoiteService::new(root).unwrap();
+    Authorizer::new(service.operator().clone())
+        .initialize_owner(
+            &space_id,
+            uuid::Uuid::parse_str(&space_id).unwrap(),
+            uuid::Uuid::now_v7(),
+            "CLI test owner",
+        )
+        .await
+        .unwrap();
+    let workspace = native_workspace(service.operator(), &service.workspace_path(&space_id))
+        .await
+        .unwrap();
+    let form = workspace
+        .list_forms()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|form| form.name == "Task")
+        .unwrap();
+    let mut run_changes = Vec::new();
+    for external_id in ["run-preview-a", "run-preview-b"] {
+        let mut revision = workspace
+            .read_revisions(form.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|revision| revision.entry.external_id == external_id)
+            .max_by_key(|revision| revision.entry_version)
+            .unwrap();
+        let change_id = uuid::Uuid::now_v7().to_string();
+        revision.parent_revision_id = Some(revision.revision_id);
+        revision.revision_id = RevisionId::from_uuid(uuid::Uuid::now_v7());
+        revision.entry_version += 1;
+        revision.expected_version = Some(revision.entry_version - 1);
+        revision.change_id = change_id.clone();
+        revision.committed_at_micros = chrono::Utc::now().timestamp_micros();
+        revision.source_kind = "cli_test".to_string();
+        revision.entry.updated_at_micros = revision.committed_at_micros;
+        let command = ChangeCommand {
+            change_id: change_id.clone(),
+            run_id: Some(RunId::new(run_id).unwrap()),
+            actor_principal_id: revision.author_id.clone(),
+            message: Some("Run preview fixture".to_string()),
+            reverts_change_id: None,
+            created_at_micros: revision.committed_at_micros,
+        };
+        let publication =
+            publication_context_for_change(&command, "test.run.preview", &revision).unwrap();
+        workspace
+            .commit(publication)
+            .unwrap()
+            .append_revisions(form.id, vec![revision])
+            .await
+            .unwrap();
+        run_changes.push(change_id);
+    }
+
+    let reverted = run_cli(&config_path, &["change", "revert", &run_changes[0]]);
+    assert!(
+        reverted.status.success(),
+        "change revert failed: {}",
+        String::from_utf8_lossy(&reverted.stderr)
+    );
+    let change_count_before = change_ids(&stdout_json(
+        &run_cli(&config_path, &["change", "list"]),
+        "change list before Run preview",
+    ))
+    .len();
+    let history_counts_before = ["run-preview-a", "run-preview-b"].map(|entry_id| {
+        revision_ids(&stdout_json(
+            &run_cli(&config_path, &["entry", "history", entry_id]),
+            "entry history before Run preview",
+        ))
+        .len()
+    });
+
+    let preview = stdout_json(
+        &run_cli(&config_path, &["run", "undo", run_id, "--dry-run"]),
+        "run undo dry-run",
+    );
+    assert_eq!(preview["run_id"], run_id);
+    assert_eq!(preview["committed_change_count"], 2);
+    assert_eq!(preview["already_reverted_count"], 1);
+    assert_eq!(preview["pending_change_count"], 1);
+    assert_eq!(preview["ready"], true);
+    let changes = preview["changes"].as_array().unwrap();
+    assert_eq!(changes.len(), 2);
+    assert_eq!(changes[0]["change_id"], run_changes[1]);
+    assert_eq!(changes[0]["state"], "ready");
+    assert_eq!(changes[0]["target_entry_count"], 1);
+    assert_eq!(changes[1]["change_id"], run_changes[0]);
+    assert_eq!(changes[1]["state"], "already_reverted");
+    assert_eq!(changes[1]["target_entry_count"], 1);
+
+    let change_count_after = change_ids(&stdout_json(
+        &run_cli(&config_path, &["change", "list"]),
+        "change list after Run preview",
+    ))
+    .len();
+    let history_counts_after = ["run-preview-a", "run-preview-b"].map(|entry_id| {
+        revision_ids(&stdout_json(
+            &run_cli(&config_path, &["entry", "history", entry_id]),
+            "entry history after Run preview",
+        ))
+        .len()
+    });
+    assert_eq!(change_count_after, change_count_before);
+    assert_eq!(history_counts_after, history_counts_before);
 }
