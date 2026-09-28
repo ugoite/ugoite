@@ -129,9 +129,9 @@ portable Catalog boundary:
   human-approval binding as the dedicated delete route.
 - `POST /spaces/{space_id}/changes/{change_id}/revert` appends a selective
   inverse and returns a conflict instead of overwriting later edits.
-- `GET /spaces/{space_id}/changes/{change_id}/revert/preview` checks whether
-  the complete Change can be reverted under the caller's current Entry
-  permissions and current revisions/schema; it never writes.
+- `GET /spaces/{space_id}/changes/{change_id}/revert/preview` checks whether the
+  complete Change can be reverted under the caller's current Entry permissions
+  and current revisions/schema; it never writes.
 - `POST /spaces/{space_id}/runs/{run_id}/undo` appends inverses for the
   still-unreverted Changes correlated to that Run; Run status is not stored.
 - `GET /spaces/{space_id}/runs/{run_id}/undo/preview` summarizes committed
