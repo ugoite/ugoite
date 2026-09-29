@@ -920,6 +920,30 @@ impl Authorizer {
         Ok(())
     }
 
+    /// Cross-crate recovery/fixture hook: publish raw authorization snapshot
+    /// bytes through the shared Catalog Head CAS. Unlike every other
+    /// authorization writer, this deliberately performs no state validation so
+    /// recovery tests can model durable corruption that stays decodable but
+    /// fails reconciliation. Production callers must use the validated
+    /// writers instead; no runtime behavior changes.
+    #[doc(hidden)]
+    pub async fn publish_raw_authorization_snapshot_for_tests(
+        &self,
+        space_id: &str,
+        space_uid: Uuid,
+        expected_revision: Option<u64>,
+        revision: u64,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
+        let store = SpaceCatalogStore::new(self.operator.clone(), format!("spaces/{space_id}"))?;
+        let catalog = crate::space_catalog::SpaceCatalog::new(store, SpaceId::from(space_uid))
+            .map_err(anyhow::Error::from)?;
+        catalog
+            .publish_authorization_snapshot(expected_revision, revision, bytes)
+            .await
+            .map_err(anyhow::Error::from)
+    }
+
     async fn authorization_catalog(
         &self,
         space_id: &str,
@@ -1668,7 +1692,16 @@ impl Authorizer {
             .await
             .map_err(|_| anyhow!("Space authorization mutation lease was lost"))?;
         if lease.pending_authorization_snapshot.lock().await.is_some() {
-            bail!("human approval mutation completed without a Catalog Head publication");
+            // The nested mutation did not publish through the Catalog Head,
+            // so the staged consumption was not applied there. Commit it
+            // directly through the Head CAS: approval-gated mutations that do
+            // not publish content still linearize, and a concurrent
+            // revocation wins the CAS and fails this closed. Mutations that
+            // publish (content or authorization writes) consume the staged
+            // snapshot atomically instead; full single-CAS atomicity for
+            // those arrives with the catalog-side pending application.
+            self.drain_pending_approval_snapshot(space_id, lease)
+                .await?;
         }
         Ok((approval, mutation))
     }
@@ -1691,6 +1724,48 @@ impl Authorizer {
             space_uid: state.space_uid,
             bytes,
         });
+        Ok(())
+    }
+
+    /// Commit a staged approval consumption that no nested publication
+    /// applied. The publish is conditional on the lease revision, so a
+    /// concurrent revocation wins the compare-and-swap and this fails closed
+    /// with a revision conflict (or an unknown outcome if the response is
+    /// lost after commit) instead of silently superseding the revocation.
+    async fn drain_pending_approval_snapshot(
+        &self,
+        space_id: &str,
+        lease: &AuthorizationLease,
+    ) -> Result<()> {
+        let pending = lease.pending_authorization_snapshot.lock().await.clone();
+        let Some(pending) = pending else {
+            return Ok(());
+        };
+        // Only persisted Spaces stage snapshots; lightweight fixtures never
+        // have pending state here. Anything else is a programming error.
+        if !self
+            .operator
+            .exists(&format!("spaces/{space_id}/meta.json"))
+            .await?
+        {
+            bail!("human approval mutation completed without a Catalog Head publication");
+        }
+        let expected_revision = pending
+            .revision
+            .checked_sub(1)
+            .ok_or_else(|| anyhow!("invalid authorization revision"))?;
+        let catalog = self
+            .authorization_catalog(space_id, pending.space_uid, true)
+            .await?;
+        catalog
+            .publish_authorization_snapshot(
+                Some(expected_revision),
+                pending.revision,
+                pending.bytes,
+            )
+            .await
+            .map_err(anyhow::Error::from)?;
+        *lease.pending_authorization_snapshot.lock().await = None;
         Ok(())
     }
 
@@ -3673,7 +3748,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn persisted_approval_cannot_succeed_without_head_publication() -> Result<()> {
+    async fn persisted_approval_consumption_publishes_without_nested_publication() -> Result<()> {
         let op = operator_from_uri("memory://approval-requires-head")?;
         let space_uid = Uuid::now_v7();
         let space_id = space_uid.to_string();
@@ -3716,7 +3791,13 @@ mod tests {
             )
             .await?;
 
-        let error = authorizer
+        // A mutation that does not publish through the Catalog Head must not
+        // strand the staged consumption: it commits directly through the Head
+        // CAS, conditional on the lease revision so a concurrent revocation
+        // still wins. (Single-CAS atomicity for publishing mutations arrives
+        // with the catalog-side pending application.)
+        let before = authorizer.state(&space_id).await?;
+        let (_, mutation) = authorizer
             .consume_human_approval_with_audit_and(
                 &space_id,
                 &token,
@@ -3730,17 +3811,16 @@ mod tests {
                 || async { Ok::<(), anyhow::Error>(()) },
             )
             .await
-            .expect_err("a successful callback without a Head publication must fail closed");
-        assert!(error
-            .to_string()
-            .contains("without a Catalog Head publication"));
+            .expect("consumption commits through the Head CAS without a nested publication");
+        mutation?;
         let state = authorizer.state(&space_id).await?;
+        assert_eq!(state.revision, before.revision + 1);
         assert!(state
             .human_approvals
             .values()
             .any(
                 |approval| approval.token_hash == hex::encode(Sha256::digest(token.as_bytes()))
-                    && approval.consumed_at.is_none()
+                    && approval.consumed_at.is_some()
             ));
         Ok(())
     }

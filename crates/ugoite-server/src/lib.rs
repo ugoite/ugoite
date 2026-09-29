@@ -21131,9 +21131,34 @@ mod initial_space_claim_recovery_tests {
             .await?;
         let history_before = state.service.list_changes(&space_id).await?;
 
-        let acl_path = format!("spaces/{space_id}/security/principals.json");
-        let mut acl: Value =
-            serde_json::from_slice(&state.service.operator().read(&acl_path).await?.to_bytes())?;
+        // The Catalog Head snapshot is the authoritative ACL store; the legacy
+        // file is no longer read once a snapshot is published. Model durable
+        // ACL corruption at that layer: publish a decodable snapshot carrying
+        // an invalid recovery fence, so admission proceeds through
+        // classification and ownership checks and stops at fence
+        // reconciliation with partial progress durable.
+        let catalog_store = ugoite_storage::SpaceCatalogStore::new(
+            state.service.operator().clone(),
+            format!("spaces/{space_id}"),
+        )?;
+        let exact_head = catalog_store
+            .read_exact_head()
+            .await?
+            .expect("Catalog Head exists after bootstrap");
+        let head: Value = serde_json::from_slice(&exact_head.bytes)?;
+        let snapshot_location = head
+            .pointer("/authorization_snapshot/location")
+            .and_then(Value::as_str)
+            .expect("Head carries an authorization snapshot")
+            .to_string();
+        let good_acl: Vec<u8> = state
+            .service
+            .operator()
+            .read(&snapshot_location)
+            .await?
+            .to_bytes()
+            .to_vec();
+        let mut acl: Value = serde_json::from_slice(&good_acl)?;
         let recovery_fence_id = Uuid::now_v7();
         acl["recovery_fences"] = json!({(recovery_fence_id.to_string()): {
             "fence_id": Uuid::now_v7(),
@@ -21151,10 +21176,18 @@ mod initial_space_claim_recovery_tests {
             "expires_at": "invalid-timestamp",
             "status": "active"
         }});
-        state
-            .service
-            .operator()
-            .write(&acl_path, serde_json::to_vec(&acl)?)
+        // The corrupt snapshot must stay decodable at its published revision
+        // so reads reach fence reconciliation instead of failing at state
+        // decode.
+        acl["revision"] = json!(2);
+        Authorizer::new(state.service.operator().clone())
+            .publish_raw_authorization_snapshot_for_tests(
+                &space_id,
+                space_uid,
+                Some(1),
+                2,
+                serde_json::to_vec(&acl)?,
+            )
             .await?;
 
         let identity = state.identity.clone();
@@ -21213,11 +21246,18 @@ mod initial_space_claim_recovery_tests {
         .expect_err("login must remain blocked while claim recovery is pending");
         assert_eq!(login.status, StatusCode::SERVICE_UNAVAILABLE);
 
-        acl["recovery_fences"] = json!({});
-        state
-            .service
-            .operator()
-            .write(&acl_path, serde_json::to_vec(&acl)?)
+        // Repair publishes a well-formed snapshot at the next revision so
+        // admission can resume; the content publication chain is untouched.
+        let mut repaired: Value = serde_json::from_slice(&good_acl)?;
+        repaired["revision"] = json!(3);
+        Authorizer::new(state.service.operator().clone())
+            .publish_raw_authorization_snapshot_for_tests(
+                &space_id,
+                space_uid,
+                Some(2),
+                3,
+                serde_json::to_vec(&repaired)?,
+            )
             .await?;
         let restarted = AppState {
             security_headers: SecurityHeadersPolicy::from_public_origin(
