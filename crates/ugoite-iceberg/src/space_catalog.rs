@@ -1073,18 +1073,24 @@ impl SpaceCatalog {
                     )
                     .into());
                 }
-                let mut tables = Vec::with_capacity(head.tables.len());
-                for reference in head.tables.values() {
+                let content_head = &publication.next_head;
+                // Pin the checkpoint to the immutable content Head recorded by
+                // the publication itself, not to the currently walked Head:
+                // authorization-only Head transitions advance the live Head
+                // checksum without creating a new publication, and the pinned
+                // checkpoint must keep validating after such advances.
+                let mut tables = Vec::with_capacity(content_head.tables.len());
+                for reference in content_head.tables.values() {
                     tables.push(self.capture_checkpoint_table(reference).await?);
                 }
                 tables.sort_by(|left, right| left.form_id.cmp(&right.form_id));
                 selected = Some(SpaceCheckpoint::new(
                     self.space_id,
-                    head.generation,
-                    head.checksum,
+                    content_head.generation,
+                    content_head.checksum.clone(),
                     path.clone(),
                     publication.checksum.clone(),
-                    head.form_registry_generation,
+                    content_head.form_registry_generation,
                     tables,
                 ));
             }
@@ -1332,19 +1338,24 @@ impl SpaceCatalog {
         )?;
         validate_publication_matches_head(&publication, &head)?;
 
-        let mut tables = Vec::with_capacity(head.tables.len());
-        for reference in head.tables.values() {
+        // Pin the checkpoint to the immutable content Head recorded by the
+        // publication, for the same reason as in
+        // resolve_publication_checkpoint: a later authorization-only Head
+        // transition must not invalidate this already-pinned checkpoint.
+        let content_head = &publication.next_head;
+        let mut tables = Vec::with_capacity(content_head.tables.len());
+        for reference in content_head.tables.values() {
             tables.push(self.capture_checkpoint_table(reference).await?);
         }
         tables.sort_by(|left, right| left.form_id.cmp(&right.form_id));
 
         Ok(SpaceCheckpoint::new(
             self.space_id,
-            head.generation,
-            head.checksum,
+            content_head.generation,
+            content_head.checksum.clone(),
             publication_location,
             publication.checksum,
-            head.form_registry_generation,
+            content_head.form_registry_generation,
             tables,
         ))
     }

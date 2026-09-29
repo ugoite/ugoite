@@ -3617,6 +3617,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn corrupt_authorization_snapshot_fails_closed_until_repaired() -> Result<()> {
+        // Server-level recovery tests model durable ACL corruption through the
+        // authoritative Head snapshot. Pin the fail-closed read behavior here,
+        // where the snapshot publication API is directly reachable.
+        let op = operator_from_uri("memory://corrupt-authorization-snapshot")?;
+        let space_uid = Uuid::now_v7();
+        let space_id = space_uid.to_string();
+        crate::space::create_space_with_identity_and_name(
+            &op,
+            space_uid,
+            "corrupt-authorization",
+            "Corrupt Authorization",
+            ".",
+        )
+        .await?;
+        let authorizer = Authorizer::new(op.clone());
+        let owner = Uuid::now_v7();
+        authorizer
+            .initialize_owner(&space_id, space_uid, owner, "Owner")
+            .await?;
+        let store = SpaceCatalogStore::new(op.clone(), format!("spaces/{space_id}"))?;
+        let catalog = crate::space_catalog::SpaceCatalog::new(store, SpaceId::from(space_uid))?;
+        let (_, good_bytes) = catalog
+            .authorization_snapshot()
+            .await?
+            .expect("owner initialization publishes a snapshot");
+        catalog
+            .publish_authorization_snapshot(Some(1), 2, b"not-json".to_vec())
+            .await
+            .map_err(anyhow::Error::from)?;
+        let error = authorizer
+            .state(&space_id)
+            .await
+            .expect_err("corrupt snapshot must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("decode Space authorization state"),
+            "{error:#}"
+        );
+        // Repair publishes a well-formed snapshot; reads resume.
+        let mut repaired: AuthorizationState = serde_json::from_slice(&good_bytes)?;
+        repaired.revision = 3;
+        catalog
+            .publish_authorization_snapshot(Some(2), 3, serde_json::to_vec_pretty(&repaired)?)
+            .await
+            .map_err(anyhow::Error::from)?;
+        let state = authorizer.state(&space_id).await?;
+        assert_eq!(state.revision, 3);
+        authorizer
+            .validate_current_layout(&space_id, space_uid)
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn persisted_approval_cannot_succeed_without_head_publication() -> Result<()> {
         let op = operator_from_uri("memory://approval-requires-head")?;
         let space_uid = Uuid::now_v7();

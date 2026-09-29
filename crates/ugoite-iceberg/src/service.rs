@@ -8430,44 +8430,6 @@ mod tests {
             .create_space_for_principal("change-query-budget", principal_id, "Owner")
             .await?
             .to_string();
-        // Establish the viewer membership and the entry policy before any
-        // content publication. Authorization mutations advance the shared
-        // Catalog Head through an authorization-only transition, and
-        // historical publication checkpoints remain strict across that
-        // transition until the catalog-side evidence comparison tolerates it
-        // (#3405). The budget assertions below only depend on the visibility
-        // computed from the current authorization state, so ordering the ACL
-        // setup first keeps this test on the supported path.
-        Authorizer::new(service.operator.clone())
-            .add_human_member(
-                &space_id,
-                principal_id,
-                SpacePrincipal {
-                    principal_id: viewer_id,
-                    kind: PrincipalKind::Human,
-                    display_name: "History viewer".into(),
-                    state: PrincipalState::Active,
-                    created_at: Utc::now().to_rfc3339(),
-                },
-                SpaceRole::Viewer,
-            )
-            .await?;
-        Authorizer::new(service.operator.clone())
-            .set_policy(
-                &space_id,
-                principal_id,
-                &ResourceRef {
-                    kind: ResourceKind::Entry,
-                    id: Uuid::from_u128(50_000).to_string(),
-                    parent: None,
-                },
-                AccessPolicy {
-                    policy_id: Uuid::now_v7(),
-                    inherit_space_role: false,
-                    grants: Vec::new(),
-                },
-            )
-            .await?;
         service
             .upsert_form(
                 &space_id,
@@ -8516,6 +8478,36 @@ mod tests {
             .iter()
             .all(|change| change.get("targets").is_none()));
 
+        Authorizer::new(service.operator.clone())
+            .add_human_member(
+                &space_id,
+                principal_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "History viewer".into(),
+                    state: PrincipalState::Active,
+                    created_at: Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        Authorizer::new(service.operator.clone())
+            .set_policy(
+                &space_id,
+                principal_id,
+                &ResourceRef {
+                    kind: ResourceKind::Entry,
+                    id: Uuid::from_u128(50_000).to_string(),
+                    parent: None,
+                },
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
         let partial_page = service
             .query_changes_authorized_for_principals_with_revision_budget(
                 &space_id,

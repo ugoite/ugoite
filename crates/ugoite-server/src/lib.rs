@@ -20811,7 +20811,16 @@ mod initial_space_claim_recovery_tests {
             .await?;
         let space_id = space_uid.to_string();
         let acl_path = format!("spaces/{space_id}/security/principals.json");
-        state.service.operator().delete(&acl_path).await?;
+        // The owner authorization snapshot lives in the Catalog Head, not the
+        // legacy file: removing the file no longer removes the ACL. Model a
+        // missing owner-backed ACL at the authoritative layer by removing the
+        // Head that carries its snapshot.
+        let head_path = ugoite_storage::SpaceCatalogStore::new(
+            state.service.operator().clone(),
+            format!("spaces/{space_id}"),
+        )?
+        .head_path();
+        state.service.operator().delete(&head_path).await?;
         let identity = state.identity.clone();
         identity.bootstrap_if_needed().await?.expect("bootstrap");
         let claim = InitialSpaceClaim {
