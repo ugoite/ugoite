@@ -446,6 +446,17 @@ Deno.test("CP1 tar reader rejects traversal and links and resolves safe PAX path
       [longPath],
     );
 
+    const posixPaxMarker = `${dir}/posix-pax-marker.tar.gz`;
+    await writePaxTarGzip(
+      posixPaxMarker,
+      longPath,
+      "spaces/metadata/Pax",
+    );
+    assertEquals(
+      (await readTarMembers(posixPaxMarker)).map((member) => member.path),
+      [longPath],
+    );
+
     const paxTraversal = `${dir}/pax-traversal.tar.gz`;
     await writePaxTarGzip(paxTraversal, "../escape");
     await assertRejects(
