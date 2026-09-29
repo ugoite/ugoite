@@ -52,7 +52,35 @@ validate_lane "e2e-smoke-mobile" "${PLAN_ARTIFACTS:-missing}" "${E2E_SMOKE_MOBIL
 validate_lane "e2e-owner" "${PLAN_ARTIFACTS:-missing}" "${E2E_OWNER_RESULT:-missing}"
 validate_lane "e2e-portable" "${PLAN_ARTIFACTS:-missing}" "${E2E_PORTABLE_RESULT:-missing}"
 validate_lane "docsite-nav" "${PLAN_DOCSITE_NAV:-missing}" "${DOCSITE_NAV_RESULT:-missing}"
-validate_lane "cp1-acceptance" "${PLAN_CP1_ACCEPTANCE:-missing}" "${CP1_ACCEPTANCE_RESULT:-missing}"
+
+# The single cp1 plan flag gates the fixtures/query/export trio as a unit:
+# when planned all three must succeed, when unplanned all three must be
+# skipped. Any mixed state (exactly one skipped or failed, timeout/cancel)
+# fails closed.
+validate_cp1_trio() {
+  local planned="$1"
+  local fixtures="$2"
+  local query="$3"
+  local export="$4"
+  case "$planned" in
+    true)
+      require_success "cp1-fixtures" "$fixtures"
+      require_success "cp1-query" "$query"
+      require_success "cp1-export" "$export"
+      ;;
+    false)
+      [[ "$fixtures" == "skipped" ]] || fail "cp1-fixtures was unplanned but result was $fixtures"
+      [[ "$query" == "skipped" ]] || fail "cp1-query was unplanned but result was $query"
+      [[ "$export" == "skipped" ]] || fail "cp1-export was unplanned but result was $export"
+      ;;
+    *) fail "cp1 plan was invalid: $planned" ;;
+  esac
+}
+
+validate_cp1_trio "${PLAN_CP1_ACCEPTANCE:-missing}" \
+  "${CP1_FIXTURES_RESULT:-missing}" \
+  "${CP1_QUERY_RESULT:-missing}" \
+  "${CP1_EXPORT_RESULT:-missing}"
 
 if [[ "${EVENT_NAME:-}" == "pull_request" ]]; then
   require_success "pr-context-report" "${PR_CONTEXT_RESULT:-missing}"

@@ -364,6 +364,30 @@ run = [
   "bash scripts/prepare-cp1-fixtures.sh",
 ]
 
+[tasks."ci:cp1:fixtures"]
+description = "Hosted CP1 fixtures entry: build the seeder once, prepare verified query/export bundles, and stage the seeder for consumer jobs"
+env = { CARGO_TARGET_DIR = "target/rust", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask" }
+run = [
+  { task = "ci:cp1:prepare-fixtures" },
+  "bash scripts/stage-cp1-seeder.sh",
+]
+
+[tasks."ci:lane:cp1-query"]
+description = "Run CP1 query acceptance against prepared fixtures and the verified release image (CI consumer; no local builds or reseeds)"
+env = { CARGO_TARGET_DIR = "target/rust", E2E_ENFORCE_CI_GATES = "true", UGOITE_QUERY_MEASURE_RUNNER = "compose", E2E_BUILD_IMAGES = "false", UGOITE_CP1_FIXTURE_BUNDLE_DIR = "target/cp1-fixtures/query", UGOITE_SEED_XTASK_BINARY = "target/cp1-seeder/xtask" }
+run = [
+  "bash scripts/assert-cp1-consumer-inputs.sh query",
+  { task = "measure:query-surfaces" },
+]
+
+[tasks."ci:lane:cp1-export"]
+description = "Run CP1 SQL export acceptance against prepared fixtures and the verified release CLI (CI consumer; no local builds or reseeds)"
+env = { CARGO_TARGET_DIR = "target/rust", UGOITE_CP1_FIXTURE_BUNDLE_DIR = "target/cp1-fixtures/export", UGOITE_SEED_XTASK_BINARY = "target/cp1-seeder/xtask" }
+run = [
+  "bash scripts/assert-cp1-consumer-inputs.sh export",
+  { task = "measure:sql-export" },
+]
+
 [tasks."ci:cp1:build-seeder"]
 description = "Build the CP1 fixture seeder once and record its process resources"
 env = { CARGO_TARGET_DIR = "target/rust" }
