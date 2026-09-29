@@ -68,6 +68,26 @@ record with its source SHA, environment, result, and limits.
 | History | `deno task --cwd e2e knowledge-journey` runs append-only restore/revert cases. `deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entries.test.ts --grep "History closes a confirmed revert and records the appended Change"` from `e2e/` runs the Browser History case.                                                                                                                                                                                                    |
 | Konase  | Run `cargo test -p ugoite-konase selected_resources_are_normalized_into_start_context_only --locked`, `cargo test -p ugoite-cli selected_resource_is_read_before_model_and_normalized_context_is_sent --locked`, and `cargo test -p ugoite-cli denied_or_mismatched_selected_read_stops_before_model_call --locked`; run Browser Host tests with `deno task frontend:test 'src/lib/konase/host.test.ts'`. These are portable, CLI, and Browser Host unit selectors, not real-server acceptance. |
 
+### Journey x surface evidence inventory (locators only, no passes claimed)
+
+No candidate run is recorded here. `reports/release/v0.2.1/` does not yet
+exist. Each cell names the exact current selector and its evidence status:
+`locator` (test exists, no candidate run recorded), `stub-harness` (runs
+against stub/test server, not real-server candidate evidence), `unit`
+(portable/host unit selector, not acceptance), or `not-run` (no selector
+recorded for this surface). Later candidate runs fill the run-evidence form
+below; a locator alone never counts as a pass.
+
+| Journey | Browser | CLI core | CLI remote | Server / API |
+| ------- | ------- | -------- | ---------- | ------------ |
+| Entry | `e2e/entries.test.ts` — locator, no candidate run recorded | not-run: same end-to-end operation through local CLI not yet evidenced | not-run: same end-to-end operation through remote CLI not yet evidenced | `e2e/knowledge-journey.test.ts` (`JOURNEY-KNOWLEDGE-001`, `JOURNEY-LOCATE-RECOVER-001`) — locator through test server API, no candidate run recorded |
+| Form | not-run: no dedicated Browser selector recorded | not-run: Change receipt / no-op coverage must be recorded separately | not-run: Change receipt / no-op coverage must be recorded separately | `e2e/forms.test.ts` (Create and List Forms; Query Entries by Form; Issue 2138) + `e2e/knowledge-journey.test.ts` schema semantics — locators, no candidate run recorded |
+| Asset | `e2e/entries.test.ts` (`REQ-FE-1877`, `@asset-owned`) — locator, no candidate run recorded | `test_asset_attach_create_and_update_read_name_back_core` (`crates/ugoite-cli/tests/test_assets.rs`) — stub-harness (Cargo-built subprocess), not packaged-candidate evidence | `test_asset_attach_create_reads_name_back_remote` (`crates/ugoite-cli/tests/test_assets.rs`) — stub-harness (stub REST), not real-server evidence | not-run: exact-candidate real-server digest check tracked by #3379 |
+| Search | `e2e/search-ui.test.ts` (`REQ-SRCH-004`, `REQ-SRCH-006`, `REQ-SRCH-007`) — locators, no candidate run recorded | not-run: CLI parity is separate evidence | not-run: CLI parity is separate evidence | `e2e/knowledge-journey.test.ts` server query postconditions — locator; server-execution cancellation is separate evidence |
+| SQL | `e2e/saved-sql-route.test.ts` (`REQ-FE-061`–`063`) — locators, no candidate run recorded | not-run as packaged CLI process evidence (`test_saved_sql_frozen` is a Rust service test on `fixtures/historical-spaces/pre-binding-sql`, not CLI process evidence) | `e2e/sql-export-remote-auth.test.ts` (revoke rejects page two; expiring credential refresh) — locators, no candidate run recorded | `cargo test -p ugoite-iceberg --test test_saved_sql_frozen` — service-level locator; bounded bytes, every continuation failure, and completed Browser result journey not proven |
+| History | `e2e/entries.test.ts` (`History closes a confirmed revert and records the appended Change`) — locator, no candidate run recorded | not-run: no separate CLI selector recorded | not-run: no separate CLI selector recorded | `e2e/knowledge-journey.test.ts` Entry restore / Space Change revert — locators; retaining confirmed success after refresh failure needs its own evidence |
+| Konase | `frontend/src/lib/konase/host.test.ts` (+ `KonasePanel.test.tsx` admission cases) — unit, not real-server acceptance | `cargo test -p ugoite-cli` selected-resource read/admission cases — unit, not real-server acceptance | not-run as remote acceptance (same CLI selectors are unit, not server proof) | not-run: portable engine selectors under `crates/ugoite-konase` are unit; real partial-save and revocation acceptance tracked by #3157 |
+
 ### Run evidence record
 
 For each executed selector, record the exact candidate source SHA, fixture or
