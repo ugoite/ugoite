@@ -108,11 +108,13 @@ trap cleanup EXIT
 
 echo "Preparing fixed query measurement dataset..." >&2
 if [[ -n "$FIXTURE_BUNDLE_DIR" ]]; then
+  FIXTURE_RUN_ID="$(bash "$ROOT_DIR/scripts/cp1-fixture-run-id.sh")"
   deno run -A "$ROOT_DIR/tools/cp1_fixture_bundle.ts" load query \
     --bundle-dir "$FIXTURE_BUNDLE_DIR" \
     --destination "$MEASURE_ROOT" \
     --xtask "${UGOITE_SEED_XTASK_BINARY:-}" \
-    --source-sha "$SOURCE_SHA"
+    --source-sha "$SOURCE_SHA" \
+    --run-id "$FIXTURE_RUN_ID"
 else
   for ((index = 0; index < ${#QUERY_FIXTURE_SLUGS[@]}; index++)); do
     fixture_slug="${QUERY_FIXTURE_SLUGS[$index]}"

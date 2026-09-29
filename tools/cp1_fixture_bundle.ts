@@ -1,4 +1,5 @@
 import {
+  CP1_SEED_MUTATION_BATCH_LIMIT,
   type Cp1Fixture,
   type Cp1FixtureSet,
   cp1FixturesFor,
@@ -92,6 +93,7 @@ async function main(): Promise<void> {
     throw new Error("CP1 fixture source SHA must match the checked out commit");
   }
   const expectedRunId = options.get("run-id") ??
+    Deno.env.get("UGOITE_CP1_RUN_ID")?.trim() ??
     Deno.env.get("UGOITE_CI_RUN_ID")?.trim() ??
     Deno.env.get("GITHUB_RUN_ID")?.trim() ?? "";
 
@@ -293,12 +295,7 @@ async function loadFixtureBundle(
       "CP1 fixture generator fingerprint does not match checkout",
     );
   }
-  if (expectedRunId !== null && manifest.ci_run_id !== expectedRunId) {
-    throw new Error("CP1 fixture manifest run ID does not match workflow run");
-  }
-  if (expectedRunId === null && !manifest.ci_run_id.startsWith("local-")) {
-    throw new Error("CP1 fixture load requires the current CI run ID");
-  }
+  assertFixtureRunBinding(expectedRunId, manifest.ci_run_id);
   const archivePath = await containedArtifactPath(
     bundleDir,
     manifest.archive.path,
@@ -671,12 +668,20 @@ async function verifyFixture(
     [...fixture.formNames].sort(),
     `Core API Form distribution for ${fixture.slug}`,
   );
-  if (
-    Object.values(counts).reduce<number>(
-      (sum, count) => sum + Number(count),
-      0,
-    ) !== fixture.entryCount
-  ) {
+  let distributed = 0;
+  for (const formName of fixture.formNames) {
+    const count = counts[formName];
+    if (
+      !Number.isSafeInteger(count) || (count as number) < 0 ||
+      (formName !== "Entry" && count === 0)
+    ) {
+      throw new Error(
+        `Core API Form distribution has an invalid Entry count for Form ${formName}`,
+      );
+    }
+    distributed += count as number;
+  }
+  if (distributed !== fixture.entryCount) {
     throw new Error(
       `Core API Form distribution count mismatch for ${fixture.slug}`,
     );
@@ -701,42 +706,90 @@ async function validateSeedProfiles(
         `CP1 seed profile files are not regular files for ${fixture.slug}`,
       );
     }
-    const profile = asRecord(
+    validateSeedProfileDocument(
       JSON.parse(await Deno.readTextFile(profilePath)),
-      `seed profile for ${fixture.slug}`,
+      fixture,
     );
-    const batchTimes = profile.mutation_batch_micros;
-    const batchEntries = profile.mutation_batch_entry_counts;
-    if (
-      profile.schema_version !== 1 || profile.space_slug !== fixture.slug ||
-      profile.scenario !== fixture.scenario || profile.seed !== fixture.seed ||
-      profile.entry_count !== fixture.entryCount ||
-      !Number.isSafeInteger(profile.form_count) ||
-      !Number.isSafeInteger(profile.space_creation_micros) ||
-      !(profile.owner_initialization_micros === null ||
-        Number.isSafeInteger(profile.owner_initialization_micros)) ||
-      !Number.isSafeInteger(profile.form_upsert_micros) ||
-      !Number.isSafeInteger(profile.markdown_render_micros) ||
-      !Number.isSafeInteger(profile.markdown_render_count) ||
-      !Number.isSafeInteger(profile.draft_conversion_micros) ||
-      !Number.isSafeInteger(profile.draft_conversion_count) ||
-      !Number.isSafeInteger(profile.total_wall_micros) ||
-      !Array.isArray(batchTimes) || !Array.isArray(batchEntries) ||
-      batchTimes.length === 0 || batchTimes.length !== batchEntries.length ||
-      batchTimes.some((value) => !Number.isSafeInteger(value)) ||
-      batchEntries.reduce(
-          (sum, value) =>
-            sum + (Number.isSafeInteger(value) ? Number(value) : 0),
-          0,
-        ) !== fixture.entryCount
-    ) {
-      throw new Error(
-        `CP1 seed profile is incomplete or mismatched for ${fixture.slug}`,
-      );
-    }
     if (resourceInfo.size === 0) {
       throw new Error(`CP1 seed resource profile is empty for ${fixture.slug}`);
     }
+  }
+}
+
+function seedProfileMismatch(fixture: Cp1Fixture): Error {
+  return new Error(
+    `CP1 seed profile is incomplete or mismatched for ${fixture.slug}`,
+  );
+}
+
+export function validateSeedProfileDocument(
+  value: unknown,
+  fixture: Cp1Fixture,
+): void {
+  const profile = asRecord(value, `seed profile for ${fixture.slug}`);
+  const batchTimes = profile.mutation_batch_micros;
+  const batchEntries = profile.mutation_batch_entry_counts;
+  if (
+    profile.schema_version !== 1 || profile.space_slug !== fixture.slug ||
+    profile.scenario !== fixture.scenario || profile.seed !== fixture.seed ||
+    profile.entry_count !== fixture.entryCount ||
+    !Number.isSafeInteger(profile.form_count) ||
+    (profile.form_count as number) < 0 ||
+    !Number.isSafeInteger(profile.space_creation_micros) ||
+    (profile.space_creation_micros as number) < 0 ||
+    !(profile.owner_initialization_micros === null ||
+      (Number.isSafeInteger(profile.owner_initialization_micros) &&
+        (profile.owner_initialization_micros as number) >= 0)) ||
+    !Number.isSafeInteger(profile.form_upsert_micros) ||
+    (profile.form_upsert_micros as number) < 0 ||
+    !Number.isSafeInteger(profile.markdown_render_micros) ||
+    (profile.markdown_render_micros as number) < 0 ||
+    !Number.isSafeInteger(profile.markdown_render_count) ||
+    (profile.markdown_render_count as number) < 0 ||
+    !Number.isSafeInteger(profile.draft_conversion_micros) ||
+    (profile.draft_conversion_micros as number) < 0 ||
+    !Number.isSafeInteger(profile.draft_conversion_count) ||
+    (profile.draft_conversion_count as number) < 0 ||
+    !Number.isSafeInteger(profile.total_wall_micros) ||
+    (profile.total_wall_micros as number) < 0 ||
+    !Array.isArray(batchTimes) || !Array.isArray(batchEntries) ||
+    batchTimes.length === 0 || batchTimes.length !== batchEntries.length
+  ) {
+    throw seedProfileMismatch(fixture);
+  }
+  if (
+    batchTimes.some((value) =>
+      !Number.isSafeInteger(value) || (value as number) < 0
+    )
+  ) {
+    throw seedProfileMismatch(fixture);
+  }
+  let batchedEntries = 0;
+  for (const value of batchEntries) {
+    if (
+      !Number.isSafeInteger(value) || (value as number) <= 0 ||
+      (value as number) > CP1_SEED_MUTATION_BATCH_LIMIT
+    ) {
+      throw seedProfileMismatch(fixture);
+    }
+    batchedEntries += value as number;
+  }
+  if (batchedEntries !== fixture.entryCount) {
+    throw seedProfileMismatch(fixture);
+  }
+}
+
+export function assertFixtureRunBinding(
+  expectedRunId: string | null,
+  manifestRunId: string,
+): void {
+  if (expectedRunId === null) {
+    throw new Error(
+      "CP1 fixture load requires the current CI run ID: pass --run-id or set UGOITE_CP1_RUN_ID",
+    );
+  }
+  if (manifestRunId !== expectedRunId) {
+    throw new Error("CP1 fixture manifest run ID does not match workflow run");
   }
 }
 
