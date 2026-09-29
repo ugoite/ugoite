@@ -160,24 +160,33 @@ impl PublicationAttempt {
     fn from_exact(
         publication: &PublicationContext,
         exact: Option<(CatalogHead, ExactCatalogHead)>,
-    ) -> Self {
+    ) -> Result<Self> {
         match exact {
-            Some((head, exact)) => Self {
-                publication: publication.clone(),
-                expected_generation: Some(head.generation),
-                expected_head_checksum: Some(head.checksum.clone()),
-                expected_previous_publication: head.publication_location.clone(),
-                expected_head: Some(head),
-                expected_head_etag: exact.etag,
-            },
-            None => Self {
+            Some((head, exact)) => {
+                // An authorization-only genesis Head has no Knowledge
+                // publication yet. Keep the first content generation at zero
+                // while still using that exact Head (and its ETag) as the
+                // shared CAS base.
+                let has_content_publication = head.publication_location.is_some();
+                Ok(Self {
+                    publication: publication.clone(),
+                    expected_generation: has_content_publication.then_some(head.generation),
+                    expected_head_checksum: has_content_publication
+                        .then(|| content_head_checksum(&head))
+                        .transpose()?,
+                    expected_previous_publication: head.publication_location.clone(),
+                    expected_head: Some(head),
+                    expected_head_etag: exact.etag,
+                })
+            }
+            None => Ok(Self {
                 publication: publication.clone(),
                 expected_head: None,
                 expected_head_etag: None,
                 expected_generation: None,
                 expected_head_checksum: None,
                 expected_previous_publication: None,
-            },
+            }),
         }
     }
 }
@@ -293,6 +302,153 @@ impl SpaceCatalog {
         self.store.mutation_permit()
     }
 
+    pub(crate) async fn authorization_snapshot(&self) -> Result<Option<(u64, Vec<u8>)>> {
+        let Some((head, _)) = self.exact_head().await? else {
+            return Ok(None);
+        };
+        let Some(reference) = head.authorization_snapshot else {
+            return Ok(None);
+        };
+        let bytes = self
+            .store
+            .read_authorization_snapshot(&reference.location)
+            .await
+            .map_err(storage_error)?;
+        if checksum(&bytes) != reference.checksum {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Space authorization snapshot checksum mismatch",
+            ));
+        }
+        Ok(Some((reference.revision, bytes)))
+    }
+
+    /// Publishes a new immutable authorization snapshot by advancing the same
+    /// exact Catalog Head used for protected content. A concurrent content
+    /// publication may win first; in that case this writer retries from the
+    /// new Head only while the expected authorization revision is unchanged.
+    // Service-layer wiring lands in a follow-up slice; unit tests in this
+    // module are the only callers until then.
+    #[allow(dead_code)]
+    pub(crate) async fn publish_authorization_snapshot(
+        &self,
+        expected_revision: Option<u64>,
+        revision: u64,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
+        let snapshot_checksum = checksum(&bytes);
+        let location = self
+            .store
+            .authorization_snapshot_path(revision, &snapshot_checksum)
+            .map_err(storage_error)?;
+        if let Err(error) = self
+            .store
+            .write_authorization_snapshot(&location, bytes.clone())
+            .await
+        {
+            // Immutable preparation may have succeeded while its response was
+            // lost. It is not authoritative until a Head references it, so a
+            // read proves whether the exact prepared bytes exist.
+            let observed = self.store.read_authorization_snapshot(&location).await;
+            if !observed.is_ok_and(|observed| checksum(&observed) == snapshot_checksum) {
+                return Err(storage_error(error));
+            }
+        }
+
+        let permit = self.mutation_permit().map_err(storage_error)?;
+        let _serializer = if self.store.write_mode() == CatalogWriteMode::SingleProcess {
+            Some(self.store.single_process_serializer().lock_owned().await)
+        } else {
+            None
+        };
+        for _ in 0..32 {
+            let exact = self.exact_head().await?;
+            let current_revision = exact
+                .as_ref()
+                .and_then(|(head, _)| head.authorization_snapshot.as_ref())
+                .map(|reference| reference.revision);
+            if current_revision != expected_revision {
+                if current_revision == Some(revision)
+                    && exact
+                        .as_ref()
+                        .and_then(|(head, _)| head.authorization_snapshot.as_ref())
+                        .is_some_and(|reference| reference.checksum == snapshot_checksum)
+                {
+                    return Ok(());
+                }
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Space authorization revision changed before publication",
+                ));
+            }
+
+            let mut next = exact.as_ref().map_or_else(
+                || CatalogHead::genesis(self.space_id, &self.namespace),
+                |(head, _)| head.clone(),
+            );
+            next.authorization_snapshot = Some(AuthorizationSnapshotReference {
+                revision,
+                location: location.clone(),
+                checksum: snapshot_checksum.clone(),
+            });
+            next.checksum = head_checksum(&next)?;
+            let encoded = encode_head(&next)?;
+            if encoded.len() > MAX_HEAD_BYTES {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head exceeds its 1 MiB safety limit",
+                ));
+            }
+            let result = if let Some((_, exact)) = exact {
+                self.store
+                    .replace_head(&permit, exact.etag.as_deref(), encoded)
+                    .await
+            } else {
+                self.store.create_head(&permit, encoded).await
+            };
+            match result {
+                Ok(()) => return Ok(()),
+                Err(error) if is_condition_conflict(&error) => continue,
+                Err(error) => {
+                    let observed = match self.authorization_snapshot().await {
+                        Ok(observed) => observed,
+                        Err(read_error) => {
+                            return Err(Error::new(
+                                ErrorKind::Unexpected,
+                                format!(
+                                    "authorization update outcome is unknown: {error}; exact Head reread failed: {read_error}"
+                                ),
+                            ));
+                        }
+                    };
+                    if observed
+                        .as_ref()
+                        .is_some_and(|(observed_revision, observed_bytes)| {
+                            *observed_revision == revision
+                                && checksum(observed_bytes) == snapshot_checksum
+                        })
+                    {
+                        return Ok(());
+                    }
+                    let observed_revision = observed.as_ref().map(|(revision, _)| *revision);
+                    if observed_revision == expected_revision {
+                        return Err(Error::new(
+                            ErrorKind::Unexpected,
+                            format!(
+                                "authorization update outcome is unknown: the exact base revision remains authoritative after a failed response: {error}"
+                            ),
+                        ));
+                    }
+                    return Err(storage_error(error));
+                }
+            }
+        }
+        Err(Error::new(
+            ErrorKind::Unexpected,
+            "Catalog Head changed during every authorization publication attempt",
+        ))
+    }
+
     pub(crate) fn with_publication_context(mut self, publication: PublicationContext) -> Self {
         self.publication = publication;
         self
@@ -324,7 +480,7 @@ impl SpaceCatalog {
         self.bound_attempt = Some(Arc::new(PublicationAttempt::from_exact(
             &self.publication,
             exact,
-        )));
+        )?));
         Ok(self)
     }
 
@@ -332,10 +488,7 @@ impl SpaceCatalog {
         if let Some(attempt) = &self.bound_attempt {
             return Ok((**attempt).clone());
         }
-        Ok(PublicationAttempt::from_exact(
-            &self.publication,
-            self.exact_head().await?,
-        ))
+        PublicationAttempt::from_exact(&self.publication, self.exact_head().await?)
     }
 
     async fn load_live_table(&self, table: &TableIdent) -> Result<iceberg::table::Table> {
@@ -587,7 +740,7 @@ impl SpaceCatalog {
             validate_publication_matches_head(&publication, &head)?;
             let boundary = self.publication_ref_for_record(&path, &publication)?;
             let generation = head.generation;
-            let expected_checksum = head.checksum.clone();
+            let expected_checksum = content_head_checksum(&head)?;
             let prefetched_path = path.clone();
             let start = ChangeHistoryChainCursor {
                 boundary: boundary.clone(),
@@ -1061,7 +1214,7 @@ impl SpaceCatalog {
             .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
         let mut next = head.next_generation();
         next.pins.insert(name.to_owned(), pin.clone());
-        let attempt = PublicationAttempt::from_exact(&publication, Some((head, exact)));
+        let attempt = PublicationAttempt::from_exact(&publication, Some((head, exact)))?;
         let result = self
             .publish_new_head(
                 &attempt,
@@ -1120,7 +1273,7 @@ impl SpaceCatalog {
         }
         let mut next = head.next_generation();
         next.pins.remove(name);
-        let attempt = PublicationAttempt::from_exact(&publication, Some((head, exact)));
+        let attempt = PublicationAttempt::from_exact(&publication, Some((head, exact)))?;
         let result = self
             .publish_new_head(
                 &attempt,
@@ -1370,7 +1523,8 @@ impl SpaceCatalog {
             return Err("publication_missing");
         };
         let mut expected_generation = head.generation;
-        let mut expected_checksum = head.checksum.clone();
+        let mut expected_checksum =
+            content_head_checksum(head).map_err(|_| "publication_head_mismatch")?;
         let mut is_head_publication = true;
         let mut visited = BTreeSet::new();
         loop {
@@ -1391,7 +1545,10 @@ impl SpaceCatalog {
             let publication = decode_publication_for_health(&bytes)?;
             if publication.generation != expected_generation
                 || publication.next_head_checksum != expected_checksum
-                || (is_head_publication && publication.next_head != *head)
+                || (is_head_publication
+                    && content_head_checksum(&publication.next_head)
+                        .map_err(|_| "publication_head_mismatch")?
+                        != expected_checksum)
                 || (is_head_publication
                     && head.publication_command_id.as_deref()
                         != Some(publication.command_id.as_str()))
@@ -1991,12 +2148,25 @@ impl SpaceCatalog {
         mut head: CatalogHead,
         publication: &PublicationContext,
     ) -> Result<Option<PublicationRecord>> {
-        let mut path = head.publication_location.clone().ok_or_else(|| {
-            Error::new(
+        let Some(mut path) = head.publication_location.clone() else {
+            // Owner initialization can be the first publication for a newly
+            // scaffolded Space. It advances the common Head with only an
+            // authorization snapshot; there is not yet a Catalog publication
+            // record to walk. The first content publication starts the
+            // receipt chain from this valid empty Head.
+            if head.generation == 0
+                && head.publication_command_id.is_none()
+                && head.tables.is_empty()
+                && head.pins.is_empty()
+                && head.authorization_snapshot.is_some()
+            {
+                return Ok(None);
+            }
+            return Err(Error::new(
                 ErrorKind::DataInvalid,
                 "Catalog Head has no publication record while resolving a command outcome",
-            )
-        })?;
+            ));
+        };
         let mut visited = BTreeSet::new();
         loop {
             if !visited.insert(path.clone()) {
@@ -2089,8 +2259,8 @@ impl SpaceCatalog {
             .map_or(0, |generation| generation.saturating_add(1));
         if publication.generation != expected_generation
             || publication.next_head.generation != publication.generation
-            || publication.next_head_checksum != publication.next_head.checksum
-            || head_checksum(&publication.next_head)? != publication.next_head_checksum
+            || publication.next_head_checksum != content_head_checksum(&publication.next_head)?
+            || head_checksum(&publication.next_head)? != publication.next_head.checksum
             || publication.next_head.space_id != self.space_id.to_string()
             || publication.next_head.namespace != *self.namespace.as_ref()
             || publication.next_head.publication_location.as_deref() != Some(publication_path)
@@ -2512,6 +2682,12 @@ impl SpaceCatalog {
             match self.store.read_publication(&publication_path).await {
                 Ok(bytes) => {
                     let publication = decode_publication(&bytes)?;
+                    if publication.next_head.authorization_snapshot != next.authorization_snapshot {
+                        return Err(Error::new(
+                            ErrorKind::DataInvalid,
+                            "existing Catalog publication has a different authorization snapshot",
+                        ));
+                    }
                     self.adopt_existing_publication_for_attempt(
                         attempt,
                         &publication_path,
@@ -2540,7 +2716,7 @@ impl SpaceCatalog {
             base_schema_id: update.base_schema_id,
             new_snapshot_id: update.new_snapshot_id,
             new_schema_id: update.new_schema_id,
-            next_head_checksum: next.checksum.clone(),
+            next_head_checksum: content_head_checksum(&next)?,
             next_head: next.clone(),
             checksum: String::new(),
         };
@@ -2589,13 +2765,27 @@ impl SpaceCatalog {
                 ErrorKind::DataInvalid,
                 "Catalog Head changed before this publication could be committed",
             )),
-            Err(error) => Err(storage_error(error)),
+            Err(error) => Err(Error::new(
+                ErrorKind::Unexpected,
+                format!("Catalog publication outcome is unknown after Head CAS request: {error}"),
+            )),
         }
     }
 
     async fn resolve_unknown_outcome(&self, attempt: &PublicationAttempt) -> Result<bool> {
-        let Some((head, _)) = self.exact_head().await? else {
+        let exact = self.exact_head().await.map_err(|error| {
+            Error::new(
+                ErrorKind::Unexpected,
+                format!(
+                    "Catalog publication outcome is unknown: exact Head reread failed: {error}"
+                ),
+            )
+        })?;
+        let Some((head, exact)) = exact else {
             return if attempt.expected_head.is_none() {
+                // An interrupted immutable preparation is still unreachable.
+                // A failed create-CAS response is preserved as an explicit
+                // unknown by the publisher itself.
                 Ok(false)
             } else {
                 Err(Error::new(
@@ -2604,6 +2794,17 @@ impl SpaceCatalog {
                 ))
             };
         };
+        if head.publication_location.is_none() {
+            if attempt.expected_head.as_ref() == Some(&head)
+                && attempt.expected_head_etag == exact.etag
+            {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "Catalog publication outcome is unknown: the exact base Head remains authoritative",
+                ));
+            }
+            return Ok(false);
+        }
         self.resolve_publication_from_head(head, attempt).await
     }
 
@@ -2612,12 +2813,11 @@ impl SpaceCatalog {
         mut head: CatalogHead,
         attempt: &PublicationAttempt,
     ) -> Result<bool> {
-        let mut path = head.publication_location.clone().ok_or_else(|| {
-            Error::new(
-                ErrorKind::DataInvalid,
-                "Catalog Head has no publication record while resolving an unknown outcome",
-            )
-        })?;
+        let Some(mut path) = head.publication_location.clone() else {
+            // Authorization-only genesis Heads are handled by the exact Head
+            // check in `resolve_unknown_outcome` before reaching this method.
+            return Ok(false);
+        };
         let mut visited = BTreeSet::new();
         loop {
             if !visited.insert(path.clone()) {
@@ -2721,12 +2921,43 @@ impl SpaceCatalog {
     /// Unknown-outcome resolution traverses the chain only as far as its
     /// exact attempt base generation.
     async fn validate_head_publication(&self, head: &CatalogHead) -> Result<()> {
-        let publication_path = head.publication_location.as_deref().ok_or_else(|| {
-            Error::new(
+        if let Some(reference) = &head.authorization_snapshot {
+            let expected_location = self
+                .store
+                .authorization_snapshot_path(reference.revision, &reference.checksum)
+                .map_err(storage_error)?;
+            if reference.location != expected_location {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head authorization snapshot location is invalid",
+                ));
+            }
+            let bytes = self
+                .store
+                .read_authorization_snapshot(&reference.location)
+                .await
+                .map_err(storage_error)?;
+            if checksum(&bytes) != reference.checksum {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head authorization snapshot checksum mismatch",
+                ));
+            }
+        }
+        let Some(publication_path) = head.publication_location.as_deref() else {
+            if head.generation == 0
+                && head.publication_command_id.is_none()
+                && head.tables.is_empty()
+                && head.pins.is_empty()
+                && head.authorization_snapshot.is_some()
+            {
+                return Ok(());
+            }
+            return Err(Error::new(
                 ErrorKind::DataInvalid,
                 "Catalog Head has no publication record",
-            )
-        })?;
+            ));
+        };
         let publication = decode_publication(
             &self
                 .store
@@ -3138,6 +3369,15 @@ struct CatalogHead {
     pins: BTreeMap<String, PinEntry>,
     publication_location: Option<String>,
     publication_command_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    authorization_snapshot: Option<AuthorizationSnapshotReference>,
+    checksum: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct AuthorizationSnapshotReference {
+    revision: u64,
+    location: String,
     checksum: String,
 }
 
@@ -3153,13 +3393,16 @@ impl CatalogHead {
             pins: BTreeMap::new(),
             publication_location: None,
             publication_command_id: None,
+            authorization_snapshot: None,
             checksum: String::new(),
         }
     }
 
     fn next_generation(&self) -> Self {
         let mut next = self.clone();
-        next.generation += 1;
+        if self.publication_location.is_some() {
+            next.generation += 1;
+        }
         next
     }
 }
@@ -3269,6 +3512,16 @@ fn head_checksum(head: &CatalogHead) -> Result<String> {
     ))
 }
 
+/// Checksum the Knowledge publication projection of a Head. Authorization
+/// snapshot advances share the same exact Head CAS without rewriting the
+/// immutable content publication that the Head still references.
+fn content_head_checksum(head: &CatalogHead) -> Result<String> {
+    let mut content = head.clone();
+    content.authorization_snapshot = None;
+    content.checksum.clear();
+    Ok(checksum(&serde_json::to_vec(&content).map_err(json_error)?))
+}
+
 fn publication_checksum(publication: &PublicationRecord) -> Result<String> {
     let mut canonical = publication.clone();
     canonical.checksum.clear();
@@ -3326,7 +3579,9 @@ fn decode_publication(bytes: &[u8]) -> Result<PublicationRecord> {
             "Catalog publication checksum mismatch",
         ));
     }
-    if publication.next_head.checksum != publication.next_head_checksum {
+    if content_head_checksum(&publication.next_head)? != publication.next_head_checksum
+        || publication.next_head.checksum != head_checksum(&publication.next_head)?
+    {
         return Err(Error::new(
             ErrorKind::DataInvalid,
             "Catalog publication Head checksum mismatch",
@@ -3354,7 +3609,11 @@ fn decode_publication_for_health(
     {
         return Err("publication_checksum_mismatch");
     }
-    if publication.next_head.checksum != publication.next_head_checksum {
+    if content_head_checksum(&publication.next_head).map_err(|_| "publication_head_mismatch")?
+        != publication.next_head_checksum
+        || publication.next_head.checksum
+            != head_checksum(&publication.next_head).map_err(|_| "publication_head_mismatch")?
+    {
         return Err("publication_head_mismatch");
     }
     Ok(publication)
@@ -3399,9 +3658,20 @@ fn validate_publication_matches_head(
     publication: &PublicationRecord,
     head: &CatalogHead,
 ) -> Result<()> {
+    // Authorization-only Head transitions do not create Knowledge Change
+    // records. Compare the current Head with the content Head recorded by the
+    // latest immutable publication while allowing its authorization pointer
+    // to have advanced through the same CAS coordinate.
+    let mut content_head = head.clone();
+    content_head.authorization_snapshot = None;
+    content_head.checksum.clear();
+    let mut publication_head = publication.next_head.clone();
+    publication_head.authorization_snapshot = None;
+    publication_head.checksum.clear();
     if publication.generation != head.generation
-        || publication.next_head_checksum != head.checksum
-        || publication.next_head != *head
+        || publication.next_head_checksum != content_head_checksum(&publication.next_head)?
+        || head_checksum(&publication.next_head)? != publication.next_head.checksum
+        || publication_head != content_head
         || head.publication_command_id.as_deref() != Some(publication.command_id.as_str())
     {
         return Err(Error::new(
@@ -3501,6 +3771,170 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn authorization_snapshot_publication_advances_one_head_cas() -> AnyResult<()> {
+        let operator = operator_from_uri("memory://authorization-head-cas")?;
+        let coordinator = SpaceCatalog::new(
+            SpaceCatalogStore::new(operator, "spaces/demo")?.single_process(),
+            SpaceId::from(Uuid::now_v7()),
+        )?;
+        coordinator
+            .publish_authorization_snapshot(None, 1, b"authorization-v1".to_vec())
+            .await?;
+        let (revision, bytes) = coordinator
+            .authorization_snapshot()
+            .await?
+            .expect("published authorization snapshot is Head-reachable");
+        assert_eq!(revision, 1);
+        assert_eq!(bytes, b"authorization-v1");
+
+        coordinator
+            .publish_authorization_snapshot(Some(1), 2, b"authorization-v2".to_vec())
+            .await?;
+        // A stale writer still expecting revision 1 loses: the shared Head
+        // CAS already moved to revision 2.
+        let stale = coordinator
+            .publish_authorization_snapshot(Some(1), 3, b"authorization-v3-stale".to_vec())
+            .await;
+        assert!(stale.is_err());
+
+        // Republishing the already-committed revision is idempotent.
+        coordinator
+            .publish_authorization_snapshot(Some(1), 2, b"authorization-v2".to_vec())
+            .await?;
+
+        let (head, _) = coordinator
+            .exact_head()
+            .await?
+            .expect("authorization publication creates the common Head");
+        assert_eq!(head.generation, 0);
+        assert_eq!(
+            head.authorization_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.revision),
+            Some(2)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn revocation_head_cas_defeats_a_stale_content_writer() -> AnyResult<()> {
+        let operator = operator_from_uri("memory://authorization-content-race")?;
+        let uid = Uuid::now_v7();
+        let store = SpaceCatalogStore::new(operator, "spaces/demo")?.single_process();
+        let coordinator = SpaceCatalog::new(store.clone(), SpaceId::from(uid))?;
+        coordinator
+            .publish_authorization_snapshot(None, 1, b"authorization-v1".to_vec())
+            .await?;
+
+        let (stale_head, stale_exact) = coordinator
+            .exact_head()
+            .await?
+            .expect("authorization publication creates the common Head");
+        let attempt = PublicationAttempt::from_exact(
+            &PublicationContext::new("stale-entry-update", "entry.update"),
+            Some((stale_head.clone(), stale_exact)),
+        )?;
+        let mut next = stale_head.next_generation();
+        next.generation = attempt.expected_generation.map_or(0, |value| value + 1);
+
+        coordinator
+            .publish_authorization_snapshot(Some(1), 2, b"authorization-v2-revoked".to_vec())
+            .await?;
+        let stale_result = coordinator
+            .publish_new_head(
+                &attempt,
+                next,
+                PublicationUpdate {
+                    affected_table: TableCoordinates {
+                        namespace: stale_head.namespace,
+                        table: "entries".to_owned(),
+                    },
+                    base_metadata_location: None,
+                    new_metadata_location: "entry-metadata-v2".to_owned(),
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: None,
+                    new_schema_id: 0,
+                },
+            )
+            .await;
+        assert!(stale_result.is_err());
+
+        let (current, _) = coordinator
+            .exact_head()
+            .await?
+            .expect("revocation remains the authoritative Head");
+        assert_eq!(current.generation, 0);
+        assert_eq!(
+            current
+                .authorization_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.revision),
+            Some(2)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authorization_head_advances_preserve_the_content_publication_chain() -> AnyResult<()> {
+        let operator = operator_from_uri("memory://authorization-publication-chain")?;
+        let uid = Uuid::now_v7();
+        let catalog = SpaceCatalog::new(
+            SpaceCatalogStore::new(operator, "spaces/demo")?.single_process(),
+            SpaceId::from(uid),
+        )?;
+        catalog
+            .publish_authorization_snapshot(None, 1, b"authorization-v1".to_vec())
+            .await?;
+
+        let (head, exact) = catalog
+            .exact_head()
+            .await?
+            .expect("authorization snapshot creates the common Head");
+        let attempt = PublicationAttempt::from_exact(
+            &PublicationContext::new("entry-create-after-auth", "test.entry.create"),
+            Some((head.clone(), exact)),
+        )?;
+        catalog
+            .publish_new_head(
+                &attempt,
+                head.next_generation(),
+                PublicationUpdate {
+                    affected_table: TableCoordinates {
+                        namespace: head.namespace,
+                        table: "entries".to_owned(),
+                    },
+                    base_metadata_location: None,
+                    new_metadata_location: "entry-metadata-v1".to_owned(),
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: None,
+                    new_schema_id: 0,
+                },
+            )
+            .await?;
+        catalog
+            .publish_authorization_snapshot(Some(1), 2, b"authorization-v2".to_vec())
+            .await?;
+
+        let (current, _) = catalog.exact_head().await?.expect("published Head");
+        let publication_path = current
+            .publication_location
+            .as_deref()
+            .expect("content publication remains reachable");
+        let publication =
+            decode_publication(&catalog.store.read_publication(publication_path).await?)?;
+        validate_publication_matches_head(&publication, &current)?;
+        catalog
+            .validate_publication_chain_for_health(&current)
+            .await
+            .expect("authorization-only Head changes do not break the content chain");
+        assert_eq!(current.generation, 0);
+        assert_eq!(current.authorization_snapshot.unwrap().revision, 2);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn creates_reopens_and_updates_a_table_through_head_publication() -> AnyResult<()> {
         let temp = tempdir()?;
         let operator = Operator::new(Fs::default().root(temp.path().to_string_lossy().as_ref()))?;
@@ -3512,7 +3946,7 @@ mod tests {
         // The same command must remain provably successful after another
         // writer advances the Catalog.
         let initial_attempt =
-            PublicationAttempt::from_exact(&catalog.publication, catalog.exact_head().await?);
+            PublicationAttempt::from_exact(&catalog.publication, catalog.exact_head().await?)?;
         let namespace = catalog.namespace().clone();
         let schema = iceberg::spec::Schema::builder()
             .with_fields(vec![])
@@ -3640,7 +4074,7 @@ mod tests {
             "interrupted-digest",
         ));
         let attempt =
-            PublicationAttempt::from_exact(&catalog.publication, catalog.exact_head().await?);
+            PublicationAttempt::from_exact(&catalog.publication, catalog.exact_head().await?)?;
         let table = TableIdent::new(catalog.namespace().clone(), "form_interrupted".to_string());
         let mut next = CatalogHead::genesis(catalog.space_id, catalog.namespace());
         let publication_path = catalog
@@ -3666,7 +4100,7 @@ mod tests {
             base_schema_id: None,
             new_snapshot_id: None,
             new_schema_id: 0,
-            next_head_checksum: next.checksum.clone(),
+            next_head_checksum: content_head_checksum(&next)?,
             next_head: next,
             checksum: String::new(),
         };
@@ -3692,7 +4126,7 @@ mod tests {
         ));
         let table = TableIdent::new(winner.namespace().clone(), "form_conflict".to_string());
         let winner_attempt =
-            PublicationAttempt::from_exact(&winner.publication, winner.exact_head().await?);
+            PublicationAttempt::from_exact(&winner.publication, winner.exact_head().await?)?;
         winner
             .publish_new_head(
                 &winner_attempt,
@@ -3719,7 +4153,7 @@ mod tests {
             "test",
             "loser-digest",
         ));
-        let stale_attempt = PublicationAttempt::from_exact(&loser.publication, None);
+        let stale_attempt = PublicationAttempt::from_exact(&loser.publication, None)?;
         let error = loser
             .publish_new_head(
                 &stale_attempt,
