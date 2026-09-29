@@ -365,6 +365,7 @@ function paxRecord(key: string, value: string): Uint8Array {
 async function writePaxTarGzip(
   path: string,
   memberPath: string,
+  paxHeaderPath = "./PaxHeaders/entry",
 ): Promise<void> {
   const encoder = new TextEncoder();
   const attributes = new Uint8Array([
@@ -373,7 +374,7 @@ async function writePaxTarGzip(
   ]);
   const payload = encoder.encode("{}");
   const paxHeader = writeTarHeader(
-    "PaxHeaders/entry",
+    paxHeaderPath,
     "x",
     0o600,
     attributes.length,
@@ -426,6 +427,18 @@ Deno.test("CP1 tar reader rejects traversal and links and resolves safe PAX path
     await writePaxTarGzip(paxTraversal, "../escape");
     await assertRejects(
       () => readTarMembers(paxTraversal),
+      Error,
+      "unsafe",
+    );
+
+    const paxHeaderTraversal = `${dir}/pax-header-traversal.tar.gz`;
+    await writePaxTarGzip(
+      paxHeaderTraversal,
+      "spaces/entry.json",
+      "./PaxHeaders/../escape",
+    );
+    await assertRejects(
+      () => readTarMembers(paxHeaderTraversal),
       Error,
       "unsafe",
     );

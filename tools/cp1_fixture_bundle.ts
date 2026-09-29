@@ -1036,6 +1036,21 @@ function validateTarPath(path: string, kind: TarMember["kind"]): string {
   return normalized;
 }
 
+function validatePaxHeaderPath(path: string): void {
+  // POSIX tar writers commonly store their per-entry metadata under
+  // ./PaxHeaders/<member>. This header is metadata, not an extracted member,
+  // but constrain its reserved path too so malformed archives fail closed.
+  const normalized = path.startsWith("./") ? path.slice(2) : path;
+  const segments = normalized.split("/");
+  if (
+    segments.length < 2 ||
+    !/^PaxHeaders(?:\.[A-Za-z0-9_-]+)?$/.test(segments[0] ?? "")
+  ) {
+    throw new Error(`unsafe CP1 fixture PAX header path: ${path}`);
+  }
+  validateTarPath(normalized, "file");
+}
+
 export async function readTarMembers(
   archivePath: string,
 ): Promise<TarMember[]> {
@@ -1079,7 +1094,7 @@ export async function readTarMembers(
         if (pendingPaxAttributes !== null) {
           throw new Error("CP1 fixture archive has nested PAX headers");
         }
-        validateTarPath(name, "file");
+        validatePaxHeaderPath(name);
         const size = parseTarOctal(
           header.subarray(124, 136),
           "PAX header size",
