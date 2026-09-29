@@ -1,6 +1,7 @@
 import { assertRejects } from "@std/assert/rejects";
 import { assertThrows } from "@std/assert/throws";
 import { assertEquals } from "@std/assert/equals";
+import { assert } from "@std/assert/assert";
 import {
   parseFixtureManifest,
   readTarMembers,
@@ -423,6 +424,28 @@ Deno.test("CP1 tar reader rejects traversal and links and resolves safe PAX path
       [longPath],
     );
 
+    const nestedPax = `${dir}/nested-pax.tar.gz`;
+    await writePaxTarGzip(
+      nestedPax,
+      longPath,
+      "spaces/PaxHeaders/.ugoite-space-slug-claims",
+    );
+    assertEquals(
+      (await readTarMembers(nestedPax)).map((member) => member.path),
+      [longPath],
+    );
+
+    const libarchivePax = `${dir}/libarchive-pax.tar.gz`;
+    await writePaxTarGzip(
+      libarchivePax,
+      longPath,
+      "PaxHeader/spaces",
+    );
+    assertEquals(
+      (await readTarMembers(libarchivePax)).map((member) => member.path),
+      [longPath],
+    );
+
     const paxTraversal = `${dir}/pax-traversal.tar.gz`;
     await writePaxTarGzip(paxTraversal, "../escape");
     await assertRejects(
@@ -435,7 +458,7 @@ Deno.test("CP1 tar reader rejects traversal and links and resolves safe PAX path
     await writePaxTarGzip(
       paxHeaderTraversal,
       "spaces/entry.json",
-      "./PaxHeaders/../escape",
+      "spaces/PaxHeaders/../escape",
     );
     await assertRejects(
       () => readTarMembers(paxHeaderTraversal),
@@ -445,4 +468,69 @@ Deno.test("CP1 tar reader rejects traversal and links and resolves safe PAX path
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+Deno.test({
+  name: "CP1 tar reader round-trips native POSIX tar metadata headers",
+  ignore: Deno.build.os === "windows",
+  fn: async () => {
+    const dir = await Deno.makeTempDir({ prefix: "ugoite-cp1-native-tar-" });
+    try {
+      const source = `${dir}/source`;
+      const archive = `${dir}/native.tar.gz`;
+      const destination = `${dir}/destination`;
+      await Deno.mkdir(`${source}/spaces`, { recursive: true });
+      await Deno.writeTextFile(`${source}/spaces/short.txt`, "fixture\n");
+      await Deno.mkdir(destination);
+      const tarArgs = [
+        "-czf",
+        archive,
+        "--format=posix",
+        "--no-xattrs",
+      ];
+      if (Deno.build.os === "darwin") tarArgs.push("--no-mac-metadata");
+      tarArgs.push("-C", source, "spaces");
+      const created = await new Deno.Command("tar", {
+        args: tarArgs,
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assert(
+        created.success,
+        new TextDecoder().decode(created.stderr),
+      );
+      assertEquals(
+        (await readTarMembers(archive)).map((member) => member.path),
+        ["spaces", "spaces/short.txt"],
+      );
+
+      const extracted = await new Deno.Command("tar", {
+        args: [
+          "-xzf",
+          archive,
+          "-C",
+          destination,
+          "--no-same-owner",
+          "--no-same-permissions",
+        ],
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assert(
+        extracted.success,
+        new TextDecoder().decode(extracted.stderr),
+      );
+      assertEquals(
+        await Deno.readTextFile(`${destination}/spaces/short.txt`),
+        "fixture\n",
+      );
+      const extractedPaths: string[] = [];
+      for await (const entry of Deno.readDir(`${destination}/spaces`)) {
+        extractedPaths.push(entry.name);
+      }
+      assertEquals(extractedPaths, ["short.txt"]);
+    } finally {
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
 });

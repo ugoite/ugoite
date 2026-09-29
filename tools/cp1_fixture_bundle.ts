@@ -1038,13 +1038,16 @@ function validateTarPath(path: string, kind: TarMember["kind"]): string {
 
 function validatePaxHeaderPath(path: string): void {
   // POSIX tar writers commonly store their per-entry metadata under
-  // ./PaxHeaders/<member>. This header is metadata, not an extracted member,
-  // but constrain its reserved path too so malformed archives fail closed.
+  // ./PaxHeaders/<member> or <parent>/PaxHeaders/<member>. This header is
+  // metadata, not an extracted member, but constrain its reserved path too so
+  // malformed archives fail closed.
   const normalized = path.startsWith("./") ? path.slice(2) : path;
   const segments = normalized.split("/");
   if (
     segments.length < 2 ||
-    !/^PaxHeaders(?:\.[A-Za-z0-9_-]+)?$/.test(segments[0] ?? "")
+    !segments.slice(0, -1).some((segment) =>
+      /^PaxHeader(?:s)?(?:\.[A-Za-z0-9_-]+)?$/.test(segment)
+    )
   ) {
     throw new Error(`unsafe CP1 fixture PAX header path: ${path}`);
   }
