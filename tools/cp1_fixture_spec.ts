@@ -10,6 +10,14 @@ export type Cp1Fixture = Readonly<{
 }>;
 
 export const CP1_FIXTURE_SPEC_SCHEMA_VERSION = 1;
+
+/**
+ * Maximum Entries per seeder mutation batch. Mirrors the production
+ * `entry::MAX_ENTRY_CREATE_BATCH_SIZE` bound enforced by the sample-data
+ * seeder; fixture profile validators use it to reject impossible batch
+ * distributions before a bundle is published or consumed.
+ */
+export const CP1_SEED_MUTATION_BATCH_LIMIT = 256;
 export const CP1_RENEWABLE_OPS_FORM_NAMES = [
   "Array",
   "EnergyReport",

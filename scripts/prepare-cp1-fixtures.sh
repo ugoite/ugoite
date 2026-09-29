@@ -18,6 +18,11 @@ fi
 
 mkdir -p "$FIXTURE_OUTPUT_ROOT" "$PROFILE_DIR"
 PROFILE_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+FIXTURE_RUN_ID="${UGOITE_CP1_RUN_ID:-${UGOITE_CI_RUN_ID:-${GITHUB_RUN_ID:-}}}"
+if [[ -z "$FIXTURE_RUN_ID" ]]; then
+  FIXTURE_RUN_ID="local-${PROFILE_RUN_ID}"
+fi
+printf '%s\n' "$FIXTURE_RUN_ID" >"$PROFILE_DIR/.cp1-fixture-run-id"
 SOURCE_SHA="$(git rev-parse HEAD)"
 QUERY_ROOT="$(mktemp -d "$FIXTURE_OUTPUT_ROOT/.query-work.XXXXXX")"
 EXPORT_ROOT="$(mktemp -d "$FIXTURE_OUTPUT_ROOT/.export-work.XXXXXX")"
@@ -62,8 +67,10 @@ seed_set() {
       seed_args+=(--owner "$owner_display_name")
     fi
     echo "Preparing CP1 $kind fixture $slug ($entry_count Entries)..." >&2
-    bash scripts/measure-process-resources.sh "$resource" \
-      env UGOITE_SEED_XTASK_BINARY="$SEEDER" \
+    # dev-seed.sh already records the seed process resources next to the seed
+    # profile when --profile-output is set; an outer wrapper here would
+    # overwrite that same <profile>.time.txt record.
+    env UGOITE_SEED_XTASK_BINARY="$SEEDER" \
       UGOITE_SOURCE_SHA="$SOURCE_SHA" \
       bash scripts/dev-seed.sh "${seed_args[@]}" --profile-output "$profile"
     mkdir -p "$root/.cp1-profiles"
@@ -81,7 +88,8 @@ bash scripts/measure-process-resources.sh "$PROFILE_DIR/fixture-bundle-query-${P
     --root "$QUERY_ROOT" \
     --out "$FIXTURE_OUTPUT_ROOT/query" \
     --xtask "$SEEDER" \
-    --source-sha "$SOURCE_SHA"
+    --source-sha "$SOURCE_SHA" \
+    --run-id "$FIXTURE_RUN_ID"
 
 echo "Verifying and packaging CP1 export fixture..." >&2
 bash scripts/measure-process-resources.sh "$PROFILE_DIR/fixture-bundle-export-${PROFILE_RUN_ID}.time.txt" \
@@ -89,6 +97,7 @@ bash scripts/measure-process-resources.sh "$PROFILE_DIR/fixture-bundle-export-${
     --root "$EXPORT_ROOT" \
     --out "$FIXTURE_OUTPUT_ROOT/export" \
     --xtask "$SEEDER" \
-    --source-sha "$SOURCE_SHA"
+    --source-sha "$SOURCE_SHA" \
+    --run-id "$FIXTURE_RUN_ID"
 
 echo "Prepared source- and run-scoped CP1 fixture bundles at $FIXTURE_OUTPUT_ROOT" >&2

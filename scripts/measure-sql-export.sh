@@ -141,11 +141,13 @@ else
   echo "Using verified CLI artifact and preparing the fixed ${FIXTURE_ENTRY_COUNT}-entry dataset..." >&2
 fi
 if [[ -n "$FIXTURE_BUNDLE_DIR" ]]; then
+  FIXTURE_RUN_ID="$(bash "$ROOT_DIR/scripts/cp1-fixture-run-id.sh")"
   deno run -A "$ROOT_DIR/tools/cp1_fixture_bundle.ts" load export \
     --bundle-dir "$FIXTURE_BUNDLE_DIR" \
     --destination "$DATA_ROOT" \
     --xtask "${UGOITE_SEED_XTASK_BINARY:-}" \
-    --source-sha "$SOURCE_SHA"
+    --source-sha "$SOURCE_SHA" \
+    --run-id "$FIXTURE_RUN_ID"
 else
   seed_args=(
     --root "$DATA_ROOT"

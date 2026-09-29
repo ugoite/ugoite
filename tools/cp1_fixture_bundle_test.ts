@@ -3,12 +3,19 @@ import { assertThrows } from "@std/assert/throws";
 import { assertEquals } from "@std/assert/equals";
 import { assert } from "@std/assert/assert";
 import {
+  assertFixtureRunBinding,
   parseFixtureManifest,
   readTarMembers,
   validateCp1ArchiveMembers,
   validateProducerTree,
+  validateSeedProfileDocument,
 } from "./cp1_fixture_bundle.ts";
-import { type Cp1Fixture, cp1FixturesFor } from "./cp1_fixture_spec.ts";
+import {
+  CP1_SEED_MUTATION_BATCH_LIMIT,
+  type Cp1Fixture,
+  cp1FixtureBySlug,
+  cp1FixturesFor,
+} from "./cp1_fixture_spec.ts";
 
 const uidFor = (index: number) =>
   `018f0000-0000-7${String(index).padStart(3, "0")}-8000-${
@@ -216,6 +223,132 @@ Deno.test("CP1 fixture manifests reject unknown schema, malformed identity, and 
 Deno.test("CP1 fixture archive member validation permits only expected Spaces and profiles", () => {
   const { members, readbacks, fixtures } = makeArchiveMembers("query");
   validateCp1ArchiveMembers(members, fixtures, readbacks);
+});
+
+function makeSeedProfile(fixture: Cp1Fixture, batchEntries: unknown[]) {
+  return {
+    schema_version: 1,
+    space_slug: fixture.slug,
+    scenario: fixture.scenario,
+    seed: fixture.seed,
+    entry_count: fixture.entryCount,
+    form_count: fixture.formNames.length,
+    space_creation_micros: 2,
+    owner_initialization_micros: fixture.ownerDisplayName === null ? null : 3,
+    form_upsert_micros: 4,
+    markdown_render_micros: 5,
+    markdown_render_count: 7,
+    draft_conversion_micros: 6,
+    draft_conversion_count: 8,
+    mutation_batch_micros: batchEntries.map(() => 9),
+    mutation_batch_entry_counts: batchEntries,
+    total_wall_micros: 50,
+  };
+}
+
+function validSeedBatches(entryCount: number): number[] {
+  const batches: number[] = [];
+  let remaining = entryCount;
+  while (remaining > 0) {
+    const next = Math.min(CP1_SEED_MUTATION_BATCH_LIMIT, remaining);
+    batches.push(next);
+    remaining -= next;
+  }
+  return batches;
+}
+
+Deno.test("CP1 seed profiles accept fully batched entry distributions", () => {
+  for (const kind of ["query", "export"] as const) {
+    for (const fixture of cp1FixturesFor(kind)) {
+      const batches = validSeedBatches(fixture.entryCount);
+      assert(
+        batches.every((count) =>
+          Number.isSafeInteger(count) && count > 0 &&
+          count <= CP1_SEED_MUTATION_BATCH_LIMIT
+        ),
+      );
+      assertEquals(
+        batches.reduce((sum, count) => sum + count, 0),
+        fixture.entryCount,
+      );
+      validateSeedProfileDocument(makeSeedProfile(fixture, batches), fixture);
+    }
+  }
+});
+
+Deno.test("CP1 seed profiles reject invalid or compensating batch entry counts", () => {
+  const fixture = cp1FixtureBySlug("query-space-b");
+  assertEquals(fixture.entryCount, 4000);
+  const filler = Array<number>(16).fill(250);
+  const cases: Array<[string, unknown[]]> = [
+    ["string count", [...filler, "250"]],
+    ["compensating string count", [...validSeedBatches(4000), "stale"]],
+    ["fractional count", [128.5, 127.5, ...validSeedBatches(4000 - 256)]],
+    [
+      "compensating fractional count",
+      [...Array<number>(16).fill(250), 249.5],
+    ],
+    ["negative count", [...Array<number>(19).fill(200), 210, -10]],
+    ["compensating zero count", [...filler, 0]],
+    ["over-limit count", [257, ...validSeedBatches(4000 - 257)]],
+    ["unsafe integer count", [
+      ...validSeedBatches(4000),
+      Number.MAX_SAFE_INTEGER + 1,
+    ]],
+    ["short total", [100]],
+  ];
+  for (const [name, batchEntries] of cases) {
+    assertThrows(
+      () =>
+        validateSeedProfileDocument(
+          makeSeedProfile(fixture, batchEntries),
+          fixture,
+        ),
+      Error,
+      "incomplete or mismatched",
+      `seed profile must reject ${name}`,
+    );
+  }
+  assertThrows(
+    () =>
+      validateSeedProfileDocument(
+        {
+          ...makeSeedProfile(fixture, validSeedBatches(4000)),
+          seed: fixture.seed + 1,
+        },
+        fixture,
+      ),
+    Error,
+    "incomplete or mismatched",
+  );
+});
+
+Deno.test("CP1 fixture loads bind local manifests to the expected producer run ID", () => {
+  assertFixtureRunBinding("123456789", "123456789");
+  assertFixtureRunBinding(
+    "local-20260929T000000Z-42",
+    "local-20260929T000000Z-42",
+  );
+  assertThrows(
+    () => assertFixtureRunBinding(null, "local-20260929T000000Z-42"),
+    Error,
+    "requires the current CI run ID",
+  );
+  assertThrows(
+    () => assertFixtureRunBinding(null, "123456789"),
+    Error,
+    "requires the current CI run ID",
+  );
+  assertThrows(
+    () => assertFixtureRunBinding("999", "123456789"),
+    Error,
+    "does not match workflow run",
+  );
+  assertThrows(
+    () => assertFixtureRunBinding("local-aaa", "local-bbb"),
+    Error,
+    "does not match workflow run",
+  );
 });
 
 Deno.test("CP1 fixture tree accepts only known Node-local metadata outside bundled Spaces", () => {
