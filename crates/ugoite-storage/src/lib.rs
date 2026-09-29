@@ -4017,6 +4017,7 @@ pub struct CatalogBackendCapabilities {
 }
 
 const EXACT_HEAD_READ_ATTEMPTS: usize = 3;
+const MAX_AUTHORIZATION_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Narrow OpenDAL boundary for the Space Catalog root and immutable
 /// publication evidence. It is intentionally not a general-purpose wrapper.
@@ -4181,6 +4182,11 @@ impl SpaceCatalogStore {
     /// shared mode for this store value. The immutable probe is evidence only;
     /// it is never used for recovery or coordination.
     pub async fn verify_shared_writes(mut self) -> Result<Self> {
+        if !self.supports_shared_authorization_publication() {
+            return Err(anyhow!(
+                "shared authorization publication is not admitted for this backend configuration"
+            ));
+        }
         if !self.supports_shared_writes() {
             return Err(anyhow!(
                 "shared Catalog writes require ETag-bound reads and conditional writes"
@@ -4456,6 +4462,63 @@ impl SpaceCatalogStore {
         self.space_path(&format!("_ugoite/checkpoints/{name}.json"))
     }
 
+    /// Immutable authorization snapshots are referenced by the authoritative
+    /// Catalog Head. The revision is diagnostic; the checksum keeps competing
+    /// preparations for the same revision at distinct object coordinates.
+    pub fn authorization_snapshot_path(&self, revision: u64, checksum: &str) -> Result<String> {
+        if checksum.len() != 64
+            || !checksum
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
+            return Err(anyhow!("invalid authorization snapshot checksum"));
+        }
+        Ok(self.space_path(&format!(
+            "_ugoite/authorization/snapshots/{revision}-{checksum}.json"
+        )))
+    }
+
+    pub async fn read_authorization_snapshot(&self, path: &str) -> opendal::Result<Vec<u8>> {
+        if !path.starts_with(&self.space_path("_ugoite/authorization/snapshots/"))
+            || path.contains("..")
+        {
+            return Err(Error::new(
+                ErrorKind::ConfigInvalid,
+                "authorization snapshot path is outside the Space prefix",
+            ));
+        }
+        let metadata = self.operator.stat(path).await?;
+        if metadata.content_length() > MAX_AUTHORIZATION_SNAPSHOT_BYTES {
+            return Err(Error::new(
+                ErrorKind::ConfigInvalid,
+                "authorization snapshot exceeds its 64 MiB safety limit",
+            ));
+        }
+        Ok(self.operator.read(path).await?.to_vec())
+    }
+
+    pub async fn write_authorization_snapshot(&self, path: &str, bytes: Vec<u8>) -> Result<()> {
+        if !path.starts_with(&self.space_path("_ugoite/authorization/snapshots/"))
+            || path.contains("..")
+            || !path.ends_with(".json")
+        {
+            return Err(anyhow!(
+                "authorization snapshot path is outside the Space prefix"
+            ));
+        }
+        if bytes.len() as u64 > MAX_AUTHORIZATION_SNAPSHOT_BYTES {
+            return Err(anyhow!(
+                "authorization snapshot exceeds its 64 MiB safety limit"
+            ));
+        }
+        self.operator
+            .write_with(path, bytes)
+            .if_not_exists(true)
+            .await
+            .context("create immutable Space authorization snapshot")?;
+        Ok(())
+    }
+
     pub async fn read_exact_head(&self) -> Result<Option<ExactCatalogHead>> {
         let Some((bytes, etag)) = self.read_exact_object(&self.head_path()).await? else {
             return Ok(None);
@@ -4628,6 +4691,13 @@ impl SpaceCatalogStore {
         capabilities.read_with_if_match
             && capabilities.write_with_if_match
             && capabilities.write_with_if_not_exists
+    }
+
+    /// Whether this backend belongs to the currently admitted S1 shared
+    /// publication matrix. Other OpenDAL schemes stay read-only until their
+    /// own independent-process acceptance evidence is added to that matrix.
+    pub fn supports_shared_authorization_publication(&self) -> bool {
+        self.operator.info().scheme() == "s3"
     }
 
     pub fn backend_capabilities(&self) -> CatalogBackendCapabilities {
@@ -5527,11 +5597,30 @@ mod tests {
         let error = SpaceCatalogStore::new(operator, "spaces/demo")?
             .verify_shared_writes()
             .await
-            .expect_err("Memory has no ETag-bound shared-write contract");
+            .expect_err("Memory is not admitted for shared authorization publication");
 
         assert!(error
             .to_string()
-            .contains("ETag-bound reads and conditional writes"));
+            .contains("not admitted for this backend configuration"));
+        Ok(())
+    }
+
+    #[test]
+    fn shared_authorization_admission_is_limited_to_s3_backend_family() -> Result<()> {
+        let s3 = SpaceCatalogStore::new(
+            operator_from_uri_with_endpoint(
+                "s3://bucket/space",
+                Some("https://storage.example.test"),
+            )?,
+            "spaces/s3",
+        )?;
+        let memory = SpaceCatalogStore::new(
+            operator_from_uri("memory://shared-authorization-admission")?,
+            "spaces/memory",
+        )?;
+
+        assert!(s3.supports_shared_authorization_publication());
+        assert!(!memory.supports_shared_authorization_publication());
         Ok(())
     }
 
@@ -5617,10 +5706,10 @@ mod tests {
             DerivedRelationHeadStore::new(operator, "spaces/demo", uuid::Uuid::from_u128(0xA001))
                 .shared()
                 .await
-                .expect_err("filesystem backend has no exact shared-write contract");
+                .expect_err("filesystem backend is not admitted for shared publication");
         assert!(error
             .to_string()
-            .contains("ETag-bound reads and conditional writes"));
+            .contains("not admitted for this backend configuration"));
         Ok(())
     }
 
