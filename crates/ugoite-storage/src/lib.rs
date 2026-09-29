@@ -5706,10 +5706,10 @@ mod tests {
             DerivedRelationHeadStore::new(operator, "spaces/demo", uuid::Uuid::from_u128(0xA001))
                 .shared()
                 .await
-                .expect_err("filesystem backend has no exact shared-write contract");
+                .expect_err("filesystem backend is not admitted for shared publication");
         assert!(error
             .to_string()
-            .contains("ETag-bound reads and conditional writes"));
+            .contains("not admitted for this backend configuration"));
         Ok(())
     }
 
