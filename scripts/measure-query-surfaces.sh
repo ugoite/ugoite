@@ -18,20 +18,21 @@ declare -a QUERY_FIXTURE_SEEDS=()
 declare -a QUERY_FIXTURE_COUNTS=()
 declare -a QUERY_FIXTURE_OWNERS=()
 declare -a QUERY_PROFILE_ARGS=()
+FIXTURE_BUNDLE_DIR="${UGOITE_CP1_FIXTURE_BUNDLE_DIR:-}"
+if [[ -n "$FIXTURE_BUNDLE_DIR" && "$FIXTURE_BUNDLE_DIR" != /* ]]; then
+  FIXTURE_BUNDLE_DIR="$ROOT_DIR/$FIXTURE_BUNDLE_DIR"
+fi
 while IFS=$'\t' read -r fixture_slug scenario seed entry_count owner_display_name; do
   [[ -n "$fixture_slug" ]] || continue
   if ! [[ "$seed" =~ ^[0-9]+$ && "$entry_count" =~ ^[0-9]+$ ]]; then
     echo "Invalid numeric values in CP1 query fixture spec for $fixture_slug" >&2
     exit 1
   fi
-  fixture_profile="$PROFILE_DIR/${fixture_slug}-${PROFILE_RUN_ID}.json"
-  fixture_resource="${fixture_profile%.json}.time.txt"
   QUERY_FIXTURE_SLUGS+=("$fixture_slug")
   QUERY_FIXTURE_SCENARIOS+=("$scenario")
   QUERY_FIXTURE_SEEDS+=("$seed")
   QUERY_FIXTURE_COUNTS+=("$entry_count")
   QUERY_FIXTURE_OWNERS+=("$owner_display_name")
-  QUERY_PROFILE_ARGS+=(--seed "$fixture_slug" "$fixture_profile" "$fixture_resource")
 done <<<"$QUERY_FIXTURE_ROWS"
 if [[ "${#QUERY_FIXTURE_SLUGS[@]}" -eq 0 ]]; then
   echo "CP1 query fixture specification is empty" >&2
@@ -60,6 +61,17 @@ if [[ -n "${UGOITE_QUERY_MEASURE_ROOT:-}" ]]; then
 else
   MEASURE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ugoite-query-surfaces.XXXXXX")"
 fi
+
+SOURCE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+for fixture_slug in "${QUERY_FIXTURE_SLUGS[@]}"; do
+  if [[ -n "$FIXTURE_BUNDLE_DIR" ]]; then
+    fixture_profile="$MEASURE_ROOT/.cp1-profiles/$fixture_slug.json"
+  else
+    fixture_profile="$PROFILE_DIR/${fixture_slug}-${PROFILE_RUN_ID}.json"
+  fi
+  fixture_resource="${fixture_profile%.json}.time.txt"
+  QUERY_PROFILE_ARGS+=(--seed "$fixture_slug" "$fixture_profile" "$fixture_resource")
+done
 
 if [[ "$OUTPUT_FILE" != /* ]]; then
   OUTPUT_FILE="$ROOT_DIR/$OUTPUT_FILE"
@@ -95,23 +107,31 @@ trap 'exit 143' TERM
 trap cleanup EXIT
 
 echo "Preparing fixed query measurement dataset..." >&2
-for ((index = 0; index < ${#QUERY_FIXTURE_SLUGS[@]}; index++)); do
-  fixture_slug="${QUERY_FIXTURE_SLUGS[$index]}"
-  fixture_profile="$PROFILE_DIR/${fixture_slug}-${PROFILE_RUN_ID}.json"
-  seed_args=(
-    --root "$MEASURE_ROOT"
-    --space-id "$fixture_slug"
-    --scenario "${QUERY_FIXTURE_SCENARIOS[$index]}"
-    --entry-count "${QUERY_FIXTURE_COUNTS[$index]}"
-    --seed "${QUERY_FIXTURE_SEEDS[$index]}"
-  )
-  if [[ -n "${QUERY_FIXTURE_OWNERS[$index]}" ]]; then
-    seed_args+=(--owner "${QUERY_FIXTURE_OWNERS[$index]}")
-  fi
-  bash "$ROOT_DIR/scripts/dev-seed.sh" \
-    "${seed_args[@]}" \
-    --profile-output "$fixture_profile"
-done
+if [[ -n "$FIXTURE_BUNDLE_DIR" ]]; then
+  deno run -A "$ROOT_DIR/tools/cp1_fixture_bundle.ts" load query \
+    --bundle-dir "$FIXTURE_BUNDLE_DIR" \
+    --destination "$MEASURE_ROOT" \
+    --xtask "${UGOITE_SEED_XTASK_BINARY:-}" \
+    --source-sha "$SOURCE_SHA"
+else
+  for ((index = 0; index < ${#QUERY_FIXTURE_SLUGS[@]}; index++)); do
+    fixture_slug="${QUERY_FIXTURE_SLUGS[$index]}"
+    fixture_profile="$PROFILE_DIR/${fixture_slug}-${PROFILE_RUN_ID}.json"
+    seed_args=(
+      --root "$MEASURE_ROOT"
+      --space-id "$fixture_slug"
+      --scenario "${QUERY_FIXTURE_SCENARIOS[$index]}"
+      --entry-count "${QUERY_FIXTURE_COUNTS[$index]}"
+      --seed "${QUERY_FIXTURE_SEEDS[$index]}"
+    )
+    if [[ -n "${QUERY_FIXTURE_OWNERS[$index]}" ]]; then
+      seed_args+=(--owner "${QUERY_FIXTURE_OWNERS[$index]}")
+    fi
+    bash "$ROOT_DIR/scripts/dev-seed.sh" \
+      "${seed_args[@]}" \
+      --profile-output "$fixture_profile"
+  done
+fi
 
 echo "Running the server-backed browser measurement..." >&2
 if [[ "$QUERY_MEASURE_RUNNER" == "host" ]]; then
@@ -119,7 +139,7 @@ if [[ "$QUERY_MEASURE_RUNNER" == "host" ]]; then
     "$WASM_BUILD_RESOURCE" mise run build:wasm
   bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
     "$SERVER_BUILD_RESOURCE" cargo build -p ugoite-server --locked
-  UGOITE_SOURCE_SHA="${UGOITE_SOURCE_SHA:-$(git -C "$ROOT_DIR" rev-parse HEAD)}" \
+  UGOITE_SOURCE_SHA="${UGOITE_SOURCE_SHA:-$SOURCE_SHA}" \
   UGOITE_QUERY_MEASURE_ENABLED=true \
   UGOITE_QUERY_MEASURE_OUTPUT="$OUTPUT_FILE" \
   UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=300 \
@@ -128,7 +148,7 @@ if [[ "$QUERY_MEASURE_RUNNER" == "host" ]]; then
     bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
       "$QUERY_E2E_RESOURCE" bash "$ROOT_DIR/e2e/scripts/run-e2e.sh" query-measurement
 else
-  UGOITE_SOURCE_SHA="${UGOITE_SOURCE_SHA:-$(git -C "$ROOT_DIR" rev-parse HEAD)}" \
+  UGOITE_SOURCE_SHA="${UGOITE_SOURCE_SHA:-$SOURCE_SHA}" \
   UGOITE_QUERY_MEASURE_ENABLED=true \
   UGOITE_QUERY_MEASURE_OUTPUT="$OUTPUT_FILE" \
   E2E_BUILD_IMAGES="${E2E_BUILD_IMAGES:-true}" \

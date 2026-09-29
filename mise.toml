@@ -351,9 +351,17 @@ run = [{ task = "test:docsite:e2e:navigation" }]
 [tasks."ci:lane:cp1-acceptance"]
 description = "Run fixed 10k/two-Space query lifecycle and bounded SQL export acceptance"
 run = [
+  { task = "ci:cp1:prepare-fixtures" },
+  { task = "measure:query-surfaces", env = { CARGO_TARGET_DIR = "target/rust", E2E_ENFORCE_CI_GATES = "true", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask", UGOITE_CP1_FIXTURE_BUNDLE_DIR = "target/cp1-fixtures/query" } },
+  { task = "measure:sql-export", env = { CARGO_TARGET_DIR = "target/rust", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask", UGOITE_CP1_FIXTURE_BUNDLE_DIR = "target/cp1-fixtures/export" } },
+]
+
+[tasks."ci:cp1:prepare-fixtures"]
+description = "Build the CP1 seeder once and prepare verified query and export fixture bundles"
+env = { CARGO_TARGET_DIR = "target/rust", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask" }
+run = [
   { task = "ci:cp1:build-seeder" },
-  { task = "measure:query-surfaces", env = { CARGO_TARGET_DIR = "target/rust", E2E_ENFORCE_CI_GATES = "true", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask" } },
-  { task = "measure:sql-export", env = { CARGO_TARGET_DIR = "target/rust", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask" } },
+  "bash scripts/prepare-cp1-fixtures.sh",
 ]
 
 [tasks."ci:cp1:build-seeder"]

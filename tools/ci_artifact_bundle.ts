@@ -1,3 +1,5 @@
+import { containedArtifactPath, sha256File } from "./ci_file_security.ts";
+
 type ManifestFile = {
   path: string;
   sha256: string;
@@ -196,11 +198,11 @@ async function verifyManifestArtifact(
       );
     }
     const filePath = await containedArtifactPath(root, file.path);
-    const bytes = await Deno.readFile(filePath);
-    if (await sha256(bytes) !== file.sha256) {
+    const actual = await sha256File(filePath);
+    if (actual.sha256 !== file.sha256) {
       throw new Error(`artifact checksum mismatch for ${file.path}`);
     }
-    if (bytes.byteLength !== file.size) {
+    if (actual.size !== file.size) {
       throw new Error(`artifact size mismatch for ${file.path}`);
     }
   }
@@ -235,52 +237,6 @@ export function validateCliArchiveMembers(
   ) {
     throw new Error("CLI archive must contain only a regular ugoite binary");
   }
-}
-
-async function containedArtifactPath(root: string, relativePath: string) {
-  if (
-    typeof relativePath !== "string" || relativePath.length === 0 ||
-    relativePath.startsWith("/") ||
-    relativePath.includes("\\") ||
-    relativePath.split("/").some((part) =>
-      part === "" || part === "." || part === ".."
-    )
-  ) {
-    throw new Error(`unsafe artifact manifest path: ${relativePath}`);
-  }
-  let current = root;
-  const parts = relativePath.split("/");
-  for (const [index, part] of parts.entries()) {
-    current = `${current}/${part}`;
-    const info = await Deno.lstat(current);
-    if (info.isSymlink) {
-      throw new Error(
-        `artifact manifest path contains a symlink: ${relativePath}`,
-      );
-    }
-    if (index < parts.length - 1 && !info.isDirectory) {
-      throw new Error(
-        `artifact manifest path crosses a non-directory: ${relativePath}`,
-      );
-    }
-    if (index === parts.length - 1 && !info.isFile) {
-      throw new Error(`artifact manifest path is not a file: ${relativePath}`);
-    }
-  }
-  const resolved = await Deno.realPath(current);
-  if (!resolved.startsWith(`${root}/`)) {
-    throw new Error(`artifact path escapes bundle root: ${relativePath}`);
-  }
-  return resolved;
-}
-
-async function sha256(bytes: Uint8Array): Promise<string> {
-  const buffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(buffer).set(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", buffer);
-  return [...new Uint8Array(digest)].map((value) =>
-    value.toString(16).padStart(2, "0")
-  ).join("");
 }
 
 async function gitHead(): Promise<string> {

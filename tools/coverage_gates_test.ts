@@ -562,11 +562,19 @@ async function assertAggregateWorkflow(
   assertContainsAll(
     taskBlock(mise, "ci:lane:cp1-acceptance"),
     [
-      '{ task = "ci:cp1:build-seeder" }',
-      '{ task = "measure:query-surfaces", env = { CARGO_TARGET_DIR = "target/rust", E2E_ENFORCE_CI_GATES = "true", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask" } }',
-      '{ task = "measure:sql-export", env = { CARGO_TARGET_DIR = "target/rust", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask" } }',
+      '{ task = "ci:cp1:prepare-fixtures" }',
+      'UGOITE_CP1_FIXTURE_BUNDLE_DIR = "target/cp1-fixtures/query"',
+      'UGOITE_CP1_FIXTURE_BUNDLE_DIR = "target/cp1-fixtures/export"',
     ],
     "CP1 acceptance mise lane",
+  );
+  assertContainsAll(
+    taskBlock(mise, "ci:cp1:prepare-fixtures"),
+    [
+      '{ task = "ci:cp1:build-seeder" }',
+      "bash scripts/prepare-cp1-fixtures.sh",
+    ],
+    "CP1 fixture producer task",
   );
   assertContainsAll(
     taskBlock(mise, "ci:cp1:build-seeder"),

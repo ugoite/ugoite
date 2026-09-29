@@ -50,7 +50,12 @@ Root task composition:
 - `ci:merge`: `ci` plus `ci:artifacts`;
 - `ci:lane:cp1-acceptance`: fixed 6,000 + 4,000 Entry, two-Space browser
   query-lifecycle assertions with the separate bounded 10,000-row SQL export
-  acceptance check; its Playwright report fails when any test is skipped;
+  acceptance check; it prepares one run-scoped bundle per fixture set, and its
+  Playwright report fails when any test is skipped;
+- `ci:cp1:prepare-fixtures`: build the fixture verifier once, seed the two
+  query Spaces and separate export Space, verify persisted contents, integrity,
+  Forms, and owner state through the canonical service, then write
+  source- and run-bound archives for the acceptance consumers;
 - `ci:impact`: a standalone, conservative diff planner used by hosted CI to
   select pull-request lanes while preserving full main-push and merge-group
   validation;
@@ -155,7 +160,12 @@ wall, the report records that excess separately instead of presenting a
 negative remainder. Reports also include fixture file counts and logical
 bytes. Values that cannot be separated with the current interfaces are marked
 unmeasured in the JSON; these measurements do not add a performance
-pass/fail threshold or change the CP1 acceptance assertions.
+pass/fail threshold or change the CP1 acceptance assertions. Fixture archives
+are checked against the current fixture specification, source SHA, workflow
+run ID, digest, and size before extraction; each consumer repeats the canonical
+readback in a fresh private root. The fixture manifest records the verified
+Space UIDs, counts, Form distribution, owner mode, generator fingerprint, and
+measurement schema. There is no cross-run fixture cache.
 
 The query measurement can run its existing seeded fixture through either the
 direct host runner (default) or `run-e2e-compose.sh` by setting

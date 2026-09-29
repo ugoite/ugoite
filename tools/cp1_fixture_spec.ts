@@ -6,9 +6,18 @@ export type Cp1Fixture = Readonly<{
   seed: number;
   entryCount: number;
   ownerDisplayName: string | null;
+  formNames: readonly string[];
 }>;
 
 export const CP1_FIXTURE_SPEC_SCHEMA_VERSION = 1;
+export const CP1_RENEWABLE_OPS_FORM_NAMES = [
+  "Array",
+  "EnergyReport",
+  "Entry",
+  "Inspection",
+  "MaintenanceTicket",
+  "Site",
+] as const;
 
 export const CP1_FIXTURE_SETS: Readonly<
   Record<Cp1FixtureSet, readonly Cp1Fixture[]>
@@ -20,6 +29,7 @@ export const CP1_FIXTURE_SETS: Readonly<
       seed: 3134001,
       entryCount: 6000,
       ownerDisplayName: "Query Measurement Owner",
+      formNames: CP1_RENEWABLE_OPS_FORM_NAMES,
     },
     {
       slug: "query-space-b",
@@ -27,6 +37,7 @@ export const CP1_FIXTURE_SETS: Readonly<
       seed: 3134002,
       entryCount: 4000,
       ownerDisplayName: "Query Measurement Owner",
+      formNames: CP1_RENEWABLE_OPS_FORM_NAMES,
     },
   ],
   export: [
@@ -36,6 +47,7 @@ export const CP1_FIXTURE_SETS: Readonly<
       seed: 3140001,
       entryCount: 10000,
       ownerDisplayName: null,
+      formNames: CP1_RENEWABLE_OPS_FORM_NAMES,
     },
   ],
 };
