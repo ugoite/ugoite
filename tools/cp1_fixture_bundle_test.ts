@@ -457,6 +457,17 @@ Deno.test("CP1 tar reader rejects traversal and links and resolves safe PAX path
       [longPath],
     );
 
+    const gnuPaxMarker = `${dir}/gnu-pax-marker.tar.gz`;
+    await writePaxTarGzip(
+      gnuPaxMarker,
+      longPath,
+      "spaces/01a0eb2b-5500-7551-82e3-ba6f7ca42bf7/forms/form_01a0eb2b55247245856b4d9e7ce341eb/data/PaxHead",
+    );
+    assertEquals(
+      (await readTarMembers(gnuPaxMarker)).map((member) => member.path),
+      [longPath],
+    );
+
     const paxTraversal = `${dir}/pax-traversal.tar.gz`;
     await writePaxTarGzip(paxTraversal, "../escape");
     await assertRejects(
@@ -473,6 +484,18 @@ Deno.test("CP1 tar reader rejects traversal and links and resolves safe PAX path
     );
     await assertRejects(
       () => readTarMembers(paxHeaderTraversal),
+      Error,
+      "unsafe",
+    );
+
+    const unrecognizedPaxMarker = `${dir}/unrecognized-pax-marker.tar.gz`;
+    await writePaxTarGzip(
+      unrecognizedPaxMarker,
+      "spaces/entry.json",
+      "spaces/metadata/PaxHeadx",
+    );
+    await assertRejects(
+      () => readTarMembers(unrecognizedPaxMarker),
       Error,
       "unsafe",
     );
