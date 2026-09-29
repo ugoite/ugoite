@@ -27,6 +27,7 @@ use std::{
 use tokio::sync::{Mutex, OwnedMutexGuard};
 use tokio::task::JoinHandle;
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_domain::id::SpaceId;
 use ugoite_domain::identity::{
     evaluate_policy, role_actions, AccessPolicy, Action, AgentMode, AgentPrincipal, Membership,
     PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
@@ -208,22 +209,27 @@ pub struct Authorizer {
     ambiguous_write_with_post_commit_writer_once: Arc<AtomicBool>,
 }
 
-/// Authorization lease held across one protected mutation. The process lock
-/// covers local callers, while non-local callers are admitted by the storage
-/// contract probe and serialized by the exact AuthorizationState CAS.
+/// Authorization context held across one protected mutation. The process and
+/// filesystem locks serialize local callers; shared callers use the captured
+/// authorization revision as a fence at the common Catalog Head CAS.
 pub struct AuthorizationLease {
-    _guard: OwnedMutexGuard<()>,
+    _guard: Option<OwnedMutexGuard<()>>,
     // Held for the complete protected local mutation, including the
     // authoritative content write. write_state_with_lease deliberately reuses
     // it so the same process does not try to lock the file twice.
     _local_lock: Option<std::fs::File>,
     durable: Option<DurableAuthorizationLease>,
+    authorization_revision: u64,
+    space_id: String,
+    pending_authorization_snapshot: Arc<Mutex<Option<PendingAuthorizationSnapshot>>>,
+    inherited_fence: Option<AuthorizationWriteFence>,
+    operator: Operator,
+    initial_state: AuthorizationState,
 }
 
-/// Cross-process lease for a shared Space authorization/content mutation.
-/// The lease is deliberately an object-store CAS record rather than a local
-/// mutex: a remote ACL writer must not commit between a protected mutation's
-/// authorization check and its authoritative write.
+/// Retained while older backends need a separate lease protocol. The selected
+/// S1 contract does not use expiry or owner takeover: shared mutation ordering
+/// comes from the exact Catalog Head compare-and-swap instead.
 struct DurableAuthorizationLease {
     operator: Operator,
     path: String,
@@ -237,6 +243,23 @@ struct DurableAuthorizationLease {
 #[derive(Clone)]
 pub struct AuthorizationWriteFence {
     durable: Option<Arc<DurableAuthorizationWriteFence>>,
+    authorization_revision: Option<u64>,
+    space_id: Option<String>,
+    space_uid: Option<Uuid>,
+    pending_authorization_snapshot: Arc<Mutex<Option<PendingAuthorizationSnapshot>>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct PendingAuthorizationSnapshot {
+    // The revision and Space identity are compared by the Catalog Head
+    // publication check that consumes this snapshot. That catalog-side wiring
+    // lands in a follow-up slice; unit tests in this module stage the snapshot
+    // until then.
+    #[allow(dead_code)]
+    pub revision: u64,
+    #[allow(dead_code)]
+    pub space_uid: Uuid,
+    pub bytes: Vec<u8>,
 }
 
 struct DurableAuthorizationWriteFence {
@@ -324,7 +347,19 @@ impl Drop for DurableAuthorizationLease {
 }
 
 impl AuthorizationLease {
+    /// Bind legacy authorization state to the common Catalog Head at the
+    /// beginning of a write. Read paths can still acquire a lease without
+    /// mutating their storage.
+    pub async fn prepare_mutation(&self) -> Result<()> {
+        Authorizer::new(self.operator.clone())
+            .bind_authorization_snapshot(&self.space_id, &self.initial_state)
+            .await
+    }
+
     pub fn write_fence(&self) -> AuthorizationWriteFence {
+        if let Some(fence) = &self.inherited_fence {
+            return fence.clone();
+        }
         AuthorizationWriteFence {
             durable: self.durable.as_ref().map(|lease| {
                 Arc::new(DurableAuthorizationWriteFence {
@@ -335,6 +370,10 @@ impl AuthorizationLease {
                     lost: lease.lost.clone(),
                 })
             }),
+            authorization_revision: Some(self.authorization_revision),
+            space_id: Some(self.space_id.clone()),
+            space_uid: Some(self.initial_state.space_uid),
+            pending_authorization_snapshot: self.pending_authorization_snapshot.clone(),
         }
     }
 
@@ -356,6 +395,13 @@ impl AuthorizationLease {
         F: FnOnce() -> Fut,
         Fut: Future<Output = T>,
     {
+        self.prepare_mutation().await.map_err(|_| ())?;
+        if self.inherited_fence.is_some() {
+            ensure_authorization_write_fence().await.map_err(|_| ())?;
+            let value = operation().await;
+            ensure_authorization_write_fence().await.map_err(|_| ())?;
+            return Ok(value);
+        }
         let Some(durable) = self.durable.as_ref() else {
             return Ok(operation().await);
         };
@@ -417,6 +463,138 @@ pub async fn ensure_authorization_write_fence() -> Result<()> {
     Ok(())
 }
 
+/// Returns the authorization revision captured by the Server's current
+/// protected-mutation lease. The Catalog Head CAS compares this revision at
+/// publication; local CLI writes intentionally have no remote principal fence.
+// Catalog-side publication wiring lands in a follow-up slice; unit tests in
+// this module are the only callers until then.
+#[allow(dead_code)]
+pub(crate) fn authorization_write_revision() -> Option<u64> {
+    AUTHORIZATION_WRITE_FENCE
+        .try_with(|fence| fence.authorization_revision)
+        .ok()
+        .flatten()
+}
+
+/// Returns the immutable Space identity carried by the Server's current
+/// protected-mutation fence. Catalog publication checks it alongside the
+/// authorization revision so a task-local fence cannot be reused for another
+/// Space that happens to have the same revision.
+// Catalog-side publication wiring lands in a follow-up slice; unit tests in
+// this module are the only callers until then.
+#[allow(dead_code)]
+pub(crate) fn authorization_write_space_uid() -> Option<Uuid> {
+    AUTHORIZATION_WRITE_FENCE
+        .try_with(|fence| fence.space_uid)
+        .ok()
+        .flatten()
+}
+
+fn inherited_authorization_write_fence(space_id: &str) -> Option<AuthorizationWriteFence> {
+    AUTHORIZATION_WRITE_FENCE
+        .try_with(|fence| {
+            fence
+                .space_id
+                .as_deref()
+                .filter(|active_space_id| *active_space_id == space_id)
+                .map(|_| fence.clone())
+        })
+        .ok()
+        .flatten()
+}
+
+pub(crate) async fn pending_authorization_snapshot() -> Option<PendingAuthorizationSnapshot> {
+    let pending = AUTHORIZATION_WRITE_FENCE
+        .try_with(|fence| fence.pending_authorization_snapshot.clone())
+        .ok()?;
+    let snapshot = pending.lock().await.clone();
+    snapshot
+}
+
+pub(crate) async fn clear_pending_authorization_snapshot() {
+    if let Ok(pending) =
+        AUTHORIZATION_WRITE_FENCE.try_with(|fence| fence.pending_authorization_snapshot.clone())
+    {
+        *pending.lock().await = None;
+    }
+}
+
+fn merge_consumed_approval_state(
+    state: &mut AuthorizationState,
+    pending: &PendingAuthorizationSnapshot,
+) -> Result<()> {
+    let consumed: AuthorizationState = serde_json::from_slice(&pending.bytes)
+        .context("decode pending consumed-approval authorization snapshot")?;
+    if consumed.space_uid != state.space_uid || consumed.revision != state.revision {
+        bail!("pending consumed-approval snapshot does not match the authorization write");
+    }
+    for (approval_id, pending_approval) in consumed.human_approvals {
+        if pending_approval.consumed_at.is_none() {
+            continue;
+        }
+        let Some(current_approval) = state.human_approvals.get_mut(&approval_id) else {
+            bail!("pending consumed approval is missing from the authorization write");
+        };
+        if current_approval.consumed_at.is_some()
+            && current_approval.consumed_at != pending_approval.consumed_at
+        {
+            bail!("pending consumed approval conflicts with the authorization write");
+        }
+        current_approval.consumed_at = pending_approval.consumed_at;
+    }
+    for (event_id, pending_event) in consumed.human_approval_audit_outbox {
+        state
+            .human_approval_audit_outbox
+            .entry(event_id)
+            .or_insert(pending_event);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn test_authorization_write_fence(revision: u64) -> AuthorizationWriteFence {
+    AuthorizationWriteFence {
+        durable: None,
+        authorization_revision: Some(revision),
+        space_id: None,
+        space_uid: None,
+        pending_authorization_snapshot: Arc::new(Mutex::new(None)),
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn test_authorization_write_fence_for_space(
+    revision: u64,
+    space_uid: Uuid,
+) -> AuthorizationWriteFence {
+    AuthorizationWriteFence {
+        durable: None,
+        authorization_revision: Some(revision),
+        space_id: None,
+        space_uid: Some(space_uid),
+        pending_authorization_snapshot: Arc::new(Mutex::new(None)),
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn test_authorization_write_fence_with_pending_snapshot(
+    revision: u64,
+    space_uid: Uuid,
+    bytes: Vec<u8>,
+) -> AuthorizationWriteFence {
+    AuthorizationWriteFence {
+        durable: None,
+        authorization_revision: Some(revision),
+        space_id: None,
+        space_uid: Some(space_uid),
+        pending_authorization_snapshot: Arc::new(Mutex::new(Some(PendingAuthorizationSnapshot {
+            revision: revision + 1,
+            space_uid,
+            bytes,
+        }))),
+    }
+}
+
 async fn finish_authorization_lease<T>(lease: AuthorizationLease, result: Result<T>) -> Result<T> {
     let release = lease.release().await;
     match (result, release) {
@@ -474,6 +652,40 @@ impl Authorizer {
         let path = state_path(space_id);
         if self.operator.exists(&path).await? {
             bail!("authorization state already exists");
+        }
+        // Persisted Spaces keep their owner snapshot in the Catalog Head
+        // rather than the legacy file. Claim recovery replays the same claim,
+        // so re-initializing the same owner must stay idempotent while a
+        // different owner over existing state stays fail-closed.
+        if self
+            .operator
+            .exists(&format!("spaces/{space_id}/meta.json"))
+            .await?
+        {
+            let catalog = self
+                .authorization_catalog(space_id, space_uid, false)
+                .await?;
+            if let Some((_, bytes)) = catalog.authorization_snapshot().await? {
+                let existing: AuthorizationState = serde_json::from_slice(&bytes)
+                    .context("decode Space authorization snapshot")?;
+                validate_authorization_state(&existing)?;
+                if existing.space_uid == space_uid
+                    && existing
+                        .memberships
+                        .get(&principal_id)
+                        .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
+                    && existing
+                        .principals
+                        .get(&principal_id)
+                        .is_some_and(|principal| {
+                            matches!(principal.kind, PrincipalKind::Human)
+                                && matches!(principal.state, PrincipalState::Active)
+                        })
+                {
+                    return Ok(());
+                }
+                bail!("authorization state already exists");
+            }
         }
         let now = now_iso();
         let principal = SpacePrincipal {
@@ -545,11 +757,31 @@ impl Authorizer {
         }
 
         let path = state_path(space_id);
-        if !self.operator.exists(&path).await? {
+        // Persisted Spaces keep their ownership in the Catalog Head snapshot
+        // rather than the legacy file. Consult the snapshot before reporting
+        // "no owner": node setup and claim recovery call ensure_owner
+        // repeatedly and must observe the already-initialized owner instead
+        // of re-initializing (or failing) on every subsequent call.
+        let state = if self.operator.exists(&path).await? {
+            self.state(space_id).await?
+        } else if self
+            .operator
+            .exists(&format!("spaces/{space_id}/meta.json"))
+            .await?
+        {
+            let catalog = self
+                .authorization_catalog(space_id, space_uid, false)
+                .await?;
+            let Some((_, bytes)) = catalog.authorization_snapshot().await? else {
+                return Ok(None);
+            };
+            let state: AuthorizationState =
+                serde_json::from_slice(&bytes).context("decode Space authorization snapshot")?;
+            validate_authorization_state(&state)?;
+            state
+        } else {
             return Ok(None);
-        }
-
-        let state = self.state(space_id).await?;
+        };
         if state.space_uid != space_uid {
             bail!("Space metadata and authorization state use different space_uid values");
         }
@@ -598,27 +830,113 @@ impl Authorizer {
     }
 
     pub async fn state(&self, space_id: &str) -> Result<AuthorizationState> {
-        let bytes = read_authorization_state_bytes(&self.operator, &state_path(space_id), None)
-            .await
-            .context("read Space authorization state")?;
-        let state: AuthorizationState =
-            serde_json::from_slice(&bytes).context("decode Space authorization state")?;
-        validate_authorization_state(&state)?;
         let metadata_path = format!("spaces/{space_id}/meta.json");
-        if self.operator.exists(&metadata_path).await? {
+        let metadata_uid = if self.operator.exists(&metadata_path).await? {
             let metadata = crate::space::get_space_raw(&self.operator, space_id)
                 .await
                 .context("read Space metadata for authorization binding")?;
-            let metadata_space_uid = metadata
-                .get("space_uid")
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow!("Space metadata has no immutable space_uid"))
-                .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))?;
-            if state.space_uid != metadata_space_uid {
+            Some(
+                metadata
+                    .get("space_uid")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| anyhow!("Space metadata has no immutable space_uid"))
+                    .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))?,
+            )
+        } else {
+            None
+        };
+        let mut snapshot = None;
+        if let Some(space_uid) = metadata_uid {
+            let catalog = self
+                .authorization_catalog(space_id, space_uid, false)
+                .await?;
+            snapshot = catalog.authorization_snapshot().await?;
+        }
+        let legacy_bytes = if snapshot.is_none() {
+            Some(
+                read_authorization_state_bytes(&self.operator, &state_path(space_id), None)
+                    .await
+                    .context("read Space authorization state")?,
+            )
+        } else {
+            None
+        };
+        let bytes = snapshot
+            .as_ref()
+            .map(|(_, bytes)| bytes.as_slice())
+            .or(legacy_bytes.as_deref())
+            .ok_or_else(|| anyhow!("Space authorization state is unavailable"))?;
+        let state: AuthorizationState =
+            serde_json::from_slice(bytes).context("decode Space authorization state")?;
+        validate_authorization_state(&state)?;
+        if snapshot
+            .as_ref()
+            .is_some_and(|(revision, _)| *revision != state.revision)
+        {
+            bail!("authorization snapshot revision does not match its Catalog Head");
+        }
+        if let Some(space_uid) = metadata_uid {
+            if state.space_uid != space_uid {
                 bail!("Space metadata and authorization state use different space_uid values");
             }
         }
+        // The Catalog Head snapshot is authoritative once published, but a
+        // coexisting legacy file that binds a different immutable Space
+        // identity must still fail closed rather than be silently ignored.
+        // Only the identity binding is compared: file content legitimately
+        // lags the snapshot for pre-fence Spaces whose later revisions
+        // publish head-only, so revision or byte equality is not required.
+        if snapshot.is_some() {
+            if let Some(space_uid) = metadata_uid {
+                self.reject_foreign_legacy_authorization_file(space_id, space_uid)
+                    .await?;
+            }
+        }
         Ok(state)
+    }
+
+    /// Fail closed when a legacy authorization file binds a different
+    /// immutable Space identity than the Space metadata. Authoritative reads
+    /// prefer the Catalog Head snapshot, so a foreign file would otherwise be
+    /// silently ignored and its tamper evidence lost.
+    async fn reject_foreign_legacy_authorization_file(
+        &self,
+        space_id: &str,
+        metadata_uid: Uuid,
+    ) -> Result<()> {
+        let path = state_path(space_id);
+        if !self.operator.exists(&path).await? {
+            return Ok(());
+        }
+        let Ok(bytes) = read_authorization_state_bytes(&self.operator, &path, None).await else {
+            return Ok(());
+        };
+        let Ok(legacy) = serde_json::from_slice::<AuthorizationState>(&bytes) else {
+            return Ok(());
+        };
+        if legacy.space_uid != metadata_uid {
+            bail!("Space metadata and authorization state use different space_uid values");
+        }
+        Ok(())
+    }
+
+    async fn authorization_catalog(
+        &self,
+        space_id: &str,
+        space_uid: Uuid,
+        verify_mutation: bool,
+    ) -> Result<crate::space_catalog::SpaceCatalog> {
+        let store = SpaceCatalogStore::new(self.operator.clone(), format!("spaces/{space_id}"))?;
+        let store = if is_local_operator(&self.operator) || !verify_mutation {
+            store
+        } else {
+            store
+                .verify_shared_writes()
+                .await
+                .context("verify shared authorization publication contract")?
+        };
+        crate::space_catalog::SpaceCatalog::new(store, SpaceId::from(space_uid))
+            .map_err(anyhow::Error::from)
     }
 
     /// Read authorization state while preserving the distinction between an
@@ -629,15 +947,38 @@ impl Authorizer {
         space_id: &str,
         expected_space_uid: Uuid,
     ) -> Result<Option<AuthorizationState>> {
-        let path = state_path(space_id);
-        let Some(bytes) = crate::read_object_exact_optional(&self.operator, &path).await? else {
+        let snapshot = self
+            .authorization_catalog(space_id, expected_space_uid, false)
+            .await?
+            .authorization_snapshot()
+            .await?;
+        let legacy = if snapshot.is_none() {
+            crate::read_object_exact_optional(&self.operator, &state_path(space_id)).await?
+        } else {
+            None
+        };
+        let Some(bytes) = snapshot
+            .as_ref()
+            .map(|(_, bytes)| bytes.as_slice())
+            .or(legacy.as_deref())
+        else {
             return Ok(None);
         };
         let state: AuthorizationState =
-            serde_json::from_slice(&bytes).context("decode Space authorization state")?;
+            serde_json::from_slice(bytes).context("decode Space authorization state")?;
         validate_authorization_state(&state)?;
+        if snapshot
+            .as_ref()
+            .is_some_and(|(revision, _)| *revision != state.revision)
+        {
+            bail!("authorization snapshot revision does not match its Catalog Head");
+        }
         if state.space_uid != expected_space_uid {
             bail!("Space metadata and authorization state use different space_uid values");
+        }
+        if snapshot.is_some() {
+            self.reject_foreign_legacy_authorization_file(space_id, expected_space_uid)
+                .await?;
         }
         let metadata = crate::space::get_space_raw_read_only(&self.operator, space_id)
             .await
@@ -668,6 +1009,20 @@ impl Authorizer {
 
     pub async fn verify_authoritative_storage(&self, space_id: &str) -> Result<()> {
         let store = SpaceCatalogStore::new(self.operator.clone(), format!("spaces/{space_id}"))?;
+        // Node startup and local servers use this probe as a general
+        // mutation-readiness check, not only for shared publication. Local
+        // operators keep their existing admission below; the shared-backend
+        // publication matrix gates only non-local operators, so local and
+        // single-process flows (including ownerless bootstrap and test
+        // fixtures) are unaffected by the S1 backend allowlist.
+        if !is_local_operator(&self.operator) && !store.supports_shared_authorization_publication()
+        {
+            return Err(AppError::dependency_unavailable(
+                ErrorCode::StorageMutationUnavailable,
+                "shared authorization-dependent writes are not admitted for this backend configuration",
+            )
+            .into());
+        }
         match store.write_mode() {
             CatalogWriteMode::SingleProcess | CatalogWriteMode::SharedVerified => Ok(()),
             CatalogWriteMode::SharedReadOnly => store
@@ -690,6 +1045,13 @@ impl Authorizer {
     pub fn ensure_authoritative_mutation_contract(&self) -> Result<()> {
         if is_local_operator(&self.operator) {
             return Ok(());
+        }
+        if self.operator.info().scheme() != "s3" {
+            return Err(AppError::dependency_unavailable(
+                ErrorCode::StorageMutationUnavailable,
+                "shared authorization-dependent writes are not admitted for this backend configuration",
+            )
+            .into());
         }
         let capabilities = self.operator.info().capability();
         if capabilities.read_with_if_match
@@ -728,6 +1090,31 @@ impl Authorizer {
         &self,
         space_id: &str,
     ) -> Result<(AuthorizationState, AuthorizationLease)> {
+        if let Some(inherited_fence) = inherited_authorization_write_fence(space_id) {
+            let state = self.state(space_id).await?;
+            let expected_revision = inherited_fence
+                .authorization_revision
+                .ok_or_else(|| anyhow!("inherited authorization fence has no revision"))?;
+            if state.revision != expected_revision {
+                bail!("Space authorization changed during an enclosing mutation");
+            }
+            return Ok((
+                state.clone(),
+                AuthorizationLease {
+                    _guard: None,
+                    _local_lock: None,
+                    durable: None,
+                    authorization_revision: expected_revision,
+                    space_id: space_id.to_owned(),
+                    pending_authorization_snapshot: inherited_fence
+                        .pending_authorization_snapshot
+                        .clone(),
+                    inherited_fence: Some(inherited_fence),
+                    operator: self.operator.clone(),
+                    initial_state: state.clone(),
+                },
+            ));
+        }
         let guard = self.lock.clone().lock_owned().await;
         let local_lock = self.local_authorization_lock(space_id).await?;
         let durable = self.acquire_durable_mutation_lease(space_id).await?;
@@ -740,14 +1127,53 @@ impl Authorizer {
                 return Err(error);
             }
         };
+        let authorization_revision = state.revision;
         Ok((
-            state,
+            state.clone(),
             AuthorizationLease {
-                _guard: guard,
+                _guard: Some(guard),
                 _local_lock: local_lock,
                 durable,
+                authorization_revision,
+                space_id: space_id.to_owned(),
+                pending_authorization_snapshot: Arc::new(Mutex::new(None)),
+                inherited_fence: None,
+                operator: self.operator.clone(),
+                initial_state: state.clone(),
             },
         ))
+    }
+
+    /// Bind pre-Catalog authorization state to the authoritative Head only on
+    /// a mutation path. Read-only permission checks must remain usable when a
+    /// shared backend cannot prove its conditional-write contract.
+    async fn bind_authorization_snapshot(
+        &self,
+        space_id: &str,
+        state: &AuthorizationState,
+    ) -> Result<()> {
+        if !self
+            .operator
+            .exists(&format!("spaces/{space_id}/meta.json"))
+            .await?
+        {
+            return Ok(());
+        }
+        let catalog = self
+            .authorization_catalog(space_id, state.space_uid, true)
+            .await?;
+        match catalog.authorization_snapshot().await? {
+            Some((revision, _)) if revision == state.revision => Ok(()),
+            Some(_) => bail!("Space authorization changed while acquiring its mutation lease"),
+            None => catalog
+                .publish_authorization_snapshot(
+                    None,
+                    state.revision,
+                    serde_json::to_vec_pretty(state)?,
+                )
+                .await
+                .context("bind existing authorization state to the Catalog Head"),
+        }
     }
 
     pub async fn effective_actions(
@@ -1035,10 +1461,18 @@ impl Authorizer {
         let guard = self.lock.clone().lock_owned().await;
         let local_lock = self.local_authorization_lock(space_id).await?;
         let durable = self.acquire_durable_mutation_lease(space_id).await?;
+        let initial_state = self.state(space_id).await?;
+        let authorization_revision = initial_state.revision;
         let lease = AuthorizationLease {
-            _guard: guard,
+            _guard: Some(guard),
             _local_lock: local_lock,
             durable,
+            authorization_revision,
+            space_id: space_id.to_owned(),
+            pending_authorization_snapshot: Arc::new(Mutex::new(None)),
+            inherited_fence: None,
+            operator: self.operator.clone(),
+            initial_state,
         };
         let result = self
             .consume_human_approval_with_audit_and_locked(
@@ -1214,13 +1648,50 @@ impl Authorizer {
             .revision
             .checked_add(1)
             .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-        self.write_human_approval_state(space_id, &state, Some(approval.approval_id), lease)
-            .await?;
+        if self
+            .operator
+            .exists(&format!("spaces/{space_id}/meta.json"))
+            .await?
+        {
+            self.prepare_human_approval_state_for_mutation(&state, lease)
+                .await?;
+        } else {
+            // Minimal authorization unit fixtures do not represent persisted
+            // Spaces and cannot publish through a Catalog Head.
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), lease)
+                .await?;
+        }
         let mutation = lease
-            .run_while_held(|| mutation(lease))
+            .run_while_held(|| async {
+                with_authorization_write_fence(lease.write_fence(), mutation(lease)).await
+            })
             .await
             .map_err(|_| anyhow!("Space authorization mutation lease was lost"))?;
+        if lease.pending_authorization_snapshot.lock().await.is_some() {
+            bail!("human approval mutation completed without a Catalog Head publication");
+        }
         Ok((approval, mutation))
+    }
+
+    async fn prepare_human_approval_state_for_mutation(
+        &self,
+        state: &AuthorizationState,
+        lease: &AuthorizationLease,
+    ) -> Result<()> {
+        validate_authorization_state(state)?;
+        let bytes = serde_json::to_vec_pretty(state)?;
+        if bytes.len() > MAX_AUTHORIZATION_STATE_BYTES {
+            bail!(
+                "Space authorization state exceeds the {} byte limit",
+                MAX_AUTHORIZATION_STATE_BYTES
+            );
+        }
+        *lease.pending_authorization_snapshot.lock().await = Some(PendingAuthorizationSnapshot {
+            revision: state.revision,
+            space_uid: state.space_uid,
+            bytes,
+        });
+        Ok(())
     }
 
     async fn write_human_approval_state(
@@ -2382,7 +2853,18 @@ impl Authorizer {
 
     async fn write_state(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
         let durable = self.acquire_durable_mutation_lease(space_id).await?;
-        let result = self.write_state_inner(space_id, state).await;
+        let result = async {
+            if self
+                .operator
+                .exists(&format!("spaces/{space_id}/meta.json"))
+                .await?
+            {
+                let current = self.state(space_id).await?;
+                self.bind_authorization_snapshot(space_id, &current).await?;
+            }
+            self.write_state_inner(space_id, state).await
+        }
+        .await;
         let release = if let Some(durable) = durable {
             durable.release().await
         } else {
@@ -2438,6 +2920,7 @@ impl Authorizer {
         state: &AuthorizationState,
         lease: &AuthorizationLease,
     ) -> Result<()> {
+        lease.prepare_mutation().await?;
         match lease.durable.as_ref() {
             Some(durable) => {
                 self.write_state_with_durable(space_id, state, durable)
@@ -2462,6 +2945,7 @@ impl Authorizer {
         local_lock_held: bool,
     ) -> Result<()> {
         self.ensure_authoritative_mutation_contract()?;
+        #[cfg(test)]
         let path = state_path(space_id);
         validate_authorization_state(state)?;
         let serialized = serde_json::to_vec_pretty(state)?;
@@ -2471,96 +2955,90 @@ impl Authorizer {
                 MAX_AUTHORIZATION_STATE_BYTES
             );
         }
-        let capabilities = self.operator.info().capability();
+        // Lightweight Authorizer unit fixtures without a persisted Space are
+        // not server-visible Spaces and have no Catalog Head to coordinate.
+        // Keep their local adapter behavior isolated from the authoritative
+        // Space path below.
+        if !self
+            .operator
+            .exists(&format!("spaces/{space_id}/meta.json"))
+            .await?
+        {
+            let _local_lock = if local_lock_held {
+                None
+            } else {
+                self.local_authorization_lock(space_id).await?
+            };
+            let path = state_path(space_id);
+            if state.revision == 1 {
+                if self.operator.exists(&path).await? {
+                    bail!("authorization state already exists");
+                }
+                self.operator.write(&path, serialized).await?;
+                return Ok(());
+            }
+            let current = self.state(space_id).await?;
+            if current.revision != state.revision - 1 {
+                bail!("Space authorization revision conflict");
+            }
+            self.operator.write(&path, serialized).await?;
+            #[cfg(test)]
+            if self
+                .ambiguous_write_with_post_commit_writer_once
+                .swap(false, Ordering::SeqCst)
+            {
+                let mut later_state = state.clone();
+                later_state.revision = later_state
+                    .revision
+                    .checked_add(1)
+                    .expect("test revision does not overflow");
+                self.operator
+                    .write(&path, serde_json::to_vec_pretty(&later_state)?)
+                    .await?;
+                return Err(anyhow!(
+                    "injected ambiguous authorization CAS response after a later writer"
+                ));
+            }
+            #[cfg(test)]
+            if self.ambiguous_write_once.swap(false, Ordering::SeqCst) {
+                return Err(anyhow!("injected ambiguous authorization CAS response"));
+            }
+            return Ok(());
+        }
         let _local_lock = if local_lock_held {
             None
         } else {
             self.local_authorization_lock(space_id).await?
         };
 
-        if state.revision == 1 {
-            if capabilities.write_with_if_not_exists {
-                self.operator
-                    .write_with(&path, serialized)
-                    .if_not_exists(true)
-                    .await
-                    .context("atomically create Space authorization state")?;
-            } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
-                if self.operator.exists(&path).await? {
-                    bail!("authorization state already exists");
-                }
-                self.operator.write(&path, serialized).await?;
-            } else {
-                bail!("Space authorization state requires conditional storage capabilities");
-            }
-            return Ok(());
-        }
-
         let expected_revision = state
             .revision
             .checked_sub(1)
             .ok_or_else(|| anyhow!("invalid authorization revision"))?;
-        if capabilities.write_with_if_match {
-            let metadata = self
-                .operator
-                .stat(&path)
-                .await
-                .context("stat Space authorization state for compare-and-swap")?;
-            let version = metadata
-                .etag()
-                .filter(|etag| !etag.is_empty())
-                .ok_or_else(|| anyhow!("Space authorization object has no ETag"))?
-                .to_string();
-            let current = read_authorization_state_bytes(&self.operator, &path, Some(&version))
-                .await
-                .context("read versioned Space authorization state")?;
-            let current: AuthorizationState = serde_json::from_slice(&current)
-                .context("decode versioned Space authorization state")?;
-            validate_authorization_state(&current)?;
-            if current.revision != expected_revision {
-                bail!("Space authorization revision conflict");
-            }
-            if let Err(error) = self
-                .operator
-                .write_with(&path, serialized.clone())
-                .if_match(&version)
-                .await
-            {
-                let error: anyhow::Error = error.into();
-                let error = error.context("compare-and-swap Space authorization state");
-                // A remote conditional write may have committed before its
-                // response was lost. Do not release the paired Node fence
-                // until the Space outcome is classified. The exact desired
-                // bytes prove this write committed; a failed verification is
-                // deliberately treated as unknown and remains fenced.
-                match self.state(space_id).await {
-                    Ok(observed) => {
-                        if serde_json::to_vec_pretty(&observed)
-                            .ok()
-                            .is_some_and(|value| value == serialized)
-                        {
-                            return Err(anyhow!(
-                                "Space authorization write committed with an ambiguous response: {error}"
-                            ));
-                        }
-                        return Err(error);
-                    }
-                    Err(read_error) => {
-                        return Err(anyhow!(
-                            "Space authorization write outcome unknown: {error}; verification failed: {read_error}"
-                        ));
-                    }
-                }
-            }
-        } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
-            // Filesystem and in-memory adapters are serialized by the shared process lock.
-            let current = self.state(space_id).await?;
-            if current.revision != expected_revision {
-                bail!("Space authorization revision conflict");
-            }
-            self.operator.write(&path, serialized).await?;
-        } else {
-            bail!("Space authorization state requires conditional storage capabilities");
+        let mut committed_state = state.clone();
+        if let Some(pending) = pending_authorization_snapshot().await {
+            merge_consumed_approval_state(&mut committed_state, &pending)?;
+        }
+        let serialized = serde_json::to_vec_pretty(&committed_state)?;
+        if serialized.len() > MAX_AUTHORIZATION_STATE_BYTES {
+            bail!(
+                "Space authorization state exceeds the {} byte limit",
+                MAX_AUTHORIZATION_STATE_BYTES
+            );
+        }
+        let catalog = self
+            .authorization_catalog(space_id, committed_state.space_uid, true)
+            .await?;
+        catalog
+            .publish_authorization_snapshot(
+                (committed_state.revision > 1).then_some(expected_revision),
+                committed_state.revision,
+                serialized,
+            )
+            .await
+            .map_err(anyhow::Error::from)?;
+        if pending_authorization_snapshot().await.is_some() {
+            clear_pending_authorization_snapshot().await;
         }
         #[cfg(test)]
         if self
@@ -2957,7 +3435,259 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use ugoite_domain::identity::Grant;
-    use ugoite_storage::operator_from_uri;
+    use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
+
+    #[tokio::test]
+    async fn read_only_legacy_authorization_does_not_publish_a_catalog_head() -> Result<()> {
+        let op = operator_from_uri("memory://authorization-read-only-legacy")?;
+        let space_uid = Uuid::now_v7();
+        let space_id = space_uid.to_string();
+        let authorizer = Authorizer::new(op.clone());
+        authorizer
+            .initialize_owner(&space_id, space_uid, Uuid::now_v7(), "Owner")
+            .await?;
+        crate::space::create_space_with_identity_and_name(
+            &op,
+            space_uid,
+            "authorization-read-only-legacy",
+            "Legacy Authorization",
+            ".",
+        )
+        .await?;
+
+        let state = authorizer.state(&space_id).await?;
+        assert_eq!(state.revision, 1);
+        let store = SpaceCatalogStore::new(op, format!("spaces/{space_id}"))?;
+        let head_has_authorization = |exact: Option<ugoite_storage::ExactCatalogHead>| {
+            exact
+                .and_then(|exact| serde_json::from_slice::<Value>(&exact.bytes).ok())
+                .is_some_and(|head| !head["authorization_snapshot"].is_null())
+        };
+        assert!(!head_has_authorization(store.read_exact_head().await?));
+
+        let (_state, lease) = authorizer.acquire_state_lease(&space_id).await?;
+        assert!(!head_has_authorization(store.read_exact_head().await?));
+        lease.prepare_mutation().await?;
+        assert!(head_has_authorization(store.read_exact_head().await?));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authorization_snapshots_advance_the_catalog_head() -> Result<()> {
+        let op = operator_from_uri("memory://authorization-head")?;
+        let space_uid = Uuid::now_v7();
+        let space_id = space_uid.to_string();
+        crate::space::create_space_with_identity_and_name(
+            &op,
+            space_uid,
+            "authorization-head",
+            "Authorization Head",
+            ".",
+        )
+        .await?;
+        let authorizer = Authorizer::new(op.clone());
+        let owner = Uuid::now_v7();
+        let member = Uuid::now_v7();
+        authorizer
+            .initialize_owner(&space_id, space_uid, owner, "Owner")
+            .await?;
+        let first = authorizer.state(&space_id).await?;
+        let store = SpaceCatalogStore::new(op.clone(), format!("spaces/{space_id}"))?;
+        let catalog = crate::space_catalog::SpaceCatalog::new(store, SpaceId::from(space_uid))?;
+        let (first_revision, first_bytes) = catalog
+            .authorization_snapshot()
+            .await?
+            .expect("owner initialization publishes an authorization snapshot");
+        assert_eq!(first_revision, first.revision);
+
+        authorizer
+            .add_human_member(
+                &space_id,
+                owner,
+                SpacePrincipal {
+                    principal_id: member,
+                    kind: PrincipalKind::Human,
+                    display_name: "Member".into(),
+                    state: PrincipalState::Active,
+                    created_at: now_iso(),
+                },
+                SpaceRole::Editor,
+            )
+            .await?;
+        authorizer
+            .revoke_principal(&space_id, owner, member)
+            .await?;
+        let current = authorizer.state(&space_id).await?;
+        let (current_revision, current_bytes) = catalog
+            .authorization_snapshot()
+            .await?
+            .expect("current authorization snapshot remains Head-reachable");
+        assert_eq!(current_revision, current.revision);
+        assert!(current_revision > first_revision);
+        assert_eq!(
+            serde_json::from_slice::<AuthorizationState>(&current_bytes)?.revision,
+            current_revision
+        );
+        assert_eq!(
+            serde_json::from_slice::<AuthorizationState>(&first_bytes)?.revision,
+            first_revision
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn nested_authorization_mutations_reuse_the_enclosing_fence() -> Result<()> {
+        let op = operator_from_uri("memory://nested-authorization-fence")?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        authorizer
+            .initialize_owner("demo", Uuid::now_v7(), Uuid::now_v7(), "Owner")
+            .await?;
+        let (state, parent) = authorizer.acquire_state_lease("demo").await?;
+        let revision = state.revision;
+        let nested_authorizer = authorizer.clone();
+        let nested_revision = with_authorization_write_fence(parent.write_fence(), async move {
+            let (nested_state, nested) = nested_authorizer.acquire_state_lease("demo").await?;
+            assert_eq!(nested_state.revision, revision);
+            let fence = nested.write_fence();
+            assert_eq!(fence.authorization_revision, Some(revision));
+            nested.release().await?;
+            Ok::<u64, anyhow::Error>(nested_state.revision)
+        })
+        .await?;
+        assert_eq!(nested_revision, revision);
+        parent.release().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authorization_write_fence_accessors_expose_lease_snapshot() -> Result<()> {
+        // No fence is active outside a protected mutation.
+        assert_eq!(authorization_write_revision(), None);
+        assert_eq!(authorization_write_space_uid(), None);
+
+        let space_uid = Uuid::now_v7();
+        let revision = 7;
+        let observed =
+            with_authorization_write_fence(test_authorization_write_fence(revision), async {
+                (
+                    authorization_write_revision(),
+                    authorization_write_space_uid(),
+                    pending_authorization_snapshot().await,
+                )
+            })
+            .await;
+        assert_eq!(observed.0, Some(revision));
+        assert_eq!(observed.1, None);
+        assert!(observed.2.is_none());
+
+        let observed = with_authorization_write_fence(
+            test_authorization_write_fence_for_space(revision, space_uid),
+            async {
+                (
+                    authorization_write_revision(),
+                    authorization_write_space_uid(),
+                )
+            },
+        )
+        .await;
+        assert_eq!(observed.0, Some(revision));
+        assert_eq!(observed.1, Some(space_uid));
+
+        let staged = vec![1, 2, 3];
+        let observed = with_authorization_write_fence(
+            test_authorization_write_fence_with_pending_snapshot(
+                revision,
+                space_uid,
+                staged.clone(),
+            ),
+            async {
+                let pending = pending_authorization_snapshot().await;
+                clear_pending_authorization_snapshot().await;
+                (pending, pending_authorization_snapshot().await)
+            },
+        )
+        .await;
+        let pending = observed.0.expect("staged pending snapshot is visible");
+        assert_eq!(pending.revision, revision + 1);
+        assert_eq!(pending.space_uid, space_uid);
+        assert_eq!(pending.bytes, staged);
+        assert!(observed.1.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn persisted_approval_cannot_succeed_without_head_publication() -> Result<()> {
+        let op = operator_from_uri("memory://approval-requires-head")?;
+        let space_uid = Uuid::now_v7();
+        let space_id = space_uid.to_string();
+        crate::space::create_space_with_identity_and_name(
+            &op,
+            space_uid,
+            "approval-requires-head",
+            "Approval Requires Head",
+            ".",
+        )
+        .await?;
+        let authorizer = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        let credential = Uuid::now_v7();
+        authorizer
+            .initialize_owner(&space_id, space_uid, owner, "Owner")
+            .await?;
+        let resource = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: "entry-unpublished".to_owned(),
+            parent: None,
+        };
+        let (_, token) = authorizer
+            .issue_human_approval(
+                &space_id,
+                HumanApprovalIssue {
+                    operation: "entry.create".to_owned(),
+                    action: Action::Create,
+                    resource: resource.clone(),
+                    intent_hash: "f".repeat(64),
+                    actor_principal_id: owner,
+                    actor_credential_id: credential,
+                    issuer_principal_id: owner,
+                    issuer_account_id: Uuid::now_v7(),
+                    issuer_credential_id: credential,
+                    issuer_credential_generation: 0,
+                    issuer_node_account_lifecycle_epoch: 0,
+                    ttl: chrono::Duration::seconds(30),
+                },
+            )
+            .await?;
+
+        let error = authorizer
+            .consume_human_approval_with_audit_and(
+                &space_id,
+                &token,
+                "entry.create",
+                Action::Create,
+                &resource,
+                &"f".repeat(64),
+                owner,
+                credential,
+                |_, _, _, _| Vec::new(),
+                || async { Ok::<(), anyhow::Error>(()) },
+            )
+            .await
+            .expect_err("a successful callback without a Head publication must fail closed");
+        assert!(error
+            .to_string()
+            .contains("without a Catalog Head publication"));
+        let state = authorizer.state(&space_id).await?;
+        assert!(state
+            .human_approvals
+            .values()
+            .any(
+                |approval| approval.token_hash == hex::encode(Sha256::digest(token.as_bytes()))
+                    && approval.consumed_at.is_none()
+            ));
+        Ok(())
+    }
 
     #[tokio::test]
     async fn authorizer_enforces_roles_and_last_owner() -> Result<()> {
