@@ -67,6 +67,41 @@ Deno.test("CP1 query and export paths select the acceptance lane", () => {
   assertEquals(docsOnly.candidateLanes.includes("cp1-acceptance"), false);
 });
 
+Deno.test("CP1 acceptance planning always includes the artifact build", () => {
+  // The hosted fixtures/query/export trio consumes the release image and CLI,
+  // so the single cp1-acceptance flag must never plan without artifacts.
+  const cases = [
+    makeImpactReport({
+      event: "pull_request",
+      baseSha,
+      headSha,
+      paths: ["e2e/query-surfaces-measurement.test.ts"],
+    }),
+    makeImpactReport({
+      event: "pull_request",
+      baseSha,
+      headSha,
+      paths: ["crates/ugoite-server/src/lib.rs"],
+    }),
+    makeImpactReport({ event: "merge_group" }),
+    makeImpactReport({
+      event: "push",
+      baseSha,
+      headSha,
+      paths: ["docs/guide.md"],
+    }),
+  ];
+  for (const report of cases) {
+    if (report.candidateLanes.includes("cp1-acceptance")) {
+      assertEquals(report.candidateLanes.includes("artifacts"), true);
+    }
+  }
+  assertEquals(
+    cases.every((report) => report.candidateLanes.includes("artifacts")),
+    true,
+  );
+});
+
 Deno.test("docs and frontend diffs select only their required lanes", () => {
   const report = makeImpactReport({
     event: "pull_request",

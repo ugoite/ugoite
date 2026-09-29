@@ -26,6 +26,9 @@ const ALL_LANES = [
   "web",
   "artifacts",
   "docsite-nav",
+  // The single cp1-acceptance plan flag gates the hosted fixtures/query/export
+  // trio as a unit; every consumer additionally requires a successful
+  // artifact build, so cp1-acceptance is never planned without artifacts.
   "cp1-acceptance",
 ] as const;
 

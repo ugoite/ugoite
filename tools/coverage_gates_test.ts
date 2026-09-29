@@ -80,7 +80,9 @@ async function assertAggregateWorkflow(
   const e2ePortableJob = workflowJobBlock(workflow, "e2e-portable");
   const impactJob = workflowJobBlock(workflow, "impact");
   const docsiteNavJob = workflowJobBlock(workflow, "docsite-nav");
-  const cp1AcceptanceJob = workflowJobBlock(workflow, "cp1-acceptance");
+  const cp1FixturesJob = workflowJobBlock(workflow, "cp1-fixtures");
+  const cp1QueryJob = workflowJobBlock(workflow, "cp1-query");
+  const cp1ExportJob = workflowJobBlock(workflow, "cp1-export");
   const requiredJob = workflowJobBlock(workflow, "required");
   const rustCheckCargoCache = workflowStepBlock(
     rustCheckJob,
@@ -486,13 +488,16 @@ async function assertAggregateWorkflow(
       "mise run ci:artifacts:load",
       "mise run ci:artifacts:load",
       "mise run ci:artifacts:load",
+      "mise run ci:artifacts:load",
       "mise run ci:artifacts:prepare",
       "mise run ci:impact",
-      "mise run ci:lane:e2e-owner",
+      "mise run ci:cp1:fixtures",
+      "mise run ci:lane:cp1-export",
+      "mise run ci:lane:cp1-query",
       "mise run ci:lane:e2e-portable",
       "mise run ci:lane:e2e-smoke-mobile",
       "mise run ci:lane:docsite-nav",
-      "mise run ci:lane:cp1-acceptance",
+      "mise run ci:lane:e2e-owner",
       "mise run ci:lane:rust-check",
       "mise run ci:lane:rust-test",
       "mise run ci:lane:web",
@@ -538,26 +543,133 @@ async function assertAggregateWorkflow(
     "docsite navigation mise lane",
   );
   assertContainsAll(
-    cp1AcceptanceJob,
+    cp1FixturesJob,
     [
-      "name: ci-cp1-acceptance",
-      "needs: [impact, artifact-build]",
+      "name: ci-cp1-fixtures",
+      "needs: impact",
+      "needs.impact.outputs.plan_cp1_acceptance == 'true'",
+      "scripts/measure-step.sh cp1-fixtures mise run ci:cp1:fixtures",
+      "name: ugoite-cp1-fixtures-query",
+      "name: ugoite-cp1-fixtures-export",
+      "name: ugoite-cp1-seeder",
+      "target/cp1-fixtures/query",
+      "target/cp1-fixtures/export",
+      "target/cp1-fixtures/seeder",
+      "target/cp1-profiling/",
+    ],
+    "CP1 fixtures producer lane",
+  );
+  assertEquals(
+    cp1FixturesJob.includes("artifact-build"),
+    false,
+    "CP1 fixtures lane must not depend on the product build",
+  );
+  assertEquals(
+    cp1FixturesJob.includes("ugoite-cli-linux"),
+    false,
+    "CP1 fixtures lane must not download product artifacts",
+  );
+  assertEquals(
+    cp1FixturesJob.includes("ugoite-runtime-image"),
+    false,
+    "CP1 fixtures lane must not download product artifacts",
+  );
+  assertEquals(
+    cp1FixturesJob.includes("cargo build -p ugoite-server"),
+    false,
+    "CP1 fixtures lane must not build the server",
+  );
+  assertEquals(
+    cp1FixturesJob.includes("build:wasm"),
+    false,
+    "CP1 fixtures lane must not build the frontend",
+  );
+  assertContainsAll(
+    cp1QueryJob,
+    [
+      "name: ci-cp1-query",
+      "needs: [impact, artifact-build, cp1-fixtures]",
       "needs.impact.outputs.plan_cp1_acceptance == 'true'",
       "needs.artifact-build.result == 'success'",
-      'E2E_ENFORCE_CI_GATES: "true"',
+      "needs.cp1-fixtures.result == 'success'",
+      "UGOITE_ARTIFACT_SELECTION: runtime",
+      "name: ugoite-artifact-manifest",
+      "name: ugoite-runtime-image",
+      "name: ugoite-cp1-fixtures-query",
+      "name: ugoite-cp1-seeder",
+      "target/cp1-fixtures/query",
+      "target/cp1-seeder",
+      "scripts/measure-step.sh load-artifacts mise run ci:artifacts:load",
+      "scripts/measure-step.sh cp1-query mise run ci:lane:cp1-query",
+      "target/cp1-profiling/",
+      "target/query-surfaces-measurement.json",
+    ],
+    "CP1 query consumer lane",
+  );
+  assertEquals(
+    cp1QueryJob.includes("name: ugoite-cli-linux"),
+    false,
+    "CP1 query lane must download only its fixture kind",
+  );
+  assertEquals(
+    cp1QueryJob.includes("name: ugoite-cp1-fixtures-export"),
+    false,
+    "CP1 query lane must download only its fixture kind",
+  );
+  assertEquals(
+    cp1QueryJob.includes("Install Rust CI components"),
+    false,
+    "CP1 query lane must not install the Rust toolchain",
+  );
+  assertEquals(
+    cp1QueryJob.includes("cargo build"),
+    false,
+    "CP1 query lane must not build anything from source",
+  );
+  assertContainsAll(
+    cp1ExportJob,
+    [
+      "name: ci-cp1-export",
+      "needs: [impact, artifact-build, cp1-fixtures]",
+      "needs.impact.outputs.plan_cp1_acceptance == 'true'",
+      "needs.artifact-build.result == 'success'",
+      "needs.cp1-fixtures.result == 'success'",
       "UGOITE_ARTIFACT_SELECTION: cli",
       "UGOITE_SQL_EXPORT_CLI_BINARY:",
       "name: ugoite-artifact-manifest",
       "name: ugoite-cli-linux",
+      "name: ugoite-cp1-fixtures-export",
+      "name: ugoite-cp1-seeder",
+      "target/cp1-fixtures/export",
+      "target/cp1-seeder",
       "downloaded_logical_bytes=",
       "bash scripts/measure-process-resources.sh target/cp1-profiling/sql-export-cli-load.time.txt mise run ci:artifacts:load",
-      "scripts/measure-step.sh cp1-acceptance mise run ci:lane:cp1-acceptance",
+      "scripts/measure-step.sh cp1-export mise run ci:lane:cp1-export",
       "target/cp1-profiling/",
       "target/cp1-profiling/sql-export-cli-transfer.json",
-      "target/query-surfaces-measurement.json",
       "target/sql-export-measurement/",
     ],
-    "CP1 acceptance lane",
+    "CP1 export consumer lane",
+  );
+  assertEquals(
+    cp1ExportJob.includes("name: ugoite-runtime-image"),
+    false,
+    "CP1 export lane must download only its fixture kind",
+  );
+  assertEquals(
+    cp1ExportJob.includes("name: ugoite-cp1-fixtures-query"),
+    false,
+    "CP1 export lane must download only its fixture kind",
+  );
+  assertEquals(
+    cp1ExportJob.includes("Install Rust CI components"),
+    false,
+    "CP1 export lane must not install the Rust toolchain",
+  );
+  assertEquals(
+    cp1ExportJob.includes("cargo build"),
+    false,
+    "CP1 export lane must not build anything from source",
   );
   assertContainsAll(
     taskBlock(mise, "ci:lane:cp1-acceptance"),
@@ -567,6 +679,36 @@ async function assertAggregateWorkflow(
       'UGOITE_CP1_FIXTURE_BUNDLE_DIR = "target/cp1-fixtures/export"',
     ],
     "CP1 acceptance mise lane",
+  );
+  assertContainsAll(
+    taskBlock(mise, "ci:cp1:fixtures"),
+    [
+      '{ task = "ci:cp1:prepare-fixtures" }',
+      "bash scripts/stage-cp1-seeder.sh",
+    ],
+    "CP1 fixtures mise entry",
+  );
+  assertContainsAll(
+    taskBlock(mise, "ci:lane:cp1-query"),
+    [
+      "bash scripts/assert-cp1-consumer-inputs.sh query",
+      '{ task = "measure:query-surfaces" }',
+      'UGOITE_QUERY_MEASURE_RUNNER = "compose"',
+      'E2E_BUILD_IMAGES = "false"',
+      'UGOITE_CP1_FIXTURE_BUNDLE_DIR = "target/cp1-fixtures/query"',
+      'UGOITE_SEED_XTASK_BINARY = "target/cp1-seeder/xtask"',
+    ],
+    "CP1 query consumer mise lane",
+  );
+  assertContainsAll(
+    taskBlock(mise, "ci:lane:cp1-export"),
+    [
+      "bash scripts/assert-cp1-consumer-inputs.sh export",
+      '{ task = "measure:sql-export" }',
+      'UGOITE_CP1_FIXTURE_BUNDLE_DIR = "target/cp1-fixtures/export"',
+      'UGOITE_SEED_XTASK_BINARY = "target/cp1-seeder/xtask"',
+    ],
+    "CP1 export consumer mise lane",
   );
   assertContainsAll(
     taskBlock(mise, "ci:cp1:prepare-fixtures"),
@@ -652,7 +794,7 @@ async function assertAggregateWorkflow(
     [
       "name: ci-required",
       "if: ${{ always() }}",
-      "needs: [impact, rust-check, rust-test, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, cp1-acceptance, pr-context-report]",
+      "needs: [impact, rust-check, rust-test, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]",
       "runs-on: ubuntu-slim",
       "IMPACT_RESULT: ${{ needs.impact.result }}",
       "IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}",
@@ -672,7 +814,9 @@ async function assertAggregateWorkflow(
       "E2E_OWNER_RESULT: ${{ needs.e2e-owner.result }}",
       "E2E_PORTABLE_RESULT: ${{ needs.e2e-portable.result }}",
       "DOCSITE_NAV_RESULT: ${{ needs.docsite-nav.result }}",
-      "CP1_ACCEPTANCE_RESULT: ${{ needs.cp1-acceptance.result }}",
+      "CP1_FIXTURES_RESULT: ${{ needs.cp1-fixtures.result }}",
+      "CP1_QUERY_RESULT: ${{ needs.cp1-query.result }}",
+      "CP1_EXPORT_RESULT: ${{ needs.cp1-export.result }}",
       "PR_CONTEXT_RESULT: ${{ needs.pr-context-report.result }}",
       "run: scripts/ci-gate-check.sh",
     ],

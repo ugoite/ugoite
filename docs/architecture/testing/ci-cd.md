@@ -48,10 +48,22 @@ Root task composition:
   `ci:lane:e2e-portable`: separate hosted E2E groups that consume the prepared
   build artifact;
 - `ci:merge`: `ci` plus `ci:artifacts`;
-- `ci:lane:cp1-acceptance`: fixed 6,000 + 4,000 Entry, two-Space browser
-  query-lifecycle assertions with the separate bounded 10,000-row SQL export
-  acceptance check; it prepares one run-scoped bundle per fixture set, and its
-  Playwright report fails when any test is skipped;
+- `ci:cp1:fixtures`: hosted fixtures entry that builds the fixture seeder
+  once, prepares one run-scoped bundle per fixture set, and stages the seeder
+  for consumer download; query and export bundles upload as separate
+  artifacts with no cross-run cache;
+- `ci:lane:cp1-query`: hosted query consumer that restores only the query
+  bundle to a unique temp root and runs the fixed 6,000 + 4,000 Entry,
+  two-Space browser query-lifecycle assertions against the verified release
+  image through the Compose runner; its Playwright report fails when any test
+  is skipped, and it never builds the server, WASM, or frontend;
+- `ci:lane:cp1-export`: hosted export consumer that restores only the export
+  bundle and runs the separate bounded 10,000-row SQL export acceptance check
+  with the verified release CLI; it never rebuilds the CLI;
+- `ci:lane:cp1-acceptance`: the local integrated entry that runs the same
+  shared fixture preparation, query, and export scripts in one process;
+  hosted CI runs the fixtures/query/export trio instead, gated as a unit by
+  the single cp1 plan flag;
 - `ci:cp1:prepare-fixtures`: build the fixture verifier once, seed the two
   query Spaces and separate export Space, verify persisted contents, integrity,
   Forms, and owner state through the canonical service, then write
@@ -148,7 +160,8 @@ Seed and measured-step durations and exit status are emitted even when a step
 fails.
 
 The CP1 query and SQL export measurements also write aggregate profiles to
-`target/cp1-profiling/` and upload them with the acceptance evidence. Seed
+`target/cp1-profiling/` and upload them with their job evidence (the fixtures
+job uploads its preparation profiles; each consumer uploads its own). Seed
 profiles split Space creation, optional owner initialization, Form upserts,
 sample Markdown rendering, draft conversion, and mutation batch calls; process
 resource logs report elapsed time, user/system CPU, and maximum RSS where the
@@ -253,10 +266,12 @@ build Mitase from Git; `MITASE_BIN` remains available as an explicit local
 development override.
 
 The required `ci-required` aggregator runs after all quality, artifact,
-docsite-navigation, CP1 acceptance, and impact-report lanes on pull requests,
+docsite-navigation, CP1 fixtures/query/export, and impact-report lanes on pull requests,
 merge queues, and pushes to `main`. It checks the planned results for
 `ci-rust-check`, `ci-rust-test`, `ci-web`, `artifact-build`, the three E2E
-consumer jobs, `ci-docsite-nav`, and `ci-cp1-acceptance`, and fails on
+consumer jobs, `ci-docsite-nav`, and the `ci-cp1-fixtures`, `ci-cp1-query`,
+and `ci-cp1-export` trio (planned and required as a unit by the single cp1
+flag), and fails on
 unexpected skips or executions. The PR
 context report must succeed for pull requests and is accepted as skipped for
 other events. The canonical
