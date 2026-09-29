@@ -4,6 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT_DIR="${UGOITE_SQL_EXPORT_MEASURE_OUTPUT:-$ROOT_DIR/target/sql-export-measurement}"
 PROFILE_DIR="${UGOITE_CP1_PROFILE_DIR:-$ROOT_DIR/target/cp1-profiling}"
+FIXTURE_BUNDLE_DIR="${UGOITE_CP1_FIXTURE_BUNDLE_DIR:-}"
+if [[ -n "$FIXTURE_BUNDLE_DIR" && "$FIXTURE_BUNDLE_DIR" != /* ]]; then
+  FIXTURE_BUNDLE_DIR="$ROOT_DIR/$FIXTURE_BUNDLE_DIR"
+fi
 EXPORT_FIXTURE_ROW="$(deno run --quiet "$ROOT_DIR/tools/cp1_fixture_spec.ts" export)"
 if [[ "$EXPORT_FIXTURE_ROW" == *$'\n'* ]]; then
   echo "CP1 export fixture specification must contain exactly one fixture" >&2
@@ -20,7 +24,6 @@ PROFILE_STARTED_MS="$(deno eval --quiet 'console.log(Date.now())')"
 mkdir -p "$PROFILE_DIR"
 PROFILE_REPORT="$PROFILE_DIR/export-${PROFILE_RUN_ID}.json"
 CLI_BUILD_RESOURCE="$PROFILE_DIR/export-cli-build-${PROFILE_RUN_ID}.time.txt"
-SEED_PROFILE="$PROFILE_DIR/${FIXTURE_SLUG}-${PROFILE_RUN_ID}.json"
 CLI_PROFILE_TIMED_STEP_ARGS=()
 mkdir -p "$OUTPUT_DIR"
 if [[ -n "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
@@ -40,6 +43,18 @@ if [[ -n "${UGOITE_SQL_EXPORT_MEASURE_ROOT:-}" ]]; then
   fi
 else
   MEASURE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ugoite-sql-export.XXXXXX")"
+fi
+
+CONFIG="$MEASURE_ROOT/ugoite.toml"
+DATA_ROOT="$MEASURE_ROOT/data"
+SQL_FILE="$OUTPUT_DIR/query.sql"
+SPACE_PATH="$DATA_ROOT/spaces"
+SOURCE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+if [[ -n "$FIXTURE_BUNDLE_DIR" ]]; then
+  SEED_PROFILE="$DATA_ROOT/.cp1-profiles/$FIXTURE_SLUG.json"
+  mkdir -m 700 -p "$DATA_ROOT"
+else
+  SEED_PROFILE="$PROFILE_DIR/${FIXTURE_SLUG}-${PROFILE_RUN_ID}.json"
 fi
 
 cleanup() {
@@ -72,12 +87,6 @@ cleanup() {
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap cleanup EXIT
-
-CONFIG="$MEASURE_ROOT/ugoite.toml"
-DATA_ROOT="$MEASURE_ROOT/data"
-SQL_FILE="$OUTPUT_DIR/query.sql"
-SPACE_PATH="$DATA_ROOT/spaces"
-SOURCE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 
 CLI_MODE="local-build"
 if [[ -n "${UGOITE_SQL_EXPORT_CLI_BINARY:-}" ]]; then
@@ -131,18 +140,26 @@ if [[ "$CLI_MODE" == "local-build" ]]; then
 else
   echo "Using verified CLI artifact and preparing the fixed ${FIXTURE_ENTRY_COUNT}-entry dataset..." >&2
 fi
-seed_args=(
-  --root "$DATA_ROOT"
-  --space-id "$FIXTURE_SLUG"
-  --scenario "$FIXTURE_SCENARIO"
-  --entry-count "$FIXTURE_ENTRY_COUNT"
-  --seed "$FIXTURE_SEED"
-)
-if [[ -n "$FIXTURE_OWNER_DISPLAY_NAME" ]]; then
-  seed_args+=(--owner "$FIXTURE_OWNER_DISPLAY_NAME")
+if [[ -n "$FIXTURE_BUNDLE_DIR" ]]; then
+  deno run -A "$ROOT_DIR/tools/cp1_fixture_bundle.ts" load export \
+    --bundle-dir "$FIXTURE_BUNDLE_DIR" \
+    --destination "$DATA_ROOT" \
+    --xtask "${UGOITE_SEED_XTASK_BINARY:-}" \
+    --source-sha "$SOURCE_SHA"
+else
+  seed_args=(
+    --root "$DATA_ROOT"
+    --space-id "$FIXTURE_SLUG"
+    --scenario "$FIXTURE_SCENARIO"
+    --entry-count "$FIXTURE_ENTRY_COUNT"
+    --seed "$FIXTURE_SEED"
+  )
+  if [[ -n "$FIXTURE_OWNER_DISPLAY_NAME" ]]; then
+    seed_args+=(--owner "$FIXTURE_OWNER_DISPLAY_NAME")
+  fi
+  bash "$ROOT_DIR/scripts/dev-seed.sh" "${seed_args[@]}" \
+    --profile-output "$SEED_PROFILE"
 fi
-bash "$ROOT_DIR/scripts/dev-seed.sh" "${seed_args[@]}" \
-  --profile-output "$SEED_PROFILE"
 
 SPACE_UID="$(deno eval --quiet '
   const [spacesRoot, expectedSlug] = Deno.args;
