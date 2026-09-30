@@ -130,8 +130,10 @@ impl PublicationContext {
             change
                 .validate()
                 .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
-        } else if !matches!(self.command_kind.as_str(), "pin.create" | "pin.delete")
-            && !self.command_kind.starts_with("test.")
+        } else if !matches!(
+            self.command_kind.as_str(),
+            "pin.create" | "pin.delete" | "asset.upload"
+        ) && !self.command_kind.starts_with("test.")
         {
             return Err(Error::new(
                 ErrorKind::DataInvalid,
@@ -2563,6 +2565,129 @@ impl SpaceCatalog {
             Ok(()) => Ok(()),
             Err(_error) if self.resolve_unknown_outcome(&attempt).await? => Ok(()),
             Err(error) => Err(error),
+        }
+    }
+
+    /// Makes an already prepared Asset object reachable from the authoritative
+    /// publication chain. The immutable object itself is not visible to Asset
+    /// readers until this exact Catalog Head CAS commits.
+    pub(crate) async fn publish_asset_upload(
+        &self,
+        asset_id: &str,
+        prepared_location: &str,
+        content_sha256: &str,
+    ) -> Result<()> {
+        validate_asset_id(asset_id)
+            .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
+        self.claim_mutation()?;
+        let _write_guard = if self.store.write_mode() == CatalogWriteMode::SingleProcess {
+            Some(self.store.single_process_serializer().lock_owned().await)
+        } else {
+            None
+        };
+        let context = PublicationContext::with_command_digest(
+            asset_id.to_string(),
+            "asset.upload",
+            checksum(
+                format!("asset.upload:{asset_id}:{prepared_location}:{content_sha256}").as_bytes(),
+            ),
+        );
+        context.validate()?;
+        let exact = self.exact_head().await?;
+        let attempt = PublicationAttempt::from_exact(&context, exact)?;
+        let next = attempt
+            .expected_head
+            .clone()
+            .unwrap_or_else(|| CatalogHead::genesis(self.space_id, &self.namespace))
+            .next_generation();
+        let update = PublicationUpdate {
+            affected_table: TableCoordinates {
+                namespace: self.namespace.as_ref().clone(),
+                table: format!("_asset_upload_{asset_id}"),
+            },
+            base_metadata_location: None,
+            new_metadata_location: prepared_location.to_string(),
+            base_snapshot_id: None,
+            base_schema_id: None,
+            new_snapshot_id: None,
+            new_schema_id: 0,
+        };
+        let result = self.publish_new_head(&attempt, next, update).await;
+        match result {
+            Ok(()) => Ok(()),
+            Err(_error) if self.resolve_unknown_outcome(&attempt).await? => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Returns the prepared-object location only when an upload receipt is
+    /// reachable from Catalog Head. An object left by a failed CAS stays an
+    /// invisible orphan.
+    pub(crate) async fn published_asset_location(&self, asset_id: &str) -> Result<Option<String>> {
+        validate_asset_id(asset_id)
+            .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?;
+        let Some((mut head, _)) = self.exact_head().await? else {
+            return Ok(None);
+        };
+        let Some(mut path) = head.publication_location.clone() else {
+            return Ok(None);
+        };
+        let mut visited = BTreeSet::new();
+        loop {
+            if !visited.insert(path.clone()) {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog publication chain contains a cycle",
+                ));
+            }
+            let publication = decode_publication(
+                &self
+                    .store
+                    .read_publication(&path)
+                    .await
+                    .map_err(storage_error)?,
+            )?;
+            validate_publication_matches_head(&publication, &head)?;
+            if publication.command_kind == "asset.upload"
+                && publication.command_id == asset_id
+                && publication.affected_table.table == format!("_asset_upload_{asset_id}")
+            {
+                return Ok(Some(publication.new_metadata_location));
+            }
+            let (generation, previous_path, previous_checksum) = match (
+                publication.previous_generation,
+                publication.previous_publication,
+                publication.previous_head_checksum,
+            ) {
+                (None, None, None) if publication.generation == 0 => return Ok(None),
+                (Some(generation), Some(path), Some(checksum))
+                    if generation + 1 == publication.generation =>
+                {
+                    (generation, path, checksum)
+                }
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Catalog publication chain is incomplete or corrupt",
+                    ))
+                }
+            };
+            let previous = decode_publication(
+                &self
+                    .store
+                    .read_publication(&previous_path)
+                    .await
+                    .map_err(storage_error)?,
+            )?;
+            if previous.generation != generation || previous.next_head_checksum != previous_checksum
+            {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog publication predecessor is corrupt",
+                ));
+            }
+            head = previous.next_head.clone();
+            path = previous_path;
         }
     }
 

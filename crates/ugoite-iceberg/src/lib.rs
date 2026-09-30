@@ -329,6 +329,29 @@ pub struct IcebergWorkspace {
 }
 
 impl IcebergWorkspace {
+    pub(crate) async fn publish_asset_upload(
+        &self,
+        asset_id: &str,
+        prepared_location: &str,
+        content_sha256: &str,
+    ) -> Result<()> {
+        self.space_catalog
+            .as_ref()
+            .context("Asset publication requires the OpenDAL-backed SpaceCatalog")?
+            .publish_asset_upload(asset_id, prepared_location, content_sha256)
+            .await
+            .map_err(|error| anyhow!(error.to_string()))
+    }
+
+    pub(crate) async fn published_asset_location(&self, asset_id: &str) -> Result<Option<String>> {
+        self.space_catalog
+            .as_ref()
+            .context("Asset reads require the OpenDAL-backed SpaceCatalog")?
+            .published_asset_location(asset_id)
+            .await
+            .map_err(|error| anyhow!(error.to_string()))
+    }
+
     /// Read the exact active Pin set owned by the Space Catalog Head.
     pub async fn list_pins(
         &self,

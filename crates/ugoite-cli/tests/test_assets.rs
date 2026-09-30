@@ -32,6 +32,21 @@ fn immutable_space_path(root: &str) -> std::path::PathBuf {
         .expect("UUID Space directory")
 }
 
+async fn assert_uploaded_asset_is_readable(root: &str, asset_id: &str) {
+    let space_path = immutable_space_path(root);
+    let space_id = space_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("UUID Space directory name");
+    let service = ugoite_iceberg::service::UgoiteService::new_without_background_refresh(root)
+        .expect("open local Space service");
+    let asset = service
+        .read_asset(space_id, asset_id)
+        .await
+        .expect("read uploaded Asset through its published receipt");
+    assert_eq!(asset.bytes, b"test asset content");
+}
+
 /// REQ-ASSET-001: Asset upload and exact-key lifecycle.
 #[test]
 fn test_asset_lifecycle() {
@@ -63,8 +78,8 @@ fn test_asset_lifecycle() {
 }
 
 /// REQ-ASSET-001: Asset upload strips traversal from explicit filenames.
-#[test]
-fn test_asset_req_asset_001_upload_strips_filename_traversal() {
+#[tokio::test]
+async fn test_asset_req_asset_001_upload_strips_filename_traversal() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
     let config_path = dir.path().join("cli-config.toml");
@@ -98,15 +113,18 @@ fn test_asset_req_asset_001_upload_strips_filename_traversal() {
         serde_json::from_slice(&upload_output.stdout).expect("asset upload JSON");
     assert_eq!(asset["kind"].as_str(), Some("asset"));
     let asset_id = asset["id"].as_str().expect("asset id");
+    assert_eq!(
+        asset["asset_reference"]["name"].as_str(),
+        Some("outside.txt")
+    );
 
-    let stored_space = immutable_space_path(&root);
-    assert!(stored_space.join("assets").join(asset_id).exists());
-    assert!(!stored_space.join("outside.txt").exists());
+    assert_uploaded_asset_is_readable(&root, asset_id).await;
+    assert!(!immutable_space_path(&root).join("outside.txt").exists());
 }
 
 /// REQ-ASSET-001: Asset upload normalizes metadata-spoofing explicit filenames.
-#[test]
-fn test_asset_req_asset_001_upload_normalizes_markdown_heading_filename() {
+#[tokio::test]
+async fn test_asset_req_asset_001_upload_normalizes_markdown_heading_filename() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_string_lossy().to_string();
     let config_path = dir.path().join("cli-config.toml");
@@ -141,11 +159,12 @@ fn test_asset_req_asset_001_upload_normalizes_markdown_heading_filename() {
     assert_eq!(asset["kind"].as_str(), Some("asset"));
     let asset_id = asset["id"].as_str().expect("asset id");
     assert!(!asset_id.is_empty());
+    assert_eq!(
+        asset["asset_reference"]["name"].as_str(),
+        Some("uploaded_at spoofed.txt")
+    );
 
-    assert!(immutable_space_path(&root)
-        .join("assets")
-        .join(asset_id)
-        .exists());
+    assert_uploaded_asset_is_readable(&root, asset_id).await;
 }
 
 /// Oversize remote CLI upload is rejected by the client-side size guard
