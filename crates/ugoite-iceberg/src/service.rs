@@ -7297,7 +7297,6 @@ impl UgoiteService {
                 crate::mutation_audit::SAVED_SQL_CREATED_ACTION,
                 &sql_id,
                 &revision_id,
-                &[],
                 author,
             )
             .await;
@@ -7471,7 +7470,6 @@ impl UgoiteService {
                 crate::mutation_audit::SAVED_SQL_UPDATED_ACTION,
                 sql_id,
                 &revision_id,
-                &[],
                 author,
             )
             .await;
@@ -7508,7 +7506,6 @@ impl UgoiteService {
                 crate::mutation_audit::SAVED_SQL_DELETED_ACTION,
                 sql_id,
                 &revision_id,
-                &[],
                 actor,
             )
             .await;

@@ -94,12 +94,10 @@ pub fn audit_attribution(
 
 /// Resolves reconciliation attribution from committed history only.
 ///
-/// The committed revision actor (author or principal ID string, as stored at
-/// commit time) is the authority: the reconcile caller never reinterprets the
-/// past with its own identity. A UUID-valued actor is recorded as both
-/// subject and actor principal; a free-form author becomes the subject with
-/// no actor principal. Only when history carries no actor does the Space UID
-/// mark the event as unattributed, exactly like the live last resort.
+/// The committed revision actor (author or provenance string, as stored at
+/// commit time) is the subject. Its textual shape does not establish an
+/// authenticated principal identity. Only when history carries no actor does
+/// the Space UID mark the event as unattributed.
 pub fn committed_actor_attribution(
     committed_actor: Option<&str>,
     space_uid: &Uuid,
@@ -108,10 +106,7 @@ pub fn committed_actor_attribution(
         .map(str::trim)
         .filter(|value| !value.is_empty());
     match actor {
-        Some(value) => (
-            value.to_string(),
-            Uuid::parse_str(value).ok().map(|_| value.to_string()),
-        ),
+        Some(value) => (value.to_string(), None),
         None => (space_uid.to_string(), None),
     }
 }
@@ -346,12 +341,11 @@ impl UgoiteService {
         action: &str,
         sql_id: &str,
         revision_id: &str,
-        principal_ids: &[Uuid],
-        author_fallback: &str,
+        committed_author: &str,
     ) {
         let delivered = async {
             let space_uid = self.space_uid(space_id).await?;
-            let (subject, actor) = audit_attribution(principal_ids, author_fallback, &space_uid);
+            let (subject, actor) = committed_actor_attribution(Some(committed_author), &space_uid);
             let event = saved_sql_mutation_event(
                 &space_uid,
                 action,
@@ -387,9 +381,10 @@ impl UgoiteService {
     /// latest revision would permanently drop evidence for earlier mutations
     /// whose delivery failed, so the whole chain converges here.
     ///
-    /// Attribution comes from the committed revision actors, never from the
-    /// reconcile caller: the caller-supplied principals/author only fill the
-    /// gap when a committed revision carries no actor at all. Returns the
+    /// Attribution comes only from committed revision provenance. Missing
+    /// actor metadata falls back to the Space UID. The caller attribution
+    /// arguments are retained for source compatibility but do not project
+    /// identity into content history. Returns the
     /// last delivered event, or `None` when the Entry has no committed
     /// revisions, including when it never existed (consistent with saved-SQL
     /// reconcile). Closing a commit→delivery crash gap is a second call away
@@ -398,8 +393,8 @@ impl UgoiteService {
         &self,
         space_id: &str,
         entry_id: &str,
-        principal_ids: &[Uuid],
-        author_fallback: &str,
+        _principal_ids: &[Uuid],
+        _author_fallback: &str,
     ) -> Result<Option<Value>> {
         let history = match crate::entry::get_entry_history(
             self.operator(),
@@ -470,13 +465,7 @@ impl UgoiteService {
                 ENTRY_UPDATED_ACTION
             };
             let committed_actor = revision.get("actor").and_then(Value::as_str);
-            let (subject, actor) = match committed_actor
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            {
-                Some(_) => committed_actor_attribution(committed_actor, &space_uid),
-                None => audit_attribution(principal_ids, author_fallback, &space_uid),
-            };
+            let (subject, actor) = committed_actor_attribution(committed_actor, &space_uid);
             let event = entry_mutation_event(
                 &space_uid,
                 action,
@@ -564,10 +553,8 @@ impl UgoiteService {
                 } else {
                     revision.updated_by.as_str()
                 };
-                let (subject, actor) = match committed_actor.trim() {
-                    "" => audit_attribution(&[], "", &space_uid),
-                    _ => committed_actor_attribution(Some(committed_actor), &space_uid),
-                };
+                let (subject, actor) =
+                    committed_actor_attribution(Some(committed_actor), &space_uid);
                 saved_sql_mutation_event(
                     &space_uid,
                     action,
@@ -590,15 +577,16 @@ impl UgoiteService {
     /// `saved_sql.updated`), so an earlier update whose delivery failed is
     /// not dropped when a later revision reconciles.
     ///
-    /// Attribution comes from the committed revision actors, never from the
-    /// reconcile caller; the caller-supplied principals/author only fill the
-    /// gap when a committed revision carries no actor at all.
+    /// Attribution comes only from committed revision provenance. Missing
+    /// actor metadata falls back to the Space UID; caller identity is never
+    /// projected into content history. The caller attribution arguments are
+    /// retained for source compatibility but do not affect the projection.
     pub async fn reconcile_saved_sql_audit(
         &self,
         space_id: &str,
         sql_id: &str,
-        principal_ids: &[Uuid],
-        author_fallback: &str,
+        _principal_ids: &[Uuid],
+        _author_fallback: &str,
     ) -> Result<Option<Value>> {
         let mut revisions: Vec<crate::entry::RevisionRow> =
             crate::entry::form_revision_rows_for_audit(
@@ -633,10 +621,7 @@ impl UgoiteService {
             } else {
                 revision.updated_by.clone()
             };
-            let (subject, actor) = match committed_actor.trim() {
-                "" => audit_attribution(principal_ids, author_fallback, &space_uid),
-                _ => committed_actor_attribution(Some(&committed_actor), &space_uid),
-            };
+            let (subject, actor) = committed_actor_attribution(Some(&committed_actor), &space_uid);
             let event = saved_sql_mutation_event(
                 &space_uid,
                 action,
@@ -1131,12 +1116,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn principal_live_delivery_converges_with_committed_reconcile() -> anyhow::Result<()> {
-        // Live delivery attributes to the first caller principal while the
-        // commit stores the author string; server handlers pass the principal
-        // ID as the author, so committed reconciliation must rebuild the
-        // byte-identical payload instead of failing closed on a fingerprint
-        // conflict.
+    async fn uuid_shaped_committed_author_is_not_inferred_as_principal() -> anyhow::Result<()> {
+        // The committed revision stores a UUID-shaped author string. It stays
+        // portable subject provenance; its syntax alone is not an identity
+        // assertion, in either live delivery or reconciliation.
         let service = UgoiteService::new("memory://mutation-audit-principal")?;
         let principal = Uuid::now_v7();
         let space_id = service
@@ -1153,10 +1136,7 @@ mod tests {
             delivered["subject_principal_id"],
             json!(principal.to_string())
         );
-        assert_eq!(
-            delivered["actor_principal_id"],
-            json!(principal.to_string())
-        );
+        assert!(delivered["actor_principal_id"].is_null());
         assert_eq!(audit_total(&service, &space_id).await?, 1);
         // The sweep path (no caller identity at all) converges too, purely
         // from committed metadata.
@@ -1446,8 +1426,7 @@ mod tests {
         use ugoite_domain::change::{ChangeCommand, RunId};
         // Authorized delete with an explicit ChangeCommand: history stays
         // append-only (tombstone, never removal) and the delete evidence
-        // carries the Change ID plus caller principal attribution from live
-        // delivery through reconcile.
+        // carries the Change ID plus portable subject provenance.
         let service = UgoiteService::new("memory://mutation-audit-hard-delete")?;
         let principal = Uuid::now_v7();
         let space_id = service
@@ -1493,8 +1472,8 @@ mod tests {
             revisions[1]["change_id"],
             json!(delete_change.change_id.as_str())
         );
-        // Live delivery left entry.deleted evidence attributed to the
-        // caller principal; reconcile converges instead of duplicating.
+        // Live delivery and reconcile converge without inferring a principal
+        // from the UUID-shaped committed author.
         assert_eq!(audit_total(&service, &space_id).await?, 2);
         service
             .reconcile_entry_audit(&space_id, "entry-1", &[principal], &principal.to_string())
@@ -1520,10 +1499,7 @@ mod tests {
             deleted_event["subject_principal_id"],
             json!(principal.to_string())
         );
-        assert_eq!(
-            deleted_event["actor_principal_id"],
-            json!(principal.to_string())
-        );
+        assert!(deleted_event["actor_principal_id"].is_null());
         Ok(())
     }
 
