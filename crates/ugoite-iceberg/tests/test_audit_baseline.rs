@@ -6,7 +6,11 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use ugoite_iceberg::{entry, service::UgoiteService};
+use ugoite_iceberg::{
+    audit::{self, AuditListOptions},
+    entry, saved_sql,
+    service::UgoiteService,
+};
 use uuid::Uuid;
 
 fn fields(body: &str) -> BTreeMap<String, Value> {
@@ -218,13 +222,10 @@ async fn revert_create_tombstone_integrity_matches_canonical_revision_body() -> 
     Ok(())
 }
 
-/// Commit-time audit delivery and reopen reconcile must attribute the same
-/// committed row actor. Delivery used the live caller principals while
-/// reconcile re-derives from the stored author, so any Space whose free-form
-/// author differs from its principal IDs failed reopen with "audit event id
-/// conflicts with canonical payload".
+/// Commit-time delivery and reopen reconciliation preserve portable Entry
+/// provenance without promoting a UUID-shaped value to principal identity.
 #[tokio::test]
-async fn audit_commit_and_reconcile_converge_on_row_actor() -> Result<()> {
+async fn entry_commit_and_reconcile_preserve_portable_provenance() -> Result<()> {
     let root = tempfile::tempdir()?;
     let root_uri = root.path().to_string_lossy().into_owned();
     let service = UgoiteService::new(root_uri.clone())?;
@@ -278,9 +279,22 @@ async fn audit_commit_and_reconcile_converge_on_row_actor() -> Result<()> {
             Some("Recover the pre-update value"),
         )
         .await?;
+    let before =
+        audit::list_audit_events(service.operator(), &space_id, AuditListOptions::default())
+            .await?;
+    assert!(before["items"].as_array().is_some_and(|items| {
+        items
+            .iter()
+            .all(|event| event["actor_principal_id"].is_null())
+            && items
+                .iter()
+                .any(|event| event["subject_principal_id"] == "human author label")
+            && items
+                .iter()
+                .any(|event| event["subject_principal_id"] == owner.to_string())
+    }));
     drop(service);
-
-    // Reopen must converge instead of conflicting with the commit-time event.
+    // Reopen must replay the same payload without changing canonical history.
     let reopened = UgoiteService::new(root_uri)?;
     let recovery = reopened.open_space(&space_id).await?;
     assert_eq!(recovery["space_id"], space_id);
@@ -288,5 +302,53 @@ async fn audit_commit_and_reconcile_converge_on_row_actor() -> Result<()> {
         reopened.get_entry(&space_id, "converge-entry").await?["fields"]["Body"],
         "before"
     );
+    let after =
+        audit::list_audit_events(reopened.operator(), &space_id, AuditListOptions::default())
+            .await?;
+    assert_eq!(after["items"], before["items"]);
+    Ok(())
+}
+
+/// A UUID-shaped portable author is not proof of an authenticated principal.
+/// Commit-time delivery and startup replay must therefore retain the same
+/// unattributed actor value for deterministic Saved SQL events.
+#[tokio::test]
+async fn saved_sql_uuid_author_does_not_become_actor_during_reopen() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let root_uri = root.path().to_string_lossy().into_owned();
+    let service = UgoiteService::new(root_uri.clone())?;
+    let space_id = service
+        .ensure_operator_space_with_name(&format!("audit-{}", Uuid::now_v7()), "Audit")
+        .await?
+        .space_id()
+        .to_string();
+    let author = Uuid::now_v7().to_string();
+    let payload = saved_sql::SqlPayload {
+        name: Some("query".to_string()),
+        kind: saved_sql::SqlKind::UserQuery,
+        metadata: None,
+        sql: "SELECT 1".to_string(),
+        variables: json!([]),
+    };
+    service
+        .create_saved_sql(&space_id, Some("uuid-author"), &payload, &author)
+        .await?;
+
+    let before =
+        audit::list_audit_events(service.operator(), &space_id, AuditListOptions::default())
+            .await?;
+    assert_eq!(before["total"], 1);
+    assert_eq!(before["items"][0]["subject_principal_id"], author);
+    assert!(before["items"][0]["actor_principal_id"].is_null());
+    drop(service);
+
+    let reopened = UgoiteService::new(root_uri)?;
+    reopened.open_space(&space_id).await?;
+    let after =
+        audit::list_audit_events(reopened.operator(), &space_id, AuditListOptions::default())
+            .await?;
+    assert_eq!(after["total"], 1);
+    assert_eq!(after["items"][0]["subject_principal_id"], author);
+    assert!(after["items"][0]["actor_principal_id"].is_null());
     Ok(())
 }
