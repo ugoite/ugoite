@@ -1165,33 +1165,11 @@ impl IcebergWorkspace {
                 provider,
                 table.metadata().uuid().to_string(),
                 query_snapshot_id,
+                &entry_scope,
                 query_limits,
             )
             .await?;
-        let entry_predicate = match &entry_scope {
-            EntryScope::AllCurrent => None,
-            EntryScope::Only(entry_ids) if entry_ids.is_empty() => Some(lit(false)),
-            EntryScope::Only(entry_ids) => Some(
-                col("entry_id").in_list(
-                    entry_ids
-                        .iter()
-                        .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
-                        .collect(),
-                    false,
-                ),
-            ),
-            EntryScope::AllExcept(entry_ids) => Some(
-                col("entry_id").in_list(
-                    entry_ids
-                        .iter()
-                        .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
-                        .collect(),
-                    true,
-                ),
-            ),
-        };
         let mut predicates = vec![col("change_id").eq(lit(change_id.to_owned()))];
-        predicates.extend(entry_predicate);
         if let Some(after_entry_id) = after_entry_id {
             predicates.push(col("entry_id").gt(lit(after_entry_id.as_uuid().as_bytes().to_vec())));
         }
@@ -1259,6 +1237,7 @@ impl IcebergWorkspace {
                 provider,
                 table.metadata().uuid().to_string(),
                 query_snapshot_id,
+                &entry_scope,
                 ugoite_core::query::QueryLimits {
                     max_memory_bytes: 64 * 1024 * 1024,
                     max_rows: revision_ids.len(),
@@ -1272,30 +1251,7 @@ impl IcebergWorkspace {
             .iter()
             .map(|revision_id| lit(revision_id.as_uuid().as_bytes().to_vec()))
             .collect::<Vec<_>>();
-        let entry_predicate = match &entry_scope {
-            EntryScope::AllCurrent => None,
-            EntryScope::Only(entry_ids) if entry_ids.is_empty() => Some(lit(false)),
-            EntryScope::Only(entry_ids) => Some(
-                col("entry_id").in_list(
-                    entry_ids
-                        .iter()
-                        .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
-                        .collect(),
-                    false,
-                ),
-            ),
-            EntryScope::AllExcept(entry_ids) => Some(
-                col("entry_id").in_list(
-                    entry_ids
-                        .iter()
-                        .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
-                        .collect(),
-                    true,
-                ),
-            ),
-        };
-        let mut predicates = vec![col("revision_id").in_list(revision_literals, false)];
-        predicates.extend(entry_predicate);
+        let predicates = vec![col("revision_id").in_list(revision_literals, false)];
         let projection = table
             .metadata()
             .current_schema()

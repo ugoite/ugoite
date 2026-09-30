@@ -903,8 +903,9 @@ impl UgoiteService {
         let mut mac = HmacSha256::new_from_slice(signing_key)
             .map_err(|_| anyhow!("invalid Change inspection cursor signing key"))?;
         mac.update(&payload);
+        let envelope_version = token.version;
         Ok(format!(
-            "v1.{}.{}",
+            "v{envelope_version}.{}.{}",
             URL_SAFE_NO_PAD.encode(payload),
             URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
         ))
@@ -921,9 +922,11 @@ impl UgoiteService {
             bail!("Change inspection cursor is too large");
         }
         let mut parts = encoded.split('.');
-        if parts.next() != Some("v1") {
-            bail!("Change inspection cursor version is unsupported");
-        }
+        let envelope_version = match parts.next() {
+            Some("v1") => 1,
+            Some("v2") => 2,
+            _ => bail!("Change inspection cursor version is unsupported"),
+        };
         let payload = URL_SAFE_NO_PAD
             .decode(
                 parts
@@ -948,7 +951,10 @@ impl UgoiteService {
             .map_err(|_| anyhow!("Change inspection cursor signature is invalid"))?;
         let token: ChangeInspectPageToken = serde_json::from_slice(&payload)
             .context("Change inspection cursor payload is invalid")?;
-        if token.version != 1 {
+        if token.version != envelope_version || !matches!(token.version, 1 | 2) {
+            bail!("Change inspection cursor version is unsupported");
+        }
+        if token.version == 1 && token.after_target.is_some() {
             bail!("Change inspection cursor version is unsupported");
         }
         if token.space_id != expected_space_id {
@@ -2736,7 +2742,7 @@ impl UgoiteService {
                 serde_json::from_value(row.clone()).context("Change query row is invalid")?;
             let cursor = Self::encode_change_inspect_cursor(
                 &ChangeInspectPageToken {
-                    version: 1,
+                    version: 2,
                     space_id: space_id.to_string(),
                     change_id: published_change.change_id.clone(),
                     publication: published_change.publication.clone(),
@@ -2844,7 +2850,7 @@ impl UgoiteService {
                     serde_json::from_value(row.clone()).context("Run Change row is invalid")?;
                 let cursor = Self::encode_change_inspect_cursor(
                     &ChangeInspectPageToken {
-                        version: 1,
+                        version: 2,
                         space_id: space_id.to_string(),
                         change_id: published_change.change_id.clone(),
                         publication: published_change.publication.clone(),
@@ -3357,7 +3363,7 @@ impl UgoiteService {
             let next_cursor = if let Some(next_offset) = next_offset {
                 Some(Self::encode_change_inspect_cursor(
                     &ChangeInspectPageToken {
-                        version: 1,
+                        version: 2,
                         space_id: space_id.to_string(),
                         change_id: change_id.to_string(),
                         publication: publication.clone(),
@@ -8449,6 +8455,7 @@ mod tests {
             },
             &signing_key,
         )?;
+        assert!(cursor.starts_with("v1."));
         assert!(UgoiteService::decode_change_inspect_cursor(
             &cursor,
             "another-space",
@@ -8491,6 +8498,34 @@ mod tests {
             )
             .await?;
         assert_eq!(first_page["targets"].as_array().map(Vec::len), Some(1));
+
+        let v2_cursor = UgoiteService::encode_change_inspect_cursor(
+            &ChangeInspectPageToken {
+                version: 2,
+                space_id: space_id.clone(),
+                change_id: change_id.clone(),
+                publication: published_change.publication.clone(),
+                change: published_change.change.clone(),
+                scope_fingerprint: UgoiteService::change_inspect_scope_fingerprint(&scopes),
+                limit: 10,
+                offset: 0,
+                after_target: Some((
+                    FormId::from_uuid(Uuid::now_v7()),
+                    EntryId::from_uuid(Uuid::now_v7()),
+                )),
+            },
+            &signing_key,
+        )?;
+        assert!(v2_cursor.starts_with("v2."));
+        assert_eq!(v2_cursor.split('.').next(), Some("v2"));
+        assert!(UgoiteService::decode_change_inspect_cursor(
+            &v2_cursor,
+            &space_id,
+            &change_id,
+            10,
+            &signing_key,
+        )
+        .is_ok());
 
         Authorizer::new(service.operator.clone())
             .set_policy(
@@ -8725,16 +8760,43 @@ mod tests {
         let hidden_version = service.get_form(&space_id, "Hidden").await?["version"]
             .as_u64()
             .unwrap() as u32;
-        let visible_ids = [Uuid::from_u128(40_001), Uuid::from_u128(40_002)];
+        let visible_ids = [
+            Uuid::from_u128(40_001),
+            Uuid::from_u128(40_002),
+            Uuid::from_u128(40_003),
+        ];
+        let mut visible_rows = append_targets(
+            "Visible",
+            "Body",
+            visible_version,
+            &change_id,
+            visible_ids.to_vec(),
+        )
+        .1;
+        let before_revision_id = Uuid::now_v7();
+        let updated_target = visible_rows
+            .iter_mut()
+            .find(|row| row.entry_id == visible_ids[0].to_string())
+            .expect("first visible target is present");
+        updated_target.parent_revision_id = Some(before_revision_id.to_string());
+        updated_target.entry_version = 2;
+        let mut before_revision = updated_target.clone();
+        before_revision.revision_id = before_revision_id.to_string();
+        before_revision.change_id = Uuid::now_v7().to_string();
+        before_revision.parent_revision_id = None;
+        before_revision.entry_version = 1;
+        before_revision.fields = json!({"Body": "before"});
+        before_revision.timestamp -= 1.0;
         let hidden_id = Uuid::from_u128(50_001);
+        crate::entry::append_revision_batch_for_form(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "Visible",
+            &[before_revision],
+        )
+        .await?;
         for (form_name, rows) in [
-            append_targets(
-                "Visible",
-                "Body",
-                visible_version,
-                &change_id,
-                visible_ids.to_vec(),
-            ),
+            ("Visible", visible_rows),
             append_targets(
                 "Hidden",
                 "Secret",
@@ -8767,6 +8829,22 @@ mod tests {
                 },
             )
             .await?;
+        Authorizer::new(service.operator.clone())
+            .set_policy(
+                &space_id,
+                owner_id,
+                &ResourceRef {
+                    kind: ResourceKind::Entry,
+                    id: visible_ids[1].to_string(),
+                    parent: None,
+                },
+                ugoite_domain::identity::AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
 
         let first = service
             .inspect_change_authorized_for_principals(
@@ -8781,6 +8859,10 @@ mod tests {
         assert!(first.get("summary").is_none());
         assert_eq!(first["targets"].as_array().map(Vec::len), Some(1));
         assert_ne!(first["targets"][0]["entry_id"], hidden_id.to_string());
+        assert_eq!(
+            first["targets"][0]["before_revision_id"],
+            before_revision_id.to_string()
+        );
         let cursor = first["next_cursor"]
             .as_str()
             .expect("visible target continues");
@@ -8816,11 +8898,14 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert_eq!(
             returned,
-            visible_ids.iter().map(ToString::to_string).collect()
+            [visible_ids[0], visible_ids[2]]
+                .iter()
+                .map(ToString::to_string)
+                .collect()
         );
-        assert!(serde_json::to_string(&[first, second])?
-            .find("Hidden")
-            .is_none());
+        let serialized_pages = serde_json::to_string(&[first, second])?;
+        assert!(!serialized_pages.contains("Hidden"));
+        assert!(!serialized_pages.contains(&visible_ids[1].to_string()));
         Ok(())
     }
 

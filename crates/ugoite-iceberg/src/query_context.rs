@@ -82,6 +82,37 @@ pub(crate) fn latest_revision_dataframe(
     latest_revision_dataframe_after(revisions, entry_scope, view, None)
 }
 
+/// Applies the caller's authorization scope before exposing a revision
+/// relation to any lookup plan.
+pub(crate) fn apply_entry_scope(
+    revisions: DataFrame,
+    entry_scope: &EntryScope,
+) -> Result<DataFrame> {
+    match entry_scope {
+        EntryScope::AllCurrent => Ok(revisions),
+        EntryScope::Only(entry_ids) if entry_ids.is_empty() => Ok(revisions.filter(lit(false))?),
+        EntryScope::Only(entry_ids) => Ok(revisions.filter(
+            col("entry_id").in_list(
+                entry_ids
+                    .iter()
+                    .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
+                    .collect::<Vec<_>>(),
+                false,
+            ),
+        )?),
+        EntryScope::AllExcept(entry_ids) if entry_ids.is_empty() => Ok(revisions),
+        EntryScope::AllExcept(entry_ids) => Ok(revisions.filter(
+            col("entry_id").in_list(
+                entry_ids
+                    .iter()
+                    .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
+                    .collect::<Vec<_>>(),
+                true,
+            ),
+        )?),
+    }
+}
+
 /// Builds one ordered keyset page of the latest revision view. The cursor
 /// predicate is applied before the max-version aggregate so a maintenance
 /// rebuild never materializes the entire current Entry set merely to return a
@@ -92,29 +123,7 @@ pub(crate) fn latest_revision_dataframe_after(
     view: crate::RevisionView,
     after_entry_id: Option<&[u8]>,
 ) -> Result<DataFrame> {
-    let scoped = match entry_scope {
-        EntryScope::AllCurrent => revisions,
-        EntryScope::Only(entry_ids) if entry_ids.is_empty() => revisions.filter(lit(false))?,
-        EntryScope::Only(entry_ids) => revisions.filter(
-            col("entry_id").in_list(
-                entry_ids
-                    .iter()
-                    .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
-                    .collect::<Vec<_>>(),
-                false,
-            ),
-        )?,
-        EntryScope::AllExcept(entry_ids) if entry_ids.is_empty() => revisions,
-        EntryScope::AllExcept(entry_ids) => revisions.filter(
-            col("entry_id").in_list(
-                entry_ids
-                    .iter()
-                    .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
-                    .collect::<Vec<_>>(),
-                true,
-            ),
-        )?,
-    };
+    let scoped = apply_entry_scope(revisions, entry_scope)?;
     let scoped = if let Some(after_entry_id) = after_entry_id {
         scoped.filter(col("entry_id").gt(lit(after_entry_id.to_vec())))?
     } else {
@@ -594,20 +603,22 @@ impl IcebergWorkspace {
         .await
     }
 
-    /// Registers a checkpoint-pinned revision source for narrow internal
-    /// lookups whose predicates are supplied by trusted callers. Unlike the
-    /// general history context, this does not build a full latest-head
-    /// invariant scan; callers must always include their Entry scope in the
-    /// relation predicates before materialization.
+    /// Registers a checkpoint-pinned revision source with its Entry scope
+    /// applied before any caller-specific lookup predicates.
     pub(crate) async fn authorized_revision_lookup_context(
         &self,
         provider: Arc<dyn TableProvider>,
         table_uuid: String,
         snapshot_id: Option<i64>,
+        entry_scope: &EntryScope,
         limits: ugoite_core::query::QueryLimits,
     ) -> Result<AuthorizedQueryContext> {
         let context = bounded_session_context(&limits)?;
         context.register_table("revisions", provider.clone())?;
+        let scoped_revisions =
+            apply_entry_scope(context.table("revisions").await?, entry_scope)?.into_view();
+        context.deregister_table("revisions")?;
+        context.register_table("revisions", scoped_revisions)?;
         let permits = self.shared_query_permits(limits.max_concurrency);
         Ok(AuthorizedQueryContext {
             context,
