@@ -46,6 +46,7 @@ fi
 
 validate_lane "rust-check" "${PLAN_RUST_CHECK:-missing}" "${RUST_CHECK_RESULT:-missing}"
 validate_lane "rust-test" "${PLAN_RUST_TEST:-missing}" "${RUST_TEST_RESULT:-missing}"
+validate_lane "s3-shared-authorization" "${PLAN_RUST_TEST:-missing}" "${S3_SHARED_AUTHORIZATION_RESULT:-missing}"
 validate_lane "web" "${PLAN_WEB:-missing}" "${WEB_RESULT:-missing}"
 validate_lane "artifact-build" "${PLAN_ARTIFACTS:-missing}" "${ARTIFACT_BUILD_RESULT:-missing}"
 validate_lane "e2e-smoke-mobile" "${PLAN_ARTIFACTS:-missing}" "${E2E_SMOKE_MOBILE_RESULT:-missing}"

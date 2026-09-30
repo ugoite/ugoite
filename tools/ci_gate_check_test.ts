@@ -13,6 +13,7 @@ function environment(
     IMPACT_JOBS_SKIPPED: "false",
     RUST_CHECK_RESULT: "success",
     RUST_TEST_RESULT: "success",
+    S3_SHARED_AUTHORIZATION_RESULT: "success",
     WEB_RESULT: "success",
     ARTIFACT_BUILD_RESULT: "success",
     E2E_SMOKE_MOBILE_RESULT: "success",
@@ -61,6 +62,7 @@ Deno.test("required gate accepts only the lanes planned for a docs-only pull req
       IMPACT_JOBS_SKIPPED: "true",
       RUST_CHECK_RESULT: "skipped",
       RUST_TEST_RESULT: "skipped",
+      S3_SHARED_AUTHORIZATION_RESULT: "skipped",
       ARTIFACT_BUILD_RESULT: "skipped",
       E2E_SMOKE_MOBILE_RESULT: "skipped",
       E2E_OWNER_RESULT: "skipped",
@@ -82,6 +84,7 @@ Deno.test("required gate rejects lane failures, cancellation, and invalid plans"
   const cases: Record<string, string>[] = [
     { RUST_CHECK_RESULT: "failure" },
     { RUST_TEST_RESULT: "cancelled" },
+    { S3_SHARED_AUTHORIZATION_RESULT: "failure" },
     { WEB_RESULT: "skipped" },
     { ARTIFACT_BUILD_RESULT: "failure" },
     { E2E_SMOKE_MOBILE_RESULT: "cancelled" },
