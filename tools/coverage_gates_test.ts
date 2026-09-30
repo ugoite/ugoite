@@ -129,6 +129,9 @@ async function assertAggregateWorkflow(
   const querySurfaceMeasure = await Deno.readTextFile(
     new URL("../scripts/measure-query-surfaces.sh", import.meta.url),
   );
+  const queryBrowserTest = await Deno.readTextFile(
+    new URL("../e2e/query-surfaces-measurement.test.ts", import.meta.url),
+  );
   const mergeTask = taskBlock(mise, "ci:merge");
 
   assertContainsAll(
@@ -761,6 +764,29 @@ async function assertAggregateWorkflow(
     ),
     false,
     "CP1 measurement scripts must not duplicate shared fixture values",
+  );
+  assertContainsAll(
+    querySurfaceMeasure,
+    [
+      "QUERY_EXPECTED_JSON=",
+      'UGOITE_QUERY_MEASURE_EXPECTED_JSON="$QUERY_EXPECTED_JSON"',
+    ],
+    "query measurement expected-count handoff",
+  );
+  assertContainsAll(
+    queryBrowserTest,
+    [
+      "UGOITE_QUERY_MEASURE_EXPECTED_JSON",
+      "expectedFixtureFor",
+    ],
+    "browser query assertions derive counts from the shared fixture spec",
+  );
+  assertEquals(
+    ["6_000", "4_000", "6,000", "4,000"].some((value) =>
+      queryBrowserTest.includes(value)
+    ),
+    false,
+    "browser query assertions must not hardcode fixture entry counts",
   );
   assertContainsAll(
     sqlExportMeasure,

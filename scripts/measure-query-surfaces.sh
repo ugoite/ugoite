@@ -136,6 +136,25 @@ else
 fi
 
 echo "Running the server-backed browser measurement..." >&2
+# The browser assertions derive their expected entry counts from the same
+# shared fixture specification (single source of truth): slug, seed, and
+# entry count per query Space. The test fails closed when the mapping is
+# missing or malformed instead of falling back to hardcoded counts.
+QUERY_EXPECTED_JSON="$(deno eval --quiet '
+  const rows = Deno.args[0].split("\n").filter(Boolean);
+  const mapping = {};
+  for (const row of rows) {
+    const [slug, , seedText, entryCountText] = row.split("\t");
+    const seed = Number(seedText);
+    const entries = Number(entryCountText);
+    if (!slug || !Number.isSafeInteger(seed) || !Number.isSafeInteger(entries) || entries <= 0) {
+      throw new Error(`invalid CP1 query fixture spec row: ${row}`);
+    }
+    mapping[slug] = { seed, entries };
+  }
+  console.log(JSON.stringify(mapping));
+' -- "$QUERY_FIXTURE_ROWS")"
+export UGOITE_QUERY_MEASURE_EXPECTED_JSON="$QUERY_EXPECTED_JSON"
 if [[ "$QUERY_MEASURE_RUNNER" == "host" ]]; then
   bash "$ROOT_DIR/scripts/measure-process-resources.sh" \
     "$WASM_BUILD_RESOURCE" mise run build:wasm
@@ -144,6 +163,7 @@ if [[ "$QUERY_MEASURE_RUNNER" == "host" ]]; then
   UGOITE_SOURCE_SHA="${UGOITE_SOURCE_SHA:-$SOURCE_SHA}" \
   UGOITE_QUERY_MEASURE_ENABLED=true \
   UGOITE_QUERY_MEASURE_OUTPUT="$OUTPUT_FILE" \
+  UGOITE_QUERY_MEASURE_EXPECTED_JSON="$QUERY_EXPECTED_JSON" \
   UGOITE_E2E_STARTUP_TIMEOUT_SECONDS=300 \
   E2E_ENFORCE_CI_GATES="${E2E_ENFORCE_CI_GATES:-false}" \
   E2E_STORAGE_ROOT="$MEASURE_ROOT" \
@@ -153,6 +173,7 @@ else
   UGOITE_SOURCE_SHA="${UGOITE_SOURCE_SHA:-$SOURCE_SHA}" \
   UGOITE_QUERY_MEASURE_ENABLED=true \
   UGOITE_QUERY_MEASURE_OUTPUT="$OUTPUT_FILE" \
+  UGOITE_QUERY_MEASURE_EXPECTED_JSON="$QUERY_EXPECTED_JSON" \
   E2E_BUILD_IMAGES="${E2E_BUILD_IMAGES:-true}" \
   E2E_BACKEND_START_TIMEOUT_SECONDS=300 \
   E2E_READINESS_TIMEOUT_SECONDS=300 \

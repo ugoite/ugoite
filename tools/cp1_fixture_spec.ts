@@ -12,6 +12,25 @@ export type Cp1Fixture = Readonly<{
 export const CP1_FIXTURE_SPEC_SCHEMA_VERSION = 1;
 
 /**
+ * Fixed CP1 acceptance fixture sizes.
+ *
+ * Rescaled 2026-09-30 from 6,000 + 4,000 (query) and 10,000 (export) to
+ * 1,200 + 800 and 1,000: seed wall time scales with entry volume and the
+ * fixture lane dominated the CP1 critical path. The smaller sizes preserve
+ * every structural property the consumers assert:
+ * - two distinct query Spaces with the same 6:4 size ratio, seeds, scenario,
+ *   and owner;
+ * - totals divisible by 4 so the MaintenanceTicket share (25% of the
+ *   renewable-ops distribution) stays an exact count;
+ * - more than 100 MaintenanceTicket rows per query Space so the browser
+ *   page-size-100 pagination reaches Page 2 with a continuation;
+ * - multi-batch seeds (256-entry mutation batches) for query and export;
+ * - export totals divisible by both page sizes (100 x 10 pages, 1,000 x 1).
+ * Trial counts, page sizes, lifecycle assertions, and the zero-skip policy
+ * are unchanged. Slugs, seeds, scenario, and owners are unchanged.
+ */
+
+/**
  * Maximum Entries per seeder mutation batch. Mirrors the production
  * `entry::MAX_ENTRY_CREATE_BATCH_SIZE` bound enforced by the sample-data
  * seeder; fixture profile validators use it to reject impossible batch
@@ -35,7 +54,7 @@ export const CP1_FIXTURE_SETS: Readonly<
       slug: "query-space-a",
       scenario: "renewable-ops",
       seed: 3134001,
-      entryCount: 6000,
+      entryCount: 1200,
       ownerDisplayName: "Query Measurement Owner",
       formNames: CP1_RENEWABLE_OPS_FORM_NAMES,
     },
@@ -43,7 +62,7 @@ export const CP1_FIXTURE_SETS: Readonly<
       slug: "query-space-b",
       scenario: "renewable-ops",
       seed: 3134002,
-      entryCount: 4000,
+      entryCount: 800,
       ownerDisplayName: "Query Measurement Owner",
       formNames: CP1_RENEWABLE_OPS_FORM_NAMES,
     },
@@ -53,7 +72,7 @@ export const CP1_FIXTURE_SETS: Readonly<
       slug: "sql-export-measure",
       scenario: "renewable-ops",
       seed: 3140001,
-      entryCount: 10000,
+      entryCount: 1000,
       ownerDisplayName: null,
       formNames: CP1_RENEWABLE_OPS_FORM_NAMES,
     },

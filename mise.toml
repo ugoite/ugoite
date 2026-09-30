@@ -42,7 +42,7 @@ description = "Seed two local Spaces, profile fixture generation, and measure En
 run = "bash scripts/measure-query-surfaces.sh"
 
 [tasks."measure:sql-export"]
-description = "Profile fixture generation and verify complete bounded SQL export over a fixed 10,000-entry Space"
+description = "Profile fixture generation and verify complete bounded SQL export over a fixed 1,000-entry Space"
 run = "bash scripts/measure-sql-export.sh"
 
 [tasks."measure:startup"]
@@ -349,7 +349,7 @@ description = "Run standalone docsite navigation and link E2E checks"
 run = [{ task = "test:docsite:e2e:navigation" }]
 
 [tasks."ci:lane:cp1-acceptance"]
-description = "Run fixed 10k/two-Space query lifecycle and bounded SQL export acceptance"
+description = "Run fixed two-Space query lifecycle and bounded SQL export acceptance"
 run = [
   { task = "ci:cp1:prepare-fixtures" },
   { task = "measure:query-surfaces", env = { CARGO_TARGET_DIR = "target/rust", E2E_ENFORCE_CI_GATES = "true", UGOITE_SEED_XTASK_BINARY = "target/rust/debug/xtask", UGOITE_CP1_FIXTURE_BUNDLE_DIR = "target/cp1-fixtures/query" } },
