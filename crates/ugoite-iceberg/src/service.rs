@@ -4590,8 +4590,7 @@ impl UgoiteService {
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        self.record_committed_entry_delete(space_id, entry_id)
-            .await;
+        self.record_committed_entry_delete(space_id, entry_id).await;
         let mut result = json!({"deleted": true});
         if let Some(receipt) = receipt {
             result["change_id"] = json!(receipt.command_id);
@@ -4633,8 +4632,7 @@ impl UgoiteService {
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        self.record_committed_entry_delete(space_id, entry_id)
-            .await;
+        self.record_committed_entry_delete(space_id, entry_id).await;
         let mut result = json!({"deleted": true});
         if let Some(receipt) = receipt {
             result["change_id"] = json!(receipt.command_id);
@@ -4725,10 +4723,7 @@ impl UgoiteService {
         crate::authorization::with_authorization_write_fence(
             authorization_lease.write_fence(),
             self.delete_entry_with_change_receipt_for_principals(
-                space_id,
-                entry_id,
-                author,
-                change,
+                space_id, entry_id, author, change,
             ),
         )
         .await
@@ -4766,8 +4761,7 @@ impl UgoiteService {
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        self.record_committed_entry_delete(space_id, entry_id)
-            .await;
+        self.record_committed_entry_delete(space_id, entry_id).await;
         let mut result = json!({"deleted": true});
         if let Some(receipt) = receipt {
             result["change_id"] = json!(receipt.command_id);

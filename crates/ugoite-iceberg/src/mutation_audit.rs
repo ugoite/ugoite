@@ -280,8 +280,7 @@ impl UgoiteService {
         } else {
             updated_by
         };
-        let (subject, actor) =
-            committed_actor_attribution(Some(committed_actor), &space_uid);
+        let (subject, actor) = committed_actor_attribution(Some(committed_actor), &space_uid);
         let event = entry_mutation_event(
             &space_uid,
             action,
