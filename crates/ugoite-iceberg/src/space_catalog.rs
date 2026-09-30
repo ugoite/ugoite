@@ -327,6 +327,34 @@ impl SpaceCatalog {
         Ok(Some((reference.revision, bytes)))
     }
 
+    /// Rechecks a fenced writer's authorization revision when its content
+    /// publication loses the Catalog Head CAS. A conflict alone only proves
+    /// concurrent publication; when the writer carries an authorization
+    /// fence whose revision no longer matches the authoritative snapshot,
+    /// retrying with a freshly bound Head would let a revoked principal's
+    /// stale write win. Returning the staleness error instead of the plain
+    /// conflict makes coordinator retry loops fail closed (they only retry
+    /// "Catalog Head changed") while unfenced writers keep their existing
+    /// retry behavior by receiving `None`.
+    async fn fenced_publication_conflict(&self) -> Result<Option<Error>> {
+        let Some(expected) = crate::authorization::authorization_write_revision() else {
+            return Ok(None);
+        };
+        let current = self
+            .authorization_snapshot()
+            .await?
+            .map(|(revision, _)| revision);
+        if current == Some(expected) {
+            return Ok(None);
+        }
+        Ok(Some(Error::new(
+            ErrorKind::DataInvalid,
+            format!(
+                "Space authorization changed before publication: fenced revision {expected} is not authoritative"
+            ),
+        )))
+    }
+
     /// Publishes a new immutable authorization snapshot by advancing the same
     /// exact Catalog Head used for protected content. A concurrent content
     /// publication may win first; in that case this writer retries from the
@@ -2307,6 +2335,9 @@ impl SpaceCatalog {
         observed_exact: &ExactCatalogHead,
     ) -> Result<()> {
         if attempt.expected_head.as_ref() != Some(observed_head) {
+            if let Some(fenced) = self.fenced_publication_conflict().await? {
+                return Err(fenced);
+            }
             return Err(Error::new(
                 ErrorKind::DataInvalid,
                 "Catalog Head changed while adopting an immutable publication",
@@ -2323,6 +2354,9 @@ impl SpaceCatalog {
             ));
         };
         if !exact_head_matches(observed_head, observed_exact.etag.as_deref(), &head, &exact) {
+            if let Some(fenced) = self.fenced_publication_conflict().await? {
+                return Err(fenced);
+            }
             return Err(Error::new(
                 ErrorKind::DataInvalid,
                 "Catalog Head changed while adopting an immutable publication",
@@ -2343,10 +2377,15 @@ impl SpaceCatalog {
             .await
         {
             Ok(()) => Ok(()),
-            Err(error) if is_condition_conflict(&error) => Err(Error::new(
-                ErrorKind::DataInvalid,
-                "Catalog Head changed while adopting an immutable publication",
-            )),
+            Err(error) if is_condition_conflict(&error) => {
+                if let Some(fenced) = self.fenced_publication_conflict().await? {
+                    return Err(fenced);
+                }
+                Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head changed while adopting an immutable publication",
+                ))
+            }
             Err(error) => Err(storage_error(error)),
         }
     }
@@ -2762,6 +2801,9 @@ impl SpaceCatalog {
         match (attempt.expected_head.as_ref(), self.exact_head().await?) {
             (Some(expected), Some((head, exact))) => {
                 if expected != &head || attempt.expected_head_etag != exact.etag {
+                    if let Some(fenced) = self.fenced_publication_conflict().await? {
+                        return Err(fenced);
+                    }
                     return Err(Error::new(
                         ErrorKind::DataInvalid,
                         "Catalog Head changed while adopting an immutable publication",
@@ -2787,17 +2829,27 @@ impl SpaceCatalog {
                 let permit = self.mutation_permit().map_err(storage_error)?;
                 match self.store.create_head(&permit, bytes).await {
                     Ok(()) => Ok(()),
-                    Err(error) if is_condition_conflict(&error) => Err(Error::new(
-                        ErrorKind::DataInvalid,
-                        "Catalog Head changed while adopting an immutable publication",
-                    )),
+                    Err(error) if is_condition_conflict(&error) => {
+                        if let Some(fenced) = self.fenced_publication_conflict().await? {
+                            return Err(fenced);
+                        }
+                        Err(Error::new(
+                            ErrorKind::DataInvalid,
+                            "Catalog Head changed while adopting an immutable publication",
+                        ))
+                    }
                     Err(error) => Err(storage_error(error)),
                 }
             }
-            _ => Err(Error::new(
-                ErrorKind::DataInvalid,
-                "Catalog Head changed while adopting an immutable publication",
-            )),
+            _ => {
+                if let Some(fenced) = self.fenced_publication_conflict().await? {
+                    return Err(fenced);
+                }
+                Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head changed while adopting an immutable publication",
+                ))
+            }
         }
     }
 
@@ -2901,10 +2953,15 @@ impl SpaceCatalog {
         };
         match result {
             Ok(()) => Ok(()),
-            Err(error) if is_condition_conflict(&error) => Err(Error::new(
-                ErrorKind::DataInvalid,
-                "Catalog Head changed before this publication could be committed",
-            )),
+            Err(error) if is_condition_conflict(&error) => {
+                if let Some(fenced) = self.fenced_publication_conflict().await? {
+                    return Err(fenced);
+                }
+                Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head changed before this publication could be committed",
+                ))
+            }
             Err(error) => Err(Error::new(
                 ErrorKind::Unexpected,
                 format!("Catalog publication outcome is unknown after Head CAS request: {error}"),

@@ -158,9 +158,14 @@ async fn s3_authorization_revocation_wins_over_stale_process_content_publication
                     )
                     .await;
                 let error = updated.expect_err("stale writer must lose the final Catalog Head CAS");
+                // Either the Head CAS itself rejects the stale base, or the
+                // fenced recheck at the publication boundary observes the
+                // revocation first. Both prove the stale write did not win.
+                let message = format!("{error:#}");
                 anyhow::ensure!(
-                    format!("{error:#}").contains("Catalog Head changed"),
-                    "writer failed outside the stale Catalog Head CAS: {error:#}"
+                    message.contains("Catalog Head changed")
+                        || message.contains("Space authorization changed"),
+                    "writer failed outside the expected stale-write conflict: {message}"
                 );
             }
             "revoker" => {
@@ -216,12 +221,24 @@ async fn s3_authorization_revocation_wins_over_stale_process_content_publication
         .create_space_for_principal(&space_slug, owner, "S3 authorization race")
         .await?
         .to_string();
-    let (_, form_lease) = Authorizer::new(service.operator().clone())
-        .acquire_state_lease(&space_id)
-        .await?;
-    form_lease.prepare_mutation().await?;
+    // Scope the setup lease narrowly: the returned lease owns the
+    // process-global authorization write lock, and every service mutation
+    // below acquires its own lease. Holding the setup lease across those
+    // calls re-enters the non-reentrant lock and deadlocks the test
+    // process (hanging every test in the binary, since the lock and the
+    // Space-creation serializer are process-global). The extracted fence
+    // carries the same authorization revision for the fenced write, and
+    // cross-process ordering stays with the Catalog Head CAS, so dropping
+    // the lease changes no proven property.
+    let form_fence = {
+        let (_, form_lease) = Authorizer::new(service.operator().clone())
+            .acquire_state_lease(&space_id)
+            .await?;
+        form_lease.prepare_mutation().await?;
+        form_lease.write_fence()
+    };
     ugoite_iceberg::authorization::with_authorization_write_fence(
-        form_lease.write_fence(),
+        form_fence,
         service.upsert_form(
             &space_id,
             &json!({
@@ -321,22 +338,22 @@ async fn s3_authorization_revocation_wins_over_stale_process_content_publication
         .spawn()?;
     wait_for_gate(&gate.join("entered-1"), &mut winner).await?;
     tokio::fs::write(gate.join("release-1"), b"continue").await?;
-    let winner = tokio::task::spawn_blocking(move || winner.wait_with_output()).await??;
+    let winner = join_child(winner, "winner").await?;
     anyhow::ensure!(
         winner.status.success(),
-        "content-first writer failed: {}",
-        String::from_utf8_lossy(&winner.stderr)
+        "{}",
+        child_failure_detail("content-first writer", &winner)
     );
     let winner_receipt: Value =
         serde_json::from_slice(&tokio::fs::read(gate.join("winner-result.json")).await?)?;
     let winner_change_id = winner_receipt["change_id"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("winner omitted its Change receipt"))?;
-    let winning_revoker = common("winner-revoker").output()?;
+    let winning_revoker = run_child(&mut common("winner-revoker"), "winner-revoker").await?;
     anyhow::ensure!(
         winning_revoker.status.success(),
-        "content-first revoker failed: {}",
-        String::from_utf8_lossy(&winning_revoker.stderr)
+        "{}",
+        child_failure_detail("content-first revoker", &winning_revoker)
     );
     let winner_changes = service.list_changes(&space_id).await?;
     anyhow::ensure!(
@@ -351,11 +368,7 @@ async fn s3_authorization_revocation_wins_over_stale_process_content_publication
         service.get_entry(&space_id, "winner-entry").await?["fields"]["Body"],
         "content Head won first"
     );
-    assert!(!Authorizer::new(service.operator().clone())
-        .state(&space_id)
-        .await?
-        .memberships
-        .contains_key(&winner_editor));
+    assert_principal_revoked(&service, &space_id, winner_editor).await?;
     tokio::fs::remove_dir_all(&gate).await?;
     tokio::fs::create_dir_all(&gate).await?;
     let mut writer = common("writer")
@@ -364,37 +377,27 @@ async fn s3_authorization_revocation_wins_over_stale_process_content_publication
         .stderr(Stdio::piped())
         .spawn()?;
     let entered = gate.join("entered-1");
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
-    while !entered.exists() {
-        if tokio::time::Instant::now() >= deadline {
-            let _ = writer.kill();
-            bail!("writer process did not reach the pre-Head-CAS gate");
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-    }
+    wait_for_gate(&entered, &mut writer).await?;
 
-    let revoker = common("revoker").output()?;
+    let revoker = run_child(&mut common("revoker"), "revoker").await?;
     tokio::fs::write(gate.join("release-1"), b"continue").await?;
-    let writer = tokio::task::spawn_blocking(move || writer.wait_with_output()).await??;
+    let writer = join_child(writer, "writer").await?;
     anyhow::ensure!(
         revoker.status.success(),
-        "revoker process failed: {}",
-        String::from_utf8_lossy(&revoker.stderr)
+        "{}",
+        child_failure_detail("revoker process", &revoker)
     );
     anyhow::ensure!(
         writer.status.success(),
-        "writer process failed: {}",
-        String::from_utf8_lossy(&writer.stderr)
+        "{}",
+        child_failure_detail("writer process", &writer)
     );
 
     assert_eq!(
         service.get_entry(&space_id, "race-entry").await?["fields"]["Body"],
         "published before revoke"
     );
-    let authorization = Authorizer::new(service.operator().clone())
-        .state(&space_id)
-        .await?;
-    assert!(!authorization.memberships.contains_key(&editor));
+    assert_principal_revoked(&service, &space_id, editor).await?;
     tokio::fs::remove_dir_all(gate).await?;
     Ok(())
 }
@@ -430,9 +433,14 @@ async fn s3_asset_upload_is_not_exposed_after_revocation_wins() -> Result<()> {
                 )
                 .await;
                 let error = result.expect_err("stale Asset writer must lose the Catalog Head CAS");
+                // Either the Head CAS itself rejects the stale base, or the
+                // fenced recheck at the publication boundary observes the
+                // revocation first. Both prove the stale upload did not win.
+                let message = format!("{error:#}");
                 anyhow::ensure!(
-                    format!("{error:#}").contains("Catalog Head changed"),
-                    "Asset writer failed outside the stale Catalog Head CAS: {error:#}"
+                    message.contains("Catalog Head changed")
+                        || message.contains("Space authorization changed"),
+                    "Asset writer failed outside the expected stale-write conflict: {message}"
                 );
             }
             "revoker" => {
@@ -496,18 +504,18 @@ async fn s3_asset_upload_is_not_exposed_after_revocation_wins() -> Result<()> {
         .stderr(Stdio::piped())
         .spawn()?;
     wait_for_gate(&gate.join("entered-1"), &mut writer).await?;
-    let revoker = common("revoker").output()?;
+    let revoker = run_child(&mut common("revoker"), "revoker").await?;
     tokio::fs::write(gate.join("release-1"), b"continue").await?;
-    let writer = tokio::task::spawn_blocking(move || writer.wait_with_output()).await??;
+    let writer = join_child(writer, "writer").await?;
     anyhow::ensure!(
         revoker.status.success(),
-        "Asset revoker failed: {}",
-        String::from_utf8_lossy(&revoker.stderr)
+        "{}",
+        child_failure_detail("Asset revoker", &revoker)
     );
     anyhow::ensure!(
         writer.status.success(),
-        "Asset writer failed: {}",
-        String::from_utf8_lossy(&writer.stderr)
+        "{}",
+        child_failure_detail("Asset writer", &writer)
     );
 
     let staged = service
@@ -530,12 +538,86 @@ async fn s3_asset_upload_is_not_exposed_after_revocation_wins() -> Result<()> {
         service.read_asset(&space_id, asset_id).await.is_err(),
         "an Asset whose Head receipt lost must not be readable"
     );
-    let authorization = Authorizer::new(service.operator().clone())
-        .state(&space_id)
-        .await?;
-    assert!(!authorization.memberships.contains_key(&editor));
+    assert_principal_revoked(&service, &space_id, editor).await?;
     tokio::fs::remove_dir_all(gate).await?;
     Ok(())
+}
+
+/// Asserts a revocation took effect under the implemented authorization
+/// contract: revocation marks the principal `Revoked` (the retained
+/// membership entry preserves history and keeps human-principal validation
+/// intact) and strips every effective action. Asserting membership removal
+/// would contradict `validate_authorization_state` and the unit-tested
+/// revoke contract, so these acceptance tests assert the same observable
+/// Post-revoke state instead.
+async fn assert_principal_revoked(
+    service: &UgoiteService,
+    space_id: &str,
+    principal: Uuid,
+) -> Result<()> {
+    let authorization = Authorizer::new(service.operator().clone())
+        .state(space_id)
+        .await?;
+    anyhow::ensure!(
+        matches!(
+            authorization
+                .principals
+                .get(&principal)
+                .map(|member| &member.state),
+            Some(ugoite_domain::identity::PrincipalState::Revoked)
+        ),
+        "principal {principal} was not revoked"
+    );
+    anyhow::ensure!(
+        ugoite_iceberg::authorization::effective_actions_for_state(&authorization, principal, None)
+            .is_err(),
+        "revoked principal {principal} retains effective actions"
+    );
+    Ok(())
+}
+
+/// Finite join budget for every spawned test child. Gate files bound the
+/// sequencing waits, but a child stuck outside its gated section must fail
+/// the test loudly instead of hanging the lane until the job timeout. The
+/// budget covers two gated publications plus setup; children carry their own
+/// 60s gate caps and exit on their own after a timeout trips here.
+const CHILD_JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+async fn join_child(child: std::process::Child, label: &str) -> Result<std::process::Output> {
+    match tokio::time::timeout(
+        CHILD_JOIN_TIMEOUT,
+        tokio::task::spawn_blocking(move || child.wait_with_output()),
+    )
+    .await
+    {
+        Ok(join) => Ok(join??),
+        Err(_) => bail!("{label} test child did not exit within 300s"),
+    }
+}
+
+async fn run_child(command: &mut Command, label: &str) -> Result<std::process::Output> {
+    // A synchronous `output()` would block the test runtime with no bound;
+    // route one-shot children through the same finite join budget instead.
+    // Piping (rather than inheriting) keeps the child's output available for
+    // the failure diagnostics below. libtest prints failures to stdout, so
+    // both streams are needed: stderr alone is empty on failure.
+    let child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    join_child(child, label).await
+}
+
+/// Renders a failed child's status plus both output streams. The harness
+/// prints failures to stdout, so stderr alone would leave lane failures
+/// undiagnosable.
+fn child_failure_detail(label: &str, output: &std::process::Output) -> String {
+    format!(
+        "{label} failed with status {}: stdout: {}; stderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
 }
 
 async fn wait_for_gate(path: &std::path::Path, child: &mut std::process::Child) -> Result<()> {
@@ -573,9 +655,14 @@ async fn s3_change_revert_rechecks_acl_at_publication_head() -> Result<()> {
                     )
                     .await;
                 let error = result.expect_err("stale revert must lose the Catalog Head CAS");
+                // Either the Head CAS itself rejects the stale base, or the
+                // fenced recheck at the publication boundary observes the
+                // revocation first. Both prove the stale revert did not win.
+                let message = format!("{error:#}");
                 anyhow::ensure!(
-                    format!("{error:#}").contains("Catalog Head changed"),
-                    "revert failed outside the stale Head CAS: {error:#}"
+                    message.contains("Catalog Head changed")
+                        || message.contains("Space authorization changed"),
+                    "revert failed outside the expected stale-write conflict: {message}"
                 );
             }
             "revoker" => {
@@ -603,12 +690,19 @@ async fn s3_change_revert_rechecks_acl_at_publication_head() -> Result<()> {
         .create_space_for_principal(&space_slug, owner, "S3 revert race")
         .await?
         .to_string();
-    let (_, lease) = Authorizer::new(service.operator().clone())
-        .acquire_state_lease(&space_id)
-        .await?;
-    lease.prepare_mutation().await?;
+    // Narrow lease scope (see the authorization-race test): the lease owns
+    // the process-global authorization write lock, which later setup calls
+    // re-acquire. Dropping it after extracting the fence keeps the fenced
+    // revision without re-entering the lock.
+    let revert_fence = {
+        let (_, lease) = Authorizer::new(service.operator().clone())
+            .acquire_state_lease(&space_id)
+            .await?;
+        lease.prepare_mutation().await?;
+        lease.write_fence()
+    };
     ugoite_iceberg::authorization::with_authorization_write_fence(
-        lease.write_fence(),
+        revert_fence,
         service.upsert_form(
             &space_id,
             &json!({"name":"RevertRaceNote","fields":{"Body":{"type":"markdown","required":true}}}),
@@ -684,18 +778,18 @@ async fn s3_change_revert_rechecks_acl_at_publication_head() -> Result<()> {
         .stderr(Stdio::piped())
         .spawn()?;
     wait_for_gate(&gate.join("entered-1"), &mut writer).await?;
-    let revoker = common("revoker").output()?;
+    let revoker = run_child(&mut common("revoker"), "revoker").await?;
     tokio::fs::write(gate.join("release-1"), b"continue").await?;
-    let writer = tokio::task::spawn_blocking(move || writer.wait_with_output()).await??;
+    let writer = join_child(writer, "writer").await?;
     anyhow::ensure!(
         revoker.status.success(),
-        "revoke failed: {}",
-        String::from_utf8_lossy(&revoker.stderr)
+        "{}",
+        child_failure_detail("revert revoker", &revoker)
     );
     anyhow::ensure!(
         writer.status.success(),
-        "revert failed: {}",
-        String::from_utf8_lossy(&writer.stderr)
+        "{}",
+        child_failure_detail("revert writer", &writer)
     );
     assert_eq!(
         service.get_entry(&space_id, "revert-race-entry").await?["fields"]["Body"],
@@ -706,11 +800,7 @@ async fn s3_change_revert_rechecks_acl_at_publication_head() -> Result<()> {
         .pointer("/change/reverts_change_id")
         .and_then(Value::as_str)
         == Some(target_change_id.as_str())));
-    assert!(!Authorizer::new(service.operator().clone())
-        .state(&space_id)
-        .await?
-        .memberships
-        .contains_key(&editor));
+    assert_principal_revoked(&service, &space_id, editor).await?;
     tokio::fs::remove_dir_all(gate).await?;
     Ok(())
 }
@@ -768,12 +858,19 @@ async fn s3_run_undo_stops_after_revoke_between_inverse_changes() -> Result<()> 
         .create_space_for_principal(&space_slug, owner, "S3 Run undo race")
         .await?
         .to_string();
-    let (_, lease) = Authorizer::new(service.operator().clone())
-        .acquire_state_lease(&space_id)
-        .await?;
-    lease.prepare_mutation().await?;
+    // Narrow lease scope (see the authorization-race test): the lease owns
+    // the process-global authorization write lock, which later setup calls
+    // re-acquire. Dropping it after extracting the fence keeps the fenced
+    // revision without re-entering the lock.
+    let undo_fence = {
+        let (_, lease) = Authorizer::new(service.operator().clone())
+            .acquire_state_lease(&space_id)
+            .await?;
+        lease.prepare_mutation().await?;
+        lease.write_fence()
+    };
     ugoite_iceberg::authorization::with_authorization_write_fence(
-        lease.write_fence(),
+        undo_fence,
         service.upsert_form(
             &space_id,
             &json!({"name":"UndoRaceNote","fields":{"Body":{"type":"markdown","required":true}}}),
@@ -861,18 +958,18 @@ async fn s3_run_undo_stops_after_revoke_between_inverse_changes() -> Result<()> 
     wait_for_gate(&gate.join("entered-1"), &mut writer).await?;
     tokio::fs::write(gate.join("release-1"), b"continue").await?;
     wait_for_gate(&gate.join("entered-2"), &mut writer).await?;
-    let revoker = common("revoker").output()?;
+    let revoker = run_child(&mut common("revoker"), "revoker").await?;
     tokio::fs::write(gate.join("release-2"), b"continue").await?;
-    let writer = tokio::task::spawn_blocking(move || writer.wait_with_output()).await??;
+    let writer = join_child(writer, "writer").await?;
     anyhow::ensure!(
         revoker.status.success(),
-        "Run revoker failed: {}",
-        String::from_utf8_lossy(&revoker.stderr)
+        "{}",
+        child_failure_detail("Run revoker", &revoker)
     );
     anyhow::ensure!(
         writer.status.success(),
-        "Run undo failed: {}",
-        String::from_utf8_lossy(&writer.stderr)
+        "{}",
+        child_failure_detail("Run undo writer", &writer)
     );
     let result: Value =
         serde_json::from_slice(&tokio::fs::read(gate.join("undo-result.json")).await?)?;
@@ -900,11 +997,7 @@ async fn s3_run_undo_stops_after_revoke_between_inverse_changes() -> Result<()> 
         .collect::<Vec<_>>();
     assert!(inverse_targets.contains(&original_change_ids[1].as_str()));
     assert!(!inverse_targets.contains(&original_change_ids[0].as_str()));
-    assert!(!Authorizer::new(service.operator().clone())
-        .state(&space_id)
-        .await?
-        .memberships
-        .contains_key(&editor));
+    assert_principal_revoked(&service, &space_id, editor).await?;
     tokio::fs::remove_dir_all(gate).await?;
     Ok(())
 }
