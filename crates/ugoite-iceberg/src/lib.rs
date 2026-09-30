@@ -96,7 +96,7 @@ use ugoite_domain::form::{
     sql_column_name, sql_relation_name, Compatibility, FieldType, FormChange, FormChangeSet,
     FormDefinition, FormField, ListItemDefinition,
 };
-use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
+use ugoite_domain::id::{validate_checkpoint_name, EntryId, FormId, RevisionId, SpaceId};
 
 use crate::logical_storage::{logical_space_uid, logical_uri};
 use ugoite_storage::{is_local_operator, operator_from_uri, SpaceCatalogStore};
@@ -1120,6 +1120,164 @@ impl IcebergWorkspace {
             true,
         )
         .await
+    }
+
+    /// Reads a bounded, keyset-paged set of target revisions for one Change.
+    /// Both the Change predicate and the trusted Entry scope are pushed into
+    /// DataFusion before rows are materialized.
+    pub(crate) async fn read_change_target_revisions_at_checkpoint(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        change_id: &str,
+        after_entry_id: Option<EntryId>,
+        limit: usize,
+    ) -> Result<Vec<EntryRevision>> {
+        self.validate_checkpoint(checkpoint)?;
+        if !(1..=MAX_NORMAL_READ_ROWS).contains(&limit) {
+            bail!("Change target revision page limit is invalid");
+        }
+        let coordinate = checkpoint
+            .tables
+            .iter()
+            .find(|coordinate| coordinate.form_id == form_id)
+            .ok_or_else(|| CheckpointUnavailable::new(format!("Form {form_id}")))?;
+        let table = self
+            .space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .load_checkpoint_table(checkpoint, coordinate)
+            .await?;
+        let form = form_from_table(&table, form_id)?;
+        let (provider, query_snapshot_id) = self
+            .revision_provider(&table, coordinate.snapshot_id)
+            .await?;
+        let query_limits = ugoite_core::query::QueryLimits {
+            max_memory_bytes: 64 * 1024 * 1024,
+            max_rows: limit,
+            timeout: Duration::from_secs(30),
+            max_concurrency: 1,
+            allowed_functions: BTreeSet::new(),
+        };
+        let context = self
+            .authorized_revision_lookup_context(
+                provider,
+                table.metadata().uuid().to_string(),
+                query_snapshot_id,
+                &entry_scope,
+                query_limits,
+            )
+            .await?;
+        let mut predicates = vec![col("change_id").eq(lit(change_id.to_owned()))];
+        if let Some(after_entry_id) = after_entry_id {
+            predicates.push(col("entry_id").gt(lit(after_entry_id.as_uuid().as_bytes().to_vec())));
+        }
+        let projection = table
+            .metadata()
+            .current_schema()
+            .as_struct()
+            .fields()
+            .iter()
+            .map(|field| ident(&field.name))
+            .collect();
+        let batches = context
+            .execute_relation_plan(
+                "revisions",
+                &[],
+                predicates,
+                projection,
+                vec![col("entry_id").sort(true, true)],
+                false,
+                false,
+                limit,
+            )
+            .await?;
+        let schema = table.metadata().current_schema().clone();
+        let mut revisions = Vec::new();
+        for batch in &batches {
+            revisions.extend(revisions_from_batch(batch, &form, &schema)?);
+        }
+        Ok(revisions)
+    }
+
+    /// Loads only the selected targets' committed revisions needed to build
+    /// their diffs, rather than scanning all prior history for those Entries.
+    pub(crate) async fn read_revision_ids_at_checkpoint_with_scope(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        revision_ids: &[ugoite_domain::id::RevisionId],
+    ) -> Result<Vec<EntryRevision>> {
+        if revision_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.validate_checkpoint(checkpoint)?;
+        if revision_ids.len() > MAX_NORMAL_READ_ROWS {
+            bail!("selected revision lookup exceeds its read limit");
+        }
+        let coordinate = checkpoint
+            .tables
+            .iter()
+            .find(|coordinate| coordinate.form_id == form_id)
+            .ok_or_else(|| CheckpointUnavailable::new(format!("Form {form_id}")))?;
+        let table = self
+            .space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .load_checkpoint_table(checkpoint, coordinate)
+            .await?;
+        let form = form_from_table(&table, form_id)?;
+        let (provider, query_snapshot_id) = self
+            .revision_provider(&table, coordinate.snapshot_id)
+            .await?;
+        let context = self
+            .authorized_revision_lookup_context(
+                provider,
+                table.metadata().uuid().to_string(),
+                query_snapshot_id,
+                &entry_scope,
+                ugoite_core::query::QueryLimits {
+                    max_memory_bytes: 64 * 1024 * 1024,
+                    max_rows: revision_ids.len(),
+                    timeout: Duration::from_secs(30),
+                    max_concurrency: 1,
+                    allowed_functions: BTreeSet::new(),
+                },
+            )
+            .await?;
+        let revision_literals = revision_ids
+            .iter()
+            .map(|revision_id| lit(revision_id.as_uuid().as_bytes().to_vec()))
+            .collect::<Vec<_>>();
+        let predicates = vec![col("revision_id").in_list(revision_literals, false)];
+        let projection = table
+            .metadata()
+            .current_schema()
+            .as_struct()
+            .fields()
+            .iter()
+            .map(|field| ident(&field.name))
+            .collect();
+        let batches = context
+            .execute_relation_plan(
+                "revisions",
+                &[],
+                predicates,
+                projection,
+                Vec::new(),
+                false,
+                false,
+                revision_ids.len(),
+            )
+            .await?;
+        let schema = table.metadata().current_schema().clone();
+        let mut revisions = Vec::new();
+        for batch in &batches {
+            revisions.extend(revisions_from_batch(batch, &form, &schema)?);
+        }
+        Ok(revisions)
     }
 
     async fn read_revision_view_at_checkpoint_with_scope_and_limit_mode(
