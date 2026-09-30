@@ -2049,3 +2049,157 @@ async fn test_lane1_parity_fixture_converges_on_cli_remote() {
     assert!(!invalid.status.success());
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("FORM_VALIDATION_FAILED"));
 }
+
+/// #3379: remote CLI Asset journey against the real server.
+///
+/// Fixed payload with a hardcoded expected SHA-256 digest: upload the bytes
+/// through the remote CLI, attach the returned AssetReference to a typed
+/// Entry, reopen through canonical reads, and verify the byte digest
+/// independently (downloaded bytes, not just the receipt echo).
+/// Evidence identity: surface=cli, transport=remote, harness-built server
+/// and CLI binaries (not a packaged candidate); source SHA recorded in #3379.
+#[tokio::test]
+async fn journey_cli_remote_asset_upload_digest() {
+    tokio::time::timeout(
+        Duration::from_secs(120),
+        journey_cli_remote_asset_upload_digest_inner(),
+    )
+    .await
+    .expect("remote CLI asset journey timed out");
+}
+
+async fn journey_cli_remote_asset_upload_digest_inner() {
+    const PAYLOAD: &[u8] = b"ugoite journey asset payload v1";
+    const EXPECTED_SHA256: &str =
+        "4c86743355d984839d9a733c1a15770684f78c76939e3fc3f4fbaaf79534fe13";
+
+    let fixture = setup_remote().await;
+    let config_path = &fixture.config_path;
+
+    // Fixed payload with an independently verifiable digest.
+    let payload_path = config_path
+        .parent()
+        .expect("config parent")
+        .join("journey-asset.bin");
+    std::fs::write(&payload_path, PAYLOAD).expect("write fixed asset payload");
+
+    // Remote upload through the real server.
+    let upload = stdout_json(
+        &run_cli(
+            config_path,
+            &[
+                "asset",
+                "upload",
+                payload_path.to_str().unwrap(),
+                "--filename",
+                "journey-asset.bin",
+            ],
+        )
+        .await,
+        "asset upload",
+    );
+    let reference = &upload["asset_reference"];
+    let asset_id = reference["asset_id"]
+        .as_str()
+        .expect("upload receipt carries the asset id");
+    assert_eq!(
+        reference["sha256"].as_str(),
+        Some(EXPECTED_SHA256),
+        "server-computed digest matches the fixed payload"
+    );
+    assert_eq!(reference["size_bytes"].as_u64(), Some(PAYLOAD.len() as u64));
+    assert_eq!(reference["name"].as_str(), Some("journey-asset.bin"));
+
+    // Attach the reference to a typed Entry through the remote CLI.
+    let form_file = config_path
+        .parent()
+        .expect("config parent")
+        .join("journey-asset-form.json");
+    std::fs::write(
+        &form_file,
+        r#"{"name":"JourneyAssetDoc","fields":{"Document":{"type":"asset_reference"}}}"#,
+    )
+    .expect("write asset form");
+    let output = run_cli(config_path, &["form", "save", form_file.to_str().unwrap()]).await;
+    assert!(
+        output.status.success(),
+        "form establish failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let fields_file = config_path
+        .parent()
+        .expect("config parent")
+        .join("journey-asset-fields.json");
+    std::fs::write(
+        &fields_file,
+        serde_json::to_string(&serde_json::json!({"Document": reference})).unwrap(),
+    )
+    .expect("write attach fields");
+    let output = run_cli(
+        config_path,
+        &[
+            "entry",
+            "create",
+            "--id",
+            "journey-asset-entry",
+            "--form",
+            "JourneyAssetDoc",
+            "--fields-file",
+            fields_file.to_str().unwrap(),
+        ],
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "entry attach failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Canonical reopen: the Entry carries the durable reference.
+    let entry = stdout_json(
+        &run_cli(config_path, &["entry", "get", "journey-asset-entry"]).await,
+        "entry get",
+    );
+    assert_eq!(
+        entry
+            .pointer("/fields/Document/asset_id")
+            .and_then(|v| v.as_str()),
+        Some(asset_id)
+    );
+    assert_eq!(
+        entry
+            .pointer("/fields/Document/sha256")
+            .and_then(|v| v.as_str()),
+        Some(EXPECTED_SHA256)
+    );
+
+    // Independent byte verification: download and hash, not receipt echo.
+    let download = run_cli(
+        config_path,
+        &[
+            "asset",
+            "download",
+            asset_id,
+            "--entry",
+            "journey-asset-entry",
+            "--field",
+            "Document",
+            "--out",
+            "-",
+        ],
+    )
+    .await;
+    assert!(
+        download.status.success(),
+        "asset download failed: {}",
+        String::from_utf8_lossy(&download.stderr)
+    );
+    let mut hasher = Sha256::new();
+    hasher.update(&download.stdout);
+    let digest: String = hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    assert_eq!(digest, EXPECTED_SHA256);
+}
