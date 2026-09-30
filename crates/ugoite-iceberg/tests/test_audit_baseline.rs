@@ -217,3 +217,76 @@ async fn revert_create_tombstone_integrity_matches_canonical_revision_body() -> 
     assert_eq!(revision["integrity"]["signature"], signature);
     Ok(())
 }
+
+/// Commit-time audit delivery and reopen reconcile must attribute the same
+/// committed row actor. Delivery used the live caller principals while
+/// reconcile re-derives from the stored author, so any Space whose free-form
+/// author differs from its principal IDs failed reopen with "audit event id
+/// conflicts with canonical payload".
+#[tokio::test]
+async fn audit_commit_and_reconcile_converge_on_row_actor() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let root_uri = root.path().to_string_lossy().into_owned();
+    let service = UgoiteService::new(root_uri.clone())?;
+    let owner = Uuid::now_v7();
+    let space_slug = format!("audit-converge-{}", Uuid::now_v7().simple());
+    let space_id = service
+        .create_space_for_principal(&space_slug, owner, "Audit convergence")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &json!({"name": "Note", "fields": {"Body": {"type": "markdown", "required": true}}}),
+        )
+        .await?;
+    // Free-form author that differs from the authorizing principal on purpose.
+    service
+        .create_structured_entry_authorized_for_principals(
+            &space_id,
+            "converge-entry",
+            "Note".to_string(),
+            Vec::new(),
+            BTreeMap::from([("Body".to_string(), json!("before"))]),
+            BTreeMap::new(),
+            "human author label",
+            &[owner],
+        )
+        .await?;
+    let mut updated_fields = BTreeMap::new();
+    updated_fields.insert("Body".to_string(), json!("after"));
+    let updated = service
+        .update_structured_entry_authorized_for_principals(
+            &space_id,
+            "converge-entry",
+            None,
+            None,
+            updated_fields,
+            BTreeMap::new(),
+            None,
+            "human author label",
+            &[owner],
+        )
+        .await?;
+    let update_change_id = updated["change_id"].as_str().expect("update Change");
+    service
+        .revert_change(
+            &space_id,
+            update_change_id,
+            &owner.to_string(),
+            None,
+            Some("Recover the pre-update value"),
+        )
+        .await?;
+    drop(service);
+
+    // Reopen must converge instead of conflicting with the commit-time event.
+    let reopened = UgoiteService::new(root_uri)?;
+    let recovery = reopened.open_space(&space_id).await?;
+    assert_eq!(recovery["space_id"], space_id);
+    assert_eq!(
+        reopened.get_entry(&space_id, "converge-entry").await?["fields"]["Body"],
+        "before"
+    );
+    Ok(())
+}
