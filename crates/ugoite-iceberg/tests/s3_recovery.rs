@@ -92,7 +92,8 @@ async fn s3_backed_space_survives_service_reopen_and_revert() -> Result<()> {
     let reopened = open_verified_service(&root_uri, &endpoint, &space_slug).await?;
     let recovery = reopened.open_space(&space_id).await?;
     assert_eq!(recovery["space_id"], space_id);
-    assert!(reopened.list_space_ids().await?.contains(&space_slug));
+    // Discovery enumerates Space directory IDs (immutable UUIDs), not slugs.
+    assert!(reopened.list_space_ids().await?.contains(&space_id));
     assert_eq!(
         reopened.get_form(&space_id, "RecoveryNote").await?["name"],
         "RecoveryNote"
