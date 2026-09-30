@@ -73,6 +73,10 @@ async function assertAggregateWorkflow(
 ): Promise<void> {
   const rustCheckJob = workflowJobBlock(workflow, "rust-check");
   const rustTestJob = workflowJobBlock(workflow, "rust-test");
+  const s3SharedAuthorizationJob = workflowJobBlock(
+    workflow,
+    "s3-shared-authorization",
+  );
   const webJob = workflowJobBlock(workflow, "web");
   const artifactBuildJob = workflowJobBlock(workflow, "artifact-build");
   const e2eSmokeMobileJob = workflowJobBlock(workflow, "e2e-smoke-mobile");
@@ -503,9 +507,24 @@ async function assertAggregateWorkflow(
       "mise run ci:lane:e2e-owner",
       "mise run ci:lane:rust-check",
       "mise run ci:lane:rust-test",
+      "mise run test:s3-storage",
       "mise run ci:lane:web",
     ].sort().join("\n"),
     "CI must invoke only Hosted lane and artifact Mise entrypoints",
+  );
+  assertContainsAll(
+    s3SharedAuthorizationJob,
+    [
+      "name: ci-s3-shared-authorization",
+      "needs: impact",
+      "needs.impact.outputs.plan_rust_test == 'true'",
+      "pgsty/minio@sha256:",
+      "UGOITE_S3_TEST_ENDPOINT",
+      "UGOITE_S3_TEST_BUCKET",
+      'UGOITE_S3_TEST_REQUIRED: "1"',
+      "mise run test:s3-storage",
+    ],
+    "S3 shared-authorization acceptance lane",
   );
   assertContainsAll(
     impactJob,
@@ -820,7 +839,7 @@ async function assertAggregateWorkflow(
     [
       "name: ci-required",
       "if: ${{ always() }}",
-      "needs: [impact, rust-check, rust-test, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]",
+      "needs: [impact, rust-check, rust-test, s3-shared-authorization, web, artifact-build, e2e-smoke-mobile, e2e-owner, e2e-portable, docsite-nav, cp1-fixtures, cp1-query, cp1-export, pr-context-report]",
       "runs-on: ubuntu-slim",
       "IMPACT_RESULT: ${{ needs.impact.result }}",
       "IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}",
@@ -834,6 +853,7 @@ async function assertAggregateWorkflow(
       "PLAN_CP1_ACCEPTANCE: ${{ needs.impact.outputs.plan_cp1_acceptance }}",
       "RUST_CHECK_RESULT: ${{ needs.rust-check.result }}",
       "RUST_TEST_RESULT: ${{ needs.rust-test.result }}",
+      "S3_SHARED_AUTHORIZATION_RESULT: ${{ needs.s3-shared-authorization.result }}",
       "WEB_RESULT: ${{ needs.web.result }}",
       "ARTIFACT_BUILD_RESULT: ${{ needs.artifact-build.result }}",
       "E2E_SMOKE_MOBILE_RESULT: ${{ needs.e2e-smoke-mobile.result }}",

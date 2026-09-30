@@ -466,9 +466,6 @@ pub async fn ensure_authorization_write_fence() -> Result<()> {
 /// Returns the authorization revision captured by the Server's current
 /// protected-mutation lease. The Catalog Head CAS compares this revision at
 /// publication; local CLI writes intentionally have no remote principal fence.
-// Catalog-side publication wiring lands in a follow-up slice; unit tests in
-// this module are the only callers until then.
-#[allow(dead_code)]
 pub(crate) fn authorization_write_revision() -> Option<u64> {
     AUTHORIZATION_WRITE_FENCE
         .try_with(|fence| fence.authorization_revision)
