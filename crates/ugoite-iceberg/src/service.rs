@@ -755,6 +755,7 @@ struct EntryAuthorizedWritePrelude {
     integrity: RealIntegrityProvider,
     workspace: String,
     _authorization_lease: AuthorizationLease,
+    authorization_fence: crate::authorization::AuthorizationWriteFence,
 }
 
 impl UgoiteService {
@@ -3360,13 +3361,17 @@ impl UgoiteService {
                 principal_ids,
             )?;
         }
-        let _authorization_lease = authorization_lease;
-        self.revert_change(
-            space_id,
-            target_change_id,
-            actor_principal_id,
-            run_id,
-            message,
+        authorization_lease.prepare_mutation().await?;
+        let fence = authorization_lease.write_fence();
+        crate::authorization::with_authorization_write_fence(
+            fence,
+            self.revert_change(
+                space_id,
+                target_change_id,
+                actor_principal_id,
+                run_id,
+                message,
+            ),
         )
         .await
     }
@@ -3666,7 +3671,7 @@ impl UgoiteService {
             .collect::<Vec<_>>();
         changes.sort_by(|left, right| right.generation.cmp(&left.generation));
         let mut inverses = Vec::with_capacity(changes.len());
-        for change in changes {
+        for change in &changes {
             let inverse = if let Some(principal_ids) = principal_ids {
                 self.revert_change_authorized_for_principals(
                     space_id,
@@ -3676,7 +3681,7 @@ impl UgoiteService {
                     Some("Undo Run"),
                     principal_ids,
                 )
-                .await?
+                .await
             } else {
                 self.revert_change(
                     space_id,
@@ -3685,9 +3690,55 @@ impl UgoiteService {
                     Some(run_id.as_str()),
                     Some("Undo Run"),
                 )
-                .await?
+                .await
             };
-            inverses.push(inverse);
+            match inverse {
+                Ok(inverse) => inverses.push(inverse),
+                Err(error) => {
+                    let committed = workspace.list_changes().await?;
+                    let reverted = committed
+                        .iter()
+                        .filter_map(|change| change.change.reverts_change_id.as_deref())
+                        .collect::<std::collections::HashSet<_>>();
+                    let remaining_change_ids = changes
+                        .iter()
+                        .filter(|pending| !reverted.contains(pending.change_id.as_str()))
+                        .map(|pending| pending.change_id.clone())
+                        .collect::<Vec<_>>();
+                    let outcome_unknown = remaining_change_ids
+                        .iter()
+                        .any(|remaining| remaining == &change.change_id)
+                        && format!("{error:#}")
+                            .to_ascii_lowercase()
+                            .contains("unknown");
+                    let committed_inverse_change_ids =
+                        committed
+                            .iter()
+                            .filter(|candidate| {
+                                candidate.change.reverts_change_id.as_deref().is_some_and(
+                                    |target| {
+                                        changes.iter().any(|change| change.change_id == target)
+                                    },
+                                )
+                            })
+                            .map(|candidate| candidate.change_id.clone())
+                            .collect::<Vec<_>>();
+                    let reverted_change_count = changes.len() - remaining_change_ids.len();
+                    if reverted_change_count == 0 && !outcome_unknown {
+                        return Err(error);
+                    }
+                    return Ok(json!({
+                        "run_id": run_id,
+                        "state": "partially_saved",
+                        "reverted_change_count": reverted_change_count,
+                        "inverses": inverses,
+                        "committed_inverse_change_ids": committed_inverse_change_ids,
+                        "remaining_change_count": remaining_change_ids.len(),
+                        "remaining_change_ids": remaining_change_ids,
+                        "outcome_unknown_change_id": outcome_unknown.then(|| change.change_id.clone()),
+                    }));
+                }
+            }
         }
         Ok(json!({
             "run_id": run_id,
@@ -4124,13 +4175,16 @@ impl UgoiteService {
             .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
             .await?;
         // (5) Common mutation context creation.
+        authorization_lease.prepare_mutation().await?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let workspace = self.workspace_path(space_id);
+        let authorization_fence = authorization_lease.write_fence();
         Ok(EntryAuthorizedWritePrelude {
             scopes,
             integrity,
             workspace,
             _authorization_lease: authorization_lease,
+            authorization_fence,
         })
     }
 
@@ -4219,18 +4273,21 @@ impl UgoiteService {
         let prelude = self
             .entry_authorized_write_prelude(space_id, entry_id, Action::Create, None, principal_ids)
             .await?;
-        let (_, receipt) = entry::create_structured_entry_with_scopes_and_change_with_receipt(
-            &self.operator,
-            &prelude.workspace,
-            entry_id,
-            form_name,
-            tags,
-            fields,
-            extra_attributes,
-            author,
-            &prelude.integrity,
-            Some(&prelude.scopes),
-            change,
+        let (_, receipt) = crate::authorization::with_authorization_write_fence(
+            prelude.authorization_fence.clone(),
+            entry::create_structured_entry_with_scopes_and_change_with_receipt(
+                &self.operator,
+                &prelude.workspace,
+                entry_id,
+                form_name,
+                tags,
+                fields,
+                extra_attributes,
+                author,
+                &prelude.integrity,
+                Some(&prelude.scopes),
+                change,
+            ),
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
@@ -4488,19 +4545,22 @@ impl UgoiteService {
                 principal_ids,
             )
             .await?;
-        let result = entry::update_structured_entry_authorized_with_change(
-            &self.operator,
-            &prelude.workspace,
-            entry_id,
-            form_name,
-            tags,
-            fields,
-            extra_attributes,
-            parent_revision_id,
-            author,
-            &prelude.integrity,
-            Some(&prelude.scopes),
-            change,
+        let result = crate::authorization::with_authorization_write_fence(
+            prelude.authorization_fence.clone(),
+            entry::update_structured_entry_authorized_with_change(
+                &self.operator,
+                &prelude.workspace,
+                entry_id,
+                form_name,
+                tags,
+                fields,
+                extra_attributes,
+                parent_revision_id,
+                author,
+                &prelude.integrity,
+                Some(&prelude.scopes),
+                change,
+            ),
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
@@ -4657,7 +4717,7 @@ impl UgoiteService {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
-        let _authorization_lease = {
+        let authorization_lease = {
             let (state, lease) = Authorizer::new(self.operator.clone())
                 .acquire_state_lease(space_id)
                 .await?;
@@ -4670,12 +4730,16 @@ impl UgoiteService {
             )?;
             lease
         };
-        self.delete_entry_with_change_receipt_for_principals(
-            space_id,
-            entry_id,
-            author,
-            principal_ids,
-            change,
+        authorization_lease.prepare_mutation().await?;
+        crate::authorization::with_authorization_write_fence(
+            authorization_lease.write_fence(),
+            self.delete_entry_with_change_receipt_for_principals(
+                space_id,
+                entry_id,
+                author,
+                principal_ids,
+                change,
+            ),
         )
         .await
     }
@@ -5197,7 +5261,7 @@ impl UgoiteService {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
-        let (state, _authorization_lease) = if principal_ids.is_empty() {
+        let (state, authorization_lease) = if principal_ids.is_empty() {
             (None, None)
         } else {
             let (state, lease) = Authorizer::new(self.operator.clone())
@@ -5213,6 +5277,7 @@ impl UgoiteService {
             (Some(state), Some(lease))
         };
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let workspace = self.workspace_path(space_id);
         let scopes = if principal_ids.is_empty() {
             None
         } else {
@@ -5225,16 +5290,22 @@ impl UgoiteService {
                 .await?,
             )
         };
-        let result = entry::restore_entry_authorized(
+        let restore = entry::restore_entry_authorized(
             &self.operator,
-            &self.workspace_path(space_id),
+            &workspace,
             entry_id,
             revision_id,
             author,
             &integrity,
             scopes.as_ref(),
-        )
-        .await?;
+        );
+        let result = if let Some(lease) = authorization_lease.as_ref() {
+            lease.prepare_mutation().await?;
+            crate::authorization::with_authorization_write_fence(lease.write_fence(), restore)
+                .await?
+        } else {
+            restore.await?
+        };
         self.schedule_asset_text_refresh(space_id);
         Ok(result)
     }
@@ -5253,7 +5324,7 @@ impl UgoiteService {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
-        let (state, _authorization_lease) = {
+        let (state, authorization_lease) = {
             let (state, lease) = Authorizer::new(self.operator.clone())
                 .acquire_state_lease(space_id)
                 .await?;
@@ -5271,15 +5342,19 @@ impl UgoiteService {
         let scopes = self
             .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
             .await?;
-        let result = entry::restore_entry_from_publication_authorized(
-            &self.operator,
-            &self.workspace_path(space_id),
-            entry_id,
-            revision_id,
-            &publication,
-            author,
-            &integrity,
-            scopes.as_ref(),
+        authorization_lease.prepare_mutation().await?;
+        let result = crate::authorization::with_authorization_write_fence(
+            authorization_lease.write_fence(),
+            entry::restore_entry_from_publication_authorized(
+                &self.operator,
+                &self.workspace_path(space_id),
+                entry_id,
+                revision_id,
+                &publication,
+                author,
+                &integrity,
+                scopes.as_ref(),
+            ),
         )
         .await
         .map_err(map_checkpoint_error)?;
@@ -6855,7 +6930,7 @@ impl UgoiteService {
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_asset_id(asset_id))?;
-        let (state, _authorization_lease) = if principal_ids.is_empty() {
+        let (state, authorization_lease) = if principal_ids.is_empty() {
             (None, None)
         } else {
             let (state, lease) = Authorizer::new(self.operator.clone())
@@ -6888,13 +6963,15 @@ impl UgoiteService {
             )
             .await?
         };
-        asset::delete_asset(
-            &self.operator,
-            &self.workspace_path(space_id),
-            asset_id,
-            &scopes,
-        )
-        .await?;
+        let workspace = self.workspace_path(space_id);
+        let deletion = asset::delete_asset(&self.operator, &workspace, asset_id, &scopes);
+        if let Some(lease) = authorization_lease.as_ref() {
+            lease.prepare_mutation().await?;
+            crate::authorization::with_authorization_write_fence(lease.write_fence(), deletion)
+                .await?;
+        } else {
+            deletion.await?;
+        }
         self.schedule_asset_text_refresh(space_id);
         Ok(())
     }
@@ -6988,7 +7065,7 @@ impl UgoiteService {
         let requested_sql_id = requested_sql_id.map(str::to_owned);
         let payload = payload.clone();
         let author = author.to_owned();
-        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+        let (state, authorization_lease) = Authorizer::new(self.operator.clone())
             .acquire_state_lease(space_id)
             .await?;
         for principal_id in &principal_ids {
@@ -7025,12 +7102,16 @@ impl UgoiteService {
                 authorized_forms.insert(form.name, form.id);
             }
         }
-        self.create_saved_sql_with_forms(
-            &space_id_owned,
-            requested_sql_id.as_deref(),
-            &payload,
-            &author,
-            &authorized_forms,
+        authorization_lease.prepare_mutation().await?;
+        crate::authorization::with_authorization_write_fence(
+            authorization_lease.write_fence(),
+            self.create_saved_sql_with_forms(
+                &space_id_owned,
+                requested_sql_id.as_deref(),
+                &payload,
+                &author,
+                &authorized_forms,
+            ),
         )
         .await
     }
@@ -7141,7 +7222,7 @@ impl UgoiteService {
         let parent_revision_id = parent_revision_id.to_owned();
         let principal_ids = principal_ids.to_vec();
         let author = author.to_owned();
-        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+        let (state, authorization_lease) = Authorizer::new(self.operator.clone())
             .acquire_state_lease(space_id)
             .await?;
         let saved_sql_resource = ResourceRef {
@@ -7185,13 +7266,17 @@ impl UgoiteService {
                 authorized_forms.insert(form.name, form.id);
             }
         }
-        self.update_saved_sql_with_forms(
-            &space_id_owned,
-            &sql_id,
-            &payload,
-            &parent_revision_id,
-            &author,
-            &authorized_forms,
+        authorization_lease.prepare_mutation().await?;
+        crate::authorization::with_authorization_write_fence(
+            authorization_lease.write_fence(),
+            self.update_saved_sql_with_forms(
+                &space_id_owned,
+                &sql_id,
+                &payload,
+                &parent_revision_id,
+                &author,
+                &authorized_forms,
+            ),
         )
         .await
     }
@@ -9935,6 +10020,174 @@ mod tests {
         assert_eq!(
             service.list_changes(&space_id).await?,
             changes_before_revocation
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn multi_entry_change_revert_publishes_no_partial_inverse_when_one_target_is_denied(
+    ) -> anyhow::Result<()> {
+        let service = UgoiteService::new("memory://multi-target-revert-auth")?;
+        let owner = Uuid::now_v7();
+        let editor = Uuid::now_v7();
+        let space_id = service
+            .create_space_for_principal("multi-target-revert", owner, "Owner")
+            .await?
+            .to_string();
+        let (_, lease) = Authorizer::new(service.operator.clone())
+            .acquire_state_lease(&space_id)
+            .await?;
+        lease.prepare_mutation().await?;
+        crate::authorization::with_authorization_write_fence(
+            lease.write_fence(),
+            service.upsert_form(
+                &space_id,
+                &serde_json::json!({
+                    "name": "MultiTargetNote",
+                    "fields": {"Body": {"type": "markdown", "required": true}}
+                }),
+            ),
+        )
+        .await?;
+        drop(lease);
+        for id in ["multi-target-a", "multi-target-z"] {
+            service
+                .create_structured_entry_authorized_for_principals(
+                    &space_id,
+                    id,
+                    "MultiTargetNote".to_string(),
+                    Vec::new(),
+                    [("Body".to_string(), Value::String("before".to_string()))]
+                        .into_iter()
+                        .collect(),
+                    BTreeMap::new(),
+                    &owner.to_string(),
+                    &[owner],
+                )
+                .await?;
+        }
+        Authorizer::new(service.operator.clone())
+            .add_human_member(
+                &space_id,
+                owner,
+                ugoite_domain::identity::SpacePrincipal {
+                    principal_id: editor,
+                    kind: ugoite_domain::identity::PrincipalKind::Human,
+                    display_name: "Editor".to_string(),
+                    state: ugoite_domain::identity::PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                ugoite_domain::identity::SpaceRole::Editor,
+            )
+            .await?;
+
+        let workspace =
+            iceberg_store::native_workspace(&service.operator, &service.workspace_path(&space_id))
+                .await?;
+        let form = workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .find(|form| form.name == "MultiTargetNote")
+            .expect("test Form exists");
+        let body_field = form
+            .fields
+            .iter()
+            .find(|field| field.name == "Body")
+            .expect("Body field exists")
+            .id;
+        let current = workspace.read_revisions(form.id).await?;
+        let provider =
+            crate::integrity::RealIntegrityProvider::from_space(&service.operator, &space_id)
+                .await?;
+        let change = ugoite_domain::change::ChangeCommand {
+            change_id: "multi-target-change".to_string(),
+            run_id: None,
+            actor_principal_id: owner.to_string(),
+            message: Some("one Change touches both Entries".to_string()),
+            reverts_change_id: None,
+            created_at_micros: chrono::Utc::now().timestamp_micros(),
+        };
+        let mut changed_revisions = Vec::new();
+        for id in ["multi-target-a", "multi-target-z"] {
+            let previous = current
+                .iter()
+                .filter(|revision| revision.entry.external_id == id)
+                .max_by_key(|revision| revision.entry_version)
+                .expect("current Entry revision exists");
+            let mut revision = previous.clone();
+            let committed_at_micros = chrono::Utc::now().timestamp_micros();
+            revision.revision_id = ugoite_domain::id::RevisionId::from_uuid(Uuid::now_v7());
+            revision.parent_revision_id = Some(previous.revision_id);
+            revision.entry_version = previous.entry_version + 1;
+            revision.change_id = change.change_id.clone();
+            revision.expected_version = Some(previous.entry_version);
+            revision.operation = ugoite_domain::entry::EntryOperation::Upsert;
+            revision.committed_at_micros = committed_at_micros;
+            revision.author_id = owner.to_string();
+            revision.entry.updated_at_micros = committed_at_micros;
+            revision.entry.updated_by = owner.to_string();
+            revision.values.insert(
+                body_field,
+                ugoite_domain::entry::FieldValue::String("changed".to_string()),
+            );
+            revision.entry.integrity =
+                crate::entry::integrity_for_domain_revision(&form, &revision, &provider)?;
+            changed_revisions.push(revision);
+        }
+        let context = crate::publication_context_for_change(
+            &change,
+            "entry.update",
+            &serde_json::json!({"entries": ["multi-target-a", "multi-target-z"]}),
+        )?;
+        workspace
+            .commit(context)?
+            .append_revisions(form.id, changed_revisions)
+            .await?;
+
+        Authorizer::new(service.operator.clone())
+            .set_policy(
+                &space_id,
+                owner,
+                &ResourceRef {
+                    kind: ResourceKind::Entry,
+                    id: "multi-target-z".to_string(),
+                    parent: None,
+                },
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
+        let before = service.list_changes(&space_id).await?;
+        let error = service
+            .revert_change_authorized_for_principals(
+                &space_id,
+                &change.change_id,
+                &editor.to_string(),
+                None,
+                Some("must not partially revert"),
+                &[editor],
+            )
+            .await
+            .expect_err("one denied target must block the entire inverse Change");
+        assert_eq!(
+            error
+                .downcast_ref::<AppError>()
+                .expect("typed authorization error")
+                .code(),
+            ErrorCode::Forbidden
+        );
+        assert_eq!(service.list_changes(&space_id).await?, before);
+        assert_eq!(
+            service.get_entry(&space_id, "multi-target-a").await?["fields"]["Body"],
+            "changed"
+        );
+        assert_eq!(
+            service.get_entry(&space_id, "multi-target-z").await?["fields"]["Body"],
+            "changed"
         );
         Ok(())
     }

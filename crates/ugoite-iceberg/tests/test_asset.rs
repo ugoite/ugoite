@@ -20,6 +20,10 @@ use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::space;
 use uuid::Uuid;
 
+fn prepared_asset_path(ws_path: &str, asset_id: &str) -> String {
+    format!("{ws_path}/_ugoite/assets/prepared/{asset_id}")
+}
+
 #[tokio::test]
 async fn upload_returns_a_typed_reference_without_creating_an_entry() -> anyhow::Result<()> {
     let op = setup_operator()?;
@@ -31,7 +35,7 @@ async fn upload_returns_a_typed_reference_without_creating_an_entry() -> anyhow:
     assert_eq!(reference.size_bytes, 5);
     assert_eq!(reference.media_type, "application/octet-stream");
     assert!(
-        op.exists(&format!("{ws_path}/assets/{}", reference.asset_id))
+        op.exists(&prepared_asset_path(ws_path, &reference.asset_id))
             .await?
     );
     assert!(ugoite_iceberg::entry::list_entries(&op, ws_path)
@@ -73,7 +77,7 @@ async fn read_and_delete_use_the_exact_asset_id_key() -> anyhow::Result<()> {
 
     asset::delete_asset(&op, ws_path, &reference.asset_id, &BTreeMap::new()).await?;
     assert!(
-        op.exists(&format!("{ws_path}/assets/{}", reference.asset_id))
+        op.exists(&prepared_asset_path(ws_path, &reference.asset_id))
             .await?
     );
     let error = asset::read_asset(&op, ws_path, &reference.asset_id)
@@ -717,7 +721,7 @@ async fn asset_text_parser_limit_is_recorded_without_rolling_back_authoritative_
         "derived parser failure must not change the authoritative Catalog Head"
     );
     assert!(
-        op.exists(&format!("{ws_path}/assets/{}", reference.asset_id))
+        op.exists(&prepared_asset_path(ws_path, &reference.asset_id))
             .await?
     );
     assert_eq!(entry::list_entries(&op, ws_path).await?.len(), 1);
@@ -821,7 +825,7 @@ async fn deleted_asset_blob_is_retained_after_logical_deletion() -> anyhow::Resu
         asset::save_asset(&op, &format!("spaces/{space_id}"), "orphan.txt", b"orphan").await?;
     service.delete_asset(&space_id, &reference.asset_id).await?;
 
-    let path = format!("spaces/{space_id}/assets/{}", reference.asset_id);
+    let path = prepared_asset_path(&format!("spaces/{space_id}"), &reference.asset_id);
     assert!(op.exists(&path).await?);
     assert!(
         !op.exists(&format!(

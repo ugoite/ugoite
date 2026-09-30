@@ -2672,6 +2672,12 @@ async fn build_asset_text_rows(
 ) -> Result<Vec<AssetTextRow>> {
     let parsed_at = Utc::now().to_rfc3339();
     let mut rows = BoundedAssetTextRows::default();
+    let metadata_path = format!("{}/meta.json", ws_path.trim_end_matches('/'));
+    let workspace = if op.exists(&metadata_path).await? {
+        Some(crate::iceberg_store::native_workspace_read_only(op, ws_path).await?)
+    } else {
+        None
+    };
     for reference in references {
         validate_asset_id(&reference.asset_id)
             .map_err(|error| anyhow!("invalid AssetReference asset_id: {error}"))?;
@@ -2702,7 +2708,11 @@ async fn build_asset_text_rows(
             parsed_at: parsed_at.clone(),
             error_code: error_code.map(str::to_string),
         };
-        let path = format!("{ws_path}/assets/{}", reference.asset_id);
+        let path = if let Some(workspace) = &workspace {
+            crate::asset::published_object_path(workspace, ws_path, &reference.asset_id).await?
+        } else {
+            format!("{ws_path}/assets/{}", reference.asset_id)
+        };
         if let Some(error_code) = reference.integrity_error.as_deref() {
             rows.push(base(
                 "integrity".into(),

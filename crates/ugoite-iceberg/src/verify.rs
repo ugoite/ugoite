@@ -405,6 +405,12 @@ async fn verify_assets(
     deep: bool,
 ) -> Result<usize> {
     let mut seen = std::collections::BTreeMap::new();
+    let metadata_path = format!("{}/meta.json", workspace_path.trim_end_matches('/'));
+    let workspace = if operator.exists(&metadata_path).await? {
+        Some(crate::iceberg_store::native_workspace_read_only(operator, workspace_path).await?)
+    } else {
+        None
+    };
     for value in references {
         let reference: ugoite_domain::entry::AssetReference =
             serde_json::from_value(serde_json::json!({
@@ -426,7 +432,12 @@ async fn verify_assets(
             reference.asset_id.clone(),
             (reference.size_bytes, reference.sha256.clone()),
         );
-        let path = format!("{workspace_path}/assets/{}", reference.asset_id);
+        let path = if let Some(workspace) = &workspace {
+            crate::asset::published_object_path(workspace, workspace_path, &reference.asset_id)
+                .await?
+        } else {
+            format!("{workspace_path}/assets/{}", reference.asset_id)
+        };
         let metadata = operator
             .stat(&path)
             .await

@@ -119,14 +119,32 @@ pub async fn save_asset_with_media_type(
     reference
         .validate()
         .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
-    // An uploaded object is still an authoritative mutation: an Entry may
-    // reference it immediately after this call. Keep the check at the
-    // object-write boundary so callers cannot accidentally bypass the
-    // authorization lease by using the lower-level asset helper.
+    // Prepare the bytes at an unreachable key. They become visible only when
+    // the same Catalog Head CAS used by ACL changes publishes their receipt.
     crate::authorization::ensure_authorization_write_fence().await?;
-    op.write(&asset_path(ws_path, &reference.asset_id), content.to_vec())
+    let prepared_path = prepared_asset_path(ws_path, &reference.asset_id);
+    op.write(&prepared_path, content.to_vec()).await?;
+    let workspace = crate::iceberg_store::native_mutation_workspace(op, ws_path).await?;
+    workspace
+        .publish_asset_upload(&reference.asset_id, &prepared_path, &reference.sha256)
         .await?;
     Ok(reference)
+}
+
+fn prepared_asset_path(ws_path: &str, asset_id: &str) -> String {
+    format!("{ws_path}/_ugoite/assets/prepared/{asset_id}")
+}
+
+pub(crate) async fn published_object_path(
+    workspace: &crate::IcebergWorkspace,
+    ws_path: &str,
+    asset_id: &str,
+) -> Result<String> {
+    validate_asset_id(asset_id).map_err(|error| AppError::invalid_identifier(error.to_string()))?;
+    Ok(workspace
+        .published_asset_location(asset_id)
+        .await?
+        .unwrap_or_else(|| asset_path(ws_path, asset_id)))
 }
 
 pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<AssetContent> {
@@ -139,7 +157,10 @@ pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<
         )
         .into());
     }
-    let path = asset_path(ws_path, asset_id);
+    let path = workspace
+        .published_asset_location(asset_id)
+        .await?
+        .unwrap_or_else(|| asset_path(ws_path, asset_id));
     let metadata = op.stat(&path).await.map_err(|error| {
         if error.kind() == opendal::ErrorKind::NotFound {
             AppError::not_found(
@@ -202,6 +223,10 @@ pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<
 pub(crate) async fn asset_exists(op: &Operator, ws_path: &str, asset_id: &str) -> Result<bool> {
     validate_asset_id(asset_id)
         .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+    let workspace = crate::iceberg_store::native_workspace_read_only(op, ws_path).await?;
+    if let Some(path) = workspace.published_asset_location(asset_id).await? {
+        return Ok(op.exists(&path).await?);
+    }
     Ok(op.exists(&asset_path(ws_path, asset_id)).await?)
 }
 
@@ -419,7 +444,11 @@ pub async fn delete_asset(
 ) -> Result<()> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     validate_asset_id(asset_id).map_err(|error| AppError::invalid_identifier(error.to_string()))?;
-    let path = asset_path(ws_path, asset_id);
+    let workspace = crate::iceberg_store::native_mutation_workspace(op, ws_path).await?;
+    let path = workspace
+        .published_asset_location(asset_id)
+        .await?
+        .unwrap_or_else(|| asset_path(ws_path, asset_id));
     if !op.exists(&path).await? {
         return Err(AppError::not_found(
             ErrorCode::AssetNotFound,
@@ -427,7 +456,6 @@ pub async fn delete_asset(
         )
         .into());
     }
-    let workspace = crate::iceberg_store::native_mutation_workspace(op, ws_path).await?;
     let publication = crate::system_publication_context(
         format!("asset-delete:{asset_id}"),
         "asset.delete",
