@@ -232,7 +232,9 @@ pub(crate) async fn deliver_mutation_audit_event(
     audit::append_audit_event(op, space_id, event, None).await
 }
 
-fn latest_entry_revision(history: &Value) -> Option<(String, Option<String>, String)> {
+fn latest_entry_revision(
+    history: &Value,
+) -> Option<(String, Option<String>, String, String, String)> {
     let revisions = history.get("revisions")?.as_array()?;
     let last = revisions.last()?.as_object()?;
     let revision_id = last.get("revision_id")?.as_str()?.to_string();
@@ -241,7 +243,17 @@ fn latest_entry_revision(history: &Value) -> Option<(String, Option<String>, Str
         .and_then(Value::as_str)
         .map(str::to_string);
     let operation = last.get("operation")?.as_str()?.to_string();
-    Some((revision_id, change_id, operation))
+    let author = last
+        .get("author")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let updated_by = last
+        .get("updated_by")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    Some((revision_id, change_id, operation, author, updated_by))
 }
 
 impl UgoiteService {
@@ -253,11 +265,22 @@ impl UgoiteService {
         entry_id: &str,
         revision_id: &str,
         change_id: Option<&str>,
-        principal_ids: &[Uuid],
-        author_fallback: &str,
+        author: &str,
+        updated_by: &str,
     ) -> Result<()> {
         let space_uid = self.space_uid(space_id).await?;
-        let (subject, actor) = audit_attribution(principal_ids, author_fallback, &space_uid);
+        // Attribution must converge with batch reconcile by construction:
+        // the committed row actor is the authority (see
+        // `committed_actor_attribution`), never the live caller identity.
+        // Caller principals that differ from the stored row used to produce
+        // same-ID events with different fingerprints, failing reopen with
+        // "audit event id conflicts with canonical payload".
+        let committed_actor = if updated_by.trim().is_empty() {
+            author
+        } else {
+            updated_by
+        };
+        let (subject, actor) = committed_actor_attribution(Some(committed_actor), &space_uid);
         let event = entry_mutation_event(
             &space_uid,
             action,
@@ -278,14 +301,11 @@ impl UgoiteService {
     /// layer mints change IDs the caller cannot predict. Failures never fail
     /// the already-committed mutation; the deterministic event ID keeps the
     /// intent recoverable via [`Self::reconcile_entry_audit`].
-    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn record_committed_entry_revision(
         &self,
         space_id: &str,
         entry_id: &str,
         action: &str,
-        principal_ids: &[Uuid],
-        author_fallback: &str,
     ) {
         let delivered = async {
             let history = crate::entry::get_entry_history(
@@ -294,7 +314,9 @@ impl UgoiteService {
                 entry_id,
             )
             .await?;
-            let Some((revision_id, change_id, _)) = latest_entry_revision(&history) else {
+            let Some((revision_id, change_id, _, author, updated_by)) =
+                latest_entry_revision(&history)
+            else {
                 return Ok::<(), anyhow::Error>(());
             };
             self.deliver_entry_revision_audit(
@@ -303,8 +325,8 @@ impl UgoiteService {
                 entry_id,
                 &revision_id,
                 change_id.as_deref(),
-                principal_ids,
-                author_fallback,
+                &author,
+                &updated_by,
             )
             .await?;
             Ok::<(), anyhow::Error>(())
@@ -350,21 +372,9 @@ impl UgoiteService {
     /// Deletes share the revision re-read path: the tombstone revision only
     /// exists after commit. Failures never fail the already-committed
     /// delete; reconcile closes the gap.
-    pub(crate) async fn record_committed_entry_delete(
-        &self,
-        space_id: &str,
-        entry_id: &str,
-        principal_ids: &[Uuid],
-        actor_fallback: &str,
-    ) {
-        self.record_committed_entry_revision(
-            space_id,
-            entry_id,
-            ENTRY_DELETED_ACTION,
-            principal_ids,
-            actor_fallback,
-        )
-        .await;
+    pub(crate) async fn record_committed_entry_delete(&self, space_id: &str, entry_id: &str) {
+        self.record_committed_entry_revision(space_id, entry_id, ENTRY_DELETED_ACTION)
+            .await;
     }
 
     /// Re-derives the expected audit events for `entry_id` from committed

@@ -3919,14 +3919,13 @@ impl UgoiteService {
                     // Adapter-authorized Remove: Delete on the exact Entry
                     // was established by the request adapter (dangerous-action
                     // approval or resource-scoped wrapper), which may hold the
-                    // authorization lease across this call. Principals still
-                    // thread to audit delivery below.
+                    // authorization lease across this call. Audit attribution
+                    // comes from the committed row, not live principals.
                     let value = self
                         .delete_entry_with_change_receipt_for_principals(
                             space_id,
                             &id,
                             actor_principal_id,
-                            principal_ids,
                             Some(change),
                         )
                         .await?;
@@ -4297,8 +4296,6 @@ impl UgoiteService {
             space_id,
             entry_id,
             crate::mutation_audit::ENTRY_CREATED_ACTION,
-            principal_ids,
-            author,
         )
         .await;
         Ok(result)
@@ -4372,8 +4369,6 @@ impl UgoiteService {
             space_id,
             &entry_id,
             crate::mutation_audit::ENTRY_CREATED_ACTION,
-            &[],
-            author,
         )
         .await;
         Ok((result, receipt))
@@ -4476,8 +4471,6 @@ impl UgoiteService {
             space_id,
             entry_id,
             crate::mutation_audit::ENTRY_UPDATED_ACTION,
-            &[],
-            author,
         )
         .await;
         Ok(result)
@@ -4568,8 +4561,6 @@ impl UgoiteService {
             space_id,
             entry_id,
             crate::mutation_audit::ENTRY_UPDATED_ACTION,
-            principal_ids,
-            author,
         )
         .await;
         Ok(result)
@@ -4599,8 +4590,7 @@ impl UgoiteService {
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        self.record_committed_entry_delete(space_id, entry_id, &[], actor)
-            .await;
+        self.record_committed_entry_delete(space_id, entry_id).await;
         let mut result = json!({"deleted": true});
         if let Some(receipt) = receipt {
             result["change_id"] = json!(receipt.command_id);
@@ -4642,8 +4632,7 @@ impl UgoiteService {
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        self.record_committed_entry_delete(space_id, entry_id, &[], actor)
-            .await;
+        self.record_committed_entry_delete(space_id, entry_id).await;
         let mut result = json!({"deleted": true});
         if let Some(receipt) = receipt {
             result["change_id"] = json!(receipt.command_id);
@@ -4734,11 +4723,7 @@ impl UgoiteService {
         crate::authorization::with_authorization_write_fence(
             authorization_lease.write_fence(),
             self.delete_entry_with_change_receipt_for_principals(
-                space_id,
-                entry_id,
-                author,
-                principal_ids,
-                change,
+                space_id, entry_id, author, change,
             ),
         )
         .await
@@ -4762,7 +4747,6 @@ impl UgoiteService {
         space_id: &str,
         entry_id: &str,
         author: &str,
-        principal_ids: &[Uuid],
         change: Option<ChangeCommand>,
     ) -> Result<Value> {
         self.ensure_mutation_admitted(space_id).await?;
@@ -4777,8 +4761,7 @@ impl UgoiteService {
         )
         .await?;
         self.schedule_asset_text_refresh(space_id);
-        self.record_committed_entry_delete(space_id, entry_id, principal_ids, author)
-            .await;
+        self.record_committed_entry_delete(space_id, entry_id).await;
         let mut result = json!({"deleted": true});
         if let Some(receipt) = receipt {
             result["change_id"] = json!(receipt.command_id);
