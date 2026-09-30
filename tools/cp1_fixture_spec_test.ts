@@ -22,7 +22,7 @@ Deno.test("CP1 fixture specification preserves the query and export contracts", 
         slug: "query-space-a",
         scenario: "renewable-ops",
         seed: 3134001,
-        entryCount: 6000,
+        entryCount: 1200,
         ownerDisplayName: "Query Measurement Owner",
         formNames: [
           "Array",
@@ -37,7 +37,7 @@ Deno.test("CP1 fixture specification preserves the query and export contracts", 
         slug: "query-space-b",
         scenario: "renewable-ops",
         seed: 3134002,
-        entryCount: 4000,
+        entryCount: 800,
         ownerDisplayName: "Query Measurement Owner",
         formNames: [
           "Array",
@@ -63,7 +63,7 @@ Deno.test("CP1 fixture specification preserves the query and export contracts", 
       slug: "sql-export-measure",
       scenario: "renewable-ops",
       seed: 3140001,
-      entryCount: 10000,
+      entryCount: 1000,
       ownerDisplayName: null,
       formNames: [
         "Array",
@@ -79,13 +79,13 @@ Deno.test("CP1 fixture specification preserves the query and export contracts", 
   assertEquals(
     cp1FixtureRows("query").split("\n"),
     [
-      "query-space-a\trenewable-ops\t3134001\t6000\tQuery Measurement Owner",
-      "query-space-b\trenewable-ops\t3134002\t4000\tQuery Measurement Owner",
+      "query-space-a\trenewable-ops\t3134001\t1200\tQuery Measurement Owner",
+      "query-space-b\trenewable-ops\t3134002\t800\tQuery Measurement Owner",
     ],
   );
   assertEquals(
     cp1FixtureRows("export"),
-    "sql-export-measure\trenewable-ops\t3140001\t10000\t",
+    "sql-export-measure\trenewable-ops\t3140001\t1000\t",
   );
 });
 

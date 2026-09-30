@@ -67,6 +67,39 @@ function percentile(values: number[], p: number): number {
   return sorted[Math.ceil(p * sorted.length) - 1] ?? 0;
 }
 
+type ExpectedFixture = { seed: number; entries: number };
+
+function expectedFixtureFor(slug: string): ExpectedFixture {
+  const raw = Deno.env.get("UGOITE_QUERY_MEASURE_EXPECTED_JSON") ?? "";
+  let mapping: unknown;
+  try {
+    mapping = JSON.parse(raw);
+  } catch {
+    throw new Error(
+      "UGOITE_QUERY_MEASURE_EXPECTED_JSON is missing or is not valid JSON",
+    );
+  }
+  if (typeof mapping !== "object" || mapping === null) {
+    throw new Error("UGOITE_QUERY_MEASURE_EXPECTED_JSON must be an object");
+  }
+  const entry = (mapping as Record<string, unknown>)[slug];
+  if (typeof entry !== "object" || entry === null) {
+    throw new Error(
+      `UGOITE_QUERY_MEASURE_EXPECTED_JSON has no entry for ${slug}`,
+    );
+  }
+  const { seed, entries } = entry as { seed: unknown; entries: unknown };
+  if (
+    !Number.isSafeInteger(seed) || (seed as number) <= 0 ||
+    !Number.isSafeInteger(entries) || (entries as number) <= 0
+  ) {
+    throw new Error(
+      `UGOITE_QUERY_MEASURE_EXPECTED_JSON entry for ${slug} must hold a positive seed and entry count`,
+    );
+  }
+  return { seed: seed as number, entries: entries as number };
+}
+
 test("records real two-Space query surface measurements", async ({ page, request }) => {
   test.skip(
     Deno.env.get("UGOITE_QUERY_MEASURE_ENABLED") !== "true",
@@ -86,6 +119,7 @@ test("records real two-Space query surface measurements", async ({ page, request
   const measuredSpaces: Array<{
     slug: string;
     space_uid: string;
+    seed: number;
     expected_entries: number;
     saved_sql_id?: string;
     parameterized_sql_id?: string;
@@ -95,10 +129,17 @@ test("records real two-Space query surface measurements", async ({ page, request
     );
     expect(space, `seeded Space ${slug} is visible to the test account`)
       .toBeTruthy();
+    // Expected seed and entry counts come from the shared CP1 fixture
+    // specification via UGOITE_QUERY_MEASURE_EXPECTED_JSON (set by
+    // scripts/measure-query-surfaces.sh). There is no hardcoded fallback:
+    // a missing or malformed mapping fails the test instead of asserting
+    // against stale counts.
+    const expected = expectedFixtureFor(slug);
     return {
       slug,
       space_uid: space!.space_uid,
-      expected_entries: slug === MEASUREMENT_SLUGS[0] ? 6_000 : 4_000,
+      seed: expected.seed,
+      expected_entries: expected.entries,
     };
   });
 
@@ -1085,8 +1126,10 @@ test("records real two-Space query surface measurements", async ({ page, request
             source_sha: Deno.env.get("UGOITE_SOURCE_SHA") ?? "unknown",
             date: new Date().toISOString(),
             dataset: {
-              seed:
-                "renewable-ops; Space A 3134001/6,000 Entries; Space B 3134002/4,000 Entries",
+              seed: "renewable-ops; " +
+                measuredSpaces.map((space) =>
+                  `${space.slug} ${space.seed}/${space.expected_entries} Entries`
+                ).join("; "),
               spaces: measuredSpaces,
               entry_type_distribution: {
                 Site: "2%",

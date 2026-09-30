@@ -278,21 +278,28 @@ Deno.test("CP1 seed profiles accept fully batched entry distributions", () => {
 
 Deno.test("CP1 seed profiles reject invalid or compensating batch entry counts", () => {
   const fixture = cp1FixtureBySlug("query-space-b");
-  assertEquals(fixture.entryCount, 4000);
-  const filler = Array<number>(16).fill(250);
+  const total = fixture.entryCount;
+  assert(total > CP1_SEED_MUTATION_BATCH_LIMIT);
+  // A filler that sums exactly to the fixture total; appending a zero keeps
+  // the sum but must still be rejected because batch counts start at 1.
+  const filler = [...validSeedBatches(total - 50), 50];
+  assertEquals(
+    filler.reduce((sum, count) => sum + count, 0),
+    total,
+  );
   const cases: Array<[string, unknown[]]> = [
-    ["string count", [...filler, "250"]],
-    ["compensating string count", [...validSeedBatches(4000), "stale"]],
-    ["fractional count", [128.5, 127.5, ...validSeedBatches(4000 - 256)]],
+    ["string count", [...filler.slice(0, -1), "50"]],
+    ["compensating string count", [...validSeedBatches(total), "stale"]],
+    ["fractional count", [128.5, 127.5, ...validSeedBatches(total - 256)]],
     [
       "compensating fractional count",
-      [...Array<number>(16).fill(250), 249.5],
+      [...filler.slice(0, -1), 49.5],
     ],
-    ["negative count", [...Array<number>(19).fill(200), 210, -10]],
+    ["negative count", [...validSeedBatches(total - 200), 210, -10]],
     ["compensating zero count", [...filler, 0]],
-    ["over-limit count", [257, ...validSeedBatches(4000 - 257)]],
+    ["over-limit count", [257, ...validSeedBatches(total - 257)]],
     ["unsafe integer count", [
-      ...validSeedBatches(4000),
+      ...validSeedBatches(total),
       Number.MAX_SAFE_INTEGER + 1,
     ]],
     ["short total", [100]],
@@ -313,7 +320,7 @@ Deno.test("CP1 seed profiles reject invalid or compensating batch entry counts",
     () =>
       validateSeedProfileDocument(
         {
-          ...makeSeedProfile(fixture, validSeedBatches(4000)),
+          ...makeSeedProfile(fixture, validSeedBatches(total)),
           seed: fixture.seed + 1,
         },
         fixture,

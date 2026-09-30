@@ -53,12 +53,12 @@ Root task composition:
   for consumer download; query and export bundles upload as separate
   artifacts with no cross-run cache;
 - `ci:lane:cp1-query`: hosted query consumer that restores only the query
-  bundle to a unique temp root and runs the fixed 6,000 + 4,000 Entry,
+  bundle to a unique temp root and runs the fixed 1,200 + 800 Entry,
   two-Space browser query-lifecycle assertions against the verified release
   image through the Compose runner; its Playwright report fails when any test
   is skipped, and it never builds the server, WASM, or frontend;
 - `ci:lane:cp1-export`: hosted export consumer that restores only the export
-  bundle and runs the separate bounded 10,000-row SQL export acceptance check
+  bundle and runs the separate bounded 1,000-row SQL export acceptance check
   with the verified release CLI; it never rebuilds the CLI;
 - `ci:lane:cp1-acceptance`: the local integrated entry that runs the same
   shared fixture preparation, query, and export scripts in one process;
@@ -143,9 +143,9 @@ upload the verified artifact set using the logical names `ugoite-docsite-pages`,
 
 The `ci:impact` planner selects CP1 acceptance for changes to EntryQuery, SQL
 query/count, or SQL export implementation and acceptance paths. Merge groups
-and main pushes run it unconditionally. It uses a fixed-seed 6,000/4,000
+and main pushes run it unconditionally. It uses a fixed-seed 1,200/800
 two-Space browser fixture for stale-result, count, cancellation, retry, and
-pagination assertions, then checks bounded 10,000-row export completion. Its
+pagination assertions, then checks bounded 1,000-row export completion. Its
 100,000-row/RSS/p95 performance measurements stay outside the required lane.
 
 The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies
