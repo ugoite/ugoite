@@ -12,6 +12,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr;
+#[cfg(debug_assertions)]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use ugoite_domain::change::ChangeDescriptor;
@@ -2865,6 +2867,8 @@ impl SpaceCatalog {
             // while the authoritative Head still proves the exact base.
             gate.pause().await;
         }
+        #[cfg(debug_assertions)]
+        wait_for_external_publication_gate().await?;
         let bytes = encode_head(&next)?;
         if bytes.len() > MAX_HEAD_BYTES {
             return Err(Error::new(
@@ -3887,6 +3891,55 @@ fn is_condition_conflict(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<opendal::Error>()
         .is_some_and(|error| error.kind() == opendal::ErrorKind::ConditionNotMatch)
+}
+
+/// Cross-process deterministic race hook for shared-backend acceptance
+/// tests. After the immutable publication is durable and immediately before
+/// the Catalog Head CAS, a child process signals `entered-{n}` in
+/// `UGOITE_TEST_PUBLICATION_GATE_DIR` and waits for `release-{n}` so the
+/// orchestrator can interleave a competing publication in another process
+/// and prove the Head CAS linearizes the two. Test-only: compiled under
+/// `debug_assertions` and a strict no-op unless the environment variable is
+/// set, so production publication paths are unaffected.
+#[cfg(debug_assertions)]
+static EXTERNAL_PUBLICATION_GATE_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(debug_assertions)]
+async fn wait_for_external_publication_gate() -> Result<()> {
+    let Ok(directory) = std::env::var("UGOITE_TEST_PUBLICATION_GATE_DIR") else {
+        return Ok(());
+    };
+    let directory = std::path::PathBuf::from(directory);
+    let sequence = EXTERNAL_PUBLICATION_GATE_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1;
+    let entered = directory.join(format!("entered-{sequence}"));
+    let release = directory.join(format!("release-{sequence}"));
+    tokio::fs::create_dir_all(&directory)
+        .await
+        .map_err(|error| {
+            Error::new(
+                ErrorKind::Unexpected,
+                format!("create test publication gate directory: {error}"),
+            )
+        })?;
+    tokio::fs::write(&entered, b"ready")
+        .await
+        .map_err(|error| {
+            Error::new(
+                ErrorKind::Unexpected,
+                format!("signal test publication gate: {error}"),
+            )
+        })?;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
+    while !release.exists() {
+        if tokio::time::Instant::now() >= deadline {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "timed out waiting for test publication gate release",
+            ));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
