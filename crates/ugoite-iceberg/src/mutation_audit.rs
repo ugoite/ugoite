@@ -308,13 +308,19 @@ async fn resolve_committed_mutation_audits(
         .iter()
         .map(|item| item.event_id.clone())
         .collect::<Vec<_>>();
-    let canonical = audit::verified_events_by_id(op, space_id, &event_ids).await?;
+    let (canonical, retained_out) =
+        audit::verified_events_and_retained_by_id(op, space_id, &event_ids).await?;
     let mut resolved = BTreeMap::new();
     let mut missing = Vec::new();
     for item in expected {
         if let Some(event) = canonical.get(&item.event_id) {
             item.validate_binding(event)?;
             resolved.insert(item.event_id.clone(), event.clone());
+        } else if let Some(retained_event) = retained_out.get(&item.event_id) {
+            // The snapshot validates the retention disposition's identity
+            // only. It is never returned as canonical audit evidence, and
+            // its historical attribution is never projected into the chain.
+            item.validate_binding(retained_event)?;
         } else {
             item.validate_binding(&item.missing_event)?;
             missing.push(item);
@@ -361,13 +367,8 @@ async fn resolve_committed_mutation_audits(
 
     let ordered = expected
         .iter()
-        .map(|item| {
-            resolved
-                .get(&item.event_id)
-                .cloned()
-                .ok_or_else(|| anyhow::anyhow!("audit event {} was not resolved", item.event_id))
-        })
-        .collect::<Result<Vec<_>>>()?;
+        .filter_map(|item| resolved.get(&item.event_id).cloned())
+        .collect::<Vec<_>>();
     Ok((ordered, missing_count))
 }
 
@@ -1527,6 +1528,75 @@ mod tests {
             assert_eq!(event["subject_principal_id"], json!(uuid_shaped_author));
             assert!(event["actor_principal_id"].is_null());
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn space_sweep_does_not_reappend_retention_expired_event() -> anyhow::Result<()> {
+        let (service, space_id) = audit_test_space("retention-expired").await?;
+        let (created, _) = service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                "entry-1",
+                "Entry".into(),
+                Vec::new(),
+                entry_fields("content"),
+                BTreeMap::new(),
+                "author",
+            )
+            .await?;
+        let revision_id = created["revision_id"].as_str().expect("revision id");
+        let history = crate::entry::get_entry_history(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "entry-1",
+        )
+        .await?;
+        let committed_revision = history["revisions"]
+            .as_array()
+            .and_then(|revisions| revisions.first())
+            .expect("committed entry revision");
+        assert_eq!(committed_revision["revision_id"], revision_id);
+        let space_uid = service.space_uid(&space_id).await?.to_string();
+        let payloads = (0..100)
+            .map(|index| {
+                json!({
+                    "event_id": Uuid::now_v7().to_string(),
+                    "action": "test.retention_filler",
+                    "space_uid": space_uid,
+                    "subject_principal_id": "retention-test",
+                    "actor_principal_id": null,
+                    "target_type": "test",
+                    "target_id": format!("filler-{index}"),
+                    "metadata": {"revision_id": format!("filler-revision-{index}")}
+                })
+            })
+            .collect::<Vec<_>>();
+        crate::audit::append_audit_events_with_retention_for_test(
+            service.operator(),
+            &space_id,
+            &payloads,
+            100,
+        )
+        .await?;
+
+        let events = crate::audit::list_audit_events(
+            service.operator(),
+            &space_id,
+            crate::audit::AuditListOptions::default(),
+        )
+        .await?;
+        assert_eq!(events["total"], json!(100));
+        let bytes_before_sweep = audit_bytes(&service, &space_id).await?;
+        let sweep = UgoiteService::from_operator(
+            service.operator().clone(),
+            service.root_uri().to_string(),
+        );
+
+        assert_eq!(sweep.reconcile_space_audit(&space_id).await?, 1);
+        assert_eq!(audit_bytes(&sweep, &space_id).await?, bytes_before_sweep);
+        assert_eq!(sweep.reconcile_space_audit(&space_id).await?, 1);
+        assert_eq!(audit_bytes(&sweep, &space_id).await?, bytes_before_sweep);
         Ok(())
     }
 
