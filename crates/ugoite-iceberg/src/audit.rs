@@ -725,19 +725,23 @@ pub async fn append_audit_event(
     Err(last_conflict.unwrap_or_else(|| anyhow!("audit append conflicted after bounded retries")))
 }
 
-/// Appends a group of audit events after reading and verifying the Space's
-/// hash chain once. This is used by recovery sweeps, where each event already
-/// has a stable idempotency key and the complete committed history is known.
+/// Strictly appends a group of audit events after reading and verifying the
+/// Space's hash chain once. Same-ID payload conflicts remain errors. Content
+/// reconciliation uses [`append_reconciliation_audit_events`] so orphan
+/// markers cannot stand in for missing chain evidence.
+///
 /// Pending event markers are written before the chain update and committed
 /// after it, preserving the single-event crash-recovery protocol.
+#[allow(dead_code)] // Generic batches remain strict; reconciliation has a dedicated chain-authoritative path.
 pub(crate) async fn append_audit_events(
     op: &Operator,
     space_id: &str,
     payloads: &[Value],
 ) -> Result<Vec<Value>> {
-    append_audit_events_inner(op, space_id, payloads, None).await
+    append_audit_events_inner(op, space_id, payloads, None, false).await
 }
 
+#[allow(dead_code)]
 pub(crate) async fn append_audit_events_with_checkpoint(
     op: &Operator,
     space_id: &str,
@@ -745,7 +749,27 @@ pub(crate) async fn append_audit_events_with_checkpoint(
     payloads: &[Value],
     checkpoint: &AuditCheckpointConfig,
 ) -> Result<Vec<Value>> {
-    append_audit_events_inner(op, space_id, payloads, Some((space_uid, checkpoint))).await
+    append_audit_events_inner(op, space_id, payloads, Some((space_uid, checkpoint)), false).await
+}
+
+/// Appends content-audit evidence whose absence was established by reading
+/// the verified canonical chain. Event-id markers cannot establish that the
+/// event already exists; an orphan marker is replaced after the chain write.
+pub(crate) async fn append_reconciliation_audit_events(
+    op: &Operator,
+    space_id: &str,
+    space_uid: &str,
+    payloads: &[Value],
+    checkpoint: Option<&AuditCheckpointConfig>,
+) -> Result<Vec<Value>> {
+    append_audit_events_inner(
+        op,
+        space_id,
+        payloads,
+        checkpoint.map(|checkpoint| (space_uid, checkpoint)),
+        true,
+    )
+    .await
 }
 
 async fn append_audit_events_inner(
@@ -753,6 +777,7 @@ async fn append_audit_events_inner(
     space_id: &str,
     payloads: &[Value],
     checkpoint: Option<(&str, &AuditCheckpointConfig)>,
+    ignore_orphan_markers: bool,
 ) -> Result<Vec<Value>> {
     if payloads.is_empty() && checkpoint.is_none() {
         return Ok(Vec::new());
@@ -763,7 +788,9 @@ async fn append_audit_events_inner(
         .map_err(crate::iceberg_store::storage_mutation_unavailable)?;
     let mut last_conflict = None;
     for _attempt in 0..3 {
-        match append_audit_events_once(op, space_id, payloads, checkpoint).await {
+        match append_audit_events_once(op, space_id, payloads, checkpoint, ignore_orphan_markers)
+            .await
+        {
             Ok(events) => return Ok(events),
             Err(error)
                 if {
@@ -786,6 +813,7 @@ async fn append_audit_events_once(
     space_id: &str,
     payloads: &[Value],
     checkpoint: Option<(&str, &AuditCheckpointConfig)>,
+    ignore_orphan_markers: bool,
 ) -> Result<Vec<Value>> {
     let safe_space_id = validate_space_id(space_id)?;
     let lock = space_lock(&safe_space_id).await;
@@ -951,6 +979,7 @@ async fn append_audit_events_once(
 
         let mut marker_version = None;
         if let Some(event_id) = requested_event_id.as_deref() {
+            let ignore_marker = ignore_orphan_markers && !event_indexes.contains_key(event_id);
             let marker_state = if event_indexes
                 .get(event_id)
                 .is_some_and(|index| *index < persisted_event_count)
@@ -960,7 +989,9 @@ async fn append_audit_events_once(
                 read_event_marker(op, &safe_space_id, event_id).await?
             };
             if let Some((marker, version)) = marker_state {
-                if marker.get("status").and_then(Value::as_str) == Some("committed") {
+                if !ignore_marker
+                    && marker.get("status").and_then(Value::as_str) == Some("committed")
+                {
                     let canonical = marker.get("event").unwrap_or(&marker);
                     if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
                         bail!("audit event id conflicts with canonical payload");
@@ -968,14 +999,18 @@ async fn append_audit_events_once(
                     output.push(canonical.clone());
                     continue;
                 }
-                if marker.get("event_id").is_some() && marker.get("event_hash").is_some() {
+                if !ignore_marker
+                    && marker.get("event_id").is_some()
+                    && marker.get("event_hash").is_some()
+                {
                     if audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)? {
                         bail!("audit event id conflicts with canonical payload");
                     }
                     output.push(marker.get("event").cloned().unwrap_or(marker));
                     continue;
                 }
-                if marker.get("status").and_then(Value::as_str) == Some("pending")
+                if !ignore_marker
+                    && marker.get("status").and_then(Value::as_str) == Some("pending")
                     && audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)?
                 {
                     bail!("audit event id conflicts with pending payload");
@@ -1078,7 +1113,8 @@ async fn append_audit_events_once(
             ).await?;
         }
         if let Some((marker, _)) = read_event_marker(op, &safe_space_id, &event_id).await? {
-            if marker.get("status").and_then(Value::as_str) == Some("committed") {
+            let ignore_marker = ignore_orphan_markers && !event_indexes.contains_key(&event_id);
+            if !ignore_marker && marker.get("status").and_then(Value::as_str) == Some("committed") {
                 let canonical = marker.get("event").unwrap_or(&marker);
                 if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
                     bail!("audit event id conflicts with canonical payload");
@@ -1086,7 +1122,9 @@ async fn append_audit_events_once(
                 output.push(canonical.clone());
                 continue;
             }
-            if audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)? {
+            if !ignore_marker
+                && audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)?
+            {
                 bail!("audit event id conflicts with pending payload");
             }
         }

@@ -331,15 +331,10 @@ async fn resolve_committed_mutation_audits(
             .iter()
             .map(|item| item.missing_event.clone())
             .collect::<Vec<_>>();
-        let append_result = match checkpoint {
-            Some(checkpoint) => {
-                audit::append_audit_events_with_checkpoint(
-                    op, space_id, space_uid, &payloads, checkpoint,
-                )
-                .await
-            }
-            None => audit::append_audit_events(op, space_id, &payloads).await,
-        };
+        let append_result = audit::append_reconciliation_audit_events(
+            op, space_id, space_uid, &payloads, checkpoint,
+        )
+        .await;
         // Read the events back from the canonical chain after append. The
         // append API may consult event-id markers for retry safety; markers
         // do not prove that an event is present in `events.jsonl`.
@@ -1343,6 +1338,105 @@ mod tests {
             audit_bytes(&service3, &space_id).await?,
             bytes_after_recovery
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn orphaned_event_marker_does_not_block_chain_recovery() -> anyhow::Result<()> {
+        let (service, space_id) = audit_test_space("orphan-marker").await?;
+        let uuid_author = Uuid::now_v7().to_string();
+        service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                "entry-1",
+                "Entry".into(),
+                Vec::new(),
+                entry_fields("content"),
+                BTreeMap::new(),
+                &uuid_author,
+            )
+            .await?;
+        let history = crate::entry::get_entry_history(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "entry-1",
+        )
+        .await?;
+        let revision = &history["revisions"][0];
+        let space_uid = service.space_uid(&space_id).await?;
+        let expected = entry_revision_audit_expectation(
+            &space_uid,
+            "entry-1",
+            ENTRY_CREATED_ACTION,
+            revision["revision_id"].as_str().expect("revision id"),
+            revision["change_id"].as_str(),
+            Some(&uuid_author),
+        );
+        let marker_path = format!(
+            "spaces/{space_id}/audit/event-ids/{}.json",
+            expected.event_id
+        );
+        let mut orphan_marker: Value =
+            serde_json::from_slice(&service.operator().read(&marker_path).await?.to_vec())?;
+        orphan_marker["event"]["actor_principal_id"] = json!(uuid_author);
+        service
+            .operator()
+            .write(&marker_path, serde_json::to_vec(&orphan_marker)?)
+            .await?;
+
+        let events_path = format!("spaces/{space_id}/audit/events.jsonl");
+        service.operator().delete(&events_path).await?;
+        assert!(
+            crate::audit::verified_events_by_id(
+                service.operator(),
+                &space_id,
+                std::slice::from_ref(&expected.event_id),
+            )
+            .await?
+            .is_empty(),
+            "an event-id marker is not canonical chain evidence"
+        );
+
+        let generic_append = crate::audit::append_audit_events(
+            service.operator(),
+            &space_id,
+            std::slice::from_ref(&expected.missing_event),
+        )
+        .await;
+        assert!(generic_append
+            .expect_err("generic same-ID marker conflict stays strict")
+            .to_string()
+            .contains("audit event id conflicts with canonical payload"));
+        assert!(
+            !service.operator().exists(&events_path).await?,
+            "generic conflict must not create a chain"
+        );
+
+        let reopened = UgoiteService::from_operator(
+            service.operator().clone(),
+            service.root_uri().to_string(),
+        );
+        reopened.open_space(&space_id).await?;
+        assert_eq!(audit_total(&reopened, &space_id).await?, 1);
+        let events = crate::audit::list_audit_events(
+            reopened.operator(),
+            &space_id,
+            crate::audit::AuditListOptions::default(),
+        )
+        .await?;
+        assert_eq!(
+            events["items"][0]["subject_principal_id"],
+            json!(uuid_author)
+        );
+        assert!(events["items"][0]["actor_principal_id"].is_null());
+        let recovered_bytes = audit_bytes(&reopened, &space_id).await?;
+        let repaired_marker: Value =
+            serde_json::from_slice(&reopened.operator().read(&marker_path).await?.to_vec())?;
+        assert!(repaired_marker["event"]["actor_principal_id"].is_null());
+
+        reopened.open_space(&space_id).await?;
+        assert_eq!(audit_bytes(&reopened, &space_id).await?, recovered_bytes);
+        assert_eq!(audit_total(&reopened, &space_id).await?, 1);
         Ok(())
     }
 
