@@ -1,0 +1,12 @@
+{
+  "created_at": 1790818510.839,
+  "hmac_key": "PFsuIeFX2f+bzXO3obNB6eGr+QM5gdyAhRZO+BDlkto=",
+  "hmac_key_id": "key-11f64454ef3147bba77074c8466f3cb2",
+  "id": "01a0f519-e7e8-755c-8bba-c57aae4b9f64",
+  "last_rotation": "2026-10-01T01:35:10.839820+00:00",
+  "name": "audit-reconciliation-v020",
+  "slug": "audit-reconciliation-v020",
+  "space_id": "01a0f519-e7e8-755c-8bba-c57aae4b9f64",
+  "space_uid": "01a0f519-e7e8-755c-8bba-c57aae4b9f64",
+  "space_version": "0.1"
+}

@@ -13,13 +13,13 @@
 //! - The committed revision (Entry history / saved-SQL row) is the only
 //!   source of truth. No outbox table, no second Knowledge record.
 //! - Every content-mutation event carries a deterministic UUIDv5 `event_id`
-//!   derived from `(space_uid, action, target_id, revision_id)`. Redelivering
-//!   the same committed revision converges to one audit event via the
-//!   existing idempotent append path; a *differing* payload under the same
-//!   event ID fails closed instead of overwriting evidence.
-//! - [`UgoiteService::reconcile_entry_audit`] and
-//!   [`UgoiteService::reconcile_saved_sql_audit`] re-derive the expected
-//!   event from committed truth and deliver it, closing a crash gap.
+//!   derived from `(space_uid, action, target_id, revision_id)`. Generic audit
+//!   append stays strict: a different payload under the same event ID fails
+//!   closed instead of overwriting evidence.
+//! - Reconciliation verifies the canonical audit chain and validates each
+//!   persisted event's binding to committed revision identity. It preserves a
+//!   matching event, including its historical attribution, and builds a new
+//!   event only for missing evidence.
 //! - Payloads are allow-listed: actor/action/target/revision/change IDs
 //!   only. Entry bodies, SQL text, variables, credentials, and tokens never
 //!   enter audit events (enforced by [`crate::audit`] secret rejection plus
@@ -29,7 +29,7 @@
 //! authorization wiring): a failed delivery never fails an already-committed
 //! mutation. The deterministic IDs plus reconcile keep that gap recoverable.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use opendal::Operator;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -227,6 +227,211 @@ pub(crate) async fn deliver_mutation_audit_event(
     audit::append_audit_event(op, space_id, event, None).await
 }
 
+#[derive(Debug, Clone)]
+struct CommittedMutationAudit {
+    event_id: String,
+    space_uid: String,
+    action: String,
+    target_type: String,
+    target_id: String,
+    revision_id: String,
+    change_id: Option<String>,
+    missing_event: Value,
+}
+
+impl CommittedMutationAudit {
+    fn new(
+        space_uid: &Uuid,
+        action: &str,
+        target_type: &str,
+        target_id: &str,
+        revision_id: &str,
+        change_id: Option<&str>,
+        missing_event: Value,
+    ) -> Self {
+        let event_id = mutation_audit_event_id(space_uid, action, target_id, revision_id);
+        Self {
+            event_id: event_id.to_string(),
+            space_uid: space_uid.to_string(),
+            action: action.to_string(),
+            target_type: target_type.to_string(),
+            target_id: target_id.to_string(),
+            revision_id: revision_id.to_string(),
+            change_id: change_id
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            missing_event,
+        }
+    }
+
+    fn validate_binding(&self, event: &Value) -> Result<()> {
+        let metadata = event.get("metadata").and_then(Value::as_object);
+        let event_change_id = metadata.and_then(|metadata| metadata.get("change_id"));
+        let change_id_matches = match (event_change_id, self.change_id.as_deref()) {
+            (None, None) => true,
+            (Some(Value::String(actual)), Some(expected)) => actual == expected,
+            _ => false,
+        };
+        let matches = event.get("event_id").and_then(Value::as_str) == Some(self.event_id.as_str())
+            && event.get("space_uid").and_then(Value::as_str) == Some(self.space_uid.as_str())
+            && event.get("action").and_then(Value::as_str) == Some(self.action.as_str())
+            && event.get("target_type").and_then(Value::as_str) == Some(self.target_type.as_str())
+            && event.get("target_id").and_then(Value::as_str) == Some(self.target_id.as_str())
+            && metadata
+                .and_then(|metadata| metadata.get("revision_id"))
+                .and_then(Value::as_str)
+                == Some(self.revision_id.as_str())
+            && change_id_matches;
+        if !matches {
+            bail!(
+                "audit event {} does not match committed {} revision {}",
+                self.event_id,
+                self.target_type,
+                self.revision_id
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Preserves verified historical events and appends only missing evidence.
+/// The same resolver is used by target reconciliation and the Space sweep.
+async fn resolve_committed_mutation_audits(
+    op: &Operator,
+    space_id: &str,
+    space_uid: &str,
+    expected: &[CommittedMutationAudit],
+    checkpoint: Option<&audit::AuditCheckpointConfig>,
+) -> Result<(Vec<Value>, usize)> {
+    let event_ids = expected
+        .iter()
+        .map(|item| item.event_id.clone())
+        .collect::<Vec<_>>();
+    let canonical = audit::verified_events_by_id(op, space_id, &event_ids).await?;
+    let mut resolved = BTreeMap::new();
+    let mut missing = Vec::new();
+    for item in expected {
+        if let Some(event) = canonical.get(&item.event_id) {
+            item.validate_binding(event)?;
+            resolved.insert(item.event_id.clone(), event.clone());
+        } else {
+            item.validate_binding(&item.missing_event)?;
+            missing.push(item);
+        }
+    }
+
+    let missing_count = missing.len();
+    if !missing.is_empty() {
+        let missing_ids = missing
+            .iter()
+            .map(|item| item.event_id.clone())
+            .collect::<Vec<_>>();
+        let payloads = missing
+            .iter()
+            .map(|item| item.missing_event.clone())
+            .collect::<Vec<_>>();
+        let append_result = match checkpoint {
+            Some(checkpoint) => {
+                audit::append_audit_events_with_checkpoint(
+                    op, space_id, space_uid, &payloads, checkpoint,
+                )
+                .await
+            }
+            None => audit::append_audit_events(op, space_id, &payloads).await,
+        };
+        // Read the events back from the canonical chain after append. The
+        // append API may consult event-id markers for retry safety; markers
+        // do not prove that an event is present in `events.jsonl`.
+        let canonical_after = audit::verified_events_by_id(op, space_id, &missing_ids).await?;
+        let all_committed = missing
+            .iter()
+            .all(|item| canonical_after.contains_key(&item.event_id));
+        if let Err(error) = append_result {
+            if !all_committed {
+                return Err(error);
+            }
+        }
+        for item in missing {
+            let Some(event) = canonical_after.get(&item.event_id) else {
+                bail!(
+                    "audit event {} was not committed to the canonical chain",
+                    item.event_id
+                );
+            };
+            item.validate_binding(event)?;
+            resolved.insert(item.event_id.clone(), event.clone());
+        }
+    }
+
+    let ordered = expected
+        .iter()
+        .map(|item| {
+            resolved
+                .get(&item.event_id)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("audit event {} was not resolved", item.event_id))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok((ordered, missing_count))
+}
+
+fn entry_revision_audit_expectation(
+    space_uid: &Uuid,
+    entry_id: &str,
+    action: &str,
+    revision_id: &str,
+    change_id: Option<&str>,
+    committed_actor: Option<&str>,
+) -> CommittedMutationAudit {
+    let (subject, actor) = committed_actor_attribution(committed_actor, space_uid);
+    let event = entry_mutation_event(
+        space_uid,
+        action,
+        entry_id,
+        revision_id,
+        change_id,
+        &subject,
+        actor.as_deref(),
+    );
+    CommittedMutationAudit::new(
+        space_uid,
+        action,
+        "entry",
+        entry_id,
+        revision_id,
+        change_id,
+        event,
+    )
+}
+
+fn saved_sql_revision_audit_expectation(
+    space_uid: &Uuid,
+    sql_id: &str,
+    action: &str,
+    revision_id: &str,
+    committed_actor: Option<&str>,
+) -> CommittedMutationAudit {
+    let (subject, actor) = committed_actor_attribution(committed_actor, space_uid);
+    let event = saved_sql_mutation_event(
+        space_uid,
+        action,
+        sql_id,
+        revision_id,
+        &subject,
+        actor.as_deref(),
+    );
+    CommittedMutationAudit::new(
+        space_uid,
+        action,
+        "saved_sql",
+        sql_id,
+        revision_id,
+        Some(revision_id),
+        event,
+    )
+}
+
 fn latest_entry_revision(
     history: &Value,
 ) -> Option<(String, Option<String>, String, String, String)> {
@@ -371,9 +576,9 @@ impl UgoiteService {
             .await;
     }
 
-    /// Re-derives the expected audit events for `entry_id` from committed
-    /// truth (Entry history, tombstones included) and delivers every missing
-    /// one idempotently.
+    /// Resolves audit evidence for `entry_id` from committed truth (Entry
+    /// history, tombstones included), preserving verified existing events
+    /// and delivering only missing evidence.
     ///
     /// Every committed revision gets its own deterministic event: the first
     /// revision is `entry.created`, a delete-operation revision is
@@ -384,8 +589,8 @@ impl UgoiteService {
     /// Attribution comes only from committed revision provenance. Missing
     /// actor metadata falls back to the Space UID. The caller attribution
     /// arguments are retained for source compatibility but do not project
-    /// identity into content history. Returns the
-    /// last delivered event, or `None` when the Entry has no committed
+    /// identity into content history. Returns the last canonical event, or
+    /// `None` when the Entry has no committed
     /// revisions, including when it never existed (consistent with saved-SQL
     /// reconcile). Closing a commit→delivery crash gap is a second call away
     /// however long after the crash the Space is reopened.
@@ -433,7 +638,7 @@ impl UgoiteService {
             .iter()
             .filter_map(|revision| revision.get("entry_version").and_then(Value::as_u64))
             .min();
-        let mut delivered = None;
+        let mut expected = Vec::with_capacity(revisions.len());
         for (index, revision) in revisions.iter().enumerate() {
             let Some(revision_id) = revision
                 .get("revision_id")
@@ -465,27 +670,32 @@ impl UgoiteService {
                 ENTRY_UPDATED_ACTION
             };
             let committed_actor = revision.get("actor").and_then(Value::as_str);
-            let (subject, actor) = committed_actor_attribution(committed_actor, &space_uid);
-            let event = entry_mutation_event(
+            expected.push(entry_revision_audit_expectation(
                 &space_uid,
-                action,
                 entry_id,
+                action,
                 &revision_id,
                 change_id.as_deref(),
-                &subject,
-                actor.as_deref(),
-            );
-            delivered =
-                Some(deliver_mutation_audit_event(self.operator(), space_id, &event).await?);
+                committed_actor,
+            ));
         }
-        Ok(delivered)
+        let space_uid_text = space_uid.to_string();
+        let (resolved, _) = resolve_committed_mutation_audits(
+            self.operator(),
+            space_id,
+            &space_uid_text,
+            &expected,
+            None,
+        )
+        .await?;
+        Ok(resolved.into_iter().last())
     }
 
     fn entry_revision_audit_events(
         entry_id: &str,
         mut revisions: Vec<crate::entry::RevisionRow>,
         space_uid: Uuid,
-    ) -> Vec<Value> {
+    ) -> Vec<CommittedMutationAudit> {
         revisions.sort_by(|left, right| {
             left.timestamp
                 .partial_cmp(&right.timestamp)
@@ -514,15 +724,13 @@ impl UgoiteService {
             } else {
                 revision.updated_by.as_str()
             };
-            let (subject, actor) = committed_actor_attribution(Some(committed_actor), &space_uid);
-            events.push(entry_mutation_event(
+            events.push(entry_revision_audit_expectation(
                 &space_uid,
-                action,
                 entry_id,
+                action,
                 &revision.revision_id,
                 Some(&revision.change_id),
-                &subject,
-                actor.as_deref(),
+                Some(committed_actor),
             ));
         }
         events
@@ -532,7 +740,7 @@ impl UgoiteService {
         sql_id: &str,
         mut revisions: Vec<crate::entry::RevisionRow>,
         space_uid: Uuid,
-    ) -> Vec<Value> {
+    ) -> Vec<CommittedMutationAudit> {
         revisions.sort_by(|left, right| {
             (left.entry_version, left.timestamp)
                 .partial_cmp(&(right.entry_version, right.timestamp))
@@ -553,23 +761,20 @@ impl UgoiteService {
                 } else {
                     revision.updated_by.as_str()
                 };
-                let (subject, actor) =
-                    committed_actor_attribution(Some(committed_actor), &space_uid);
-                saved_sql_mutation_event(
+                saved_sql_revision_audit_expectation(
                     &space_uid,
-                    action,
                     sql_id,
+                    action,
                     &revision.revision_id,
-                    &subject,
-                    actor.as_deref(),
+                    Some(committed_actor),
                 )
             })
             .collect()
     }
 
-    /// Re-derives the expected audit events for `sql_id` from committed
-    /// truth (saved-SQL revision rows, including tombstones) and delivers
-    /// every missing one idempotently.
+    /// Resolves audit evidence for `sql_id` from committed truth (saved-SQL
+    /// revision rows, including tombstones), preserving verified existing
+    /// events and delivering only missing evidence.
     ///
     /// Like Entries, every committed revision gets its own deterministic
     /// event (first revision without a parent is `saved_sql.created`, a
@@ -607,7 +812,7 @@ impl UgoiteService {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         let space_uid = self.space_uid(space_id).await?;
-        let mut delivered = None;
+        let mut expected = Vec::with_capacity(revisions.len());
         for revision in &revisions {
             let action = if revision.operation == "delete" {
                 SAVED_SQL_DELETED_ACTION
@@ -621,19 +826,24 @@ impl UgoiteService {
             } else {
                 revision.updated_by.clone()
             };
-            let (subject, actor) = committed_actor_attribution(Some(&committed_actor), &space_uid);
-            let event = saved_sql_mutation_event(
+            expected.push(saved_sql_revision_audit_expectation(
                 &space_uid,
-                action,
                 sql_id,
+                action,
                 &revision.revision_id,
-                &subject,
-                actor.as_deref(),
-            );
-            delivered =
-                Some(deliver_mutation_audit_event(self.operator(), space_id, &event).await?);
+                Some(&committed_actor),
+            ));
         }
-        Ok(delivered)
+        let space_uid_text = space_uid.to_string();
+        let (resolved, _) = resolve_committed_mutation_audits(
+            self.operator(),
+            space_id,
+            &space_uid_text,
+            &expected,
+            None,
+        )
+        .await?;
+        Ok(resolved.into_iter().last())
     }
 
     /// Converges audit evidence for every committed Entry and saved-SQL
@@ -642,12 +852,11 @@ impl UgoiteService {
     /// Crash windows and delivery failures are per-mutation: a sweep must not
     /// stop at the latest revision of one target. Every committed Entry
     /// revision (tombstones included) and every committed saved-SQL row is
-    /// converted to the same deterministic events as the per-target paths,
-    /// then delivered as one batch so the audit chain is verified and
-    /// rewritten once. Attribution always comes from committed metadata,
-    /// never from the sweep caller (empty principals and a blank author
-    /// fallback force the committed authority). Failures propagate instead
-    /// of hiding as success; existing events are never rewritten and
+    /// converted to the same deterministic identities as the per-target
+    /// paths. Verified existing events are preserved and only missing events
+    /// are delivered as one batch. Attribution is used only for newly built
+    /// evidence; existing event attribution remains historical. Failures
+    /// propagate instead of hiding as success; existing events are never rewritten and
     /// Change/revision IDs never change. Returns the number of targets
     /// converged.
     pub async fn reconcile_space_audit(&self, space_id: &str) -> Result<usize> {
@@ -700,9 +909,9 @@ impl UgoiteService {
         let entry_target_count = entry_revisions.len();
         let sql_target_count = sql_ids.len();
         let converged = entry_target_count + sql_target_count;
-        let mut audit_events = Vec::new();
+        let mut expected_audits = Vec::new();
         for (entry_id, revisions) in entry_revisions {
-            audit_events.extend(Self::entry_revision_audit_events(
+            expected_audits.extend(Self::entry_revision_audit_events(
                 &entry_id, revisions, space_uid,
             ));
         }
@@ -725,7 +934,7 @@ impl UgoiteService {
         }
         for sql_id in sql_ids {
             if let Some(revisions) = sql_revisions.remove(&sql_id) {
-                audit_events.extend(Self::saved_sql_revision_audit_events(
+                expected_audits.extend(Self::saved_sql_revision_audit_events(
                     &sql_id, revisions, space_uid,
                 ));
             }
@@ -740,25 +949,22 @@ impl UgoiteService {
         );
         let target_count = converged;
         let append_started = Instant::now();
-        if let Some(checkpoint) = self.audit_checkpoint_config() {
-            crate::audit::append_audit_events_with_checkpoint(
-                self.operator(),
-                space_id,
-                &space_uid.to_string(),
-                &audit_events,
-                checkpoint,
-            )
-            .await
-        } else {
-            crate::audit::append_audit_events(self.operator(), space_id, &audit_events).await
-        }
+        let space_uid_text = space_uid.to_string();
+        let (_, appended_events) = resolve_committed_mutation_audits(
+            self.operator(),
+            space_id,
+            &space_uid_text,
+            &expected_audits,
+            self.audit_checkpoint_config(),
+        )
+        .await
         .with_context(|| format!("reconcile audit events for Space {space_id}"))?;
         crate::audit::emit_startup_audit_measurement(
             "audit_reconcile_append",
             append_started.elapsed(),
             serde_json::json!({
                 "targets": target_count,
-                "events": audit_events.len()
+                "events": appended_events
             }),
         );
         Ok(converged)
@@ -869,6 +1075,14 @@ mod tests {
         )
         .await?;
         Ok(listed.get("total").and_then(Value::as_u64).unwrap_or(0) as usize)
+    }
+
+    async fn audit_bytes(service: &UgoiteService, space_id: &str) -> anyhow::Result<Vec<u8>> {
+        Ok(service
+            .operator()
+            .read(&format!("spaces/{space_id}/audit/events.jsonl"))
+            .await?
+            .to_vec())
     }
 
     async fn write_untracked_entry(
@@ -1112,6 +1326,23 @@ mod tests {
             .reconcile_entry_audit(&space_id, "entry-1", &[], "author")
             .await?;
         assert_eq!(audit_total(&service2, &space_id).await?, 1);
+        let events = crate::audit::list_audit_events(
+            service2.operator(),
+            &space_id,
+            crate::audit::AuditListOptions::default(),
+        )
+        .await?;
+        assert!(events["items"][0]["actor_principal_id"].is_null());
+        let bytes_after_recovery = audit_bytes(&service2, &space_id).await?;
+        let service3 = UgoiteService::from_operator(
+            service2.operator().clone(),
+            service2.root_uri().to_string(),
+        );
+        service3.open_space(&space_id).await?;
+        assert_eq!(
+            audit_bytes(&service3, &space_id).await?,
+            bytes_after_recovery
+        );
         Ok(())
     }
 
@@ -1142,6 +1373,173 @@ mod tests {
         // from committed metadata.
         assert_eq!(service.reconcile_space_audit(&space_id).await?, 1);
         assert_eq!(audit_total(&service, &space_id).await?, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn current_writer_delivery_and_reconciliation_preserve_audit_bytes() -> anyhow::Result<()>
+    {
+        let (service, space_id) = audit_test_space("writer-stable").await?;
+        let uuid_shaped_author = Uuid::now_v7().to_string();
+        service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                "entry-1",
+                "Entry".into(),
+                Vec::new(),
+                entry_fields("content"),
+                BTreeMap::new(),
+                &uuid_shaped_author,
+            )
+            .await?;
+        let sql_payload = crate::saved_sql::SqlPayload {
+            name: Some("q".to_string()),
+            kind: crate::saved_sql::SqlKind::UserQuery,
+            metadata: None,
+            sql: "SELECT 1".to_string(),
+            variables: json!([]),
+        };
+        service
+            .create_saved_sql(&space_id, Some("sql-1"), &sql_payload, &uuid_shaped_author)
+            .await?;
+        assert_eq!(audit_total(&service, &space_id).await?, 2);
+        let bytes_after_delivery = audit_bytes(&service, &space_id).await?;
+
+        let reopened = UgoiteService::from_operator(
+            service.operator().clone(),
+            service.root_uri().to_string(),
+        );
+        reopened.open_space(&space_id).await?;
+        reopened
+            .reconcile_entry_audit(&space_id, "entry-1", &[], "ignored")
+            .await?;
+        reopened
+            .reconcile_saved_sql_audit(&space_id, "sql-1", &[], "ignored")
+            .await?;
+        assert_eq!(reopened.reconcile_space_audit(&space_id).await?, 2);
+        assert_eq!(audit_total(&reopened, &space_id).await?, 2);
+        assert_eq!(
+            audit_bytes(&reopened, &space_id).await?,
+            bytes_after_delivery
+        );
+
+        let events = crate::audit::list_audit_events(
+            reopened.operator(),
+            &space_id,
+            crate::audit::AuditListOptions::default(),
+        )
+        .await?;
+        for event in events["items"].as_array().expect("events") {
+            assert_eq!(event["subject_principal_id"], json!(uuid_shaped_author));
+            assert!(event["actor_principal_id"].is_null());
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reconciliation_rejects_events_not_bound_to_committed_revision() -> anyhow::Result<()> {
+        for field in [
+            "action",
+            "target_type",
+            "target_id",
+            "revision_id",
+            "change_id",
+            "space_uid",
+        ] {
+            let (service, space_id) = audit_test_space(&format!("binding-{field}")).await?;
+            write_untracked_entry(&service, &space_id, "content").await?;
+            let history = crate::entry::get_entry_history(
+                service.operator(),
+                &service.workspace_path(&space_id),
+                "entry-1",
+            )
+            .await?;
+            let revision = &history["revisions"][0];
+            let revision_id = revision["revision_id"].as_str().expect("revision id");
+            let change_id = revision["change_id"].as_str().expect("Change id");
+            let space_uid = service.space_uid(&space_id).await?;
+            let expected = entry_revision_audit_expectation(
+                &space_uid,
+                "entry-1",
+                ENTRY_CREATED_ACTION,
+                revision_id,
+                Some(change_id),
+                Some("author"),
+            );
+            let mut conflicting = expected.missing_event;
+            match field {
+                "action" => conflicting["action"] = json!(ENTRY_UPDATED_ACTION),
+                "target_type" => conflicting["target_type"] = json!("saved_sql"),
+                "target_id" => conflicting["target_id"] = json!("other-entry"),
+                "revision_id" => conflicting["metadata"]["revision_id"] = json!("other-revision"),
+                "change_id" => conflicting["metadata"]["change_id"] = json!("other-change"),
+                "space_uid" => conflicting["space_uid"] = json!(Uuid::now_v7().to_string()),
+                _ => unreachable!(),
+            }
+            deliver_mutation_audit_event(service.operator(), &space_id, &conflicting).await?;
+            let bytes_before_reconcile = audit_bytes(&service, &space_id).await?;
+            let error = service
+                .open_space(&space_id)
+                .await
+                .expect_err("mismatched committed identity must fail closed");
+            assert!(
+                format!("{error:#}").contains("does not match committed"),
+                "unexpected error for {field}: {error:#}"
+            );
+            assert_eq!(
+                audit_bytes(&service, &space_id).await?,
+                bytes_before_reconcile,
+                "reconciliation must not rewrite a conflicting event"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reconciliation_does_not_repair_a_tampered_audit_chain() -> anyhow::Result<()> {
+        let (service, space_id) = audit_test_space("chain-tamper").await?;
+        write_untracked_entry(&service, &space_id, "content").await?;
+        let history = crate::entry::get_entry_history(
+            service.operator(),
+            &service.workspace_path(&space_id),
+            "entry-1",
+        )
+        .await?;
+        let revision = &history["revisions"][0];
+        let space_uid = service.space_uid(&space_id).await?;
+        let event = entry_revision_audit_expectation(
+            &space_uid,
+            "entry-1",
+            ENTRY_CREATED_ACTION,
+            revision["revision_id"].as_str().expect("revision id"),
+            revision["change_id"].as_str(),
+            Some("author"),
+        )
+        .missing_event;
+        deliver_mutation_audit_event(service.operator(), &space_id, &event).await?;
+
+        let mut tampered_event: Value =
+            serde_json::from_slice(&audit_bytes(&service, &space_id).await?)?;
+        tampered_event["actor_principal_id"] = json!("tampered");
+        let mut tampered_bytes = serde_json::to_vec(&tampered_event)?;
+        tampered_bytes.push(b'\n');
+        service
+            .operator()
+            .write(
+                &format!("spaces/{space_id}/audit/events.jsonl"),
+                tampered_bytes.clone(),
+            )
+            .await?;
+
+        let error = service
+            .open_space(&space_id)
+            .await
+            .expect_err("tampered chain must fail closed");
+        assert!(
+            format!("{error:#}").contains("Audit chain integrity check failed"),
+            "unexpected error: {error:#}"
+        );
+        assert_eq!(audit_bytes(&service, &space_id).await?, tampered_bytes);
         Ok(())
     }
 

@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, OnceLock};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, BTreeSet, HashMap},
     fs::{self, OpenOptions},
     path::Path,
     time::{Duration, Instant},
@@ -457,6 +457,43 @@ async fn read_events(op: &Operator, space_id: &str) -> Result<Vec<Value>> {
         return Ok(Vec::new());
     };
     parse_audit_events(&bytes)
+}
+
+/// Returns requested events from the verified canonical audit chain.
+///
+/// Event-id marker objects are deliberately not consulted: reconciliation
+/// treats the append-only `events.jsonl` chain as the historical authority.
+/// This is a read-only operation and never repairs or rewrites the chain.
+pub(crate) async fn verified_events_by_id(
+    op: &Operator,
+    space_id: &str,
+    event_ids: &[String],
+) -> Result<BTreeMap<String, Value>> {
+    let safe_space_id = validate_space_id(space_id)?;
+    let lock = space_lock(&safe_space_id).await;
+    let _guard = lock.lock().await;
+    let _local_lock = local_audit_lock(op, &safe_space_id)?;
+
+    let events = read_events(op, &safe_space_id).await?;
+    verify_chain(&events)?;
+
+    let requested = event_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let mut canonical = BTreeMap::new();
+    for event in events {
+        let Some(event_id) = event.get("event_id").and_then(Value::as_str) else {
+            continue;
+        };
+        let event_id = event_id.to_string();
+        if requested.contains(event_id.as_str())
+            && canonical.insert(event_id.clone(), event).is_some()
+        {
+            bail!("audit chain contains duplicate event id {event_id}");
+        }
+    }
+    Ok(canonical)
 }
 
 fn parse_audit_events(bytes: &[u8]) -> Result<Vec<Value>> {
