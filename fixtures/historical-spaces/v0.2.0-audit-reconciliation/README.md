@@ -16,3 +16,7 @@ cargo test -p ugoite-iceberg --test gen_v020_audit_fixture --locked -- --nocaptu
 ```
 
 The test harness was temporary and is not part of the release source or this fixture. Treat this tree as frozen release evidence; do not refresh it with current-code output.
+
+The release bootstrap also created an empty `assets/` directory. Git does not
+preserve empty directories, so the compatibility test recreates that directory
+in its temporary copy; it does not synthesize or rewrite any fixture file.

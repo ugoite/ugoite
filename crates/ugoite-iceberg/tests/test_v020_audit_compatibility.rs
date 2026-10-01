@@ -66,6 +66,15 @@ async fn v020_audit_events_remain_unchanged_on_open_and_reconcile() -> Result<()
     verify_frozen_manifest(&fixture)?;
     let temp_root = tempdir()?;
     copy_tree(&fixture, temp_root.path())?;
+    // The released Space bootstrap created this empty directory, but Git does
+    // not represent empty directories in a checked-out tree.
+    fs::create_dir_all(
+        temp_root
+            .path()
+            .join("spaces")
+            .join(SPACE_ID)
+            .join("assets"),
+    )?;
 
     let event_path = temp_root
         .path()
