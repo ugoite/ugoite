@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "space_uid": "01a0f519-e7e8-755c-8bba-c57aae4b9f64",
+  "principals": {
+    "34180000-0000-4000-8000-000000000001": {
+      "principal_id": "34180000-0000-4000-8000-000000000001",
+      "kind": "human",
+      "display_name": "Fixture Owner",
+      "state": "active",
+      "created_at": "2026-10-01T01:35:10.889Z"
+    }
+  },
+  "memberships": {
+    "34180000-0000-4000-8000-000000000001": {
+      "principal_id": "34180000-0000-4000-8000-000000000001",
+      "role": "owner",
+      "created_at": "2026-10-01T01:35:10.889Z"
+    }
+  },
+  "policies": {},
+  "policy_history": {},
+  "agents": {},
+  "agent_grants": {},
+  "principal_lifecycle_epochs": {
+    "34180000-0000-4000-8000-000000000001": 1
+  },
+  "recovery_fences": {},
+  "human_approvals": {},
+  "human_approval_audit_outbox": {},
+  "revision": 1
+}

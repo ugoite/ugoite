@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, OnceLock};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, BTreeSet, HashMap},
     fs::{self, OpenOptions},
     path::Path,
     time::{Duration, Instant},
@@ -22,6 +22,8 @@ const DEFAULT_AUDIT_LIMIT: usize = 100;
 const MAX_AUDIT_LIMIT: usize = 500;
 const DEFAULT_AUDIT_RETENTION: usize = 5000;
 const MAX_AUDIT_RETENTION: usize = 50000;
+const MAX_RECONCILIATION_BATCH_SIZE: usize = 256;
+const RETAINED_OUT_MARKER_STATUS: &str = "retained_out";
 const AUDIT_CHECKPOINT_VERSION: u32 = 1;
 const AUDIT_CHECKPOINT_KEY_PREFIX: &str = "audit-verification-checkpoints/v1/";
 
@@ -161,6 +163,33 @@ fn normalize_retention_limit(limit: Option<usize>) -> usize {
     raw.clamp(100, MAX_AUDIT_RETENTION)
 }
 
+pub(crate) fn reconciliation_batch_limit(retention_limit: Option<usize>) -> usize {
+    normalize_retention_limit(retention_limit).min(MAX_RECONCILIATION_BATCH_SIZE)
+}
+
+fn legacy_retained_event_snapshot<'a>(
+    marker: &'a Value,
+    events: &[Value],
+    retention_limit: Option<usize>,
+) -> Option<&'a Value> {
+    if marker.get("status").and_then(Value::as_str) != Some("committed")
+        || events.len() < normalize_retention_limit(retention_limit)
+    {
+        return None;
+    }
+    let snapshot = marker.get("event").filter(|event| event.is_object())?;
+    let oldest_timestamp = events
+        .first()
+        .and_then(|event| event.get("timestamp"))
+        .and_then(Value::as_str)
+        .and_then(|timestamp| chrono::DateTime::parse_from_rfc3339(timestamp).ok())?;
+    let snapshot_timestamp = snapshot
+        .get("timestamp")
+        .and_then(Value::as_str)
+        .and_then(|timestamp| chrono::DateTime::parse_from_rfc3339(timestamp).ok())?;
+    (snapshot_timestamp <= oldest_timestamp).then_some(snapshot)
+}
+
 fn normalize_outcome(outcome: Option<&str>) -> String {
     let normalized = outcome.unwrap_or("success").trim().to_lowercase();
     match normalized.as_str() {
@@ -258,6 +287,13 @@ fn audit_event_fingerprint(value: &Value) -> Result<String> {
         "metadata": object.get("metadata").cloned().unwrap_or_else(|| json!({})),
     }))
     .map_err(Into::into)
+}
+
+fn marker_is_final(marker: &Value) -> bool {
+    matches!(
+        marker.get("status").and_then(Value::as_str),
+        Some("committed") | Some(RETAINED_OUT_MARKER_STATUS)
+    )
 }
 
 fn verify_chain(events: &[Value]) -> Result<()> {
@@ -459,6 +495,74 @@ async fn read_events(op: &Operator, space_id: &str) -> Result<Vec<Value>> {
     parse_audit_events(&bytes)
 }
 
+/// Returns verified canonical events plus retention dispositions for requested
+/// IDs that are absent from the canonical chain. A disposition is never an
+/// event authority: callers must not return its snapshot as canonical evidence
+/// or use its attribution. The chain always wins when the event is present.
+pub(crate) async fn verified_events_and_retained_by_id(
+    op: &Operator,
+    space_id: &str,
+    event_ids: &[String],
+) -> Result<(BTreeMap<String, Value>, BTreeMap<String, Value>)> {
+    let safe_space_id = validate_space_id(space_id)?;
+    let lock = space_lock(&safe_space_id).await;
+    let _guard = lock.lock().await;
+    let _local_lock = local_audit_lock(op, &safe_space_id)?;
+
+    let events = read_events(op, &safe_space_id).await?;
+    verify_chain(&events)?;
+    let requested = event_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let mut canonical = BTreeMap::new();
+    for event in &events {
+        let Some(event_id) = event.get("event_id").and_then(Value::as_str) else {
+            continue;
+        };
+        if requested.contains(event_id)
+            && canonical
+                .insert(event_id.to_string(), event.clone())
+                .is_some()
+        {
+            bail!("audit chain contains duplicate event id {event_id}");
+        }
+    }
+
+    let missing_ids = requested
+        .into_iter()
+        .filter(|event_id| !canonical.contains_key(*event_id))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if missing_ids.is_empty() {
+        return Ok((canonical, BTreeMap::new()));
+    }
+    let markers = read_event_markers(op, &safe_space_id, missing_ids.clone()).await?;
+    let mut retained = BTreeMap::new();
+    for event_id in &missing_ids {
+        let Some((marker, _)) = markers.get(event_id).cloned().flatten() else {
+            continue;
+        };
+        let status = marker.get("status").and_then(Value::as_str);
+        if status == Some(RETAINED_OUT_MARKER_STATUS) {
+            let event = marker
+                .get("event")
+                .filter(|event| event.is_object())
+                .ok_or_else(|| anyhow!("audit retention disposition marker is malformed"))?;
+            retained.insert(event_id.clone(), event.clone());
+            continue;
+        }
+
+        // v0.2.0 markers predate an explicit retention disposition. At the
+        // retention boundary, their committed snapshot can identify an event
+        // that has aged out, but it is never returned as canonical evidence.
+        if let Some(snapshot) = legacy_retained_event_snapshot(&marker, &events, None) {
+            retained.insert(event_id.clone(), snapshot.clone());
+        }
+    }
+    Ok((canonical, retained))
+}
+
 fn parse_audit_events(bytes: &[u8]) -> Result<Vec<Value>> {
     let content = std::str::from_utf8(bytes)?;
     let mut events = Vec::new();
@@ -622,8 +726,38 @@ async fn commit_event_marker(
     expected_version: Option<&str>,
     event: &Value,
 ) -> Result<()> {
+    write_event_marker_status(op, space_id, event_id, expected_version, "committed", event).await
+}
+
+async fn mark_event_retained_out(op: &Operator, space_id: &str, event: &Value) -> Result<()> {
+    let event_id = event
+        .get("event_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("audit event id is missing"))?;
+    let expected_version = read_event_marker(op, space_id, event_id)
+        .await?
+        .and_then(|(_, version)| version);
+    write_event_marker_status(
+        op,
+        space_id,
+        event_id,
+        expected_version.as_deref(),
+        RETAINED_OUT_MARKER_STATUS,
+        event,
+    )
+    .await
+}
+
+async fn write_event_marker_status(
+    op: &Operator,
+    space_id: &str,
+    event_id: &str,
+    expected_version: Option<&str>,
+    status: &str,
+    event: &Value,
+) -> Result<()> {
     let path = audit_event_id_path(space_id, event_id);
-    let marker = json!({"status": "committed", "event": event});
+    let marker = json!({"status": status, "event": event});
     let bytes = serde_json::to_vec(&marker)?;
     let capabilities = op.info().capability();
     if let Some(version) = expected_version {
@@ -688,19 +822,33 @@ pub async fn append_audit_event(
     Err(last_conflict.unwrap_or_else(|| anyhow!("audit append conflicted after bounded retries")))
 }
 
-/// Appends a group of audit events after reading and verifying the Space's
-/// hash chain once. This is used by recovery sweeps, where each event already
-/// has a stable idempotency key and the complete committed history is known.
+/// Strictly appends a group of audit events after reading and verifying the
+/// Space's hash chain once. Same-ID payload conflicts remain errors. Content
+/// reconciliation uses [`append_reconciliation_audit_events`] so orphan
+/// markers cannot stand in for missing chain evidence.
+///
 /// Pending event markers are written before the chain update and committed
 /// after it, preserving the single-event crash-recovery protocol.
+#[allow(dead_code)] // Generic batches remain strict; reconciliation has a dedicated chain-authoritative path.
 pub(crate) async fn append_audit_events(
     op: &Operator,
     space_id: &str,
     payloads: &[Value],
 ) -> Result<Vec<Value>> {
-    append_audit_events_inner(op, space_id, payloads, None).await
+    append_audit_events_inner(op, space_id, payloads, None, None, false).await
 }
 
+#[cfg(test)]
+pub(crate) async fn append_audit_events_with_retention_for_test(
+    op: &Operator,
+    space_id: &str,
+    payloads: &[Value],
+    retention_limit: usize,
+) -> Result<Vec<Value>> {
+    append_audit_events_inner(op, space_id, payloads, None, Some(retention_limit), false).await
+}
+
+#[allow(dead_code)]
 pub(crate) async fn append_audit_events_with_checkpoint(
     op: &Operator,
     space_id: &str,
@@ -708,7 +856,37 @@ pub(crate) async fn append_audit_events_with_checkpoint(
     payloads: &[Value],
     checkpoint: &AuditCheckpointConfig,
 ) -> Result<Vec<Value>> {
-    append_audit_events_inner(op, space_id, payloads, Some((space_uid, checkpoint))).await
+    append_audit_events_inner(
+        op,
+        space_id,
+        payloads,
+        Some((space_uid, checkpoint)),
+        None,
+        false,
+    )
+    .await
+}
+
+/// Appends content-audit evidence whose absence was established by reading
+/// the verified canonical chain. Event-id markers cannot establish that the
+/// event already exists; an orphan marker is replaced after the chain write.
+pub(crate) async fn append_reconciliation_audit_events(
+    op: &Operator,
+    space_id: &str,
+    space_uid: &str,
+    payloads: &[Value],
+    checkpoint: Option<&AuditCheckpointConfig>,
+    retention_limit: Option<usize>,
+) -> Result<Vec<Value>> {
+    append_audit_events_inner(
+        op,
+        space_id,
+        payloads,
+        checkpoint.map(|checkpoint| (space_uid, checkpoint)),
+        retention_limit,
+        true,
+    )
+    .await
 }
 
 async fn append_audit_events_inner(
@@ -716,6 +894,8 @@ async fn append_audit_events_inner(
     space_id: &str,
     payloads: &[Value],
     checkpoint: Option<(&str, &AuditCheckpointConfig)>,
+    retention_limit: Option<usize>,
+    ignore_orphan_markers: bool,
 ) -> Result<Vec<Value>> {
     if payloads.is_empty() && checkpoint.is_none() {
         return Ok(Vec::new());
@@ -726,7 +906,16 @@ async fn append_audit_events_inner(
         .map_err(crate::iceberg_store::storage_mutation_unavailable)?;
     let mut last_conflict = None;
     for _attempt in 0..3 {
-        match append_audit_events_once(op, space_id, payloads, checkpoint).await {
+        match append_audit_events_once(
+            op,
+            space_id,
+            payloads,
+            checkpoint,
+            retention_limit,
+            ignore_orphan_markers,
+        )
+        .await
+        {
             Ok(events) => return Ok(events),
             Err(error)
                 if {
@@ -749,6 +938,8 @@ async fn append_audit_events_once(
     space_id: &str,
     payloads: &[Value],
     checkpoint: Option<(&str, &AuditCheckpointConfig)>,
+    retention_limit: Option<usize>,
+    ignore_orphan_markers: bool,
 ) -> Result<Vec<Value>> {
     let safe_space_id = validate_space_id(space_id)?;
     let lock = space_lock(&safe_space_id).await;
@@ -923,7 +1114,11 @@ async fn append_audit_events_once(
                 read_event_marker(op, &safe_space_id, event_id).await?
             };
             if let Some((marker, version)) = marker_state {
-                if marker.get("status").and_then(Value::as_str) == Some("committed") {
+                let ignore_marker = ignore_orphan_markers
+                    && !event_indexes.contains_key(event_id)
+                    && marker.get("status").and_then(Value::as_str)
+                        != Some(RETAINED_OUT_MARKER_STATUS);
+                if !ignore_marker && marker_is_final(&marker) {
                     let canonical = marker.get("event").unwrap_or(&marker);
                     if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
                         bail!("audit event id conflicts with canonical payload");
@@ -931,14 +1126,18 @@ async fn append_audit_events_once(
                     output.push(canonical.clone());
                     continue;
                 }
-                if marker.get("event_id").is_some() && marker.get("event_hash").is_some() {
+                if !ignore_marker
+                    && marker.get("event_id").is_some()
+                    && marker.get("event_hash").is_some()
+                {
                     if audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)? {
                         bail!("audit event id conflicts with canonical payload");
                     }
                     output.push(marker.get("event").cloned().unwrap_or(marker));
                     continue;
                 }
-                if marker.get("status").and_then(Value::as_str) == Some("pending")
+                if !ignore_marker
+                    && marker.get("status").and_then(Value::as_str) == Some("pending")
                     && audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)?
                 {
                     bail!("audit event id conflicts with pending payload");
@@ -1041,7 +1240,10 @@ async fn append_audit_events_once(
             ).await?;
         }
         if let Some((marker, _)) = read_event_marker(op, &safe_space_id, &event_id).await? {
-            if marker.get("status").and_then(Value::as_str) == Some("committed") {
+            let ignore_marker = ignore_orphan_markers
+                && !event_indexes.contains_key(&event_id)
+                && marker.get("status").and_then(Value::as_str) != Some(RETAINED_OUT_MARKER_STATUS);
+            if !ignore_marker && marker_is_final(&marker) {
                 let canonical = marker.get("event").unwrap_or(&marker);
                 if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
                     bail!("audit event id conflicts with canonical payload");
@@ -1049,7 +1251,9 @@ async fn append_audit_events_once(
                 output.push(canonical.clone());
                 continue;
             }
-            if audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)? {
+            if !ignore_marker
+                && audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)?
+            {
                 bail!("audit event id conflicts with pending payload");
             }
         }
@@ -1066,12 +1270,35 @@ async fn append_audit_events_once(
         json!({"payloads": payloads.len(), "new_events": pending_markers.len()}),
     );
 
+    let mut retained_out_ids = BTreeSet::new();
+    let mut retained_out_before_chain = Vec::new();
+    let mut retained_out_after_chain = Vec::new();
     if appended {
-        let retention = normalize_retention_limit(None);
+        let retention = normalize_retention_limit(retention_limit);
         if events.len() > retention {
             let start_index = events.len() - retention;
+            let retained_out_events = events[..start_index].to_vec();
             events = events.split_off(start_index);
             rehash_chain(&mut events)?;
+            for event in &retained_out_events {
+                if let Some(event_id) = event.get("event_id").and_then(Value::as_str) {
+                    retained_out_ids.insert(event_id.to_string());
+                    if event_indexes
+                        .get(event_id)
+                        .is_some_and(|index| *index < persisted_event_count)
+                    {
+                        retained_out_before_chain.push(event.clone());
+                    } else {
+                        retained_out_after_chain.push(event.clone());
+                    }
+                }
+            }
+            // Record expirations of previously canonical events before the
+            // chain write. If the write fails, canonical lookup still wins;
+            // after a successful write these receipts prevent replay churn.
+            for event in &retained_out_before_chain {
+                mark_event_retained_out(op, &safe_space_id, event).await?;
+            }
         }
         let canonical_by_id: HashMap<&str, &Value> = events
             .iter()
@@ -1085,6 +1312,12 @@ async fn append_audit_events_once(
         let write_chain_started = Instant::now();
         write_events(op, &safe_space_id, &events, expected_version.as_deref()).await?;
         audit_bytes = serialize_audit_events(&events)?;
+        // Events first introduced by this batch but excluded by the window
+        // are marked only after the compacted chain commits. A failed write
+        // therefore leaves their pending markers eligible for recovery.
+        for event in &retained_out_after_chain {
+            mark_event_retained_out(op, &safe_space_id, event).await?;
+        }
         emit_startup_audit_measurement(
             "audit_chain_write",
             write_chain_started.elapsed(),
@@ -1092,8 +1325,14 @@ async fn append_audit_events_once(
         );
     }
     let commit_markers_started = Instant::now();
-    let committed_marker_count = pending_markers.len();
+    let committed_marker_count = pending_markers
+        .iter()
+        .filter(|(event_id, _, _)| !retained_out_ids.contains(event_id))
+        .count();
     for (event_id, marker_version, event) in pending_markers {
+        if retained_out_ids.contains(&event_id) {
+            continue;
+        }
         commit_event_marker(
             op,
             &safe_space_id,
@@ -1253,7 +1492,7 @@ async fn append_audit_event_once(
     let mut marker_version = None;
     if let Some(event_id) = &requested_event_id {
         if let Some((marker, version)) = read_event_marker(op, &safe_space_id, event_id).await? {
-            if marker.get("status").and_then(Value::as_str) == Some("committed") {
+            if marker_is_final(&marker) {
                 let canonical = marker.get("event").unwrap_or(&marker);
                 if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
                     bail!("audit event id conflicts with canonical payload");
@@ -1338,8 +1577,10 @@ async fn append_audit_event_once(
     events.push(event.clone());
 
     let retention = normalize_retention_limit(retention_limit);
+    let mut retained_out_events = Vec::new();
     if events.len() > retention {
         let start_index = events.len() - retention;
+        retained_out_events.extend_from_slice(&events[..start_index]);
         events = events.split_off(start_index);
         rehash_chain(&mut events)?;
         if let Some(last) = events.last() {
@@ -1381,8 +1622,11 @@ async fn append_audit_event_once(
         )
         .await?;
     }
+    for retained_out_event in &retained_out_events {
+        mark_event_retained_out(op, &safe_space_id, retained_out_event).await?;
+    }
     if let Some((marker, _)) = read_event_marker(op, &safe_space_id, event_id).await? {
-        if marker.get("status").and_then(Value::as_str) == Some("committed") {
+        if marker_is_final(&marker) {
             let canonical = marker.get("event").unwrap_or(&marker);
             if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
                 bail!("audit event id conflicts with canonical payload");
@@ -1404,7 +1648,7 @@ async fn append_audit_event_once(
     .await
     {
         if let Some((marker, _)) = read_event_marker(op, &safe_space_id, event_id).await? {
-            if marker.get("status").and_then(Value::as_str) == Some("committed") {
+            if marker_is_final(&marker) {
                 let canonical = marker.get("event").unwrap_or(&marker);
                 if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
                     bail!("audit event id conflicts with canonical payload");
@@ -2042,6 +2286,91 @@ mod tests {
         assert_eq!(first["event_id"], retained["event_id"]);
         assert_eq!(replay["event_id"], retained["event_id"]);
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn reconciliation_retention_disposition_is_not_canonical_event() -> Result<()> {
+        let op = operator_from_uri("memory://audit-retained-disposition")?;
+        let space_uid = uuid::Uuid::now_v7().to_string();
+        let payloads = (0..101)
+            .map(|index| {
+                json!({
+                    "event_id": uuid::Uuid::now_v7().to_string(),
+                    "action": "entry.updated",
+                    "space_uid": space_uid,
+                    "subject_principal_id": "author",
+                    "actor_principal_id": null,
+                    "target_type": "entry",
+                    "target_id": format!("entry-{index}"),
+                    "metadata": {"revision_id": format!("revision-{index}")}
+                })
+            })
+            .collect::<Vec<_>>();
+        let retained_out_id = payloads[0]["event_id"]
+            .as_str()
+            .expect("stable event id")
+            .to_string();
+
+        append_audit_events_inner(&op, "demo", &payloads, None, Some(100), false).await?;
+
+        let events = read_events(&op, "demo").await?;
+        verify_chain(&events)?;
+        assert_eq!(events.len(), 100);
+        assert!(events
+            .iter()
+            .all(|event| event["event_id"] != retained_out_id));
+        let (marker, _) = read_event_marker(&op, "demo", &retained_out_id)
+            .await?
+            .expect("retention disposition marker");
+        assert_eq!(marker["status"], RETAINED_OUT_MARKER_STATUS);
+
+        let (canonical, retained_out) =
+            verified_events_and_retained_by_id(&op, "demo", std::slice::from_ref(&retained_out_id))
+                .await?;
+        assert!(
+            canonical.is_empty(),
+            "a marker is never canonical chain evidence"
+        );
+        assert!(retained_out.contains_key(&retained_out_id));
+
+        let mut conflicting = payloads[0].clone();
+        conflicting["metadata"]["revision_id"] = json!("different-revision");
+        let error = append_audit_events(&op, "demo", &[conflicting])
+            .await
+            .expect_err("retained event IDs keep strict same-ID conflict handling");
+        assert!(error.to_string().contains("conflicts"));
+        assert_eq!(read_events(&op, "demo").await?.len(), 100);
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_retention_receipt_requires_a_full_window_and_older_timestamp() {
+        let events = (0..100)
+            .map(|index| {
+                json!({
+                    "event_id": format!("retained-{index}"),
+                    "timestamp": format!("2026-10-01T00:{:02}:00Z", index / 60),
+                })
+            })
+            .collect::<Vec<_>>();
+        let marker = json!({
+            "status": "committed",
+            "event": {
+                "event_id": "expired-event",
+                "timestamp": "2026-09-30T23:59:00Z"
+            }
+        });
+        assert!(legacy_retained_event_snapshot(&marker, &events, Some(100)).is_some());
+        assert!(legacy_retained_event_snapshot(&marker, &events[..99], Some(100)).is_none());
+
+        let recent_marker = json!({
+            "status": "committed",
+            "event": {
+                "event_id": "orphan-event",
+                "timestamp": "2026-10-01T00:01:00Z"
+            }
+        });
+        assert!(legacy_retained_event_snapshot(&recent_marker, &events, Some(100)).is_none());
     }
 
     #[tokio::test]
