@@ -22,6 +22,7 @@ const DEFAULT_AUDIT_LIMIT: usize = 100;
 const MAX_AUDIT_LIMIT: usize = 500;
 const DEFAULT_AUDIT_RETENTION: usize = 5000;
 const MAX_AUDIT_RETENTION: usize = 50000;
+const MAX_RECONCILIATION_BATCH_SIZE: usize = 256;
 const RETAINED_OUT_MARKER_STATUS: &str = "retained_out";
 const AUDIT_CHECKPOINT_VERSION: u32 = 1;
 const AUDIT_CHECKPOINT_KEY_PREFIX: &str = "audit-verification-checkpoints/v1/";
@@ -160,6 +161,10 @@ async fn space_lock(space_id: &str) -> Arc<Mutex<()>> {
 fn normalize_retention_limit(limit: Option<usize>) -> usize {
     let raw = limit.unwrap_or(DEFAULT_AUDIT_RETENTION);
     raw.clamp(100, MAX_AUDIT_RETENTION)
+}
+
+pub(crate) fn reconciliation_batch_limit(retention_limit: Option<usize>) -> usize {
+    normalize_retention_limit(retention_limit).min(MAX_RECONCILIATION_BATCH_SIZE)
 }
 
 fn legacy_retained_event_snapshot<'a>(
@@ -488,43 +493,6 @@ async fn read_events(op: &Operator, space_id: &str) -> Result<Vec<Value>> {
         return Ok(Vec::new());
     };
     parse_audit_events(&bytes)
-}
-
-/// Returns requested events from the verified canonical audit chain.
-///
-/// Event-id marker objects are deliberately not consulted: reconciliation
-/// treats the append-only `events.jsonl` chain as the historical authority.
-/// This is a read-only operation and never repairs or rewrites the chain.
-pub(crate) async fn verified_events_by_id(
-    op: &Operator,
-    space_id: &str,
-    event_ids: &[String],
-) -> Result<BTreeMap<String, Value>> {
-    let safe_space_id = validate_space_id(space_id)?;
-    let lock = space_lock(&safe_space_id).await;
-    let _guard = lock.lock().await;
-    let _local_lock = local_audit_lock(op, &safe_space_id)?;
-
-    let events = read_events(op, &safe_space_id).await?;
-    verify_chain(&events)?;
-
-    let requested = event_ids
-        .iter()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>();
-    let mut canonical = BTreeMap::new();
-    for event in events {
-        let Some(event_id) = event.get("event_id").and_then(Value::as_str) else {
-            continue;
-        };
-        let event_id = event_id.to_string();
-        if requested.contains(event_id.as_str())
-            && canonical.insert(event_id.clone(), event).is_some()
-        {
-            bail!("audit chain contains duplicate event id {event_id}");
-        }
-    }
-    Ok(canonical)
 }
 
 /// Returns verified canonical events plus retention dispositions for requested
@@ -908,13 +876,14 @@ pub(crate) async fn append_reconciliation_audit_events(
     space_uid: &str,
     payloads: &[Value],
     checkpoint: Option<&AuditCheckpointConfig>,
+    retention_limit: Option<usize>,
 ) -> Result<Vec<Value>> {
     append_audit_events_inner(
         op,
         space_id,
         payloads,
         checkpoint.map(|checkpoint| (space_uid, checkpoint)),
-        None,
+        retention_limit,
         true,
     )
     .await
@@ -1302,6 +1271,8 @@ async fn append_audit_events_once(
     );
 
     let mut retained_out_ids = BTreeSet::new();
+    let mut retained_out_before_chain = Vec::new();
+    let mut retained_out_after_chain = Vec::new();
     if appended {
         let retention = normalize_retention_limit(retention_limit);
         if events.len() > retention {
@@ -1312,7 +1283,20 @@ async fn append_audit_events_once(
             for event in &retained_out_events {
                 if let Some(event_id) = event.get("event_id").and_then(Value::as_str) {
                     retained_out_ids.insert(event_id.to_string());
+                    if event_indexes
+                        .get(event_id)
+                        .is_some_and(|index| *index < persisted_event_count)
+                    {
+                        retained_out_before_chain.push(event.clone());
+                    } else {
+                        retained_out_after_chain.push(event.clone());
+                    }
                 }
+            }
+            // Record expirations of previously canonical events before the
+            // chain write. If the write fails, canonical lookup still wins;
+            // after a successful write these receipts prevent replay churn.
+            for event in &retained_out_before_chain {
                 mark_event_retained_out(op, &safe_space_id, event).await?;
             }
         }
@@ -1328,6 +1312,12 @@ async fn append_audit_events_once(
         let write_chain_started = Instant::now();
         write_events(op, &safe_space_id, &events, expected_version.as_deref()).await?;
         audit_bytes = serialize_audit_events(&events)?;
+        // Events first introduced by this batch but excluded by the window
+        // are marked only after the compacted chain commits. A failed write
+        // therefore leaves their pending markers eligible for recovery.
+        for event in &retained_out_after_chain {
+            mark_event_retained_out(op, &safe_space_id, event).await?;
+        }
         emit_startup_audit_measurement(
             "audit_chain_write",
             write_chain_started.elapsed(),

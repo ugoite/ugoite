@@ -303,6 +303,7 @@ async fn resolve_committed_mutation_audits(
     space_uid: &str,
     expected: &[CommittedMutationAudit],
     checkpoint: Option<&audit::AuditCheckpointConfig>,
+    retention_limit: Option<usize>,
 ) -> Result<(Vec<Value>, usize)> {
     let event_ids = expected
         .iter()
@@ -329,39 +330,82 @@ async fn resolve_committed_mutation_audits(
 
     let missing_count = missing.len();
     if !missing.is_empty() {
-        let missing_ids = missing
+        // Each append chunk is smaller than the configured retention window,
+        // so its new events are canonical before a later chunk can age them
+        // out. A concurrent writer may still compact a chunk immediately;
+        // only a successful append plus a verified retention receipt proves
+        // that such an event was committed before it left the window.
+        let chunk_size = audit::reconciliation_batch_limit(retention_limit);
+        for chunk in missing.chunks(chunk_size) {
+            let chunk_ids = chunk
+                .iter()
+                .map(|item| item.event_id.clone())
+                .collect::<Vec<_>>();
+            let payloads = chunk
+                .iter()
+                .map(|item| item.missing_event.clone())
+                .collect::<Vec<_>>();
+            let append_result = audit::append_reconciliation_audit_events(
+                op,
+                space_id,
+                space_uid,
+                &payloads,
+                checkpoint,
+                retention_limit,
+            )
+            .await;
+            // Markers alone do not prove chain presence. Read the verified
+            // chain and retention receipts after every bounded append.
+            let (canonical_after, retained_after) =
+                audit::verified_events_and_retained_by_id(op, space_id, &chunk_ids).await?;
+            if let Err(error) = append_result {
+                // A failed append may be retried when a competing writer
+                // already committed every deterministic event. Retention
+                // receipts cannot turn a failed append into success.
+                if !chunk
+                    .iter()
+                    .all(|item| canonical_after.contains_key(&item.event_id))
+                {
+                    return Err(error);
+                }
+            }
+            for item in chunk {
+                if let Some(event) = canonical_after.get(&item.event_id) {
+                    item.validate_binding(event)?;
+                } else if let Some(event) = retained_after.get(&item.event_id) {
+                    item.validate_binding(event)?;
+                } else {
+                    bail!(
+                        "audit event {} was neither committed nor retained after reconciliation",
+                        item.event_id
+                    );
+                }
+            }
+        }
+
+        // Later chunks (or a concurrent append) may have compacted earlier
+        // events. Resolve the final view from the canonical chain, accepting
+        // only identity-validated retention receipts for events no longer in
+        // the window. Receipt snapshots are never returned as audit events.
+        let all_ids = expected
             .iter()
             .map(|item| item.event_id.clone())
             .collect::<Vec<_>>();
-        let payloads = missing
-            .iter()
-            .map(|item| item.missing_event.clone())
-            .collect::<Vec<_>>();
-        let append_result = audit::append_reconciliation_audit_events(
-            op, space_id, space_uid, &payloads, checkpoint,
-        )
-        .await;
-        // Read the events back from the canonical chain after append. The
-        // append API may consult event-id markers for retry safety; markers
-        // do not prove that an event is present in `events.jsonl`.
-        let canonical_after = audit::verified_events_by_id(op, space_id, &missing_ids).await?;
-        let all_committed = missing
-            .iter()
-            .all(|item| canonical_after.contains_key(&item.event_id));
-        if let Err(error) = append_result {
-            if !all_committed {
-                return Err(error);
-            }
-        }
-        for item in missing {
-            let Some(event) = canonical_after.get(&item.event_id) else {
+        let (canonical_final, retained_final) =
+            audit::verified_events_and_retained_by_id(op, space_id, &all_ids).await?;
+        for item in expected {
+            if let Some(event) = canonical_final.get(&item.event_id) {
+                item.validate_binding(event)?;
+                resolved.insert(item.event_id.clone(), event.clone());
+            } else if let Some(event) = retained_final.get(&item.event_id) {
+                item.validate_binding(event)?;
+                resolved.remove(&item.event_id);
+            } else {
                 bail!(
-                    "audit event {} was not committed to the canonical chain",
+                    "audit event {} disappeared without a verified retention disposition",
                     item.event_id
                 );
-            };
-            item.validate_binding(event)?;
-            resolved.insert(item.event_id.clone(), event.clone());
+            }
         }
     }
 
@@ -682,6 +726,7 @@ impl UgoiteService {
             &space_uid_text,
             &expected,
             None,
+            None,
         )
         .await?;
         Ok(resolved.into_iter().last())
@@ -837,6 +882,7 @@ impl UgoiteService {
             &space_uid_text,
             &expected,
             None,
+            None,
         )
         .await?;
         Ok(resolved.into_iter().last())
@@ -952,6 +998,7 @@ impl UgoiteService {
             &space_uid_text,
             &expected_audits,
             self.audit_checkpoint_config(),
+            None,
         )
         .await
         .with_context(|| format!("reconcile audit events for Space {space_id}"))?;
@@ -1343,6 +1390,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn oversized_recovery_is_chunked_and_retention_stays_stable() -> anyhow::Result<()> {
+        let (service, space_id) = audit_test_space("retention-batch").await?;
+        let space_uid = service.space_uid(&space_id).await?;
+        let target_id = "entry-retention-batch";
+        let expected = (0..101)
+            .map(|index| {
+                let revision_id = format!("revision-{index}");
+                let change_id = format!("change-{index}");
+                let event = entry_mutation_event(
+                    &space_uid,
+                    ENTRY_UPDATED_ACTION,
+                    target_id,
+                    &revision_id,
+                    Some(&change_id),
+                    "author",
+                    None,
+                );
+                CommittedMutationAudit::new(
+                    &space_uid,
+                    ENTRY_UPDATED_ACTION,
+                    "entry",
+                    target_id,
+                    &revision_id,
+                    Some(&change_id),
+                    event,
+                )
+            })
+            .collect::<Vec<_>>();
+        let space_uid_text = space_uid.to_string();
+
+        let (recovered, appended) = resolve_committed_mutation_audits(
+            service.operator(),
+            &space_id,
+            &space_uid_text,
+            &expected,
+            None,
+            Some(100),
+        )
+        .await?;
+        assert_eq!(appended, 101);
+        assert_eq!(recovered.len(), 100);
+        assert_eq!(audit_total(&service, &space_id).await?, 100);
+        let (canonical, retained) = audit::verified_events_and_retained_by_id(
+            service.operator(),
+            &space_id,
+            &expected
+                .iter()
+                .map(|item| item.event_id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?;
+        assert!(!canonical.contains_key(&expected[0].event_id));
+        assert!(retained.contains_key(&expected[0].event_id));
+
+        let before_reopen = audit_bytes(&service, &space_id).await?;
+        let (recovered_again, appended_again) = resolve_committed_mutation_audits(
+            service.operator(),
+            &space_id,
+            &space_uid_text,
+            &expected,
+            None,
+            Some(100),
+        )
+        .await?;
+        assert_eq!(appended_again, 0);
+        assert_eq!(recovered_again.len(), 100);
+        assert_eq!(audit_bytes(&service, &space_id).await?, before_reopen);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn orphaned_event_marker_does_not_block_chain_recovery() -> anyhow::Result<()> {
         let (service, space_id) = audit_test_space("orphan-marker").await?;
         let uuid_author = Uuid::now_v7().to_string();
@@ -1387,14 +1505,14 @@ mod tests {
 
         let events_path = format!("spaces/{space_id}/audit/events.jsonl");
         service.operator().delete(&events_path).await?;
+        let (canonical, _) = crate::audit::verified_events_and_retained_by_id(
+            service.operator(),
+            &space_id,
+            std::slice::from_ref(&expected.event_id),
+        )
+        .await?;
         assert!(
-            crate::audit::verified_events_by_id(
-                service.operator(),
-                &space_id,
-                std::slice::from_ref(&expected.event_id),
-            )
-            .await?
-            .is_empty(),
+            canonical.is_empty(),
             "an event-id marker is not canonical chain evidence"
         );
 
