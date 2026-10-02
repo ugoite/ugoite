@@ -11,6 +11,10 @@ use ugoite_domain::identity::{
 };
 use uuid::Uuid;
 
+#[cfg(debug_assertions)]
+#[path = "process_conflict_tests.rs"]
+mod process_conflict_tests;
+
 #[tokio::test]
 async fn authorized_composition_raw_read_conceals_missing_and_denied_ids() -> anyhow::Result<()> {
     let service = UgoiteService::new(format!("memory://composition-acl-{}", Uuid::now_v7()))?;
