@@ -29,6 +29,9 @@ pub const COMPOSITION_LIST_MAX_PAGE_SIZE: usize = 100;
 #[path = "composition/authorized_raw_read_tests.rs"]
 mod authorized_raw_read_tests;
 #[cfg(test)]
+#[path = "composition/history_tests.rs"]
+mod history_tests;
+#[cfg(test)]
 #[path = "composition/list_tests.rs"]
 mod list_tests;
 
@@ -557,12 +560,13 @@ pub(crate) async fn read_composition_raw_revision(
     let history = workspace
         .form_history_at_publication(&publication, form.id)
         .await?;
+    let checkpoint = workspace.resolve_publication(&publication).await?;
     let revision = workspace
-        .read_revision_view_at_publication_with_scope(
-            &publication,
+        .read_revision_ids_at_checkpoint_with_scope(
+            &checkpoint,
             form.id,
             target_scope(entry_id),
-            crate::RevisionView::All,
+            &[revision_id],
         )
         .await?
         .into_iter()
@@ -595,30 +599,27 @@ pub(crate) async fn read_composition_history_page(
     let form_history = workspace
         .form_history_at_publication(&publication, form.id)
         .await?;
-    let mut revisions = workspace
-        .read_revision_view_at_publication_with_scope(
-            &publication,
+    let checkpoint = workspace.resolve_publication(&publication).await?;
+    let (mut revisions, total) = workspace
+        .read_revision_page_at_checkpoint_with_scope(
+            &checkpoint,
             form.id,
             target_scope(entry_id),
-            crate::RevisionView::All,
+            offset,
+            limit,
         )
-        .await?
-        .into_iter()
-        .filter(|revision| revision.entry_id == entry_id)
-        .map(|revision| raw_revision(revision, &form_history))
-        .collect::<Result<Vec<_>>>()?;
-    if revisions.is_empty() {
+        .await?;
+    if total == 0 {
         return Ok(None);
     }
-    revisions.sort_by_key(|revision| {
-        (
-            revision.revision.committed_at_micros,
-            revision.revision.revision_id,
-        )
-    });
-    let total = revisions.len();
-    let has_more = offset.saturating_add(limit) < total;
-    let revisions = revisions.into_iter().skip(offset).take(limit).collect();
+    let has_more = revisions.len() > limit;
+    revisions.truncate(limit);
+    let revisions = revisions
+        .into_iter()
+        .map(|revision| raw_revision(revision, &form_history))
+        .collect::<Result<Vec<_>>>()?;
+    let total = usize::try_from(total)
+        .map_err(|_| anyhow!("Composition history total exceeds the supported range"))?;
     Ok(Some(RawCompositionHistoryPage {
         entry_id,
         revisions,

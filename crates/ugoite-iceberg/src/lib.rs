@@ -1281,6 +1281,85 @@ impl IcebergWorkspace {
         Ok(revisions)
     }
 
+    /// Reads one bounded page from the full revision history at an immutable
+    /// checkpoint. The Entry scope is installed in the trusted provider view
+    /// before page predicates, and only the selected page is decoded into
+    /// domain revisions. A separate provider-side count preserves exact page
+    /// metadata without collecting the complete history in Rust.
+    pub(crate) async fn read_revision_page_at_checkpoint_with_scope(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<EntryRevision>, u64)> {
+        self.validate_checkpoint(checkpoint)?;
+        if !(1..=MAX_NORMAL_READ_ROWS).contains(&limit) {
+            bail!("revision history page limit is invalid");
+        }
+        let page_limit = limit
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("revision history page limit is too large"))?;
+        let coordinate = checkpoint
+            .tables
+            .iter()
+            .find(|coordinate| coordinate.form_id == form_id)
+            .ok_or_else(|| CheckpointUnavailable::new(format!("Form {form_id}")))?;
+        let table = self
+            .space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .load_checkpoint_table(checkpoint, coordinate)
+            .await?;
+        let form = form_from_table(&table, form_id)?;
+        let (provider, query_snapshot_id) = self
+            .revision_provider(&table, coordinate.snapshot_id)
+            .await?;
+        let context = self
+            .authorized_revision_lookup_context(
+                provider,
+                table.metadata().uuid().to_string(),
+                query_snapshot_id,
+                &entry_scope,
+                QueryLimits {
+                    max_memory_bytes: 64 * 1024 * 1024,
+                    max_rows: page_limit,
+                    timeout: Duration::from_secs(30),
+                    max_concurrency: 1,
+                    allowed_functions: BTreeSet::new(),
+                },
+            )
+            .await?;
+        let total = context
+            .execute_stateless_count("SELECT revision_id FROM revisions", HashMap::new())
+            .await?;
+        let schema = table.metadata().current_schema().clone();
+        let mut revisions = Vec::new();
+        // DataFusion represents OFFSET as a signed value. Windows outside
+        // that range cannot select a row, so preserve the empty-page behavior
+        // of the former iterator-based reader without passing a wrapped value
+        // to the query planner.
+        let page_window_end = offset.checked_add(page_limit);
+        if page_window_end.is_some_and(|end| i64::try_from(end).is_ok()) {
+            let (_, batches, has_order) = context
+                .execute_stateless_page(
+                    "SELECT * FROM revisions ORDER BY committed_at ASC, revision_id ASC",
+                    HashMap::new(),
+                    offset,
+                    page_limit,
+                )
+                .await?;
+            if !has_order {
+                bail!("revision history page query has no deterministic order");
+            }
+            for batch in &batches {
+                revisions.extend(revisions_from_batch(batch, &form, &schema)?);
+            }
+        }
+        Ok((revisions, total))
+    }
+
     async fn read_revision_view_at_checkpoint_with_scope_and_limit_mode(
         &self,
         checkpoint: &SpaceCheckpoint,
