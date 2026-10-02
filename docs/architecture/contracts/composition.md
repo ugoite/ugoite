@@ -19,11 +19,13 @@ is `dashboard` for v0.2.2. The `spec` contains typed parameters, sources,
 components, and sections. A source identifies either an Entry query template
 or an exact Saved SQL revision. Components refer to named sources and sections
 group named components. An `entry_query` source carries a sorted `field_schema`
-snapshot for the property fields used by its query. A preview projection uses
-all current property fields; an explicit projection, filter, or sort uses the
-fields it names. When text search is present, the snapshot also includes every
-text-searchable property field under existing EntryQuery semantics. The
-text-search expansion excludes `binary`, `list`, `object_list`, and
+snapshot for the property fields used by its query and any EntryQuery metric
+bound to it. A preview projection uses all current property fields; an
+explicit projection, filter, or sort uses the fields it names. An EntryQuery
+metric adds its stable FieldId to this set even when the query does not
+otherwise use that property. When text search is present, the snapshot also
+includes every text-searchable property field under existing EntryQuery
+semantics. The text-search expansion excludes `binary`, `list`, `object_list`, and
 `asset_reference` fields. A field of those types still appears when the query
 otherwise uses it, such as in a projection. Each snapshot row contains
 `field_id` and `field_type`, plus `reference_form` for a RowReference or
@@ -33,6 +35,8 @@ The complete illustrative document is maintained in
 `crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml`.
 It is a contract fixture for domain, parser, canonicalization, and WASM parity
 tests, not an assertion that persistence or rendering is already shipped.
+The `metric-value-fields.ugcomp.yaml` fixture covers both source-aware metric
+field variants.
 
 The typed v1 model supports `string`, `boolean`, `integer`, `float`, `date`, and
 `timestamp` parameters. A parameter may carry a typed default and a display
@@ -56,6 +60,16 @@ component ID is unique and is referenced by exactly one section entry;
 unknown, duplicate, or unreferenced component references make the document
 invalid. An empty component and section layout is valid, and component
 declaration order does not supply a fallback render order.
+
+A metric `value_field` is a tagged value so an EntryQuery property cannot be
+confused with a Saved SQL result column. EntryQuery metrics use
+`{ kind: entry_field, field_id: 102 }`, where `field_id` is the stable Form
+property identity. Saved SQL metrics use
+`{ kind: sql_column, name: total }`, where `name` is the exact output column
+name. Resolution checks that the tag matches the referenced source; for an
+EntryQuery property it carries both the stable `FieldId` and the current Form
+field name used as the `EntryResult.properties` key. A Saved SQL column name
+is matched against the exact selected revision's result.
 
 The stable diagnostic codes are `unsupported_format_version`,
 `invalid_composition`, `parameter_unknown`, `parameter_missing`,
@@ -114,9 +128,11 @@ schema fingerprint.
 
 Each `entry_query` source has a narrower source-schema fingerprint. The core
 resolver computes it from only the source `FormId` and the normalized schema
-snapshot for fields that the resolved EntryQuery uses. This includes the
-projection fields (all property fields for preview), filter and sort fields,
-and the fields searched under existing EntryQuery text-search semantics. The
+snapshot for fields that the resolved EntryQuery or an EntryQuery metric uses.
+This includes projection fields (all property fields for preview), filter and
+sort fields, fields searched under existing EntryQuery text-search semantics,
+and each stable FieldId referenced by a metric component bound to the source.
+Metric fields are included even when the query template does not use them. The
 snapshot is unique and normalized by `FieldId`; each field contributes its
 logical type, List item metadata, and RowReference target metadata. Unrelated
 Form fields, labels, and the rest of the Composition document do not affect

@@ -173,7 +173,10 @@ mod tests {
     use super::{
         canonicalize_composition, canonicalize_composition_yaml, normalize_composition_document,
     };
-    use crate::composition::{CompositionDiagnosticCode, CompositionDocument, CompositionSource};
+    use crate::composition::{
+        CompositionDiagnosticCode, CompositionDocument, CompositionMetricValueField,
+        CompositionSource,
+    };
     use crate::form::{FieldType, ListItemDefinition};
     use crate::id::FormId;
 
@@ -181,6 +184,8 @@ mod tests {
         include_str!("../../tests/fixtures/composition/monthly-expense.ugcomp.yaml");
     const MONTHLY_EXPENSE_LABELED: &str =
         include_str!("../../tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml");
+    const METRIC_VALUE_FIELDS: &str =
+        include_str!("../../tests/fixtures/composition/metric-value-fields.ugcomp.yaml");
     const UNKNOWN_LIST_ITEM_FIELD: &str =
         include_str!("../../tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml");
 
@@ -265,6 +270,36 @@ mod tests {
             MONTHLY_EXPENSE_LABELED.replace("label: Monthly total", "label: Total expenses");
         let changed = canonicalize_composition_yaml(&changed_label).unwrap();
         assert_ne!(result.fingerprint, changed.fingerprint);
+    }
+
+    #[test]
+    fn metric_value_fields_canonical_bytes_and_fingerprint_match_golden_fixtures() {
+        let result = canonicalize_composition_yaml(METRIC_VALUE_FIELDS).unwrap();
+        assert_eq!(
+            result.yaml,
+            include_str!(
+                "../../tests/fixtures/composition/metric-value-fields.canonical.ugcomp.yaml"
+            )
+        );
+        assert_eq!(
+            result.fingerprint,
+            include_str!("../../tests/fixtures/composition/metric-value-fields.fingerprint.txt")
+                .trim()
+        );
+        assert!(matches!(
+            &result.document.spec.components[0],
+            super::super::CompositionComponent::Metric {
+                value_field: CompositionMetricValueField::EntryField { field_id },
+                ..
+            } if field_id.get() == 102
+        ));
+        assert!(matches!(
+            &result.document.spec.components[1],
+            super::super::CompositionComponent::Metric {
+                value_field: CompositionMetricValueField::SqlColumn { name },
+                ..
+            } if name == "total"
+        ));
     }
 
     #[test]

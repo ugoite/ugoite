@@ -58,7 +58,9 @@ spec:
       id: total
       label: Monthly total
       source: month_total
-      value_field: total
+      value_field:
+        kind: sql_column
+        name: total
     - kind: table
       id: transactions
       label: Expense transactions

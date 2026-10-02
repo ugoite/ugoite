@@ -25,6 +25,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-002#criterion.optional-display-labels
               - kind: documents
+                anchor: REQ-COMP-002#criterion.typed-metric-value-field
+              - kind: documents
                 anchor: REQ-COMP-002#criterion.ordered-component-layout
               - kind: documents
                 anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
@@ -53,6 +55,10 @@ features:
           - id: monthly-expense-labeled-fixture
             adapter: declared
             path: crates/ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml
+            selector: { kind: file }
+          - id: metric-value-fields-fixture
+            adapter: declared
+            path: crates/ugoite-domain/tests/fixtures/composition/metric-value-fields.ugcomp.yaml
             selector: { kind: file }
       - id: display-label-domain
         role: implementation
@@ -112,6 +118,55 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.optional-display-labels
+              - kind: evidences
+                anchor: REQ-COMP-003#criterion.wasm-parity
+      - id: metric-value-field-domain
+        role: implementation
+        facet: domain
+        responsibility: Model EntryQuery metric properties by stable FieldId and Saved SQL metric output by exact column name.
+        targets:
+          - id: metric-value-field-type
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: CompositionMetricValueField }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.typed-metric-value-field
+      - id: metric-value-field-contract-evidence
+        role: evidence
+        facet: domain-tests
+        responsibility: Verify typed metric references canonicalize and retain distinct stable identities through native and WASM execution.
+        targets:
+          - id: metric-value-fields-canonical-golden
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/canonical.rs
+            selector: { kind: symbol, name: metric_value_fields_canonical_bytes_and_fingerprint_match_golden_fixtures }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.typed-metric-value-field
+          - id: invalid-metric-value-field-shapes
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/yaml.rs
+            selector: { kind: symbol, name: rejects_ambiguous_or_unknown_metric_value_field_shapes }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.typed-metric-value-field
+          - id: wasm-metric-value-field-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: composition_canonicalization_matches_the_native_domain_contract }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.typed-metric-value-field
+              - kind: evidences
+                anchor: REQ-COMP-003#criterion.wasm-parity
+          - id: wasm32-metric-value-field-parity
+            adapter: typescript
+            path: crates/ugoite-wasm/tests/composition_parity.ts
+            selector: { kind: symbol, name: main }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.typed-metric-value-field
               - kind: evidences
                 anchor: REQ-COMP-003#criterion.wasm-parity
       - id: component-layout-domain

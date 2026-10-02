@@ -340,6 +340,18 @@ pub struct CompositionParameterReference {
     pub parameter: String,
 }
 
+/// The stable identity of the scalar read by a metric component.
+///
+/// EntryQuery properties use a stable `FieldId`; Saved SQL results use the
+/// exact output column name returned by the selected query revision. The
+/// resolver validates that this variant matches the component's source.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CompositionMetricValueField {
+    EntryField { field_id: FieldId },
+    SqlColumn { name: String },
+}
+
 /// A visual component supported by the dashboard renderer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -350,7 +362,7 @@ pub enum CompositionComponent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
         source: String,
-        value_field: String,
+        value_field: CompositionMetricValueField,
     },
     Table {
         id: String,
@@ -422,8 +434,9 @@ impl CompositionDiagnosticCode {
 mod tests {
     use super::{
         parse_composition_yaml, CompositionComponent, CompositionDiagnosticCode,
-        CompositionDocument, CompositionKind, CompositionSection, CompositionSource,
-        CompositionSpec, CompositionValue, EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
+        CompositionDocument, CompositionKind, CompositionMetricValueField, CompositionSection,
+        CompositionSource, CompositionSpec, CompositionValue, EntryQueryTemplate,
+        DEFAULT_COMPOSITION_PAGE_LIMIT,
     };
 
     const MONTHLY_EXPENSE: &str =
@@ -590,7 +603,7 @@ mod tests {
                     }
                 ],
                 "components": [
-                    {"kind": "metric", "id": "total", "source": "monthly_total", "value_field": "total"},
+                    {"kind": "metric", "id": "total", "source": "monthly_total", "value_field": {"kind": "sql_column", "name": "total"}},
                     {"kind": "table", "id": "transactions", "source": "expense_rows"}
                 ],
                 "sections": [{"id": "overview", "components": ["total", "transactions"]}]
@@ -608,6 +621,13 @@ mod tests {
             Some(CompositionValue::Parameter(reference)) if reference.parameter == "search"
         ));
         assert_eq!(document.spec.sources[1].id(), "monthly_total");
+        assert!(matches!(
+            &document.spec.components[0],
+            CompositionComponent::Metric {
+                value_field: CompositionMetricValueField::SqlColumn { name },
+                ..
+            } if name == "total"
+        ));
     }
 
     #[test]

@@ -89,6 +89,10 @@ async function main(): Promise<void> {
     "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml",
     import.meta.url,
   );
+  const metricValueFieldsFixturePath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/metric-value-fields.ugcomp.yaml",
+    import.meta.url,
+  );
   const canonicalPath = new URL(
     "../../ugoite-domain/tests/fixtures/composition/monthly-expense.canonical.ugcomp.yaml",
     import.meta.url,
@@ -105,16 +109,31 @@ async function main(): Promise<void> {
     "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.fingerprint.txt",
     import.meta.url,
   );
+  const metricValueFieldsCanonicalPath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/metric-value-fields.canonical.ugcomp.yaml",
+    import.meta.url,
+  );
+  const metricValueFieldsFingerprintPath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/metric-value-fields.fingerprint.txt",
+    import.meta.url,
+  );
   const invalidListItemPath = new URL(
     "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml",
     import.meta.url,
   );
   const yaml = await Deno.readTextFile(fixturePath);
   const labeledYaml = await Deno.readTextFile(labeledFixturePath);
+  const metricValueFieldsYaml = await Deno.readTextFile(metricValueFieldsFixturePath);
   const canonicalYaml = await Deno.readTextFile(canonicalPath);
   const fingerprint = (await Deno.readTextFile(fingerprintPath)).trim();
   const labeledCanonicalYaml = await Deno.readTextFile(labeledCanonicalPath);
   const labeledFingerprint = (await Deno.readTextFile(labeledFingerprintPath)).trim();
+  const metricValueFieldsCanonicalYaml = await Deno.readTextFile(
+    metricValueFieldsCanonicalPath,
+  );
+  const metricValueFieldsFingerprint = (
+    await Deno.readTextFile(metricValueFieldsFingerprintPath)
+  ).trim();
   const invalidListItemYaml = await Deno.readTextFile(invalidListItemPath);
   const unreferencedComponentYaml = yaml.replace(
     "      components: [transactions]",
@@ -149,11 +168,44 @@ async function main(): Promise<void> {
     "labeled semantic fingerprint",
   );
 
+  const metricValueFieldsResponse = await invokeWasm(instance.exports, {
+    action: "domain.canonicalize_composition",
+    value: { yaml: metricValueFieldsYaml },
+  });
+  const metricValueFieldsResponseValue = metricValueFieldsResponse.value as Record<
+    string,
+    unknown
+  >;
+  assertEqual(
+    metricValueFieldsResponse.ok,
+    true,
+    "typed metric value fields parse result",
+  );
+  assertEqual(
+    metricValueFieldsResponseValue.canonical_yaml,
+    metricValueFieldsCanonicalYaml,
+    "typed metric value fields canonical YAML",
+  );
+  assertEqual(
+    metricValueFieldsResponseValue.fingerprint,
+    metricValueFieldsFingerprint,
+    "typed metric value fields semantic fingerprint",
+  );
+
+  const invalidMetricValueFieldYaml = yaml.replace(
+    "kind: sql_column",
+    "kind: unknown_column",
+  );
+  if (invalidMetricValueFieldYaml === yaml) {
+    throw new Error("Could not build an unknown metric value-field variant fixture");
+  }
+
   for (
     const [invalidYaml, expectedCode] of [
       ["format_version: 2\n", "unsupported_format_version"],
       ["format_version: 1\nname: [invalid\n", "invalid_composition"],
       [invalidListItemYaml, "invalid_composition"],
+      [invalidMetricValueFieldYaml, "invalid_composition"],
       [unreferencedComponentYaml, "invalid_composition"],
     ] as const
   ) {
