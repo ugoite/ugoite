@@ -282,7 +282,7 @@ async fn authorized_composition_source_descriptors_use_current_acl_and_exact_rev
         name: Some("parameterized source".to_string()),
         kind: crate::saved_sql::SqlKind::UserQuery,
         metadata: None,
-        sql: format!("SELECT ${name} AS result"),
+        sql: format!("SELECT ${name} AS result FROM \"{form_name}\""),
         variables: json!([{
             "name": name,
             "type": "string",
@@ -298,6 +298,16 @@ async fn authorized_composition_source_descriptors_use_current_acl_and_exact_rev
             &[owner],
         )
         .await?;
+    let stored_first = service.get_saved_sql(&space_id, &sql_id).await?;
+    assert_eq!(stored_first["metadata"]["bindingVersion"], json!(1));
+    assert_eq!(
+        stored_first["metadata"]["formBindings"],
+        json!([{
+            "name": form_name,
+            "formId": form_id.to_string(),
+        }]),
+        "the exact Saved SQL revision fixture must contain server-derived Form bindings"
+    );
     let first_revision_id = first["revision_id"]
         .as_str()
         .expect("created exact revision")
@@ -331,8 +341,11 @@ async fn authorized_composition_source_descriptors_use_current_acl_and_exact_rev
     assert_eq!(first_descriptor.id, sql_id);
     assert_eq!(first_descriptor.revision_id, first_revision_id);
     assert_eq!(first_descriptor.variables["month"].var_type, "string");
-    assert!(!format!("{first_descriptor:?}").contains("private first description"));
-    assert!(!format!("{first_descriptor:?}").contains("SELECT"));
+    let first_descriptor_debug = format!("{first_descriptor:?}");
+    assert!(!first_descriptor_debug.contains("private first description"));
+    assert!(!first_descriptor_debug.contains("SELECT"));
+    assert!(!first_descriptor_debug.contains(form_name));
+    assert!(!first_descriptor_debug.contains(&form_id.to_string()));
 
     let second_descriptor = service
         .get_saved_sql_revision_descriptor_authorized_for_principals(
