@@ -1,0 +1,66 @@
+format_version: 1
+name: Monthly expenses
+kind: dashboard
+spec:
+  parameters:
+    - id: month_start
+      label: Start month
+      type: date
+      required: true
+      format: year-month
+    - id: month_end
+      label: End month
+      type: date
+      required: true
+      format: year-month
+  sources:
+    - id: expense_rows
+      kind: entry_query
+      form_id: "00000000-0000-7000-8000-000000000010"
+      field_schema:
+        - field_id: 100
+          field_type: date
+        - field_id: 101
+          field_type: string
+        - field_id: 102
+          field_type: double
+      query:
+        filters:
+          - field_id: 100
+            operator: gte
+            value:
+              parameter: month_start
+          - field_id: 100
+            operator: lt
+            value:
+              parameter: month_end
+        sort:
+          - field_id: 100
+            direction: desc
+        projection:
+          kind: fields
+          fields: [100, 101, 102]
+    - id: month_total
+      kind: saved_sql
+      entry_id: "00000000-0000-7000-8000-000000000020"
+      revision_id: "00000000-0000-7000-8000-000000000021"
+      variables:
+        month_start:
+          parameter: month_start
+        month_end:
+          parameter: month_end
+  components:
+    - id: total
+      label: Monthly total
+      kind: metric
+      source: month_total
+      value_field: total
+    - id: transactions
+      label: Expense transactions
+      kind: table
+      source: expense_rows
+  sections:
+    - id: overview
+      components: [total]
+    - id: detail
+      components: [transactions]

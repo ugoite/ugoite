@@ -179,6 +179,8 @@ mod tests {
 
     const MONTHLY_EXPENSE: &str =
         include_str!("../../tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+    const MONTHLY_EXPENSE_LABELED: &str =
+        include_str!("../../tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml");
     const UNKNOWN_LIST_ITEM_FIELD: &str =
         include_str!("../../tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml");
 
@@ -200,6 +202,69 @@ mod tests {
         assert_eq!(roundtrip.document, result.document);
         assert_eq!(roundtrip.yaml, result.yaml);
         assert_eq!(roundtrip.fingerprint, result.fingerprint);
+        assert!(result
+            .document
+            .spec
+            .parameters
+            .iter()
+            .all(|parameter| parameter.label.is_none()));
+        assert!(result
+            .document
+            .spec
+            .components
+            .iter()
+            .all(|component| match component {
+                super::super::CompositionComponent::Metric { label, .. }
+                | super::super::CompositionComponent::Table { label, .. } => label.is_none(),
+            }));
+    }
+
+    #[test]
+    fn labeled_monthly_expense_canonical_bytes_and_fingerprint_match_golden_fixtures() {
+        let result = canonicalize_composition_yaml(MONTHLY_EXPENSE_LABELED).unwrap();
+        assert_eq!(
+            result.yaml,
+            include_str!(
+                "../../tests/fixtures/composition/monthly-expense-labeled.canonical.ugcomp.yaml"
+            )
+        );
+        assert_eq!(
+            result.fingerprint,
+            include_str!(
+                "../../tests/fixtures/composition/monthly-expense-labeled.fingerprint.txt"
+            )
+            .trim()
+        );
+        assert_eq!(result.document.spec.parameters[0].id, "month_start");
+        assert_eq!(
+            result.document.spec.parameters[0].label.as_deref(),
+            Some("Start month")
+        );
+        assert!(result
+            .document
+            .spec
+            .components
+            .iter()
+            .any(|component| matches!(
+                component,
+                super::super::CompositionComponent::Metric { id, label: Some(label), .. }
+                    if id == "total" && label == "Monthly total"
+            )));
+        assert!(result
+            .document
+            .spec
+            .components
+            .iter()
+            .any(|component| matches!(
+                component,
+                super::super::CompositionComponent::Table { id, label: Some(label), .. }
+                    if id == "transactions" && label == "Expense transactions"
+            )));
+
+        let changed_label =
+            MONTHLY_EXPENSE_LABELED.replace("label: Monthly total", "label: Total expenses");
+        let changed = canonicalize_composition_yaml(&changed_label).unwrap();
+        assert_ne!(result.fingerprint, changed.fingerprint);
     }
 
     #[test]

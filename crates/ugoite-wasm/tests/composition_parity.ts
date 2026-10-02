@@ -85,6 +85,10 @@ async function main(): Promise<void> {
     "../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
     import.meta.url,
   );
+  const labeledFixturePath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml",
+    import.meta.url,
+  );
   const canonicalPath = new URL(
     "../../ugoite-domain/tests/fixtures/composition/monthly-expense.canonical.ugcomp.yaml",
     import.meta.url,
@@ -93,13 +97,24 @@ async function main(): Promise<void> {
     "../../ugoite-domain/tests/fixtures/composition/monthly-expense.fingerprint.txt",
     import.meta.url,
   );
+  const labeledCanonicalPath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.canonical.ugcomp.yaml",
+    import.meta.url,
+  );
+  const labeledFingerprintPath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.fingerprint.txt",
+    import.meta.url,
+  );
   const invalidListItemPath = new URL(
     "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml",
     import.meta.url,
   );
   const yaml = await Deno.readTextFile(fixturePath);
+  const labeledYaml = await Deno.readTextFile(labeledFixturePath);
   const canonicalYaml = await Deno.readTextFile(canonicalPath);
   const fingerprint = (await Deno.readTextFile(fingerprintPath)).trim();
+  const labeledCanonicalYaml = await Deno.readTextFile(labeledCanonicalPath);
+  const labeledFingerprint = (await Deno.readTextFile(labeledFingerprintPath)).trim();
   const invalidListItemYaml = await Deno.readTextFile(invalidListItemPath);
   const unreferencedComponentYaml = yaml.replace(
     "      components: [transactions]",
@@ -116,6 +131,23 @@ async function main(): Promise<void> {
   assertEqual(response.ok, true, "monthly-expense parse result");
   assertEqual(responseValue.canonical_yaml, canonicalYaml, "canonical YAML");
   assertEqual(responseValue.fingerprint, fingerprint, "semantic fingerprint");
+
+  const labeledResponse = await invokeWasm(instance.exports, {
+    action: "domain.canonicalize_composition",
+    value: { yaml: labeledYaml },
+  });
+  const labeledResponseValue = labeledResponse.value as Record<string, unknown>;
+  assertEqual(labeledResponse.ok, true, "labeled monthly-expense parse result");
+  assertEqual(
+    labeledResponseValue.canonical_yaml,
+    labeledCanonicalYaml,
+    "labeled canonical YAML",
+  );
+  assertEqual(
+    labeledResponseValue.fingerprint,
+    labeledFingerprint,
+    "labeled semantic fingerprint",
+  );
 
   for (
     const [invalidYaml, expectedCode] of [
