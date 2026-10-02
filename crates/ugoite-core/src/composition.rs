@@ -11,17 +11,18 @@ use crate::entry_query::{
 };
 use crate::sql_query::{SavedSqlRevisionRef, SqlQueryRequest};
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
     CompositionDiagnosticCode, CompositionFieldSchemaEntry, CompositionLiteral,
     CompositionParameter, CompositionParameterType, CompositionQueryOperator,
-    CompositionSortDirection, CompositionSource, CompositionValue, EntryQueryProjectionTemplate,
-    EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
+    CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
+    EntryQueryProjectionTemplate, EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
 };
 use ugoite_domain::form::{FieldType, FormDefinition};
-use ugoite_domain::id::FormId;
+use ugoite_domain::id::{EntryId, FormId, RevisionId};
 
 /// One stable diagnostic emitted while binding a parameter or value template.
 ///
@@ -667,6 +668,169 @@ pub fn compile_saved_sql_source(
     })
 }
 
+/// Identity of the exact Composition revision being resolved.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionRevisionRef {
+    pub entry_id: EntryId,
+    pub revision_id: RevisionId,
+}
+
+/// Current source metadata obtained through the caller's current ACL boundary.
+/// `None` represents either absence or a concealed denial and compiles to the
+/// same `source_unavailable` diagnostic.
+pub enum CurrentSourceDescriptor<'a> {
+    EntryQuery {
+        source_id: &'a str,
+        current_form: Option<&'a FormDefinition>,
+    },
+    SavedSql {
+        source_id: &'a str,
+        current_revision: Option<&'a SavedSqlRevisionMetadata>,
+    },
+}
+
+impl CurrentSourceDescriptor<'_> {
+    fn source_id(&self) -> &str {
+        match self {
+            Self::EntryQuery { source_id, .. } | Self::SavedSql { source_id, .. } => source_id,
+        }
+    }
+}
+
+/// Inputs for one pure Composition resolution pass. The Composition has
+/// already been parsed and version-checked; every supplied current descriptor
+/// must have been read through the current authorization boundary.
+pub struct ResolveInput<'a> {
+    pub composition_revision: CompositionRevisionRef,
+    pub spec: &'a CompositionSpec,
+    pub parameters: &'a BTreeMap<String, Value>,
+    /// Descriptors may arrive in any order; results always follow spec order.
+    pub current_sources: &'a [CurrentSourceDescriptor<'a>],
+}
+
+/// One source-local request compiled into an existing bounded query contract.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ResolvedSourceRequest {
+    EntryQuery {
+        source_id: String,
+        request: EntryPageRequest,
+        source_schema_fingerprint: String,
+    },
+    SavedSql {
+        source_id: String,
+        request: SqlQueryRequest,
+        source_schema_fingerprint: String,
+    },
+}
+
+/// Complete plan for one immutable Composition revision.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedCompositionPlan {
+    pub composition_revision: CompositionRevisionRef,
+    /// The source order is the document order, regardless of descriptor order.
+    pub sources: Vec<ResolvedSourceRequest>,
+}
+
+/// Resolve all sources as one all-or-nothing plan.
+///
+/// Caller parameter diagnostics are a global gate: no source is compiled when
+/// any value is missing, unknown, or has the wrong type. Source diagnostics
+/// are then aggregated in Composition document order. No query is executed by
+/// this function; the returned requests still go through their ordinary ACL,
+/// bounds, and continuation checks when executed.
+pub fn resolve_composition(
+    input: ResolveInput<'_>,
+) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
+    let bindings = bind_parameters(&input.spec.parameters, input.parameters);
+    if !bindings.diagnostics.is_empty() {
+        return Err(bindings.diagnostics);
+    }
+
+    let source_ids = input
+        .spec
+        .sources
+        .iter()
+        .map(|source| source.id().to_owned())
+        .collect::<BTreeSet<_>>();
+    if source_ids.len() != input.spec.sources.len() {
+        return Err(vec![CompositionDiagnostic::without_parameter(
+            CompositionDiagnosticCode::InvalidComposition,
+        )]);
+    }
+
+    let mut current_by_id = BTreeMap::new();
+    for descriptor in input.current_sources {
+        let source_id = descriptor.source_id();
+        if !source_ids.contains(source_id) || current_by_id.insert(source_id, descriptor).is_some()
+        {
+            return Err(vec![CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::InvalidComposition,
+            )]);
+        }
+    }
+
+    let mut resolved_sources = Vec::with_capacity(input.spec.sources.len());
+    let mut diagnostics = Vec::new();
+    for source in &input.spec.sources {
+        let source_id = source.id();
+        match (source, current_by_id.get(source_id).copied()) {
+            (
+                CompositionSource::EntryQuery {
+                    form_id,
+                    field_schema,
+                    query,
+                    ..
+                },
+                Some(CurrentSourceDescriptor::EntryQuery {
+                    current_form: Some(current_form),
+                    ..
+                }),
+            ) => match compile_entry_query_source(
+                *form_id,
+                field_schema,
+                query,
+                &bindings,
+                current_form,
+            ) {
+                Ok(compiled) => resolved_sources.push(ResolvedSourceRequest::EntryQuery {
+                    source_id: source_id.to_owned(),
+                    request: compiled.request,
+                    source_schema_fingerprint: compiled.source_schema_fingerprint,
+                }),
+                Err(source_diagnostics) => diagnostics.extend(source_diagnostics),
+            },
+            (
+                CompositionSource::SavedSql { .. },
+                Some(CurrentSourceDescriptor::SavedSql {
+                    current_revision, ..
+                }),
+            ) => match compile_saved_sql_source(source, *current_revision, &bindings) {
+                Ok(compiled) => resolved_sources.push(ResolvedSourceRequest::SavedSql {
+                    source_id: source_id.to_owned(),
+                    request: compiled.request,
+                    source_schema_fingerprint: compiled.source_schema_fingerprint,
+                }),
+                Err(source_diagnostics) => diagnostics.extend(source_diagnostics),
+            },
+            _ => diagnostics.push(CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::SourceUnavailable,
+            )),
+        }
+    }
+
+    if !diagnostics.is_empty() {
+        return Err(diagnostics);
+    }
+
+    Ok(ResolvedCompositionPlan {
+        composition_revision: input.composition_revision,
+        sources: resolved_sources,
+    })
+}
+
 fn composition_parameter_type_for_sql(variable_type: &str) -> Option<CompositionParameterType> {
     match variable_type {
         "string" => Some(CompositionParameterType::String),
@@ -797,8 +961,10 @@ fn wall_timestamp_nanos_are_representable(timestamp: NaiveDateTime) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        bind_parameters, compile_entry_query_source, compile_saved_sql_source,
-        resolve_value_template, CompositionDiagnostic, ParameterBindings, SavedSqlRevisionMetadata,
+        bind_parameters, compile_entry_query_source, compile_saved_sql_source, resolve_composition,
+        resolve_value_template, CompositionDiagnostic, CompositionRevisionRef,
+        CurrentSourceDescriptor, ParameterBindings, ResolveInput, ResolvedSourceRequest,
+        SavedSqlRevisionMetadata,
     };
     use serde_json::{json, Value};
     use std::collections::BTreeMap;
@@ -806,7 +972,7 @@ mod tests {
         CompositionDiagnosticCode, CompositionFieldSchemaEntry, CompositionLiteral,
         CompositionParameter, CompositionParameterFormat, CompositionParameterReference,
         CompositionParameterType, CompositionQueryOperator, CompositionSortDirection,
-        CompositionSource, CompositionValue, EntryQueryFilterTemplate,
+        CompositionSource, CompositionSpec, CompositionValue, EntryQueryFilterTemplate,
         EntryQueryProjectionTemplate, EntryQuerySortTemplate, EntryQueryTemplate,
     };
     use ugoite_domain::form::{
@@ -913,6 +1079,41 @@ mod tests {
                 .into_iter()
                 .map(|(name, value)| (name, value.to_owned()))
                 .collect(),
+        }
+    }
+
+    fn empty_entry_query_template() -> EntryQueryTemplate {
+        EntryQueryTemplate {
+            text: None,
+            filters: Vec::new(),
+            sort: Vec::new(),
+            page_limit: 100,
+            projection: EntryQueryProjectionTemplate::Preview,
+        }
+    }
+
+    fn entry_query_source(
+        id: &str,
+        form: &FormDefinition,
+        query: EntryQueryTemplate,
+    ) -> CompositionSource {
+        CompositionSource::EntryQuery {
+            id: id.to_owned(),
+            form_id: form.id,
+            field_schema: schema(form),
+            query,
+        }
+    }
+
+    fn composition_spec(
+        parameters: Vec<CompositionParameter>,
+        sources: Vec<CompositionSource>,
+    ) -> CompositionSpec {
+        CompositionSpec {
+            parameters,
+            sources,
+            components: Vec::new(),
+            sections: Vec::new(),
         }
     }
 
@@ -2091,6 +2292,192 @@ mod tests {
                 &bindings
             )),
             vec![CompositionDiagnosticCode::ParameterTypeMismatch]
+        );
+    }
+
+    #[test]
+    fn any_parameter_error_stops_resolution_before_compiling_any_source() {
+        let current_form = form(&[(100, FieldType::String)]);
+        let (entry_id, revision_id) = id_pair();
+        let spec = composition_spec(
+            vec![parameter(
+                "limit",
+                CompositionParameterType::Integer,
+                true,
+                None,
+                None,
+            )],
+            vec![
+                entry_query_source("entries", &current_form, empty_entry_query_template()),
+                CompositionSource::SavedSql {
+                    id: "report".to_owned(),
+                    entry_id,
+                    revision_id,
+                    variables: BTreeMap::from([("limit".to_owned(), parameter_ref("limit"))]),
+                },
+            ],
+        );
+        let supplied = BTreeMap::from([("limit".to_owned(), json!("not-an-integer"))]);
+        let current_sources = [
+            CurrentSourceDescriptor::EntryQuery {
+                source_id: "entries",
+                current_form: Some(&current_form),
+            },
+            // If resolution starts compiling, this unavailable second source
+            // would add a source diagnostic to the binding error.
+            CurrentSourceDescriptor::SavedSql {
+                source_id: "report",
+                current_revision: None,
+            },
+        ];
+        let (composition_entry_id, composition_revision_id) = id_pair();
+
+        let diagnostics = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: composition_entry_id,
+                revision_id: composition_revision_id,
+            },
+            spec: &spec,
+            parameters: &supplied,
+            current_sources: &current_sources,
+        })
+        .expect_err("one invalid parameter rejects the complete plan");
+
+        assert_eq!(
+            diagnostics,
+            vec![CompositionDiagnostic {
+                code: CompositionDiagnosticCode::ParameterTypeMismatch,
+                parameter_id: Some("limit".to_owned()),
+            }]
+        );
+    }
+
+    #[test]
+    fn resolve_plan_preserves_document_order_and_exact_revision_identity() {
+        let current_form = form(&[(100, FieldType::String)]);
+        let (sql_entry_id, sql_revision_id) = id_pair();
+        let saved_sql = CompositionSource::SavedSql {
+            id: "report".to_owned(),
+            entry_id: sql_entry_id,
+            revision_id: sql_revision_id,
+            variables: BTreeMap::new(),
+        };
+        let spec = composition_spec(
+            Vec::new(),
+            vec![
+                saved_sql,
+                entry_query_source("entries", &current_form, empty_entry_query_template()),
+            ],
+        );
+        let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
+        // Metadata lookup order is independent of Composition source order.
+        let current_sources = [
+            CurrentSourceDescriptor::EntryQuery {
+                source_id: "entries",
+                current_form: Some(&current_form),
+            },
+            CurrentSourceDescriptor::SavedSql {
+                source_id: "report",
+                current_revision: Some(&sql_metadata),
+            },
+        ];
+        let (composition_entry_id, composition_revision_id) = id_pair();
+
+        let plan = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: composition_entry_id,
+                revision_id: composition_revision_id,
+            },
+            spec: &spec,
+            parameters: &BTreeMap::new(),
+            current_sources: &current_sources,
+        })
+        .expect("both sources compile");
+
+        assert_eq!(
+            plan.composition_revision,
+            CompositionRevisionRef {
+                entry_id: composition_entry_id,
+                revision_id: composition_revision_id,
+            }
+        );
+        assert!(matches!(
+            &plan.sources[0],
+            ResolvedSourceRequest::SavedSql {
+                source_id,
+                request,
+                source_schema_fingerprint,
+            } if source_id == "report"
+                && request.saved_sql.as_ref().is_some_and(|saved_sql| {
+                    saved_sql.id == sql_entry_id.to_string()
+                        && saved_sql.revision_id == sql_revision_id.to_string()
+                })
+                && source_schema_fingerprint.len() == 64
+        ));
+        assert!(matches!(
+            &plan.sources[1],
+            ResolvedSourceRequest::EntryQuery {
+                source_id,
+                source_schema_fingerprint,
+                ..
+            } if source_id == "entries" && source_schema_fingerprint.len() == 64
+        ));
+    }
+
+    #[test]
+    fn resolve_aggregates_source_diagnostics_in_document_order_without_a_partial_plan() {
+        let expected_form = form(&[(100, FieldType::String)]);
+        let current_form = form(&[(100, FieldType::Integer)]);
+        let (sql_entry_id, sql_revision_id) = id_pair();
+        let spec = composition_spec(
+            Vec::new(),
+            vec![
+                entry_query_source("entries", &expected_form, empty_entry_query_template()),
+                CompositionSource::SavedSql {
+                    id: "report".to_owned(),
+                    entry_id: sql_entry_id,
+                    revision_id: sql_revision_id,
+                    variables: BTreeMap::new(),
+                },
+            ],
+        );
+        let unavailable_sql = SavedSqlRevisionMetadata {
+            id: "concealed-or-missing".to_owned(),
+            revision_id: sql_revision_id.to_string(),
+            variable_types: BTreeMap::new(),
+        };
+        let current_sources = [
+            CurrentSourceDescriptor::SavedSql {
+                source_id: "report",
+                current_revision: Some(&unavailable_sql),
+            },
+            CurrentSourceDescriptor::EntryQuery {
+                source_id: "entries",
+                current_form: Some(&current_form),
+            },
+        ];
+        let (composition_entry_id, composition_revision_id) = id_pair();
+
+        let diagnostics = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: composition_entry_id,
+                revision_id: composition_revision_id,
+            },
+            spec: &spec,
+            parameters: &BTreeMap::new(),
+            current_sources: &current_sources,
+        })
+        .expect_err("a failed source prevents returning a partial plan");
+
+        assert_eq!(
+            diagnostics
+                .into_iter()
+                .map(|diagnostic| diagnostic.code)
+                .collect::<Vec<_>>(),
+            vec![
+                CompositionDiagnosticCode::FieldTypeChanged,
+                CompositionDiagnosticCode::SourceUnavailable,
+            ]
         );
     }
 
