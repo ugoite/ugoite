@@ -7,9 +7,11 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use ugoite_core::entry::StructuredEntryDraft;
 use ugoite_domain::change::ChangeCommand;
-use ugoite_iceberg::entry;
+use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
+use ugoite_domain::id::{FieldId, FormId};
 use ugoite_iceberg::integrity::IntegrityProvider;
 use ugoite_iceberg::service::UgoiteService;
+use ugoite_iceberg::{entry, iceberg_store};
 use uuid::Uuid;
 
 #[allow(dead_code)]
@@ -17,6 +19,107 @@ pub fn setup_operator() -> Result<Operator> {
     let builder = Memory::default();
     let op = Operator::new(builder)?;
     Ok(op)
+}
+
+/// Seed a Form through the workspace publication layer for compatibility
+/// fixtures that need to represent data written before a public Form guard
+/// existed.
+pub async fn seed_preexisting_form(
+    op: &Operator,
+    ws_path: &str,
+    form_definition: &Value,
+) -> Result<()> {
+    let form_id = FormId::from(Uuid::parse_str(
+        form_definition
+            .get("id")
+            .and_then(Value::as_str)
+            .context("preexisting Form fixture is missing an ID")?,
+    )?);
+    let version = FormVersion::new(
+        form_definition
+            .get("version")
+            .and_then(Value::as_u64)
+            .unwrap_or(1) as u32,
+    )?;
+    let mut fields = Vec::new();
+    if let Some(field_map) = form_definition.get("fields").and_then(Value::as_object) {
+        for (name, definition) in field_map {
+            fields.push(FormField {
+                id: FieldId::new(
+                    definition
+                        .get("id")
+                        .and_then(Value::as_i64)
+                        .and_then(|value| i32::try_from(value).ok())
+                        .context("preexisting Form fixture field is missing an ID")?,
+                )?,
+                name: name.clone(),
+                field_type: serde_json::from_value::<FieldType>(
+                    definition
+                        .get("type")
+                        .cloned()
+                        .unwrap_or_else(|| Value::String("string".to_string())),
+                )?,
+                required: definition
+                    .get("required")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                label: None,
+                description: None,
+                semantic_role: None,
+                reference_form: None,
+                list_item: None,
+                validation: None,
+                enum_values: Vec::new(),
+                deprecated: false,
+            });
+        }
+    }
+    let policy = form_definition
+        .get("allow_extra_attributes")
+        .and_then(Value::as_str)
+        .unwrap_or("deny");
+    let mut extension_metadata = form_definition
+        .get("extension_metadata")
+        .and_then(Value::as_object)
+        .map(|metadata| {
+            metadata
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    extension_metadata.insert(
+        "ugoite.extra_attributes_policy".to_string(),
+        Value::String(policy.to_string()),
+    );
+    let domain_form = FormDefinition {
+        id: form_id,
+        version,
+        name: form_definition
+            .get("name")
+            .and_then(Value::as_str)
+            .context("preexisting Form fixture is missing a name")?
+            .to_string(),
+        description: form_definition
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        fields,
+        allow_extra_attributes: policy == "allow_json",
+        extension_metadata,
+    };
+    domain_form.validate()?;
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let publication = ugoite_iceberg::publication_context(
+        format!("test-form-create:{}", domain_form.id),
+        "test.form.create",
+        &domain_form,
+    )?;
+    workspace
+        .commit(publication)?
+        .create_form(&domain_form)
+        .await?;
+    Ok(())
 }
 
 /// Test-only fixture parser. Product mutation APIs are structured-only; these

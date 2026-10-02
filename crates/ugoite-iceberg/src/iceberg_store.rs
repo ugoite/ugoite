@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 pub(crate) const SPACE_METADATA_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
-async fn stable_space_id(operator: &Operator, workspace_path: &str) -> Result<SpaceId> {
+pub(crate) async fn stable_space_id(operator: &Operator, workspace_path: &str) -> Result<SpaceId> {
     let metadata_path = format!("{}/meta.json", workspace_path.trim_end_matches('/'));
     let metadata_exists =
         tokio::time::timeout(SPACE_METADATA_READ_TIMEOUT, operator.exists(&metadata_path))
@@ -160,9 +160,64 @@ pub(crate) async fn ensure_form_tables_with_receipt(
     workspace_path: &str,
     form_definition: &Value,
 ) -> Result<Option<String>> {
+    ensure_form_tables_inner(operator, workspace_path, form_definition, false).await
+}
+
+/// The Saved SQL adapter is the only internal caller allowed to create its
+/// reserved metadata Form through the generic Form storage path. Composition
+/// uses its dedicated validated system-Form path instead.
+pub(crate) async fn ensure_saved_sql_form_tables(
+    operator: &Operator,
+    workspace_path: &str,
+    form_definition: &Value,
+) -> Result<()> {
+    let form = crate::form::to_domain_form(form_definition)?;
+    if !form
+        .name
+        .eq_ignore_ascii_case(crate::saved_sql::SQL_FORM_NAME_FOR_AUDIT)
+    {
+        return Err(AppError::invalid_input(
+            ErrorCode::FormValidationFailed,
+            "only the Saved SQL metadata Form may use the internal metadata creation path",
+        )
+        .into());
+    }
+    ensure_form_tables_inner(operator, workspace_path, form_definition, true)
+        .await
+        .map(|_| ())
+}
+
+async fn ensure_form_tables_inner(
+    operator: &Operator,
+    workspace_path: &str,
+    form_definition: &Value,
+    allow_saved_sql_metadata_form: bool,
+) -> Result<Option<String>> {
     crate::authorization::Authorizer::new(operator.clone())
         .ensure_authoritative_mutation_contract()?;
     let form = crate::form::to_domain_form(form_definition)?;
+    if ugoite_domain::metadata::is_reserved_metadata_form(&form.name)
+        && !(allow_saved_sql_metadata_form
+            && form
+                .name
+                .eq_ignore_ascii_case(crate::saved_sql::SQL_FORM_NAME_FOR_AUDIT))
+    {
+        let (code, message) = if form
+            .name
+            .eq_ignore_ascii_case(crate::composition::COMPOSITION_REGISTRY_FORM_NAME)
+        {
+            (
+                ErrorCode::CompositionRegistryConflict,
+                "composition_registry_conflict: generic Form creation cannot create the Composition registry",
+            )
+        } else {
+            (
+                ErrorCode::FormValidationFailed,
+                "Form name is reserved for an internal metadata Form",
+            )
+        };
+        return Err(AppError::conflict(code, message).into());
+    }
     // SQL helpers may call this function from read paths that lazily create
     // the system Form. That creation is still authoritative and must not
     // bypass the request's authorization write fence.

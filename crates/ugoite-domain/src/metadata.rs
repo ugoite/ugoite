@@ -20,7 +20,7 @@ const DEFAULT_METADATA_COLUMNS: &[&str] = &[
     "word_count",
 ];
 
-const DEFAULT_METADATA_FORMS: &[&str] = &["SQL", "User", "UserGroup"];
+const DEFAULT_METADATA_FORMS: &[&str] = &["SQL", "User", "UserGroup", "_ugoite_compositions"];
 
 static METADATA_COLUMNS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 static METADATA_FORMS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
