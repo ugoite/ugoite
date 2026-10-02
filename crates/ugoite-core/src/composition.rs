@@ -17,9 +17,10 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
     CompositionComponent, CompositionDiagnosticCode, CompositionFieldSchemaEntry,
-    CompositionLiteral, CompositionParameter, CompositionParameterType, CompositionQueryOperator,
-    CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
-    EntryQueryProjectionTemplate, EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
+    CompositionLiteral, CompositionMetricValueField, CompositionParameter,
+    CompositionParameterType, CompositionQueryOperator, CompositionSortDirection,
+    CompositionSource, CompositionSpec, CompositionValue, EntryQueryProjectionTemplate,
+    EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
 };
 use ugoite_domain::form::{FieldType, FormDefinition};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
@@ -842,13 +843,13 @@ pub fn resolve_composition(
     let mut metric_fields_by_source: BTreeMap<&str, Vec<FieldId>> = BTreeMap::new();
     let mut metric_field_by_component = BTreeMap::new();
     for component in &render_components {
-        let (source_id, value_field) = match component {
+        let (source_id, metric) = match component {
             CompositionComponent::Metric {
                 id,
                 source,
                 value_field,
                 ..
-            } => (source.as_str(), Some((id.as_str(), value_field.as_str()))),
+            } => (source.as_str(), Some((id.as_str(), value_field))),
             CompositionComponent::Table { source, .. } => (source.as_str(), None),
         };
         if !source_ids.contains(source_id) {
@@ -856,17 +857,28 @@ pub fn resolve_composition(
                 CompositionDiagnosticCode::InvalidComposition,
             )]);
         }
-        if let Some((component_id, value_field)) = value_field {
-            if matches!(
-                sources_by_id.get(source_id),
-                Some(CompositionSource::EntryQuery { .. })
-            ) {
-                let field_id = entry_query_metric_field_id(value_field)?;
+        match (sources_by_id.get(source_id).copied(), metric) {
+            (Some(CompositionSource::EntryQuery { .. }), Some((component_id, value_field))) => {
+                let CompositionMetricValueField::EntryField { field_id } = value_field else {
+                    return Err(vec![CompositionDiagnostic::without_parameter(
+                        CompositionDiagnosticCode::InvalidComposition,
+                    )]);
+                };
                 metric_fields_by_source
                     .entry(source_id)
                     .or_default()
-                    .push(field_id);
-                metric_field_by_component.insert(component_id, field_id);
+                    .push(*field_id);
+                metric_field_by_component.insert(component_id, *field_id);
+            }
+            (
+                Some(CompositionSource::SavedSql { .. }),
+                Some((_, CompositionMetricValueField::SqlColumn { .. })),
+            )
+            | (Some(_), None) => {}
+            _ => {
+                return Err(vec![CompositionDiagnostic::without_parameter(
+                    CompositionDiagnosticCode::InvalidComposition,
+                )]);
             }
         }
     }
@@ -953,19 +965,6 @@ pub fn resolve_composition(
     })
 }
 
-fn entry_query_metric_field_id(value_field: &str) -> Result<FieldId, Vec<CompositionDiagnostic>> {
-    let parsed = value_field
-        .parse::<i32>()
-        .ok()
-        .and_then(|value| FieldId::new(value).ok())
-        .filter(|field_id| field_id.get().to_string() == value_field);
-    parsed.ok_or_else(|| {
-        vec![CompositionDiagnostic::without_parameter(
-            CompositionDiagnosticCode::InvalidComposition,
-        )]
-    })
-}
-
 fn resolve_component_bindings(
     components: &[&CompositionComponent],
     sources_by_id: &BTreeMap<&str, &CompositionSource>,
@@ -989,6 +988,11 @@ fn resolve_component_bindings(
                     })?;
                 let (metric_field_id, result_property_key) = match source_definition {
                     CompositionSource::EntryQuery { .. } => {
+                        let CompositionMetricValueField::EntryField { .. } = value_field else {
+                            return Err(vec![CompositionDiagnostic::without_parameter(
+                                CompositionDiagnosticCode::InvalidComposition,
+                            )]);
+                        };
                         let Some(field_id) = metric_field_by_component.get(id.as_str()).copied()
                         else {
                             return Err(vec![CompositionDiagnostic::without_parameter(
@@ -1017,7 +1021,14 @@ fn resolve_component_bindings(
                         };
                         (Some(field_id), Some(field.name.clone()))
                     }
-                    CompositionSource::SavedSql { .. } => (None, Some(value_field.clone())),
+                    CompositionSource::SavedSql { .. } => {
+                        let CompositionMetricValueField::SqlColumn { name } = value_field else {
+                            return Err(vec![CompositionDiagnostic::without_parameter(
+                                CompositionDiagnosticCode::InvalidComposition,
+                            )]);
+                        };
+                        (None, Some(name.clone()))
+                    }
                 };
                 ResolvedComponentBinding {
                     component_id: id.clone(),
@@ -1189,10 +1200,10 @@ mod tests {
     use std::collections::BTreeMap;
     use ugoite_domain::composition::{
         CompositionComponent, CompositionDiagnosticCode, CompositionFieldSchemaEntry,
-        CompositionLiteral, CompositionParameter, CompositionParameterFormat,
-        CompositionParameterReference, CompositionParameterType, CompositionQueryOperator,
-        CompositionSection, CompositionSortDirection, CompositionSource, CompositionSpec,
-        CompositionValue, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
+        CompositionLiteral, CompositionMetricValueField, CompositionParameter,
+        CompositionParameterFormat, CompositionParameterReference, CompositionParameterType,
+        CompositionQueryOperator, CompositionSection, CompositionSortDirection, CompositionSource,
+        CompositionSpec, CompositionValue, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
         EntryQuerySortTemplate, EntryQueryTemplate,
     };
     use ugoite_domain::form::{
@@ -2805,7 +2816,9 @@ mod tests {
                 id: "entry-total".to_owned(),
                 label: Some("Entry total".to_owned()),
                 source: "entries".to_owned(),
-                value_field: "101".to_owned(),
+                value_field: CompositionMetricValueField::EntryField {
+                    field_id: FieldId::new(101).unwrap(),
+                },
             },
             CompositionComponent::Table {
                 id: "rows".to_owned(),
@@ -2816,7 +2829,9 @@ mod tests {
                 id: "sql-total".to_owned(),
                 label: Some("SQL total".to_owned()),
                 source: "report".to_owned(),
-                value_field: "total".to_owned(),
+                value_field: CompositionMetricValueField::SqlColumn {
+                    name: "total".to_owned(),
+                },
             },
         ];
         spec.sections = vec![
@@ -2947,6 +2962,73 @@ mod tests {
     }
 
     #[test]
+    fn metric_value_field_variant_must_match_its_source_kind() {
+        let current_form = form(&[(100, FieldType::Integer)]);
+        let entry_source =
+            entry_query_source("entries", &current_form, empty_entry_query_template());
+        let (entry_id, revision_id) = id_pair();
+        let sql_source = CompositionSource::SavedSql {
+            id: "report".to_owned(),
+            entry_id,
+            revision_id,
+            variables: BTreeMap::new(),
+        };
+        let sql_metadata = saved_sql_metadata(entry_id, revision_id, BTreeMap::new());
+        let (composition_entry_id, composition_revision_id) = id_pair();
+
+        for (source_id, value_field) in [
+            (
+                "entries",
+                CompositionMetricValueField::SqlColumn {
+                    name: "total".to_owned(),
+                },
+            ),
+            (
+                "report",
+                CompositionMetricValueField::EntryField {
+                    field_id: FieldId::new(100).unwrap(),
+                },
+            ),
+        ] {
+            let mut spec =
+                composition_spec(Vec::new(), vec![entry_source.clone(), sql_source.clone()]);
+            spec.components = vec![CompositionComponent::Metric {
+                id: "total".to_owned(),
+                label: None,
+                source: source_id.to_owned(),
+                value_field,
+            }];
+            spec.sections = vec![CompositionSection {
+                id: "main".to_owned(),
+                components: vec!["total".to_owned()],
+            }];
+            let current_sources = [
+                CurrentSourceDescriptor::EntryQuery {
+                    source_id: "entries",
+                    current_form: Some(&current_form),
+                },
+                CurrentSourceDescriptor::SavedSql {
+                    source_id: "report",
+                    current_revision: Some(&sql_metadata),
+                },
+            ];
+
+            assert_eq!(
+                diagnostic_codes(resolve_composition(ResolveInput {
+                    composition_revision: CompositionRevisionRef {
+                        entry_id: composition_entry_id,
+                        revision_id: composition_revision_id,
+                    },
+                    spec: &spec,
+                    parameters: &BTreeMap::new(),
+                    current_sources: &current_sources,
+                })),
+                [CompositionDiagnosticCode::InvalidComposition]
+            );
+        }
+    }
+
+    #[test]
     fn denied_metric_source_is_concealed_as_source_unavailable() {
         let current_form = form(&[(100, FieldType::Integer)]);
         let mut spec = composition_spec(
@@ -2961,7 +3043,9 @@ mod tests {
             id: "private-component".to_owned(),
             label: None,
             source: "private-source-name".to_owned(),
-            value_field: "100".to_owned(),
+            value_field: CompositionMetricValueField::EntryField {
+                field_id: FieldId::new(100).unwrap(),
+            },
         }];
         spec.sections = vec![CompositionSection {
             id: "private-section".to_owned(),
@@ -3010,7 +3094,9 @@ mod tests {
             id: "total".to_owned(),
             label: None,
             source: "entries".to_owned(),
-            value_field: "101".to_owned(),
+            value_field: CompositionMetricValueField::EntryField {
+                field_id: FieldId::new(101).unwrap(),
+            },
         }];
         spec.sections = vec![CompositionSection {
             id: "main".to_owned(),
@@ -3065,7 +3151,9 @@ mod tests {
             id: "total".to_owned(),
             label: None,
             source: "entries".to_owned(),
-            value_field: "101".to_owned(),
+            value_field: CompositionMetricValueField::EntryField {
+                field_id: FieldId::new(101).unwrap(),
+            },
         }];
         spec.sections = vec![CompositionSection {
             id: "main".to_owned(),
@@ -3112,7 +3200,9 @@ mod tests {
             id: "total".to_owned(),
             label: None,
             source: "entries".to_owned(),
-            value_field: "101".to_owned(),
+            value_field: CompositionMetricValueField::EntryField {
+                field_id: FieldId::new(101).unwrap(),
+            },
         }];
         spec.sections = vec![CompositionSection {
             id: "main".to_owned(),
