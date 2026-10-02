@@ -4,9 +4,9 @@ title: "Composition acceptance plan"
 
 This is the Lane D acceptance plan for the Composition feature, whose full
 surface and runtime journey remain incomplete. The read-only portable list,
-get, and lint operations are implemented, as are the CLI list, inspect, and
-lint commands; this does not claim a complete Composition API or CLI command
-set, Browser route, or passing runtime journey.
+get, history, and lint operations are implemented, as are the CLI list, history,
+inspect, and lint commands; this does not claim a complete Composition API or
+CLI command set, Browser route, or passing runtime journey.
 The current structured locator map is
 [`e2e/fixtures/composition/acceptance-plan.json`](../../../e2e/fixtures/composition/acceptance-plan.json).
 
@@ -29,6 +29,7 @@ until their integration contracts are reviewed and frozen.
 The current CLI command surface includes:
 
 - `ugoite composition list`
+- `ugoite composition history <id>`
 - `ugoite composition inspect <id> [--revision] [--raw]`
 - `ugoite composition lint <file>`
 
@@ -39,24 +40,29 @@ stored YAML spec. CLI list and structured inspect output are JSON; inspect
 `--raw` writes the stored spec value. Offline lint returns its canonicalization
 or diagnostic result as JSON.
 
+`composition history` reads the raw append-only revision page in local Core or
+remote mode. Its default page size is 100 with offset 0; `--limit` and
+`--offset` select a different page. It returns the shared
+`CompositionHistoryPage` JSON, including each raw revision carrier without
+parsing its stored spec.
+
 The remaining planned command surface is:
 
-- `ugoite composition history <id>`
 - `ugoite composition restore <id> --revision <revision>`
 - `ugoite composition save <file>`
 - `ugoite composition query <id> --param k=v`
 - `ugoite composition export <id> --output <path>`
 - `ugoite composition import <file>`
 
-Focused CLI tests cover bounded local paging, remote operation request and
-response decoding, summary output shape, exact-revision inspect, and shared
-lint diagnostics. Full cross-surface list/get/history acceptance and CLI
-parity acceptance remain planned. Future history and restore must preserve
-append-only revisions, and save success must wait for the Entry receipt. Raw inspect,
-export, and history must remain available for unknown versions, malformed
-documents, and broken references. Query must invoke the existing resolved
-query path and preserve paged results. Core and remote modes must agree on
-output meaning across the complete command set.
+Focused CLI tests cover bounded local list and history pages, remote operation
+request and response decoding, summary output shape, exact-revision inspect,
+and shared lint diagnostics. Full cross-surface list/get/history acceptance
+and CLI parity acceptance remain planned. History and restore must preserve
+append-only revisions, and save success must wait for the Entry receipt. Raw
+inspect, export, and history must remain available for unknown versions,
+malformed documents, and broken references. Query must invoke the existing
+resolved query path and preserve paged results. Core and remote modes must
+agree on output meaning across the complete command set.
 
 ## Browser Golden Journey shape
 
@@ -96,8 +102,10 @@ stable diagnostic code on failure. Its request body is bounded and the parser
 enforces the 64 KiB YAML limit. `composition.list` now returns one bounded,
 ACL-authorized summary page through the portable operation and server route;
 the CLI uses this operation in remote mode and the matching local Core reader
-in local mode. The list DTO omits `spec`. Resolve is available as a
-side-effect-free operation; save, export, and restore remain planned, with
+in local mode. The list DTO omits `spec`. CLI history uses the portable
+`composition.history` operation remotely and the local raw history reader in
+local mode. Resolve is available as a side-effect-free operation; save, export,
+and restore remain planned, with
 their relevant contracts and generic-write protections still in progress.
 
 ## Recovery and authorization acceptance

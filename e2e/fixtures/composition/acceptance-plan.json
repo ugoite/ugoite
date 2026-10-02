@@ -342,6 +342,34 @@
             "kind": "test",
             "name": "list_remote_request_decodes_and_returns_the_portable_page"
           }
+        },
+        {
+          "path": "crates/ugoite-cli/src/commands/composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "history_reads_bounded_local_pages_with_raw_revision_data"
+          }
+        },
+        {
+          "path": "crates/ugoite-cli/src/commands/composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "history_prepares_a_bounded_page_request_through_the_portable_protocol"
+          }
+        },
+        {
+          "path": "crates/ugoite-cli/src/commands/composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "history_remote_request_decodes_and_returns_the_portable_page"
+          }
+        },
+        {
+          "path": "crates/ugoite-cli/src/main.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_history_accepts_bounded_page_options_without_becoming_a_write"
+          }
         }
       ]
     },
