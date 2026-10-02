@@ -145,3 +145,98 @@ pub struct CompositionHistoryPage {
     pub limit: usize,
     pub has_more: bool,
 }
+
+/// Request to resolve one exact Composition revision against current source
+/// metadata. Resolution does not execute any source query or create state.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionResolveRequest {
+    pub revision_id: String,
+    #[serde(default)]
+    pub parameters: BTreeMap<String, Value>,
+}
+
+/// Caller-visible result of a side-effect-free Composition resolution pass.
+/// Parameter definitions are present whenever the exact revision parsed as a
+/// supported Composition document, including responses with diagnostics.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionResolveResponse {
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<CompositionResolvePlan>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<CompositionResolveDiagnostic>,
+}
+
+/// Typed, UI-neutral fields needed to collect caller parameter values.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionParameterDefinition {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub parameter_type: CompositionParameterType,
+    pub required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<CompositionParameterFormat>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionParameterType {
+    String,
+    Boolean,
+    Integer,
+    Float,
+    Date,
+    Timestamp,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CompositionParameterFormat {
+    YearMonth,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionResolvePlan {
+    pub composition_revision: CompositionRevisionReference,
+    pub sources: Vec<CompositionResolvedSource>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionRevisionReference {
+    pub entry_id: String,
+    pub revision_id: String,
+}
+
+/// A query request compiled by the Rust core resolver. The request value is
+/// forwarded unchanged to the existing `entry.query` or `sql.query` operation.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CompositionResolvedSource {
+    EntryQuery {
+        source_id: String,
+        request: Value,
+        source_schema_fingerprint: String,
+    },
+    SavedSql {
+        source_id: String,
+        request: Value,
+        source_schema_fingerprint: String,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionResolveDiagnostic {
+    pub code: CompositionDiagnosticCode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_id: Option<String>,
+}

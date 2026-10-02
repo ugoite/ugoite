@@ -46,10 +46,27 @@ use tower_http::{
 use ugoite_api_client::{
     CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
     CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
-    CompositionLintResponse, CompositionLintValue, CompositionRawRevision,
-    CompositionRevisionMetadata,
+    CompositionLintResponse, CompositionLintValue, CompositionParameterDefinition,
+    CompositionParameterFormat as ApiCompositionParameterFormat,
+    CompositionParameterType as ApiCompositionParameterType, CompositionRawRevision,
+    CompositionResolveDiagnostic, CompositionResolvePlan, CompositionResolveRequest,
+    CompositionResolveResponse, CompositionResolvedSource, CompositionRevisionMetadata,
+    CompositionRevisionReference,
+};
+use ugoite_core::composition::{
+    bind_parameters as bind_composition_parameters,
+    resolve_composition as resolve_composition_core,
+    CompositionDiagnostic as CoreCompositionDiagnostic, CurrentSourceDescriptor, ResolveInput,
+    ResolvedCompositionPlan, SavedSqlRevisionMetadata,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
+use ugoite_core::sql_query::SavedSqlRevisionRef;
+use ugoite_domain::composition::{
+    CompositionDiagnosticCode as DomainCompositionDiagnosticCode,
+    CompositionParameter as DomainCompositionParameter,
+    CompositionParameterFormat as DomainCompositionParameterFormat,
+    CompositionParameterType as DomainCompositionParameterType, CompositionSource,
+};
 use ugoite_domain::id::{validate_decoded_space_id, validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
     AccessPolicy, AccountStatus, Action, Actor, AgentMode, AssuranceLevel, AuthenticatedSubject,
@@ -1739,6 +1756,11 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route(
             "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}",
             get(composition_revision),
+        )
+        .route(
+            "/spaces/{space_id}/compositions/{entry_id}/resolve",
+            post(resolve_composition_handler)
+                .layer(DefaultBodyLimit::max(COMPOSITION_RESOLVE_MAX_REQUEST_BYTES)),
         )
         .route(
             "/compositions/lint",
@@ -11036,6 +11058,305 @@ async fn composition_history(
     Ok(Json(composition_raw_history_page_response(history)))
 }
 
+const COMPOSITION_RESOLVE_MAX_REQUEST_BYTES: usize = 256 * 1024;
+
+async fn resolve_composition_handler(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, composition_id)): Path<(String, String)>,
+    request: Result<Json<CompositionResolveRequest>, JsonRejection>,
+) -> ApiResult<Json<CompositionResolveResponse>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    validate_id(&composition_id, "entry_id")?;
+    let Json(request) = request.map_err(|error| {
+        ApiError::new(
+            error.status(),
+            json!({
+                "code": "INVALID_INPUT",
+                "message": error.body_text(),
+            }),
+        )
+    })?;
+    validate_id(&request.revision_id, "revision_id")?;
+
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let raw = state
+        .service
+        .get_composition_raw_revision_authorized_for_principals(
+            &space_id,
+            &composition_id,
+            &request.revision_id,
+            &principals,
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+    let Some(yaml) = raw.fields.get("spec").and_then(Value::as_str) else {
+        return Ok(Json(composition_resolve_diagnostic_response(
+            DomainCompositionDiagnosticCode::InvalidComposition,
+            None,
+            None,
+        )));
+    };
+    let document = match ugoite_domain::composition::parse_composition_yaml(yaml) {
+        Ok(document) => document,
+        Err(code) => {
+            return Ok(Json(composition_resolve_diagnostic_response(
+                code, None, None,
+            )));
+        }
+    };
+
+    let parameter_definitions = Some(
+        document
+            .spec
+            .parameters
+            .iter()
+            .map(api_composition_parameter_definition)
+            .collect::<Vec<_>>(),
+    );
+
+    let parameter_bindings =
+        bind_composition_parameters(&document.spec.parameters, &request.parameters);
+    if !parameter_bindings.diagnostics.is_empty() {
+        return Ok(Json(composition_resolve_diagnostics_response(
+            parameter_bindings.diagnostics,
+            parameter_definitions.clone(),
+        )));
+    }
+
+    let mut owned_sources = Vec::with_capacity(document.spec.sources.len());
+    for source in &document.spec.sources {
+        match source {
+            CompositionSource::EntryQuery { id, form_id, .. } => {
+                let form = conceal_composition_source_lookup(
+                    state
+                        .service
+                        .get_composition_source_form_authorized_for_principals(
+                            &space_id,
+                            *form_id,
+                            &principals,
+                        )
+                        .await,
+                    ErrorCode::FormNotFound,
+                )
+                .map_err(ApiError::from_core)?;
+                owned_sources.push(OwnedCompositionSourceDescriptor::EntryQuery {
+                    source_id: id.clone(),
+                    form,
+                });
+            }
+            CompositionSource::SavedSql {
+                id,
+                entry_id,
+                revision_id,
+                ..
+            } => {
+                let saved_sql_ref = SavedSqlRevisionRef {
+                    id: entry_id.to_string(),
+                    revision_id: revision_id.to_string(),
+                };
+                let descriptor = conceal_composition_source_lookup(
+                    state
+                        .service
+                        .get_saved_sql_revision_descriptor_authorized_for_principals(
+                            &space_id,
+                            &saved_sql_ref,
+                            &principals,
+                        )
+                        .await,
+                    ErrorCode::EntryNotFound,
+                )
+                .map_err(ApiError::from_core)?
+                .map(|descriptor| SavedSqlRevisionMetadata {
+                    id: descriptor.id,
+                    revision_id: descriptor.revision_id,
+                    variable_types: descriptor
+                        .variables
+                        .into_iter()
+                        .map(|(name, variable)| (name, variable.var_type))
+                        .collect(),
+                });
+                owned_sources.push(OwnedCompositionSourceDescriptor::SavedSql {
+                    source_id: id.clone(),
+                    revision: descriptor,
+                });
+            }
+        }
+    }
+
+    let current_sources = owned_sources
+        .iter()
+        .map(OwnedCompositionSourceDescriptor::as_current_source)
+        .collect::<Vec<_>>();
+    let result = resolve_composition_core(ResolveInput {
+        composition_revision: ugoite_core::composition::CompositionRevisionRef {
+            entry_id: raw.revision.entry_id,
+            revision_id: raw.revision.revision_id,
+        },
+        spec: &document.spec,
+        parameters: &request.parameters,
+        current_sources: &current_sources,
+    });
+
+    match result {
+        Ok(plan) => Ok(Json(composition_resolve_success_response(
+            plan,
+            parameter_definitions,
+        )?)),
+        Err(diagnostics) => Ok(Json(composition_resolve_diagnostics_response(
+            diagnostics,
+            parameter_definitions,
+        ))),
+    }
+}
+
+enum OwnedCompositionSourceDescriptor {
+    EntryQuery {
+        source_id: String,
+        form: Option<ugoite_domain::form::FormDefinition>,
+    },
+    SavedSql {
+        source_id: String,
+        revision: Option<SavedSqlRevisionMetadata>,
+    },
+}
+
+impl OwnedCompositionSourceDescriptor {
+    fn as_current_source(&self) -> CurrentSourceDescriptor<'_> {
+        match self {
+            Self::EntryQuery { source_id, form } => CurrentSourceDescriptor::EntryQuery {
+                source_id,
+                current_form: form.as_ref(),
+            },
+            Self::SavedSql {
+                source_id,
+                revision,
+            } => CurrentSourceDescriptor::SavedSql {
+                source_id,
+                current_revision: revision.as_ref(),
+            },
+        }
+    }
+}
+
+fn conceal_composition_source_lookup<T>(
+    result: anyhow::Result<T>,
+    concealed_code: ErrorCode,
+) -> anyhow::Result<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(error)
+            if error.chain().any(|cause| {
+                cause
+                    .downcast_ref::<AppError>()
+                    .is_some_and(|app| app.code() == concealed_code)
+            }) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn api_composition_parameter_definition(
+    parameter: &DomainCompositionParameter,
+) -> CompositionParameterDefinition {
+    CompositionParameterDefinition {
+        id: parameter.id.clone(),
+        parameter_type: match parameter.parameter_type {
+            DomainCompositionParameterType::String => ApiCompositionParameterType::String,
+            DomainCompositionParameterType::Boolean => ApiCompositionParameterType::Boolean,
+            DomainCompositionParameterType::Integer => ApiCompositionParameterType::Integer,
+            DomainCompositionParameterType::Float => ApiCompositionParameterType::Float,
+            DomainCompositionParameterType::Date => ApiCompositionParameterType::Date,
+            DomainCompositionParameterType::Timestamp => ApiCompositionParameterType::Timestamp,
+        },
+        required: parameter.required,
+        default: parameter
+            .default
+            .as_ref()
+            .map(|value| value.as_json_value().clone()),
+        format: parameter.format.map(|format| match format {
+            DomainCompositionParameterFormat::YearMonth => ApiCompositionParameterFormat::YearMonth,
+        }),
+    }
+}
+
+fn composition_resolve_diagnostic_response(
+    code: DomainCompositionDiagnosticCode,
+    parameter_id: Option<String>,
+    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+) -> CompositionResolveResponse {
+    composition_resolve_diagnostics_response(
+        vec![CoreCompositionDiagnostic { code, parameter_id }],
+        parameter_definitions,
+    )
+}
+
+fn composition_resolve_diagnostics_response(
+    diagnostics: Vec<CoreCompositionDiagnostic>,
+    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+) -> CompositionResolveResponse {
+    CompositionResolveResponse {
+        ok: false,
+        parameter_definitions,
+        plan: None,
+        diagnostics: diagnostics
+            .into_iter()
+            .map(|diagnostic| CompositionResolveDiagnostic {
+                code: api_composition_diagnostic_code(diagnostic.code),
+                parameter_id: diagnostic.parameter_id,
+            })
+            .collect(),
+    }
+}
+
+fn composition_resolve_success_response(
+    plan: ResolvedCompositionPlan,
+    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+) -> ApiResult<CompositionResolveResponse> {
+    let composition_revision = CompositionRevisionReference {
+        entry_id: plan.composition_revision.entry_id.to_string(),
+        revision_id: plan.composition_revision.revision_id.to_string(),
+    };
+    let sources = plan
+        .sources
+        .into_iter()
+        .map(|source| match source {
+            ugoite_core::composition::ResolvedSourceRequest::EntryQuery {
+                source_id,
+                request,
+                source_schema_fingerprint,
+            } => Ok(CompositionResolvedSource::EntryQuery {
+                source_id,
+                request: serde_json::to_value(request)
+                    .map_err(|error| ApiError::from_core(anyhow!(error)))?,
+                source_schema_fingerprint,
+            }),
+            ugoite_core::composition::ResolvedSourceRequest::SavedSql {
+                source_id,
+                request,
+                source_schema_fingerprint,
+            } => Ok(CompositionResolvedSource::SavedSql {
+                source_id,
+                request: serde_json::to_value(request)
+                    .map_err(|error| ApiError::from_core(anyhow!(error)))?,
+                source_schema_fingerprint,
+            }),
+        })
+        .collect::<ApiResult<Vec<_>>>()?;
+    Ok(CompositionResolveResponse {
+        ok: true,
+        parameter_definitions,
+        plan: Some(CompositionResolvePlan {
+            composition_revision,
+            sources,
+        }),
+        diagnostics: Vec::new(),
+    })
+}
+
 async fn lint_composition(
     request: Result<Json<CompositionLintRequest>, JsonRejection>,
 ) -> ApiResult<Json<CompositionLintResponse>> {
@@ -13587,6 +13908,11 @@ mod authentication_regression_tests {
                 get(composition_revision),
             )
             .route(
+                "/spaces/{space_id}/compositions/{entry_id}/resolve",
+                post(resolve_composition_handler)
+                    .layer(DefaultBodyLimit::max(COMPOSITION_RESOLVE_MAX_REQUEST_BYTES)),
+            )
+            .route(
                 "/compositions/lint",
                 post(lint_composition)
                     .layer(DefaultBodyLimit::max(COMPOSITION_LINT_MAX_REQUEST_BYTES)),
@@ -13778,6 +14104,530 @@ mod authentication_regression_tests {
         assert_eq!(latest_body["code"], history_body["code"]);
         assert_eq!(latest_body["message"], history_body["message"]);
         assert_eq!(invalid_limit_status, StatusCode::UNPROCESSABLE_ENTITY);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn composition_resolve_conceals_missing_and_denied_forms() -> anyhow::Result<()> {
+        use ugoite_domain::{
+            composition::{
+                CompositionComponent, CompositionDocument, CompositionKind, CompositionSection,
+                CompositionSource, CompositionSpec, EntryQueryProjectionTemplate,
+                EntryQueryTemplate,
+            },
+            id::FormId,
+        };
+
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-resolve-forms-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(347401);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-resolve-forms", principal_id, "Resolve test")
+            .await?
+            .to_string();
+        let viewer_id = Uuid::from_u128(347404);
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                principal_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Resolve viewer".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        let source_form_id = Uuid::from_u128(347402);
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "id": source_form_id,
+                    "name": "ResolveSourceForm",
+                    "version": 1,
+                    "fields": {},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+
+        let save_document = |name: &str, form_id: FormId| CompositionDocument {
+            format_version: 1,
+            name: name.to_string(),
+            kind: CompositionKind::Dashboard,
+            spec: CompositionSpec {
+                parameters: Vec::new(),
+                sources: vec![CompositionSource::EntryQuery {
+                    id: "private-source-id".to_string(),
+                    form_id,
+                    field_schema: Vec::new(),
+                    query: EntryQueryTemplate {
+                        text: None,
+                        filters: Vec::new(),
+                        sort: Vec::new(),
+                        page_limit: 10,
+                        projection: EntryQueryProjectionTemplate::Preview,
+                    },
+                }],
+                components: Vec::<CompositionComponent>::new(),
+                sections: Vec::<CompositionSection>::new(),
+            },
+        };
+        let missing = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: save_document(
+                        "Missing source",
+                        FormId::from_uuid(Uuid::from_u128(347403)),
+                    ),
+                    tags: None,
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let denied = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: save_document("Denied source", FormId::from_uuid(source_form_id)),
+                    tags: None,
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        Authorizer::new(state.service.operator().clone())
+            .set_policy(
+                &space_id,
+                principal_id,
+                &ResourceRef {
+                    kind: ResourceKind::Form,
+                    id: "ResolveSourceForm".to_string(),
+                    parent: None,
+                },
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
+
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(viewer_id, space_uid),
+        );
+        let resolve = |entry_id: Uuid, revision_id: String| {
+            Request::post(format!(
+                "/spaces/{space_id}/compositions/{entry_id}/resolve"
+            ))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({"revision_id": revision_id, "parameters": {}}).to_string(),
+            ))
+        };
+        let (missing_status, missing_body) = route_json(
+            route.clone(),
+            resolve(missing.entry_id.as_uuid(), missing.revision_id.to_string())?,
+        )
+        .await?;
+        let (denied_status, denied_body) = route_json(
+            route,
+            resolve(denied.entry_id.as_uuid(), denied.revision_id.to_string())?,
+        )
+        .await?;
+
+        let expected = json!({
+            "ok": false,
+            "parameter_definitions": [],
+            "diagnostics": [{"code": "source_unavailable"}]
+        });
+        assert_eq!(missing_status, StatusCode::OK);
+        assert_eq!(denied_status, StatusCode::OK);
+        assert_eq!(missing_body, expected);
+        assert_eq!(denied_body, expected);
+        assert!(!missing_body.to_string().contains("private-source-id"));
+        assert!(!denied_body.to_string().contains("private-source-id"));
+        assert!(!missing_body
+            .to_string()
+            .contains(&source_form_id.to_string()));
+        assert!(!denied_body
+            .to_string()
+            .contains(&source_form_id.to_string()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial(
+    ) -> anyhow::Result<()> {
+        use ugoite_domain::composition::{
+            CompositionDocument, CompositionKind, CompositionSource, CompositionSpec,
+        };
+
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-resolve-sql-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(347411);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-resolve-sql", principal_id, "Resolve test")
+            .await?
+            .to_string();
+        let viewer_id = Uuid::from_u128(347415);
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                principal_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Resolve viewer".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        let sql_id = Uuid::from_u128(347412);
+        let sql = state
+            .service
+            .create_saved_sql_authorized_for_principals(
+                &space_id,
+                Some(&sql_id.to_string()),
+                &saved_sql::SqlPayload {
+                    name: Some("Private SQL".to_string()),
+                    kind: saved_sql::SqlKind::UserQuery,
+                    metadata: None,
+                    sql: "SELECT 1 AS value".to_string(),
+                    variables: json!([]),
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let exact_revision = sql["revision_id"]
+            .as_str()
+            .expect("created Saved SQL revision")
+            .to_string();
+        let saved_sql_id = sql["id"]
+            .as_str()
+            .expect("created Saved SQL ID")
+            .to_string();
+        let saved_sql_uuid = Uuid::parse_str(&saved_sql_id)?;
+        let exact_revision_id = exact_revision.parse::<Uuid>()?;
+        let save_document =
+            |name: &str, source_entry_id: Uuid, revision_id: Uuid| CompositionDocument {
+                format_version: 1,
+                name: name.to_string(),
+                kind: CompositionKind::Dashboard,
+                spec: CompositionSpec {
+                    parameters: Vec::new(),
+                    sources: vec![CompositionSource::SavedSql {
+                        id: "private-sql-source".to_string(),
+                        entry_id: ugoite_domain::id::EntryId::from_uuid(source_entry_id),
+                        revision_id: ugoite_domain::id::RevisionId::from_uuid(revision_id),
+                        variables: BTreeMap::new(),
+                    }],
+                    components: Vec::new(),
+                    sections: Vec::new(),
+                },
+            };
+        let missing = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: save_document(
+                        "Missing SQL revision",
+                        saved_sql_uuid,
+                        Uuid::from_u128(347414),
+                    ),
+                    tags: None,
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let exact = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: save_document(
+                        "Exact SQL revision",
+                        saved_sql_uuid,
+                        exact_revision_id,
+                    ),
+                    tags: None,
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let denied = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: save_document(
+                        "Denied SQL revision",
+                        saved_sql_uuid,
+                        exact_revision_id,
+                    ),
+                    tags: None,
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(viewer_id, space_uid),
+        );
+        let resolve = |entry_id: Uuid, revision_id: String| {
+            Request::post(format!(
+                "/spaces/{space_id}/compositions/{entry_id}/resolve"
+            ))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({"revision_id": revision_id, "parameters": {}}).to_string(),
+            ))
+        };
+        let (exact_status, exact_body) = route_json(
+            route.clone(),
+            resolve(exact.entry_id.as_uuid(), exact.revision_id.to_string())?,
+        )
+        .await?;
+        assert_eq!(exact_status, StatusCode::OK);
+        assert_eq!(exact_body["ok"], true);
+        assert_eq!(
+            exact_body["plan"]["sources"][0]["request"]["saved_sql"],
+            json!({"id": saved_sql_id, "revision_id": exact_revision})
+        );
+        let (missing_status, missing_body) = route_json(
+            route.clone(),
+            resolve(missing.entry_id.as_uuid(), missing.revision_id.to_string())?,
+        )
+        .await?;
+        Authorizer::new(state.service.operator().clone())
+            .set_policy(
+                &space_id,
+                principal_id,
+                &ResourceRef {
+                    kind: ResourceKind::SavedSql,
+                    id: saved_sql_id.clone(),
+                    parent: None,
+                },
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
+        let (denied_status, denied_body) = route_json(
+            route,
+            resolve(denied.entry_id.as_uuid(), denied.revision_id.to_string())?,
+        )
+        .await?;
+
+        let expected = json!({
+            "ok": false,
+            "parameter_definitions": [],
+            "diagnostics": [{"code": "source_unavailable"}]
+        });
+        assert_eq!(missing_status, StatusCode::OK);
+        assert_eq!(denied_status, StatusCode::OK);
+        assert_eq!(missing_body, expected);
+        assert_eq!(denied_body, expected);
+        assert!(!missing_body.to_string().contains("private-sql-source"));
+        assert!(!denied_body.to_string().contains("private-sql-source"));
+        assert!(!missing_body.to_string().contains(&saved_sql_id));
+        assert!(!denied_body.to_string().contains(&saved_sql_id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn composition_resolve_uses_exact_requested_revision_with_newer_revision_available(
+    ) -> anyhow::Result<()> {
+        use ugoite_domain::composition::{
+            CompositionDocument, CompositionKind, CompositionParameter, CompositionParameterType,
+            CompositionSpec,
+        };
+
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-resolve-exact-revision-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(347421);
+        let space_id = state
+            .service
+            .create_space_for_principal(
+                "composition-resolve-exact-revision",
+                principal_id,
+                "Resolve exact revision test",
+            )
+            .await?
+            .to_string();
+        let viewer_id = Uuid::from_u128(347422);
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                principal_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Resolve viewer".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+
+        let document = |name: &str, parameters: Vec<CompositionParameter>| CompositionDocument {
+            format_version: 1,
+            name: name.to_string(),
+            kind: CompositionKind::Dashboard,
+            spec: CompositionSpec {
+                parameters,
+                sources: Vec::new(),
+                components: Vec::new(),
+                sections: Vec::new(),
+            },
+        };
+        let month_parameter = || CompositionParameter {
+            id: "month".to_string(),
+            parameter_type: CompositionParameterType::String,
+            required: true,
+            default: None,
+            format: None,
+        };
+        let older = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: document("Older exact revision", vec![month_parameter()]),
+                    tags: None,
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let newer = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: Some(older.entry_id),
+                    base_revision_id: Some(older.revision_id),
+                    document: document("Newer latest revision", Vec::new()),
+                    tags: None,
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        assert_eq!(older.entry_id, newer.entry_id);
+        assert_ne!(older.revision_id, newer.revision_id);
+
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(viewer_id, space_uid),
+        );
+        let resolve = |revision_id: String, parameters: Value| {
+            Request::post(format!(
+                "/spaces/{space_id}/compositions/{}/resolve",
+                older.entry_id
+            ))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({"revision_id": revision_id, "parameters": parameters}).to_string(),
+            ))
+        };
+        let (missing_parameter_status, missing_parameter_body) = route_json(
+            route.clone(),
+            resolve(older.revision_id.to_string(), json!({}))?,
+        )
+        .await?;
+        assert_eq!(missing_parameter_status, StatusCode::OK);
+        assert_eq!(missing_parameter_body["ok"], false);
+        assert_eq!(
+            missing_parameter_body["parameter_definitions"],
+            json!([{"id":"month", "type":"string", "required":true}])
+        );
+        assert_eq!(
+            missing_parameter_body["diagnostics"],
+            json!([{"code":"parameter_missing", "parameter_id":"month"}])
+        );
+
+        let (older_status, older_body) = route_json(
+            route.clone(),
+            resolve(older.revision_id.to_string(), json!({"month":"October"}))?,
+        )
+        .await?;
+        assert_eq!(older_status, StatusCode::OK);
+        assert_eq!(older_body["ok"], true);
+        assert_eq!(
+            older_body["parameter_definitions"],
+            json!([{"id":"month", "type":"string", "required":true}])
+        );
+        assert_eq!(
+            older_body["plan"]["composition_revision"],
+            json!({
+                "entry_id": older.entry_id.to_string(),
+                "revision_id": older.revision_id.to_string(),
+            })
+        );
+        assert_eq!(older_body["plan"]["sources"], json!([]));
+
+        let (latest_status, latest_body) = route_json(
+            route.clone(),
+            resolve(newer.revision_id.to_string(), json!({"month":"October"}))?,
+        )
+        .await?;
+        assert_eq!(latest_status, StatusCode::OK);
+        assert_eq!(latest_body["ok"], false);
+        assert_eq!(latest_body["parameter_definitions"], json!([]));
+        assert_eq!(
+            latest_body["diagnostics"],
+            json!([{"code":"parameter_unknown", "parameter_id":"month"}])
+        );
+
+        let (missing_status, missing_body) = route_json(
+            route,
+            resolve(Uuid::from_u128(347423).to_string(), json!({}))?,
+        )
+        .await?;
+        assert_eq!(missing_status, StatusCode::NOT_FOUND, "{missing_body}");
         Ok(())
     }
 

@@ -15,7 +15,10 @@ pub mod composition;
 pub use composition::{
     CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
     CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
-    CompositionRawRevision, CompositionRevisionMetadata,
+    CompositionParameterDefinition, CompositionParameterFormat, CompositionParameterType,
+    CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
+    CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedSource,
+    CompositionRevisionMetadata, CompositionRevisionReference,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -80,6 +83,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "composition.lint",
     "composition.get",
     "composition.history",
+    "composition.resolve",
     "sql.list",
     "sql.get",
     "sql.create",
@@ -1037,6 +1041,17 @@ pub fn prepare_request(
                     query,
                 )
             }
+            "composition.resolve" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to resolve Composition"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "compositions".into(),
+                    required_string(operation, args, "composition_id")?,
+                    "resolve".into(),
+                ],
+                vec![],
+            ),
             "entry.create" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to create entry"),
                 vec![
@@ -1846,6 +1861,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to get Composition history",
             RequestBodyKind::None,
         ),
+        "composition.resolve" => (
+            HttpMethod::Post,
+            "Failed to resolve Composition",
+            RequestBodyKind::Json,
+        ),
         "entry.create" => (
             HttpMethod::Post,
             "Failed to create entry",
@@ -2533,6 +2553,84 @@ mod tests {
             json!({"yaml": "format_version: 1\n"})
         );
 
+        let resolve_body = json!({
+            "revision_id": "01900000-0000-7000-8000-000000000003",
+            "parameters": {"month": "2026-10"}
+        });
+        let resolve = prepare_request(
+            "composition.resolve",
+            &json!({"space_id": "demo", "composition_id": "composition-1"}),
+            Some(&resolve_body),
+        )
+        .expect("resolve request");
+        assert_eq!(resolve.method, HttpMethod::Post);
+        assert_eq!(
+            resolve.path,
+            "/spaces/demo/compositions/composition-1/resolve"
+        );
+        assert_eq!(resolve.body_kind, RequestBodyKind::Json);
+        assert_eq!(
+            serde_json::from_str::<Value>(resolve.body.as_deref().expect("resolve body"))
+                .expect("resolve request JSON"),
+            resolve_body
+        );
+
+        let resolve_success = json!({
+            "ok": true,
+            "parameter_definitions": [{
+                "id": "month",
+                "type": "date",
+                "required": true,
+                "default": "2026-10-01",
+                "format": "year-month"
+            }],
+            "plan": {
+                "composition_revision": {
+                    "entry_id": "01900000-0000-7000-8000-000000000002",
+                    "revision_id": "01900000-0000-7000-8000-000000000003"
+                },
+                "sources": [{
+                    "kind": "saved_sql",
+                    "source_id": "monthly-total",
+                    "request": {
+                        "limit": 100,
+                        "saved_sql": {
+                            "id": "01900000-0000-7000-8000-000000000004",
+                            "revision_id": "01900000-0000-7000-8000-000000000005"
+                        }
+                    },
+                    "source_schema_fingerprint": "b".repeat(64)
+                }]
+            }
+        });
+        let resolve_success_dto: CompositionResolveResponse =
+            serde_json::from_value(resolve_success.clone()).expect("resolve success DTO");
+        assert_eq!(
+            serde_json::to_value(&resolve_success_dto).expect("serialize resolve success DTO"),
+            resolve_success
+        );
+        let source_unavailable = json!({
+            "ok": false,
+            "parameter_definitions": [{
+                "id": "month",
+                "type": "date",
+                "required": true,
+                "default": "2026-10-01",
+                "format": "year-month"
+            }],
+            "diagnostics": [{"code": "source_unavailable"}]
+        });
+        let resolve_error_dto: CompositionResolveResponse =
+            serde_json::from_value(source_unavailable.clone()).expect("resolve diagnostic DTO");
+        assert_eq!(
+            serde_json::to_value(&resolve_error_dto).expect("serialize resolve diagnostic DTO"),
+            source_unavailable
+        );
+        assert_eq!(
+            CompositionDiagnosticCode::SourceUnavailable.as_str(),
+            "source_unavailable"
+        );
+
         let lint_success = json!({
             "ok": true,
             "value": {
@@ -2638,6 +2736,20 @@ mod tests {
             )
             .expect("raw Composition JSON response");
             assert_eq!(decoded, expected);
+        }
+
+        for response_value in [resolve_success, source_unavailable] {
+            let decoded = decode_response(
+                "composition.resolve",
+                ApiResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    headers: vec![],
+                    body: response_value.to_string(),
+                },
+            )
+            .expect("Composition resolve JSON response");
+            assert_eq!(decoded, response_value);
         }
     }
 
@@ -3306,7 +3418,10 @@ mod tests {
         if needs_space_id && !matches!(operation, "space.list" | "space.create") {
             arguments.insert("space_id".into(), json!("demo"));
         }
-        if matches!(operation, "composition.get" | "composition.history") {
+        if matches!(
+            operation,
+            "composition.get" | "composition.history" | "composition.resolve"
+        ) {
             arguments.insert("composition_id".into(), json!("composition-1"));
         }
         if matches!(

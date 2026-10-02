@@ -175,6 +175,9 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
   B4: [
     "crates/ugoite-api-client/src/lib.rs#test:composition_operations_prepare_and_decode_through_the_portable_protocol",
     "crates/ugoite-server/src/lib.rs#test:composition_handlers_use_authorized_service_boundaries",
+    "crates/ugoite-server/src/lib.rs#test:composition_resolve_conceals_missing_and_denied_forms",
+    "crates/ugoite-server/src/lib.rs#test:composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial",
+    "crates/ugoite-server/src/lib.rs#test:composition_resolve_uses_exact_requested_revision_with_newer_revision_available",
     "crates/ugoite-cli/src/commands/composition.rs#test:composition_core_and_remote_outputs_preserve_diagnostic_codes",
   ],
   B5: [
