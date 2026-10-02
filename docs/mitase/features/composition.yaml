@@ -35,6 +35,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-004#criterion.used-field-fingerprint
               - kind: documents
+                anchor: REQ-COMP-004#criterion.exact-composition-revision
+              - kind: documents
                 anchor: REQ-COMP-004#criterion.concealed-unavailable-references
               - kind: documents
                 anchor: REQ-COMP-005#criterion.raw-inspection
