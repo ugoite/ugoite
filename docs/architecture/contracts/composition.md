@@ -138,9 +138,10 @@ logical type, List item metadata, and RowReference target metadata. Unrelated
 Form fields, labels, and the rest of the Composition document do not affect
 this fingerprint. In particular, text search alone does not make List fields
 used because existing EntryQuery semantics exclude them from text-search
-expansion. The behavior is implemented in
+expansion. The query-template contribution is implemented in
 `compile_entry_query_source` and covered by the focused resolver fingerprint
-tests in `crates/ugoite-core/src/composition.rs`.
+tests in `crates/ugoite-core/src/composition.rs`. Metric FieldId inclusion is
+part of the planned component-binding resolver work.
 
 The shared native/WASM fixture can be executed with
 `deno run -A crates/ugoite-wasm/tests/composition_parity.ts`.
