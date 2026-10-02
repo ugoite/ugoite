@@ -2,9 +2,18 @@ mod common;
 
 use common::{seed_preexisting_form, setup_operator};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_domain::identity::{
+    AccessPolicy, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
+};
 use ugoite_domain::metadata;
+use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
+use ugoite_iceberg::entry;
+use ugoite_iceberg::integrity::FakeIntegrityProvider;
+use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::{composition, form, iceberg_store, space};
+use uuid::Uuid;
 
 fn registry_form_definition(extension_metadata: Value, fields: Value) -> Value {
     json!({
@@ -33,6 +42,36 @@ fn assert_registry_conflict(error: &anyhow::Error) {
             .downcast_ref::<AppError>()
             .is_some_and(|app_error| app_error.code() == ErrorCode::CompositionRegistryConflict)
     }));
+}
+
+#[tokio::test]
+async fn raw_composition_read_does_not_create_the_registry() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op.clone(), "memory://composition-raw-empty");
+    let owner = Uuid::from_u128(3_428_000);
+    let space_id = service
+        .create_space_for_principal("composition-raw-empty", owner, "Owner")
+        .await?
+        .to_string();
+    let ws_path = service.workspace_path(&space_id);
+
+    let error = service
+        .get_composition_raw_authorized_for_principals(&space_id, "missing-composition", &[owner])
+        .await
+        .expect_err("missing Composition should be not found");
+    assert_eq!(
+        error.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::EntryNotFound
+    );
+    assert!(iceberg_store::native_workspace_read_only(&op, &ws_path)
+        .await?
+        .list_forms()
+        .await?
+        .iter()
+        .all(|form| !form
+            .name
+            .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)));
+    Ok(())
 }
 
 #[tokio::test]
@@ -193,5 +232,264 @@ async fn registry_marker_and_schema_mismatch_fail_closed() -> anyhow::Result<()>
         .await?;
         assert_eq!(after, before);
     }
+    Ok(())
+}
+
+fn composition_fields(spec: &str, version: i64, name: &str) -> BTreeMap<String, Value> {
+    BTreeMap::from([
+        ("name".to_string(), json!(name)),
+        ("kind".to_string(), json!("dashboard")),
+        ("format_version".to_string(), json!(version)),
+        ("spec".to_string(), json!(spec)),
+    ])
+}
+
+#[tokio::test]
+async fn raw_composition_read_preserves_unknown_version_and_exact_history() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op.clone(), "memory://composition-raw");
+    let owner = Uuid::from_u128(3_428_003);
+    let space_id = service
+        .create_space_for_principal("composition-raw", owner, "Owner")
+        .await?
+        .to_string();
+    let ws_path = service.workspace_path(&space_id);
+    composition::ensure_composition_registry(&op, &ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+    let missing_history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            "missing-composition",
+            &[owner],
+            10,
+            0,
+        )
+        .await
+        .expect_err("missing Composition history should be not found");
+    assert_eq!(
+        missing_history.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::EntryNotFound
+    );
+    let first = entry::create_structured_entry_with_scopes_and_change_with_receipt(
+        &op,
+        &ws_path,
+        "composition-document",
+        composition::COMPOSITION_REGISTRY_FORM_NAME.to_string(),
+        vec!["tool".to_string()],
+        composition_fields("not: [valid YAML", 99, "Raw tool"),
+        BTreeMap::new(),
+        "author",
+        &integrity,
+        None,
+        None,
+    )
+    .await?;
+    let first_revision_id = first.1.committed_revision_ids[0].to_string();
+
+    let raw = service
+        .get_composition_raw_authorized_for_principals(&space_id, "composition-document", &[owner])
+        .await?;
+    assert_eq!(raw.fields["format_version"], json!(99));
+    assert_eq!(raw.format_version_probe(), Some(99));
+    assert_eq!(raw.fields["spec"], json!("not: [valid YAML"));
+    assert_eq!(raw.revision.entry.tags, ["tool"]);
+
+    entry::update_structured_entry_authorized_with_change(
+        &op,
+        &ws_path,
+        "composition-document",
+        Some(composition::COMPOSITION_REGISTRY_FORM_NAME.to_string()),
+        Some(vec!["updated".to_string()]),
+        composition_fields("name: updated", 1, "Updated tool"),
+        BTreeMap::new(),
+        Some(&first_revision_id),
+        "author",
+        &integrity,
+        None,
+        None,
+    )
+    .await?;
+
+    let exact = service
+        .get_composition_raw_revision_authorized_for_principals(
+            &space_id,
+            "composition-document",
+            &first_revision_id,
+            &[owner],
+        )
+        .await?;
+    assert_eq!(exact.fields["spec"], json!("not: [valid YAML"));
+    let missing_revision = service
+        .get_composition_raw_revision_authorized_for_principals(
+            &space_id,
+            "composition-document",
+            &Uuid::from_u128(3_428_099).to_string(),
+            &[owner],
+        )
+        .await
+        .expect_err("exact read must not fall back to latest");
+    assert_eq!(
+        missing_revision.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::EntryNotFound
+    );
+    let latest = service
+        .get_composition_raw_authorized_for_principals(&space_id, "composition-document", &[owner])
+        .await?;
+    assert_eq!(latest.fields["spec"], json!("name: updated"));
+    assert_ne!(latest.revision.revision_id, exact.revision.revision_id);
+
+    let page = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            "composition-document",
+            &[owner],
+            1,
+            0,
+        )
+        .await?;
+    assert_eq!(page.total, 2);
+    assert!(page.has_more);
+    assert_eq!(
+        page.revisions[0].revision.revision_id,
+        exact.revision.revision_id
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn authorized_composition_raw_read_conceals_missing_and_denied_ids() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op.clone(), "memory://composition-acl");
+    let owner = Uuid::from_u128(3_428_001);
+    let viewer = Uuid::from_u128(3_428_002);
+    let space_id = service
+        .create_space_for_principal("composition-acl", owner, "Owner")
+        .await?
+        .to_string();
+    let ws_path = service.workspace_path(&space_id);
+    composition::ensure_composition_registry(&op, &ws_path).await?;
+    let (_, receipt) = entry::create_structured_entry_with_scopes_and_change_with_receipt(
+        &op,
+        &ws_path,
+        "composition-denied",
+        composition::COMPOSITION_REGISTRY_FORM_NAME.to_string(),
+        Vec::new(),
+        composition_fields("name: tool", 1, "Tool"),
+        BTreeMap::new(),
+        &owner.to_string(),
+        &FakeIntegrityProvider,
+        None,
+        None,
+    )
+    .await?;
+    let revision_id = receipt.committed_revision_ids[0].to_string();
+
+    let authorizer = Authorizer::new(op);
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_string(),
+                state: PrincipalState::Active,
+                created_at: chrono::Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Entry,
+                id: "composition-denied".to_string(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+
+    let visible = service
+        .get_composition_raw_authorized_for_principals(&space_id, "composition-denied", &[owner])
+        .await?;
+    assert_eq!(visible.fields["name"], json!("Tool"));
+    let exact = service
+        .get_composition_raw_revision_authorized_for_principals(
+            &space_id,
+            "composition-denied",
+            &revision_id,
+            &[owner],
+        )
+        .await?;
+    assert_eq!(exact.revision.revision_id.to_string(), revision_id);
+    let history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            "composition-denied",
+            &[owner],
+            10,
+            0,
+        )
+        .await?;
+    assert_eq!(history.total, 1);
+    assert_eq!(
+        history.revisions[0].revision.revision_id.to_string(),
+        revision_id
+    );
+
+    let denied = service
+        .get_composition_raw_authorized_for_principals(&space_id, "composition-denied", &[viewer])
+        .await
+        .expect_err("Entry-level deny must hide the Composition");
+    let missing = service
+        .get_composition_raw_authorized_for_principals(&space_id, "composition-missing", &[viewer])
+        .await
+        .expect_err("missing Composition must remain concealed");
+    let denied = denied.downcast::<AppError>().expect("typed denied error");
+    let missing = missing.downcast::<AppError>().expect("typed missing error");
+    assert_eq!(denied.code(), ErrorCode::EntryNotFound);
+    assert_eq!(denied.code(), missing.code());
+    assert!(denied.message().starts_with("Entry not found:"));
+    assert!(missing.message().starts_with("Entry not found:"));
+
+    let denied_invalid_page = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            "composition-denied",
+            &[viewer],
+            0,
+            0,
+        )
+        .await
+        .expect_err("invalid pagination is rejected before ACL-dependent reads");
+    let missing_invalid_page = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            "composition-missing",
+            &[viewer],
+            0,
+            0,
+        )
+        .await
+        .expect_err("invalid pagination is rejected before existence checks");
+    let denied_invalid_page = denied_invalid_page
+        .downcast::<AppError>()
+        .expect("typed invalid-page error");
+    let missing_invalid_page = missing_invalid_page
+        .downcast::<AppError>()
+        .expect("typed invalid-page error");
+    assert_eq!(denied_invalid_page.code(), ErrorCode::InvalidInput);
+    assert_eq!(denied_invalid_page.code(), missing_invalid_page.code());
+    assert_eq!(
+        denied_invalid_page.message(),
+        missing_invalid_page.message()
+    );
     Ok(())
 }
