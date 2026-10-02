@@ -1,19 +1,26 @@
 //! Space-owned storage identity for Composition records.
 //!
-//! This module only establishes the reserved Registry Form. Composition YAML
-//! parsing and record mutation are handled by higher layers after their
-//! contracts are defined.
+//! This module owns the reserved Registry carrier and its Entry-backed
+//! persistence boundary. YAML semantics remain defined by `ugoite-domain`.
 
 use anyhow::{anyhow, Result};
+use chrono::Utc;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
-use ugoite_domain::entry::EntryRevision;
+use ugoite_domain::change::ChangeCommand;
+use ugoite_domain::composition::{
+    canonicalize_composition_yaml, CanonicalComposition, CompositionDocument,
+};
+use ugoite_domain::entry::{
+    EntryMetadata, EntryOperation, EntryRevision, EntryRevisionDraft, FieldValue,
+};
 use ugoite_domain::form::FormDefinition;
 use ugoite_domain::id::{validate_entry_id, validate_revision_id, EntryId, FieldId, RevisionId};
+use uuid::Uuid;
 
 pub const COMPOSITION_HISTORY_MAX_PAGE_SIZE: usize = 100;
 
@@ -48,6 +55,28 @@ pub struct RawCompositionHistoryPage {
     pub offset: usize,
     pub limit: usize,
     pub has_more: bool,
+}
+
+/// Create or update intent for one Composition Entry. Updates must carry the
+/// exact current revision as `base_revision_id`; unconditional overwrite is
+/// not part of this storage contract.
+#[derive(Debug, Clone)]
+pub struct CompositionSaveRequest {
+    pub entry_id: Option<EntryId>,
+    pub base_revision_id: Option<RevisionId>,
+    pub document: CompositionDocument,
+    /// When omitted on update, the current Entry tags are preserved.
+    pub tags: Option<Vec<String>>,
+}
+
+/// Result of one committed Composition publication.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompositionSaveResult {
+    pub entry_id: EntryId,
+    pub revision_id: RevisionId,
+    pub document: CompositionDocument,
+    pub canonical_yaml: String,
+    pub receipt: crate::CommitReceipt,
 }
 
 fn entry_uuid(entry_id: &str) -> EntryId {
@@ -107,6 +136,235 @@ fn target_scope(entry_id: EntryId) -> EntryScope {
 fn validate_raw_read(entry_id: &str) -> Result<EntryId> {
     validate_entry_id(entry_id).map_err(|error| AppError::invalid_identifier(error.to_string()))?;
     Ok(entry_uuid(entry_id))
+}
+
+fn registry_field_value<'a>(
+    form: &FormDefinition,
+    revision: &'a EntryRevision,
+    name: &str,
+) -> Result<&'a FieldValue> {
+    let field = form
+        .fields
+        .iter()
+        .find(|field| field.name == name)
+        .ok_or_else(|| registry_conflict("registry is missing a required carrier field"))?;
+    revision
+        .values
+        .get(&field.id)
+        .ok_or_else(|| registry_conflict("Composition revision is missing a carrier value"))
+}
+
+/// Validate every bit of the reserved Entry carrier before a production
+/// Composition append. This keeps the crate-private write path unable to
+/// publish malformed or noncanonical carrier values.
+pub(crate) fn validate_composition_revision(
+    revision: &EntryRevision,
+    form: &FormDefinition,
+) -> Result<CompositionDocument> {
+    validate_composition_registry_form(form)?;
+    if revision.operation != EntryOperation::Upsert
+        || !revision.extra_attributes.is_empty()
+        || !revision.extension_metadata.is_empty()
+        || revision.values.len() != form.fields.len()
+        || revision.entry.external_id != revision.entry_id.to_string()
+    {
+        return Err(registry_conflict(
+            "Composition revision has an invalid carrier shape",
+        ));
+    }
+
+    let name = match registry_field_value(form, revision, "name")? {
+        FieldValue::String(value) => value,
+        _ => {
+            return Err(registry_conflict(
+                "Composition name carrier has the wrong type",
+            ))
+        }
+    };
+    let kind = match registry_field_value(form, revision, "kind")? {
+        FieldValue::String(value) => value,
+        _ => {
+            return Err(registry_conflict(
+                "Composition kind carrier has the wrong type",
+            ))
+        }
+    };
+    let format_version = match registry_field_value(form, revision, "format_version")? {
+        FieldValue::Integer(value) => *value,
+        _ => {
+            return Err(registry_conflict(
+                "Composition format-version carrier has the wrong type",
+            ))
+        }
+    };
+    let spec = match registry_field_value(form, revision, "spec")? {
+        FieldValue::String(value) => value,
+        _ => {
+            return Err(registry_conflict(
+                "Composition spec carrier has the wrong type",
+            ))
+        }
+    };
+    let canonical = canonicalize_composition_yaml(spec)
+        .map_err(|diagnostic| registry_conflict(diagnostic.as_str()))?;
+    let expected_kind = serde_json::to_value(canonical.document.kind)?;
+    if canonical.yaml != *spec
+        || canonical.document.name != *name
+        || expected_kind.as_str() != Some(kind.as_str())
+        || i64::from(canonical.document.format_version) != format_version
+    {
+        return Err(registry_conflict(
+            "Composition carrier fields do not match canonical spec",
+        ));
+    }
+    Ok(canonical.document)
+}
+
+/// Append one canonical Composition as one Entry revision. Authorization is
+/// held by the service boundary; the coordinator rechecks Entry revision
+/// parentage against the latest Catalog Head before publication.
+pub(crate) async fn save_composition(
+    operator: &Operator,
+    workspace_path: &str,
+    request: CompositionSaveRequest,
+    entry_id: EntryId,
+    canonical: CanonicalComposition,
+    author: &str,
+) -> Result<CompositionSaveResult> {
+    if request.entry_id.is_some() != request.base_revision_id.is_some() {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "Composition updates require an entry ID and exact base revision",
+        )
+        .into());
+    }
+    let form = ensure_composition_registry(operator, workspace_path).await?;
+    let current_raw = if request.base_revision_id.is_some() {
+        read_composition_raw(operator, workspace_path, &entry_id.to_string())
+            .await?
+            .ok_or_else(|| AppError::not_found(ErrorCode::EntryNotFound, "Composition not found"))?
+            .into()
+    } else {
+        None
+    };
+    let current = current_raw.map(|raw: RawCompositionRevision| raw.revision);
+    if let (Some(base_revision), Some(current)) = (request.base_revision_id, current.as_ref()) {
+        if base_revision != current.revision_id {
+            let current_revision_id = current.revision_id.to_string();
+            return Err(AppError::revision_conflict(
+                &current_revision_id,
+                &base_revision.to_string(),
+                &current_revision_id,
+            )
+            .into());
+        }
+    }
+
+    let timestamp = Utc::now().timestamp_micros().max(
+        current
+            .as_ref()
+            .map(|revision| revision.entry.updated_at_micros.saturating_add(1))
+            .unwrap_or_default(),
+    );
+    let mut values = BTreeMap::new();
+    for (name, value) in [
+        ("name", FieldValue::String(canonical.document.name.clone())),
+        (
+            "kind",
+            FieldValue::String(
+                serde_json::to_value(canonical.document.kind)?
+                    .as_str()
+                    .expect("Composition kind serializes as a string")
+                    .to_string(),
+            ),
+        ),
+        (
+            "format_version",
+            FieldValue::Integer(i64::from(canonical.document.format_version)),
+        ),
+        ("spec", FieldValue::String(canonical.yaml.clone())),
+    ] {
+        let field_id = form
+            .fields
+            .iter()
+            .find(|field| field.name == name)
+            .map(|field| field.id)
+            .ok_or_else(|| registry_conflict("registry is missing a required carrier field"))?;
+        values.insert(field_id, value);
+    }
+
+    let change_id = Uuid::now_v7().to_string();
+    let draft = EntryRevisionDraft {
+        form_id: form.id,
+        entry_id,
+        revision_id: RevisionId::from(Uuid::now_v7()),
+        change_id: change_id.clone(),
+        operation: EntryOperation::Upsert,
+        committed_at_micros: timestamp,
+        author_id: current
+            .as_ref()
+            .map(|revision| revision.author_id.clone())
+            .unwrap_or_else(|| author.to_string()),
+        form_version: form.version,
+        source_kind: "api".to_string(),
+        source_id: None,
+        entry: EntryMetadata {
+            external_id: entry_id.to_string(),
+            tags: request.tags.unwrap_or_else(|| {
+                current
+                    .as_ref()
+                    .map(|revision| revision.entry.tags.clone())
+                    .unwrap_or_default()
+            }),
+            created_at_micros: current
+                .as_ref()
+                .map(|revision| revision.entry.created_at_micros)
+                .unwrap_or(timestamp),
+            updated_at_micros: timestamp,
+            updated_by: author.to_string(),
+            integrity: current
+                .as_ref()
+                .map(|revision| revision.entry.integrity.clone())
+                .unwrap_or_default(),
+            ..EntryMetadata::default()
+        },
+        values,
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    let revision = draft
+        .build(&form, current.as_ref())
+        .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+    let document = validate_composition_revision(&revision, &form)?;
+    let change = ChangeCommand {
+        change_id,
+        run_id: None,
+        actor_principal_id: author.to_string(),
+        message: Some(if current.is_some() {
+            "Update Composition".to_string()
+        } else {
+            "Create Composition".to_string()
+        }),
+        reverts_change_id: None,
+        created_at_micros: timestamp,
+    };
+    let publication =
+        crate::publication_context_for_change(&change, "composition.save", &revision)?;
+    crate::authorization::ensure_authorization_write_fence().await?;
+    let workspace =
+        crate::iceberg_store::native_mutation_workspace(operator, workspace_path).await?;
+    let receipt = workspace
+        .commit(publication)?
+        .append_composition_revision_authorized(revision.clone())
+        .await?;
+
+    Ok(CompositionSaveResult {
+        entry_id,
+        revision_id: revision.revision_id,
+        document,
+        canonical_yaml: canonical.yaml,
+        receipt,
+    })
 }
 
 pub(crate) fn validate_history_page(limit: usize) -> Result<()> {
@@ -324,7 +582,6 @@ fn validate_registry_definition(
     Ok(())
 }
 
-#[cfg(test)]
 pub(crate) fn validate_composition_registry_form(existing: &FormDefinition) -> Result<()> {
     let expected = composition_registry_definition()?;
     validate_registry_definition(existing, &expected)

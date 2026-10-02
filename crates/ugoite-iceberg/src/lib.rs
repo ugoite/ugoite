@@ -2456,13 +2456,27 @@ impl IcebergWorkspace {
                                 .checked_add(1)
                                 .ok_or_else(|| anyhow!("entry version overflow"))?
                     {
-                        return Err(anyhow!("entry revision conflict"));
+                        let current_revision_id = previous.revision_id.to_string();
+                        let expected_revision_id = revision
+                            .parent_revision_id
+                            .map(|revision_id| revision_id.to_string())
+                            .unwrap_or_else(|| "none".to_string());
+                        return Err(AppError::revision_conflict(
+                            &current_revision_id,
+                            &expected_revision_id,
+                            &current_revision_id,
+                        )
+                        .into());
                     }
                 } else if revision.expected_version.is_some()
                     || revision.parent_revision_id.is_some()
                     || revision.entry_version != 1
                 {
-                    return Err(anyhow!("entry revision conflict"));
+                    return Err(AppError::conflict(
+                        ErrorCode::RevisionConflict,
+                        "Entry revision conflict: the base revision is no longer current",
+                    )
+                    .into());
                 }
             }
             validate_revision_payload(&form, revision)?;
@@ -3273,6 +3287,20 @@ impl SpaceCommitCoordinator {
         let form = self.workspace.load_form(form_id).await?;
         crate::composition::ensure_generic_entry_write_allowed(&form.name)?;
         self.append_revisions_authorized_inner(form_id, revisions, relation_scopes)
+            .await
+    }
+
+    /// Append one Composition revision through the reserved Registry after
+    /// validating its canonical YAML carrier. Generic Entry writes must use
+    /// [`Self::append_revisions_authorized`], which rejects this Form.
+    pub(crate) async fn append_composition_revision_authorized(
+        &self,
+        revision: EntryRevision,
+    ) -> Result<CommitReceipt> {
+        self.ensure_authoritative_mutation_contract()?;
+        let form = self.workspace.load_form(revision.form_id).await?;
+        crate::composition::validate_composition_revision(&revision, &form)?;
+        self.append_revisions_authorized_inner(revision.form_id, vec![revision], None)
             .await
     }
 
