@@ -343,6 +343,9 @@ pub enum CompositionDiagnosticCode {
     ParameterMissing,
     ParameterTypeMismatch,
     SourceUnavailable,
+    MissingForm,
+    SavedSqlRevisionMissing,
+    NotAuthorized,
     MissingField,
     FieldTypeChanged,
     SourceSchemaChanged,
@@ -357,6 +360,9 @@ impl CompositionDiagnosticCode {
             Self::ParameterMissing => "parameter_missing",
             Self::ParameterTypeMismatch => "parameter_type_mismatch",
             Self::SourceUnavailable => "source_unavailable",
+            Self::MissingForm => "missing_form",
+            Self::SavedSqlRevisionMissing => "saved_sql_revision_missing",
+            Self::NotAuthorized => "not_authorized",
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
             Self::SourceSchemaChanged => "source_schema_changed",
@@ -473,17 +479,56 @@ mod tests {
 
     #[test]
     fn diagnostic_codes_have_stable_machine_spellings() {
-        assert_eq!(
-            CompositionDiagnosticCode::UnsupportedFormatVersion.as_str(),
-            "unsupported_format_version"
-        );
-        assert_eq!(
-            CompositionDiagnosticCode::InvalidComposition.as_str(),
-            "invalid_composition"
-        );
-        assert_eq!(
-            serde_json::to_string(&CompositionDiagnosticCode::SourceUnavailable).unwrap(),
-            "\"source_unavailable\""
-        );
+        let codes = [
+            (
+                CompositionDiagnosticCode::UnsupportedFormatVersion,
+                "unsupported_format_version",
+            ),
+            (
+                CompositionDiagnosticCode::InvalidComposition,
+                "invalid_composition",
+            ),
+            (
+                CompositionDiagnosticCode::ParameterUnknown,
+                "parameter_unknown",
+            ),
+            (
+                CompositionDiagnosticCode::ParameterMissing,
+                "parameter_missing",
+            ),
+            (
+                CompositionDiagnosticCode::ParameterTypeMismatch,
+                "parameter_type_mismatch",
+            ),
+            (
+                CompositionDiagnosticCode::SourceUnavailable,
+                "source_unavailable",
+            ),
+            (CompositionDiagnosticCode::MissingForm, "missing_form"),
+            (
+                CompositionDiagnosticCode::SavedSqlRevisionMissing,
+                "saved_sql_revision_missing",
+            ),
+            (CompositionDiagnosticCode::NotAuthorized, "not_authorized"),
+            (CompositionDiagnosticCode::MissingField, "missing_field"),
+            (
+                CompositionDiagnosticCode::FieldTypeChanged,
+                "field_type_changed",
+            ),
+            (
+                CompositionDiagnosticCode::SourceSchemaChanged,
+                "source_schema_changed",
+            ),
+        ];
+
+        for (code, spelling) in codes {
+            assert_eq!(code.as_str(), spelling);
+            let serialized = serde_json::to_string(&code).unwrap();
+            assert_eq!(serialized, format!("\"{spelling}\""));
+            assert_eq!(
+                serde_json::from_str::<CompositionDiagnosticCode>(&serialized).unwrap(),
+                code
+            );
+        }
     }
 }
