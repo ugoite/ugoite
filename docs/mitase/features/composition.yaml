@@ -84,3 +84,69 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.used-field-fingerprint
+      - id: cli-raw-inspection-source-evidence
+        role: evidence
+        facet: cli
+        responsibility: Show the CLI read and raw-output paths as partial evidence for inspection behavior; these source bindings do not establish export or history behavior.
+        targets:
+          - id: inspect-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: run }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.raw-inspection
+          - id: inspect-read-path
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: read_composition }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.raw-inspection
+          - id: inspect-raw-output
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: raw_spec_output }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.raw-inspection
+      - id: cli-raw-inspection-evidence
+        role: evidence
+        facet: cli-tests
+        responsibility: Preserve focused CLI evidence for raw-read projection, raw-carrier output, and exact revision selection, including the no-fallback case. These selectors cover inspection behavior only; they do not establish export or history evidence.
+        targets:
+          - id: portable-read-projection
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: local_raw_projection_matches_the_portable_composition_read_dto }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.raw-inspection
+          - id: raw-carrier-output
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: raw_spec_output_preserves_strings_and_represents_non_string_carriers }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.raw-inspection
+          - id: exact-revision-selection
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: inspect_selects_only_the_requested_composition_revision }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.raw-inspection
+          - id: missing-revision-no-fallback
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: inspect_missing_exact_revision_does_not_fall_back_to_latest }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.raw-inspection
+          - id: inspect-cli-arguments
+            adapter: rust
+            path: crates/ugoite-cli/src/main.rs
+            selector: { kind: symbol, name: composition_inspect_accepts_exact_revision_and_raw_output_without_becoming_a_write }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.raw-inspection
