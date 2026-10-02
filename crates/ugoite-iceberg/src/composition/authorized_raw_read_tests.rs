@@ -188,6 +188,36 @@ async fn authorized_composition_raw_read_conceals_missing_and_denied_ids() -> an
         denied_invalid_page.message(),
         missing_invalid_page.message()
     );
+
+    let denied_history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            "composition-denied",
+            &[viewer],
+            10,
+            0,
+        )
+        .await
+        .expect_err("a valid page must hide a denied Composition");
+    let missing_history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            "composition-missing",
+            &[viewer],
+            10,
+            0,
+        )
+        .await
+        .expect_err("a valid page for a missing Composition must remain concealed");
+    let denied_history = denied_history.downcast::<ugoite_core::error::AppError>()?;
+    let missing_history = missing_history.downcast::<ugoite_core::error::AppError>()?;
+    assert_eq!(
+        denied_history.code(),
+        ugoite_core::error::ErrorCode::EntryNotFound
+    );
+    assert_eq!(denied_history.code(), missing_history.code());
+    assert!(denied_history.message().starts_with("Entry not found:"));
+    assert!(missing_history.message().starts_with("Entry not found:"));
     Ok(())
 }
 
