@@ -27,6 +27,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-003#criterion.canonical-yaml
               - kind: documents
+                anchor: REQ-COMP-003#criterion.semantic-fingerprint
+              - kind: documents
                 anchor: REQ-COMP-003#criterion.wasm-parity
               - kind: documents
                 anchor: REQ-COMP-004#criterion.entry-query-translation
@@ -42,3 +44,43 @@ features:
             adapter: declared
             path: crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml
             selector: { kind: file }
+      - id: entry-query-resolver
+        role: implementation
+        facet: core
+        responsibility: Compile entry_query sources against the current Form and fingerprint only the schema fields used by the existing EntryQuery contract.
+        targets:
+          - id: compile-entry-query-source
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: compile_entry_query_source }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+      - id: entry-query-fingerprint-evidence
+        role: evidence
+        facet: core-tests
+        responsibility: Preserve focused evidence for excluding unrelated schema fields and matching the text-search expansion defined by existing EntryQuery semantics.
+        targets:
+          - id: ignores-unreferenced-fields
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: entry_query_fingerprint_ignores_unreferenced_schema_fields }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.used-field-fingerprint
+          - id: text-search-fields
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: text_search_fingerprints_only_fields_searched_by_entry_query }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.used-field-fingerprint
+          - id: added-searchable-field
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: new_text_search_field_changes_source_schema }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.used-field-fingerprint
