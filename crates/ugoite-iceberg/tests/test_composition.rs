@@ -1,10 +1,13 @@
 mod common;
 
+use chrono::Utc;
 use common::{seed_preexisting_form, setup_operator};
 use serde_json::{json, Value};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::composition::parse_composition_yaml;
+use ugoite_domain::identity::{PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole};
 use ugoite_domain::metadata;
+use ugoite_iceberg::authorization::Authorizer;
 use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::{composition, form, iceberg_store, space};
 use uuid::Uuid;
@@ -107,12 +110,124 @@ async fn composition_save_persists_canonical_carrier_and_receipt() -> anyhow::Re
             &[owner],
         )
         .await?;
+    assert_eq!(raw.revision.change_id, saved.receipt.command_id);
     assert_eq!(raw.fields["name"], json!(saved.document.name));
     assert_eq!(raw.fields["kind"], json!("dashboard"));
     assert_eq!(raw.fields["format_version"], json!(1));
     assert_eq!(raw.fields["spec"], json!(saved.canonical_yaml));
     assert_eq!(raw.revision.entry.tags, ["dashboard", "finance"]);
     assert_eq!(raw.revision.revision_id, saved.revision_id);
+    Ok(())
+}
+
+#[tokio::test]
+async fn denied_composition_create_and_update_have_no_storage_side_effects() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(
+        op.clone(),
+        format!("memory://composition-denied-save-{}", Uuid::now_v7()),
+    );
+    let owner = Uuid::from_u128(3_428_020);
+    let viewer = Uuid::from_u128(3_428_021);
+    let space_id = service
+        .create_space_for_principal("composition-denied-save", owner, "Owner")
+        .await?
+        .to_string();
+    Authorizer::new(op)
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+
+    let denied_create = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: document.clone(),
+                tags: None,
+            },
+            &viewer.to_string(),
+            &[viewer],
+        )
+        .await
+        .expect_err("viewer cannot create a Composition");
+    assert_eq!(
+        denied_create.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::Forbidden
+    );
+    assert!(iceberg_store::native_workspace_read_only(
+        service.operator(),
+        &service.workspace_path(&space_id)
+    )
+    .await?
+    .list_forms()
+    .await?
+    .iter()
+    .all(|form| !form
+        .name
+        .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)));
+
+    let created = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: document.clone(),
+                tags: None,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let mut changed = document;
+    changed.name.push_str(" (denied update)");
+    let denied_update = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(created.entry_id),
+                base_revision_id: Some(created.revision_id),
+                document: changed,
+                tags: None,
+            },
+            &viewer.to_string(),
+            &[viewer],
+        )
+        .await
+        .expect_err("viewer cannot update a Composition");
+    assert_eq!(
+        denied_update.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::Forbidden
+    );
+
+    let history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &created.entry_id.to_string(),
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(history.total, 1);
+    assert_eq!(
+        history.revisions[0].revision.revision_id,
+        created.revision_id
+    );
     Ok(())
 }
 
@@ -159,10 +274,10 @@ async fn invalid_composition_save_does_not_create_registry() -> anyhow::Result<(
 
 #[tokio::test]
 async fn composition_update_requires_exact_base_and_reports_stale_revision() -> anyhow::Result<()> {
-    let service = UgoiteService::new(format!(
-        "memory://composition-save-update-{}",
-        Uuid::now_v7()
-    ))?;
+    let op = setup_operator()?;
+    let root_uri = format!("memory://composition-save-update-{}", Uuid::now_v7());
+    let service = UgoiteService::from_operator(op.clone(), root_uri.clone());
+    let other_service = UgoiteService::from_operator(op, root_uri);
     let owner = Uuid::from_u128(3_428_011);
     let space_id = service
         .create_space_for_principal("composition-save-update", owner, "Owner")
@@ -242,7 +357,7 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
     let actor = owner.to_string();
     let principals = [owner];
     let (left, right) = tokio::join!(
-        service.save_composition_authorized_for_principals(
+        other_service.save_composition_authorized_for_principals(
             &space_id,
             composition::CompositionSaveRequest {
                 entry_id: Some(updated.entry_id),
@@ -265,12 +380,34 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
             &principals,
         ),
     );
-    assert_ne!(left.is_ok(), right.is_ok());
-    let conflict = left.err().or_else(|| right.err()).unwrap();
+    let (winner, conflict) = match (left, right) {
+        (Ok(winner), Err(conflict)) | (Err(conflict), Ok(winner)) => (winner, conflict),
+        (Ok(_), Ok(_)) => panic!("both stale-base writers unexpectedly committed"),
+        (Err(left), Err(right)) => panic!("both stale-base writers failed: {left}; {right}"),
+    };
     assert_eq!(
         conflict.downcast_ref::<AppError>().unwrap().code(),
         ErrorCode::RevisionConflict
     );
+    let latest = service
+        .get_composition_raw_authorized_for_principals(
+            &space_id,
+            &updated.entry_id.to_string(),
+            &[owner],
+        )
+        .await?;
+    assert_eq!(latest.revision.revision_id, winner.revision_id);
+    assert_eq!(latest.revision.change_id, winner.receipt.command_id);
+    let history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &updated.entry_id.to_string(),
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(history.total, 3);
     Ok(())
 }
 
