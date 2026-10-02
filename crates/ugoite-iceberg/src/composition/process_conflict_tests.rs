@@ -82,28 +82,28 @@ async fn composition_stale_base_conflicts_across_processes() -> anyhow::Result<(
     let winner_result = directory.path().join("winner-result.json");
     let loser_result = directory.path().join("loser-result.json");
 
-    let mut winner = spawn_writer(
-        "winner",
-        &root_uri,
-        &space_id,
-        &entry_id,
-        &base_revision_id,
-        winner_name,
-        &winner_gate,
-        &winner_result,
-    )?;
+    let mut winner = spawn_writer(WriterSpec {
+        role: "winner",
+        root_uri: &root_uri,
+        space_id: &space_id,
+        entry_id: &entry_id,
+        base_revision_id: &base_revision_id,
+        name: winner_name,
+        gate: &winner_gate,
+        result: &winner_result,
+    })?;
     winner.wait_for_gate(&winner_gate)?;
 
-    let mut loser = spawn_writer(
-        "loser",
-        &root_uri,
-        &space_id,
-        &entry_id,
-        &base_revision_id,
-        loser_name,
-        &loser_gate,
-        &loser_result,
-    )?;
+    let mut loser = spawn_writer(WriterSpec {
+        role: "loser",
+        root_uri: &root_uri,
+        space_id: &space_id,
+        entry_id: &entry_id,
+        base_revision_id: &base_revision_id,
+        name: loser_name,
+        gate: &loser_gate,
+        result: &loser_result,
+    })?;
     loser.wait_for_gate(&loser_gate)?;
 
     fs::write(winner_gate.join("release-1"), b"release")?;
@@ -250,38 +250,40 @@ async fn run_writer_child() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn spawn_writer(
-    role: &str,
-    root_uri: &str,
-    space_id: &str,
-    entry_id: &str,
-    base_revision_id: &str,
-    name: &str,
-    gate: &Path,
-    result: &Path,
-) -> anyhow::Result<ChildProcess> {
+struct WriterSpec<'a> {
+    role: &'a str,
+    root_uri: &'a str,
+    space_id: &'a str,
+    entry_id: &'a str,
+    base_revision_id: &'a str,
+    name: &'a str,
+    gate: &'a Path,
+    result: &'a Path,
+}
+
+fn spawn_writer(spec: WriterSpec<'_>) -> anyhow::Result<ChildProcess> {
     let mut command = Command::new(std::env::current_exe()?);
     command
         .arg("--exact")
         .arg(TEST_NAME)
         .arg("--nocapture")
         .env(CHILD_MODE_ENV, "1")
-        .env("UGOITE_TEST_PUBLICATION_GATE_DIR", gate)
-        .env("UGOITE_COMPOSITION_CONFLICT_ROLE", role)
-        .env("UGOITE_COMPOSITION_CONFLICT_ROOT_URI", root_uri)
-        .env("UGOITE_COMPOSITION_CONFLICT_SPACE_ID", space_id)
-        .env("UGOITE_COMPOSITION_CONFLICT_ENTRY_ID", entry_id)
+        .env("UGOITE_TEST_PUBLICATION_GATE_DIR", spec.gate)
+        .env("UGOITE_COMPOSITION_CONFLICT_ROLE", spec.role)
+        .env("UGOITE_COMPOSITION_CONFLICT_ROOT_URI", spec.root_uri)
+        .env("UGOITE_COMPOSITION_CONFLICT_SPACE_ID", spec.space_id)
+        .env("UGOITE_COMPOSITION_CONFLICT_ENTRY_ID", spec.entry_id)
         .env(
             "UGOITE_COMPOSITION_CONFLICT_BASE_REVISION_ID",
-            base_revision_id,
+            spec.base_revision_id,
         )
-        .env("UGOITE_COMPOSITION_CONFLICT_NAME", name)
-        .env("UGOITE_COMPOSITION_CONFLICT_RESULT", result)
+        .env("UGOITE_COMPOSITION_CONFLICT_NAME", spec.name)
+        .env("UGOITE_COMPOSITION_CONFLICT_RESULT", spec.result)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     Ok(ChildProcess {
         child: Some(command.spawn()?),
-        role: role.to_string(),
+        role: spec.role.to_string(),
     })
 }
 
