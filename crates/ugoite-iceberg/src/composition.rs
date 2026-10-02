@@ -74,7 +74,12 @@ pub async fn ensure_composition_registry(
     operator: &Operator,
     workspace_path: &str,
 ) -> Result<FormDefinition> {
-    let expected = composition_registry_definition()?;
+    let mut expected = composition_registry_definition()?;
+    let space_id = crate::iceberg_store::stable_space_id(operator, workspace_path).await?;
+    expected.id = ugoite_domain::id::FormId::from(uuid::Uuid::new_v5(
+        &space_id.as_uuid(),
+        COMPOSITION_REGISTRY_FORM_NAME.as_bytes(),
+    ));
     let workspace = crate::iceberg_store::native_workspace(operator, workspace_path).await?;
     let existing = workspace.list_forms().await?.into_iter().find(|form| {
         form.name
@@ -86,17 +91,31 @@ pub async fn ensure_composition_registry(
         return Ok(existing);
     }
 
-    let mut created = expected.clone();
-    created.id = ugoite_domain::id::FormId::from(uuid::Uuid::now_v7());
-    match crate::form::create_system_form(operator, workspace_path, &created).await {
-        Ok(()) => Ok(created),
-        Err(error) if is_registry_conflict(&error) => {
-            // Another opener may have created the canonical registry after the
-            // first read. Re-read and accept it only if its marker and schema
-            // are exact; a name collision remains fail-closed.
+    match crate::form::create_system_form(operator, workspace_path, &expected).await {
+        Ok(()) => Ok(expected),
+        Err(error) => {
+            // Every concurrent opener derives the same ID from immutable
+            // Space identity. After any creation error, re-read current Head
+            // and accept only the exact marker/schema; never mint a second
+            // same-name registry with a different ID.
             let workspace =
-                crate::iceberg_store::native_workspace(operator, workspace_path).await?;
-            let existing = workspace.list_forms().await?.into_iter().find(|form| {
+                match crate::iceberg_store::native_workspace(operator, workspace_path).await {
+                    Ok(workspace) => workspace,
+                    Err(inspect_error) => {
+                        return Err(error.context(format!(
+                    "registry creation failed and follow-up inspection failed: {inspect_error:#}"
+                )))
+                    }
+                };
+            let forms = match workspace.list_forms().await {
+                Ok(forms) => forms,
+                Err(inspect_error) => {
+                    return Err(error.context(format!(
+                    "registry creation failed and follow-up inspection failed: {inspect_error:#}"
+                )))
+                }
+            };
+            let existing = forms.into_iter().find(|form| {
                 form.name
                     .eq_ignore_ascii_case(COMPOSITION_REGISTRY_FORM_NAME)
             });
@@ -107,16 +126,7 @@ pub async fn ensure_composition_registry(
                 Err(error)
             }
         }
-        Err(error) => Err(error),
     }
-}
-
-fn is_registry_conflict(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        cause
-            .downcast_ref::<AppError>()
-            .is_some_and(|app_error| app_error.code() == ErrorCode::CompositionRegistryConflict)
-    })
 }
 
 #[cfg(test)]

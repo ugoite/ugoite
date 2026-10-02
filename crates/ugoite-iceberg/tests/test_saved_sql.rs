@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 use ugoite_core::query::EntryScope;
 use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
-use ugoite_iceberg::iceberg_store;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::saved_sql::{
     self, SearchHistoryOperator, SqlGeneratedName, SqlKind, SqlMetadata, SqlPayload,
@@ -237,9 +236,9 @@ async fn saved_sql_evolves_legacy_form_without_rewriting_entries() -> anyhow::Re
     let integrity = FakeIntegrityProvider;
 
     // The public Form API rejects reserved metadata names. Seed the historical
-    // SQL Form through the storage boundary so this fixture represents a
-    // pre-name system Form rather than a user-created Form.
-    iceberg_store::ensure_form_tables(
+    // SQL Form through the workspace publication layer so this fixture
+    // represents a pre-name system Form rather than a user-created Form.
+    common::seed_preexisting_form(
         &op,
         ws_path,
         &json!({

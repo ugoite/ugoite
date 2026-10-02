@@ -1,6 +1,6 @@
 mod common;
 
-use common::setup_operator;
+use common::{seed_preexisting_form, setup_operator};
 use serde_json::{json, Value};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::metadata;
@@ -79,6 +79,44 @@ async fn composition_registry_is_reserved_and_reopens_without_recreation() -> an
     .await;
     assert!(public_upsert.is_err());
     assert!(public_upsert.unwrap_err().to_string().contains("reserved"));
+
+    let direct_storage_create = iceberg_store::ensure_form_tables(
+        &op,
+        ws_path,
+        &serde_json::to_value(composition::composition_registry_definition()?)?,
+    )
+    .await
+    .unwrap_err();
+    assert_registry_conflict(&direct_storage_create);
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_registry_ensure_uses_one_stable_form() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "composition-concurrent", "/tmp").await?;
+    let ws_path = "spaces/composition-concurrent";
+
+    let (left, right) = tokio::join!(
+        composition::ensure_composition_registry(&op, ws_path),
+        composition::ensure_composition_registry(&op, ws_path),
+    );
+    let left = left?;
+    let right = right?;
+    assert_eq!(left.id, right.id);
+    assert_eq!(
+        iceberg_store::native_workspace(&op, ws_path)
+            .await?
+            .list_forms()
+            .await?
+            .into_iter()
+            .filter(|form| {
+                form.name
+                    .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)
+            })
+            .count(),
+        1
+    );
     Ok(())
 }
 
@@ -87,7 +125,7 @@ async fn same_name_existing_form_is_not_adopted_or_migrated() -> anyhow::Result<
     let op = setup_operator()?;
     space::create_space(&op, "composition-existing-form", "/tmp").await?;
     let ws_path = "spaces/composition-existing-form";
-    iceberg_store::ensure_form_tables(
+    seed_preexisting_form(
         &op,
         ws_path,
         &registry_form_definition(
@@ -134,12 +172,7 @@ async fn registry_marker_and_schema_mismatch_fail_closed() -> anyhow::Result<()>
         let op = setup_operator()?;
         space::create_space(&op, space_id, "/tmp").await?;
         let ws_path = format!("spaces/{space_id}");
-        iceberg_store::ensure_form_tables(
-            &op,
-            &ws_path,
-            &registry_form_definition(metadata, fields),
-        )
-        .await?;
+        seed_preexisting_form(&op, &ws_path, &registry_form_definition(metadata, fields)).await?;
         let before = iceberg_store::load_domain_form(
             &op,
             &ws_path,

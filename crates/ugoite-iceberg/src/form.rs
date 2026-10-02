@@ -437,7 +437,7 @@ pub(crate) async fn upsert_metadata_form(
             return Ok(());
         }
     }
-    iceberg_store::ensure_form_tables(op, ws_path, &normalized).await?;
+    iceberg_store::ensure_saved_sql_form_tables(op, ws_path, &normalized).await?;
     Ok(())
 }
 
