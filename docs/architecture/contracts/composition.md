@@ -37,10 +37,14 @@ tests, not an assertion that persistence or rendering is already shipped.
 The typed v1 model supports `string`, `boolean`, `integer`, `float`, `date`, and
 `timestamp` parameters. A parameter may carry a typed default and a display
 format hint; `year-month` is a hint and does not evaluate an expression or
-change the parameter value. Source values are literals or named parameter
-references. An `entry_query` template scopes property `FieldId`s to its
-`FormId`, snapshots query-used field types, and carries the existing query
-filters, sort, text, projection, and page-size semantics. Text may be a literal
+change the parameter value. Parameters and `metric`/`table` components may
+also carry optional display `label` text. A label is emitted in canonical YAML
+and included in the document fingerprint when present, and omitted when
+absent. Labels do not replace stable parameter, component, source, or field IDs
+and do not change source or query binding semantics. Source values are literals
+or named parameter references. An `entry_query` template scopes property
+`FieldId`s to its `FormId`, snapshots query-used field types, and carries the
+existing query filters, sort, text, projection, and page-size semantics. Text may be a literal
 or parameter reference; a parameter used for text is bound as a string. Its
 projection is either preview or an ordered list of property `FieldId`s. The
 optional `page_limit` defaults to 100 and is still bounded by the existing

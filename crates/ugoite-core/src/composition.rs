@@ -989,6 +989,7 @@ mod tests {
     ) -> CompositionParameter {
         CompositionParameter {
             id: id.to_owned(),
+            label: None,
             parameter_type,
             required,
             default,

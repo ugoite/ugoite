@@ -542,6 +542,9 @@ mod tests {
 
     const MONTHLY_EXPENSE_COMPOSITION: &str =
         include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+    const MONTHLY_EXPENSE_LABELED_COMPOSITION: &str = include_str!(
+        "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml"
+    );
     const UNKNOWN_LIST_ITEM_FIELD_COMPOSITION: &str = include_str!(
         "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml"
     );
@@ -556,23 +559,26 @@ mod tests {
 
     #[test]
     fn composition_canonicalization_matches_the_native_domain_contract() {
-        let native =
-            ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE_COMPOSITION)
-                .unwrap();
-        let request = serde_json::json!({
-            "action": "domain.canonicalize_composition",
-            "value": {"yaml": MONTHLY_EXPENSE_COMPOSITION},
-        });
-        let response: Value =
-            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+        for yaml in [
+            MONTHLY_EXPENSE_COMPOSITION,
+            MONTHLY_EXPENSE_LABELED_COMPOSITION,
+        ] {
+            let native = ugoite_domain::composition::canonicalize_composition_yaml(yaml).unwrap();
+            let request = serde_json::json!({
+                "action": "domain.canonicalize_composition",
+                "value": {"yaml": yaml},
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
 
-        assert_eq!(response["ok"], true, "{response}");
-        assert_eq!(
-            response["value"]["document"],
-            serde_json::to_value(native.document).unwrap()
-        );
-        assert_eq!(response["value"]["canonical_yaml"], native.yaml);
-        assert_eq!(response["value"]["fingerprint"], native.fingerprint);
+            assert_eq!(response["ok"], true, "{response}");
+            assert_eq!(
+                response["value"]["document"],
+                serde_json::to_value(native.document).unwrap()
+            );
+            assert_eq!(response["value"]["canonical_yaml"], native.yaml);
+            assert_eq!(response["value"]["fingerprint"], native.fingerprint);
+        }
 
         let unreferenced_component = MONTHLY_EXPENSE_COMPOSITION
             .replace("      components: [transactions]", "      components: []");

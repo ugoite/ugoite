@@ -14752,6 +14752,7 @@ mod authentication_regression_tests {
             };
         let month_parameter = || CompositionParameter {
             id: "month".to_string(),
+            label: None,
             parameter_type: CompositionParameterType::String,
             required: true,
             default: None,

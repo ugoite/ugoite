@@ -23,6 +23,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-002#criterion.typed-dashboard-model
               - kind: documents
+                anchor: REQ-COMP-002#criterion.optional-display-labels
+              - kind: documents
                 anchor: REQ-COMP-002#criterion.ordered-component-layout
               - kind: documents
                 anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
@@ -48,6 +50,70 @@ features:
             adapter: declared
             path: crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml
             selector: { kind: file }
+          - id: monthly-expense-labeled-fixture
+            adapter: declared
+            path: crates/ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml
+            selector: { kind: file }
+      - id: display-label-domain
+        role: implementation
+        facet: domain
+        responsibility: Represent optional Composition display labels without changing stable IDs or source and query binding semantics.
+        targets:
+          - id: parameter-display-label
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: CompositionParameter }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.optional-display-labels
+          - id: component-display-label
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: CompositionComponent }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.optional-display-labels
+      - id: display-label-domain-tests
+        role: evidence
+        facet: domain-tests
+        responsibility: Prove labels are preserved in canonical YAML and document fingerprints while unlabeled documents retain their existing canonical contract, including native/WASM parity.
+        targets:
+          - id: labeled-canonical-golden
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/canonical.rs
+            selector: { kind: symbol, name: labeled_monthly_expense_canonical_bytes_and_fingerprint_match_golden_fixtures }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.optional-display-labels
+              - kind: evidences
+                anchor: REQ-COMP-003#criterion.semantic-fingerprint
+          - id: unlabeled-canonical-golden
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/canonical.rs
+            selector: { kind: symbol, name: monthly_expense_canonical_bytes_and_fingerprint_match_golden_fixtures }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.optional-display-labels
+              - kind: evidences
+                anchor: REQ-COMP-003#criterion.canonical-yaml
+          - id: wasm-label-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: composition_canonicalization_matches_the_native_domain_contract }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.optional-display-labels
+              - kind: evidences
+                anchor: REQ-COMP-003#criterion.wasm-parity
+          - id: wasm32-label-parity
+            adapter: typescript
+            path: crates/ugoite-wasm/tests/composition_parity.ts
+            selector: { kind: symbol, name: main }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.optional-display-labels
+              - kind: evidences
+                anchor: REQ-COMP-003#criterion.wasm-parity
       - id: component-layout-domain
         role: implementation
         facet: domain

@@ -115,6 +115,9 @@ impl CompositionSpec {
 #[serde(deny_unknown_fields)]
 pub struct CompositionParameter {
     pub id: String,
+    /// Optional display text; parameter binding continues to use `id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     #[serde(rename = "type")]
     pub parameter_type: CompositionParameterType,
     pub required: bool,
@@ -343,11 +346,17 @@ pub struct CompositionParameterReference {
 pub enum CompositionComponent {
     Metric {
         id: String,
+        /// Optional display text; component and source bindings continue to use IDs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
         source: String,
         value_field: String,
     },
     Table {
         id: String,
+        /// Optional display text; component and source bindings continue to use IDs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
         source: String,
     },
 }
@@ -425,6 +434,7 @@ mod tests {
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
         spec.components.push(CompositionComponent::Table {
             id: "last".to_string(),
+            label: None,
             source: "expense_rows".to_string(),
         });
         spec.components.reverse();
