@@ -11,6 +11,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+mod yaml;
+
+pub use yaml::{
+    parse_composition_yaml, MAX_COMPOSITION_COLLECTION_ITEMS, MAX_COMPOSITION_YAML_BYTES,
+    MAX_COMPOSITION_YAML_DEPTH,
+};
+
 pub const COMPOSITION_FORMAT_VERSION: u32 = 1;
 /// Default page size for an EntryQuery source when the document omits it.
 /// The core resolver still validates the value against EntryQuery's maximum.

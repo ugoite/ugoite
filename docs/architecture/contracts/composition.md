@@ -3,8 +3,8 @@ title: Composition contract
 description: The portable document and semantic boundaries for Composition v1.
 ---
 
-**Status:** accepted semantic boundary; the parser implementation and resource
-limits are selected from measured evidence in the Composition implementation.
+**Status:** accepted semantic boundary; parser and resource limits were selected
+from the COMP-011 native and WASM spike.
 
 ## Portable document
 
@@ -65,11 +65,29 @@ definitions. Browser TypeScript does not implement a second Composition
 parser, resolver, query engine, or semantic validator.
 
 The v1 syntax rejects duplicate mapping keys, multiple documents, anchors and
-aliases, merge keys, custom tags, implicit timestamp interpretation, and
-unknown fields. Resource limits apply to input bytes, nesting depth, and
-collection lengths. Their numeric values are chosen only after native and
-`wasm32-unknown-unknown` measurements; they are not implied by this contract
-document.
+aliases, merge keys, unsupported/custom tags, implicit timestamp
+interpretation, and unknown fields. Date-like plain scalars remain strings;
+ambiguous string values that look like booleans or numbers must be quoted.
+
+COMP-011 evaluated `serde-saphyr` 1.3.0 and `yaml-rust2` 0.13.0. Both parsed
+the shared fixture and compiled for `wasm32-unknown-unknown`. `yaml-rust2`
+exposes useful parser events, but requires a Ugoite-owned layer for typed value
+construction, duplicate-key detection, and collection budgets. `serde-saphyr`
+was selected because it deserializes directly into the shared Serde model and
+exposes explicit duplicate-key, syntax, and resource-budget controls. The
+domain parser first performs bounded version inspection, then strictly parses
+supported v1 input; both passes use `serde-saphyr`.
+
+The parser accepts at most 65,536 input bytes, 64 levels of nesting, 4,096
+nodes, 8,192 parser events, 32,768 total scalar bytes, and 256 items in any one
+Composition collection. The version probe accepts at most two documents and
+limits anchors, aliases, merge keys, and retained anchor data; strict v1 parse
+rejects those constructs outright. These limits leave substantial room over
+the shared monthly-expense fixture, which measured 1,475 input bytes, 144
+nodes, 181 events, depth 8, and 842 scalar bytes. The ignored profile test
+reported 1,000 full parser calls in about 1.07 seconds in a debug build on the
+implementation host. This is a reproducibility sample, not a performance
+threshold.
 
 Canonical YAML uses schema field order, block collections, two-space
 indentation, LF line endings, and no BOM. Canonical output is derived from the
