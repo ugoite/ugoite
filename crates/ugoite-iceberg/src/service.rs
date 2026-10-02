@@ -5102,6 +5102,105 @@ impl UgoiteService {
             .await
     }
 
+    /// Create or update one Composition Entry after validating the canonical
+    /// document, current Entry authorization, and exact update base revision.
+    pub async fn save_composition_authorized_for_principals(
+        &self,
+        space_id: &str,
+        request: composition::CompositionSaveRequest,
+        author: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<composition::CompositionSaveResult> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        if request.entry_id.is_some() != request.base_revision_id.is_some() {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "Composition updates require an entry ID and exact base revision",
+            )
+            .into());
+        }
+        // Validate before any Registry Form creation so malformed or
+        // unsupported documents leave the Space unchanged.
+        let canonical = ugoite_domain::composition::canonicalize_composition(&request.document)
+            .map_err(|diagnostic| {
+                AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str())
+            })?;
+        self.ensure_mutation_admitted(space_id).await?;
+        self.validate_complete_space(space_id).await?;
+        let entry_id = request
+            .entry_id
+            .unwrap_or_else(|| EntryId::from(Uuid::now_v7()));
+        let entry_id_text = entry_id.to_string();
+        validate_storage_id(validate_entry_id(&entry_id_text))?;
+        if let Some(base_revision_id) = request.base_revision_id {
+            validate_storage_id(validate_revision_id(&base_revision_id.to_string()))?;
+        }
+        let action = if request.entry_id.is_some() {
+            Action::Update
+        } else {
+            Action::Create
+        };
+        let is_create = request.entry_id.is_none();
+        let (state, authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        self.require_action_for_principals_in_state(
+            &state,
+            &entry_id_text,
+            ResourceKind::Entry,
+            action,
+            principal_ids,
+        )?;
+        let registry_resource = ResourceRef {
+            kind: ResourceKind::Form,
+            id: composition::COMPOSITION_REGISTRY_FORM_NAME.to_string(),
+            parent: None,
+        };
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, Some(&registry_resource))?
+                .contains(&Action::Read)
+            {
+                return Err(AppError::forbidden("Form is not readable").into());
+            }
+        }
+        authorization_lease.prepare_mutation().await?;
+        let workspace = self.workspace_path(space_id);
+        let registry = crate::authorization::with_authorization_write_fence(
+            authorization_lease.write_fence(),
+            composition::ensure_composition_registry(&self.operator, &workspace),
+        )
+        .await?;
+        let scopes = self
+            .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+            .await?;
+        if !scopes.contains_key(&registry.name.to_ascii_lowercase()) {
+            return Err(AppError::forbidden("Form is not readable").into());
+        }
+        let result = crate::authorization::with_authorization_write_fence(
+            authorization_lease.write_fence(),
+            composition::save_composition(
+                &self.operator,
+                &workspace,
+                request,
+                entry_id,
+                canonical,
+                author,
+            ),
+        )
+        .await?;
+        self.record_committed_entry_revision(
+            space_id,
+            &entry_id_text,
+            if is_create {
+                crate::mutation_audit::ENTRY_CREATED_ACTION
+            } else {
+                crate::mutation_audit::ENTRY_UPDATED_ACTION
+            },
+        )
+        .await;
+        Ok(result)
+    }
+
     /// Reads exactly the requested raw Composition revision. It never falls
     /// back to the latest revision and rechecks current Form/Entry ACLs.
     pub async fn get_composition_raw_revision_authorized_for_principals(
