@@ -1,14 +1,15 @@
-//! Pure Composition parameter binding.
+//! Pure Composition parameter binding and source compilation.
 //!
-//! This module resolves typed Composition values only. Source compilation and
-//! query execution stay in their existing core contracts and are added by the
-//! corresponding resolver layers.
+//! This module resolves typed Composition values into the existing bounded
+//! EntryQuery and stateless SQL query contracts. It performs no storage reads,
+//! grants no authorization, and creates no persistent query state.
 
 use crate::entry_query::{
     entry_field_capability, entry_query_text_searches_field_type, EntryFieldRef, EntryFilter,
     EntryPageRequest, EntryProjection, EntryQuery, EntryQueryFieldKind, EntryQueryScope, EntrySort,
     EntrySortDirection, SearchOperator,
 };
+use crate::sql_query::{SavedSqlRevisionRef, SqlQueryRequest};
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -16,7 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
     CompositionDiagnosticCode, CompositionFieldSchemaEntry, CompositionLiteral,
     CompositionParameter, CompositionParameterType, CompositionQueryOperator,
-    CompositionSortDirection, CompositionValue, EntryQueryProjectionTemplate, EntryQueryTemplate,
+    CompositionSortDirection, CompositionSource, CompositionValue, EntryQueryProjectionTemplate,
+    EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
 };
 use ugoite_domain::form::{FieldType, FormDefinition};
 use ugoite_domain::id::FormId;
@@ -509,6 +511,174 @@ pub fn compile_entry_query_source(
     })
 }
 
+/// Current metadata for one exact Saved SQL revision, projected by the
+/// authorized storage boundary into the core resolver's transport-neutral
+/// input. SQL text and variable descriptions are deliberately not included.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SavedSqlRevisionMetadata {
+    pub id: String,
+    pub revision_id: String,
+    pub variable_types: BTreeMap<String, String>,
+}
+
+/// An exact Saved SQL source compiled to the existing stateless SQL request.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledSavedSqlSource {
+    pub request: SqlQueryRequest,
+    /// SHA-256 over the exact revision identity and its bound variable schema.
+    pub source_schema_fingerprint: String,
+}
+
+/// Compile a Composition Saved SQL source against metadata read for its exact
+/// current revision. The caller must obtain the descriptor through the
+/// current ACL boundary. A missing descriptor (including a concealed denied
+/// read) produces one stable unavailable-revision diagnostic. SQL execution
+/// remains in the existing query path, which rechecks current authorization.
+pub fn compile_saved_sql_source(
+    source: &CompositionSource,
+    current_revision: Option<&SavedSqlRevisionMetadata>,
+    bindings: &ParameterBindings,
+) -> Result<CompiledSavedSqlSource, Vec<CompositionDiagnostic>> {
+    let CompositionSource::SavedSql {
+        entry_id,
+        revision_id,
+        variables,
+        ..
+    } = source
+    else {
+        return Err(vec![CompositionDiagnostic::without_parameter(
+            CompositionDiagnosticCode::InvalidComposition,
+        )]);
+    };
+
+    let Some(current_revision) = current_revision else {
+        return Err(vec![CompositionDiagnostic::without_parameter(
+            CompositionDiagnosticCode::SourceUnavailable,
+        )]);
+    };
+
+    let expected_id = entry_id.to_string();
+    let expected_revision_id = revision_id.to_string();
+    if current_revision.id != expected_id || current_revision.revision_id != expected_revision_id {
+        return Err(vec![CompositionDiagnostic::without_parameter(
+            CompositionDiagnosticCode::SourceUnavailable,
+        )]);
+    }
+
+    let mut diagnostics = Vec::new();
+    let mut parameters = serde_json::Map::new();
+    let mut parameter_types = BTreeMap::new();
+    let mut used_variable_types = BTreeMap::new();
+
+    for (variable_name, value_template) in variables {
+        let Some(variable_type) = current_revision.variable_types.get(variable_name) else {
+            diagnostics.push(CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::SourceSchemaChanged,
+            ));
+            continue;
+        };
+        let Some(parameter_type) = composition_parameter_type_for_sql(variable_type) else {
+            diagnostics.push(CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::SourceSchemaChanged,
+            ));
+            continue;
+        };
+        let bound = match resolve_value_template(value_template, bindings) {
+            Ok(bound) => bound,
+            Err(diagnostic) => {
+                diagnostics.push(diagnostic);
+                continue;
+            }
+        };
+        if bound
+            .parameter_type
+            .is_some_and(|bound_type| bound_type != parameter_type)
+        {
+            diagnostics.push(CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::ParameterTypeMismatch,
+            ));
+            continue;
+        }
+        // SQL query binding uses the descriptor's declared type to preserve a
+        // typed NULL; non-null literals and named parameters still require an
+        // exact Composition type/value match.
+        if (bound.value.is_null() && bound.parameter_type.is_some())
+            || (!bound.value.is_null() && !value_matches_parameter(&bound.value, parameter_type))
+        {
+            diagnostics.push(CompositionDiagnostic::without_parameter(
+                if bound.parameter_type.is_some() {
+                    CompositionDiagnosticCode::ParameterTypeMismatch
+                } else {
+                    CompositionDiagnosticCode::InvalidComposition
+                },
+            ));
+            continue;
+        }
+
+        parameters.insert(variable_name.clone(), bound.value);
+        parameter_types.insert(variable_name.clone(), variable_type.clone());
+        used_variable_types.insert(variable_name.clone(), variable_type.clone());
+    }
+
+    if current_revision
+        .variable_types
+        .keys()
+        .any(|name| !variables.contains_key(name))
+    {
+        diagnostics.push(CompositionDiagnostic::without_parameter(
+            CompositionDiagnosticCode::ParameterMissing,
+        ));
+    }
+
+    if !diagnostics.is_empty() {
+        return Err(deduplicate_diagnostics(diagnostics));
+    }
+
+    let saved_sql = SavedSqlRevisionRef {
+        id: expected_id,
+        revision_id: expected_revision_id,
+    };
+    let fingerprint_material =
+        serde_json::to_vec(&(&saved_sql, &used_variable_types)).map_err(|_| {
+            vec![CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::InvalidComposition,
+            )]
+        })?;
+    let request = SqlQueryRequest {
+        // The SQL text is resolved by the existing executor from this exact
+        // revision reference. Sending a client copy would create a second
+        // authority for the query text.
+        sql: String::new(),
+        parameters,
+        parameter_types,
+        limit: DEFAULT_COMPOSITION_PAGE_LIMIT,
+        continuation: None,
+        saved_sql: Some(saved_sql),
+    };
+    if request.validate().is_err() {
+        return Err(vec![CompositionDiagnostic::without_parameter(
+            CompositionDiagnosticCode::InvalidComposition,
+        )]);
+    }
+
+    Ok(CompiledSavedSqlSource {
+        request,
+        source_schema_fingerprint: hex::encode(Sha256::digest(fingerprint_material)),
+    })
+}
+
+fn composition_parameter_type_for_sql(variable_type: &str) -> Option<CompositionParameterType> {
+    match variable_type {
+        "string" => Some(CompositionParameterType::String),
+        "boolean" => Some(CompositionParameterType::Boolean),
+        "integer" => Some(CompositionParameterType::Integer),
+        "float" => Some(CompositionParameterType::Float),
+        "date" => Some(CompositionParameterType::Date),
+        "timestamp" => Some(CompositionParameterType::Timestamp),
+        _ => None,
+    }
+}
+
 fn deduplicate_diagnostics(diagnostics: Vec<CompositionDiagnostic>) -> Vec<CompositionDiagnostic> {
     let mut seen = BTreeSet::new();
     diagnostics
@@ -627,8 +797,8 @@ fn wall_timestamp_nanos_are_representable(timestamp: NaiveDateTime) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        bind_parameters, compile_entry_query_source, resolve_value_template, CompositionDiagnostic,
-        ParameterBindings,
+        bind_parameters, compile_entry_query_source, compile_saved_sql_source,
+        resolve_value_template, CompositionDiagnostic, ParameterBindings, SavedSqlRevisionMetadata,
     };
     use serde_json::{json, Value};
     use std::collections::BTreeMap;
@@ -636,13 +806,13 @@ mod tests {
         CompositionDiagnosticCode, CompositionFieldSchemaEntry, CompositionLiteral,
         CompositionParameter, CompositionParameterFormat, CompositionParameterReference,
         CompositionParameterType, CompositionQueryOperator, CompositionSortDirection,
-        CompositionValue, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
-        EntryQuerySortTemplate, EntryQueryTemplate,
+        CompositionSource, CompositionValue, EntryQueryFilterTemplate,
+        EntryQueryProjectionTemplate, EntryQuerySortTemplate, EntryQueryTemplate,
     };
     use ugoite_domain::form::{
         FieldType, FormDefinition, FormField, FormVersion, ListItemDefinition,
     };
-    use ugoite_domain::id::{FieldId, FormId};
+    use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
 
     fn parameter(
         id: &str,
@@ -718,11 +888,47 @@ mod tests {
         ParameterBindings::default()
     }
 
-    fn diagnostic_codes(
-        result: Result<super::CompiledEntryQuery, Vec<CompositionDiagnostic>>,
+    fn saved_sql_source(
+        entry_id: EntryId,
+        revision_id: RevisionId,
+        variables: BTreeMap<String, CompositionValue>,
+    ) -> CompositionSource {
+        CompositionSource::SavedSql {
+            id: "monthly-expenses".to_owned(),
+            entry_id,
+            revision_id,
+            variables,
+        }
+    }
+
+    fn saved_sql_metadata(
+        entry_id: EntryId,
+        revision_id: RevisionId,
+        variable_types: BTreeMap<String, &str>,
+    ) -> SavedSqlRevisionMetadata {
+        SavedSqlRevisionMetadata {
+            id: entry_id.to_string(),
+            revision_id: revision_id.to_string(),
+            variable_types: variable_types
+                .into_iter()
+                .map(|(name, value)| (name, value.to_owned()))
+                .collect(),
+        }
+    }
+
+    fn id_pair() -> (EntryId, RevisionId) {
+        (
+            EntryId::from(uuid::Uuid::from_u128(42)),
+            RevisionId::from(uuid::Uuid::from_u128(43)),
+        )
+    }
+
+    fn diagnostic_codes<T>(
+        result: Result<T, Vec<CompositionDiagnostic>>,
     ) -> Vec<CompositionDiagnosticCode> {
         result
-            .expect_err("composition query should be rejected")
+            .err()
+            .expect("composition source should be rejected")
             .into_iter()
             .map(|diagnostic| diagnostic.code)
             .collect()
@@ -1595,5 +1801,332 @@ mod tests {
                 vec![CompositionDiagnosticCode::InvalidComposition]
             );
         }
+    }
+
+    #[test]
+    fn saved_sql_source_compiles_to_the_exact_stateless_sql_request() {
+        let (entry_id, revision_id) = id_pair();
+        let source = saved_sql_source(
+            entry_id,
+            revision_id,
+            BTreeMap::from([
+                ("enabled".to_owned(), value(json!(true))),
+                ("period_start".to_owned(), parameter_ref("start")),
+            ]),
+        );
+        let parameters = [parameter(
+            "start",
+            CompositionParameterType::Date,
+            true,
+            None,
+            None,
+        )];
+        let bindings = bind_parameters(
+            &parameters,
+            &BTreeMap::from([("start".to_owned(), json!("2026-10-01"))]),
+        );
+        let current_revision = saved_sql_metadata(
+            entry_id,
+            revision_id,
+            BTreeMap::from([
+                ("enabled".to_owned(), "boolean"),
+                ("period_start".to_owned(), "date"),
+            ]),
+        );
+
+        let compiled = compile_saved_sql_source(&source, Some(&current_revision), &bindings)
+            .expect("the exact Saved SQL revision and its parameters compile");
+
+        assert_eq!(compiled.request.sql, "");
+        assert_eq!(
+            compiled.request.saved_sql.as_ref().unwrap().id,
+            entry_id.to_string()
+        );
+        assert_eq!(
+            compiled.request.saved_sql.as_ref().unwrap().revision_id,
+            revision_id.to_string()
+        );
+        assert_eq!(compiled.request.parameters["enabled"], json!(true));
+        assert_eq!(
+            compiled.request.parameters["period_start"],
+            json!("2026-10-01")
+        );
+        assert_eq!(compiled.request.parameter_types["enabled"], "boolean");
+        assert_eq!(compiled.request.parameter_types["period_start"], "date");
+        assert_eq!(
+            compiled.request.limit,
+            ugoite_domain::composition::DEFAULT_COMPOSITION_PAGE_LIMIT
+        );
+        assert!(compiled.request.continuation.is_none());
+        assert!(compiled.request.validate().is_ok());
+
+        let repeated = compile_saved_sql_source(&source, Some(&current_revision), &bindings)
+            .expect("the same source and descriptor compile deterministically");
+        assert_eq!(
+            compiled.source_schema_fingerprint,
+            repeated.source_schema_fingerprint
+        );
+    }
+
+    #[test]
+    fn saved_sql_source_requires_the_exact_current_revision_descriptor() {
+        let (entry_id, revision_id) = id_pair();
+        let source = saved_sql_source(entry_id, revision_id, BTreeMap::new());
+        let bindings = empty_bindings();
+
+        assert_eq!(
+            diagnostic_codes(compile_saved_sql_source(&source, None, &bindings)),
+            vec![CompositionDiagnosticCode::SourceUnavailable]
+        );
+
+        let wrong_revision = saved_sql_metadata(
+            entry_id,
+            RevisionId::from(uuid::Uuid::from_u128(44)),
+            BTreeMap::new(),
+        );
+        assert_eq!(
+            diagnostic_codes(compile_saved_sql_source(
+                &source,
+                Some(&wrong_revision),
+                &bindings
+            )),
+            vec![CompositionDiagnosticCode::SourceUnavailable]
+        );
+    }
+
+    #[test]
+    fn saved_sql_source_requires_declared_variables_to_be_bound_once() {
+        let (entry_id, revision_id) = id_pair();
+        let source = saved_sql_source(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("not_declared".to_owned(), value(json!(5)))]),
+        );
+        let current_revision = saved_sql_metadata(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("required".to_owned(), "integer")]),
+        );
+
+        assert_eq!(
+            diagnostic_codes(compile_saved_sql_source(
+                &source,
+                Some(&current_revision),
+                &empty_bindings()
+            )),
+            vec![
+                CompositionDiagnosticCode::SourceSchemaChanged,
+                CompositionDiagnosticCode::ParameterMissing,
+            ]
+        );
+    }
+
+    #[test]
+    fn saved_sql_source_binds_every_supported_sql_variable_type() {
+        let (entry_id, revision_id) = id_pair();
+        let parameters = [
+            parameter("text", CompositionParameterType::String, true, None, None),
+            parameter("flag", CompositionParameterType::Boolean, true, None, None),
+            parameter("count", CompositionParameterType::Integer, true, None, None),
+            parameter("ratio", CompositionParameterType::Float, true, None, None),
+            parameter("date", CompositionParameterType::Date, true, None, None),
+            parameter(
+                "timestamp",
+                CompositionParameterType::Timestamp,
+                true,
+                None,
+                None,
+            ),
+        ];
+        let values = BTreeMap::from([
+            ("text".to_owned(), json!("october")),
+            ("flag".to_owned(), json!(true)),
+            ("count".to_owned(), json!(3)),
+            ("ratio".to_owned(), json!(1.25)),
+            ("date".to_owned(), json!("2026-10-02")),
+            ("timestamp".to_owned(), json!("2026-10-02T12:30:00")),
+        ]);
+        let bindings = bind_parameters(&parameters, &values);
+        let source = saved_sql_source(
+            entry_id,
+            revision_id,
+            BTreeMap::from([
+                ("sql_text".to_owned(), parameter_ref("text")),
+                ("sql_flag".to_owned(), parameter_ref("flag")),
+                ("sql_count".to_owned(), parameter_ref("count")),
+                ("sql_ratio".to_owned(), parameter_ref("ratio")),
+                ("sql_date".to_owned(), parameter_ref("date")),
+                ("sql_timestamp".to_owned(), parameter_ref("timestamp")),
+            ]),
+        );
+        let current_revision = saved_sql_metadata(
+            entry_id,
+            revision_id,
+            BTreeMap::from([
+                ("sql_text".to_owned(), "string"),
+                ("sql_flag".to_owned(), "boolean"),
+                ("sql_count".to_owned(), "integer"),
+                ("sql_ratio".to_owned(), "float"),
+                ("sql_date".to_owned(), "date"),
+                ("sql_timestamp".to_owned(), "timestamp"),
+            ]),
+        );
+
+        let compiled = compile_saved_sql_source(&source, Some(&current_revision), &bindings)
+            .expect("all existing Saved SQL variable types are supported");
+
+        assert_eq!(compiled.request.parameters.len(), 6);
+        assert_eq!(compiled.request.parameter_types.len(), 6);
+        assert_eq!(compiled.request.parameters["sql_date"], json!("2026-10-02"));
+        assert_eq!(
+            compiled.request.parameters["sql_timestamp"],
+            json!("2026-10-02T12:30:00")
+        );
+    }
+
+    #[test]
+    fn saved_sql_source_checks_parameter_types_and_literal_values() {
+        let (entry_id, revision_id) = id_pair();
+        let parameters = [parameter(
+            "amount",
+            CompositionParameterType::Integer,
+            true,
+            None,
+            None,
+        )];
+        let bindings = bind_parameters(
+            &parameters,
+            &BTreeMap::from([("amount".to_owned(), json!(5))]),
+        );
+        let source = saved_sql_source(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("threshold".to_owned(), parameter_ref("amount"))]),
+        );
+        let current_revision = saved_sql_metadata(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("threshold".to_owned(), "float")]),
+        );
+        assert_eq!(
+            diagnostic_codes(compile_saved_sql_source(
+                &source,
+                Some(&current_revision),
+                &bindings
+            )),
+            vec![CompositionDiagnosticCode::ParameterTypeMismatch]
+        );
+
+        let invalid_literal = saved_sql_source(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("start".to_owned(), value(json!("not-a-date")))]),
+        );
+        let date_revision = saved_sql_metadata(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("start".to_owned(), "date")]),
+        );
+        assert_eq!(
+            diagnostic_codes(compile_saved_sql_source(
+                &invalid_literal,
+                Some(&date_revision),
+                &empty_bindings()
+            )),
+            vec![CompositionDiagnosticCode::InvalidComposition]
+        );
+    }
+
+    #[test]
+    fn saved_sql_source_preserves_typed_null_literals() {
+        let (entry_id, revision_id) = id_pair();
+        let source = saved_sql_source(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("optional_limit".to_owned(), value(Value::Null))]),
+        );
+        let current_revision = saved_sql_metadata(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("optional_limit".to_owned(), "integer")]),
+        );
+
+        let compiled =
+            compile_saved_sql_source(&source, Some(&current_revision), &empty_bindings())
+                .expect("the exact SQL variable type supplies the null parameter type");
+
+        assert_eq!(compiled.request.parameters["optional_limit"], Value::Null);
+        assert_eq!(
+            compiled.request.parameter_types["optional_limit"],
+            "integer"
+        );
+    }
+
+    #[test]
+    fn saved_sql_source_rejects_null_from_a_named_parameter() {
+        let (entry_id, revision_id) = id_pair();
+        let source = saved_sql_source(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("optional_limit".to_owned(), parameter_ref("limit"))]),
+        );
+        let current_revision = saved_sql_metadata(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("optional_limit".to_owned(), "integer")]),
+        );
+        let bindings = ParameterBindings {
+            values: BTreeMap::from([("limit".to_owned(), Value::Null)]),
+            parameter_types: BTreeMap::from([(
+                "limit".to_owned(),
+                CompositionParameterType::Integer,
+            )]),
+            ..ParameterBindings::default()
+        };
+
+        assert_eq!(
+            diagnostic_codes(compile_saved_sql_source(
+                &source,
+                Some(&current_revision),
+                &bindings
+            )),
+            vec![CompositionDiagnosticCode::ParameterTypeMismatch]
+        );
+    }
+
+    #[test]
+    fn saved_sql_schema_fingerprint_tracks_variable_types_deterministically() {
+        let (entry_id, revision_id) = id_pair();
+        let source = saved_sql_source(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("threshold".to_owned(), value(json!(5)))]),
+        );
+        let bindings = empty_bindings();
+        let integer_revision = saved_sql_metadata(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("threshold".to_owned(), "integer")]),
+        );
+        let float_revision = saved_sql_metadata(
+            entry_id,
+            revision_id,
+            BTreeMap::from([("threshold".to_owned(), "float")]),
+        );
+
+        let integer = compile_saved_sql_source(&source, Some(&integer_revision), &bindings)
+            .expect("integer literal binds");
+        let float = compile_saved_sql_source(&source, Some(&float_revision), &bindings)
+            .expect("the same JSON number is valid for float");
+        let repeated = compile_saved_sql_source(&source, Some(&integer_revision), &bindings)
+            .expect("the same source fingerprint is deterministic");
+        assert_ne!(
+            integer.source_schema_fingerprint,
+            float.source_schema_fingerprint
+        );
+        assert_eq!(
+            integer.source_schema_fingerprint,
+            repeated.source_schema_fingerprint
+        );
     }
 }
