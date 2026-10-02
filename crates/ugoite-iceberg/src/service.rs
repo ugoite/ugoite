@@ -5072,6 +5072,20 @@ impl UgoiteService {
             .await
     }
 
+    /// Reads the current raw Composition revision for the principal-free local
+    /// Core path. Server adapters must use the authorized variant below.
+    pub async fn get_composition_raw_local(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+    ) -> Result<composition::RawCompositionRevision> {
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        composition::read_composition_raw(&self.operator, &self.workspace_path(space_id), entry_id)
+            .await?
+            .ok_or_else(|| composition_entry_not_found(entry_id))
+    }
+
     /// Reads the current raw Composition revision through the current Form
     /// and Entry ACLs. Missing and denied identifiers share the existing
     /// EntryNotFound projection.
@@ -5201,6 +5215,27 @@ impl UgoiteService {
         Ok(result)
     }
 
+    /// Reads exactly the requested raw Composition revision for the
+    /// principal-free local Core path. It never falls back to latest.
+    pub async fn get_composition_raw_revision_local(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        revision_id: &str,
+    ) -> Result<composition::RawCompositionRevision> {
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        validate_storage_id(validate_revision_id(revision_id))?;
+        composition::read_composition_raw_revision(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            revision_id,
+        )
+        .await?
+        .ok_or_else(|| composition_entry_not_found(entry_id))
+    }
+
     /// Reads exactly the requested raw Composition revision. It never falls
     /// back to the latest revision and rechecks current Form/Entry ACLs.
     pub async fn get_composition_raw_revision_authorized_for_principals(
@@ -5231,6 +5266,29 @@ impl UgoiteService {
                 .ok_or_else(|| composition_entry_not_found(entry_id))
             })
             .await
+    }
+
+    /// Reads a page from the raw append-only Composition history for the
+    /// principal-free local Core path. The result limit is bounded.
+    pub async fn composition_history_local_page(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<composition::RawCompositionHistoryPage> {
+        composition::validate_history_page(limit)?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        composition::read_composition_history_page(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            limit,
+            offset,
+        )
+        .await?
+        .ok_or_else(|| composition_entry_not_found(entry_id))
     }
 
     /// Reads a page from the raw append-only Composition history after

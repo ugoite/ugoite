@@ -551,6 +551,12 @@ async fn raw_composition_read_preserves_unknown_version_and_exact_history() -> a
     assert_eq!(raw.format_version_probe(), Some(99));
     assert_eq!(raw.fields["spec"], json!("not: [valid YAML"));
     assert_eq!(raw.revision.entry.tags, ["tool"]);
+    let local_raw = service
+        .get_composition_raw_local(&space_id, "composition-document")
+        .await?;
+    assert_eq!(local_raw.fields["format_version"], json!(99));
+    assert_eq!(local_raw.fields["spec"], json!("not: [valid YAML"));
+    assert_eq!(local_raw.revision.revision_id, raw.revision.revision_id);
 
     let second_revision_id = Uuid::now_v7();
     let second_change_id = Uuid::now_v7().to_string();
@@ -618,6 +624,26 @@ async fn raw_composition_read_preserves_unknown_version_and_exact_history() -> a
         .await?;
     assert_eq!(latest.fields["spec"], json!("name: updated"));
     assert_ne!(latest.revision.revision_id, exact.revision.revision_id);
+    let local_exact = service
+        .get_composition_raw_revision_local(&space_id, "composition-document", &first_revision_id)
+        .await?;
+    assert_eq!(local_exact.fields["spec"], json!("not: [valid YAML"));
+    assert_eq!(local_exact.revision.revision_id, exact.revision.revision_id);
+    let local_missing_revision = service
+        .get_composition_raw_revision_local(
+            &space_id,
+            "composition-document",
+            &Uuid::from_u128(3_428_099).to_string(),
+        )
+        .await
+        .expect_err("local exact read must not fall back to latest");
+    assert_eq!(
+        local_missing_revision
+            .downcast_ref::<ugoite_core::error::AppError>()
+            .unwrap()
+            .code(),
+        ugoite_core::error::ErrorCode::EntryNotFound
+    );
 
     let page = service
         .composition_history_authorized_for_principals_page(
@@ -634,5 +660,75 @@ async fn raw_composition_read_preserves_unknown_version_and_exact_history() -> a
         page.revisions[0].revision.revision_id,
         exact.revision.revision_id
     );
+    let local_page = service
+        .composition_history_local_page(&space_id, "composition-document", 1, 0)
+        .await?;
+    assert_eq!(local_page.total, 2);
+    assert_eq!(local_page.limit, 1);
+    assert_eq!(local_page.offset, 0);
+    assert!(local_page.has_more);
+    assert_eq!(
+        local_page.revisions[0].revision.revision_id,
+        exact.revision.revision_id
+    );
+    let local_second_page = service
+        .composition_history_local_page(&space_id, "composition-document", 1, 1)
+        .await?;
+    assert_eq!(local_second_page.total, 2);
+    assert!(!local_second_page.has_more);
+    assert_eq!(local_second_page.revisions.len(), 1);
+    assert_eq!(
+        local_second_page.revisions[0].revision.revision_id,
+        latest.revision.revision_id
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_composition_raw_reads_do_not_create_registry() -> anyhow::Result<()> {
+    use ugoite_core::error::{AppError, ErrorCode};
+
+    let service = UgoiteService::new(format!(
+        "memory://composition-local-missing-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::from_u128(3_428_004);
+    let space_id = service
+        .create_space_for_principal("composition-local-missing", owner, "Owner")
+        .await?
+        .to_string();
+    let workspace_path = service.workspace_path(&space_id);
+
+    let missing_current = service
+        .get_composition_raw_local(&space_id, "composition-not-created")
+        .await
+        .expect_err("missing local Composition should be not found");
+    let missing_exact = service
+        .get_composition_raw_revision_local(
+            &space_id,
+            "composition-not-created",
+            &Uuid::now_v7().to_string(),
+        )
+        .await
+        .expect_err("missing local exact revision should be not found");
+    let missing_history = service
+        .composition_history_local_page(&space_id, "composition-not-created", 10, 0)
+        .await
+        .expect_err("missing local Composition history should be not found");
+    for error in [missing_current, missing_exact, missing_history] {
+        assert_eq!(
+            error.downcast::<AppError>()?.code(),
+            ErrorCode::EntryNotFound
+        );
+    }
+
+    let workspace =
+        iceberg_store::native_workspace_read_only(service.operator(), &workspace_path).await?;
+    let publication = workspace.current_publication().await?;
+    let forms = workspace.forms_at_publication(&publication).await?;
+    assert!(!forms.iter().any(|form| {
+        form.name
+            .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)
+    }));
     Ok(())
 }
