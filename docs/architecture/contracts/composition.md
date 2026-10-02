@@ -19,8 +19,11 @@ is `dashboard` for v0.2.2. The `spec` contains typed parameters, sources,
 components, and sections. A source identifies either an Entry query template
 or an exact Saved SQL revision. Components refer to named sources and sections
 group named components. An `entry_query` source carries a sorted `field_schema`
-snapshot for exactly the query-used property fields; text search also snapshots
-all searchable fields because they contribute to its meaning.
+snapshot for the union of its query-used property fields and, when text search
+is present, every text-searchable property field. The text-search expansion
+follows the existing EntryQuery semantics: `binary`, `list`, `object_list`, and
+`asset_reference` fields are excluded. A field of those types still appears
+when the query otherwise uses it, such as in a projection.
 
 The complete illustrative document is maintained in
 `crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml`.
