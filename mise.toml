@@ -305,6 +305,10 @@ run = [
 description = "Validate the v0.1 supported authentication contract and test traceability"
 run = "cargo run -p xtask -- supported-check"
 
+[tasks."openapi:generate"]
+description = "Regenerate frontend metadata from the authoritative Server OpenAPI document"
+run = "cargo run -p xtask -- openapi-generate"
+
 [tasks."test:s3-storage"]
 description = "Run the S3 publication and Space recovery proof against a configured deployment backend"
 run = "bash scripts/test-s3-storage.sh"
@@ -465,6 +469,10 @@ run = [
   "cargo test --doc -p ugoite-domain -p ugoite-iceberg -p ugoite-core -p ugoite-server --locked",
   { task = "test:frontend" },
 ]
+
+[tasks."test:composition-adapter"]
+description = "Run focused Composition portable protocol and Server adapter tests"
+run = "cargo nextest run -p ugoite-api-client -p ugoite-server -E 'test(composition_operations_prepare_and_decode_through_the_portable_protocol) | test(composition_resolve_conceals_missing_and_denied_forms) | test(composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial)' --locked"
 
 [tasks."package:docsite"]
 description = "Stage the built docsite under target/artifacts"

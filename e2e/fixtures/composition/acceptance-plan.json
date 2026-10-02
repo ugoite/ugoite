@@ -302,6 +302,20 @@
           }
         },
         {
+          "path": "crates/ugoite-server/src/lib.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_resolve_conceals_missing_and_denied_forms"
+          }
+        },
+        {
+          "path": "crates/ugoite-server/src/lib.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial"
+          }
+        },
+        {
           "path": "crates/ugoite-cli/src/commands/composition.rs",
           "selector": {
             "kind": "test",
