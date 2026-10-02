@@ -262,6 +262,18 @@ fn registry_conflict(reason: &str) -> anyhow::Error {
     .into()
 }
 
+/// Generic Entry mutation paths must not publish directly into the reserved
+/// Composition Registry. Composition-aware operations validate canonical
+/// YAML before appending the corresponding Entry revision.
+pub(crate) fn ensure_generic_entry_write_allowed(form_name: &str) -> Result<()> {
+    if form_name.eq_ignore_ascii_case(COMPOSITION_REGISTRY_FORM_NAME) {
+        return Err(registry_conflict(
+            "generic Entry mutations cannot write the Composition registry",
+        ));
+    }
+    Ok(())
+}
+
 /// Build the expected registry definition. Field IDs and types are stable
 /// storage identities; Form IDs are assigned once when the Space is created.
 pub fn composition_registry_definition() -> Result<FormDefinition> {
@@ -306,6 +318,12 @@ fn validate_registry_definition(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn validate_composition_registry_form(existing: &FormDefinition) -> Result<()> {
+    let expected = composition_registry_definition()?;
+    validate_registry_definition(existing, &expected)
 }
 
 /// Ensure the reserved Registry Form exists and has the exact Composition

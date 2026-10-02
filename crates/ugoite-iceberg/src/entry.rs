@@ -1028,6 +1028,7 @@ pub async fn append_revision_batch_for_form(
     rows: &[RevisionRow],
 ) -> Result<()> {
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    crate::composition::ensure_generic_entry_write_allowed(form_name)?;
     crate::iceberg_store::ensure_mutation_admitted(op, ws_path).await?;
     let form_def = form::read_form_definition(op, ws_path, form_name).await?;
     append_revision_rows_to_workspace(op, ws_path, rows, &form_def).await
@@ -1413,6 +1414,7 @@ async fn prepare_entry_from_draft<I: IntegrityProvider>(
         .ok_or_else(|| invalid_entry_input("Form is required for entry creation"))?;
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
     let domain_form = form::to_domain_form_from_storage(&form_def)?;
+    crate::composition::ensure_generic_entry_write_allowed(&domain_form.name)?;
     let normalized = core_entry::normalize_and_validate_draft(&domain_form, &draft)
         .map_err(anyhow::Error::from)?;
 
@@ -2112,6 +2114,7 @@ async fn restore_entry_from_resolved_authorized<I: IntegrityProvider>(
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
+    crate::composition::ensure_generic_entry_write_allowed(&form_name)?;
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
     let current_form = form::to_domain_form_from_storage(&form_def)?;
     let scope = checkpoint_scope_for_form(current_form.id, form_scopes);
@@ -2297,6 +2300,7 @@ pub async fn update_structured_entry_authorized_with_change<I: IntegrityProvider
     let stored_form = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
+    crate::composition::ensure_generic_entry_write_allowed(&stored_form)?;
     let stored_row = read_entry_row(op, ws_path, &stored_form, entry_id).await?;
     if let Some(name) = form_name.as_deref() {
         if name != stored_form {
@@ -2492,6 +2496,7 @@ pub async fn delete_entry_with_change_receipt(
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
+    crate::composition::ensure_generic_entry_write_allowed(&form_name)?;
     let mut row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
 
     if row.deleted {
@@ -2749,6 +2754,7 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
+    crate::composition::ensure_generic_entry_write_allowed(&form_name)?;
     if let Some(scopes) = relation_scopes {
         if !scopes.contains_key(&form_name.to_ascii_lowercase()) {
             return Err(AppError::forbidden("Form is not readable").into());
@@ -3041,3 +3047,7 @@ mod input_conversion_tests {
         assert!(extra_attributes.as_object().unwrap().is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "entry/generic_write_guard_tests.rs"]
+mod generic_write_guard_tests;

@@ -3270,6 +3270,34 @@ impl SpaceCommitCoordinator {
         revisions: Vec<EntryRevision>,
         relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     ) -> Result<CommitReceipt> {
+        let form = self.workspace.load_form(form_id).await?;
+        crate::composition::ensure_generic_entry_write_allowed(&form.name)?;
+        self.append_revisions_authorized_inner(form_id, revisions, relation_scopes)
+            .await
+    }
+
+    /// Test-only publication helper for seeding a valid Composition revision.
+    /// Production Composition writes will use a dedicated typed storage path;
+    /// generic Entry callers must use [`Self::append_revisions_authorized`].
+    #[cfg(test)]
+    pub(crate) async fn append_composition_revisions_authorized(
+        &self,
+        form_id: FormId,
+        revisions: Vec<EntryRevision>,
+        relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    ) -> Result<CommitReceipt> {
+        let form = self.workspace.load_form(form_id).await?;
+        crate::composition::validate_composition_registry_form(&form)?;
+        self.append_revisions_authorized_inner(form_id, revisions, relation_scopes)
+            .await
+    }
+
+    async fn append_revisions_authorized_inner(
+        &self,
+        form_id: FormId,
+        revisions: Vec<EntryRevision>,
+        relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    ) -> Result<CommitReceipt> {
         self.ensure_authoritative_mutation_contract()?;
         if self.publication.change.is_some()
             && revisions
