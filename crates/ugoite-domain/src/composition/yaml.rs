@@ -1,9 +1,6 @@
 //! Restricted YAML parsing for the typed Composition v1 contract.
 
-use super::{
-    CompositionDiagnosticCode, CompositionDocument, CompositionSource,
-    EntryQueryProjectionTemplate, COMPOSITION_FORMAT_VERSION,
-};
+use super::{CompositionDiagnosticCode, CompositionDocument, COMPOSITION_FORMAT_VERSION};
 use serde_json::Value;
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy};
 
@@ -47,11 +44,7 @@ pub fn parse_composition_yaml(
             .map_err(|_| CompositionDiagnosticCode::InvalidComposition)?;
 
     document.validate_format_version()?;
-    if !collection_limits_hold(&document) {
-        return Err(CompositionDiagnosticCode::InvalidComposition);
-    }
-
-    Ok(document)
+    super::canonical::normalize_composition_document(&document)
 }
 
 fn probe_format_version(input: &str) -> Result<u64, CompositionDiagnosticCode> {
@@ -113,49 +106,6 @@ fn version_probe_options() -> serde_saphyr::Options {
         emit_comments: false,
         with_snippet: false,
     }
-}
-
-fn collection_limits_hold(document: &CompositionDocument) -> bool {
-    let spec = &document.spec;
-    if spec.parameters.len() > MAX_COMPOSITION_COLLECTION_ITEMS
-        || spec.sources.len() > MAX_COMPOSITION_COLLECTION_ITEMS
-        || spec.components.len() > MAX_COMPOSITION_COLLECTION_ITEMS
-        || spec.sections.len() > MAX_COMPOSITION_COLLECTION_ITEMS
-    {
-        return false;
-    }
-
-    for source in &spec.sources {
-        match source {
-            CompositionSource::EntryQuery {
-                field_schema,
-                query,
-                ..
-            } => {
-                if field_schema.len() > MAX_COMPOSITION_COLLECTION_ITEMS
-                    || query.filters.len() > MAX_COMPOSITION_COLLECTION_ITEMS
-                    || query.sort.len() > MAX_COMPOSITION_COLLECTION_ITEMS
-                {
-                    return false;
-                }
-
-                if let EntryQueryProjectionTemplate::Fields { fields } = &query.projection {
-                    if fields.len() > MAX_COMPOSITION_COLLECTION_ITEMS {
-                        return false;
-                    }
-                }
-            }
-            CompositionSource::SavedSql { variables, .. } => {
-                if variables.len() > MAX_COMPOSITION_COLLECTION_ITEMS {
-                    return false;
-                }
-            }
-        }
-    }
-
-    spec.sections
-        .iter()
-        .all(|section| section.components.len() <= MAX_COMPOSITION_COLLECTION_ITEMS)
 }
 
 #[cfg(test)]

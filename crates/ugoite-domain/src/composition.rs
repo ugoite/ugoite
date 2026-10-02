@@ -4,15 +4,19 @@
 //! execution code. It defines the shared Rust model that native and WASM
 //! adapters use when parsing and resolving a Composition.
 
-use crate::form::FieldType;
+use crate::form::{FieldType, ListItemDefinition};
 use crate::id::{EntryId, FieldId, FormId, RevisionId};
 use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+mod canonical;
 mod yaml;
 
+pub use canonical::{
+    canonicalize_composition, canonicalize_composition_yaml, CanonicalComposition,
+};
 pub use yaml::{
     parse_composition_yaml, MAX_COMPOSITION_COLLECTION_ITEMS, MAX_COMPOSITION_YAML_BYTES,
     MAX_COMPOSITION_YAML_DEPTH,
@@ -129,12 +133,17 @@ impl CompositionSource {
     }
 }
 
-/// The schema snapshot of one query-used Form field.
+/// The logical schema snapshot of one query-used Form field, including typed
+/// List item and RowReference target metadata when applicable.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionFieldSchemaEntry {
     pub field_id: FieldId,
     pub field_type: FieldType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_form: Option<FormId>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "items")]
+    pub list_item: Option<ListItemDefinition>,
 }
 
 /// An EntryQuery template. The resolver compiles this into the existing

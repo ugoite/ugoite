@@ -266,6 +266,10 @@ run = [
   "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
 ]
 
+[tasks."check:wasm:composition-parity"]
+description = "Verify Composition canonicalization and diagnostics in the actual WASM runtime"
+run = "deno run -A crates/ugoite-wasm/tests/composition_parity.ts"
+
 [tasks."check:deno"]
 description = "Run Deno workspace type and framework checks"
 run = "deno task check"
@@ -292,6 +296,7 @@ run = "./scripts/mitase check ."
 description = "Run all repository checks"
 run = [
   { task = "check:rust" },
+  { task = "check:wasm:composition-parity" },
   { task = "check:deno" },
   { task = "check:repo" },
 ]
@@ -628,6 +633,7 @@ run = [
   { task = "lint:rust" },
   { task = "check:rust" },
   { task = "check:repo" },
+  { task = "check:wasm:composition-parity" },
 ]
 
 [tasks."ci:lane:rust-test"]

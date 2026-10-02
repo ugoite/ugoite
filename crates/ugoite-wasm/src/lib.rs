@@ -154,6 +154,39 @@ fn invoke_konase(request: serde_json::Value) -> String {
 }
 
 fn invoke_domain(request: serde_json::Value) -> String {
+    if request.get("action").and_then(serde_json::Value::as_str)
+        == Some("domain.canonicalize_composition")
+    {
+        let Some(yaml) = request
+            .get("value")
+            .and_then(|value| value.get("yaml"))
+            .and_then(serde_json::Value::as_str)
+        else {
+            return serde_json::json!({
+                "ok": false,
+                "error": {"kind": "domain_validation", "message": "value.yaml must be a string"},
+            })
+            .to_string();
+        };
+
+        return match ugoite_domain::composition::canonicalize_composition_yaml(yaml) {
+            Ok(canonical) => serde_json::json!({
+                "ok": true,
+                "value": {
+                    "document": canonical.document,
+                    "canonical_yaml": canonical.yaml,
+                    "fingerprint": canonical.fingerprint,
+                },
+            })
+            .to_string(),
+            Err(code) => serde_json::json!({
+                "ok": false,
+                "error": {"kind": "composition_diagnostic", "code": code.as_str()},
+            })
+            .to_string(),
+        };
+    }
+
     let result = (|| -> Result<serde_json::Value, String> {
         let action = request
             .get("action")
@@ -507,12 +540,51 @@ mod abi {
 mod tests {
     use serde_json::Value;
 
+    const MONTHLY_EXPENSE_COMPOSITION: &str =
+        include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+
     #[test]
     fn test_api_req_api_001_wasm_adapter_exposes_protocol_version() {
         let response = super::invoke_json(r#"{"action":"version"}"#);
         let response: Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["ok"], true, "{response}");
         assert_eq!(response["value"]["protocol_version"], 1);
+    }
+
+    #[test]
+    fn composition_canonicalization_matches_the_native_domain_contract() {
+        let native =
+            ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE_COMPOSITION)
+                .unwrap();
+        let request = serde_json::json!({
+            "action": "domain.canonicalize_composition",
+            "value": {"yaml": MONTHLY_EXPENSE_COMPOSITION},
+        });
+        let response: Value =
+            serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(
+            response["value"]["document"],
+            serde_json::to_value(native.document).unwrap()
+        );
+        assert_eq!(response["value"]["canonical_yaml"], native.yaml);
+        assert_eq!(response["value"]["fingerprint"], native.fingerprint);
+
+        for (yaml, expected_code) in [
+            ("format_version: 2\n", "unsupported_format_version"),
+            ("format_version: 1\nname: [invalid\n", "invalid_composition"),
+        ] {
+            let request = serde_json::json!({
+                "action": "domain.canonicalize_composition",
+                "value": {"yaml": yaml},
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response["ok"], false, "{response}");
+            assert_eq!(response["error"]["kind"], "composition_diagnostic");
+            assert_eq!(response["error"]["code"], expected_code);
+        }
     }
 
     #[test]
