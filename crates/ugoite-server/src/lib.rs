@@ -11098,6 +11098,7 @@ fn api_composition_diagnostic_code(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CompositionLintRequest {
     yaml: String,
 }
@@ -13702,6 +13703,32 @@ mod authentication_regression_tests {
             route_json(route.clone(), malformed_json_request).await?;
         assert_eq!(malformed_json_status, StatusCode::BAD_REQUEST);
         assert_eq!(malformed_json_body["code"], "INVALID_INPUT");
+
+        for (body, expected_status) in [
+            (json!({}).to_string(), StatusCode::UNPROCESSABLE_ENTITY),
+            (
+                json!({"yaml": lint_yaml, "ignored": true}).to_string(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+        ] {
+            let rejected_request = Request::post("/compositions/lint")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))?;
+            let (status, body) = route_json(route.clone(), rejected_request).await?;
+            assert_eq!(status, expected_status);
+            assert_eq!(body["code"], "INVALID_INPUT");
+        }
+
+        let wrong_content_type_request = Request::post("/compositions/lint")
+            .header(header::CONTENT_TYPE, "text/plain")
+            .body(Body::from(json!({"yaml": lint_yaml}).to_string()))?;
+        let (wrong_content_type_status, wrong_content_type_body) =
+            route_json(route.clone(), wrong_content_type_request).await?;
+        assert_eq!(
+            wrong_content_type_status,
+            StatusCode::UNSUPPORTED_MEDIA_TYPE
+        );
+        assert_eq!(wrong_content_type_body["code"], "INVALID_INPUT");
 
         let unsupported_version = "format_version: 99\nname: future\n";
         let invalid_request = Request::post("/compositions/lint")

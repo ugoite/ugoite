@@ -1299,6 +1299,14 @@ fn openapi_documents_composition_lint_request_response_and_diagnostics() {
         lint["responses"]["400"]["description"],
         "Invalid JSON request body"
     );
+    assert_eq!(
+        lint["responses"]["415"]["description"],
+        "Request Content-Type must be application/json"
+    );
+    assert_eq!(
+        lint["responses"]["422"]["description"],
+        "The JSON value does not match the Composition lint request schema"
+    );
 
     let request = &snapshot["components"]["schemas"]["CompositionLintRequest"];
     assert_eq!(request["required"], serde_json::json!(["yaml"]));

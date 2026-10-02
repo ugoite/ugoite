@@ -917,6 +917,50 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "415": {
+            "description": "Request Content-Type must be application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON value does not match the Composition lint request schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
             }
           }
         }
