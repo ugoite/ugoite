@@ -23,6 +23,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-002#criterion.typed-dashboard-model
               - kind: documents
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: documents
                 anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
               - kind: documents
                 anchor: REQ-COMP-003#criterion.canonical-yaml
@@ -46,6 +48,93 @@ features:
             adapter: declared
             path: crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml
             selector: { kind: file }
+      - id: component-layout-domain
+        role: implementation
+        facet: domain
+        responsibility: Expose section-ordered component references and reject incomplete or ambiguous component layouts during canonicalization.
+        targets:
+          - id: ordered-components
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: components_in_render_order }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+          - id: canonical-layout-validation
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/canonical.rs
+            selector: { kind: symbol, name: normalize_composition_document }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - id: component-layout-domain-tests
+        role: evidence
+        facet: domain-tests
+        responsibility: Exercise section ordering, complete and unique references, the valid empty layout, canonical rejection of invalid component layouts, and native/WASM diagnostic parity.
+        targets:
+          - id: section-reference-order
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: components_follow_section_and_reference_order }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: empty-layout
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: empty_component_layout_is_valid }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: duplicate-component-id
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: duplicate_component_ids_are_invalid }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: duplicate-component-reference
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: duplicate_component_references_are_invalid }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: unknown-component-reference
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: unknown_component_references_are_invalid }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: unreferenced-component
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: unreferenced_components_are_invalid }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: canonical-invalid-layout
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/canonical.rs
+            selector: { kind: symbol, name: canonicalization_rejects_unreferenced_components }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: wasm-invalid-layout-parity
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: composition_canonicalization_matches_the_native_domain_contract }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: wasm32-invalid-layout-parity
+            adapter: typescript
+            path: crates/ugoite-wasm/tests/composition_parity.ts
+            selector: { kind: symbol, name: main }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
       - id: entry-query-resolver
         role: implementation
         facet: core

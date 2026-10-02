@@ -9,7 +9,7 @@ use crate::id::{EntryId, FieldId, FormId, RevisionId};
 use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod canonical;
 mod yaml;
@@ -69,6 +69,45 @@ pub struct CompositionSpec {
     pub components: Vec<CompositionComponent>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sections: Vec<CompositionSection>,
+}
+
+impl CompositionSpec {
+    /// Return components in section order and each section's reference order.
+    ///
+    /// A component must have a unique ID and be referenced exactly once by the
+    /// sections. Unknown, duplicate, or missing references make the layout
+    /// invalid; the top-level component declaration order is never a fallback.
+    pub fn components_in_render_order(
+        &self,
+    ) -> Result<Vec<&CompositionComponent>, CompositionDiagnosticCode> {
+        let mut components_by_id = HashMap::with_capacity(self.components.len());
+        for component in &self.components {
+            if components_by_id.insert(component.id(), component).is_some() {
+                return Err(CompositionDiagnosticCode::InvalidComposition);
+            }
+        }
+
+        let mut rendered_ids = HashSet::with_capacity(self.components.len());
+        let mut ordered = Vec::with_capacity(self.components.len());
+        for section in &self.sections {
+            for component_id in &section.components {
+                if !rendered_ids.insert(component_id.as_str()) {
+                    return Err(CompositionDiagnosticCode::InvalidComposition);
+                }
+                let component = components_by_id
+                    .get(component_id.as_str())
+                    .copied()
+                    .ok_or(CompositionDiagnosticCode::InvalidComposition)?;
+                ordered.push(component);
+            }
+        }
+
+        if rendered_ids.len() != components_by_id.len() {
+            return Err(CompositionDiagnosticCode::InvalidComposition);
+        }
+
+        Ok(ordered)
+    }
 }
 
 /// A value that can be supplied to a Composition source.
@@ -373,9 +412,103 @@ impl CompositionDiagnosticCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        CompositionDiagnosticCode, CompositionDocument, CompositionKind, CompositionSource,
+        parse_composition_yaml, CompositionComponent, CompositionDiagnosticCode,
+        CompositionDocument, CompositionKind, CompositionSection, CompositionSource,
         CompositionSpec, CompositionValue, EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
     };
+
+    const MONTHLY_EXPENSE: &str =
+        include_str!("../tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+
+    #[test]
+    fn components_follow_section_and_reference_order() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.components.push(CompositionComponent::Table {
+            id: "last".to_string(),
+            source: "expense_rows".to_string(),
+        });
+        spec.components.reverse();
+        spec.sections.reverse();
+        spec.sections[0].components.push("total".to_string());
+        spec.sections[1].components.clear();
+        spec.sections.push(CompositionSection {
+            id: "later".to_string(),
+            components: vec!["last".to_string()],
+        });
+
+        let component_ids: Vec<_> = spec
+            .components_in_render_order()
+            .unwrap()
+            .into_iter()
+            .map(CompositionComponent::id)
+            .collect();
+
+        assert_eq!(component_ids, ["transactions", "total", "last"]);
+    }
+
+    #[test]
+    fn empty_component_layout_is_valid() {
+        let spec = CompositionSpec {
+            parameters: vec![],
+            sources: vec![],
+            components: vec![],
+            sections: vec![],
+        };
+
+        assert!(spec.components_in_render_order().unwrap().is_empty());
+    }
+
+    #[test]
+    fn duplicate_component_ids_are_invalid() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.components[1] = spec.components[0].clone();
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn duplicate_component_references_are_invalid() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.sections[0].components.push("total".to_string());
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.sections[1].components.push("total".to_string());
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn unknown_component_references_are_invalid() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.sections[0].components[0] = "unknown".to_string();
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn unreferenced_components_are_invalid() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.sections[1].components.clear();
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
 
     #[test]
     fn document_uses_the_portable_envelope_field_names() {

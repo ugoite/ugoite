@@ -77,6 +77,7 @@ pub(super) fn normalize_composition_document(
     if !composition_collection_limits_hold(document) {
         return Err(CompositionDiagnosticCode::InvalidComposition);
     }
+    document.spec.components_in_render_order()?;
 
     let mut normalized = document.clone();
     for source in &mut normalized.spec.sources {
@@ -169,7 +170,9 @@ fn list_item_is_valid(item: &ListItemDefinition) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{canonicalize_composition_yaml, normalize_composition_document};
+    use super::{
+        canonicalize_composition, canonicalize_composition_yaml, normalize_composition_document,
+    };
     use crate::composition::{CompositionDiagnosticCode, CompositionDocument, CompositionSource};
     use crate::form::{FieldType, ListItemDefinition};
     use crate::id::FormId;
@@ -232,6 +235,19 @@ mod tests {
         let changed = canonicalize_composition_yaml(&changed).unwrap();
 
         assert_ne!(baseline.fingerprint, changed.fingerprint);
+    }
+
+    #[test]
+    fn canonicalization_rejects_unreferenced_components() {
+        let mut document = canonicalize_composition_yaml(MONTHLY_EXPENSE)
+            .unwrap()
+            .document;
+        document.spec.sections[1].components.clear();
+
+        assert_eq!(
+            canonicalize_composition(&document),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
     }
 
     #[test]
