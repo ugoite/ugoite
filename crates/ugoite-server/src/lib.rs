@@ -14475,9 +14475,12 @@ mod authentication_regression_tests {
     async fn composition_resolve_uses_exact_requested_revision_with_newer_revision_available(
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
-            CompositionDocument, CompositionKind, CompositionParameter, CompositionParameterType,
-            CompositionSpec,
+            CompositionDocument, CompositionFieldSchemaEntry, CompositionKind,
+            CompositionParameter, CompositionParameterReference, CompositionParameterType,
+            CompositionQueryOperator, CompositionSource, CompositionSpec, CompositionValue,
+            EntryQueryFilterTemplate, EntryQueryProjectionTemplate, EntryQueryTemplate,
         };
+        use ugoite_domain::{form::FieldType, id::FieldId};
 
         let state = AppState::new_for_tests(format!(
             "memory://server-composition-resolve-exact-revision-{}",
@@ -14509,23 +14512,69 @@ mod authentication_regression_tests {
             )
             .await?;
 
-        let document = |name: &str, parameters: Vec<CompositionParameter>| CompositionDocument {
-            format_version: 1,
-            name: name.to_string(),
-            kind: CompositionKind::Dashboard,
-            spec: CompositionSpec {
-                parameters,
-                sources: Vec::new(),
-                components: Vec::new(),
-                sections: Vec::new(),
-            },
-        };
+        let source_form_id = Uuid::from_u128(347424);
+        let source_field_id = FieldId::new(100)?;
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "id": source_form_id,
+                    "name": "ResolveExactRevisionSource",
+                    "version": 1,
+                    "fields": {
+                        "month": {"id": source_field_id.get(), "type": "string"}
+                    },
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+
+        let document =
+            |name: &str, parameters: Vec<CompositionParameter>, sources: Vec<CompositionSource>| {
+                CompositionDocument {
+                    format_version: 1,
+                    name: name.to_string(),
+                    kind: CompositionKind::Dashboard,
+                    spec: CompositionSpec {
+                        parameters,
+                        sources,
+                        components: Vec::new(),
+                        sections: Vec::new(),
+                    },
+                }
+            };
         let month_parameter = || CompositionParameter {
             id: "month".to_string(),
             parameter_type: CompositionParameterType::String,
             required: true,
             default: None,
             format: None,
+        };
+        let older_source = CompositionSource::EntryQuery {
+            id: "older_entries".to_string(),
+            form_id: ugoite_domain::id::FormId::from_uuid(source_form_id),
+            field_schema: vec![CompositionFieldSchemaEntry {
+                field_id: source_field_id,
+                field_type: FieldType::String,
+                reference_form: None,
+                list_item: None,
+            }],
+            query: EntryQueryTemplate {
+                text: None,
+                filters: vec![EntryQueryFilterTemplate {
+                    field_id: source_field_id,
+                    operator: CompositionQueryOperator::Equals,
+                    value: CompositionValue::Parameter(CompositionParameterReference {
+                        parameter: "month".to_string(),
+                    }),
+                }],
+                sort: Vec::new(),
+                page_limit: 10,
+                projection: EntryQueryProjectionTemplate::Fields {
+                    fields: vec![source_field_id],
+                },
+            },
         };
         let older = state
             .service
@@ -14534,7 +14583,11 @@ mod authentication_regression_tests {
                 ugoite_iceberg::composition::CompositionSaveRequest {
                     entry_id: None,
                     base_revision_id: None,
-                    document: document("Older exact revision", vec![month_parameter()]),
+                    document: document(
+                        "Older exact revision",
+                        vec![month_parameter()],
+                        vec![older_source],
+                    ),
                     tags: None,
                 },
                 &principal_id.to_string(),
@@ -14548,7 +14601,7 @@ mod authentication_regression_tests {
                 ugoite_iceberg::composition::CompositionSaveRequest {
                     entry_id: Some(older.entry_id),
                     base_revision_id: Some(older.revision_id),
-                    document: document("Newer latest revision", Vec::new()),
+                    document: document("Newer latest revision", Vec::new(), Vec::new()),
                     tags: None,
                 },
                 &principal_id.to_string(),
@@ -14607,7 +14660,24 @@ mod authentication_regression_tests {
                 "revision_id": older.revision_id.to_string(),
             })
         );
-        assert_eq!(older_body["plan"]["sources"], json!([]));
+        assert_eq!(
+            older_body["plan"]["sources"][0]["source_id"],
+            json!("older_entries")
+        );
+        assert_eq!(
+            older_body["plan"]["sources"][0]["request"]["query"]["filters"],
+            json!([{
+                "field": {"kind": "property", "field_id": source_field_id.get()},
+                "operator": "equals",
+                "value": "October"
+            }])
+        );
+        assert_eq!(
+            older_body["plan"]["sources"][0]["source_schema_fingerprint"]
+                .as_str()
+                .map(str::len),
+            Some(64)
+        );
 
         let (latest_status, latest_body) = route_json(
             route.clone(),
