@@ -732,3 +732,70 @@ async fn local_composition_raw_reads_do_not_create_registry() -> anyhow::Result<
     }));
     Ok(())
 }
+
+#[tokio::test]
+async fn local_composition_raw_reads_reject_invalid_ids_and_history_limits() -> anyhow::Result<()> {
+    use ugoite_core::error::{AppError, ErrorCode};
+
+    let service = UgoiteService::new(format!(
+        "memory://composition-local-read-validation-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::from_u128(3_428_005);
+    let space_id = service
+        .create_space_for_principal("composition-local-read-validation", owner, "Owner")
+        .await?
+        .to_string();
+    let valid_entry_id = Uuid::now_v7().to_string();
+
+    let invalid_current = service
+        .get_composition_raw_local(&space_id, "bad/entry-id")
+        .await
+        .expect_err("current raw read must reject a malformed Entry ID");
+    let invalid_exact_entry = service
+        .get_composition_raw_revision_local(&space_id, "bad/entry-id", &Uuid::now_v7().to_string())
+        .await
+        .expect_err("exact raw read must reject a malformed Entry ID");
+    let invalid_exact_revision = service
+        .get_composition_raw_revision_local(&space_id, &valid_entry_id, "bad/revision-id")
+        .await
+        .expect_err("exact raw read must reject a malformed Revision ID");
+    let invalid_history_entry = service
+        .composition_history_local_page(&space_id, "bad/entry-id", 10, 0)
+        .await
+        .expect_err("history read must reject a malformed Entry ID");
+
+    for error in [
+        invalid_current,
+        invalid_exact_entry,
+        invalid_exact_revision,
+        invalid_history_entry,
+    ] {
+        assert_eq!(
+            error.downcast::<AppError>()?.code(),
+            ErrorCode::InvalidIdentifier
+        );
+    }
+
+    let zero_limit = service
+        .composition_history_local_page(&space_id, &valid_entry_id, 0, 0)
+        .await
+        .expect_err("history page size zero must be rejected");
+    let over_limit = service
+        .composition_history_local_page(
+            &space_id,
+            &valid_entry_id,
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE + 1,
+            0,
+        )
+        .await
+        .expect_err("history page size above the maximum must be rejected");
+
+    for error in [zero_limit, over_limit] {
+        assert_eq!(
+            error.downcast::<AppError>()?.code(),
+            ErrorCode::InvalidInput
+        );
+    }
+    Ok(())
+}
