@@ -234,7 +234,13 @@ candidate comparison are maintained in [`composition.md`](composition.md).
 Canonical output derives from normalized typed values, uses schema field order
 and stable YAML formatting, and does not preserve comments. The semantic
 fingerprint is SHA-256 over the normalized semantic value, not the source YAML
-bytes.
+bytes. Normalization sorts each `entry_query` field-schema snapshot by
+`FieldId`, rejects duplicate or inconsistent entries, and includes a typed
+List's `items` definition and a RowReference's `reference_form` when present.
+The fingerprint hashes compact JSON serialization of the normalized typed
+value; the public digest is lowercase hexadecimal. Rust's domain and WASM
+paths return the same canonical YAML, fingerprint, and diagnostic code for a
+given fixture.
 
 The complete current contract is maintained in
 [`composition.md`](composition.md); the shared example is

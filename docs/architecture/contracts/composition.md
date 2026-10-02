@@ -23,7 +23,9 @@ snapshot for the union of its query-used property fields and, when text search
 is present, every text-searchable property field. The text-search expansion
 follows the existing EntryQuery semantics: `binary`, `list`, `object_list`, and
 `asset_reference` fields are excluded. A field of those types still appears
-when the query otherwise uses it, such as in a projection.
+when the query otherwise uses it, such as in a projection. Each snapshot row
+contains `field_id` and `field_type`, plus `reference_form` for a RowReference
+or `items` for a typed List when those type details are present.
 
 The complete illustrative document is maintained in
 `crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml`.
@@ -91,10 +93,15 @@ threshold.
 
 Canonical YAML uses schema field order, block collections, two-space
 indentation, LF line endings, and no BOM. Canonical output is derived from the
-normalized typed value; comments are not preserved. Semantic fingerprints hash
-the normalized semantic value, so formatting changes do not change identity.
-The `field_schema` sequence is unique and sorted by `FieldId`; its fingerprint
-contains only the source Form ID and these used field IDs and types.
+normalized typed value; comments are not preserved. The semantic fingerprint is
+lowercase hexadecimal SHA-256 over the normalized typed value serialized as
+compact JSON. Formatting changes do not change identity. The `field_schema`
+sequence is unique and normalized by `FieldId`; its fingerprint contains only
+the source Form ID and used field IDs with their logical type, List item, and
+RowReference target metadata. Text search alone does not make List fields used
+because existing EntryQuery semantics exclude them from text-search expansion.
+The shared native/WASM fixture can be executed with
+`deno run -A crates/ugoite-wasm/tests/composition_parity.ts`.
 
 ## Failure and recovery boundary
 

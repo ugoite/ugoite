@@ -1,0 +1,16 @@
+format_version: 1
+name: Unknown List item field
+kind: dashboard
+spec:
+  sources:
+    - kind: entry_query
+      id: source
+      form_id: 00000000-0000-7000-8000-000000000010
+      field_schema:
+        - field_id: 100
+          field_type: list
+          items:
+            type: string
+            unknown: discarded
+      query:
+        page_limit: 10

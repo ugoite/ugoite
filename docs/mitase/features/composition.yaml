@@ -27,6 +27,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-003#criterion.canonical-yaml
               - kind: documents
+                anchor: REQ-COMP-003#criterion.wasm-parity
+              - kind: documents
                 anchor: REQ-COMP-004#criterion.entry-query-translation
               - kind: documents
                 anchor: REQ-COMP-004#criterion.used-field-fingerprint

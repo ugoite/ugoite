@@ -41,7 +41,7 @@ requirements:
         governed_by: [POL-014#rule.governance]
       - id: used-field-schema-snapshot
         kind: behavior
-        statement: An entry_query source records a FieldId and FieldType snapshot for its query-used property fields; when text search is present, it also includes every text-searchable property field under existing EntryQuery semantics, excluding binary, list, object_list, and asset_reference fields from the text-search expansion.
+        statement: An entry_query source records a FieldId and FieldType snapshot for its query-used property fields, including List item and RowReference target metadata when present; when text search is present, it also includes every text-searchable property field under existing EntryQuery semantics, excluding binary, list, object_list, and asset_reference fields from the text-search expansion.
         governed_by: [POL-007#rule.governance]
   - id: REQ-COMP-003
     title: Canonical Composition representation
@@ -57,6 +57,10 @@ requirements:
         kind: behavior
         statement: The Composition fingerprint is SHA-256 over the normalized semantic value, so formatting-only changes do not alter it while semantic changes do.
         governed_by: [POL-007#rule.governance]
+      - id: wasm-parity
+        kind: behavior
+        statement: Native Rust and WASM produce identical canonical YAML, semantic fingerprints, and diagnostic codes for the shared Composition fixtures.
+        governed_by: [POL-001#rule.governance, POL-007#rule.governance]
   - id: REQ-COMP-004
     title: Existing query and authorization semantics
     description: Composition sources compile into existing query contracts and retain their limits, exact-revision selection, and current authorization checks.
