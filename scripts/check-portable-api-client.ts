@@ -111,11 +111,17 @@ const checkCargoManifests = async (): Promise<void> => {
   const wasmDependencies = await dependencyKeysFromManifest(
     "crates/ugoite-wasm/Cargo.toml",
   );
+  // Mirror the portable WASM boundary in xtask: the thin adapter may delegate
+  // to ugoite-core, but it must not reach storage, catalog, or I/O crates.
   const forbiddenWasm = new Set([
+    "arrow-array",
+    "arrow-schema",
+    "iceberg",
     "opendal",
+    "parquet",
     "reqwest",
     "tokio",
-    "ugoite-core",
+    "ugoite-iceberg",
     "ugoite-storage",
   ]);
   const unexpectedWasm = [...wasmDependencies].filter((dep) =>
