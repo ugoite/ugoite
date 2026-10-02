@@ -135,8 +135,7 @@ impl CompositionSource {
 
 /// The logical schema snapshot of one query-used Form field, including typed
 /// List item and RowReference target metadata when applicable.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct CompositionFieldSchemaEntry {
     pub field_id: FieldId,
     pub field_type: FieldType,
@@ -144,6 +143,44 @@ pub struct CompositionFieldSchemaEntry {
     pub reference_form: Option<FormId>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "items")]
     pub list_item: Option<ListItemDefinition>,
+}
+
+impl<'de> Deserialize<'de> for CompositionFieldSchemaEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct FieldSchemaEntryWire {
+            field_id: FieldId,
+            field_type: FieldType,
+            #[serde(default)]
+            reference_form: Option<FormId>,
+            #[serde(default, rename = "items")]
+            list_item: Option<ListItemSchemaWire>,
+        }
+
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct ListItemSchemaWire {
+            #[serde(rename = "type")]
+            field_type: FieldType,
+            #[serde(default, rename = "target_form")]
+            reference_form: Option<FormId>,
+        }
+
+        let entry = FieldSchemaEntryWire::deserialize(deserializer)?;
+        Ok(Self {
+            field_id: entry.field_id,
+            field_type: entry.field_type,
+            reference_form: entry.reference_form,
+            list_item: entry.list_item.map(|item| ListItemDefinition {
+                field_type: item.field_type,
+                reference_form: item.reference_form,
+            }),
+        })
+    }
 }
 
 /// An EntryQuery template. The resolver compiles this into the existing

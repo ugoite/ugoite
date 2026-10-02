@@ -301,4 +301,17 @@ mod tests {
             Err(CompositionDiagnosticCode::UnsupportedFormatVersion)
         );
     }
+
+    #[test]
+    fn unknown_list_item_schema_fields_are_rejected() {
+        let yaml = MONTHLY_EXPENSE.replace(
+            "        - field_id: 102\n          field_type: double",
+            "        - field_id: 102\n          field_type: list\n          items:\n            type: string\n            unknown: discarded",
+        );
+
+        assert_eq!(
+            canonicalize_composition_yaml(&yaml),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
 }
