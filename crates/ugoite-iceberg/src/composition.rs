@@ -4,11 +4,246 @@
 //! parsing and record mutation are handled by higher layers after their
 //! contracts are defined.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use opendal::Operator;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::query::EntryScope;
+use ugoite_domain::entry::EntryRevision;
 use ugoite_domain::form::FormDefinition;
+use ugoite_domain::id::{validate_entry_id, validate_revision_id, EntryId, FieldId, RevisionId};
+
+pub const COMPOSITION_HISTORY_MAX_PAGE_SIZE: usize = 100;
+
+/// An inspectable stored Composition revision. `revision.values` retains the
+/// stable FieldId keyed carrier while `fields` provides its historical Form
+/// field names. Values such as an unsupported format version or malformed
+/// YAML remain available without invoking the strict Composition parser.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RawCompositionRevision {
+    pub revision: EntryRevision,
+    pub fields: BTreeMap<String, Value>,
+    pub unmapped_field_values: BTreeMap<FieldId, Value>,
+}
+
+impl RawCompositionRevision {
+    /// Returns a version probe only when the raw carrier is a non-negative
+    /// integer. It deliberately does not validate or interpret the document.
+    pub fn format_version_probe(&self) -> Option<u64> {
+        self.fields.get("format_version").and_then(Value::as_u64)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RawCompositionHistoryPage {
+    pub entry_id: EntryId,
+    pub revisions: Vec<RawCompositionRevision>,
+    pub total: usize,
+    pub offset: usize,
+    pub limit: usize,
+    pub has_more: bool,
+}
+
+fn entry_uuid(entry_id: &str) -> EntryId {
+    EntryId::from(
+        uuid::Uuid::parse_str(entry_id).unwrap_or_else(|_| {
+            uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, entry_id.as_bytes())
+        }),
+    )
+}
+
+fn registry_form_at_publication(forms: Vec<FormDefinition>) -> Result<Option<FormDefinition>> {
+    let expected = composition_registry_definition()?;
+    let existing = forms.into_iter().find(|form| {
+        form.name
+            .eq_ignore_ascii_case(COMPOSITION_REGISTRY_FORM_NAME)
+    });
+    if let Some(existing) = &existing {
+        validate_registry_definition(existing, &expected)?;
+    }
+    Ok(existing)
+}
+
+fn raw_revision(
+    revision: EntryRevision,
+    form_history: &[FormDefinition],
+) -> Result<RawCompositionRevision> {
+    let form = form_history
+        .iter()
+        .find(|form| form.version == revision.form_version)
+        .ok_or_else(|| anyhow!("Composition revision Form history is incomplete"))?;
+    let fields_by_id = form
+        .fields
+        .iter()
+        .map(|field| (field.id, field.name.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let mut fields = BTreeMap::new();
+    let mut unmapped_field_values = BTreeMap::new();
+    for (field_id, value) in &revision.values {
+        let value = serde_json::to_value(value)?;
+        if let Some(name) = fields_by_id.get(field_id) {
+            fields.insert((*name).to_string(), value);
+        } else {
+            unmapped_field_values.insert(*field_id, value);
+        }
+    }
+    Ok(RawCompositionRevision {
+        revision,
+        fields,
+        unmapped_field_values,
+    })
+}
+
+fn target_scope(entry_id: EntryId) -> EntryScope {
+    EntryScope::Only(BTreeSet::from([entry_id]))
+}
+
+fn validate_raw_read(entry_id: &str) -> Result<EntryId> {
+    validate_entry_id(entry_id).map_err(|error| AppError::invalid_identifier(error.to_string()))?;
+    Ok(entry_uuid(entry_id))
+}
+
+/// Reads the current Composition revision without creating or repairing its
+/// Registry Form. Deleted records are absent from the current read surface.
+pub async fn read_composition_raw(
+    operator: &Operator,
+    workspace_path: &str,
+    entry_id: &str,
+) -> Result<Option<RawCompositionRevision>> {
+    let entry_id = validate_raw_read(entry_id)?;
+    let workspace =
+        crate::iceberg_store::native_workspace_read_only(operator, workspace_path).await?;
+    let publication = workspace.current_publication().await?;
+    let Some(form) =
+        registry_form_at_publication(workspace.forms_at_publication(&publication).await?)?
+    else {
+        return Ok(None);
+    };
+    let history = workspace
+        .form_history_at_publication(&publication, form.id)
+        .await?;
+    let mut revisions = workspace
+        .read_revision_view_at_publication_with_scope(
+            &publication,
+            form.id,
+            target_scope(entry_id),
+            crate::RevisionView::LatestIncludingTombstones,
+        )
+        .await?;
+    let Some(revision) = revisions
+        .drain(..)
+        .find(|revision| revision.entry_id == entry_id && !revision.entry.deleted)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(raw_revision(revision, &history)?))
+}
+
+/// Reads an exact Composition revision from the append-only Entry history.
+/// There is no fallback to the current revision when the requested ID is
+/// missing, and tombstones remain inspectable through this path.
+pub async fn read_composition_raw_revision(
+    operator: &Operator,
+    workspace_path: &str,
+    entry_id: &str,
+    revision_id: &str,
+) -> Result<Option<RawCompositionRevision>> {
+    let entry_id = validate_raw_read(entry_id)?;
+    validate_revision_id(revision_id)
+        .map_err(|error| AppError::invalid_identifier(error.to_string()))?;
+    let revision_id = uuid::Uuid::parse_str(revision_id)
+        .map(RevisionId::from)
+        .map_err(|error| AppError::invalid_identifier(error.to_string()))?;
+    let workspace =
+        crate::iceberg_store::native_workspace_read_only(operator, workspace_path).await?;
+    let publication = workspace.current_publication().await?;
+    let Some(form) =
+        registry_form_at_publication(workspace.forms_at_publication(&publication).await?)?
+    else {
+        return Ok(None);
+    };
+    let history = workspace
+        .form_history_at_publication(&publication, form.id)
+        .await?;
+    let revision = workspace
+        .read_revision_view_at_publication_with_scope(
+            &publication,
+            form.id,
+            target_scope(entry_id),
+            crate::RevisionView::All,
+        )
+        .await?
+        .into_iter()
+        .find(|revision| revision.entry_id == entry_id && revision.revision_id == revision_id);
+    revision
+        .map(|revision| raw_revision(revision, &history))
+        .transpose()
+}
+
+/// Reads a bounded page of the append-only history for one Composition.
+/// Authorization is supplied by the service boundary; the provider read is
+/// always narrowed to this Entry before revisions are decoded.
+pub async fn read_composition_history_page(
+    operator: &Operator,
+    workspace_path: &str,
+    entry_id: &str,
+    limit: usize,
+    offset: usize,
+) -> Result<Option<RawCompositionHistoryPage>> {
+    let entry_id = validate_raw_read(entry_id)?;
+    if !(1..=COMPOSITION_HISTORY_MAX_PAGE_SIZE).contains(&limit) {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            format!("Composition history limit must be between 1 and {COMPOSITION_HISTORY_MAX_PAGE_SIZE}"),
+        )
+        .into());
+    }
+    let workspace =
+        crate::iceberg_store::native_workspace_read_only(operator, workspace_path).await?;
+    let publication = workspace.current_publication().await?;
+    let Some(form) =
+        registry_form_at_publication(workspace.forms_at_publication(&publication).await?)?
+    else {
+        return Ok(None);
+    };
+    let form_history = workspace
+        .form_history_at_publication(&publication, form.id)
+        .await?;
+    let mut revisions = workspace
+        .read_revision_view_at_publication_with_scope(
+            &publication,
+            form.id,
+            target_scope(entry_id),
+            crate::RevisionView::All,
+        )
+        .await?
+        .into_iter()
+        .filter(|revision| revision.entry_id == entry_id)
+        .map(|revision| raw_revision(revision, &form_history))
+        .collect::<Result<Vec<_>>>()?;
+    if revisions.is_empty() {
+        return Ok(None);
+    }
+    revisions.sort_by_key(|revision| {
+        (
+            revision.revision.committed_at_micros,
+            revision.revision.revision_id,
+        )
+    });
+    let total = revisions.len();
+    let has_more = offset.saturating_add(limit) < total;
+    let revisions = revisions.into_iter().skip(offset).take(limit).collect();
+    Ok(Some(RawCompositionHistoryPage {
+        entry_id,
+        revisions,
+        total,
+        offset,
+        limit,
+        has_more,
+    }))
+}
 
 pub const COMPOSITION_REGISTRY_FORM_NAME: &str = "_ugoite_compositions";
 const COMPOSITION_REGISTRY_MARKER_KEY: &str = "ugoite.registry";

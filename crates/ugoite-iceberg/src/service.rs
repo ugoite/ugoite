@@ -128,7 +128,7 @@ use crate::{
         effective_actions_for_state, AuthorizationLease, AuthorizationState, Authorizer,
         ResourceKind, ResourceRef,
     },
-    entry, form, iceberg_store, index, preferences, saved_sql, space,
+    composition, entry, form, iceberg_store, index, preferences, saved_sql, space,
 };
 use crate::{CheckpointIntegrityError, CheckpointUnavailable, PublicationRef, RevisionView};
 use ugoite_core::entry_query::{
@@ -5021,6 +5021,101 @@ impl UgoiteService {
             .await
     }
 
+    /// Reads the current raw Composition revision through the current Form
+    /// and Entry ACLs. Missing and denied identifiers share the existing
+    /// EntryNotFound projection.
+    pub async fn get_composition_raw_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<composition::RawCompositionRevision> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let parsed_entry_id = parse_entry_id(entry_id)?;
+        Authorizer::new(self.operator.clone())
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                require_composition_entry_read_scope(&scopes, parsed_entry_id, entry_id)?;
+                composition::read_composition_raw(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                )
+                .await?
+                .ok_or_else(|| composition_entry_not_found(entry_id))
+            })
+            .await
+    }
+
+    /// Reads exactly the requested raw Composition revision. It never falls
+    /// back to the latest revision and rechecks current Form/Entry ACLs.
+    pub async fn get_composition_raw_revision_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        revision_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<composition::RawCompositionRevision> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        validate_storage_id(validate_revision_id(revision_id))?;
+        let parsed_entry_id = parse_entry_id(entry_id)?;
+        Authorizer::new(self.operator.clone())
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                require_composition_entry_read_scope(&scopes, parsed_entry_id, entry_id)?;
+                composition::read_composition_raw_revision(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                    revision_id,
+                )
+                .await?
+                .ok_or_else(|| composition_entry_not_found(entry_id))
+            })
+            .await
+    }
+
+    /// Reads a page from the raw append-only Composition history after
+    /// rechecking current Form/Entry ACLs.
+    pub async fn composition_history_authorized_for_principals_page(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        principal_ids: &[Uuid],
+        limit: usize,
+        offset: usize,
+    ) -> Result<composition::RawCompositionHistoryPage> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let parsed_entry_id = parse_entry_id(entry_id)?;
+        Authorizer::new(self.operator.clone())
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                require_composition_entry_read_scope(&scopes, parsed_entry_id, entry_id)?;
+                composition::read_composition_history_page(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                    limit,
+                    offset,
+                )
+                .await?
+                .ok_or_else(|| composition_entry_not_found(entry_id))
+            })
+            .await
+    }
+
     pub async fn entry_history_at_pin(
         &self,
         space_id: &str,
@@ -7748,6 +7843,32 @@ fn parse_entry_id(value: &str) -> Result<ugoite_domain::id::EntryId> {
         Uuid::parse_str(value)
             .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, value.as_bytes())),
     ))
+}
+
+fn composition_entry_not_found(entry_id: &str) -> anyhow::Error {
+    AppError::not_found(
+        ErrorCode::EntryNotFound,
+        format!("Entry not found: {entry_id}"),
+    )
+    .into()
+}
+
+fn require_composition_entry_read_scope(
+    scopes: &BTreeMap<String, EntryScope>,
+    entry_id: EntryId,
+    entry_id_text: &str,
+) -> Result<()> {
+    let registry_scope =
+        scopes.get(&composition::COMPOSITION_REGISTRY_FORM_NAME.to_ascii_lowercase());
+    let readable = registry_scope.is_some_and(|scope| match scope {
+        EntryScope::AllCurrent => true,
+        EntryScope::Only(entry_ids) => entry_ids.contains(&entry_id),
+        EntryScope::AllExcept(entry_ids) => !entry_ids.contains(&entry_id),
+    });
+    if !readable {
+        return Err(composition_entry_not_found(entry_id_text));
+    }
+    Ok(())
 }
 
 fn parse_revision_id(value: &str) -> Result<ugoite_domain::id::RevisionId> {
