@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LoginRoute from "./login";
 import { authApi } from "~/lib/auth-api";
+import { setLocale } from "~/lib/i18n";
 
 const navigateMock = vi.fn();
 
@@ -25,6 +26,8 @@ vi.mock("~/lib/auth-api", () => ({
 describe("/login continuation", () => {
   beforeEach(() => {
     navigateMock.mockReset();
+    setLocale("en");
+    vi.mocked(authApi.getConfig).mockReset();
     vi.mocked(authApi.getConfig).mockResolvedValue({
       status: "active",
       nodeId: "node",
@@ -33,7 +36,9 @@ describe("/login continuation", () => {
       passkey: true,
       oidc: false,
     });
+    vi.mocked(authApi.listOidcProviders).mockReset();
     vi.mocked(authApi.listOidcProviders).mockResolvedValue([]);
+    vi.mocked(authApi.loginWithPasskey).mockReset();
     vi.mocked(authApi.loginWithPasskey).mockResolvedValue();
     vi.mocked(authApi.loginWithOidc).mockReset();
   });
@@ -102,14 +107,59 @@ describe("/login continuation", () => {
     );
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("No passkey found");
+    expect(alert).toHaveTextContent("Sign-in failed.");
     // A single task surface: one error, one primary action, one recovery path.
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(
-      screen.getByRole("button", { name: "Sign in with a passkey" }),
+      screen.getByRole("button", { name: "Try again" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Lost your Passkey?" }))
       .toBeInTheDocument();
+    expect(screen.getByText("No passkey found", { selector: "pre" }))
+      .not.toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() =>
+      expect(authApi.loginWithPasskey).toHaveBeenCalledTimes(2)
+    );
+  });
+
+  it("REQ-FE-069: renders only the logo and authentication actions", async () => {
+    render(() => <LoginRoute />);
+
+    expect(await screen.findByRole("heading", { name: "Ugoite" }))
+      .toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /sign in/i }))
+      .toHaveLength(1);
+    expect(document.querySelectorAll(".loginPanel > .btn.primary"))
+      .toHaveLength(1);
+    expect(document.querySelector(".loginStatement")).toBeNull();
+    expect(document.querySelectorAll(".loginPanel > *")).toHaveLength(3);
+  });
+
+  it("REQ-FE-069: lets users retry when authentication options fail to load", async () => {
+    vi.mocked(authApi.getConfig)
+      .mockRejectedValueOnce(new Error("network unavailable"))
+      .mockResolvedValueOnce({
+        status: "active",
+        nodeId: "node",
+        issuer: "http://localhost:3000",
+        rpId: "localhost",
+        passkey: true,
+        oidc: false,
+      });
+    render(() => <LoginRoute />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Sign-in options are unavailable.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(
+      await screen.findByRole("button", {
+        name: "Sign in with a passkey",
+      }),
+    ).toBeInTheDocument();
+    expect(authApi.getConfig).toHaveBeenCalledTimes(2);
   });
 
   it("autofocuses the primary sign-in action once the config loads", async () => {

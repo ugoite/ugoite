@@ -22,8 +22,7 @@ vi.mock(
   }),
 );
 
-const docsHref =
-  "https://ugoite.github.io/ugoite/docs/get-started";
+const docsHref = "https://ugoite.github.io/ugoite/docs/get-started";
 
 describe("concept public pages", () => {
   const originalLocation = window.location;
@@ -65,10 +64,12 @@ describe("concept public pages", () => {
     setLocale("ja");
 
     render(() => <IndexRoute />);
-    expect(
-      screen.getByText(
-        "ローカルファーストの知識を、検索と自動化のために構造化",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ugoite" }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "ログイン" }))
+      .toHaveAttribute("href", "/login");
+    expect(document.querySelectorAll(".loginPanel > .btn.primary"))
+      .toHaveLength(1);
+    expect(document.querySelectorAll(".loginPanel > *")).toHaveLength(2);
   });
 });

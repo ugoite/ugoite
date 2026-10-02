@@ -23,34 +23,21 @@ describe("root route", () => {
       expect(navigate).toHaveBeenCalledWith("/spaces", { replace: true })
     );
   });
-  it("REQ-OPS-015: keeps signed-out visitors on the public landing page", async () => {
+  it("REQ-FE-069: keeps unauthenticated visitors on the login entry", async () => {
     getSession.mockResolvedValue({ authenticated: false });
     render(() => <IndexRoute />);
 
     expect(screen.getByRole("heading", { name: "Ugoite" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute(
-      "href",
-      "/login",
-    );
-    expect(screen.getByRole("link", { name: "Log in" })).toHaveClass(
-      "ui-button-primary",
-    );
-    expect(screen.getByRole("link", { name: "Open Spaces" })).toHaveAttribute(
-      "href",
-      "/spaces",
-    );
-    expect(screen.getByRole("link", { name: "Open Spaces" })).toHaveClass(
-      "ui-button-secondary",
-    );
-    expect(screen.getByRole("link", { name: "Learn More" })).toHaveAttribute(
-      "href",
-      "https://ugoite.github.io/ugoite/docs/get-started",
-    );
-    expect(
-      screen.getByText(/\/spaces requires an authenticated browser session/),
-    )
-      .toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+
+    const login = await screen.findByRole("link", { name: "Login" });
+    await waitFor(() => expect(login).toHaveFocus());
+    expect(login).toHaveAttribute("href", "/login");
+    expect(login).toHaveClass("btn", "primary");
+    expect(document.querySelectorAll(".loginPanel > .btn.primary"))
+      .toHaveLength(1);
+    expect(document.querySelectorAll(".loginPanel > *")).toHaveLength(2);
 
     await waitFor(() => expect(getSession).toHaveBeenCalledTimes(1));
     expect(navigate).not.toHaveBeenCalled();

@@ -269,6 +269,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-064#criterion.public-locale
+              - kind: satisfies
+                criterion: REQ-FE-069#criterion.unauthenticated-entry
           - id: about-docs-redirect
             adapter: typescript
             path: frontend/src/routes/about.tsx

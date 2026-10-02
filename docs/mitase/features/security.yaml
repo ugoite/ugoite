@@ -198,6 +198,14 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SEC-004#criterion.passwordless-primary
+              - kind: satisfies
+                criterion: REQ-FE-069#criterion.unauthenticated-entry
+              - kind: satisfies
+                criterion: REQ-FE-069#criterion.authentication-state
+              - kind: satisfies
+                criterion: REQ-FE-069#criterion.narrow-accessible-entry
+              - kind: satisfies
+                criterion: REQ-FE-069#criterion.post-authentication-navigation
           - id: setup-route
             adapter: typescript
             path: frontend/src/routes/setup.tsx
