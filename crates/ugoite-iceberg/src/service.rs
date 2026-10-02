@@ -5072,6 +5072,67 @@ impl UgoiteService {
             .await
     }
 
+    /// Lists current Composition Entries for the principal-free local Core
+    /// path. Server adapters must use the authorized variant below.
+    pub async fn list_compositions_local_page(
+        &self,
+        space_id: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<composition::RawCompositionListPage> {
+        composition::validate_list_page(limit, offset)?;
+        self.validate_complete_space(space_id).await?;
+        composition::read_composition_page(
+            &self.operator,
+            &self.workspace_path(space_id),
+            EntryScope::AllCurrent,
+            limit,
+            offset,
+        )
+        .await
+    }
+
+    /// Lists current Composition Entries after rechecking current Space,
+    /// Form, and Entry read authorization. A denied Space or Form produces an
+    /// empty page so the response contains no Composition metadata.
+    pub async fn list_compositions_authorized_for_principals_page(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        limit: usize,
+        offset: usize,
+    ) -> Result<composition::RawCompositionListPage> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        composition::validate_list_page(limit, offset)?;
+        self.validate_complete_space(space_id).await?;
+        Authorizer::new(self.operator.clone())
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                let Some(entry_scope) = scopes
+                    .get(&composition::COMPOSITION_REGISTRY_FORM_NAME.to_ascii_lowercase())
+                    .cloned()
+                else {
+                    return Ok(composition::RawCompositionListPage {
+                        items: Vec::new(),
+                        offset,
+                        limit,
+                        has_more: false,
+                    });
+                };
+                composition::read_composition_page(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_scope,
+                    limit,
+                    offset,
+                )
+                .await
+            })
+            .await
+    }
+
     /// Reads the current raw Composition revision for the principal-free local
     /// Core path. Server adapters must use the authorized variant below.
     pub async fn get_composition_raw_local(
