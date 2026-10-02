@@ -550,6 +550,22 @@ fn generated_openapi_types(spec: &Value) -> Result<String> {
     ))
 }
 
+fn contains_identifier(source: &str, identifier: &str) -> bool {
+    source.match_indices(identifier).any(|(start, matched)| {
+        let is_identifier_continue =
+            |character: char| character.is_alphanumeric() || character == '_';
+        let before_is_boundary = source[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|character| !is_identifier_continue(character));
+        let after_is_boundary = source[start + matched.len()..]
+            .chars()
+            .next()
+            .is_none_or(|character| !is_identifier_continue(character));
+        before_is_boundary && after_is_boundary
+    })
+}
+
 fn architecture_check() -> Result<()> {
     let mut violations = Vec::new();
     let server_manifest = fs::read_to_string("crates/ugoite-server/Cargo.toml")
@@ -604,14 +620,15 @@ fn architecture_check() -> Result<()> {
             "Transaction",
             "SessionContext",
         ] {
-            // `SearchOperator` is the logical typed-search product type and
-            // must not trip the physical `opendal::Operator` guard.
-            let haystack = if forbidden == "Operator" {
-                content.replace("SearchOperator", "")
+            let contains_forbidden = if forbidden == "Operator" {
+                // Match the complete Rust identifier so logical names such as
+                // `SearchOperator` and `CompositionQueryOperator` do not trip
+                // this physical adapter type guard.
+                contains_identifier(&content, forbidden)
             } else {
-                content.clone()
+                content.contains(forbidden)
             };
-            if haystack.contains(forbidden) {
+            if contains_forbidden {
                 violations.push(format!(
                     "{path_text} leaks physical adapter type or dependency {forbidden}"
                 ));
@@ -1917,6 +1934,14 @@ fn parse_string_list_const(source: &str, name: &str, violations: &mut Vec<String
 #[cfg(test)]
 mod gate_contract_tests {
     use super::*;
+
+    #[test]
+    fn physical_operator_guard_matches_complete_identifiers() {
+        assert!(contains_identifier("use adapter::Operator;", "Operator"));
+        assert!(contains_identifier("let _: Operator = value;", "Operator"));
+        assert!(!contains_identifier("SearchOperator", "Operator"));
+        assert!(!contains_identifier("CompositionQueryOperator", "Operator"));
+    }
 
     const GOOD_SPACE_SOURCE: &str = r#"
 pub const CURRENT_SPACE_VERSION: &str = "0.1";
