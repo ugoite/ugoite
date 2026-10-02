@@ -6644,6 +6644,7 @@ dependencies = [
  "tokio",
  "tower",
  "tower-http 0.7.1",
+ "ugoite-api-client",
  "ugoite-core",
  "ugoite-domain",
  "ugoite-iceberg",

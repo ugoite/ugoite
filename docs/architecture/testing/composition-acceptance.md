@@ -3,7 +3,8 @@ title: "Composition acceptance plan"
 ---
 
 This is the Lane D acceptance plan for the planned Composition feature. It does
-not claim a shipped API, CLI command, Browser route, or passing runtime journey.
+not claim a complete Composition API, CLI command set, Browser route, or passing
+runtime journey.
 The current structured locator map is
 [`e2e/fixtures/composition/acceptance-plan.json`](../../../e2e/fixtures/composition/acceptance-plan.json).
 
@@ -70,8 +71,14 @@ The portable operation inventory is mirrored by
 tests must change with both inventories. Server handlers and `/openapi.json`
 remain the HTTP implementation and contract. Composition handlers must delegate
 authorization and behavior through the existing service boundary. The D1
-operation names are listed in the fixture acceptance map; request and response
-DTOs are intentionally not reserved here.
+operation names are listed in the fixture acceptance map. `composition.get`
+currently reads the latest raw revision or an exact revision when `revision_id`
+is supplied, and `composition.history` reads a bounded raw history page.
+Their wire response DTOs are owned by `ugoite-api-client`; the Server converts
+the storage reader result at its adapter boundary. The remaining operation
+request and response DTOs are still pending their shared contracts.
+Composition list, lint, resolve, save, export, and restore operations remain
+planned.
 
 ## Recovery and authorization acceptance
 
