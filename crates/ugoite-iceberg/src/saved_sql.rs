@@ -112,6 +112,20 @@ pub(crate) struct ResolvedSavedSqlRevision {
     pub binding_version: Option<u32>,
 }
 
+/// Current-authorization-safe metadata for one exact immutable Saved SQL
+/// revision. SQL text, variable descriptions, and Form bindings are omitted.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SavedSqlRevisionDescriptor {
+    pub id: String,
+    pub revision_id: String,
+    pub variables: BTreeMap<String, SavedSqlVariableDescriptor>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SavedSqlVariableDescriptor {
+    pub var_type: String,
+}
+
 fn saved_sql_binding_metadata(
     metadata: Option<SqlMetadata>,
 ) -> Result<(Option<u32>, Vec<SqlFormBinding>)> {

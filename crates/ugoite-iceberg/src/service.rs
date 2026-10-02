@@ -4282,6 +4282,57 @@ impl UgoiteService {
             .await
     }
 
+    /// Reads a Form by its stable identity after rechecking current Space and
+    /// Form read permissions. Missing and denied Forms share FormNotFound.
+    pub async fn get_composition_source_form_authorized_for_principals(
+        &self,
+        space_id: &str,
+        form_id: FormId,
+        principal_ids: &[Uuid],
+    ) -> Result<FormDefinition> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        Authorizer::new(self.operator.clone())
+            .with_state_lock(space_id, |state| async move {
+                let not_found = || AppError::not_found(ErrorCode::FormNotFound, "Form not found");
+                for principal_id in principal_ids {
+                    if !effective_actions_for_state(&state, *principal_id, None)?
+                        .contains(&Action::Read)
+                    {
+                        return Err(not_found().into());
+                    }
+                }
+                let workspace =
+                    iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
+                        .await?;
+                let Some(form) = workspace
+                    .list_forms_bounded(
+                        MAX_AUTHORIZED_SCOPE_FORMS,
+                        MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
+                    )
+                    .await?
+                    .into_iter()
+                    .find(|form| form.id == form_id)
+                else {
+                    return Err(not_found().into());
+                };
+                let resource = ResourceRef {
+                    kind: ResourceKind::Form,
+                    id: form.name.clone(),
+                    parent: None,
+                };
+                for principal_id in principal_ids {
+                    if !effective_actions_for_state(&state, *principal_id, Some(&resource))?
+                        .contains(&Action::Read)
+                    {
+                        return Err(not_found().into());
+                    }
+                }
+                Ok(form)
+            })
+            .await
+    }
+
     pub async fn upsert_form(&self, space_id: &str, form_def: &Value) -> Result<()> {
         self.upsert_form_result(space_id, form_def)
             .await
@@ -7261,6 +7312,92 @@ impl UgoiteService {
                 let entry_scope = Self::saved_sql_entry_scope_for_state(&state, principal_ids)?;
                 saved_sql::list_sql(&self.operator, &self.workspace_path(space_id), entry_scope)
                     .await
+            })
+            .await
+    }
+
+    /// Reads only the declared parameter metadata from one exact Saved SQL
+    /// revision after rechecking current Space and Saved SQL read permissions.
+    /// SQL text, descriptions, and Form bindings never cross this boundary.
+    pub async fn get_saved_sql_revision_descriptor_authorized_for_principals(
+        &self,
+        space_id: &str,
+        source: &ugoite_core::sql_query::SavedSqlRevisionRef,
+        principal_ids: &[Uuid],
+    ) -> Result<saved_sql::SavedSqlRevisionDescriptor> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        validate_storage_id(validate_sql_id(&source.id))?;
+        validate_storage_id(validate_revision_id(&source.revision_id))?;
+        self.validate_complete_space(space_id).await?;
+        Authorizer::new(self.operator.clone())
+            .with_state_lock(space_id, |state| async move {
+                let not_found = || {
+                    AppError::not_found(ErrorCode::EntryNotFound, "Saved SQL revision not found")
+                };
+                for principal_id in principal_ids {
+                    if !effective_actions_for_state(&state, *principal_id, None)?
+                        .contains(&Action::Read)
+                    {
+                        return Err(not_found().into());
+                    }
+                }
+                let resource = ResourceRef {
+                    kind: ResourceKind::SavedSql,
+                    id: source.id.clone(),
+                    parent: None,
+                };
+                for principal_id in principal_ids {
+                    if !effective_actions_for_state(&state, *principal_id, Some(&resource))?
+                        .contains(&Action::Read)
+                    {
+                        return Err(not_found().into());
+                    }
+                }
+
+                let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+                let revision = match saved_sql::read_sql_revision(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    &source.id,
+                    &source.revision_id,
+                    &integrity,
+                )
+                .await
+                {
+                    Ok(revision) => revision,
+                    Err(error)
+                        if error.chain().any(|cause| {
+                            cause
+                                .downcast_ref::<AppError>()
+                                .is_some_and(|app| app.code() == ErrorCode::EntryNotFound)
+                        }) =>
+                    {
+                        return Err(not_found().into());
+                    }
+                    Err(error) => return Err(error),
+                };
+                let mut variables = BTreeMap::new();
+                for variable in revision.variables.as_array().into_iter().flatten() {
+                    let name = variable
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| anyhow!("Saved SQL variable name is missing"))?;
+                    let var_type = variable
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| anyhow!("Saved SQL variable type is missing"))?;
+                    variables.insert(
+                        name.to_owned(),
+                        saved_sql::SavedSqlVariableDescriptor {
+                            var_type: var_type.to_owned(),
+                        },
+                    );
+                }
+                Ok(saved_sql::SavedSqlRevisionDescriptor {
+                    id: source.id.clone(),
+                    revision_id: source.revision_id.clone(),
+                    variables,
+                })
             })
             .await
     }
