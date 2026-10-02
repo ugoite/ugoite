@@ -132,9 +132,12 @@ unsupported or malformed document remains recoverable. Broken source
 references are execution failures; they do not erase the stored document.
 
 Entry query templates resolve to the existing bounded EntryQuery contract.
-Saved SQL references identify an exact Entry and Revision; they never fall
-back to the latest revision. Current authorization is re-evaluated by the
-existing query paths.
+Composition resolution reads and authorizes the caller-selected Entry ID and
+exact Revision ID before parsing. Its typed spec and reported Composition
+revision reference come from that same revision; a missing selected revision
+does not fall back to latest. Saved SQL references independently identify an
+exact Entry and Revision and never fall back to the latest revision. Current
+authorization is re-evaluated by the existing query paths.
 
 Browser page, scroll, result, and cache state are transient Work. They are not
 fields of a Composition and do not become Space Knowledge.

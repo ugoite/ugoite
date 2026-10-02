@@ -96,6 +96,14 @@ requirements:
         kind: behavior
         statement: A saved_sql source selects its exact Entry and Revision and never silently falls back to a newer revision.
         governed_by: [POL-014#rule.governance, POL-016#rule.governance]
+      - id: exact-composition-revision
+        kind: behavior
+        statement: >-
+          Composition resolution reads and authorizes the caller-selected
+          EntryId and exact RevisionId before parsing; its typed spec and
+          reported Composition revision reference come from that same
+          revision, and a missing selected revision never falls back to latest.
+        governed_by: [POL-011#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
       - id: current-authorization
         kind: behavior
         statement: Composition list, get, resolve, and source execution stay within the existing current-authorization boundaries.
