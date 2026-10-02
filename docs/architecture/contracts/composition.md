@@ -30,6 +30,33 @@ The complete illustrative document is maintained in
 It is a contract fixture for domain, parser, canonicalization, and WASM parity
 tests, not an assertion that persistence or rendering is already shipped.
 
+The typed v1 model supports `string`, `boolean`, `integer`, `float`, `date`, and
+`timestamp` parameters. A parameter may carry a typed default and a display
+format hint; `year-month` is a hint and does not evaluate an expression or
+change the parameter value. Source values are literals or named parameter
+references. An `entry_query` template scopes property `FieldId`s to its
+`FormId`, snapshots query-used field types, and carries the existing query
+filters, sort, text, projection, and page-size semantics. Text may be a literal
+or parameter reference; a parameter used for text is bound as a string. Its
+projection is either preview or an ordered list of property `FieldId`s. The
+optional `page_limit` defaults to 100 and is still bounded by the existing
+EntryQuery maximum. A `saved_sql` source carries an `EntryId`, an exact
+`RevisionId`, and literal-or-parameter variables. Dashboard components are
+`metric` or `table` and refer to named sources; sections group named
+components.
+
+The stable diagnostic codes are `unsupported_format_version`,
+`invalid_composition`, `parameter_unknown`, `parameter_missing`,
+`parameter_type_mismatch`, `source_unavailable`, `missing_field`,
+`field_type_changed`, and `source_schema_changed`. A missing or denied
+Composition uses the same existing generic 404/error response shape, so its
+existence is not disclosed. `not_authorized` is not a Composition diagnostic.
+After Composition access is authorized, a missing or denied Form or exact
+Saved SQL source has the same caller-visible `source_unavailable` diagnostic,
+with no source ID or metadata. Field-level diagnostics are returned only after
+the source Form is authorized. UI messages are supplied by the consuming
+surface and are not part of this domain contract.
+
 ## Semantic authority
 
 Rust typed domain values are the semantic authority. Native and WASM callers
@@ -55,8 +82,11 @@ contains only the source Form ID and these used field IDs and types.
 
 Unsupported format versions and invalid documents return stable diagnostic
 codes. They do not make raw inspection, export, or revision history unavailable.
-Broken source references are execution failures; they do not erase the stored
-document.
+The parser identifies `format_version` before strict v1 typed deserialization;
+only a supported v1 document is deserialized as `CompositionDocument`. Raw
+inspection, export, and history use the stored revision independently, so an
+unsupported or malformed document remains recoverable. Broken source
+references are execution failures; they do not erase the stored document.
 
 Entry query templates resolve to the existing bounded EntryQuery contract.
 Saved SQL references identify an exact Entry and Revision; they never fall
