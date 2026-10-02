@@ -772,7 +772,8 @@ pub enum ResolvedSourceRequest {
 #[serde(rename_all = "snake_case")]
 pub enum ResolvedComponentKind {
     Metric,
-    Table,
+    #[serde(rename = "table")]
+    Tabular,
 }
 
 /// One component's stable source binding in deterministic render order.
@@ -841,24 +842,16 @@ pub fn resolve_composition(
         .map(|source| (source.id(), source))
         .collect::<BTreeMap<_, _>>();
     let mut metric_fields_by_source: BTreeMap<&str, Vec<FieldId>> = BTreeMap::new();
-    let mut metric_field_by_component = BTreeMap::new();
     for component in &render_components {
-        let (source_id, metric) = match component {
-            CompositionComponent::Metric {
-                id,
-                source,
-                value_field,
-                ..
-            } => (source.as_str(), Some((id.as_str(), value_field))),
-            CompositionComponent::Table { source, .. } => (source.as_str(), None),
-        };
+        let source_id = component.source_id();
+        let value_field = component.value_field();
         if !source_ids.contains(source_id) {
             return Err(vec![CompositionDiagnostic::without_parameter(
                 CompositionDiagnosticCode::InvalidComposition,
             )]);
         }
-        match (sources_by_id.get(source_id).copied(), metric) {
-            (Some(CompositionSource::EntryQuery { .. }), Some((component_id, value_field))) => {
+        match (sources_by_id.get(source_id).copied(), value_field) {
+            (Some(CompositionSource::EntryQuery { .. }), Some(value_field)) => {
                 let CompositionMetricValueField::EntryField { field_id } = value_field else {
                     return Err(vec![CompositionDiagnostic::without_parameter(
                         CompositionDiagnosticCode::InvalidComposition,
@@ -868,11 +861,10 @@ pub fn resolve_composition(
                     .entry(source_id)
                     .or_default()
                     .push(*field_id);
-                metric_field_by_component.insert(component_id, *field_id);
             }
             (
                 Some(CompositionSource::SavedSql { .. }),
-                Some((_, CompositionMetricValueField::SqlColumn { .. })),
+                Some(CompositionMetricValueField::SqlColumn { .. }),
             )
             | (Some(_), None) => {}
             _ => {
@@ -951,12 +943,8 @@ pub fn resolve_composition(
         return Err(diagnostics);
     }
 
-    let component_bindings = resolve_component_bindings(
-        &render_components,
-        &sources_by_id,
-        &current_by_id,
-        &metric_field_by_component,
-    )?;
+    let component_bindings =
+        resolve_component_bindings(&render_components, &sources_by_id, &current_by_id)?;
 
     Ok(ResolvedCompositionPlan {
         composition_revision: input.composition_revision,
@@ -969,93 +957,67 @@ fn resolve_component_bindings(
     components: &[&CompositionComponent],
     sources_by_id: &BTreeMap<&str, &CompositionSource>,
     current_by_id: &BTreeMap<&str, &CurrentSourceDescriptor<'_>>,
-    metric_field_by_component: &BTreeMap<&str, FieldId>,
 ) -> Result<Vec<ResolvedComponentBinding>, Vec<CompositionDiagnostic>> {
     let mut resolved = Vec::with_capacity(components.len());
     for component in components {
-        let binding = match component {
-            CompositionComponent::Metric {
-                id,
-                label,
-                source,
-                value_field,
-            } => {
-                let source_definition =
-                    sources_by_id.get(source.as_str()).copied().ok_or_else(|| {
-                        vec![CompositionDiagnostic::without_parameter(
-                            CompositionDiagnosticCode::InvalidComposition,
-                        )]
-                    })?;
-                let (metric_field_id, result_property_key) = match source_definition {
-                    CompositionSource::EntryQuery { .. } => {
-                        let CompositionMetricValueField::EntryField { .. } = value_field else {
+        let component_id = component.id();
+        let source_id = component.source_id();
+        let source_definition = sources_by_id.get(source_id).copied().ok_or_else(|| {
+            vec![CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::InvalidComposition,
+            )]
+        })?;
+        let (kind, metric_field_id, result_property_key) =
+            match (source_definition, component.value_field()) {
+                (
+                    CompositionSource::EntryQuery { .. },
+                    Some(CompositionMetricValueField::EntryField { field_id }),
+                ) => {
+                    let current_form = match current_by_id.get(source_id).copied() {
+                        Some(CurrentSourceDescriptor::EntryQuery {
+                            current_form: Some(form),
+                            ..
+                        }) => form,
+                        _ => {
                             return Err(vec![CompositionDiagnostic::without_parameter(
-                                CompositionDiagnosticCode::InvalidComposition,
+                                CompositionDiagnosticCode::SourceUnavailable,
                             )]);
-                        };
-                        let Some(field_id) = metric_field_by_component.get(id.as_str()).copied()
-                        else {
-                            return Err(vec![CompositionDiagnostic::without_parameter(
-                                CompositionDiagnosticCode::InvalidComposition,
-                            )]);
-                        };
-                        let current_form = match current_by_id.get(source.as_str()).copied() {
-                            Some(CurrentSourceDescriptor::EntryQuery {
-                                current_form: Some(form),
-                                ..
-                            }) => form,
-                            _ => {
-                                return Err(vec![CompositionDiagnostic::without_parameter(
-                                    CompositionDiagnosticCode::SourceUnavailable,
-                                )]);
-                            }
-                        };
-                        let Some(field) = current_form
-                            .fields
-                            .iter()
-                            .find(|field| field.id == field_id)
-                        else {
-                            return Err(vec![CompositionDiagnostic::without_parameter(
-                                CompositionDiagnosticCode::MissingField,
-                            )]);
-                        };
-                        (Some(field_id), Some(field.name.clone()))
-                    }
-                    CompositionSource::SavedSql { .. } => {
-                        let CompositionMetricValueField::SqlColumn { name } = value_field else {
-                            return Err(vec![CompositionDiagnostic::without_parameter(
-                                CompositionDiagnosticCode::InvalidComposition,
-                            )]);
-                        };
-                        (None, Some(name.clone()))
-                    }
-                };
-                ResolvedComponentBinding {
-                    component_id: id.clone(),
-                    kind: ResolvedComponentKind::Metric,
-                    label: label.clone(),
-                    source_id: source.clone(),
-                    metric_field_id,
-                    result_property_key,
+                        }
+                    };
+                    let Some(field) = current_form
+                        .fields
+                        .iter()
+                        .find(|field| field.id == *field_id)
+                    else {
+                        return Err(vec![CompositionDiagnostic::without_parameter(
+                            CompositionDiagnosticCode::MissingField,
+                        )]);
+                    };
+                    (
+                        ResolvedComponentKind::Metric,
+                        Some(*field_id),
+                        Some(field.name.clone()),
+                    )
                 }
-            }
-            CompositionComponent::Table { id, label, source } => {
-                if !sources_by_id.contains_key(source.as_str()) {
+                (
+                    CompositionSource::SavedSql { .. },
+                    Some(CompositionMetricValueField::SqlColumn { name }),
+                ) => (ResolvedComponentKind::Metric, None, Some(name.clone())),
+                (_, None) => (ResolvedComponentKind::Tabular, None, None),
+                _ => {
                     return Err(vec![CompositionDiagnostic::without_parameter(
                         CompositionDiagnosticCode::InvalidComposition,
                     )]);
                 }
-                ResolvedComponentBinding {
-                    component_id: id.clone(),
-                    kind: ResolvedComponentKind::Table,
-                    label: label.clone(),
-                    source_id: source.clone(),
-                    metric_field_id: None,
-                    result_property_key: None,
-                }
-            }
-        };
-        resolved.push(binding);
+            };
+        resolved.push(ResolvedComponentBinding {
+            component_id: component_id.to_owned(),
+            kind,
+            label: component.label().map(str::to_owned),
+            source_id: source_id.to_owned(),
+            metric_field_id,
+            result_property_key,
+        });
     }
     Ok(resolved)
 }
@@ -1226,6 +1188,16 @@ mod tests {
             default,
             format,
         }
+    }
+
+    fn tabular_component(id: &str, label: Option<&str>, source: &str) -> CompositionComponent {
+        serde_json::from_value(json!({
+            "kind": "table",
+            "id": id,
+            "label": label,
+            "source": source,
+        }))
+        .expect("the domain component representation deserializes")
     }
 
     fn parameter_ref(id: &str) -> CompositionValue {
@@ -2821,11 +2793,7 @@ mod tests {
                     field_id: FieldId::new(101).unwrap(),
                 },
             },
-            CompositionComponent::Table {
-                id: "rows".to_owned(),
-                label: None,
-                source: "entries".to_owned(),
-            },
+            tabular_component("rows", None, "entries"),
             CompositionComponent::Metric {
                 id: "sql-total".to_owned(),
                 label: Some("SQL total".to_owned()),
@@ -2896,7 +2864,7 @@ mod tests {
         );
         assert_eq!(
             plan.component_bindings[2].kind,
-            super::ResolvedComponentKind::Table
+            super::ResolvedComponentKind::Tabular
         );
         assert_eq!(plan.component_bindings[2].metric_field_id, None);
         assert_eq!(plan.component_bindings[2].result_property_key, None);
@@ -2909,6 +2877,7 @@ mod tests {
             plan_json["component_bindings"][1]["result_property_key"],
             json!("total_amount")
         );
+        assert_eq!(plan_json["component_bindings"][2]["kind"], json!("table"));
         assert!(matches!(
             &plan.sources[0],
             ResolvedSourceRequest::EntryQuery { request, .. }
@@ -2933,11 +2902,7 @@ mod tests {
     #[test]
     fn missing_component_source_is_an_invalid_composition() {
         let mut spec = composition_spec(Vec::new(), Vec::new());
-        spec.components = vec![CompositionComponent::Table {
-            id: "rows".to_owned(),
-            label: None,
-            source: "missing".to_owned(),
-        }];
+        spec.components = vec![tabular_component("rows", None, "missing")];
         spec.sections = vec![CompositionSection {
             id: "main".to_owned(),
             components: vec!["rows".to_owned()],
