@@ -43,6 +43,10 @@ use tower_http::{
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
+use ugoite_api_client::{
+    CompositionEntryIntegrity, CompositionEntryMetadata, CompositionHistoryPage,
+    CompositionRawRevision, CompositionRevisionMetadata,
+};
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::id::{validate_decoded_space_id, validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
@@ -55,6 +59,10 @@ use ugoite_iceberg::{
     authorization::{
         AuthorizationState, Authorizer, HumanApproval, HumanApprovalIssue, ResourceKind,
         ResourceRef,
+    },
+    composition::{
+        RawCompositionHistoryPage as StoredCompositionHistoryPage,
+        RawCompositionRevision as StoredCompositionRawRevision, COMPOSITION_HISTORY_MAX_PAGE_SIZE,
     },
     form, saved_sql,
     service::{
@@ -1717,6 +1725,18 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route(
             "/spaces/{space_id}/entries/{entry_id}/restore",
             post(restore_entry),
+        )
+        .route(
+            "/spaces/{space_id}/compositions/{entry_id}",
+            get(get_composition),
+        )
+        .route(
+            "/spaces/{space_id}/compositions/{entry_id}/history",
+            get(composition_history),
+        )
+        .route(
+            "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}",
+            get(composition_revision),
         )
         .route("/spaces/{space_id}/pins", get(list_pins).post(create_pin))
         .route("/spaces/{space_id}/pins/{pin_name}", delete(delete_pin))
@@ -10934,6 +10954,155 @@ async fn entry_revision(
     Ok(Json(revision))
 }
 
+async fn get_composition(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, entry_id)): Path<(String, String)>,
+) -> ApiResult<Json<CompositionRawRevision>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    validate_id(&entry_id, "entry_id")?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let composition = state
+        .service
+        .get_composition_raw_authorized_for_principals(&space_id, &entry_id, &principals)
+        .await
+        .map_err(ApiError::from_core)?;
+    Ok(Json(composition_raw_revision_response(composition)))
+}
+
+async fn composition_revision(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, entry_id, revision_id)): Path<(String, String, String)>,
+) -> ApiResult<Json<CompositionRawRevision>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    validate_id(&entry_id, "entry_id")?;
+    validate_id(&revision_id, "revision_id")?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let composition = state
+        .service
+        .get_composition_raw_revision_authorized_for_principals(
+            &space_id,
+            &entry_id,
+            &revision_id,
+            &principals,
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+    Ok(Json(composition_raw_revision_response(composition)))
+}
+
+async fn composition_history(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, entry_id)): Path<(String, String)>,
+    Query(query): Query<CompositionHistoryQuery>,
+) -> ApiResult<Json<CompositionHistoryPage>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    validate_id(&entry_id, "entry_id")?;
+    let limit = query.limit.unwrap_or(COMPOSITION_HISTORY_MAX_PAGE_SIZE);
+    if !(1..=COMPOSITION_HISTORY_MAX_PAGE_SIZE).contains(&limit) {
+        return Err(ApiError::from_core(
+            AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                format!(
+                    "Composition history limit must be between 1 and {COMPOSITION_HISTORY_MAX_PAGE_SIZE}"
+                ),
+            )
+            .into(),
+        ));
+    }
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let history = state
+        .service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &entry_id,
+            &principals,
+            limit,
+            query.offset.unwrap_or(0),
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+    Ok(Json(composition_raw_history_page_response(history)))
+}
+
+fn composition_raw_revision_response(raw: StoredCompositionRawRevision) -> CompositionRawRevision {
+    let revision = raw.revision;
+    let entry = revision.entry;
+    CompositionRawRevision {
+        revision: CompositionRevisionMetadata {
+            form_id: revision.form_id.to_string(),
+            entry_id: revision.entry_id.to_string(),
+            revision_id: revision.revision_id.to_string(),
+            parent_revision_id: revision.parent_revision_id.map(|value| value.to_string()),
+            entry_version: revision.entry_version,
+            change_id: revision.change_id,
+            expected_version: revision.expected_version,
+            operation: match revision.operation {
+                ugoite_domain::entry::EntryOperation::Upsert => "upsert",
+                ugoite_domain::entry::EntryOperation::Delete => "delete",
+                ugoite_domain::entry::EntryOperation::Restore => "restore",
+            }
+            .to_string(),
+            committed_at_micros: revision.committed_at_micros,
+            author_id: revision.author_id,
+            form_version: revision.form_version.get(),
+            source_kind: revision.source_kind,
+            source_id: revision.source_id,
+            entry: CompositionEntryMetadata {
+                external_id: entry.external_id,
+                tags: entry.tags,
+                created_at_micros: entry.created_at_micros,
+                updated_at_micros: entry.updated_at_micros,
+                updated_by: entry.updated_by,
+                integrity: CompositionEntryIntegrity {
+                    checksum: entry.integrity.checksum,
+                    signature: entry.integrity.signature,
+                },
+                deleted: entry.deleted,
+                deleted_at_micros: entry.deleted_at_micros,
+                deleted_by: entry.deleted_by,
+                restored_from: entry.restored_from.map(|value| value.to_string()),
+            },
+            extra_attributes: revision.extra_attributes,
+            extension_metadata: revision.extension_metadata,
+        },
+        fields: raw.fields,
+        unmapped_field_values: raw
+            .unmapped_field_values
+            .into_iter()
+            .map(|(field_id, value)| (field_id.get().to_string(), value))
+            .collect(),
+    }
+}
+
+fn composition_raw_history_page_response(
+    raw: StoredCompositionHistoryPage,
+) -> CompositionHistoryPage {
+    CompositionHistoryPage {
+        entry_id: raw.entry_id.to_string(),
+        revisions: raw
+            .revisions
+            .into_iter()
+            .map(composition_raw_revision_response)
+            .collect(),
+        total: raw.total,
+        offset: raw.offset,
+        limit: raw.limit,
+        has_more: raw.has_more,
+    }
+}
+
+#[derive(Default, Deserialize)]
+struct CompositionHistoryQuery {
+    limit: Option<usize>,
+    offset: Option<usize>,
+}
+
 #[derive(Deserialize)]
 struct RestoreEntry {
     revision_id: String,
@@ -13345,6 +13514,18 @@ mod authentication_regression_tests {
                 "/spaces/{space_id}/entries/{entry_id}/history",
                 get(entry_history),
             )
+            .route(
+                "/spaces/{space_id}/compositions/{entry_id}",
+                get(get_composition),
+            )
+            .route(
+                "/spaces/{space_id}/compositions/{entry_id}/history",
+                get(composition_history),
+            )
+            .route(
+                "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}",
+                get(composition_revision),
+            )
             .layer(Extension(identity))
             .with_state(state)
     }
@@ -13378,6 +13559,127 @@ mod authentication_regression_tests {
         assert!(!value.contains("://"));
         assert!(!value.contains("change:"));
         assert!(!value.contains("spaces/"));
+    }
+
+    #[tokio::test]
+    async fn composition_handlers_use_authorized_service_boundaries() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-raw-read-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(34901);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-raw-read", principal_id, "Route test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state,
+            reversible_knowledge_identity(principal_id, space_uid),
+        );
+        let composition_id = Uuid::from_u128(34902);
+        let missing_revision_id = Uuid::from_u128(34903);
+
+        let (latest_status, latest_body) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/compositions/{composition_id}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+        let (revision_status, revision_body) = route_json(
+            route.clone(),
+            Request::get(format!(
+                "/spaces/{space_id}/compositions/{composition_id}/history/{missing_revision_id}"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        let (history_status, history_body) = route_json(
+            route.clone(),
+            Request::get(format!(
+                "/spaces/{space_id}/compositions/{composition_id}/history?limit=20&offset=10"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        let (invalid_limit_status, _) = route_json(
+            route,
+            Request::get(format!(
+                "/spaces/{space_id}/compositions/{composition_id}/history?limit=101"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+
+        for (status, body) in [
+            (latest_status, &latest_body),
+            (revision_status, &revision_body),
+            (history_status, &history_body),
+        ] {
+            assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+            assert!(body["code"].as_str().is_some(), "{body}");
+            assert!(body["message"].as_str().is_some(), "{body}");
+        }
+        assert_eq!(latest_body["code"], revision_body["code"]);
+        assert_eq!(latest_body["message"], revision_body["message"]);
+        assert_eq!(latest_body["code"], history_body["code"]);
+        assert_eq!(latest_body["message"], history_body["message"]);
+        assert_eq!(invalid_limit_status, StatusCode::UNPROCESSABLE_ENTITY);
+        Ok(())
+    }
+
+    #[test]
+    fn composition_raw_response_maps_storage_to_the_portable_dto() -> anyhow::Result<()> {
+        use ugoite_domain::{
+            entry::{EntryMetadata, EntryOperation, EntryRevision},
+            form::FormVersion,
+            id::{EntryId, FieldId, FormId, RevisionId},
+        };
+
+        let entry_id = EntryId::from(Uuid::from_u128(34912));
+        let revision_id = RevisionId::from(Uuid::from_u128(34913));
+        let raw = StoredCompositionRawRevision {
+            revision: EntryRevision {
+                form_id: FormId::from(Uuid::from_u128(34911)),
+                entry_id,
+                revision_id,
+                parent_revision_id: None,
+                entry_version: 1,
+                change_id: "change-34913".into(),
+                expected_version: None,
+                operation: EntryOperation::Upsert,
+                committed_at_micros: 34914,
+                author_id: "author-34915".into(),
+                form_version: FormVersion::new(1)?,
+                source_kind: "user".into(),
+                source_id: None,
+                entry: EntryMetadata {
+                    external_id: "monthly-expense".into(),
+                    tags: vec!["finance".into()],
+                    ..EntryMetadata::default()
+                },
+                values: BTreeMap::new(),
+                extra_attributes: BTreeMap::new(),
+                extension_metadata: BTreeMap::new(),
+            },
+            fields: BTreeMap::from([
+                ("format_version".into(), json!(99)),
+                ("spec".into(), json!("future: payload\n")),
+            ]),
+            unmapped_field_values: BTreeMap::from([(FieldId::new(150)?, json!("orphaned-value"))]),
+        };
+
+        let response = composition_raw_revision_response(raw);
+        let value = serde_json::to_value(&response)?;
+        assert_eq!(value["revision"]["entry_id"], entry_id.to_string());
+        assert_eq!(value["revision"]["revision_id"], revision_id.to_string());
+        assert_eq!(value["revision"]["entry"]["tags"], json!(["finance"]));
+        assert_eq!(value["revision"]["operation"], "upsert");
+        assert_eq!(value["fields"]["format_version"], 99);
+        assert_eq!(value["fields"]["spec"], "future: payload\n");
+        assert_eq!(value["unmapped_field_values"]["150"], "orphaned-value");
+        Ok(())
     }
 
     fn assert_complete_pin_response(value: &Value, space_uid: Uuid, principal_id: Uuid) {

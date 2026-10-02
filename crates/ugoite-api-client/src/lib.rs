@@ -10,6 +10,13 @@ use serde_json::{json, Map, Value};
 use std::fmt;
 use url::Url;
 
+pub mod composition;
+
+pub use composition::{
+    CompositionEntryIntegrity, CompositionEntryMetadata, CompositionHistoryPage,
+    CompositionRawRevision, CompositionRevisionMetadata,
+};
+
 pub const PROTOCOL_VERSION: u32 = 1;
 
 /// Stable operation names understood by both native and WASM adapters.
@@ -69,6 +76,8 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "entry.history",
     "entry.revision",
     "entry.restore",
+    "composition.get",
+    "composition.history",
     "sql.list",
     "sql.get",
     "sql.create",
@@ -972,6 +981,55 @@ pub fn prepare_request(
                     query,
                 )
             }
+            "composition.get" => {
+                let mut path = vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "compositions".into(),
+                    required_string(operation, args, "composition_id")?,
+                ];
+                if let Some(revision_id) = optional_string(operation, args, "revision_id")? {
+                    if revision_id.is_empty() {
+                        return Err(ApiProtocolError::invalid_arguments(
+                            operation,
+                            "argument `revision_id` must be a non-empty string when provided",
+                        ));
+                    }
+                    path.push("history".into());
+                    path.push(revision_id);
+                }
+                (
+                    OperationSpec::get("Failed to get Composition"),
+                    path,
+                    vec![],
+                )
+            }
+            "composition.history" => {
+                let mut query = Vec::new();
+                if let Some(limit) = optional_u64(operation, args, "limit")? {
+                    if !(1..=100).contains(&limit) {
+                        return Err(ApiProtocolError::invalid_arguments(
+                            operation,
+                            "limit must be an integer between 1 and 100",
+                        ));
+                    }
+                    query.push(("limit".into(), limit.to_string()));
+                }
+                if let Some(offset) = optional_u64(operation, args, "offset")? {
+                    query.push(("offset".into(), offset.to_string()));
+                }
+                (
+                    OperationSpec::get("Failed to get Composition history"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "compositions".into(),
+                        required_string(operation, args, "composition_id")?,
+                        "history".into(),
+                    ],
+                    query,
+                )
+            }
             "entry.create" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to create entry"),
                 vec![
@@ -1766,6 +1824,16 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to get entry",
             RequestBodyKind::None,
         ),
+        "composition.get" => (
+            HttpMethod::Get,
+            "Failed to get Composition",
+            RequestBodyKind::None,
+        ),
+        "composition.history" => (
+            HttpMethod::Get,
+            "Failed to get Composition history",
+            RequestBodyKind::None,
+        ),
         "entry.create" => (
             HttpMethod::Post,
             "Failed to create entry",
@@ -2380,6 +2448,138 @@ mod tests {
             request.path,
             "/spaces/demo/entries/entry-1/history?limit=51&offset=50"
         );
+    }
+
+    #[test]
+    fn composition_operations_prepare_and_decode_through_the_portable_protocol() {
+        let latest = prepare_request(
+            "composition.get",
+            &json!({"space_id": "team/東京", "composition_id": "comp-1"}),
+            None,
+        )
+        .expect("latest Composition request");
+        assert_eq!(latest.method, HttpMethod::Get);
+        assert_eq!(
+            latest.path,
+            "/spaces/team%2F%E6%9D%B1%E4%BA%AC/compositions/comp-1"
+        );
+
+        let exact = prepare_request(
+            "composition.get",
+            &json!({
+                "space_id": "demo",
+                "composition_id": "comp-1",
+                "revision_id": "rev/one"
+            }),
+            None,
+        )
+        .expect("exact Composition revision request");
+        assert_eq!(
+            exact.path,
+            "/spaces/demo/compositions/comp-1/history/rev%2Fone"
+        );
+
+        let history = prepare_request(
+            "composition.history",
+            &json!({
+                "space_id": "demo",
+                "composition_id": "comp-1",
+                "limit": 50,
+                "offset": 100
+            }),
+            None,
+        )
+        .expect("Composition history page request");
+        assert_eq!(history.method, HttpMethod::Get);
+        assert_eq!(
+            history.path,
+            "/spaces/demo/compositions/comp-1/history?limit=50&offset=100"
+        );
+
+        for limit in [0, 101] {
+            let error = prepare_request(
+                "composition.history",
+                &json!({"space_id": "demo", "composition_id": "comp-1", "limit": limit}),
+                None,
+            )
+            .expect_err("Composition history page size is bounded");
+            assert!(error.to_string().contains("between 1 and 100"));
+        }
+
+        let raw_revision = json!({
+            "revision": {
+                "form_id": "01900000-0000-7000-8000-000000000001",
+                "entry_id": "01900000-0000-7000-8000-000000000002",
+                "revision_id": "01900000-0000-7000-8000-000000000003",
+                "parent_revision_id": null,
+                "entry_version": 1,
+                "change_id": "change-1",
+                "expected_version": null,
+                "operation": "upsert",
+                "committed_at_micros": 123,
+                "author_id": "author-1",
+                "form_version": 1,
+                "source_kind": "user",
+                "source_id": null,
+                "entry": {
+                    "external_id": "monthly-expense",
+                    "tags": ["finance"],
+                    "created_at_micros": 123,
+                    "updated_at_micros": 123,
+                    "updated_by": "author-1",
+                    "integrity": {"checksum": "", "signature": ""},
+                    "deleted": false,
+                    "deleted_at_micros": null,
+                    "deleted_by": null,
+                    "restored_from": null
+                },
+                "extra_attributes": {},
+                "extension_metadata": {}
+            },
+            "fields": {"format_version": 99, "spec": "future: payload\n"},
+            "unmapped_field_values": {"150": "orphaned-value"}
+        });
+        let raw_revision_dto: CompositionRawRevision =
+            serde_json::from_value(raw_revision.clone()).expect("raw revision DTO");
+        assert_eq!(
+            serde_json::to_value(&raw_revision_dto).expect("serialize raw revision DTO"),
+            raw_revision
+        );
+        let raw_revision = serde_json::to_value(raw_revision_dto).expect("raw revision value");
+        let history_page = json!({
+            "entry_id": "01900000-0000-7000-8000-000000000002",
+            "revisions": [raw_revision.clone()],
+            "total": 1,
+            "offset": 0,
+            "limit": 100,
+            "has_more": false
+        });
+        let history_page_dto: CompositionHistoryPage =
+            serde_json::from_value(history_page.clone()).expect("history page DTO");
+        assert_eq!(
+            serde_json::to_value(&history_page_dto).expect("serialize history page DTO"),
+            history_page
+        );
+        for (operation, body, expected) in [
+            ("composition.get", raw_revision.to_string(), raw_revision),
+            (
+                "composition.history",
+                history_page.to_string(),
+                history_page,
+            ),
+        ] {
+            let decoded = decode_response(
+                operation,
+                ApiResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    headers: vec![],
+                    body,
+                },
+            )
+            .expect("raw Composition JSON response");
+            assert_eq!(decoded, expected);
+        }
     }
 
     #[test]
@@ -3037,6 +3237,7 @@ mod tests {
             || operation == "ugoite.apply"
             || operation.starts_with("form.")
             || operation.starts_with("entry.")
+            || operation.starts_with("composition.")
             || operation.starts_with("search.")
             || operation.starts_with("sql.")
             || operation.starts_with("agent.")
@@ -3045,6 +3246,9 @@ mod tests {
             || operation.starts_with("asset.");
         if needs_space_id && !matches!(operation, "space.list" | "space.create") {
             arguments.insert("space_id".into(), json!("demo"));
+        }
+        if matches!(operation, "composition.get" | "composition.history") {
+            arguments.insert("composition_id".into(), json!("composition-1"));
         }
         if matches!(
             operation,

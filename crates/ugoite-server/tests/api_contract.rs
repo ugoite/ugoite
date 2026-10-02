@@ -1228,6 +1228,57 @@ fn issue_2125_openapi_documents_entry_list_and_entry_query_bounds() {
 }
 
 #[test]
+fn openapi_documents_raw_composition_reads_and_history_bounds() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let current = &snapshot["paths"]["/spaces/{space_id}/compositions/{entry_id}"]["get"];
+    let exact = &snapshot["paths"]
+        ["/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}"]["get"];
+    let history = &snapshot["paths"]["/spaces/{space_id}/compositions/{entry_id}/history"]["get"];
+
+    assert!(
+        current.is_object(),
+        "latest raw Composition read is documented"
+    );
+    assert!(
+        exact.is_object(),
+        "exact raw Composition revision read is documented"
+    );
+    assert!(history.is_object(), "raw Composition history is documented");
+    assert_eq!(
+        current["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionRawRevision"
+    );
+    assert_eq!(
+        history["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionHistoryPage"
+    );
+    assert_eq!(
+        exact["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionRawRevision"
+    );
+    assert_eq!(
+        exact["description"],
+        "Returns only the requested stored Composition revision; it never falls back to the latest revision or requires the current Composition format parser."
+    );
+    let history_parameters = history["parameters"]
+        .as_array()
+        .expect("history parameters");
+    assert!(history_parameters
+        .iter()
+        .any(|parameter| parameter["$ref"] == "#/components/parameters/CompositionHistoryLimit"));
+    assert!(history_parameters
+        .iter()
+        .any(|parameter| parameter["$ref"] == "#/components/parameters/Offset"));
+    let limit = &snapshot["components"]["parameters"]["CompositionHistoryLimit"]["schema"];
+    assert_eq!(limit["minimum"], 1);
+    assert_eq!(limit["maximum"], 100);
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionRawRevision"]["required"],
+        serde_json::json!(["revision", "fields", "unmapped_field_values"])
+    );
+}
+
+#[test]
 fn openapi_documents_the_form_extra_attributes_policy() {
     let snapshot = ugoite_server::openapi_snapshot();
     assert_eq!(
