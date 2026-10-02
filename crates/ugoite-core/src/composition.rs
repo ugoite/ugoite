@@ -83,6 +83,16 @@ pub fn bind_parameters(
                 ));
             return bindings;
         }
+        if parameter.default.as_ref().is_some_and(|default| {
+            !value_matches_parameter(default.as_json_value(), parameter.parameter_type)
+        }) {
+            bindings
+                .diagnostics
+                .push(CompositionDiagnostic::without_parameter(
+                    CompositionDiagnosticCode::InvalidComposition,
+                ));
+            return bindings;
+        }
         bindings
             .parameter_types
             .insert(parameter.id.clone(), parameter.parameter_type);
@@ -321,6 +331,30 @@ mod tests {
             CompositionDiagnosticCode::ParameterTypeMismatch
         );
         assert_eq!(reference_error.parameter_id, None);
+    }
+
+    #[test]
+    fn invalid_default_is_rejected_even_when_caller_supplies_a_valid_value() {
+        let parameters = [parameter(
+            "limit",
+            CompositionParameterType::Integer,
+            true,
+            Some(literal(json!("not an integer"))),
+            None,
+        )];
+        let supplied = BTreeMap::from([("limit".to_owned(), json!(5))]);
+
+        let bindings = bind_parameters(&parameters, &supplied);
+
+        assert_eq!(
+            bindings.diagnostics,
+            vec![super::CompositionDiagnostic {
+                code: CompositionDiagnosticCode::InvalidComposition,
+                parameter_id: None,
+            }]
+        );
+        assert!(bindings.values.is_empty());
+        assert!(bindings.invalid_values.is_empty());
     }
 
     #[test]
