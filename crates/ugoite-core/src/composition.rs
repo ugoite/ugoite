@@ -475,6 +475,12 @@ pub fn compile_entry_query_source(
             diagnostics.push(CompositionDiagnostic::without_parameter(
                 CompositionDiagnosticCode::FieldTypeChanged,
             ));
+        } else if current.reference_form != expected.reference_form
+            || current.list_item != expected.list_item
+        {
+            diagnostics.push(CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::SourceSchemaChanged,
+            ));
         }
     }
 
@@ -484,7 +490,13 @@ pub fn compile_entry_query_source(
 
     let schema_material = used_fields
         .iter()
-        .filter_map(|field_id| expected_by_id.get(field_id))
+        .filter_map(|field_id| current_by_id.get(field_id))
+        .map(|field| CompositionFieldSchemaEntry {
+            field_id: field.id,
+            field_type: field.field_type.clone(),
+            reference_form: field.reference_form,
+            list_item: field.list_item.clone(),
+        })
         .collect::<Vec<_>>();
     let schema_bytes = serde_json::to_vec(&(form_id, schema_material)).map_err(|_| {
         vec![CompositionDiagnostic::without_parameter(
@@ -627,7 +639,9 @@ mod tests {
         CompositionValue, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
         EntryQuerySortTemplate, EntryQueryTemplate,
     };
-    use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
+    use ugoite_domain::form::{
+        FieldType, FormDefinition, FormField, FormVersion, ListItemDefinition,
+    };
     use ugoite_domain::id::{FieldId, FormId};
 
     fn parameter(
@@ -694,6 +708,8 @@ mod tests {
             .map(|field| CompositionFieldSchemaEntry {
                 field_id: field.id,
                 field_type: field.field_type.clone(),
+                reference_form: field.reference_form,
+                list_item: field.list_item.clone(),
             })
             .collect()
     }
@@ -1041,16 +1057,25 @@ mod tests {
 
     #[test]
     fn entry_query_fingerprint_ignores_unreferenced_schema_fields() {
-        let current = form(&[
+        let mut current = form(&[
             (100, FieldType::String),
             (101, FieldType::Integer),
-            (102, FieldType::Boolean),
+            (102, FieldType::List),
         ]);
+        current.fields[2].list_item = Some(ListItemDefinition {
+            field_type: FieldType::String,
+            reference_form: None,
+        });
         let changed_unrelated = form(&[
             (100, FieldType::String),
             (101, FieldType::Integer),
             (102, FieldType::Double),
         ]);
+        let mut changed_unreferenced_list_item = current.clone();
+        changed_unreferenced_list_item.fields[2].list_item = Some(ListItemDefinition {
+            field_type: FieldType::Integer,
+            reference_form: None,
+        });
         let expected = schema(&current);
         let template = EntryQueryTemplate {
             text: None,
@@ -1083,6 +1108,18 @@ mod tests {
             first.source_schema_fingerprint,
             second.source_schema_fingerprint
         );
+        let third = compile_entry_query_source(
+            changed_unreferenced_list_item.id,
+            &expected,
+            &template,
+            &empty_bindings(),
+            &changed_unreferenced_list_item,
+        )
+        .expect("unreferenced List item metadata does not invalidate projection");
+        assert_eq!(
+            first.source_schema_fingerprint,
+            third.source_schema_fingerprint
+        );
 
         let mut same_schema_different_form = current.clone();
         same_schema_different_form.id = FormId::from(uuid::Uuid::from_u128(43));
@@ -1110,6 +1147,8 @@ mod tests {
         let expected = vec![CompositionFieldSchemaEntry {
             field_id: FieldId::new(100).unwrap(),
             field_type: FieldType::String,
+            reference_form: None,
+            list_item: None,
         }];
         let template = EntryQueryTemplate {
             text: Some(value(json!("hello"))),
@@ -1138,6 +1177,8 @@ mod tests {
         let expected = vec![CompositionFieldSchemaEntry {
             field_id: FieldId::new(100).unwrap(),
             field_type: FieldType::String,
+            reference_form: None,
+            list_item: None,
         }];
         let template = EntryQueryTemplate {
             text: Some(value(json!("hello"))),
@@ -1159,6 +1200,137 @@ mod tests {
             )),
             vec![CompositionDiagnosticCode::SourceSchemaChanged]
         );
+    }
+
+    #[test]
+    fn changed_list_item_schema_is_reported_for_a_used_field() {
+        let mut original = form(&[(100, FieldType::List)]);
+        original.fields[0].list_item = Some(ListItemDefinition {
+            field_type: FieldType::String,
+            reference_form: None,
+        });
+        let expected = schema(&original);
+        let mut current = original.clone();
+        current.fields[0].list_item = Some(ListItemDefinition {
+            field_type: FieldType::Integer,
+            reference_form: None,
+        });
+        let template = EntryQueryTemplate {
+            text: None,
+            filters: vec![],
+            sort: vec![],
+            page_limit: 10,
+            projection: EntryQueryProjectionTemplate::Fields {
+                fields: vec![FieldId::new(100).unwrap()],
+            },
+        };
+
+        assert_eq!(
+            diagnostic_codes(compile_entry_query_source(
+                current.id,
+                &expected,
+                &template,
+                &empty_bindings(),
+                &current,
+            )),
+            vec![CompositionDiagnosticCode::SourceSchemaChanged]
+        );
+    }
+
+    #[test]
+    fn changed_row_reference_target_is_reported_for_a_used_field() {
+        let mut original = form(&[(100, FieldType::RowReference)]);
+        original.fields[0].reference_form = Some(FormId::from(uuid::Uuid::from_u128(1000)));
+        let expected = schema(&original);
+        let mut current = original.clone();
+        current.fields[0].reference_form = Some(FormId::from(uuid::Uuid::from_u128(1001)));
+        let template = EntryQueryTemplate {
+            text: None,
+            filters: vec![],
+            sort: vec![],
+            page_limit: 10,
+            projection: EntryQueryProjectionTemplate::Fields {
+                fields: vec![FieldId::new(100).unwrap()],
+            },
+        };
+
+        assert_eq!(
+            diagnostic_codes(compile_entry_query_source(
+                current.id,
+                &expected,
+                &template,
+                &empty_bindings(),
+                &current,
+            )),
+            vec![CompositionDiagnosticCode::SourceSchemaChanged]
+        );
+    }
+
+    #[test]
+    fn source_schema_fingerprint_includes_typed_list_and_reference_metadata() {
+        let template = EntryQueryTemplate {
+            text: None,
+            filters: vec![],
+            sort: vec![],
+            page_limit: 10,
+            projection: EntryQueryProjectionTemplate::Fields {
+                fields: vec![FieldId::new(100).unwrap()],
+            },
+        };
+
+        let mut string_list = form(&[(100, FieldType::List)]);
+        string_list.fields[0].list_item = Some(ListItemDefinition {
+            field_type: FieldType::String,
+            reference_form: None,
+        });
+        let mut integer_list = string_list.clone();
+        integer_list.fields[0].list_item = Some(ListItemDefinition {
+            field_type: FieldType::Integer,
+            reference_form: None,
+        });
+        let string_list_fingerprint = compile_entry_query_source(
+            string_list.id,
+            &schema(&string_list),
+            &template,
+            &empty_bindings(),
+            &string_list,
+        )
+        .unwrap()
+        .source_schema_fingerprint;
+        let integer_list_fingerprint = compile_entry_query_source(
+            integer_list.id,
+            &schema(&integer_list),
+            &template,
+            &empty_bindings(),
+            &integer_list,
+        )
+        .unwrap()
+        .source_schema_fingerprint;
+        assert_ne!(string_list_fingerprint, integer_list_fingerprint);
+
+        let mut first_reference = form(&[(100, FieldType::RowReference)]);
+        first_reference.fields[0].reference_form = Some(FormId::from(uuid::Uuid::from_u128(1000)));
+        let mut second_reference = first_reference.clone();
+        second_reference.fields[0].reference_form = Some(FormId::from(uuid::Uuid::from_u128(1001)));
+        let first_reference_fingerprint = compile_entry_query_source(
+            first_reference.id,
+            &schema(&first_reference),
+            &template,
+            &empty_bindings(),
+            &first_reference,
+        )
+        .unwrap()
+        .source_schema_fingerprint;
+        let second_reference_fingerprint = compile_entry_query_source(
+            second_reference.id,
+            &schema(&second_reference),
+            &template,
+            &empty_bindings(),
+            &second_reference,
+        )
+        .unwrap()
+        .source_schema_fingerprint;
+        assert_ne!(first_reference_fingerprint, second_reference_fingerprint);
     }
 
     #[test]
