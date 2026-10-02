@@ -187,6 +187,224 @@ async fn authorized_composition_raw_read_conceals_missing_and_denied_ids() -> an
     Ok(())
 }
 
+#[tokio::test]
+async fn authorized_composition_source_descriptors_use_current_acl_and_exact_revision(
+) -> anyhow::Result<()> {
+    use ugoite_core::error::{AppError, ErrorCode};
+    use ugoite_core::sql_query::SavedSqlRevisionRef;
+    use ugoite_domain::id::FormId;
+
+    let service = UgoiteService::new(format!(
+        "memory://composition-source-descriptors-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::from_u128(3_429_001);
+    let viewer = Uuid::from_u128(3_429_002);
+    let space_id = service
+        .create_space_for_principal("composition-source-descriptors", owner, "Owner")
+        .await?
+        .to_string();
+    let authorizer = Authorizer::new(service.operator().clone());
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_string(),
+                state: PrincipalState::Active,
+                created_at: chrono::Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+
+    let form_name = "Composition-Source";
+    let form = service
+        .upsert_form_result(
+            &space_id,
+            &json!({
+                "name": form_name,
+                "fields": {
+                    "amount": {"id": 100, "type": "integer", "required": false}
+                }
+            }),
+        )
+        .await?;
+    let form_id = form.form_id;
+    let readable_form = service
+        .get_composition_source_form_authorized_for_principals(&space_id, form_id, &[owner])
+        .await?;
+    assert_eq!(readable_form.id, form_id);
+    assert_eq!(readable_form.fields[0].name, "amount");
+
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Form,
+                id: form_name.to_string(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+    let denied_form = service
+        .get_composition_source_form_authorized_for_principals(&space_id, form_id, &[viewer])
+        .await
+        .expect_err("denied Form schema must be concealed");
+    let missing_form = service
+        .get_composition_source_form_authorized_for_principals(
+            &space_id,
+            FormId::from(Uuid::now_v7()),
+            &[viewer],
+        )
+        .await
+        .expect_err("missing Form identity must be concealed");
+    let denied_form = denied_form.downcast::<AppError>()?;
+    let missing_form = missing_form.downcast::<AppError>()?;
+    assert_eq!(denied_form.code(), ErrorCode::FormNotFound);
+    assert_eq!(denied_form.code(), missing_form.code());
+    assert_eq!(denied_form.message(), missing_form.message());
+
+    let sql_id = format!("composition-source-{}", Uuid::now_v7());
+    let payload = |name: &str, description: &str| crate::saved_sql::SqlPayload {
+        name: Some("parameterized source".to_string()),
+        kind: crate::saved_sql::SqlKind::UserQuery,
+        metadata: None,
+        sql: format!("SELECT ${name} AS result"),
+        variables: json!([{
+            "name": name,
+            "type": "string",
+            "description": description
+        }]),
+    };
+    let first = service
+        .create_saved_sql_authorized_for_principals(
+            &space_id,
+            Some(&sql_id),
+            &payload("month", "private first description"),
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let first_revision_id = first["revision_id"]
+        .as_str()
+        .expect("created exact revision")
+        .to_string();
+    let second = service
+        .update_saved_sql_authorized_for_principals(
+            &space_id,
+            &sql_id,
+            &payload("year", "private second description"),
+            &first_revision_id,
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let second_revision_id = second["revision_id"]
+        .as_str()
+        .expect("updated exact revision")
+        .to_string();
+    assert_ne!(first_revision_id, second_revision_id);
+
+    let first_descriptor = service
+        .get_saved_sql_revision_descriptor_authorized_for_principals(
+            &space_id,
+            &SavedSqlRevisionRef {
+                id: sql_id.clone(),
+                revision_id: first_revision_id.clone(),
+            },
+            &[owner],
+        )
+        .await?;
+    assert_eq!(first_descriptor.id, sql_id);
+    assert_eq!(first_descriptor.revision_id, first_revision_id);
+    assert_eq!(first_descriptor.variables["month"].var_type, "string");
+    assert!(!format!("{first_descriptor:?}").contains("private first description"));
+    assert!(!format!("{first_descriptor:?}").contains("SELECT"));
+
+    let second_descriptor = service
+        .get_saved_sql_revision_descriptor_authorized_for_principals(
+            &space_id,
+            &SavedSqlRevisionRef {
+                id: sql_id.clone(),
+                revision_id: second_revision_id.clone(),
+            },
+            &[owner],
+        )
+        .await?;
+    assert_eq!(second_descriptor.variables["year"].var_type, "string");
+    assert!(!second_descriptor.variables.contains_key("month"));
+
+    let missing_sql = service
+        .get_saved_sql_revision_descriptor_authorized_for_principals(
+            &space_id,
+            &SavedSqlRevisionRef {
+                id: sql_id.clone(),
+                revision_id: Uuid::now_v7().to_string(),
+            },
+            &[owner],
+        )
+        .await
+        .expect_err("missing exact revision must not fall back to latest");
+    assert_eq!(
+        missing_sql.downcast::<AppError>()?.code(),
+        ErrorCode::EntryNotFound
+    );
+
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::SavedSql,
+                id: sql_id.clone(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+    let denied_sql = service
+        .get_saved_sql_revision_descriptor_authorized_for_principals(
+            &space_id,
+            &SavedSqlRevisionRef {
+                id: sql_id.clone(),
+                revision_id: first_revision_id,
+            },
+            &[viewer],
+        )
+        .await
+        .expect_err("denied Saved SQL metadata must be concealed");
+    let missing_sql = service
+        .get_saved_sql_revision_descriptor_authorized_for_principals(
+            &space_id,
+            &SavedSqlRevisionRef {
+                id: format!("missing-{}", Uuid::now_v7()),
+                revision_id: Uuid::now_v7().to_string(),
+            },
+            &[viewer],
+        )
+        .await
+        .expect_err("missing exact revision must be concealed");
+    let denied_sql = denied_sql.downcast::<AppError>()?;
+    let missing_sql = missing_sql.downcast::<AppError>()?;
+    assert_eq!(denied_sql.code(), ErrorCode::EntryNotFound);
+    assert_eq!(denied_sql.code(), missing_sql.code());
+    assert_eq!(denied_sql.message(), missing_sql.message());
+    Ok(())
+}
+
 struct RawCompositionRevisionArgs<'a> {
     form_id: FormId,
     form_version: FormVersion,
