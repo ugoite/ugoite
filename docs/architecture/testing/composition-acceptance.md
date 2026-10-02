@@ -2,9 +2,11 @@
 title: "Composition acceptance plan"
 ---
 
-This is the Lane D acceptance plan for the planned Composition feature. It does
-not claim a complete Composition API, CLI command set, Browser route, or passing
-runtime journey.
+This is the Lane D acceptance plan for the Composition feature, whose full
+surface and runtime journey remain incomplete. The read-only portable list,
+get, and lint operations are implemented, as are the CLI list, inspect, and
+lint commands; this does not claim a complete Composition API or CLI command
+set, Browser route, or passing runtime journey.
 The current structured locator map is
 [`e2e/fixtures/composition/acceptance-plan.json`](../../../e2e/fixtures/composition/acceptance-plan.json).
 
@@ -24,26 +26,37 @@ until their integration contracts are reviewed and frozen.
 
 ## CLI acceptance shape
 
-The planned command surface is:
+The current CLI command surface includes:
 
 - `ugoite composition list`
 - `ugoite composition inspect <id> [--revision] [--raw]`
+- `ugoite composition lint <file>`
+
+`composition list` reads one bounded page in local Core or remote mode. Its
+default page size is 100 with offset 0; `--limit` and `--offset` select a
+different page. It returns the portable summary DTO and does not load the
+stored YAML spec. CLI list and structured inspect output are JSON; inspect
+`--raw` writes the stored spec value. Offline lint returns its canonicalization
+or diagnostic result as JSON.
+
+The remaining planned command surface is:
+
 - `ugoite composition history <id>`
 - `ugoite composition restore <id> --revision <revision>`
-- `ugoite composition lint <file>`
 - `ugoite composition save <file>`
 - `ugoite composition query <id> --param k=v`
 - `ugoite composition export <id> --output <path>`
 - `ugoite composition import <file>`
 
-Acceptance checks will prove authorized paging for list, exact-revision inspect
-and history, append-only restore with its new revision receipt, stable
-diagnostic codes from the shared Rust contract, and save success only after the
-Entry receipt confirms the new revision. Raw inspect, export, and history must
-remain available for unknown versions, malformed documents, and broken
-references. Query must invoke the existing resolved query path and preserve
-paged results. Core and remote CLI modes must agree on output meaning. JSON
-field names and presentation snapshots wait for the shared DTO to freeze.
+Focused CLI tests cover bounded local paging, remote operation request and
+response decoding, summary output shape, exact-revision inspect, and shared
+lint diagnostics. Full cross-surface list/get/history acceptance and CLI
+parity acceptance remain planned. Future history and restore must preserve
+append-only revisions, and save success must wait for the Entry receipt. Raw inspect,
+export, and history must remain available for unknown versions, malformed
+documents, and broken references. Query must invoke the existing resolved
+query path and preserve paged results. Core and remote modes must agree on
+output meaning across the complete command set.
 
 ## Browser Golden Journey shape
 
@@ -80,9 +93,12 @@ validates and canonicalizes a submitted document through the shared Rust domain
 parser at `POST /compositions/lint`. It reads and writes no Space state, returns
 the normalized document, canonical YAML, and fingerprint on success, and a
 stable diagnostic code on failure. Its request body is bounded and the parser
-enforces the 64 KiB YAML limit. Composition list, resolve, save, export, and
-restore operations remain planned; their request and response DTOs are pending
-shared contracts.
+enforces the 64 KiB YAML limit. `composition.list` now returns one bounded,
+ACL-authorized summary page through the portable operation and server route;
+the CLI uses this operation in remote mode and the matching local Core reader
+in local mode. The list DTO omits `spec`. Resolve is available as a
+side-effect-free operation; save, export, and restore remain planned, with
+their relevant contracts and generic-write protections still in progress.
 
 ## Recovery and authorization acceptance
 
