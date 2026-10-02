@@ -10,6 +10,8 @@ spaces/
 !frontend/src/routes/spaces/**
 !fixtures/spaces/
 !fixtures/spaces/**
+!fixtures/historical-spaces/
+!fixtures/historical-spaces/**
 
 # OS metadata
 .DS_Store
