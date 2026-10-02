@@ -1279,6 +1279,75 @@ fn openapi_documents_raw_composition_reads_and_history_bounds() {
 }
 
 #[test]
+fn openapi_documents_composition_lint_request_response_and_diagnostics() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let lint = &snapshot["paths"]["/compositions/lint"]["post"];
+    assert!(lint.is_object(), "Composition lint route is documented");
+    assert_eq!(
+        lint["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionLintRequest"
+    );
+    assert_eq!(
+        lint["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionLintResponse"
+    );
+    assert_eq!(
+        lint["responses"]["413"]["description"],
+        "The JSON request body exceeds the bounded parser request size"
+    );
+    assert_eq!(
+        lint["responses"]["400"]["description"],
+        "Invalid JSON request body"
+    );
+    assert_eq!(
+        lint["responses"]["415"]["description"],
+        "Request Content-Type must be application/json"
+    );
+    assert_eq!(
+        lint["responses"]["422"]["description"],
+        "The JSON value does not match the Composition lint request schema"
+    );
+
+    let request = &snapshot["components"]["schemas"]["CompositionLintRequest"];
+    assert_eq!(request["required"], serde_json::json!(["yaml"]));
+    assert_eq!(request["additionalProperties"], false);
+    assert!(request["properties"]["yaml"]["description"]
+        .as_str()
+        .expect("YAML request size description")
+        .contains("64 KiB"));
+
+    let response = &snapshot["components"]["schemas"]["CompositionLintResponse"];
+    assert_eq!(response["oneOf"].as_array().map(Vec::len), Some(2));
+    assert_eq!(response["oneOf"][0]["properties"]["ok"]["const"], true);
+    assert_eq!(response["oneOf"][1]["properties"]["ok"]["const"], false);
+    assert_eq!(
+        response["oneOf"][0]["properties"]["value"]["$ref"],
+        "#/components/schemas/CompositionLintValue"
+    );
+    assert_eq!(
+        response["oneOf"][1]["properties"]["error"]["$ref"],
+        "#/components/schemas/CompositionLintError"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionDiagnosticCode"]["enum"],
+        serde_json::json!([
+            "unsupported_format_version",
+            "invalid_composition",
+            "parameter_unknown",
+            "parameter_missing",
+            "parameter_type_mismatch",
+            "source_unavailable",
+            "missing_form",
+            "missing_field",
+            "field_type_changed",
+            "source_schema_changed",
+            "saved_sql_revision_missing",
+            "not_authorized"
+        ])
+    );
+}
+
+#[test]
 fn openapi_documents_the_form_extra_attributes_policy() {
     let snapshot = ugoite_server::openapi_snapshot();
     assert_eq!(

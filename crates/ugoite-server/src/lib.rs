@@ -44,8 +44,10 @@ use tower_http::{
     trace::TraceLayer,
 };
 use ugoite_api_client::{
-    CompositionEntryIntegrity, CompositionEntryMetadata, CompositionHistoryPage,
-    CompositionRawRevision, CompositionRevisionMetadata,
+    CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
+    CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
+    CompositionLintResponse, CompositionLintValue, CompositionRawRevision,
+    CompositionRevisionMetadata,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::id::{validate_decoded_space_id, validate_identifier, IdentifierKind};
@@ -1737,6 +1739,10 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route(
             "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}",
             get(composition_revision),
+        )
+        .route(
+            "/compositions/lint",
+            post(lint_composition).layer(DefaultBodyLimit::max(COMPOSITION_LINT_MAX_REQUEST_BYTES)),
         )
         .route("/spaces/{space_id}/pins", get(list_pins).post(create_pin))
         .route("/spaces/{space_id}/pins/{pin_name}", delete(delete_pin))
@@ -11030,6 +11036,60 @@ async fn composition_history(
     Ok(Json(composition_raw_history_page_response(history)))
 }
 
+async fn lint_composition(
+    request: Result<Json<CompositionLintRequest>, JsonRejection>,
+) -> ApiResult<Json<CompositionLintResponse>> {
+    let Json(request) = request.map_err(|error| {
+        ApiError::new(
+            error.status(),
+            json!({
+                "code": "INVALID_INPUT",
+                "message": error.body_text(),
+            }),
+        )
+    })?;
+    Ok(Json(composition_lint_response(&request.yaml)))
+}
+
+const COMPOSITION_LINT_MAX_REQUEST_BYTES: usize =
+    ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6 + 256;
+
+fn composition_lint_response(yaml: &str) -> CompositionLintResponse {
+    match ugoite_domain::composition::canonicalize_composition_yaml(yaml) {
+        Ok(canonical) => CompositionLintResponse {
+            ok: true,
+            value: Some(CompositionLintValue {
+                document: serde_json::to_value(canonical.document)
+                    .expect("Composition domain document is JSON serializable"),
+                canonical_yaml: canonical.yaml,
+                fingerprint: canonical.fingerprint,
+            }),
+            error: None,
+        },
+        Err(code) => CompositionLintResponse {
+            ok: false,
+            value: None,
+            error: Some(CompositionLintError {
+                kind: "composition_diagnostic".to_string(),
+                code: api_composition_diagnostic_code(code),
+            }),
+        },
+    }
+}
+
+fn api_composition_diagnostic_code(
+    code: ugoite_domain::composition::CompositionDiagnosticCode,
+) -> ApiCompositionDiagnosticCode {
+    ApiCompositionDiagnosticCode::from_code(code.as_str())
+        .expect("domain Composition diagnostics are included in the portable API contract")
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CompositionLintRequest {
+    yaml: String,
+}
+
 fn composition_raw_revision_response(raw: StoredCompositionRawRevision) -> CompositionRawRevision {
     let revision = raw.revision;
     let entry = revision.entry;
@@ -13526,6 +13586,11 @@ mod authentication_regression_tests {
                 "/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}",
                 get(composition_revision),
             )
+            .route(
+                "/compositions/lint",
+                post(lint_composition)
+                    .layer(DefaultBodyLimit::max(COMPOSITION_LINT_MAX_REQUEST_BYTES)),
+            )
             .layer(Extension(identity))
             .with_state(state)
     }
@@ -13603,6 +13668,93 @@ mod authentication_regression_tests {
             .body(Body::empty())?,
         )
         .await?;
+        let lint_yaml = include_str!(
+            "../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml"
+        );
+        let lint_request = Request::post("/compositions/lint")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&json!({"yaml": lint_yaml}))?))?;
+        let (lint_status, lint_body) = route_json(route.clone(), lint_request).await?;
+        let canonical = ugoite_domain::composition::canonicalize_composition_yaml(lint_yaml)
+            .expect("shared fixture canonicalizes");
+        assert_eq!(lint_status, StatusCode::OK);
+        assert_eq!(lint_body["ok"], true);
+        assert_eq!(lint_body["value"]["document"], json!(canonical.document));
+        assert_eq!(lint_body["value"]["canonical_yaml"], canonical.yaml);
+        assert_eq!(lint_body["value"]["fingerprint"], canonical.fingerprint);
+
+        let malformed_json_request = Request::post("/compositions/lint")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from("{"))?;
+        let (malformed_json_status, malformed_json_body) =
+            route_json(route.clone(), malformed_json_request).await?;
+        assert_eq!(malformed_json_status, StatusCode::BAD_REQUEST);
+        assert_eq!(malformed_json_body["code"], "INVALID_INPUT");
+
+        for (body, expected_status) in [
+            (json!({}).to_string(), StatusCode::UNPROCESSABLE_ENTITY),
+            (
+                json!({"yaml": lint_yaml, "ignored": true}).to_string(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+        ] {
+            let rejected_request = Request::post("/compositions/lint")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))?;
+            let (status, body) = route_json(route.clone(), rejected_request).await?;
+            assert_eq!(status, expected_status);
+            assert_eq!(body["code"], "INVALID_INPUT");
+        }
+
+        let wrong_content_type_request = Request::post("/compositions/lint")
+            .header(header::CONTENT_TYPE, "text/plain")
+            .body(Body::from(json!({"yaml": lint_yaml}).to_string()))?;
+        let (wrong_content_type_status, wrong_content_type_body) =
+            route_json(route.clone(), wrong_content_type_request).await?;
+        assert_eq!(
+            wrong_content_type_status,
+            StatusCode::UNSUPPORTED_MEDIA_TYPE
+        );
+        assert_eq!(wrong_content_type_body["code"], "INVALID_INPUT");
+
+        let unsupported_version = "format_version: 99\nname: future\n";
+        let invalid_request = Request::post("/compositions/lint")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&json!({
+                "yaml": unsupported_version
+            }))?))?;
+        let (invalid_status, invalid_body) = route_json(route.clone(), invalid_request).await?;
+        assert_eq!(invalid_status, StatusCode::OK);
+        assert_eq!(invalid_body["ok"], false);
+        assert_eq!(
+            invalid_body["error"],
+            json!({
+                "kind": "composition_diagnostic",
+                "code": "unsupported_format_version"
+            })
+        );
+
+        let over_limit_yaml =
+            "x".repeat(ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES + 1);
+        let over_limit_request = Request::post("/compositions/lint")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(
+                &json!({"yaml": over_limit_yaml}),
+            )?))?;
+        let (over_limit_status, over_limit_body) =
+            route_json(route.clone(), over_limit_request).await?;
+        assert_eq!(over_limit_status, StatusCode::OK);
+        assert_eq!(over_limit_body["error"]["code"], "invalid_composition");
+
+        let oversized_body = serde_json::to_vec(&json!({
+            "yaml": "x".repeat(COMPOSITION_LINT_MAX_REQUEST_BYTES)
+        }))?;
+        let oversized_request = Request::post("/compositions/lint")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(oversized_body))?;
+        let oversized_response = route.clone().oneshot(oversized_request).await?;
+        assert_eq!(oversized_response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
         let (invalid_limit_status, _) = route_json(
             route,
             Request::get(format!(
@@ -13626,6 +13778,49 @@ mod authentication_regression_tests {
         assert_eq!(latest_body["code"], history_body["code"]);
         assert_eq!(latest_body["message"], history_body["message"]);
         assert_eq!(invalid_limit_status, StatusCode::UNPROCESSABLE_ENTITY);
+        Ok(())
+    }
+
+    #[test]
+    fn composition_lint_diagnostic_codes_match_the_domain_contract() -> anyhow::Result<()> {
+        use ugoite_domain::composition::CompositionDiagnosticCode as DomainCode;
+
+        for domain in [
+            DomainCode::UnsupportedFormatVersion,
+            DomainCode::InvalidComposition,
+            DomainCode::ParameterUnknown,
+            DomainCode::ParameterMissing,
+            DomainCode::ParameterTypeMismatch,
+            DomainCode::SourceUnavailable,
+            DomainCode::MissingField,
+            DomainCode::FieldTypeChanged,
+            DomainCode::SourceSchemaChanged,
+        ] {
+            let api = ApiCompositionDiagnosticCode::from_code(domain.as_str())
+                .expect("domain diagnostic is represented by the portable API");
+            assert_eq!(domain.as_str(), api.as_str());
+            assert_eq!(serde_json::to_value(api)?, json!(domain.as_str()));
+        }
+
+        for (api, expected) in [
+            (ApiCompositionDiagnosticCode::MissingForm, "missing_form"),
+            (
+                ApiCompositionDiagnosticCode::SavedSqlRevisionMissing,
+                "saved_sql_revision_missing",
+            ),
+            (
+                ApiCompositionDiagnosticCode::NotAuthorized,
+                "not_authorized",
+            ),
+        ] {
+            assert_eq!(api.as_str(), expected);
+            assert_eq!(ApiCompositionDiagnosticCode::from_code(expected), Some(api));
+            assert_eq!(serde_json::to_value(api)?, json!(expected));
+        }
+        assert_eq!(
+            ApiCompositionDiagnosticCode::from_code("unknown_diagnostic"),
+            None
+        );
         Ok(())
     }
 

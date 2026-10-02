@@ -13,7 +13,8 @@ use url::Url;
 pub mod composition;
 
 pub use composition::{
-    CompositionEntryIntegrity, CompositionEntryMetadata, CompositionHistoryPage,
+    CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
+    CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
     CompositionRawRevision, CompositionRevisionMetadata,
 };
 
@@ -76,6 +77,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "entry.history",
     "entry.revision",
     "entry.restore",
+    "composition.lint",
     "composition.get",
     "composition.history",
     "sql.list",
@@ -981,6 +983,11 @@ pub fn prepare_request(
                     query,
                 )
             }
+            "composition.lint" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to lint Composition"),
+                vec!["compositions".into(), "lint".into()],
+                vec![],
+            ),
             "composition.get" => {
                 let mut path = vec![
                     "spaces".into(),
@@ -1824,6 +1831,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to get entry",
             RequestBodyKind::None,
         ),
+        "composition.lint" => (
+            HttpMethod::Post,
+            "Failed to lint Composition",
+            RequestBodyKind::Json,
+        ),
         "composition.get" => (
             HttpMethod::Get,
             "Failed to get Composition",
@@ -2505,6 +2517,53 @@ mod tests {
             .expect_err("Composition history page size is bounded");
             assert!(error.to_string().contains("between 1 and 100"));
         }
+
+        let lint = prepare_request(
+            "composition.lint",
+            &json!({}),
+            Some(&json!({"yaml": "format_version: 1\n"})),
+        )
+        .expect("Composition lint request");
+        assert_eq!(lint.method, HttpMethod::Post);
+        assert_eq!(lint.path, "/compositions/lint");
+        assert_eq!(lint.body_kind, RequestBodyKind::Json);
+        assert_eq!(
+            serde_json::from_str::<Value>(lint.body.as_deref().expect("lint body"))
+                .expect("lint request JSON"),
+            json!({"yaml": "format_version: 1\n"})
+        );
+
+        let lint_success = json!({
+            "ok": true,
+            "value": {
+                "document": {"format_version": 1},
+                "canonical_yaml": "format_version: 1\n",
+                "fingerprint": "a".repeat(64)
+            }
+        });
+        let lint_success_dto: CompositionLintResponse =
+            serde_json::from_value(lint_success.clone()).expect("lint success DTO");
+        assert_eq!(
+            serde_json::to_value(&lint_success_dto).expect("serialize lint success DTO"),
+            lint_success
+        );
+        let lint_error = json!({
+            "ok": false,
+            "error": {
+                "kind": "composition_diagnostic",
+                "code": "unsupported_format_version"
+            }
+        });
+        let lint_error_dto: CompositionLintResponse =
+            serde_json::from_value(lint_error.clone()).expect("lint diagnostic DTO");
+        assert_eq!(
+            serde_json::to_value(&lint_error_dto).expect("serialize lint diagnostic DTO"),
+            lint_error
+        );
+        assert_eq!(
+            CompositionDiagnosticCode::UnsupportedFormatVersion.as_str(),
+            "unsupported_format_version"
+        );
 
         let raw_revision = json!({
             "revision": {

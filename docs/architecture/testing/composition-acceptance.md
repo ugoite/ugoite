@@ -75,10 +75,14 @@ operation names are listed in the fixture acceptance map. `composition.get`
 currently reads the latest raw revision or an exact revision when `revision_id`
 is supplied, and `composition.history` reads a bounded raw history page.
 Their wire response DTOs are owned by `ugoite-api-client`; the Server converts
-the storage reader result at its adapter boundary. The remaining operation
-request and response DTOs are still pending their shared contracts.
-Composition list, lint, resolve, save, export, and restore operations remain
-planned.
+the storage reader result at its adapter boundary. `composition.lint` now
+validates and canonicalizes a submitted document through the shared Rust domain
+parser at `POST /compositions/lint`. It reads and writes no Space state, returns
+the normalized document, canonical YAML, and fingerprint on success, and a
+stable diagnostic code on failure. Its request body is bounded and the parser
+enforces the 64 KiB YAML limit. Composition list, resolve, save, export, and
+restore operations remain planned; their request and response DTOs are pending
+shared contracts.
 
 ## Recovery and authorization acceptance
 
