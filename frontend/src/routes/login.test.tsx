@@ -58,6 +58,29 @@ describe("/login continuation", () => {
     );
   });
 
+  it("REQ-FE-069: sends first-run authentication to setup", async () => {
+    vi.mocked(authApi.getConfig).mockResolvedValue({
+      status: "uninitialized",
+      nodeId: "node",
+      issuer: "http://localhost:3000",
+      rpId: "localhost",
+      passkey: true,
+      oidc: false,
+    });
+    render(() => <LoginRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Sign in with a passkey" }),
+    );
+
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/setup?next=%2Fspaces%2Fdemo%2Fdashboard%3Ftab%3Drecent",
+        { replace: true },
+      )
+    );
+  });
+
   it("shows configured OIDC login after the Passkey primary action", async () => {
     vi.mocked(authApi.getConfig).mockResolvedValue({
       status: "active",

@@ -24,20 +24,28 @@ describe("root route", () => {
     );
   });
   it("REQ-FE-069: keeps unauthenticated visitors on the login entry", async () => {
-    getSession.mockResolvedValue({ authenticated: false });
+    let resolveSession: (value: { authenticated: boolean }) => void = () => {};
+    getSession.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSession = resolve;
+      }),
+    );
     render(() => <IndexRoute />);
 
     expect(screen.getByRole("heading", { name: "Ugoite" }))
       .toBeInTheDocument();
     expect(screen.getByRole("status")).toBeInTheDocument();
 
-    const login = await screen.findByRole("link", { name: "Login" });
+    const login = screen.getByRole("link", { name: "Login" });
     await waitFor(() => expect(login).toHaveFocus());
     expect(login).toHaveAttribute("href", "/login");
     expect(login).toHaveClass("btn", "primary");
     expect(document.querySelectorAll(".loginPanel > .btn.primary"))
       .toHaveLength(1);
-    expect(document.querySelectorAll(".loginPanel > *")).toHaveLength(2);
+    expect(document.querySelectorAll(".loginPanel > *")).toHaveLength(3);
+
+    resolveSession({ authenticated: false });
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
 
     await waitFor(() => expect(getSession).toHaveBeenCalledTimes(1));
     expect(navigate).not.toHaveBeenCalled();

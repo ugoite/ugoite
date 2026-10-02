@@ -199,6 +199,26 @@ test.describe("responsive login layout", () => {
     });
   });
 
+  test("REQ-FE-069: keeps login usable at the 320px effective width of 200% zoom", async ({ page }) => {
+    await installAuthConfig(page, []);
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.goto("/login");
+
+    const brand = page.getByRole("heading", { name: "Ugoite" });
+    const primary = page.locator(".loginPanel > .btn.primary");
+    await expect(brand).toBeVisible();
+    await expect(primary).toBeVisible();
+    await expect(primary).toHaveAccessibleName(/passkey/i);
+    await expectControlFits(primary, 320, 48);
+    await expect.poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth)
+    ).toBeLessThanOrEqual(320);
+    await page.screenshot({
+      path: path.join(screenshotDir, "login-effective-200-percent-320px.png"),
+      fullPage: true,
+    });
+  });
+
   test("REQ-FE-069: exposes loading and configuration failure with a keyboard retry", async ({ page }) => {
     let configRequests = 0;
     let releaseConfigFailure!: () => void;

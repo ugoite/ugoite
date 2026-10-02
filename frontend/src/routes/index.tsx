@@ -29,24 +29,20 @@ export default function IndexRoute() {
           <img class="brandMark" src="/brand/ugoite-mark.svg" alt="" />
           <strong>Ugoite</strong>
         </h1>
-        <Show
-          when={!checkingSession()}
-          fallback={
-            <p class="loginStatus" role="status" aria-live="polite">
-              {t("loginPage.checkingSession")}
-            </p>
-          }
-        >
-          <a
-            class="btn primary"
-            href="/login"
-            ref={(element) => {
-              queueMicrotask(() => element.focus());
-            }}
-          >
-            {t("nav.login")}
-          </a>
+        <Show when={checkingSession()}>
+          <p class="loginStatus" role="status" aria-live="polite">
+            {t("loginPage.checkingSession")}
+          </p>
         </Show>
+        <a
+          class="btn primary"
+          href="/login"
+          ref={(element) => {
+            queueMicrotask(() => element.focus());
+          }}
+        >
+          {t("nav.login")}
+        </a>
       </section>
     </main>
   );
