@@ -22,7 +22,7 @@ use std::time::Duration;
 use ugoite_domain::form::{
     sql_column_name, sql_relation_name, FieldType, FormDefinition, FormField,
 };
-use ugoite_domain::id::FormId;
+use ugoite_domain::id::{FieldId, FormId, RevisionId};
 pub use ugoite_domain::text::compute_word_count;
 use uuid::Uuid;
 
@@ -1841,6 +1841,164 @@ pub(crate) async fn query_form_entry_rows_authorized(
     )
     .await?;
     entry_rows_from_batches(form_name, form, &batches)
+}
+
+/// One current Entry with only the requested stable fields materialized.
+/// Composition listing uses this to avoid reading its potentially large YAML
+/// carrier while retaining the normal authorized current-Entry query path.
+#[derive(Debug, Clone)]
+pub(crate) struct AuthorizedProjectedEntryRow {
+    pub entry_id: String,
+    pub revision_id: RevisionId,
+    pub updated_at: f64,
+    pub tags: Vec<String>,
+    pub fields: BTreeMap<String, Value>,
+}
+
+pub(crate) struct FormProjectionPage<'a> {
+    pub checkpoint: SpaceCheckpoint,
+    pub forms: Vec<FormDefinition>,
+    pub form_id: FormId,
+    pub relation_scopes: &'a BTreeMap<String, EntryScope>,
+    pub field_ids: &'a [FieldId],
+    pub limit: usize,
+    pub offset: usize,
+}
+
+/// Reads an offset page from one exact Form snapshot through its current ACL
+/// scope. The provider materializes at most `limit + 1` projected rows; the
+/// extra row is used only to compute `has_more`.
+pub(crate) async fn query_form_projected_page_authorized(
+    op: &Operator,
+    ws_path: &str,
+    page: FormProjectionPage<'_>,
+) -> Result<(Vec<AuthorizedProjectedEntryRow>, bool)> {
+    let FormProjectionPage {
+        checkpoint,
+        forms,
+        form_id,
+        relation_scopes,
+        field_ids,
+        limit,
+        offset,
+    } = page;
+    if limit == 0 || limit >= crate::MAX_NORMAL_READ_ROWS {
+        return Err(anyhow!("projected Entry page limit is out of range"));
+    }
+    let form = forms
+        .iter()
+        .find(|form| form.id == form_id)
+        .with_context(|| format!("missing Form definition {form_id}"))?;
+    let relation_scope = relation_scopes
+        .get(&form.name.to_ascii_lowercase())
+        .with_context(|| format!("Form {} is not authorized for reading", form.name))?;
+    if relation_scope == &EntryScope::Only(BTreeSet::new()) {
+        return Ok((Vec::new(), false));
+    }
+
+    let selected_fields = field_ids
+        .iter()
+        .map(|field_id| {
+            form.fields
+                .iter()
+                .find(|field| field.id == *field_id)
+                .with_context(|| format!("Form {} does not define field {field_id:?}", form.name))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let page_limit = limit
+        .checked_add(1)
+        .context("projected Entry page limit is too large")?;
+    let context = datafusion_sql_context_with_form_definitions(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        Some(checkpoint),
+        BTreeSet::new(),
+        page_limit,
+        true,
+        forms.clone(),
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let mut columns = vec![
+        "_ugoite_id".to_string(),
+        "_ugoite_revision_id".to_string(),
+        "_ugoite_updated_at".to_string(),
+        "_ugoite_tags".to_string(),
+    ];
+    columns.extend(
+        selected_fields
+            .iter()
+            .map(|field| sql_column_name(field.id)),
+    );
+    let projection = columns
+        .iter()
+        .map(|column| quote_identifier(column))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let relation = quote_identifier(&sql_relation_name(form_id));
+    let sql = format!(
+        "SELECT {projection} FROM {relation} ORDER BY {} ASC",
+        quote_identifier("_ugoite_id")
+    );
+    let (_, batches, has_order) = context
+        .execute_stateless_page(&sql, HashMap::new(), offset, page_limit)
+        .await
+        .map_err(map_sql_error)?;
+    if !has_order {
+        return Err(anyhow!(
+            "projected Entry page query has no deterministic order"
+        ));
+    }
+
+    let mut rows = Vec::new();
+    for batch in &batches {
+        for row in 0..batch.num_rows() {
+            let mut fields = BTreeMap::new();
+            for field in &selected_fields {
+                let column = sql_column_name(field.id);
+                let array = batch
+                    .column_by_name(&column)
+                    .with_context(|| format!("Entry projection is missing {column}"))?;
+                let value = crate::field_value_at(
+                    array.as_ref(),
+                    row,
+                    &field.field_type,
+                    field.list_item.as_ref(),
+                )?
+                .unwrap_or(ugoite_domain::entry::FieldValue::Null);
+                fields.insert(
+                    field.name.clone(),
+                    serde_json::to_value(value).context("encode projected Entry field")?,
+                );
+            }
+            let revision_id = Uuid::parse_str(&required_uuid_string_column(
+                batch,
+                row,
+                "_ugoite_revision_id",
+                "revision ID",
+            )?)
+            .map(RevisionId::from)
+            .context("Entry projection returned an invalid revision ID")?;
+            rows.push(AuthorizedProjectedEntryRow {
+                entry_id: required_string_column(batch, row, "_ugoite_id", "external ID")?,
+                revision_id,
+                updated_at: required_timestamp_seconds_column(
+                    batch,
+                    row,
+                    "_ugoite_updated_at",
+                    "updated_at",
+                )?,
+                tags: required_string_list_column(batch, row, "_ugoite_tags", "tags")?,
+                fields,
+            });
+        }
+    }
+    let has_more = rows.len() > limit;
+    rows.truncate(limit);
+    Ok((rows, has_more))
 }
 
 #[allow(clippy::too_many_arguments)]

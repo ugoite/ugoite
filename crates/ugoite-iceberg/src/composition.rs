@@ -23,10 +23,14 @@ use ugoite_domain::id::{validate_entry_id, validate_revision_id, EntryId, FieldI
 use uuid::Uuid;
 
 pub const COMPOSITION_HISTORY_MAX_PAGE_SIZE: usize = 100;
+pub const COMPOSITION_LIST_MAX_PAGE_SIZE: usize = 100;
 
 #[cfg(test)]
 #[path = "composition/authorized_raw_read_tests.rs"]
 mod authorized_raw_read_tests;
+#[cfg(test)]
+#[path = "composition/list_tests.rs"]
+mod list_tests;
 
 /// An inspectable stored Composition revision. `revision.values` retains the
 /// stable FieldId keyed carrier while `fields` provides its historical Form
@@ -52,6 +56,28 @@ pub struct RawCompositionHistoryPage {
     pub entry_id: EntryId,
     pub revisions: Vec<RawCompositionRevision>,
     pub total: usize,
+    pub offset: usize,
+    pub limit: usize,
+    pub has_more: bool,
+}
+
+/// Bounded list projection for one current Composition Entry. The `spec`
+/// carrier is intentionally omitted so Home/list surfaces do not materialize
+/// or transport full YAML documents.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RawCompositionListItem {
+    pub entry_id: String,
+    pub revision_id: RevisionId,
+    pub updated_at: f64,
+    pub name: Option<Value>,
+    pub kind: Option<Value>,
+    pub format_version: Option<Value>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RawCompositionListPage {
+    pub items: Vec<RawCompositionListItem>,
     pub offset: usize,
     pub limit: usize,
     pub has_more: bool,
@@ -376,6 +402,97 @@ pub(crate) fn validate_history_page(limit: usize) -> Result<()> {
         .into());
     }
     Ok(())
+}
+
+pub(crate) fn validate_list_page(limit: usize, offset: usize) -> Result<()> {
+    if !(1..=COMPOSITION_LIST_MAX_PAGE_SIZE).contains(&limit) {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            format!(
+                "Composition list limit must be between 1 and {COMPOSITION_LIST_MAX_PAGE_SIZE}"
+            ),
+        )
+        .into());
+    }
+    if offset.checked_add(limit + 1).is_none() {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "Composition list offset is out of range",
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// Reads one deterministic, current Composition page without creating or
+/// repairing its Registry Form. The caller supplies current ACL scopes.
+pub(crate) async fn read_composition_page(
+    operator: &Operator,
+    workspace_path: &str,
+    entry_scope: EntryScope,
+    limit: usize,
+    offset: usize,
+) -> Result<RawCompositionListPage> {
+    validate_list_page(limit, offset)?;
+    let workspace =
+        crate::iceberg_store::native_workspace_read_only(operator, workspace_path).await?;
+    let publication = workspace.current_publication().await?;
+    let checkpoint = workspace.resolve_publication(&publication).await?;
+    let forms = workspace.forms_at_publication(&publication).await?;
+    let Some(form) = registry_form_at_publication(forms.clone())? else {
+        return Ok(RawCompositionListPage {
+            items: Vec::new(),
+            offset,
+            limit,
+            has_more: false,
+        });
+    };
+    let field_id = |name: &str| {
+        form.fields
+            .iter()
+            .find(|field| field.name == name)
+            .map(|field| field.id)
+            .ok_or_else(|| registry_conflict("registry is missing a required carrier field"))
+    };
+    let projection = [
+        field_id("name")?,
+        field_id("kind")?,
+        field_id("format_version")?,
+    ];
+    let form_id = form.id;
+    let scopes = BTreeMap::from([(form.name.to_ascii_lowercase(), entry_scope)]);
+    let (rows, has_more) = crate::index::query_form_projected_page_authorized(
+        operator,
+        workspace_path,
+        crate::index::FormProjectionPage {
+            checkpoint,
+            forms,
+            form_id,
+            relation_scopes: &scopes,
+            field_ids: &projection,
+            limit,
+            offset,
+        },
+    )
+    .await?;
+    let items = rows
+        .into_iter()
+        .map(|row| RawCompositionListItem {
+            entry_id: row.entry_id,
+            revision_id: row.revision_id,
+            updated_at: row.updated_at,
+            name: row.fields.get("name").cloned(),
+            kind: row.fields.get("kind").cloned(),
+            format_version: row.fields.get("format_version").cloned(),
+            tags: row.tags,
+        })
+        .collect();
+    Ok(RawCompositionListPage {
+        items,
+        offset,
+        limit,
+        has_more,
+    })
 }
 
 /// Reads the current Composition revision without creating or repairing its
