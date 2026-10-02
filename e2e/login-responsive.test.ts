@@ -201,21 +201,28 @@ test.describe("responsive login layout", () => {
 
   test("REQ-FE-069: exposes loading and configuration failure with a keyboard retry", async ({ page }) => {
     let configRequests = 0;
-    await page.route("**/api/auth/config", (route) => {
+    let releaseConfigFailure!: () => void;
+    const configFailure = new Promise<void>((resolve) => {
+      releaseConfigFailure = resolve;
+    });
+    let signalConfigRequest!: () => void;
+    const firstConfigRequest = new Promise<void>((resolve) => {
+      signalConfigRequest = resolve;
+    });
+    await page.route("**/api/auth/config", async (route) => {
       configRequests++;
       if (configRequests === 1) {
-        return new Promise<void>((resolve) => setTimeout(resolve, 200))
-          .then(() =>
-            route.fulfill({
-              status: 503,
-              contentType: "application/json",
-              body: JSON.stringify({
-                message: "Authentication configuration unavailable",
-              }),
-            })
-          );
+        signalConfigRequest();
+        await configFailure;
+        return await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({
+            message: "Authentication configuration unavailable",
+          }),
+        });
       }
-      return route.fulfill({
+      return await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
           status: "active",
@@ -231,13 +238,16 @@ test.describe("responsive login layout", () => {
     await page.goto("/login");
 
     await expect(page.getByRole("heading", { name: "Ugoite" })).toBeVisible();
+    await firstConfigRequest;
     await expect(page.getByRole("status")).toHaveText("Loading…");
+    releaseConfigFailure();
     await expect(page.getByRole("alert")).toHaveText(
       "Sign-in options are unavailable.",
     );
     const retry = page.locator(".loginPanel > .btn.primary");
     await expect(retry).toHaveAccessibleName("Retry");
-    await page.keyboard.press("Tab");
+    await page.getByRole("link", { name: /passkey/i }).focus();
+    await page.keyboard.press("Shift+Tab");
     await expect(retry).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.locator(".loginPanel > .btn.primary"))
