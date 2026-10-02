@@ -15,10 +15,11 @@ pub mod composition;
 pub use composition::{
     CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
     CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
-    CompositionParameterDefinition, CompositionParameterFormat, CompositionParameterType,
-    CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
-    CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedSource,
-    CompositionRevisionMetadata, CompositionRevisionReference,
+    CompositionListItem, CompositionListPage, CompositionParameterDefinition,
+    CompositionParameterFormat, CompositionParameterType, CompositionRawRevision,
+    CompositionResolveDiagnostic, CompositionResolvePlan, CompositionResolveRequest,
+    CompositionResolveResponse, CompositionResolvedSource, CompositionRevisionMetadata,
+    CompositionRevisionReference,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -81,6 +82,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "entry.revision",
     "entry.restore",
     "composition.lint",
+    "composition.list",
     "composition.get",
     "composition.history",
     "composition.resolve",
@@ -992,6 +994,30 @@ pub fn prepare_request(
                 vec!["compositions".into(), "lint".into()],
                 vec![],
             ),
+            "composition.list" => {
+                let mut query = Vec::new();
+                if let Some(limit) = optional_u64(operation, args, "limit")? {
+                    if !(1..=100).contains(&limit) {
+                        return Err(ApiProtocolError::invalid_arguments(
+                            operation,
+                            "limit must be an integer between 1 and 100",
+                        ));
+                    }
+                    query.push(("limit".into(), limit.to_string()));
+                }
+                if let Some(offset) = optional_u64(operation, args, "offset")? {
+                    query.push(("offset".into(), offset.to_string()));
+                }
+                (
+                    OperationSpec::get("Failed to list Compositions"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "compositions".into(),
+                    ],
+                    query,
+                )
+            }
             "composition.get" => {
                 let mut path = vec![
                     "spaces".into(),
@@ -1851,6 +1877,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to lint Composition",
             RequestBodyKind::Json,
         ),
+        "composition.list" => (
+            HttpMethod::Get,
+            "Failed to list Compositions",
+            RequestBodyKind::None,
+        ),
         "composition.get" => (
             HttpMethod::Get,
             "Failed to get Composition",
@@ -2484,6 +2515,16 @@ mod tests {
 
     #[test]
     fn composition_operations_prepare_and_decode_through_the_portable_protocol() {
+        let list = prepare_request(
+            "composition.list",
+            &json!({"space_id": "demo", "limit": 25, "offset": 50}),
+            None,
+        )
+        .expect("Composition list page request");
+        assert_eq!(list.method, HttpMethod::Get);
+        assert_eq!(list.body_kind, RequestBodyKind::None);
+        assert_eq!(list.path, "/spaces/demo/compositions?limit=25&offset=50");
+
         let latest = prepare_request(
             "composition.get",
             &json!({"space_id": "team/東京", "composition_id": "comp-1"}),
@@ -2535,6 +2576,14 @@ mod tests {
                 None,
             )
             .expect_err("Composition history page size is bounded");
+            assert!(error.to_string().contains("between 1 and 100"));
+
+            let error = prepare_request(
+                "composition.list",
+                &json!({"space_id": "demo", "limit": limit}),
+                None,
+            )
+            .expect_err("Composition list page size is bounded");
             assert!(error.to_string().contains("between 1 and 100"));
         }
 
@@ -2717,7 +2766,29 @@ mod tests {
             serde_json::to_value(&history_page_dto).expect("serialize history page DTO"),
             history_page
         );
+        let list_page = json!({
+            "items": [{
+                "composition_id": "01900000-0000-7000-8000-000000000002",
+                "revision_id": "01900000-0000-7000-8000-000000000003",
+                "updated_at": 1720000000.5,
+                "name": "Monthly expenses",
+                "kind": "dashboard",
+                "format_version": 1,
+                "tags": ["finance"]
+            }],
+            "offset": 25,
+            "limit": 25,
+            "has_more": true
+        });
+        let list_page_dto: CompositionListPage =
+            serde_json::from_value(list_page.clone()).expect("Composition list DTO");
+        assert_eq!(
+            serde_json::to_value(&list_page_dto).expect("serialize Composition list DTO"),
+            list_page
+        );
+        assert!(list_page["items"][0].get("spec").is_none());
         for (operation, body, expected) in [
+            ("composition.list", list_page.to_string(), list_page),
             ("composition.get", raw_revision.to_string(), raw_revision),
             (
                 "composition.history",

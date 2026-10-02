@@ -46,8 +46,8 @@ use tower_http::{
 use ugoite_api_client::{
     CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
     CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
-    CompositionLintResponse, CompositionLintValue, CompositionParameterDefinition,
-    CompositionParameterFormat as ApiCompositionParameterFormat,
+    CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
+    CompositionParameterDefinition, CompositionParameterFormat as ApiCompositionParameterFormat,
     CompositionParameterType as ApiCompositionParameterType, CompositionRawRevision,
     CompositionResolveDiagnostic, CompositionResolvePlan, CompositionResolveRequest,
     CompositionResolveResponse, CompositionResolvedSource, CompositionRevisionMetadata,
@@ -81,7 +81,10 @@ use ugoite_iceberg::{
     },
     composition::{
         RawCompositionHistoryPage as StoredCompositionHistoryPage,
+        RawCompositionListItem as StoredCompositionListItem,
+        RawCompositionListPage as StoredCompositionListPage,
         RawCompositionRevision as StoredCompositionRawRevision, COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+        COMPOSITION_LIST_MAX_PAGE_SIZE,
     },
     form, saved_sql,
     service::{
@@ -1745,6 +1748,7 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/entries/{entry_id}/restore",
             post(restore_entry),
         )
+        .route("/spaces/{space_id}/compositions", get(list_compositions))
         .route(
             "/spaces/{space_id}/compositions/{entry_id}",
             get(get_composition),
@@ -10982,6 +10986,40 @@ async fn entry_revision(
     Ok(Json(revision))
 }
 
+async fn list_compositions(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Query(query): Query<CompositionListQuery>,
+) -> ApiResult<Json<CompositionListPage>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let limit = query.limit.unwrap_or(COMPOSITION_LIST_MAX_PAGE_SIZE);
+    if !(1..=COMPOSITION_LIST_MAX_PAGE_SIZE).contains(&limit) {
+        return Err(ApiError::from_core(
+            AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                format!(
+                    "Composition list limit must be between 1 and {COMPOSITION_LIST_MAX_PAGE_SIZE}"
+                ),
+            )
+            .into(),
+        ));
+    }
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let page = state
+        .service
+        .list_compositions_authorized_for_principals_page(
+            &space_id,
+            &principals,
+            limit,
+            query.offset.unwrap_or(0),
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+    Ok(Json(composition_raw_list_page_response(page)))
+}
+
 async fn get_composition(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
@@ -11478,8 +11516,39 @@ fn composition_raw_history_page_response(
     }
 }
 
+fn composition_raw_list_page_response(raw: StoredCompositionListPage) -> CompositionListPage {
+    CompositionListPage {
+        items: raw
+            .items
+            .into_iter()
+            .map(composition_raw_list_item_response)
+            .collect(),
+        offset: raw.offset,
+        limit: raw.limit,
+        has_more: raw.has_more,
+    }
+}
+
+fn composition_raw_list_item_response(raw: StoredCompositionListItem) -> CompositionListItem {
+    CompositionListItem {
+        composition_id: raw.entry_id,
+        revision_id: raw.revision_id.to_string(),
+        updated_at: raw.updated_at,
+        name: raw.name,
+        kind: raw.kind,
+        format_version: raw.format_version,
+        tags: raw.tags,
+    }
+}
+
 #[derive(Default, Deserialize)]
 struct CompositionHistoryQuery {
+    limit: Option<usize>,
+    offset: Option<usize>,
+}
+
+#[derive(Default, Deserialize)]
+struct CompositionListQuery {
     limit: Option<usize>,
     offset: Option<usize>,
 }
@@ -13895,6 +13964,7 @@ mod authentication_regression_tests {
                 "/spaces/{space_id}/entries/{entry_id}/history",
                 get(entry_history),
             )
+            .route("/spaces/{space_id}/compositions", get(list_compositions))
             .route(
                 "/spaces/{space_id}/compositions/{entry_id}",
                 get(get_composition),
@@ -13950,6 +14020,142 @@ mod authentication_regression_tests {
         assert!(!value.contains("://"));
         assert!(!value.contains("change:"));
         assert!(!value.contains("spaces/"));
+    }
+
+    #[tokio::test]
+    async fn composition_list_returns_bounded_acl_authorized_summary_pages() -> anyhow::Result<()> {
+        use ugoite_domain::composition::{CompositionDocument, CompositionKind, CompositionSpec};
+
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-list-{}",
+            Uuid::now_v7()
+        ))?;
+        let owner_id = Uuid::from_u128(351101);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-list", owner_id, "List test")
+            .await?
+            .to_string();
+        let document = |name: &str| CompositionDocument {
+            format_version: 1,
+            name: name.to_string(),
+            kind: CompositionKind::Dashboard,
+            spec: CompositionSpec {
+                parameters: Vec::new(),
+                sources: Vec::new(),
+                components: Vec::new(),
+                sections: Vec::new(),
+            },
+        };
+        for (name, tag) in [("Alpha", "alpha"), ("Beta", "beta")] {
+            state
+                .service
+                .save_composition_authorized_for_principals(
+                    &space_id,
+                    ugoite_iceberg::composition::CompositionSaveRequest {
+                        entry_id: None,
+                        base_revision_id: None,
+                        document: document(name),
+                        tags: Some(vec![tag.to_string()]),
+                    },
+                    &owner_id.to_string(),
+                    &[owner_id],
+                )
+                .await?;
+        }
+
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let owner_route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(owner_id, space_uid),
+        );
+        let list_page = |limit, offset| {
+            Request::get(format!(
+                "/spaces/{space_id}/compositions?limit={limit}&offset={offset}"
+            ))
+            .body(Body::empty())
+        };
+        let (first_status, first) = route_json(owner_route.clone(), list_page(1, 0)?).await?;
+        let (second_status, second) = route_json(owner_route.clone(), list_page(1, 1)?).await?;
+        assert_eq!(first_status, StatusCode::OK, "{first}");
+        assert_eq!(second_status, StatusCode::OK, "{second}");
+        assert_eq!(first["offset"], 0);
+        assert_eq!(first["limit"], 1);
+        assert_eq!(first["has_more"], true);
+        assert_eq!(second["offset"], 1);
+        assert_eq!(second["limit"], 1);
+        assert_eq!(second["has_more"], false);
+        assert!(first.get("total").is_none());
+        assert_eq!(first["items"].as_array().map(Vec::len), Some(1));
+        assert_eq!(second["items"].as_array().map(Vec::len), Some(1));
+        for item in [&first["items"][0], &second["items"][0]] {
+            assert!(item["composition_id"].as_str().is_some());
+            assert!(item["revision_id"].as_str().is_some());
+            assert!(item["updated_at"].as_f64().is_some());
+            assert_eq!(item["kind"], "dashboard");
+            assert_eq!(item["format_version"], 1);
+            assert!(item.get("spec").is_none());
+        }
+        let mut names = vec![
+            first["items"][0]["name"].as_str().unwrap().to_string(),
+            second["items"][0]["name"].as_str().unwrap().to_string(),
+        ];
+        names.sort();
+        assert_eq!(names, ["Alpha", "Beta"]);
+        let invalid_limit = route_json(
+            owner_route,
+            Request::get(format!("/spaces/{space_id}/compositions?limit=101"))
+                .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(invalid_limit.0, StatusCode::UNPROCESSABLE_ENTITY);
+
+        let viewer_id = Uuid::from_u128(351102);
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                owner_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "List viewer".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        Authorizer::new(state.service.operator().clone())
+            .set_policy(
+                &space_id,
+                owner_id,
+                &ResourceRef {
+                    kind: ResourceKind::Form,
+                    id: ugoite_iceberg::composition::COMPOSITION_REGISTRY_FORM_NAME.to_string(),
+                    parent: None,
+                },
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
+        let viewer_route =
+            reversible_knowledge_route(state, reversible_knowledge_identity(viewer_id, space_uid));
+        let (denied_status, denied) = route_json(
+            viewer_route,
+            Request::get(format!("/spaces/{space_id}/compositions?limit=1")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(denied_status, StatusCode::OK, "{denied}");
+        assert_eq!(denied["items"], json!([]));
+        assert_eq!(denied["has_more"], false);
+        assert_eq!(denied["offset"], 0);
+        assert_eq!(denied["limit"], 1);
+        assert!(!denied.to_string().contains("Alpha"));
+        assert!(!denied.to_string().contains("Beta"));
+        Ok(())
     }
 
     #[tokio::test]
