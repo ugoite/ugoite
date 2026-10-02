@@ -9,14 +9,16 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use ugoite_api_client::{
     CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
-    CompositionEntryMetadata, CompositionLintError, CompositionLintResponse, CompositionLintValue,
-    CompositionListItem, CompositionListPage, CompositionRawRevision, CompositionRevisionMetadata,
+    CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
+    CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
+    CompositionRawRevision, CompositionRevisionMetadata,
 };
 use ugoite_domain::composition::{
     canonicalize_composition_yaml, CompositionDiagnosticCode, MAX_COMPOSITION_YAML_BYTES,
 };
 
 const COMPOSITION_LIST_PAGE_SIZE: usize = 100;
+const COMPOSITION_HISTORY_PAGE_SIZE: usize = 100;
 
 #[derive(Args)]
 pub struct CompositionCmd {
@@ -37,6 +39,26 @@ pub enum CompositionSubCmd {
             long,
             value_name = "ITEMS",
             help = "Number of items to skip (default: 0)"
+        )]
+        offset: Option<usize>,
+    },
+    /// Read one bounded page of raw revision history for a saved Composition
+    #[command(
+        long_about = "Read the append-only raw revision history for a saved Composition in the selected local Core or remote Space. The default page contains up to 100 revisions; use --limit and --offset to select another page."
+    )]
+    History {
+        #[arg(value_name = "COMPOSITION_ID")]
+        composition_id: String,
+        #[arg(
+            long,
+            value_name = "REVISIONS",
+            help = "Page size (1–100; default: 100)"
+        )]
+        limit: Option<usize>,
+        #[arg(
+            long,
+            value_name = "REVISIONS",
+            help = "Number of revisions to skip (default: 0)"
         )]
         offset: Option<usize>,
     },
@@ -72,6 +94,22 @@ pub async fn run(
             let page = list_compositions(
                 &target,
                 limit.unwrap_or(COMPOSITION_LIST_PAGE_SIZE),
+                offset.unwrap_or(0),
+            )
+            .await?;
+            crate::output::print_json(&page);
+        }
+        CompositionSubCmd::History {
+            composition_id,
+            limit,
+            offset,
+        } => {
+            let target =
+                resolve_command_target(explicit_config, context_override, "composition history")?;
+            let page = read_composition_history(
+                &target,
+                &composition_id,
+                limit.unwrap_or(COMPOSITION_HISTORY_PAGE_SIZE),
                 offset.unwrap_or(0),
             )
             .await?;
@@ -147,6 +185,61 @@ fn local_composition_list_page_to_api(
                 tags: item.tags,
             })
             .collect(),
+        offset: page.offset,
+        limit: page.limit,
+        has_more: page.has_more,
+    }
+}
+
+async fn read_composition_history(
+    target: &SpaceTarget,
+    composition_id: &str,
+    limit: usize,
+    offset: usize,
+) -> Result<CompositionHistoryPage> {
+    match target {
+        SpaceTarget::Core { root, space_id } => {
+            let service =
+                ugoite_iceberg::service::UgoiteService::new_without_background_refresh(root)?;
+            let raw = service
+                .composition_history_local_page(space_id, composition_id, limit, offset)
+                .await?;
+            Ok(local_composition_history_page_to_api(raw))
+        }
+        SpaceTarget::Remote { space_uid, .. } => {
+            let arguments = composition_history_arguments(space_uid, composition_id, limit, offset);
+            let result =
+                http::execute_for_target(target, "composition.history", arguments, None).await?;
+            serde_json::from_value(result).context("decode Composition history response")
+        }
+    }
+}
+
+fn composition_history_arguments(
+    space_id: &str,
+    composition_id: &str,
+    limit: usize,
+    offset: usize,
+) -> Value {
+    json!({
+        "space_id": space_id,
+        "composition_id": composition_id,
+        "limit": limit,
+        "offset": offset,
+    })
+}
+
+fn local_composition_history_page_to_api(
+    page: ugoite_iceberg::composition::RawCompositionHistoryPage,
+) -> CompositionHistoryPage {
+    CompositionHistoryPage {
+        entry_id: page.entry_id.to_string(),
+        revisions: page
+            .revisions
+            .into_iter()
+            .map(local_raw_revision_to_api)
+            .collect(),
+        total: page.total,
         offset: page.offset,
         limit: page.limit,
         has_more: page.has_more,
@@ -330,9 +423,9 @@ fn diagnostic_response(code: CompositionDiagnosticCode) -> CompositionLintRespon
 #[cfg(test)]
 mod tests {
     use super::{
-        composition_get_arguments, composition_list_arguments, lint_file, lint_yaml_bytes,
-        list_compositions, local_raw_revision_to_api, raw_spec_output, read_composition,
-        RawSpecOutput,
+        composition_get_arguments, composition_history_arguments, composition_list_arguments,
+        lint_file, lint_yaml_bytes, list_compositions, local_raw_revision_to_api, raw_spec_output,
+        read_composition, read_composition_history, RawSpecOutput,
     };
     use crate::cli_config::SpaceTarget;
     use anyhow::Result;
@@ -340,8 +433,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::io::Write;
     use ugoite_api_client::{
-        prepare_request, CompositionDiagnosticCode, CompositionListPage, HttpMethod,
-        RequestBodyKind,
+        prepare_request, CompositionDiagnosticCode, CompositionHistoryPage, CompositionListPage,
+        HttpMethod, RequestBodyKind,
     };
     use ugoite_core::error::{AppError, ErrorCode};
     use ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES;
@@ -722,6 +815,193 @@ mod tests {
         assert!(serde_json::to_value(&page)?["items"][0]
             .get("spec")
             .is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn history_reads_bounded_local_pages_with_raw_revision_data() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let root_path = root.path().to_string_lossy().into_owned();
+        let service =
+            ugoite_iceberg::service::UgoiteService::new_without_background_refresh(&root_path)?;
+        let owner = Uuid::from_u128(2_201);
+        let space_id = service
+            .create_space_for_principal("composition-history-cli", owner, "Owner")
+            .await?
+            .to_string();
+        let document = ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE)
+            .expect("shared Composition fixture parses")
+            .document;
+        let first = service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: document.clone(),
+                    tags: Some(vec!["first".to_string()]),
+                },
+                "Owner",
+                &[owner],
+            )
+            .await?;
+        let second = service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: Some(first.entry_id),
+                    base_revision_id: Some(first.revision_id),
+                    document,
+                    tags: Some(vec!["second".to_string()]),
+                },
+                "Owner",
+                &[owner],
+            )
+            .await?;
+        let target = SpaceTarget::Core {
+            root: root_path,
+            space_id,
+        };
+
+        let first_page =
+            read_composition_history(&target, &first.entry_id.to_string(), 1, 0).await?;
+        let second_page =
+            read_composition_history(&target, &first.entry_id.to_string(), 1, 1).await?;
+
+        assert_eq!(first_page.entry_id, first.entry_id.to_string());
+        assert_eq!(first_page.total, 2);
+        assert_eq!(first_page.offset, 0);
+        assert_eq!(first_page.limit, 1);
+        assert!(first_page.has_more);
+        assert_eq!(first_page.revisions.len(), 1);
+        assert_eq!(second_page.total, 2);
+        assert_eq!(second_page.offset, 1);
+        assert_eq!(second_page.limit, 1);
+        assert!(!second_page.has_more);
+        assert_eq!(second_page.revisions.len(), 1);
+        let returned_revisions = [
+            first_page.revisions[0].revision.revision_id.clone(),
+            second_page.revisions[0].revision.revision_id.clone(),
+        ];
+        assert!(returned_revisions.contains(&first.revision_id.to_string()));
+        assert!(returned_revisions.contains(&second.revision_id.to_string()));
+        assert_eq!(
+            first_page.revisions[0].fields["spec"],
+            MONTHLY_EXPENSE_CANONICAL
+        );
+        assert!(serde_json::to_value(&first_page)?["revisions"][0]["fields"]
+            .get("spec")
+            .is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn history_prepares_a_bounded_page_request_through_the_portable_protocol() {
+        let request = prepare_request(
+            "composition.history",
+            &composition_history_arguments("demo", "comp-1", 25, 50),
+            None,
+        )
+        .expect("Composition history request");
+
+        assert_eq!(request.method, HttpMethod::Get);
+        assert_eq!(request.body_kind, RequestBodyKind::None);
+        assert_eq!(request.body, None);
+        assert_eq!(
+            request.path,
+            "/spaces/demo/compositions/comp-1/history?limit=25&offset=50"
+        );
+    }
+
+    #[tokio::test]
+    async fn history_remote_request_decodes_and_returns_the_portable_page() -> Result<()> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let page_json = json!({
+            "entry_id": "entry-1",
+            "revisions": [{
+                "revision": {
+                    "form_id": "form-1",
+                    "entry_id": "entry-1",
+                    "revision_id": "revision-2",
+                    "parent_revision_id": "revision-1",
+                    "entry_version": 2,
+                    "change_id": "change-2",
+                    "expected_version": 1,
+                    "operation": "upsert",
+                    "committed_at_micros": 12,
+                    "author_id": "owner",
+                    "form_version": 1,
+                    "source_kind": "core",
+                    "source_id": null,
+                    "entry": {
+                        "external_id": "entry-1",
+                        "tags": ["finance"],
+                        "created_at_micros": 1,
+                        "updated_at_micros": 12,
+                        "updated_by": "owner",
+                        "integrity": {"checksum": "", "signature": ""},
+                        "deleted": false,
+                        "deleted_at_micros": null,
+                        "deleted_by": null,
+                        "restored_from": null
+                    },
+                    "extra_attributes": {},
+                    "extension_metadata": {}
+                },
+                "fields": {
+                    "name": "Quarterly report",
+                    "spec": "format_version: 1\nname: Quarterly report"
+                },
+                "unmapped_field_values": {}
+            }],
+            "total": 2,
+            "offset": 50,
+            "limit": 25,
+            "has_more": true
+        });
+        let response_body = page_json.to_string();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept CLI request");
+            let mut request = [0_u8; 4096];
+            let bytes_read = stream.read(&mut request).await.expect("read CLI request");
+            let request = String::from_utf8_lossy(&request[..bytes_read]).to_string();
+            let body = response_body;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(), body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .await
+                .expect("write CLI response");
+            request
+        });
+
+        let target = SpaceTarget::Remote {
+            base: format!("http://{address}"),
+            space_uid: "demo".to_string(),
+            connection: "test".to_string(),
+            credential: None,
+        };
+        let page = read_composition_history(&target, "comp-1", 25, 50).await?;
+        let request = server.await.expect("mock server completes");
+
+        assert!(request.starts_with(
+            "GET /spaces/demo/compositions/comp-1/history?limit=25&offset=50 HTTP/1.1\r\n"
+        ));
+        assert_eq!(
+            page,
+            serde_json::from_value::<CompositionHistoryPage>(page_json.clone())?
+        );
+        assert_eq!(page.entry_id, "entry-1");
+        assert_eq!(page.revisions[0].fields["name"], "Quarterly report");
+        assert_eq!(
+            page.revisions[0].fields["spec"],
+            "format_version: 1\nname: Quarterly report"
+        );
         Ok(())
     }
 }

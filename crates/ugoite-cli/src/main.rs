@@ -291,6 +291,45 @@ mod tests {
     }
 
     #[test]
+    fn composition_history_accepts_bounded_page_options_without_becoming_a_write() {
+        let defaults = Cli::try_parse_from(["ugoite", "composition", "history", "composition-1"])
+            .expect("Composition history command");
+        assert!(!defaults.is_mutation_command());
+        assert!(matches!(
+            defaults.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::History {
+                    composition_id,
+                    limit: None,
+                    offset: None,
+                }
+            }) if composition_id == "composition-1"
+        ));
+
+        let paged = Cli::try_parse_from([
+            "ugoite",
+            "composition",
+            "history",
+            "composition-1",
+            "--limit",
+            "25",
+            "--offset",
+            "50",
+        ])
+        .expect("Composition history paging options");
+        assert!(matches!(
+            paged.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::History {
+                    composition_id,
+                    limit: Some(25),
+                    offset: Some(50),
+                }
+            }) if composition_id == "composition-1"
+        ));
+    }
+
+    #[test]
     fn composition_inspect_accepts_exact_revision_and_raw_output_without_becoming_a_write() {
         let cli = Cli::try_parse_from([
             "ugoite",

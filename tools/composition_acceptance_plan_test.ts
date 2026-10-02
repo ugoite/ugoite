@@ -181,6 +181,10 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
     "crates/ugoite-cli/src/commands/composition.rs#test:composition_core_and_remote_outputs_preserve_diagnostic_codes",
     "crates/ugoite-cli/src/commands/composition.rs#test:list_reads_bounded_local_pages_without_loading_specs",
     "crates/ugoite-cli/src/commands/composition.rs#test:list_remote_request_decodes_and_returns_the_portable_page",
+    "crates/ugoite-cli/src/commands/composition.rs#test:history_reads_bounded_local_pages_with_raw_revision_data",
+    "crates/ugoite-cli/src/commands/composition.rs#test:history_prepares_a_bounded_page_request_through_the_portable_protocol",
+    "crates/ugoite-cli/src/commands/composition.rs#test:history_remote_request_decodes_and_returns_the_portable_page",
+    "crates/ugoite-cli/src/main.rs#test:composition_history_accepts_bounded_page_options_without_becoming_a_write",
   ],
   B5: [
     "frontend/src/lib/composition-api.ts#test:composition_query_handle_discards_stale_response_state_updates",
