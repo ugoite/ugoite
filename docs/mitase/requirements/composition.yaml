@@ -79,6 +79,10 @@ requirements:
         kind: behavior
         statement: Composition list, get, resolve, and source execution stay within the existing current-authorization boundaries.
         governed_by: [POL-011#rule.governance]
+      - id: concealed-unavailable-references
+        kind: behavior
+        statement: Missing and denied Composition reads use the same caller-visible generic error; within an authorized Composition, missing and denied source Form or exact Saved SQL references use the same source_unavailable diagnostic without source identifiers or metadata, and field-level schema diagnostics require an authorized source Form read.
+        governed_by: [POL-011#rule.governance]
   - id: REQ-COMP-005
     title: Recoverable invalid or unsupported Compositions
     description: Unsupported versions and broken references may prevent execution but do not remove raw inspection, export, or history access.

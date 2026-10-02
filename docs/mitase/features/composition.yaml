@@ -31,6 +31,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-004#criterion.used-field-fingerprint
               - kind: documents
+                anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+              - kind: documents
                 anchor: REQ-COMP-005#criterion.raw-inspection
               - kind: documents
                 anchor: REQ-COMP-006#criterion.work-state-is-transient

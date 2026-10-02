@@ -4,6 +4,7 @@
 pub mod change;
 pub mod change_history;
 pub mod checkpoint;
+pub mod composition;
 pub mod derived_relation;
 pub mod entry;
 pub mod form;

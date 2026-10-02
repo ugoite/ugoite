@@ -16,26 +16,28 @@ spec:
       kind: entry_query
       form_id: "00000000-0000-7000-8000-000000000010"
       field_schema:
-        - field_id: 10
+        - field_id: 100
           field_type: date
-        - field_id: 11
+        - field_id: 101
           field_type: string
-        - field_id: 12
+        - field_id: 102
           field_type: double
       query:
         filters:
-          - field_id: 10
+          - field_id: 100
             operator: gte
             value:
               parameter: month_start
-          - field_id: 10
+          - field_id: 100
             operator: lt
             value:
               parameter: month_end
         sort:
-          - field_id: 10
+          - field_id: 100
             direction: desc
-        projection: [10, 11, 12]
+        projection:
+          kind: fields
+          fields: [100, 101, 102]
     - id: month_total
       kind: saved_sql
       entry_id: "00000000-0000-7000-8000-000000000020"
