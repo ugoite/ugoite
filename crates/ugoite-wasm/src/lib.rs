@@ -542,6 +542,9 @@ mod tests {
 
     const MONTHLY_EXPENSE_COMPOSITION: &str =
         include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+    const UNKNOWN_LIST_ITEM_FIELD_COMPOSITION: &str = include_str!(
+        "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml"
+    );
 
     #[test]
     fn test_api_req_api_001_wasm_adapter_exposes_protocol_version() {
@@ -574,6 +577,7 @@ mod tests {
         for (yaml, expected_code) in [
             ("format_version: 2\n", "unsupported_format_version"),
             ("format_version: 1\nname: [invalid\n", "invalid_composition"),
+            (UNKNOWN_LIST_ITEM_FIELD_COMPOSITION, "invalid_composition"),
         ] {
             let request = serde_json::json!({
                 "action": "domain.canonicalize_composition",

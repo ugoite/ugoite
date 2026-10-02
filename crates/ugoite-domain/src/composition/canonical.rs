@@ -176,6 +176,8 @@ mod tests {
 
     const MONTHLY_EXPENSE: &str =
         include_str!("../../tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+    const UNKNOWN_LIST_ITEM_FIELD: &str =
+        include_str!("../../tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml");
 
     #[test]
     fn monthly_expense_canonical_bytes_and_fingerprint_match_golden_fixtures() {
@@ -304,13 +306,8 @@ mod tests {
 
     #[test]
     fn unknown_list_item_schema_fields_are_rejected() {
-        let yaml = MONTHLY_EXPENSE.replace(
-            "        - field_id: 102\n          field_type: double",
-            "        - field_id: 102\n          field_type: list\n          items:\n            type: string\n            unknown: discarded",
-        );
-
         assert_eq!(
-            canonicalize_composition_yaml(&yaml),
+            canonicalize_composition_yaml(UNKNOWN_LIST_ITEM_FIELD),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
     }

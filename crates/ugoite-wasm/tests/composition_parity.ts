@@ -93,9 +93,14 @@ async function main(): Promise<void> {
     "../../ugoite-domain/tests/fixtures/composition/monthly-expense.fingerprint.txt",
     import.meta.url,
   );
+  const invalidListItemPath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml",
+    import.meta.url,
+  );
   const yaml = await Deno.readTextFile(fixturePath);
   const canonicalYaml = await Deno.readTextFile(canonicalPath);
   const fingerprint = (await Deno.readTextFile(fingerprintPath)).trim();
+  const invalidListItemYaml = await Deno.readTextFile(invalidListItemPath);
   const response = await invokeWasm(instance.exports, {
     action: "domain.canonicalize_composition",
     value: { yaml },
@@ -109,6 +114,7 @@ async function main(): Promise<void> {
     const [invalidYaml, expectedCode] of [
       ["format_version: 2\n", "unsupported_format_version"],
       ["format_version: 1\nname: [invalid\n", "invalid_composition"],
+      [invalidListItemYaml, "invalid_composition"],
     ] as const
   ) {
     const invalidResponse = await invokeWasm(instance.exports, {
