@@ -11080,21 +11080,8 @@ fn composition_lint_response(yaml: &str) -> CompositionLintResponse {
 fn api_composition_diagnostic_code(
     code: ugoite_domain::composition::CompositionDiagnosticCode,
 ) -> ApiCompositionDiagnosticCode {
-    use ugoite_domain::composition::CompositionDiagnosticCode as DomainCode;
-
-    match code {
-        DomainCode::UnsupportedFormatVersion => {
-            ApiCompositionDiagnosticCode::UnsupportedFormatVersion
-        }
-        DomainCode::InvalidComposition => ApiCompositionDiagnosticCode::InvalidComposition,
-        DomainCode::ParameterUnknown => ApiCompositionDiagnosticCode::ParameterUnknown,
-        DomainCode::ParameterMissing => ApiCompositionDiagnosticCode::ParameterMissing,
-        DomainCode::ParameterTypeMismatch => ApiCompositionDiagnosticCode::ParameterTypeMismatch,
-        DomainCode::SourceUnavailable => ApiCompositionDiagnosticCode::SourceUnavailable,
-        DomainCode::MissingField => ApiCompositionDiagnosticCode::MissingField,
-        DomainCode::FieldTypeChanged => ApiCompositionDiagnosticCode::FieldTypeChanged,
-        DomainCode::SourceSchemaChanged => ApiCompositionDiagnosticCode::SourceSchemaChanged,
-    }
+    ApiCompositionDiagnosticCode::from_code(code.as_str())
+        .expect("domain Composition diagnostics are included in the portable API contract")
 }
 
 #[derive(Deserialize)]
@@ -13798,47 +13785,42 @@ mod authentication_regression_tests {
     fn composition_lint_diagnostic_codes_match_the_domain_contract() -> anyhow::Result<()> {
         use ugoite_domain::composition::CompositionDiagnosticCode as DomainCode;
 
-        for (domain, api) in [
-            (
-                DomainCode::UnsupportedFormatVersion,
-                ApiCompositionDiagnosticCode::UnsupportedFormatVersion,
-            ),
-            (
-                DomainCode::InvalidComposition,
-                ApiCompositionDiagnosticCode::InvalidComposition,
-            ),
-            (
-                DomainCode::ParameterUnknown,
-                ApiCompositionDiagnosticCode::ParameterUnknown,
-            ),
-            (
-                DomainCode::ParameterMissing,
-                ApiCompositionDiagnosticCode::ParameterMissing,
-            ),
-            (
-                DomainCode::ParameterTypeMismatch,
-                ApiCompositionDiagnosticCode::ParameterTypeMismatch,
-            ),
-            (
-                DomainCode::SourceUnavailable,
-                ApiCompositionDiagnosticCode::SourceUnavailable,
-            ),
-            (
-                DomainCode::MissingField,
-                ApiCompositionDiagnosticCode::MissingField,
-            ),
-            (
-                DomainCode::FieldTypeChanged,
-                ApiCompositionDiagnosticCode::FieldTypeChanged,
-            ),
-            (
-                DomainCode::SourceSchemaChanged,
-                ApiCompositionDiagnosticCode::SourceSchemaChanged,
-            ),
+        for domain in [
+            DomainCode::UnsupportedFormatVersion,
+            DomainCode::InvalidComposition,
+            DomainCode::ParameterUnknown,
+            DomainCode::ParameterMissing,
+            DomainCode::ParameterTypeMismatch,
+            DomainCode::SourceUnavailable,
+            DomainCode::MissingField,
+            DomainCode::FieldTypeChanged,
+            DomainCode::SourceSchemaChanged,
         ] {
+            let api = ApiCompositionDiagnosticCode::from_code(domain.as_str())
+                .expect("domain diagnostic is represented by the portable API");
             assert_eq!(domain.as_str(), api.as_str());
             assert_eq!(serde_json::to_value(api)?, json!(domain.as_str()));
         }
+
+        for (api, expected) in [
+            (ApiCompositionDiagnosticCode::MissingForm, "missing_form"),
+            (
+                ApiCompositionDiagnosticCode::SavedSqlRevisionMissing,
+                "saved_sql_revision_missing",
+            ),
+            (
+                ApiCompositionDiagnosticCode::NotAuthorized,
+                "not_authorized",
+            ),
+        ] {
+            assert_eq!(api.as_str(), expected);
+            assert_eq!(ApiCompositionDiagnosticCode::from_code(expected), Some(api));
+            assert_eq!(serde_json::to_value(api)?, json!(expected));
+        }
+        assert_eq!(
+            ApiCompositionDiagnosticCode::from_code("unknown_diagnostic"),
+            None
+        );
         Ok(())
     }
 

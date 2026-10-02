@@ -17,9 +17,12 @@ pub enum CompositionDiagnosticCode {
     ParameterMissing,
     ParameterTypeMismatch,
     SourceUnavailable,
+    MissingForm,
     MissingField,
     FieldTypeChanged,
     SourceSchemaChanged,
+    SavedSqlRevisionMissing,
+    NotAuthorized,
 }
 
 impl CompositionDiagnosticCode {
@@ -31,9 +34,30 @@ impl CompositionDiagnosticCode {
             Self::ParameterMissing => "parameter_missing",
             Self::ParameterTypeMismatch => "parameter_type_mismatch",
             Self::SourceUnavailable => "source_unavailable",
+            Self::MissingForm => "missing_form",
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
             Self::SourceSchemaChanged => "source_schema_changed",
+            Self::SavedSqlRevisionMissing => "saved_sql_revision_missing",
+            Self::NotAuthorized => "not_authorized",
+        }
+    }
+
+    pub fn from_code(value: &str) -> Option<Self> {
+        match value {
+            "unsupported_format_version" => Some(Self::UnsupportedFormatVersion),
+            "invalid_composition" => Some(Self::InvalidComposition),
+            "parameter_unknown" => Some(Self::ParameterUnknown),
+            "parameter_missing" => Some(Self::ParameterMissing),
+            "parameter_type_mismatch" => Some(Self::ParameterTypeMismatch),
+            "source_unavailable" => Some(Self::SourceUnavailable),
+            "missing_form" => Some(Self::MissingForm),
+            "missing_field" => Some(Self::MissingField),
+            "field_type_changed" => Some(Self::FieldTypeChanged),
+            "source_schema_changed" => Some(Self::SourceSchemaChanged),
+            "saved_sql_revision_missing" => Some(Self::SavedSqlRevisionMissing),
+            "not_authorized" => Some(Self::NotAuthorized),
+            _ => None,
         }
     }
 }
