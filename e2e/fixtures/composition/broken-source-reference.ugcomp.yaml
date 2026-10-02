@@ -1,0 +1,13 @@
+format_version: 1
+name: Missing Form recovery candidate
+kind: dashboard
+spec:
+  sources:
+    - id: removed_form_rows
+      kind: entry_query
+      form_id: "00000000-0000-7000-8000-000000000099"
+      query: {}
+  components:
+    - id: removed_form_table
+      kind: table
+      source: removed_form_rows

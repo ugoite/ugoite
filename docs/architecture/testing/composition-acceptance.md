@@ -15,11 +15,11 @@ Mitase verification bindings until the corresponding tests exist. The current
 D0 check validates only the completeness and pending status of that map.
 
 The canonical monthly-expense YAML document is shared with the domain fixture
-set. E2E-specific unknown-version and broken-reference documents, Space seed,
-and expected-output files wait for Lane A's restricted format, typed schema,
-canonicalization, diagnostics, and resource limits to be reviewed and frozen.
-The D0 fixture directory records their paths and recovery purpose without
-choosing persisted fields or parser behavior ahead of that contract.
+set. Two small raw-payload candidates now cover an unsupported format version
+and a missing Form reference. They use the merged typed document shape but are
+not parser or runtime evidence; the restricted parser rules and resource
+limits remain in progress. Space-seed and expected-output files stay planned
+until their integration contracts are reviewed and frozen.
 
 ## CLI acceptance shape
 

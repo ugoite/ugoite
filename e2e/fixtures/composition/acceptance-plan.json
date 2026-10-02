@@ -5,7 +5,7 @@
   "runtime_evidence_recorded": false,
   "fixture_layout": {
     "root": "e2e/fixtures/composition",
-    "payload_note": "The canonical monthly-expense document belongs to the shared domain fixture set. E2E Space seeds and recovery fixtures wait for the typed format and parser limits to be reviewed and frozen.",
+    "payload_note": "The canonical monthly-expense document belongs to the shared domain fixture set. Two raw recovery candidates are registered below; E2E seed and expected-result payloads remain pending parser and integration contracts.",
     "shared_document_fixtures": [
       {
         "path": "crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
@@ -13,12 +13,22 @@
         "status": "shared_reference"
       }
     ],
-    "e2e_payloads": {
+    "recovery_fixture_candidates": [
+      {
+        "path": "e2e/fixtures/composition/unknown-format-version.ugcomp.yaml",
+        "scenario": "unsupported_format_version",
+        "status": "raw_fixture_only"
+      },
+      {
+        "path": "e2e/fixtures/composition/broken-source-reference.ugcomp.yaml",
+        "scenario": "missing_form",
+        "status": "raw_fixture_only"
+      }
+    ],
+    "integration_payloads": {
       "status": "planned",
       "created": false,
       "planned_files": [
-        "e2e/fixtures/composition/unknown-format-version.ugcomp.yaml",
-        "e2e/fixtures/composition/broken-source-reference.ugcomp.yaml",
         "e2e/fixtures/composition/space-seed/manifest.json",
         "e2e/fixtures/composition/expected/"
       ]

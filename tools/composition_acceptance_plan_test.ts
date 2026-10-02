@@ -24,7 +24,12 @@ type AcceptancePlan = {
       owner: string;
       status: string;
     }>;
-    e2e_payloads: {
+    recovery_fixture_candidates: Array<{
+      path: string;
+      scenario: string;
+      status: string;
+    }>;
+    integration_payloads: {
       status: string;
       created: boolean;
       planned_files: string[];
@@ -217,11 +222,27 @@ Deno.test(
       (await Deno.stat(sharedFixtures[0].path)).isFile,
       "the shared canonical Composition fixture must exist as a file",
     );
-    assertEquals(plan.fixture_layout.e2e_payloads.status, "planned");
-    assertEquals(plan.fixture_layout.e2e_payloads.created, false);
-    assertEquals(plan.fixture_layout.e2e_payloads.planned_files, [
-      "e2e/fixtures/composition/unknown-format-version.ugcomp.yaml",
-      "e2e/fixtures/composition/broken-source-reference.ugcomp.yaml",
+    assertEquals(plan.fixture_layout.recovery_fixture_candidates, [
+      {
+        path: "e2e/fixtures/composition/unknown-format-version.ugcomp.yaml",
+        scenario: "unsupported_format_version",
+        status: "raw_fixture_only",
+      },
+      {
+        path: "e2e/fixtures/composition/broken-source-reference.ugcomp.yaml",
+        scenario: "missing_form",
+        status: "raw_fixture_only",
+      },
+    ]);
+    for (const fixture of plan.fixture_layout.recovery_fixture_candidates) {
+      assert(
+        (await Deno.stat(fixture.path)).isFile,
+        `the raw recovery fixture candidate must exist: ${fixture.path}`,
+      );
+    }
+    assertEquals(plan.fixture_layout.integration_payloads.status, "planned");
+    assertEquals(plan.fixture_layout.integration_payloads.created, false);
+    assertEquals(plan.fixture_layout.integration_payloads.planned_files, [
       "e2e/fixtures/composition/space-seed/manifest.json",
       "e2e/fixtures/composition/expected/",
     ]);
@@ -300,7 +321,7 @@ Deno.test(
       );
     }
 
-    for (const path of plan.fixture_layout.e2e_payloads.planned_files) {
+    for (const path of plan.fixture_layout.integration_payloads.planned_files) {
       assert(path.startsWith("e2e/fixtures/composition/"), path);
     }
   },
