@@ -146,6 +146,31 @@ pub struct CompositionHistoryPage {
     pub has_more: bool,
 }
 
+/// One bounded current-index projection for a Composition.
+///
+/// The listing intentionally exposes only its stable entry/revision identity
+/// and raw summary fields. It never transports the stored YAML `spec`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CompositionListItem {
+    pub composition_id: String,
+    pub revision_id: String,
+    pub updated_at: f64,
+    pub name: Option<Value>,
+    pub kind: Option<Value>,
+    pub format_version: Option<Value>,
+    pub tags: Vec<String>,
+}
+
+/// Bounded current Composition page. Authorization is evaluated by the
+/// server for each request; `has_more` is the only continuation signal.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CompositionListPage {
+    pub items: Vec<CompositionListItem>,
+    pub offset: usize,
+    pub limit: usize,
+    pub has_more: bool,
+}
+
 /// Request to resolve one exact Composition revision against current source
 /// metadata. Resolution does not execute any source query or create state.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]

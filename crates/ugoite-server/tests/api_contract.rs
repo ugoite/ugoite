@@ -1230,11 +1230,16 @@ fn issue_2125_openapi_documents_entry_list_and_entry_query_bounds() {
 #[test]
 fn openapi_documents_raw_composition_reads_and_history_bounds() {
     let snapshot = ugoite_server::openapi_snapshot();
+    let list = &snapshot["paths"]["/spaces/{space_id}/compositions"]["get"];
     let current = &snapshot["paths"]["/spaces/{space_id}/compositions/{entry_id}"]["get"];
     let exact = &snapshot["paths"]
         ["/spaces/{space_id}/compositions/{entry_id}/history/{revision_id}"]["get"];
     let history = &snapshot["paths"]["/spaces/{space_id}/compositions/{entry_id}/history"]["get"];
 
+    assert!(
+        list.is_object(),
+        "current Composition listing is documented"
+    );
     assert!(
         current.is_object(),
         "latest raw Composition read is documented"
@@ -1244,6 +1249,10 @@ fn openapi_documents_raw_composition_reads_and_history_bounds() {
         "exact raw Composition revision read is documented"
     );
     assert!(history.is_object(), "raw Composition history is documented");
+    assert_eq!(
+        list["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionListPage"
+    );
     assert_eq!(
         current["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
         "#/components/schemas/CompositionRawRevision"
@@ -1269,6 +1278,21 @@ fn openapi_documents_raw_composition_reads_and_history_bounds() {
     assert!(history_parameters
         .iter()
         .any(|parameter| parameter["$ref"] == "#/components/parameters/Offset"));
+    let list_parameters = list["parameters"].as_array().expect("list parameters");
+    assert!(list_parameters
+        .iter()
+        .any(|parameter| { parameter["$ref"] == "#/components/parameters/CompositionListLimit" }));
+    assert!(list_parameters
+        .iter()
+        .any(|parameter| parameter["$ref"] == "#/components/parameters/Offset"));
+    let list_limit = &snapshot["components"]["parameters"]["CompositionListLimit"]["schema"];
+    assert_eq!(list_limit["minimum"], 1);
+    assert_eq!(list_limit["maximum"], 100);
+    let list_item = &snapshot["components"]["schemas"]["CompositionListItem"];
+    let list_page = &snapshot["components"]["schemas"]["CompositionListPage"];
+    assert!(list_item["properties"].get("spec").is_none());
+    assert!(list_page["properties"].get("total").is_none());
+    assert!(list_item["properties"]["tags"].is_object());
     let limit = &snapshot["components"]["parameters"]["CompositionHistoryLimit"]["schema"];
     assert_eq!(limit["minimum"], 1);
     assert_eq!(limit["maximum"], 100);
