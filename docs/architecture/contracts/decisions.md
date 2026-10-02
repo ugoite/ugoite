@@ -217,20 +217,24 @@ Composition.
 
 ## ADR-017 — Composition semantics use a restricted YAML contract
 
-**Accepted semantic boundary; parser implementation pending measured B0
-evidence.** `.ugcomp.yaml` v1 is a restricted exchange representation. Rust
+**Accepted.** `.ugcomp.yaml` v1 is a restricted exchange representation. Rust
 typed domain values own its meaning; native and WASM callers use the same
 parser, validation, diagnostics, canonicalization, and fingerprint behavior.
 Adapters do not add a second Composition parser or query engine.
 
-The syntax rejects duplicate keys, multiple documents, anchors and aliases,
-merge keys, custom tags, implicit timestamp interpretation, and unknown
-fields. It applies explicit byte, nesting-depth, and collection-size limits.
-The parser candidate and numeric limits remain unfrozen until native and
-`wasm32-unknown-unknown` evidence is recorded. Canonical output derives from
-normalized typed values, uses schema field order and stable YAML formatting,
-and does not preserve comments. The semantic fingerprint is SHA-256 over the
-normalized semantic value, not the source YAML bytes.
+The parser uses `serde-saphyr` 1.3.0 with duplicate-key errors, strict typed
+deserialization, and explicit resource budgets. It rejects multiple
+documents, anchors and aliases, merge keys, unsupported/custom tags, and
+unknown fields. It limits input to 65,536 bytes, nesting depth to 64, YAML
+nodes to 4,096, parser events to 8,192, total scalar bytes to 32,768, and each
+Composition collection to 256 items. A bounded version probe reads
+`format_version` before strict v1 deserialization. The numeric limits and
+candidate comparison are maintained in [`composition.md`](composition.md).
+
+Canonical output derives from normalized typed values, uses schema field order
+and stable YAML formatting, and does not preserve comments. The semantic
+fingerprint is SHA-256 over the normalized semantic value, not the source YAML
+bytes.
 
 The complete current contract is maintained in
 [`composition.md`](composition.md); the shared example is

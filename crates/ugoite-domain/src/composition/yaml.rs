@@ -1,0 +1,378 @@
+//! Restricted YAML parsing for the typed Composition v1 contract.
+
+use super::{
+    CompositionDiagnosticCode, CompositionDocument, CompositionSource,
+    EntryQueryProjectionTemplate, COMPOSITION_FORMAT_VERSION,
+};
+use serde_json::Value;
+use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy};
+
+/// Maximum UTF-8 input size accepted by the Composition YAML parser.
+pub const MAX_COMPOSITION_YAML_BYTES: usize = 64 * 1024;
+/// Maximum structural nesting depth accepted by the Composition YAML parser.
+pub const MAX_COMPOSITION_YAML_DEPTH: usize = 64;
+/// Maximum number of items accepted in any one Composition collection.
+pub const MAX_COMPOSITION_COLLECTION_ITEMS: usize = 256;
+
+const MAX_YAML_NODES: usize = 4096;
+const MAX_YAML_EVENTS: usize = 8192;
+const MAX_YAML_SCALAR_BYTES: usize = 32 * 1024;
+const VERSION_PROBE_MAX_DOCUMENTS: usize = 2;
+const VERSION_PROBE_MAX_ANCHORS: usize = 64;
+const VERSION_PROBE_MAX_ALIASES: usize = 64;
+const VERSION_PROBE_MAX_RECORDED_ANCHOR_EVENTS: usize = 4096;
+const VERSION_PROBE_MAX_RECORDED_ANCHOR_BYTES: usize = MAX_COMPOSITION_YAML_BYTES;
+const VERSION_PROBE_MAX_MERGE_KEYS: usize = 64;
+
+/// Parse a restricted `.ugcomp.yaml` document into the shared Rust model.
+///
+/// The format version is inspected using bounded YAML parsing before strict v1
+/// deserialization. Unsupported versions therefore do not get misreported as
+/// malformed v1 documents. Raw inspection and revision recovery remain the
+/// responsibility of the storage adapter and do not call this function.
+pub fn parse_composition_yaml(
+    input: &str,
+) -> Result<CompositionDocument, CompositionDiagnosticCode> {
+    if input.len() > MAX_COMPOSITION_YAML_BYTES {
+        return Err(CompositionDiagnosticCode::InvalidComposition);
+    }
+
+    let format_version = probe_format_version(input)?;
+    if format_version != u64::from(COMPOSITION_FORMAT_VERSION) {
+        return Err(CompositionDiagnosticCode::UnsupportedFormatVersion);
+    }
+
+    let document: CompositionDocument =
+        serde_saphyr::from_slice_with_options(input.as_bytes(), strict_v1_options())
+            .map_err(|_| CompositionDiagnosticCode::InvalidComposition)?;
+
+    document.validate_format_version()?;
+    if !collection_limits_hold(&document) {
+        return Err(CompositionDiagnosticCode::InvalidComposition);
+    }
+
+    Ok(document)
+}
+
+fn probe_format_version(input: &str) -> Result<u64, CompositionDiagnosticCode> {
+    let documents: Vec<Value> =
+        serde_saphyr::from_slice_multiple_with_options(input.as_bytes(), version_probe_options())
+            .map_err(|_| CompositionDiagnosticCode::InvalidComposition)?;
+
+    documents
+        .first()
+        .and_then(|document| document.get("format_version"))
+        .and_then(Value::as_u64)
+        .ok_or(CompositionDiagnosticCode::InvalidComposition)
+}
+
+fn strict_v1_options() -> serde_saphyr::Options {
+    serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_documents: 1,
+            max_depth: MAX_COMPOSITION_YAML_DEPTH,
+            max_nodes: MAX_YAML_NODES,
+            max_events: MAX_YAML_EVENTS,
+            max_total_scalar_bytes: MAX_YAML_SCALAR_BYTES,
+            max_anchors: 0,
+            max_aliases: 0,
+            max_recorded_anchor_events: 0,
+            max_recorded_anchor_bytes: 0,
+            max_merge_keys: 0,
+        },
+        duplicate_keys: DuplicateKeyPolicy::Error,
+        merge_keys: MergeKeyPolicy::Error,
+        no_schema: true,
+        strict_booleans: true,
+        reject_unsupported_tags: true,
+        emit_comments: false,
+        with_snippet: false,
+    }
+}
+
+fn version_probe_options() -> serde_saphyr::Options {
+    serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_documents: VERSION_PROBE_MAX_DOCUMENTS,
+            max_depth: MAX_COMPOSITION_YAML_DEPTH,
+            max_nodes: MAX_YAML_NODES,
+            max_events: MAX_YAML_EVENTS,
+            max_total_scalar_bytes: MAX_YAML_SCALAR_BYTES,
+            max_anchors: VERSION_PROBE_MAX_ANCHORS,
+            max_aliases: VERSION_PROBE_MAX_ALIASES,
+            max_recorded_anchor_events: VERSION_PROBE_MAX_RECORDED_ANCHOR_EVENTS,
+            max_recorded_anchor_bytes: VERSION_PROBE_MAX_RECORDED_ANCHOR_BYTES,
+            max_merge_keys: VERSION_PROBE_MAX_MERGE_KEYS,
+            max_property_expansion_depth: MAX_COMPOSITION_YAML_DEPTH,
+        },
+        duplicate_keys: DuplicateKeyPolicy::Error,
+        merge_keys: MergeKeyPolicy::Merge,
+        strict_booleans: false,
+        no_schema: false,
+        reject_unsupported_tags: false,
+        emit_comments: false,
+        with_snippet: false,
+    }
+}
+
+fn collection_limits_hold(document: &CompositionDocument) -> bool {
+    let spec = &document.spec;
+    if spec.parameters.len() > MAX_COMPOSITION_COLLECTION_ITEMS
+        || spec.sources.len() > MAX_COMPOSITION_COLLECTION_ITEMS
+        || spec.components.len() > MAX_COMPOSITION_COLLECTION_ITEMS
+        || spec.sections.len() > MAX_COMPOSITION_COLLECTION_ITEMS
+    {
+        return false;
+    }
+
+    for source in &spec.sources {
+        match source {
+            CompositionSource::EntryQuery {
+                field_schema,
+                query,
+                ..
+            } => {
+                if field_schema.len() > MAX_COMPOSITION_COLLECTION_ITEMS
+                    || query.filters.len() > MAX_COMPOSITION_COLLECTION_ITEMS
+                    || query.sort.len() > MAX_COMPOSITION_COLLECTION_ITEMS
+                {
+                    return false;
+                }
+
+                if let EntryQueryProjectionTemplate::Fields { fields } = &query.projection {
+                    if fields.len() > MAX_COMPOSITION_COLLECTION_ITEMS {
+                        return false;
+                    }
+                }
+            }
+            CompositionSource::SavedSql { variables, .. } => {
+                if variables.len() > MAX_COMPOSITION_COLLECTION_ITEMS {
+                    return false;
+                }
+            }
+        }
+    }
+
+    spec.sections
+        .iter()
+        .all(|section| section.components.len() <= MAX_COMPOSITION_COLLECTION_ITEMS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        parse_composition_yaml, strict_v1_options, MAX_COMPOSITION_COLLECTION_ITEMS,
+        MAX_COMPOSITION_YAML_BYTES, MAX_COMPOSITION_YAML_DEPTH,
+    };
+    use crate::composition::{
+        CompositionDiagnosticCode, CompositionLiteral, CompositionSource, CompositionValue,
+        DEFAULT_COMPOSITION_PAGE_LIMIT,
+    };
+    use serde_saphyr::DuplicateKeyPolicy;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::time::Instant;
+
+    const MONTHLY_EXPENSE: &str =
+        include_str!("../../tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+
+    #[test]
+    fn parses_the_shared_monthly_expense_fixture() {
+        let document = parse_composition_yaml(MONTHLY_EXPENSE).unwrap();
+
+        assert_eq!(document.name, "Monthly expenses");
+        assert_eq!(document.spec.parameters.len(), 2);
+        assert_eq!(document.spec.sources.len(), 2);
+        assert_eq!(document.spec.components.len(), 2);
+        assert_eq!(document.spec.sections.len(), 2);
+        let CompositionSource::EntryQuery { query, .. } = &document.spec.sources[0] else {
+            panic!("first sample source should be an EntryQuery")
+        };
+        assert_eq!(query.page_limit, DEFAULT_COMPOSITION_PAGE_LIMIT);
+    }
+
+    #[test]
+    fn returns_unsupported_version_before_strict_v1_deserialization() {
+        let input = r#"
+format_version: 2
+future_data: !future &shared [one, two]
+future_alias: *shared
+"#;
+
+        assert_eq!(
+            parse_composition_yaml(input),
+            Err(CompositionDiagnosticCode::UnsupportedFormatVersion)
+        );
+    }
+
+    #[test]
+    fn rejects_restricted_or_ambiguous_yaml_constructs() {
+        let invalid = [
+            "format_version: 1\nname: Example\nname: Duplicate\nkind: dashboard\nspec: {}\n",
+            "format_version: 1\nname: Example\nkind: dashboard\nspec: {}\n---\nformat_version: 1\n",
+            "format_version: 1\nname: &name Example\nkind: dashboard\nspec: {}\n",
+            "format_version: 1\nname: Example\nkind: dashboard\nspec: {<<: {parameters: [], sources: [], components: [], sections: []}}\n",
+            "format_version: 1\nname: !custom Example\nkind: dashboard\nspec: {}\n",
+            "format_version: 1\nname: Example\nkind: dashboard\nspec: {}\nextra: true\n",
+            "format_version: 1\nname: 2026\nkind: dashboard\nspec: {}\n",
+            "format_version: 1\nname: [not, a, string]\nkind: dashboard\nspec: {}\n",
+        ];
+
+        for input in invalid {
+            assert_eq!(
+                parse_composition_yaml(input),
+                Err(CompositionDiagnosticCode::InvalidComposition),
+                "accepted restricted YAML: {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn leaves_date_like_literals_as_strings() {
+        let input = r#"
+format_version: 1
+name: Example
+kind: dashboard
+spec:
+  parameters:
+    - id: date_default
+      type: date
+      required: false
+      default: 2026-10-02
+"#;
+        let document = parse_composition_yaml(input).unwrap();
+
+        assert!(matches!(
+            &document.spec.parameters[0].default,
+            Some(CompositionLiteral(value)) if value == &serde_json::Value::String("2026-10-02".to_owned())
+        ));
+    }
+
+    #[test]
+    fn rejects_input_over_the_byte_limit_and_accepts_the_limit() {
+        let at_limit = padded_fixture(MAX_COMPOSITION_YAML_BYTES);
+        assert!(parse_composition_yaml(&at_limit).is_ok());
+
+        let over_limit = padded_fixture(MAX_COMPOSITION_YAML_BYTES + 1);
+        assert_eq!(
+            parse_composition_yaml(&over_limit),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn enforces_the_per_collection_item_limit() {
+        let at_limit = parameters_document(MAX_COMPOSITION_COLLECTION_ITEMS);
+        assert!(parse_composition_yaml(&at_limit).is_ok());
+
+        let over_limit = parameters_document(MAX_COMPOSITION_COLLECTION_ITEMS + 1);
+        assert_eq!(
+            parse_composition_yaml(&over_limit),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn enforces_the_version_probe_nesting_limit() {
+        let at_limit = nested_future_document(MAX_COMPOSITION_YAML_DEPTH - 1);
+        assert_eq!(
+            parse_composition_yaml(&at_limit),
+            Err(CompositionDiagnosticCode::UnsupportedFormatVersion)
+        );
+
+        let over_limit = nested_future_document(MAX_COMPOSITION_YAML_DEPTH);
+        assert_eq!(
+            parse_composition_yaml(&over_limit),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn date_like_scalar_is_not_implicitly_converted_by_the_parser() {
+        let options = serde_saphyr::options! {
+            budget: serde_saphyr::budget! {
+                max_documents: 1,
+                max_depth: MAX_COMPOSITION_YAML_DEPTH,
+                max_nodes: 4096,
+                max_events: 8192,
+                max_total_scalar_bytes: MAX_COMPOSITION_YAML_BYTES,
+            },
+            duplicate_keys: DuplicateKeyPolicy::Error,
+            no_schema: true,
+            strict_booleans: true,
+            reject_unsupported_tags: true,
+            emit_comments: false,
+            with_snippet: false,
+        };
+        let date: CompositionValue =
+            serde_saphyr::from_str_with_options("2026-10-02", options).unwrap();
+
+        assert!(matches!(
+            date,
+            CompositionValue::Literal(CompositionLiteral(value))
+                if value == serde_json::Value::String("2026-10-02".to_owned())
+        ));
+    }
+
+    #[test]
+    #[ignore = "manual parser profile; run with --ignored --nocapture"]
+    fn profile_monthly_expense_fixture() {
+        let report = Rc::new(RefCell::new(None));
+        let captured_report = Rc::clone(&report);
+        let options = strict_v1_options().with_budget_report(move |summary| {
+            *captured_report.borrow_mut() = Some(summary);
+        });
+        let _: super::super::CompositionDocument =
+            serde_saphyr::from_slice_with_options(MONTHLY_EXPENSE.as_bytes(), options).unwrap();
+        let report = report.borrow();
+        let report = report.as_ref().expect("parser budget report");
+        eprintln!(
+            "fixture_bytes={} nodes={} events={} max_depth={} scalar_bytes={} documents={}",
+            MONTHLY_EXPENSE.len(),
+            report.nodes,
+            report.events,
+            report.max_depth,
+            report.total_scalar_bytes,
+            report.documents,
+        );
+        assert!(parse_composition_yaml(MONTHLY_EXPENSE).is_ok());
+
+        let iterations = 1000;
+        let start = Instant::now();
+        for _ in 0..iterations {
+            assert!(parse_composition_yaml(MONTHLY_EXPENSE).is_ok());
+        }
+        eprintln!(
+            "parsed {iterations} fixture documents in {:?}",
+            start.elapsed()
+        );
+    }
+
+    fn padded_fixture(target_bytes: usize) -> String {
+        let mut input = MONTHLY_EXPENSE.to_owned();
+        assert!(input.ends_with('\n'));
+        input.push('#');
+        input.push_str(&"x".repeat(target_bytes - input.len()));
+        input
+    }
+
+    fn parameters_document(count: usize) -> String {
+        let mut input = String::from(
+            "format_version: 1\nname: Example\nkind: dashboard\nspec:\n  parameters:\n",
+        );
+        for index in 0..count {
+            input.push_str(&format!(
+                "    - id: parameter_{index}\n      type: string\n      required: true\n"
+            ));
+        }
+        input
+    }
+
+    fn nested_future_document(depth: usize) -> String {
+        format!(
+            "format_version: 2\nvalue: {}0{}\n",
+            "[".repeat(depth),
+            "]".repeat(depth)
+        )
+    }
+}
