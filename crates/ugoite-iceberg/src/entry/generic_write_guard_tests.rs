@@ -7,6 +7,7 @@ use serde_json::json;
 use std::collections::BTreeMap;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::change::ChangeCommand;
+use ugoite_domain::composition::parse_composition_yaml;
 use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::id::{EntryId, FieldId, RevisionId};
 
@@ -297,5 +298,62 @@ async fn generic_entry_mutations_cannot_write_composition_registry() -> anyhow::
         .await?;
     assert_eq!(ordinary.0["form"], "Ordinary");
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn revert_change_cannot_write_composition_registry() -> anyhow::Result<()> {
+    let service = UgoiteService::new(format!(
+        "memory://composition-revert-write-{}",
+        uuid::Uuid::now_v7()
+    ))?;
+    let owner_id = uuid::Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-revert-write", owner_id, "Owner")
+        .await?
+        .to_string();
+    let author = owner_id.to_string();
+    let document = parse_composition_yaml(COMPOSITION_YAML)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let saved = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+                tags: None,
+            },
+            &author,
+            &[owner_id],
+        )
+        .await?;
+
+    let error = service
+        .revert_change(
+            &space_id,
+            &saved.receipt.command_id,
+            &author,
+            None,
+            Some("attempt to revert a Composition publication"),
+        )
+        .await
+        .unwrap_err();
+    assert_registry_conflict(&error);
+
+    let entry_id = saved.entry_id.to_string();
+    let current = service
+        .get_composition_raw_local(&space_id, &entry_id)
+        .await?;
+    assert_eq!(current.revision.revision_id, saved.revision_id);
+    assert_eq!(current.revision.change_id, saved.receipt.command_id);
+
+    let history = service
+        .composition_history_local_page(&space_id, &entry_id, 10, 0)
+        .await?;
+    assert_eq!(history.total, 1);
+    assert_eq!(history.revisions.len(), 1);
+    assert!(!history.has_more);
+    assert_eq!(history.revisions[0].revision.revision_id, saved.revision_id);
     Ok(())
 }
