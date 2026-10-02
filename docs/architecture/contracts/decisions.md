@@ -200,6 +200,42 @@ safety over availability when a writer cannot establish its outcome. The
 supported-backend matrix and S1 acceptance contract are maintained in
 [`shared-authorization-publication.md`](../security/shared-authorization-publication.md).
 
+## ADR-016 — Composition is Space-owned Knowledge
+
+**Accepted target contract for v0.2.2.** A saved Composition is one Entry
+revision in its user-owned Space. The Space remains its authority; Entry
+history, restore, receipts, and stale-write conflicts remain the persistence
+contract. A separate database or hidden catalog is not a Composition
+authority. The initial executable kind is `dashboard`. Persistence and browser
+rendering are future implementation work until their own bindings and evidence
+exist.
+
+Unsupported format versions and broken source references may prevent execution
+but must not remove raw inspection, export, or revision history. Browser page,
+scroll, result, and cache state are transient Work and are not stored in a
+Composition.
+
+## ADR-017 — Composition semantics use a restricted YAML contract
+
+**Accepted semantic boundary; parser implementation pending measured B0
+evidence.** `.ugcomp.yaml` v1 is a restricted exchange representation. Rust
+typed domain values own its meaning; native and WASM callers use the same
+parser, validation, diagnostics, canonicalization, and fingerprint behavior.
+Adapters do not add a second Composition parser or query engine.
+
+The syntax rejects duplicate keys, multiple documents, anchors and aliases,
+merge keys, custom tags, implicit timestamp interpretation, and unknown
+fields. It applies explicit byte, nesting-depth, and collection-size limits.
+The parser candidate and numeric limits remain unfrozen until native and
+`wasm32-unknown-unknown` evidence is recorded. Canonical output derives from
+normalized typed values, uses schema field order and stable YAML formatting,
+and does not preserve comments. The semantic fingerprint is SHA-256 over the
+normalized semantic value, not the source YAML bytes.
+
+The complete current contract is maintained in
+[`composition.md`](composition.md); the shared example is
+[`monthly-expense.ugcomp.yaml`](../../../crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml).
+
 Local CLI operator authority remains distinct from remote Server principal
 authorization. The storage layer supplies conditional publication mechanics;
 `ugoite-iceberg::authorization` remains the owner of ACL state and decisions.

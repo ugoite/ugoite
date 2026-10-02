@@ -1,0 +1,97 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: composition
+category: Portable Composition documents, execution, and recovery
+requirements:
+  - id: REQ-COMP-001
+    title: Composition is Space-owned Knowledge
+    description: A Composition is stored as one Entry revision in its user-owned Space and uses the existing revision, restore, receipt, and conflict contract; it does not acquire a separate database or hidden catalog as authority.
+    priority: high
+    status: planned
+    criteria:
+      - id: space-authority
+        kind: behavior
+        statement: A Composition's authoritative document is owned by its Space and is not duplicated into a separate authoritative catalog.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: one-entry-revision
+        kind: behavior
+        statement: Each saved Composition is represented by one Entry revision and inherits the existing append-only history, restore, receipt, and stale-write conflict behavior.
+        governed_by: [POL-000#rule.foundation-precedence, POL-014#rule.governance, POL-016#rule.governance]
+  - id: REQ-COMP-002
+    title: Restricted portable Composition format
+    description: The v0.2.2 Composition exchange format is restricted `.ugcomp.yaml` v1, with dashboard as its only executable kind and Rust typed domain semantics shared by native and WASM surfaces.
+    priority: high
+    status: planned
+    criteria:
+      - id: typed-dashboard-model
+        kind: behavior
+        statement: The Composition v1 model represents its name, dashboard kind, parameters, sources, components, and sections as typed Rust domain values.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: restricted-yaml
+        kind: behavior
+        statement: Composition parsing rejects duplicate keys, multiple documents, anchors, aliases, merge keys, custom tags, implicit timestamp interpretation, and unknown fields.
+        governed_by: [POL-011#rule.governance]
+      - id: bounded-parser
+        kind: quality
+        statement: Composition parsing enforces measured limits for input bytes, nesting depth, and collection lengths in native and wasm32 builds.
+        governed_by: [POL-011#rule.governance]
+      - id: deterministic-diagnostics
+        kind: behavior
+        statement: Unsupported format versions and invalid Composition documents produce stable diagnostic codes independent of UI messages.
+        governed_by: [POL-014#rule.governance]
+  - id: REQ-COMP-003
+    title: Canonical Composition representation
+    description: Canonical YAML and semantic fingerprints derive from the normalized typed Composition value rather than source formatting.
+    priority: high
+    status: planned
+    criteria:
+      - id: canonical-yaml
+        kind: behavior
+        statement: Canonical YAML uses schema field order, block style, two-space indentation, LF line endings, and no BOM; comments are not preserved.
+        governed_by: [POL-001#rule.governance, POL-007#rule.governance]
+      - id: semantic-fingerprint
+        kind: behavior
+        statement: The Composition fingerprint is SHA-256 over the normalized semantic value, so formatting-only changes do not alter it while semantic changes do.
+        governed_by: [POL-007#rule.governance]
+  - id: REQ-COMP-004
+    title: Existing query and authorization semantics
+    description: Composition sources compile into existing query contracts and retain their limits, exact-revision selection, and current authorization checks.
+    priority: high
+    status: planned
+    criteria:
+      - id: entry-query-translation
+        kind: behavior
+        statement: An entry_query source resolves to the existing bounded EntryQuery contract without creating a Composition-specific query engine.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-007#rule.governance]
+      - id: exact-saved-sql-revision
+        kind: behavior
+        statement: A saved_sql source selects its exact Entry and Revision and never silently falls back to a newer revision.
+        governed_by: [POL-014#rule.governance, POL-016#rule.governance]
+      - id: current-authorization
+        kind: behavior
+        statement: Composition list, get, resolve, and source execution stay within the existing current-authorization boundaries.
+        governed_by: [POL-011#rule.governance]
+  - id: REQ-COMP-005
+    title: Recoverable invalid or unsupported Compositions
+    description: Unsupported versions and broken references may prevent execution but do not remove raw inspection, export, or history access.
+    priority: high
+    status: planned
+    criteria:
+      - id: raw-inspection
+        kind: behavior
+        statement: Unknown Composition versions and invalid or broken references remain available for raw inspection and export.
+        governed_by: [POL-014#rule.governance, POL-016#rule.governance]
+      - id: history-available
+        kind: behavior
+        statement: Unsupported versions and broken references do not prevent access to the Composition's existing revision history.
+        governed_by: [POL-014#rule.governance, POL-016#rule.governance]
+  - id: REQ-COMP-006
+    title: Transient Composition runtime state
+    description: Browser navigation and query-result state is Work and is not persisted as part of Composition Knowledge.
+    priority: medium
+    status: planned
+    criteria:
+      - id: work-state-is-transient
+        kind: behavior
+        statement: Browser page, scroll, result, and cache state is not saved into a Composition document.
+        governed_by: [POL-000#rule.foundation-precedence, POL-002#rule.governance]
