@@ -105,9 +105,20 @@ fn validate_raw_read(entry_id: &str) -> Result<EntryId> {
     Ok(entry_uuid(entry_id))
 }
 
+pub(crate) fn validate_history_page(limit: usize) -> Result<()> {
+    if !(1..=COMPOSITION_HISTORY_MAX_PAGE_SIZE).contains(&limit) {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            format!("Composition history limit must be between 1 and {COMPOSITION_HISTORY_MAX_PAGE_SIZE}"),
+        )
+        .into());
+    }
+    Ok(())
+}
+
 /// Reads the current Composition revision without creating or repairing its
 /// Registry Form. Deleted records are absent from the current read surface.
-pub async fn read_composition_raw(
+pub(crate) async fn read_composition_raw(
     operator: &Operator,
     workspace_path: &str,
     entry_id: &str,
@@ -144,7 +155,7 @@ pub async fn read_composition_raw(
 /// Reads an exact Composition revision from the append-only Entry history.
 /// There is no fallback to the current revision when the requested ID is
 /// missing, and tombstones remain inspectable through this path.
-pub async fn read_composition_raw_revision(
+pub(crate) async fn read_composition_raw_revision(
     operator: &Operator,
     workspace_path: &str,
     entry_id: &str,
@@ -185,7 +196,7 @@ pub async fn read_composition_raw_revision(
 /// Reads a bounded page of the append-only history for one Composition.
 /// Authorization is supplied by the service boundary; the provider read is
 /// always narrowed to this Entry before revisions are decoded.
-pub async fn read_composition_history_page(
+pub(crate) async fn read_composition_history_page(
     operator: &Operator,
     workspace_path: &str,
     entry_id: &str,
@@ -193,13 +204,7 @@ pub async fn read_composition_history_page(
     offset: usize,
 ) -> Result<Option<RawCompositionHistoryPage>> {
     let entry_id = validate_raw_read(entry_id)?;
-    if !(1..=COMPOSITION_HISTORY_MAX_PAGE_SIZE).contains(&limit) {
-        return Err(AppError::invalid_input(
-            ErrorCode::InvalidInput,
-            format!("Composition history limit must be between 1 and {COMPOSITION_HISTORY_MAX_PAGE_SIZE}"),
-        )
-        .into());
-    }
+    validate_history_page(limit)?;
     let workspace =
         crate::iceberg_store::native_workspace_read_only(operator, workspace_path).await?;
     let publication = workspace.current_publication().await?;

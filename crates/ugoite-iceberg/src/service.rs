@@ -5094,6 +5094,7 @@ impl UgoiteService {
         offset: usize,
     ) -> Result<composition::RawCompositionHistoryPage> {
         require_nonempty_authorized_principals(principal_ids)?;
+        composition::validate_history_page(limit)?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         let parsed_entry_id = parse_entry_id(entry_id)?;
