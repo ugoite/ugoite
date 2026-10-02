@@ -1,0 +1,40 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Saved, portable Composition documents
+features:
+  - id: FEAT-COMP-001
+    title: Composition Knowledge and semantic contract
+    summary: Define restricted, portable Composition documents as Space-owned Knowledge with shared Rust semantics and bounded execution through existing query contracts.
+    status: planned
+    bindings:
+      - id: contract
+        role: contract-source
+        facet: domain
+        responsibility: Define the Composition v1 document, semantic authority, recovery boundary, and transient Work boundary without claiming the planned persistence or UI behavior is already implemented.
+        targets:
+          - id: composition-contract
+            adapter: declared
+            path: docs/architecture/contracts/composition.md
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-COMP-001#criterion.space-authority
+              - kind: documents
+                anchor: REQ-COMP-002#criterion.typed-dashboard-model
+              - kind: documents
+                anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+              - kind: documents
+                anchor: REQ-COMP-003#criterion.canonical-yaml
+              - kind: documents
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+              - kind: documents
+                anchor: REQ-COMP-004#criterion.used-field-fingerprint
+              - kind: documents
+                anchor: REQ-COMP-005#criterion.raw-inspection
+              - kind: documents
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: monthly-expense-fixture
+            adapter: declared
+            path: crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml
+            selector: { kind: file }
