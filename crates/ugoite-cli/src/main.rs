@@ -255,6 +255,42 @@ mod tests {
     }
 
     #[test]
+    fn composition_list_accepts_bounded_page_options_without_becoming_a_write() {
+        let defaults = Cli::try_parse_from(["ugoite", "composition", "list"])
+            .expect("Composition list command");
+        assert!(!defaults.is_mutation_command());
+        assert!(matches!(
+            defaults.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::List {
+                    limit: None,
+                    offset: None,
+                }
+            })
+        ));
+
+        let paged = Cli::try_parse_from([
+            "ugoite",
+            "composition",
+            "list",
+            "--limit",
+            "25",
+            "--offset",
+            "50",
+        ])
+        .expect("Composition list paging options");
+        assert!(matches!(
+            paged.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::List {
+                    limit: Some(25),
+                    offset: Some(50),
+                }
+            })
+        ));
+    }
+
+    #[test]
     fn composition_inspect_accepts_exact_revision_and_raw_output_without_becoming_a_write() {
         let cli = Cli::try_parse_from([
             "ugoite",

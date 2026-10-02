@@ -179,6 +179,8 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
     "crates/ugoite-server/src/lib.rs#test:composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial",
     "crates/ugoite-server/src/lib.rs#test:composition_resolve_uses_exact_requested_revision_with_newer_revision_available",
     "crates/ugoite-cli/src/commands/composition.rs#test:composition_core_and_remote_outputs_preserve_diagnostic_codes",
+    "crates/ugoite-cli/src/commands/composition.rs#test:list_reads_bounded_local_pages_without_loading_specs",
+    "crates/ugoite-cli/src/commands/composition.rs#test:list_remote_request_decodes_and_returns_the_portable_page",
   ],
   B5: [
     "frontend/src/lib/composition-api.ts#test:composition_query_handle_discards_stale_response_state_updates",
