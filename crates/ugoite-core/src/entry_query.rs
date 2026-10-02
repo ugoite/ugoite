@@ -39,6 +39,18 @@ pub enum SearchOperator {
     Gte,
 }
 
+/// Whether the canonical EntryQuery text search includes a Form field.
+///
+/// Text search scans scalar columns and excludes collection, asset-reference,
+/// and binary columns. Storage adapters should use this predicate when they
+/// need to describe the fields that affect an EntryQuery text plan.
+pub fn entry_query_text_searches_field_type(field_type: &FieldType) -> bool {
+    !matches!(
+        field_type,
+        FieldType::List | FieldType::ObjectList | FieldType::AssetReference | FieldType::Binary
+    )
+}
+
 impl SearchOperator {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -768,6 +780,23 @@ mod tests {
                 SearchOperator::Gte,
             ]
         );
+    }
+
+    #[test]
+    fn text_search_field_contract_excludes_only_non_scalar_columns() {
+        assert!(entry_query_text_searches_field_type(&FieldType::String));
+        assert!(entry_query_text_searches_field_type(&FieldType::Uuid));
+        assert!(entry_query_text_searches_field_type(
+            &FieldType::RowReference
+        ));
+        assert!(!entry_query_text_searches_field_type(&FieldType::List));
+        assert!(!entry_query_text_searches_field_type(
+            &FieldType::ObjectList
+        ));
+        assert!(!entry_query_text_searches_field_type(
+            &FieldType::AssetReference
+        ));
+        assert!(!entry_query_text_searches_field_type(&FieldType::Binary));
     }
 
     #[test]
