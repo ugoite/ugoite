@@ -23,9 +23,13 @@ features:
               - kind: documents
                 anchor: REQ-COMP-002#criterion.typed-dashboard-model
               - kind: documents
+                anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+              - kind: documents
                 anchor: REQ-COMP-003#criterion.canonical-yaml
               - kind: documents
                 anchor: REQ-COMP-004#criterion.entry-query-translation
+              - kind: documents
+                anchor: REQ-COMP-004#criterion.used-field-fingerprint
               - kind: documents
                 anchor: REQ-COMP-005#criterion.raw-inspection
               - kind: documents
