@@ -2792,7 +2792,8 @@ mod tests {
 
     #[test]
     fn resolve_plan_binds_components_in_render_order_with_stable_metric_identity() {
-        let current_form = form(&[(100, FieldType::String), (101, FieldType::Integer)]);
+        let mut current_form = form(&[(100, FieldType::String), (101, FieldType::Integer)]);
+        current_form.fields[1].name = "total_amount".to_owned();
         let entry_source = entry_query_source(
             "entries",
             &current_form,
@@ -2891,7 +2892,7 @@ mod tests {
         );
         assert_eq!(
             plan.component_bindings[1].result_property_key.as_deref(),
-            Some("field_101")
+            Some("total_amount")
         );
         assert_eq!(
             plan.component_bindings[2].kind,
@@ -2906,7 +2907,7 @@ mod tests {
         );
         assert_eq!(
             plan_json["component_bindings"][1]["result_property_key"],
-            json!("field_101")
+            json!("total_amount")
         );
         assert!(matches!(
             &plan.sources[0],
