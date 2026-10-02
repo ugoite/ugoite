@@ -1,3 +1,8 @@
+---
+title: Composition contract
+description: The portable document and semantic boundaries for Composition v1.
+---
+
 # Composition contract
 
 **Status:** accepted semantic boundary; the parser implementation and resource
