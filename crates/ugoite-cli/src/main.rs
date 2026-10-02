@@ -73,6 +73,7 @@ impl Cli {
                         | SavedSqlSubCmd::Delete { .. }
                 )
             ),
+            Commands::Composition(_) => false,
             Commands::Auth(_)
             | Commands::Config(_)
             | Commands::Context(_)
@@ -120,6 +121,8 @@ enum Commands {
     Run(commands::run::RunCmd),
     /// SQL syntax linting and completion commands
     Sql(commands::sql::SqlCmd),
+    /// Local Composition file commands
+    Composition(commands::composition::CompositionCmd),
     /// Indexer operations
     Index(commands::index::IndexCmd),
     /// Start the Konase assistant
@@ -178,6 +181,7 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Pin(cmd) => commands::pin::run(cmd, explicit_config, explicit_context).await,
         Commands::Run(cmd) => commands::run::run(cmd, explicit_config, explicit_context).await,
         Commands::Sql(cmd) => commands::sql::run(cmd, explicit_config, explicit_context).await,
+        Commands::Composition(cmd) => commands::composition::run(cmd),
         Commands::Index(cmd) => commands::index::run(cmd, explicit_config, explicit_context).await,
         Commands::Konase(cmd) => {
             commands::konase::run(cmd, explicit_config, explicit_context).await
@@ -227,5 +231,24 @@ mod tests {
 
         let run_write = Cli::try_parse_from(["ugoite", "run", "undo", "run-id"]).unwrap();
         assert!(run_write.is_mutation_command());
+    }
+
+    #[test]
+    fn composition_lint_accepts_a_file_without_a_space_context() {
+        let cli = Cli::try_parse_from([
+            "ugoite",
+            "composition",
+            "lint",
+            "monthly-expense.ugcomp.yaml",
+        ])
+        .expect("Composition lint command");
+
+        assert!(!cli.is_mutation_command());
+        assert!(matches!(
+            cli.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::Lint { .. }
+            })
+        ));
     }
 }
