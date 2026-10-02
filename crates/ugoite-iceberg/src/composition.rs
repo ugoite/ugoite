@@ -17,6 +17,10 @@ use ugoite_domain::id::{validate_entry_id, validate_revision_id, EntryId, FieldI
 
 pub const COMPOSITION_HISTORY_MAX_PAGE_SIZE: usize = 100;
 
+#[cfg(test)]
+#[path = "composition/authorized_raw_read_tests.rs"]
+mod authorized_raw_read_tests;
+
 /// An inspectable stored Composition revision. `revision.values` retains the
 /// stable FieldId keyed carrier while `fields` provides its historical Form
 /// field names. Values such as an unsupported format version or malformed
