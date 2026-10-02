@@ -812,6 +812,11 @@ pub struct ResolvedCompositionPlan {
 pub fn resolve_composition(
     input: ResolveInput<'_>,
 ) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
+    let bindings = bind_parameters(&input.spec.parameters, input.parameters);
+    if !bindings.diagnostics.is_empty() {
+        return Err(bindings.diagnostics);
+    }
+
     let render_components = input
         .spec
         .components_in_render_order()
@@ -864,11 +869,6 @@ pub fn resolve_composition(
                 metric_field_by_component.insert(component_id, field_id);
             }
         }
-    }
-
-    let bindings = bind_parameters(&input.spec.parameters, input.parameters);
-    if !bindings.diagnostics.is_empty() {
-        return Err(bindings.diagnostics);
     }
 
     let mut current_by_id = BTreeMap::new();
