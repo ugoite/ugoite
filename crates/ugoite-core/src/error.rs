@@ -49,6 +49,7 @@ pub enum ErrorCode {
     FormDefinitionReadFailed,
     SpaceDiscoveryFailed,
     FormVersionConflict,
+    CompositionRegistryConflict,
 }
 
 impl ErrorCode {
@@ -88,6 +89,7 @@ impl ErrorCode {
             Self::FormDefinitionReadFailed => "FORM_DEFINITION_READ_FAILED",
             Self::SpaceDiscoveryFailed => "SPACE_DISCOVERY_FAILED",
             Self::FormVersionConflict => "FORM_VERSION_CONFLICT",
+            Self::CompositionRegistryConflict => "COMPOSITION_REGISTRY_CONFLICT",
         }
     }
 }

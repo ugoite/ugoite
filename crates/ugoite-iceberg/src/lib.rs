@@ -16,6 +16,7 @@ mod space_catalog;
 pub mod asset;
 pub mod audit;
 pub mod authorization;
+pub mod composition;
 pub mod entry;
 pub mod form;
 pub mod health;

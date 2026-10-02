@@ -441,6 +441,42 @@ pub(crate) async fn upsert_metadata_form(
     Ok(())
 }
 
+pub(crate) async fn create_system_form(
+    op: &Operator,
+    ws_path: &str,
+    form: &FormDefinition,
+) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    form.validate()?;
+    crate::authorization::ensure_authorization_write_fence().await?;
+    let workspace = iceberg_store::native_mutation_workspace(op, ws_path).await?;
+    let known_forms = workspace.list_forms().await?;
+    if known_forms
+        .iter()
+        .any(|existing| existing.name.eq_ignore_ascii_case(&form.name))
+    {
+        return Err(AppError::conflict(
+            ErrorCode::CompositionRegistryConflict,
+            "composition_registry_conflict: a Form with the reserved registry name already exists",
+        )
+        .into());
+    }
+    if workspace.has_form(form.id).await? {
+        return Err(AppError::conflict(
+            ErrorCode::CompositionRegistryConflict,
+            "composition_registry_conflict: the registry Form identity is already in use",
+        )
+        .into());
+    }
+    let command =
+        crate::system_publication_context(format!("form-create:{}", form.id), "form.create", form)?;
+    workspace
+        .commit(command)?
+        .create_form_with_receipt(form)
+        .await?;
+    Ok(())
+}
+
 pub(crate) async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
     iceberg_store::list_form_names(op, ws_path).await
 }
@@ -570,6 +606,16 @@ fn to_domain_form_inner(
         }
     }
     let mut extension_metadata = BTreeMap::new();
+    if let Some(values) = form_def
+        .get("extension_metadata")
+        .and_then(Value::as_object)
+    {
+        extension_metadata.extend(
+            values
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+    }
     if let Some(policy) = form_def
         .get("allow_extra_attributes")
         .and_then(Value::as_str)
