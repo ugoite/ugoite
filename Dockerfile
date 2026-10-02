@@ -18,6 +18,7 @@ COPY scripts ./scripts
 COPY crates ./crates
 COPY vendor ./vendor
 COPY shared ./shared
+COPY docs/brand/assets ./docs/brand/assets
 RUN cd frontend && deno install --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp
 RUN bash scripts/build-ugoite-wasm.sh release target/wasm/ugoite_wasm.release.wasm
 RUN bash scripts/activate-ugoite-wasm.sh release

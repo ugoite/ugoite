@@ -57,6 +57,22 @@ Deno.test("REQ-OPS-044: version.txt is the only prepared-version authority", asy
   }
 });
 
+Deno.test("source Docker build includes the frontend brand asset manifest", async () => {
+  const dockerfile = await readText("Dockerfile");
+  const frontendBuildStart = dockerfile.indexOf("FROM denoland/deno:");
+  const rustBuildStart = dockerfile.indexOf("\nFROM rust:", frontendBuildStart);
+  const frontendBuild = dockerfile.slice(frontendBuildStart, rustBuildStart);
+  const assetsCopy = frontendBuild.indexOf(
+    "COPY docs/brand/assets ./docs/brand/assets",
+  );
+  const frontendBuildCommand = frontendBuild.indexOf(
+    "RUN UGOITE_STATIC_SPA=true deno task frontend:build",
+  );
+
+  assertEquals(assetsCopy >= 0, true);
+  assertEquals(frontendBuildCommand > assetsCopy, true);
+});
+
 Deno.test("REQ-OPS-044: candidate creation qualifies the acceptance corpus first", async () => {
   const releaseTool = await readText("tools/release.ts");
   for (
