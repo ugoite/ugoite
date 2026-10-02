@@ -106,7 +106,8 @@ Deno.test(
     assertEquals(plan.implementation_contract_frozen, false);
     assertEquals(plan.runtime_evidence_recorded, false);
     assertEquals(plan.fixture_layout.root, "e2e/fixtures/composition");
-    assertEquals(plan.fixture_layout.shared_document_fixtures, [
+    const sharedFixtures = plan.fixture_layout.shared_document_fixtures;
+    assertEquals(sharedFixtures, [
       {
         path:
           "crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
@@ -114,6 +115,10 @@ Deno.test(
         status: "shared_reference",
       },
     ]);
+    assert(
+      (await Deno.stat(sharedFixtures[0].path)).isFile,
+      "the shared canonical Composition fixture must exist as a file",
+    );
     assertEquals(plan.fixture_layout.e2e_payloads.status, "planned");
     assertEquals(plan.fixture_layout.e2e_payloads.created, false);
     assertEquals(plan.fixture_layout.e2e_payloads.planned_files, [
