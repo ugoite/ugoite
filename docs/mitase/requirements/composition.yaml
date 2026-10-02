@@ -27,6 +27,10 @@ requirements:
         kind: behavior
         statement: The Composition v1 model represents its name, dashboard kind, parameters, sources, components, and sections as typed Rust domain values.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: ordered-component-layout
+        kind: behavior
+        statement: Sections define component order by section-array order and component-reference order; component IDs are unique and each component is referenced exactly once. Duplicate IDs, unknown references, duplicate references, or unreferenced components produce invalid_composition, and the empty component/section layout is valid.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: restricted-yaml
         kind: behavior
         statement: Composition parsing rejects duplicate keys, multiple documents, anchors, aliases, merge keys, custom tags, implicit timestamp interpretation, and unknown fields.

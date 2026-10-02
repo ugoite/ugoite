@@ -101,6 +101,13 @@ async function main(): Promise<void> {
   const canonicalYaml = await Deno.readTextFile(canonicalPath);
   const fingerprint = (await Deno.readTextFile(fingerprintPath)).trim();
   const invalidListItemYaml = await Deno.readTextFile(invalidListItemPath);
+  const unreferencedComponentYaml = yaml.replace(
+    "      components: [transactions]",
+    "      components: []",
+  );
+  if (unreferencedComponentYaml === yaml) {
+    throw new Error("Could not build the unreferenced-component fixture");
+  }
   const response = await invokeWasm(instance.exports, {
     action: "domain.canonicalize_composition",
     value: { yaml },
@@ -115,6 +122,7 @@ async function main(): Promise<void> {
       ["format_version: 2\n", "unsupported_format_version"],
       ["format_version: 1\nname: [invalid\n", "invalid_composition"],
       [invalidListItemYaml, "invalid_composition"],
+      [unreferencedComponentYaml, "invalid_composition"],
     ] as const
   ) {
     const invalidResponse = await invokeWasm(instance.exports, {

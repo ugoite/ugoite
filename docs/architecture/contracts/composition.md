@@ -46,8 +46,12 @@ projection is either preview or an ordered list of property `FieldId`s. The
 optional `page_limit` defaults to 100 and is still bounded by the existing
 EntryQuery maximum. A `saved_sql` source carries an `EntryId`, an exact
 `RevisionId`, and literal-or-parameter variables. Dashboard components are
-`metric` or `table` and refer to named sources; sections group named
-components.
+`metric` or `table` and refer to named sources. Sections define component
+render order by section-array order and component-reference order. Every
+component ID is unique and is referenced by exactly one section entry;
+unknown, duplicate, or unreferenced component references make the document
+invalid. An empty component and section layout is valid, and component
+declaration order does not supply a fallback render order.
 
 The stable diagnostic codes are `unsupported_format_version`,
 `invalid_composition`, `parameter_unknown`, `parameter_missing`,

@@ -574,20 +574,28 @@ mod tests {
         assert_eq!(response["value"]["canonical_yaml"], native.yaml);
         assert_eq!(response["value"]["fingerprint"], native.fingerprint);
 
+        let unreferenced_component = MONTHLY_EXPENSE_COMPOSITION
+            .replace("      components: [transactions]", "      components: []");
+        assert_ne!(unreferenced_component, MONTHLY_EXPENSE_COMPOSITION);
+
         for (yaml, expected_code) in [
             ("format_version: 2\n", "unsupported_format_version"),
             ("format_version: 1\nname: [invalid\n", "invalid_composition"),
             (UNKNOWN_LIST_ITEM_FIELD_COMPOSITION, "invalid_composition"),
+            (unreferenced_component.as_str(), "invalid_composition"),
         ] {
+            let native_error =
+                ugoite_domain::composition::canonicalize_composition_yaml(yaml).unwrap_err();
             let request = serde_json::json!({
                 "action": "domain.canonicalize_composition",
                 "value": {"yaml": yaml},
             });
             let response: Value =
                 serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(native_error.as_str(), expected_code);
             assert_eq!(response["ok"], false, "{response}");
             assert_eq!(response["error"]["kind"], "composition_diagnostic");
-            assert_eq!(response["error"]["code"], expected_code);
+            assert_eq!(response["error"]["code"], native_error.as_str());
         }
     }
 
