@@ -142,6 +142,31 @@ mod tests {
     }
 
     #[test]
+    fn rejects_ambiguous_or_unknown_metric_value_field_shapes() {
+        let invalid = [
+            MONTHLY_EXPENSE.replace("kind: sql_column", "kind: unknown_column"),
+            MONTHLY_EXPENSE.replace("name: total", "name: total\n        field_id: 100"),
+            MONTHLY_EXPENSE.replace(
+                "kind: sql_column\n        name: total",
+                "kind: entry_field\n        name: total",
+            ),
+            MONTHLY_EXPENSE.replace(
+                "kind: sql_column\n        name: total",
+                "kind: sql_column\n        name: total\n        extra: true",
+            ),
+            MONTHLY_EXPENSE.replace("kind: sql_column\n        name: total", "total"),
+        ];
+
+        for input in invalid {
+            assert_eq!(
+                parse_composition_yaml(&input),
+                Err(CompositionDiagnosticCode::InvalidComposition),
+                "accepted invalid metric value field shape: {input}"
+            );
+        }
+    }
+
+    #[test]
     fn returns_unsupported_version_before_strict_v1_deserialization() {
         let input = r#"
 format_version: 2

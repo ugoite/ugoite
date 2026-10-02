@@ -545,6 +545,9 @@ mod tests {
     const MONTHLY_EXPENSE_LABELED_COMPOSITION: &str = include_str!(
         "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml"
     );
+    const METRIC_VALUE_FIELDS_COMPOSITION: &str = include_str!(
+        "../../ugoite-domain/tests/fixtures/composition/metric-value-fields.ugcomp.yaml"
+    );
     const UNKNOWN_LIST_ITEM_FIELD_COMPOSITION: &str = include_str!(
         "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml"
     );
@@ -562,6 +565,7 @@ mod tests {
         for yaml in [
             MONTHLY_EXPENSE_COMPOSITION,
             MONTHLY_EXPENSE_LABELED_COMPOSITION,
+            METRIC_VALUE_FIELDS_COMPOSITION,
         ] {
             let native = ugoite_domain::composition::canonicalize_composition_yaml(yaml).unwrap();
             let request = serde_json::json!({

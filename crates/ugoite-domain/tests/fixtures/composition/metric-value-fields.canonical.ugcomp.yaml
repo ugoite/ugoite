@@ -1,0 +1,39 @@
+format_version: 1
+name: Metric value fields
+kind: dashboard
+spec:
+  sources:
+    - kind: entry_query
+      id: expense_rows
+      form_id: 00000000-0000-7000-8000-000000000010
+      field_schema:
+        - field_id: 102
+          field_type: double
+      query:
+        page_limit: 100
+        projection:
+          kind: fields
+          fields:
+            - 102
+    - kind: saved_sql
+      id: monthly_total
+      entry_id: 00000000-0000-7000-8000-000000000020
+      revision_id: 00000000-0000-7000-8000-000000000021
+  components:
+    - kind: metric
+      id: expense_amount
+      source: expense_rows
+      value_field:
+        kind: entry_field
+        field_id: 102
+    - kind: metric
+      id: total
+      source: monthly_total
+      value_field:
+        kind: sql_column
+        name: total
+  sections:
+    - id: overview
+      components:
+        - expense_amount
+        - total
