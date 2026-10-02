@@ -145,5 +145,16 @@ async fn authorized_composition_history_pages_and_exact_reads_reach_revisions_af
         .await?;
     assert_eq!(exact.revision.revision_id, second_to_last);
     assert_ne!(exact.revision.revision_id, last);
+
+    let exact_last = service
+        .get_composition_raw_revision_authorized_for_principals(
+            &space_id,
+            &entry_id,
+            &last.to_string(),
+            &[owner],
+        )
+        .await?;
+    assert_eq!(exact_last.revision.revision_id, last);
+    assert_ne!(exact_last.revision.revision_id, second_to_last);
     Ok(())
 }
