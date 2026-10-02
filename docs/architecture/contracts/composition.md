@@ -3,8 +3,6 @@ title: Composition contract
 description: The portable document and semantic boundaries for Composition v1.
 ---
 
-# Composition contract
-
 **Status:** accepted semantic boundary; the parser implementation and resource
 limits are selected from measured evidence in the Composition implementation.
 
@@ -16,13 +14,16 @@ receipts, and stale-write conflicts use the existing Entry revision contract;
 no separate database or hidden catalog becomes authoritative.
 
 The exchange format is a restricted `.ugcomp.yaml` document at format version
-`1`. Its semantic kind is `dashboard` for v0.2.2. The document describes its
-name, typed parameters, sources, components, and sections. A source identifies
-either an Entry query template or an exact Saved SQL revision. Components refer
-to named sources and sections group named components.
+`1`. Its envelope contains `format_version`, `name`, `kind`, and `spec`; `kind`
+is `dashboard` for v0.2.2. The `spec` contains typed parameters, sources,
+components, and sections. A source identifies either an Entry query template
+or an exact Saved SQL revision. Components refer to named sources and sections
+group named components. An `entry_query` source carries a sorted `field_schema`
+snapshot for exactly the query-used property fields; text search also snapshots
+all searchable fields because they contribute to its meaning.
 
-The complete illustrative document is maintained at
-[`monthly-expense.ugcomp.yaml`](../../../crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml).
+The complete illustrative document is maintained in
+`crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml`.
 It is a contract fixture for domain, parser, canonicalization, and WASM parity
 tests, not an assertion that persistence or rendering is already shipped.
 
@@ -44,6 +45,8 @@ Canonical YAML uses schema field order, block collections, two-space
 indentation, LF line endings, and no BOM. Canonical output is derived from the
 normalized typed value; comments are not preserved. Semantic fingerprints hash
 the normalized semantic value, so formatting changes do not change identity.
+The `field_schema` sequence is unique and sorted by `FieldId`; its fingerprint
+contains only the source Form ID and these used field IDs and types.
 
 ## Failure and recovery boundary
 

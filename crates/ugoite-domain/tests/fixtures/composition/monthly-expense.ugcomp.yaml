@@ -1,7 +1,7 @@
 format_version: 1
+name: Monthly expenses
+kind: dashboard
 spec:
-  name: Monthly expenses
-  kind: dashboard
   parameters:
     - id: month_start
       type: date
@@ -15,6 +15,13 @@ spec:
     - id: expense_rows
       kind: entry_query
       form_id: "00000000-0000-7000-8000-000000000010"
+      field_schema:
+        - field_id: 10
+          field_type: date
+        - field_id: 11
+          field_type: string
+        - field_id: 12
+          field_type: double
       query:
         filters:
           - field_id: 10

@@ -19,7 +19,7 @@ requirements:
         governed_by: [POL-000#rule.foundation-precedence, POL-014#rule.governance, POL-016#rule.governance]
   - id: REQ-COMP-002
     title: Restricted portable Composition format
-    description: The v0.2.2 Composition exchange format is restricted `.ugcomp.yaml` v1, with dashboard as its only executable kind and Rust typed domain semantics shared by native and WASM surfaces.
+    description: The v0.2.2 Composition exchange format is restricted `.ugcomp.yaml` v1, with a typed envelope and spec, dashboard as its only executable kind, and Rust semantics shared by native and WASM surfaces.
     priority: high
     status: planned
     criteria:
@@ -39,6 +39,10 @@ requirements:
         kind: behavior
         statement: Unsupported format versions and invalid Composition documents produce stable diagnostic codes independent of UI messages.
         governed_by: [POL-014#rule.governance]
+      - id: used-field-schema-snapshot
+        kind: behavior
+        statement: An entry_query source records the FieldId and FieldType snapshot for exactly its query-used property fields, and text search includes every searchable field in that snapshot.
+        governed_by: [POL-007#rule.governance]
   - id: REQ-COMP-003
     title: Canonical Composition representation
     description: Canonical YAML and semantic fingerprints derive from the normalized typed Composition value rather than source formatting.
@@ -63,6 +67,10 @@ requirements:
         kind: behavior
         statement: An entry_query source resolves to the existing bounded EntryQuery contract without creating a Composition-specific query engine.
         governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-007#rule.governance]
+      - id: used-field-fingerprint
+        kind: behavior
+        statement: The entry_query source fingerprint hashes only the source FormId and the used-field schema snapshot, excluding unrelated fields and labels.
+        governed_by: [POL-007#rule.governance]
       - id: exact-saved-sql-revision
         kind: behavior
         statement: A saved_sql source selects its exact Entry and Revision and never silently falls back to a newer revision.

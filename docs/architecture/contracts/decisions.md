@@ -234,7 +234,7 @@ normalized semantic value, not the source YAML bytes.
 
 The complete current contract is maintained in
 [`composition.md`](composition.md); the shared example is
-[`monthly-expense.ugcomp.yaml`](../../../crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml).
+`crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml`.
 
 Local CLI operator authority remains distinct from remote Server principal
 authorization. The storage layer supplies conditional publication mechanics;
