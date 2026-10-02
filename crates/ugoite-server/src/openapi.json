@@ -870,6 +870,58 @@
         }
       }
     },
+    "/compositions/lint": {
+      "post": {
+        "summary": "Validate and canonicalize a Composition document",
+        "description": "Uses the shared Composition domain parser without reading or writing Space state. The YAML document is limited to 64 KiB; malformed or unsupported documents return a stable Composition diagnostic in the response body.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompositionLintRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Canonical document or stable Composition diagnostic",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompositionLintResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "413": {
+            "description": "The JSON request body exceeds the bounded parser request size"
+          },
+          "400": {
+            "description": "Invalid JSON request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/preferences/me": {
       "get": {
         "summary": "Read current user preferences",
@@ -14112,6 +14164,111 @@
           },
           "additionalProperties": false
         }
+      },
+      "CompositionDiagnosticCode": {
+        "type": "string",
+        "enum": [
+          "unsupported_format_version",
+          "invalid_composition",
+          "parameter_unknown",
+          "parameter_missing",
+          "parameter_type_mismatch",
+          "source_unavailable",
+          "missing_field",
+          "field_type_changed",
+          "source_schema_changed"
+        ]
+      },
+      "CompositionLintRequest": {
+        "type": "object",
+        "required": [
+          "yaml"
+        ],
+        "properties": {
+          "yaml": {
+            "type": "string",
+            "description": "UTF-8 restricted Composition YAML, limited to 64 KiB before parsing."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionLintError": {
+        "type": "object",
+        "required": [
+          "kind",
+          "code"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "composition_diagnostic"
+          },
+          "code": {
+            "$ref": "#/components/schemas/CompositionDiagnosticCode"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionLintValue": {
+        "type": "object",
+        "required": [
+          "document",
+          "canonical_yaml",
+          "fingerprint"
+        ],
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "canonical_yaml": {
+            "type": "string",
+            "description": "Canonical UTF-8 YAML with LF line endings and a final newline."
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Lowercase SHA-256 of the normalized semantic document."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionLintResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "ok",
+              "value"
+            ],
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              },
+              "value": {
+                "$ref": "#/components/schemas/CompositionLintValue"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "ok",
+              "error"
+            ],
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": false
+              },
+              "error": {
+                "$ref": "#/components/schemas/CompositionLintError"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "CompositionRawRevision": {
         "type": "object",

@@ -7,6 +7,63 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+/// Stable semantic diagnostic identifiers shared across Composition surfaces.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionDiagnosticCode {
+    UnsupportedFormatVersion,
+    InvalidComposition,
+    ParameterUnknown,
+    ParameterMissing,
+    ParameterTypeMismatch,
+    SourceUnavailable,
+    MissingField,
+    FieldTypeChanged,
+    SourceSchemaChanged,
+}
+
+impl CompositionDiagnosticCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::UnsupportedFormatVersion => "unsupported_format_version",
+            Self::InvalidComposition => "invalid_composition",
+            Self::ParameterUnknown => "parameter_unknown",
+            Self::ParameterMissing => "parameter_missing",
+            Self::ParameterTypeMismatch => "parameter_type_mismatch",
+            Self::SourceUnavailable => "source_unavailable",
+            Self::MissingField => "missing_field",
+            Self::FieldTypeChanged => "field_type_changed",
+            Self::SourceSchemaChanged => "source_schema_changed",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CompositionLintValue {
+    pub document: Value,
+    pub canonical_yaml: String,
+    pub fingerprint: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CompositionLintError {
+    pub kind: String,
+    pub code: CompositionDiagnosticCode,
+}
+
+/// Result of the side-effect-free `composition.lint` operation.
+///
+/// A successful response sets `ok` and `value`; a diagnostic response sets
+/// `error`. The Server omits the inactive optional field in each shape.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CompositionLintResponse {
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<CompositionLintValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<CompositionLintError>,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CompositionRawRevision {
     pub revision: CompositionRevisionMetadata,

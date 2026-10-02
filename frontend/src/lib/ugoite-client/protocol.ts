@@ -63,6 +63,7 @@ export const UGOITE_API_OPERATIONS = [
   "entry.history",
   "entry.revision",
   "entry.restore",
+  "composition.lint",
   "composition.get",
   "composition.history",
   "sql.list",
