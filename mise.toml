@@ -472,7 +472,7 @@ run = [
 
 [tasks."test:composition-adapter"]
 description = "Run focused Composition portable protocol and Server adapter tests"
-run = "cargo nextest run -p ugoite-api-client -p ugoite-server -E 'test(composition_operations_prepare_and_decode_through_the_portable_protocol) | test(composition_resolve_conceals_missing_and_denied_forms) | test(composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial)' --locked"
+run = "cargo nextest run -p ugoite-api-client -p ugoite-server -E 'test(composition_operations_prepare_and_decode_through_the_portable_protocol) | test(composition_resolve_conceals_missing_and_denied_forms) | test(composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial) | test(composition_resolve_uses_exact_requested_revision_with_newer_revision_available)' --locked"
 
 [tasks."package:docsite"]
 description = "Stage the built docsite under target/artifacts"

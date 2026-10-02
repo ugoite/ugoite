@@ -14413,6 +14413,116 @@ mod authentication_regression_tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn composition_resolve_uses_exact_requested_revision_with_newer_revision_available(
+    ) -> anyhow::Result<()> {
+        use ugoite_domain::composition::{CompositionDocument, CompositionKind, CompositionSpec};
+
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-resolve-exact-revision-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(347421);
+        let space_id = state
+            .service
+            .create_space_for_principal(
+                "composition-resolve-exact-revision",
+                principal_id,
+                "Resolve exact revision test",
+            )
+            .await?
+            .to_string();
+        let viewer_id = Uuid::from_u128(347422);
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                principal_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Resolve viewer".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+
+        let document = |name: &str| CompositionDocument {
+            format_version: 1,
+            name: name.to_string(),
+            kind: CompositionKind::Dashboard,
+            spec: CompositionSpec {
+                parameters: Vec::new(),
+                sources: Vec::new(),
+                components: Vec::new(),
+                sections: Vec::new(),
+            },
+        };
+        let older = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: document("Older exact revision"),
+                    tags: None,
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let newer = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: Some(older.entry_id),
+                    base_revision_id: Some(older.revision_id),
+                    document: document("Newer latest revision"),
+                    tags: None,
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        assert_eq!(older.entry_id, newer.entry_id);
+        assert_ne!(older.revision_id, newer.revision_id);
+
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(viewer_id, space_uid),
+        );
+        let resolve = |revision_id: String| {
+            Request::post(format!(
+                "/spaces/{space_id}/compositions/{}/resolve",
+                older.entry_id
+            ))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({"revision_id": revision_id, "parameters": {}}).to_string(),
+            ))
+        };
+        let (older_status, older_body) =
+            route_json(route.clone(), resolve(older.revision_id.to_string())?).await?;
+        assert_eq!(older_status, StatusCode::OK);
+        assert_eq!(
+            older_body["plan"]["composition_revision"],
+            json!({
+                "entry_id": older.entry_id.to_string(),
+                "revision_id": older.revision_id.to_string(),
+            })
+        );
+        assert_eq!(older_body["plan"]["sources"], json!([]));
+
+        let (missing_status, missing_body) =
+            route_json(route, resolve(Uuid::from_u128(347423).to_string())?).await?;
+        assert_eq!(missing_status, StatusCode::NOT_FOUND, "{missing_body}");
+        Ok(())
+    }
+
     #[test]
     fn composition_lint_diagnostic_codes_match_the_domain_contract() -> anyhow::Result<()> {
         use ugoite_domain::composition::CompositionDiagnosticCode as DomainCode;

@@ -316,6 +316,13 @@
           }
         },
         {
+          "path": "crates/ugoite-server/src/lib.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_resolve_uses_exact_requested_revision_with_newer_revision_available"
+          }
+        },
+        {
           "path": "crates/ugoite-cli/src/commands/composition.rs",
           "selector": {
             "kind": "test",
