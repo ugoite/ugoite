@@ -157,14 +157,49 @@ pub struct CompositionResolveRequest {
 }
 
 /// Caller-visible result of a side-effect-free Composition resolution pass.
+/// Parameter definitions are present whenever the exact revision parsed as a
+/// supported Composition document, including responses with diagnostics.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionResolveResponse {
     pub ok: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<CompositionResolvePlan>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<CompositionResolveDiagnostic>,
+}
+
+/// Typed, UI-neutral fields needed to collect caller parameter values.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionParameterDefinition {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub parameter_type: CompositionParameterType,
+    pub required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<CompositionParameterFormat>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionParameterType {
+    String,
+    Boolean,
+    Integer,
+    Float,
+    Date,
+    Timestamp,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CompositionParameterFormat {
+    YearMonth,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

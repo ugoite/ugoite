@@ -15,6 +15,7 @@ pub mod composition;
 pub use composition::{
     CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
     CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
+    CompositionParameterDefinition, CompositionParameterFormat, CompositionParameterType,
     CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
     CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedSource,
     CompositionRevisionMetadata, CompositionRevisionReference,
@@ -2576,6 +2577,13 @@ mod tests {
 
         let resolve_success = json!({
             "ok": true,
+            "parameter_definitions": [{
+                "id": "month",
+                "type": "date",
+                "required": true,
+                "default": "2026-10-01",
+                "format": "year-month"
+            }],
             "plan": {
                 "composition_revision": {
                     "entry_id": "01900000-0000-7000-8000-000000000002",
@@ -2603,6 +2611,13 @@ mod tests {
         );
         let source_unavailable = json!({
             "ok": false,
+            "parameter_definitions": [{
+                "id": "month",
+                "type": "date",
+                "required": true,
+                "default": "2026-10-01",
+                "format": "year-month"
+            }],
             "diagnostics": [{"code": "source_unavailable"}]
         });
         let resolve_error_dto: CompositionResolveResponse =

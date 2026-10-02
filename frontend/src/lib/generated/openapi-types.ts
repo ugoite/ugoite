@@ -22,6 +22,7 @@ export const OPENAPI_SCHEMA_NAMES = [
   "CompositionLintRequest",
   "CompositionLintResponse",
   "CompositionLintValue",
+  "CompositionParameterDefinition",
   "CompositionRawRevision",
   "CompositionResolveDiagnostic",
   "CompositionResolvePlan",

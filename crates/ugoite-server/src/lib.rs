@@ -46,7 +46,9 @@ use tower_http::{
 use ugoite_api_client::{
     CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
     CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
-    CompositionLintResponse, CompositionLintValue, CompositionRawRevision,
+    CompositionLintResponse, CompositionLintValue, CompositionParameterDefinition,
+    CompositionParameterFormat as ApiCompositionParameterFormat,
+    CompositionParameterType as ApiCompositionParameterType, CompositionRawRevision,
     CompositionResolveDiagnostic, CompositionResolvePlan, CompositionResolveRequest,
     CompositionResolveResponse, CompositionResolvedSource, CompositionRevisionMetadata,
     CompositionRevisionReference,
@@ -60,7 +62,10 @@ use ugoite_core::composition::{
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::sql_query::SavedSqlRevisionRef;
 use ugoite_domain::composition::{
-    CompositionDiagnosticCode as DomainCompositionDiagnosticCode, CompositionSource,
+    CompositionDiagnosticCode as DomainCompositionDiagnosticCode,
+    CompositionParameter as DomainCompositionParameter,
+    CompositionParameterFormat as DomainCompositionParameterFormat,
+    CompositionParameterType as DomainCompositionParameterType, CompositionSource,
 };
 use ugoite_domain::id::{validate_decoded_space_id, validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
@@ -11090,20 +11095,33 @@ async fn resolve_composition_handler(
         return Ok(Json(composition_resolve_diagnostic_response(
             DomainCompositionDiagnosticCode::InvalidComposition,
             None,
+            None,
         )));
     };
     let document = match ugoite_domain::composition::parse_composition_yaml(yaml) {
         Ok(document) => document,
         Err(code) => {
-            return Ok(Json(composition_resolve_diagnostic_response(code, None)));
+            return Ok(Json(composition_resolve_diagnostic_response(
+                code, None, None,
+            )));
         }
     };
+
+    let parameter_definitions = Some(
+        document
+            .spec
+            .parameters
+            .iter()
+            .map(api_composition_parameter_definition)
+            .collect::<Vec<_>>(),
+    );
 
     let parameter_bindings =
         bind_composition_parameters(&document.spec.parameters, &request.parameters);
     if !parameter_bindings.diagnostics.is_empty() {
         return Ok(Json(composition_resolve_diagnostics_response(
             parameter_bindings.diagnostics,
+            parameter_definitions.clone(),
         )));
     }
 
@@ -11182,8 +11200,14 @@ async fn resolve_composition_handler(
     });
 
     match result {
-        Ok(plan) => Ok(Json(composition_resolve_success_response(plan)?)),
-        Err(diagnostics) => Ok(Json(composition_resolve_diagnostics_response(diagnostics))),
+        Ok(plan) => Ok(Json(composition_resolve_success_response(
+            plan,
+            parameter_definitions,
+        )?)),
+        Err(diagnostics) => Ok(Json(composition_resolve_diagnostics_response(
+            diagnostics,
+            parameter_definitions,
+        ))),
     }
 }
 
@@ -11235,18 +11259,48 @@ fn conceal_composition_source_lookup<T>(
     }
 }
 
+fn api_composition_parameter_definition(
+    parameter: &DomainCompositionParameter,
+) -> CompositionParameterDefinition {
+    CompositionParameterDefinition {
+        id: parameter.id.clone(),
+        parameter_type: match parameter.parameter_type {
+            DomainCompositionParameterType::String => ApiCompositionParameterType::String,
+            DomainCompositionParameterType::Boolean => ApiCompositionParameterType::Boolean,
+            DomainCompositionParameterType::Integer => ApiCompositionParameterType::Integer,
+            DomainCompositionParameterType::Float => ApiCompositionParameterType::Float,
+            DomainCompositionParameterType::Date => ApiCompositionParameterType::Date,
+            DomainCompositionParameterType::Timestamp => ApiCompositionParameterType::Timestamp,
+        },
+        required: parameter.required,
+        default: parameter
+            .default
+            .as_ref()
+            .map(|value| value.as_json_value().clone()),
+        format: parameter.format.map(|format| match format {
+            DomainCompositionParameterFormat::YearMonth => ApiCompositionParameterFormat::YearMonth,
+        }),
+    }
+}
+
 fn composition_resolve_diagnostic_response(
     code: DomainCompositionDiagnosticCode,
     parameter_id: Option<String>,
+    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
 ) -> CompositionResolveResponse {
-    composition_resolve_diagnostics_response(vec![CoreCompositionDiagnostic { code, parameter_id }])
+    composition_resolve_diagnostics_response(
+        vec![CoreCompositionDiagnostic { code, parameter_id }],
+        parameter_definitions,
+    )
 }
 
 fn composition_resolve_diagnostics_response(
     diagnostics: Vec<CoreCompositionDiagnostic>,
+    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
 ) -> CompositionResolveResponse {
     CompositionResolveResponse {
         ok: false,
+        parameter_definitions,
         plan: None,
         diagnostics: diagnostics
             .into_iter()
@@ -11260,6 +11314,7 @@ fn composition_resolve_diagnostics_response(
 
 fn composition_resolve_success_response(
     plan: ResolvedCompositionPlan,
+    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
 ) -> ApiResult<CompositionResolveResponse> {
     let composition_revision = CompositionRevisionReference {
         entry_id: plan.composition_revision.entry_id.to_string(),
@@ -11293,6 +11348,7 @@ fn composition_resolve_success_response(
         .collect::<ApiResult<Vec<_>>>()?;
     Ok(CompositionResolveResponse {
         ok: true,
+        parameter_definitions,
         plan: Some(CompositionResolvePlan {
             composition_revision,
             sources,
@@ -14199,6 +14255,7 @@ mod authentication_regression_tests {
 
         let expected = json!({
             "ok": false,
+            "parameter_definitions": [],
             "diagnostics": [{"code": "source_unavailable"}]
         });
         assert_eq!(missing_status, StatusCode::OK);
@@ -14400,6 +14457,7 @@ mod authentication_regression_tests {
 
         let expected = json!({
             "ok": false,
+            "parameter_definitions": [],
             "diagnostics": [{"code": "source_unavailable"}]
         });
         assert_eq!(missing_status, StatusCode::OK);
@@ -14416,7 +14474,10 @@ mod authentication_regression_tests {
     #[tokio::test]
     async fn composition_resolve_uses_exact_requested_revision_with_newer_revision_available(
     ) -> anyhow::Result<()> {
-        use ugoite_domain::composition::{CompositionDocument, CompositionKind, CompositionSpec};
+        use ugoite_domain::composition::{
+            CompositionDocument, CompositionKind, CompositionParameter, CompositionParameterType,
+            CompositionSpec,
+        };
 
         let state = AppState::new_for_tests(format!(
             "memory://server-composition-resolve-exact-revision-{}",
@@ -14448,16 +14509,23 @@ mod authentication_regression_tests {
             )
             .await?;
 
-        let document = |name: &str| CompositionDocument {
+        let document = |name: &str, parameters: Vec<CompositionParameter>| CompositionDocument {
             format_version: 1,
             name: name.to_string(),
             kind: CompositionKind::Dashboard,
             spec: CompositionSpec {
-                parameters: Vec::new(),
+                parameters,
                 sources: Vec::new(),
                 components: Vec::new(),
                 sections: Vec::new(),
             },
+        };
+        let month_parameter = || CompositionParameter {
+            id: "month".to_string(),
+            parameter_type: CompositionParameterType::String,
+            required: true,
+            default: None,
+            format: None,
         };
         let older = state
             .service
@@ -14466,7 +14534,7 @@ mod authentication_regression_tests {
                 ugoite_iceberg::composition::CompositionSaveRequest {
                     entry_id: None,
                     base_revision_id: None,
-                    document: document("Older exact revision"),
+                    document: document("Older exact revision", vec![month_parameter()]),
                     tags: None,
                 },
                 &principal_id.to_string(),
@@ -14480,7 +14548,7 @@ mod authentication_regression_tests {
                 ugoite_iceberg::composition::CompositionSaveRequest {
                     entry_id: Some(older.entry_id),
                     base_revision_id: Some(older.revision_id),
-                    document: document("Newer latest revision"),
+                    document: document("Newer latest revision", Vec::new()),
                     tags: None,
                 },
                 &principal_id.to_string(),
@@ -14495,19 +14563,43 @@ mod authentication_regression_tests {
             state.clone(),
             reversible_knowledge_identity(viewer_id, space_uid),
         );
-        let resolve = |revision_id: String| {
+        let resolve = |revision_id: String, parameters: Value| {
             Request::post(format!(
                 "/spaces/{space_id}/compositions/{}/resolve",
                 older.entry_id
             ))
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
-                json!({"revision_id": revision_id, "parameters": {}}).to_string(),
+                json!({"revision_id": revision_id, "parameters": parameters}).to_string(),
             ))
         };
-        let (older_status, older_body) =
-            route_json(route.clone(), resolve(older.revision_id.to_string())?).await?;
+        let (missing_parameter_status, missing_parameter_body) = route_json(
+            route.clone(),
+            resolve(older.revision_id.to_string(), json!({}))?,
+        )
+        .await?;
+        assert_eq!(missing_parameter_status, StatusCode::OK);
+        assert_eq!(missing_parameter_body["ok"], false);
+        assert_eq!(
+            missing_parameter_body["parameter_definitions"],
+            json!([{"id":"month", "type":"string", "required":true}])
+        );
+        assert_eq!(
+            missing_parameter_body["diagnostics"],
+            json!([{"code":"parameter_missing", "parameter_id":"month"}])
+        );
+
+        let (older_status, older_body) = route_json(
+            route.clone(),
+            resolve(older.revision_id.to_string(), json!({"month":"October"}))?,
+        )
+        .await?;
         assert_eq!(older_status, StatusCode::OK);
+        assert_eq!(older_body["ok"], true);
+        assert_eq!(
+            older_body["parameter_definitions"],
+            json!([{"id":"month", "type":"string", "required":true}])
+        );
         assert_eq!(
             older_body["plan"]["composition_revision"],
             json!({
@@ -14517,8 +14609,24 @@ mod authentication_regression_tests {
         );
         assert_eq!(older_body["plan"]["sources"], json!([]));
 
-        let (missing_status, missing_body) =
-            route_json(route, resolve(Uuid::from_u128(347423).to_string())?).await?;
+        let (latest_status, latest_body) = route_json(
+            route.clone(),
+            resolve(newer.revision_id.to_string(), json!({"month":"October"}))?,
+        )
+        .await?;
+        assert_eq!(latest_status, StatusCode::OK);
+        assert_eq!(latest_body["ok"], false);
+        assert_eq!(latest_body["parameter_definitions"], json!([]));
+        assert_eq!(
+            latest_body["diagnostics"],
+            json!([{"code":"parameter_unknown", "parameter_id":"month"}])
+        );
+
+        let (missing_status, missing_body) = route_json(
+            route,
+            resolve(Uuid::from_u128(347423).to_string(), json!({}))?,
+        )
+        .await?;
         assert_eq!(missing_status, StatusCode::NOT_FOUND, "{missing_body}");
         Ok(())
     }

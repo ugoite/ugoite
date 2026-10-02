@@ -14442,9 +14442,13 @@
         "oneOf": [
           {
             "type": "object",
-            "required": ["ok", "plan"],
+            "required": ["ok", "parameter_definitions", "plan"],
             "properties": {
               "ok": { "type": "boolean", "const": true },
+              "parameter_definitions": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/CompositionParameterDefinition" }
+              },
               "plan": { "$ref": "#/components/schemas/CompositionResolvePlan" }
             },
             "additionalProperties": false
@@ -14454,6 +14458,10 @@
             "required": ["ok", "diagnostics"],
             "properties": {
               "ok": { "type": "boolean", "const": false },
+              "parameter_definitions": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/CompositionParameterDefinition" }
+              },
               "diagnostics": {
                 "type": "array",
                 "minItems": 1,
@@ -14463,6 +14471,21 @@
             "additionalProperties": false
           }
         ]
+      },
+      "CompositionParameterDefinition": {
+        "type": "object",
+        "required": ["id", "type", "required"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["string", "boolean", "integer", "float", "date", "timestamp"]
+          },
+          "required": { "type": "boolean" },
+          "default": { "$ref": "#/components/schemas/JsonValue" },
+          "format": { "type": "string", "enum": ["year-month"] }
+        },
+        "additionalProperties": false
       },
       "CompositionRawRevision": {
         "type": "object",
