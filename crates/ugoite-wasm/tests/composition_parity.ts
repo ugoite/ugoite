@@ -18,7 +18,9 @@ async function runCommand(command: string, args: string[]): Promise<string> {
 
 function assertEqual(actual: unknown, expected: unknown, label: string): void {
   if (actual !== expected) {
-    throw new Error(`${label}: expected ${String(expected)}, got ${String(actual)}`);
+    throw new Error(
+      `${label}: expected ${String(expected)}, got ${String(actual)}`,
+    );
   }
 }
 
@@ -28,7 +30,10 @@ async function invokeWasm(
 ): Promise<Record<string, unknown>> {
   const memory = exports.memory as WebAssembly.Memory;
   const allocate = exports.ugoite_alloc as (length: number) => number;
-  const deallocate = exports.ugoite_dealloc as (pointer: number, length: number) => void;
+  const deallocate = exports.ugoite_dealloc as (
+    pointer: number,
+    length: number,
+  ) => void;
   const invoke = exports.ugoite_protocol_invoke as (
     pointer: number,
     length: number,
@@ -65,9 +70,15 @@ async function main(): Promise<void> {
     "--locked",
   ]);
   const metadata = JSON.parse(
-    await runCommand("cargo", ["metadata", "--no-deps", "--format-version", "1"]),
+    await runCommand("cargo", [
+      "metadata",
+      "--no-deps",
+      "--format-version",
+      "1",
+    ]),
   ) as { target_directory: string };
-  const wasmPath = `${metadata.target_directory}/wasm32-unknown-unknown/debug/ugoite_wasm.wasm`;
+  const wasmPath =
+    `${metadata.target_directory}/wasm32-unknown-unknown/debug/ugoite_wasm.wasm`;
   const wasmBytes = await Deno.readFile(wasmPath);
   const { instance } = await WebAssembly.instantiate(wasmBytes, {});
   const fixturePath = new URL(
@@ -94,10 +105,12 @@ async function main(): Promise<void> {
   assertEqual(responseValue.canonical_yaml, canonicalYaml, "canonical YAML");
   assertEqual(responseValue.fingerprint, fingerprint, "semantic fingerprint");
 
-  for (const [invalidYaml, expectedCode] of [
-    ["format_version: 2\n", "unsupported_format_version"],
-    ["format_version: 1\nname: [invalid\n", "invalid_composition"],
-  ] as const) {
+  for (
+    const [invalidYaml, expectedCode] of [
+      ["format_version: 2\n", "unsupported_format_version"],
+      ["format_version: 1\nname: [invalid\n", "invalid_composition"],
+    ] as const
+  ) {
     const invalidResponse = await invokeWasm(instance.exports, {
       action: "domain.canonicalize_composition",
       value: { yaml: invalidYaml },
