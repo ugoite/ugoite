@@ -30,11 +30,15 @@
     "composition.lint",
     "composition.resolve",
     "composition.save",
-    "composition.export"
+    "composition.export",
+    "composition.history",
+    "composition.restore"
   ],
   "cli_commands": [
     "ugoite composition list",
     "ugoite composition inspect <id> [--revision] [--raw]",
+    "ugoite composition history <id>",
+    "ugoite composition restore <id> --revision <revision>",
     "ugoite composition lint <file>",
     "ugoite composition save <file>",
     "ugoite composition query <id> --param k=v",
@@ -48,12 +52,13 @@
       "Close the browser context, reopen the Space Home, and open the saved Composition.",
       "Change a declared parameter and run the source through the existing paged query path.",
       "Advance a result page and confirm the displayed rows come from the query response without Browser aggregation.",
-      "Change a parameter while an earlier request is delayed and confirm its stale response does not replace the current result.",
+      "Change a parameter, Space, or source while an earlier request is delayed and confirm stale success, error, finalization, and loading updates are discarded.",
       "Confirm page, scroll, result, continuation, and cache state are absent from the saved Composition."
     ]
   },
   "evidence_record_fields": [
     "source_sha",
+    "candidate_sha",
     "command",
     "selector",
     "surface",
@@ -61,8 +66,85 @@
     "environment",
     "result",
     "artifact",
+    "artifact_digest",
     "gap"
   ],
+  "recovery_and_authorization": {
+    "status": "planned",
+    "selector_binding_status": "pending_public_storage_and_resolver_contracts",
+    "save_enablement": {
+      "enabled": false,
+      "status": "blocked_until_generic_entry_write_guard_and_receipt_reconciliation",
+      "prerequisites": [
+        "Generic Entry create, update, bulk, import, and restore paths cannot bypass Composition validation.",
+        "Generic restore of the reserved Composition Form is denied while Composition-scoped restore validates.",
+        "A successful save is confirmed by the canonical receipt identifying the published revision.",
+        "A lost save response remains outcome-unknown until receipt reconciliation confirms the exact revision; retry does not publish a duplicate."
+      ]
+    },
+    "cases": [
+      {
+        "id": "concealed_composition_reads",
+        "surface": "API, CLI, Browser",
+        "boundary": "Composition-scoped authorized get and history service",
+        "expectation": "Missing and denied Composition reads have the same existing caller-visible generic 404/error shape and do not reveal existence."
+      },
+      {
+        "id": "source_unavailable_projection",
+        "surface": "Resolver and query",
+        "boundary": "Authorized Composition read followed by current source authorization",
+        "expectation": "After Composition access is authorized, missing and denied sources produce the same source_unavailable diagnostic without source IDs or metadata; field diagnostics require an authorized Form read."
+      },
+      {
+        "id": "current_acl_after_resolve_and_each_page",
+        "surface": "Query",
+        "boundary": "Existing EntryQuery and exact-revision Saved SQL execution paths",
+        "expectation": "Resolve does not grant access; execution and every continuation page recheck current authorization, including revocation after resolve and during paging."
+      },
+      {
+        "id": "raw_unknown_version_and_broken_reference_recovery",
+        "surface": "Server, CLI core/remote, Browser",
+        "boundary": "Composition-scoped exact raw revision reader",
+        "expectation": "Raw inspect, export, and history preserve the exact stored spec and revision metadata for unsupported format versions, malformed documents, and broken references; version is identified before strict v1 typed deserialization."
+      },
+      {
+        "id": "append_only_history_and_restore",
+        "surface": "API, CLI core/remote, Browser",
+        "boundary": "Composition-scoped authorized Entry history and restore service",
+        "expectation": "History reads exact revisions; restore publishes a new revision and returns its receipt identity without rewriting prior history."
+      },
+      {
+        "id": "generic_entry_write_guard",
+        "surface": "Storage and API",
+        "boundary": "Every generic Entry mutation route and Composition-scoped validation",
+        "expectation": "Public generic create, update, bulk, import, and restore cannot bypass Composition validation; reserved-Form generic restore is denied."
+      },
+      {
+        "id": "save_receipt_reconciliation",
+        "surface": "API, CLI core/remote, Browser",
+        "boundary": "Composition save and existing publication receipt reconciliation",
+        "expectation": "Save reports success only when the receipt identifies the published revision; a lost response remains unknown until the exact revision is reconciled, and retry does not create a second revision."
+      },
+      {
+        "id": "stale_browser_request_state",
+        "surface": "Browser",
+        "boundary": "Transient Composition query generation state",
+        "expectation": "Parameter, Space, and source changes suppress stale success, error, finalization, and loading-state updates."
+      },
+      {
+        "id": "portable_surface_contract_parity",
+        "surface": "Rust API client, TypeScript protocol, Server OpenAPI, CLI core/remote",
+        "boundary": "Shared operation inventory and transport adapters",
+        "expectation": "Operations, prepare/decode behavior, HTTP routes, CLI output meaning, and diagnostic codes agree against the same frozen contracts."
+      },
+      {
+        "id": "exact_candidate_release_evidence",
+        "surface": "Release verification",
+        "boundary": "Exact candidate source and artifact manifest",
+        "expectation": "Evidence records source and candidate SHA, artifact digest, actual command, selector, surface, fixture, environment, result, artifact, and gap; planned or unexecuted selectors remain unverified."
+      }
+    ]
+  },
   "milestones": [
     {
       "id": "B0",
@@ -138,6 +220,27 @@
             "kind": "test",
             "name": "generic_entry_write_cannot_bypass_composition_validation"
           }
+        },
+        {
+          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "read_raw_composition_preserves_unknown_version_and_malformed_spec"
+          }
+        },
+        {
+          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "read_exact_composition_revision_does_not_fallback_to_latest"
+          }
+        },
+        {
+          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "authorized_composition_raw_read_conceals_missing_and_denied_ids"
+          }
         }
       ]
     },
@@ -164,7 +267,7 @@
           "path": "crates/ugoite-core/src/composition.rs",
           "selector": {
             "kind": "test",
-            "name": "source_resolution_rechecks_current_authorization"
+            "name": "source_resolution_and_continuation_recheck_current_authorization"
           }
         }
       ]
@@ -206,7 +309,7 @@
           "path": "frontend/src/lib/composition-api.ts",
           "selector": {
             "kind": "test",
-            "name": "composition_query_handle_discards_stale_generations"
+            "name": "composition_query_handle_discards_stale_response_state_updates"
           }
         },
         {
@@ -242,6 +345,20 @@
           "selector": {
             "kind": "test",
             "name": "Composition CLI inspect query and export agree in core and remote modes"
+          }
+        },
+        {
+          "path": "e2e/composition-recovery-authorization.test.ts",
+          "selector": {
+            "kind": "test",
+            "name": "Composition raw recovery and ACL denial preserve caller-visible contracts"
+          }
+        },
+        {
+          "path": "e2e/composition-save-receipt.test.ts",
+          "selector": {
+            "kind": "test",
+            "name": "Composition save reconciles a lost response without duplicate publication"
           }
         },
         {
