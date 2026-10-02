@@ -121,7 +121,7 @@ enum Commands {
     Run(commands::run::RunCmd),
     /// SQL syntax linting and completion commands
     Sql(commands::sql::SqlCmd),
-    /// Local Composition file commands
+    /// Composition document commands
     Composition(commands::composition::CompositionCmd),
     /// Indexer operations
     Index(commands::index::IndexCmd),
@@ -181,7 +181,9 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Pin(cmd) => commands::pin::run(cmd, explicit_config, explicit_context).await,
         Commands::Run(cmd) => commands::run::run(cmd, explicit_config, explicit_context).await,
         Commands::Sql(cmd) => commands::sql::run(cmd, explicit_config, explicit_context).await,
-        Commands::Composition(cmd) => commands::composition::run(cmd),
+        Commands::Composition(cmd) => {
+            commands::composition::run(cmd, explicit_config, explicit_context).await
+        }
         Commands::Index(cmd) => commands::index::run(cmd, explicit_config, explicit_context).await,
         Commands::Konase(cmd) => {
             commands::konase::run(cmd, explicit_config, explicit_context).await
@@ -249,6 +251,34 @@ mod tests {
             Commands::Composition(commands::composition::CompositionCmd {
                 sub: commands::composition::CompositionSubCmd::Lint { .. }
             })
+        ));
+    }
+
+    #[test]
+    fn composition_inspect_accepts_exact_revision_and_raw_output_without_becoming_a_write() {
+        let cli = Cli::try_parse_from([
+            "ugoite",
+            "--context",
+            "research",
+            "composition",
+            "inspect",
+            "composition-1",
+            "--revision",
+            "revision-2",
+            "--raw",
+        ])
+        .expect("Composition inspect command");
+
+        assert!(!cli.is_mutation_command());
+        assert!(matches!(
+            cli.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::Inspect {
+                    composition_id,
+                    revision: Some(revision),
+                    raw: true,
+                }
+            }) if composition_id == "composition-1" && revision == "revision-2"
         ));
     }
 }
