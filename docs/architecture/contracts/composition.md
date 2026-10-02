@@ -19,13 +19,15 @@ is `dashboard` for v0.2.2. The `spec` contains typed parameters, sources,
 components, and sections. A source identifies either an Entry query template
 or an exact Saved SQL revision. Components refer to named sources and sections
 group named components. An `entry_query` source carries a sorted `field_schema`
-snapshot for the union of its query-used property fields and, when text search
-is present, every text-searchable property field. The text-search expansion
-follows the existing EntryQuery semantics: `binary`, `list`, `object_list`, and
-`asset_reference` fields are excluded. A field of those types still appears
-when the query otherwise uses it, such as in a projection. Each snapshot row
-contains `field_id` and `field_type`, plus `reference_form` for a RowReference
-or `items` for a typed List when those type details are present.
+snapshot for the property fields used by its query. A preview projection uses
+all current property fields; an explicit projection, filter, or sort uses the
+fields it names. When text search is present, the snapshot also includes every
+text-searchable property field under existing EntryQuery semantics. The
+text-search expansion excludes `binary`, `list`, `object_list`, and
+`asset_reference` fields. A field of those types still appears when the query
+otherwise uses it, such as in a projection. Each snapshot row contains
+`field_id` and `field_type`, plus `reference_form` for a RowReference or
+`items` for a typed List when those type details are present.
 
 The complete illustrative document is maintained in
 `crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml`.
@@ -93,13 +95,29 @@ threshold.
 
 Canonical YAML uses schema field order, block collections, two-space
 indentation, LF line endings, and no BOM. Canonical output is derived from the
-normalized typed value; comments are not preserved. The semantic fingerprint is
-lowercase hexadecimal SHA-256 over the normalized typed value serialized as
-compact JSON. Formatting changes do not change identity. The `field_schema`
-sequence is unique and normalized by `FieldId`; its fingerprint contains only
-the source Form ID and used field IDs with their logical type, List item, and
-RowReference target metadata. Text search alone does not make List fields used
-because existing EntryQuery semantics exclude them from text-search expansion.
+normalized typed value; comments are not preserved.
+
+Composition has two distinct fingerprint scopes. The document-level semantic
+Composition fingerprint is lowercase hexadecimal SHA-256 over the complete
+normalized `CompositionDocument` serialized as compact JSON. It represents the
+portable document identity, so any semantic change to the envelope or spec
+changes this fingerprint while formatting changes do not. It is not a source
+schema fingerprint.
+
+Each `entry_query` source has a narrower source-schema fingerprint. The core
+resolver computes it from only the source `FormId` and the normalized schema
+snapshot for fields that the resolved EntryQuery uses. This includes the
+projection fields (all property fields for preview), filter and sort fields,
+and the fields searched under existing EntryQuery text-search semantics. The
+snapshot is unique and normalized by `FieldId`; each field contributes its
+logical type, List item metadata, and RowReference target metadata. Unrelated
+Form fields, labels, and the rest of the Composition document do not affect
+this fingerprint. In particular, text search alone does not make List fields
+used because existing EntryQuery semantics exclude them from text-search
+expansion. The behavior is implemented in
+`compile_entry_query_source` and covered by the focused resolver fingerprint
+tests in `crates/ugoite-core/src/composition.rs`.
+
 The shared native/WASM fixture can be executed with
 `deno run -A crates/ugoite-wasm/tests/composition_parity.ts`.
 
