@@ -1,0 +1,249 @@
+{
+  "schema": "ugoite/composition-acceptance-plan/v1",
+  "status": "planned",
+  "implementation_contract_frozen": false,
+  "runtime_evidence_recorded": false,
+  "fixture_layout": {
+    "root": "e2e/fixtures/composition",
+    "e2e_payloads_created": false,
+    "payload_note": "The canonical monthly-expense document belongs to the shared domain fixture set. E2E Space seeds and recovery fixtures wait for the typed format and parser limits to be reviewed and frozen.",
+    "shared_document_fixtures": [
+      "crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml"
+    ],
+    "planned_files": [
+      "e2e/fixtures/composition/unknown-format-version.ugcomp.yaml",
+      "e2e/fixtures/composition/broken-source-reference.ugcomp.yaml",
+      "e2e/fixtures/composition/space-seed/manifest.json",
+      "e2e/fixtures/composition/expected/"
+    ]
+  },
+  "operation_inventory": [
+    "composition.list",
+    "composition.get",
+    "composition.lint",
+    "composition.resolve",
+    "composition.save",
+    "composition.export"
+  ],
+  "cli_commands": [
+    "ugoite composition list",
+    "ugoite composition inspect <id> [--revision] [--raw]",
+    "ugoite composition lint <file>",
+    "ugoite composition save <file>",
+    "ugoite composition query <id> --param k=v",
+    "ugoite composition export <id> --output <path>",
+    "ugoite composition import <file>"
+  ],
+  "browser_golden_journey": {
+    "model_connection": "disabled",
+    "steps": [
+      "Save a Composition to the active Space and confirm success only after the Entry receipt identifies the published revision.",
+      "Close the browser context, reopen the Space Home, and open the saved Composition.",
+      "Change a declared parameter and run the source through the existing paged query path.",
+      "Advance a result page and confirm the displayed rows come from the query response without Browser aggregation.",
+      "Change a parameter while an earlier request is delayed and confirm its stale response does not replace the current result.",
+      "Confirm page, scroll, result, continuation, and cache state are absent from the saved Composition."
+    ]
+  },
+  "evidence_record_fields": [
+    "source_sha",
+    "command",
+    "selector",
+    "surface",
+    "fixture",
+    "environment",
+    "result",
+    "artifact",
+    "gap"
+  ],
+  "milestones": [
+    {
+      "id": "B0",
+      "status": "planned",
+      "outcome": "Contract, storage, query/ACL, and surface harness establish the Composition boundaries before persisted schema and DTO freeze.",
+      "reserved_selectors": [
+        {
+          "path": "crates/ugoite-domain/src/composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "restricted_yaml_rejects_unsupported_syntax_with_stable_diagnostics"
+          }
+        },
+        {
+          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_registry_round_trip_is_one_space_entry"
+          }
+        },
+        {
+          "path": "crates/ugoite-core/src/composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_resolves_through_existing_query_contracts"
+          }
+        }
+      ]
+    },
+    {
+      "id": "B1",
+      "status": "planned",
+      "outcome": "Typed format, deterministic canonical output, semantic fingerprint, and native/WASM diagnostics agree.",
+      "reserved_selectors": [
+        {
+          "path": "crates/ugoite-domain/src/composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_canonicalization_is_semantic_and_deterministic"
+          }
+        },
+        {
+          "path": "crates/ugoite-wasm/src/lib.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_wasm_matches_native_canonical_output_and_diagnostics"
+          }
+        }
+      ]
+    },
+    {
+      "id": "B2",
+      "status": "planned",
+      "outcome": "Save, get, list, history, restore, stale-base conflict, receipt, raw read, and generic-write guard use Space Entry contracts.",
+      "reserved_selectors": [
+        {
+          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_save_get_list_history_restore_and_conflict_use_entry_revisions"
+          }
+        },
+        {
+          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "unknown_version_and_broken_reference_remain_raw_inspectable"
+          }
+        },
+        {
+          "path": "crates/ugoite-iceberg/tests/test_composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "generic_entry_write_cannot_bypass_composition_validation"
+          }
+        }
+      ]
+    },
+    {
+      "id": "B3",
+      "status": "planned",
+      "outcome": "Parameters bind deterministically and sources compile to existing EntryQuery or exact-revision Saved SQL requests under current authorization.",
+      "reserved_selectors": [
+        {
+          "path": "crates/ugoite-core/src/composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "entry_query_template_compiles_to_bounded_entry_query"
+          }
+        },
+        {
+          "path": "crates/ugoite-core/src/composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "saved_sql_source_requires_the_exact_revision"
+          }
+        },
+        {
+          "path": "crates/ugoite-core/src/composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "source_resolution_rechecks_current_authorization"
+          }
+        }
+      ]
+    },
+    {
+      "id": "B4",
+      "status": "planned",
+      "outcome": "Portable operations, authorized Server handlers, and CLI core/remote commands expose the same Composition results and diagnostics.",
+      "reserved_selectors": [
+        {
+          "path": "crates/ugoite-api-client/src/lib.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_operations_prepare_and_decode_through_the_portable_protocol"
+          }
+        },
+        {
+          "path": "crates/ugoite-server/src/lib.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_handlers_use_authorized_service_boundaries"
+          }
+        },
+        {
+          "path": "crates/ugoite-cli/src/commands/composition.rs",
+          "selector": {
+            "kind": "test",
+            "name": "composition_core_and_remote_outputs_preserve_diagnostic_codes"
+          }
+        }
+      ]
+    },
+    {
+      "id": "B5",
+      "status": "planned",
+      "outcome": "Browser reopens saved Compositions, uses transient query state, reuses the paged table contract, and never aggregates result rows locally.",
+      "reserved_selectors": [
+        {
+          "path": "frontend/src/lib/composition-api.ts",
+          "selector": {
+            "kind": "test",
+            "name": "composition_query_handle_discards_stale_generations"
+          }
+        },
+        {
+          "path": "frontend/src/components/CompositionRenderer.test.tsx",
+          "selector": {
+            "kind": "test",
+            "name": "composition_renderer_uses_paged_results_without_client_aggregation"
+          }
+        },
+        {
+          "path": "e2e/composition-golden-journey.test.ts",
+          "selector": {
+            "kind": "test",
+            "name": "Browser reopens a saved Composition with model connection disabled"
+          }
+        }
+      ]
+    },
+    {
+      "id": "B6",
+      "status": "planned",
+      "outcome": "Portable reopen, unknown/broken raw recovery, CLI transport parity, and release-candidate exact-byte evidence are recorded without promoting or publishing a release.",
+      "reserved_selectors": [
+        {
+          "path": "e2e/composition-golden-journey.test.ts",
+          "selector": {
+            "kind": "test",
+            "name": "Composition remains portable across Space reopen and query pagination"
+          }
+        },
+        {
+          "path": "e2e/composition-cli-parity.test.ts",
+          "selector": {
+            "kind": "test",
+            "name": "Composition CLI inspect query and export agree in core and remote modes"
+          }
+        },
+        {
+          "path": "docs/architecture/testing/composition-acceptance.md",
+          "selector": {
+            "kind": "file"
+          }
+        }
+      ]
+    }
+  ]
+}
