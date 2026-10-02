@@ -207,6 +207,10 @@ requirements:
                 criterion: REQ-SEC-004#criterion.passwordless-primary
                 covers: [FEAT-SEC-002#binding.client/target.auth-client, FEAT-SEC-002#binding.client/target.login-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/login.test.tsx, test: keeps the requested route after Passkey login } }
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.post-authentication-navigation
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/login.test.tsx, test: keeps the requested route after Passkey login } }
           - id: assertion-validation-case
             adapter: rust
             path: crates/ugoite-identity/src/node_identity.rs

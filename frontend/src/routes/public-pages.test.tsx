@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@solidjs/testing-library";
+import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import AboutRedirectRoute, { aboutDocsHref } from "./about";
@@ -22,8 +22,7 @@ vi.mock(
   }),
 );
 
-const docsHref =
-  "https://ugoite.github.io/ugoite/docs/get-started";
+const docsHref = "https://ugoite.github.io/ugoite/docs/get-started";
 
 describe("concept public pages", () => {
   const originalLocation = window.location;
@@ -65,10 +64,13 @@ describe("concept public pages", () => {
     setLocale("ja");
 
     render(() => <IndexRoute />);
-    expect(
-      screen.getByText(
-        "ローカルファーストの知識を、検索と自動化のために構造化",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ugoite" }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "ログイン" }))
+      .toHaveAttribute("href", "/login");
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    expect(document.querySelectorAll(".loginPanel > .btn.primary"))
+      .toHaveLength(1);
+    expect(document.querySelectorAll(".loginPanel > *")).toHaveLength(2);
   });
 });

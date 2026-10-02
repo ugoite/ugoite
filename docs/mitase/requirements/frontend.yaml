@@ -2316,3 +2316,113 @@ requirements:
                 criterion: REQ-FE-068#criterion.shared-native-table-and-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-run-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "renders arbitrary SQL rows and keeps pagination client-held" } }
+
+  - id: REQ-FE-069
+    title: Unauthenticated Login Boundary
+    description: The Login surface is not a product capability authority; it starts authentication and presents authentication state only. Space navigation follows authentication.
+    priority: high
+    status: implemented
+    criteria:
+      - id: unauthenticated-entry
+        kind: behavior
+        statement: The Login surface MUST NOT be a product capability authority, and product capability descriptions MUST NOT be hard-coded into or rendered by the unauthenticated shell. The root route presents one primary Login action without a Space shortcut; /login presents configured authentication methods and recovery only.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance]
+      - id: authentication-state
+        kind: quality
+        statement: Authentication configuration loading, sign-in progress, and failure are explicit states; failures expose a keyboard-operable retry and status/error semantics for assistive technology, with technical detail only through disclosure. Manual VoiceOver/NVDA confirmation remains an explicit evidence gap.
+        governed_by: [POL-UI-007#rule.governance, POL-UI-009#rule.governance]
+      - id: narrow-accessible-entry
+        kind: quality
+        statement: At 320 CSS pixels (the effective layout width of a 640 CSS-pixel viewport at 200% browser zoom), the brand and primary authentication action remain visible without horizontal page overflow.
+        governed_by: [POL-UI-007#rule.governance]
+      - id: post-authentication-navigation
+        kind: behavior
+        statement: Only successful authentication continues to the requested route or first-run setup; an already authenticated root visit may continue to Spaces.
+        governed_by: [POL-UI-002#rule.governance]
+    bindings:
+      - id: login-boundary-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the unauthenticated entry, authentication states, retry behavior, effective 200% zoom width, and each successful continuation path through exact frontend and browser tests. Tests assert browser-exposed status/error semantics and keyboard operation; manual VoiceOver/NVDA confirmation remains an explicit evidence gap.
+        targets:
+          - id: home-entry
+            adapter: typescript
+            path: frontend/src/routes/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-069: keeps unauthenticated visitors on the login entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.unauthenticated-entry
+                covers: [FEAT-FE-004#binding.frontend/target.public-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/index.test.tsx, test: "REQ-FE-069: keeps unauthenticated visitors on the login entry" } }
+          - id: authenticated-home-to-spaces
+            adapter: typescript
+            path: frontend/src/routes/index.test.tsx
+            selector: { kind: test, name: opens Spaces for an authenticated session }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.post-authentication-navigation
+                covers: [FEAT-FE-004#binding.frontend/target.public-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/index.test.tsx, test: opens Spaces for an authenticated session } }
+          - id: login-shell
+            adapter: typescript
+            path: frontend/src/routes/login.test.tsx
+            selector: { kind: test, name: "REQ-FE-069: renders only the logo and authentication actions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.unauthenticated-entry
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/login.test.tsx, test: "REQ-FE-069: renders only the logo and authentication actions" } }
+          - id: login-first-run-setup
+            adapter: typescript
+            path: frontend/src/routes/login.test.tsx
+            selector: { kind: test, name: "REQ-FE-069: sends first-run authentication to setup" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.post-authentication-navigation
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/login.test.tsx, test: "REQ-FE-069: sends first-run authentication to setup" } }
+          - id: home-entry-browser
+            adapter: typescript
+            path: e2e/public-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-069: unauthenticated home has one primary login action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.unauthenticated-entry
+                covers: [FEAT-FE-004#binding.frontend/target.public-index-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/public-pages.test.ts, test: "REQ-FE-069: unauthenticated home has one primary login action" } }
+          - id: login-state-and-retry
+            adapter: typescript
+            path: e2e/login-responsive.test.ts
+            selector: { kind: test, name: "REQ-FE-069: exposes loading and configuration failure with a keyboard retry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.authentication-state
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/login-responsive.test.ts, test: "REQ-FE-069: exposes loading and configuration failure with a keyboard retry" } }
+          - id: login-failure-retry
+            adapter: typescript
+            path: e2e/login-responsive.test.ts
+            selector: { kind: test, name: "REQ-FE-069: exposes authentication failure and retry as accessible state" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.authentication-state
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/login-responsive.test.ts, test: "REQ-FE-069: exposes authentication failure and retry as accessible state" } }
+          - id: login-responsive-screenshot
+            adapter: typescript
+            path: e2e/login-responsive.test.ts
+            selector: { kind: test, name: "REQ-FE-069: login screenshot is anchored to brand, primary action, and state structure" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.narrow-accessible-entry
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/login-responsive.test.ts, test: "REQ-FE-069: login screenshot is anchored to brand, primary action, and state structure" } }
+          - id: login-effective-zoom-width
+            adapter: typescript
+            path: e2e/login-responsive.test.ts
+            selector: { kind: test, name: "REQ-FE-069: keeps login usable at the 320px effective width of 200% zoom" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.narrow-accessible-entry
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/login-responsive.test.ts, test: "REQ-FE-069: keeps login usable at the 320px effective width of 200% zoom" } }

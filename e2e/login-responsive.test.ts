@@ -28,60 +28,35 @@ test.describe("responsive login layout", () => {
 
   for (const viewport of viewports) {
     test(
-      `Passkey-only login stays reachable at ${viewport.width}x${viewport.height}`,
+      `primary sign-in action stays reachable at ${viewport.width}x${viewport.height}`,
       async ({ page }) => {
         await installAuthConfig(page, []);
         await page.setViewportSize(viewport);
         await page.goto("/login?next=%2Fspaces%2Fdemo%2Fdashboard");
 
-        const passkey = page.getByRole("button", {
-          name: "Sign in with a passkey",
-        });
-        const recovery = page.getByRole("link", { name: "Lost your Passkey?" });
+        const brand = page.getByRole("heading", { name: "Ugoite" });
+        const passkey = page.locator(".loginPanel > .btn.primary");
+        const recovery = page.getByRole("link", { name: /passkey/i });
         const shell = page.locator(".loginShell");
+        await expect(brand).toBeVisible();
         await expect(passkey).toBeVisible();
         await expect(recovery).toBeVisible();
-        await expect(page.getByRole("complementary", {
-          name: "Ugoite principles",
-        })).toBeVisible();
+        await expect(passkey).toHaveAccessibleName(/passkey/i);
+        await expect(page.locator(".loginPanel > .btn.primary"))
+          .toHaveCount(1);
+        await expect(page.locator(".loginStatement")).toHaveCount(0);
+        await expect(page.locator("main aside, .loginPanel .ui-card"))
+          .toHaveCount(0);
 
         const columns = await shell.evaluate((element) =>
           getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/)
         );
-        expect(columns).toHaveLength(viewport.width <= 900 ? 1 : 2);
-        const principlesStyle = await page.locator(".loginStatement").evaluate(
-          (element) => {
-            const style = getComputedStyle(element);
-            return {
-              display: style.display,
-              fontSize: Number.parseFloat(style.fontSize),
-              backgroundImage: style.backgroundImage,
-            };
-          },
-        );
-        if (viewport.width <= 900) {
-          expect(principlesStyle.fontSize).toBeLessThanOrEqual(14);
-          expect(principlesStyle.backgroundImage).toBe("none");
-          const passkeyRect = await passkey.boundingBox();
-          const panelContentWidth = await page.locator(".loginPanel").evaluate(
-            (panel) => {
-              const style = getComputedStyle(panel);
-              return panel.clientWidth -
-                Number.parseFloat(style.paddingLeft) -
-                Number.parseFloat(style.paddingRight);
-            },
-          );
-          expect(passkeyRect!.width).toBeGreaterThanOrEqual(
-            panelContentWidth - 1,
-          );
-        } else {
-          expect(principlesStyle.backgroundImage).toContain("linear-gradient");
-        }
+        expect(columns).toHaveLength(1);
 
         await expectControlFits(
           passkey,
           viewport.width,
-          viewport.width <= 900 ? 48 : 44,
+          48,
         );
         await expectControlFits(recovery, viewport.width, 44);
         const documentWidth = await page.evaluate(() =>
@@ -112,13 +87,11 @@ test.describe("responsive login layout", () => {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.goto("/login");
 
-      const passkey = page.getByRole("button", {
-        name: "Sign in with a passkey",
-      });
+      const passkey = page.locator(".loginPanel > .btn.primary");
       const provider = page.getByRole("button", {
-        name: "Continue with identity.example/tenant",
+        name: /identity\.example\/tenant/,
       });
-      const recovery = page.getByRole("link", { name: "Lost your Passkey?" });
+      const recovery = page.getByRole("link", { name: /passkey/i });
       await expect(passkey).toBeVisible();
       await expect(provider).toBeVisible();
       await expect(recovery).toBeVisible();
@@ -159,16 +132,10 @@ test.describe("responsive login layout", () => {
 
     const actions = page.locator(".loginPanel > button");
     await expect(actions).toHaveCount(3);
-    await expect(actions.nth(0)).toHaveAccessibleName(
-      "Sign in with a passkey",
-    );
-    await expect(actions.nth(1)).toHaveAccessibleName(
-      "Continue with identity.example/organizations/very-long-tenant-name",
-    );
-    await expect(actions.nth(2)).toHaveAccessibleName(
-      "Continue with identity-two.example/another-long-tenant-name",
-    );
-    const recovery = page.getByRole("link", { name: "Lost your Passkey?" });
+    await expect(actions.nth(0)).toHaveAccessibleName(/passkey/i);
+    await expect(actions.nth(1)).toHaveAccessibleName(/identity\.example/);
+    await expect(actions.nth(2)).toHaveAccessibleName(/identity-two\.example/);
+    const recovery = page.getByRole("link", { name: /passkey/i });
     await expectControlFits(actions.nth(1), 320, 48);
     await expectControlFits(actions.nth(2), 320, 48);
     await expect(recovery).toBeVisible();
@@ -194,26 +161,146 @@ test.describe("responsive login layout", () => {
     });
   });
 
-  test("shows a single inline error while keeping sign-in and recovery available", async ({ page }) => {
+  test("REQ-FE-069: login screenshot is anchored to brand, primary action, and state structure", async ({ page }) => {
     await installAuthConfig(page, []);
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.goto("/login");
+
+    const brand = page.getByRole("heading", { name: "Ugoite" });
+    const primary = page.locator(".loginPanel > .btn.primary");
+    await expect(brand).toBeVisible();
+    await expect(primary).toHaveCount(1);
+    await expect(primary).toHaveAccessibleName(/passkey/i);
+    await expect(page.getByRole("link", { name: /passkey/i })).toBeVisible();
+    await expect(page.locator(".loginStatement")).toHaveCount(0);
+    await expect(page.locator("main aside, .loginPanel .ui-card"))
+      .toHaveCount(0);
+    await expect.poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth)
+    ).toBeLessThanOrEqual(320);
+    await page.screenshot({
+      path: path.join(screenshotDir, "login-structure-320x568.png"),
+      fullPage: true,
+    });
+
     await page.route("**/api/auth/passkey/start", (route) =>
       route.fulfill({
         status: 401,
         contentType: "application/json",
         body: JSON.stringify({ message: "Passkey unavailable" }),
       }));
+    await primary.click();
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(primary).toHaveCount(1);
+    await expect(primary).toHaveAccessibleName("Try again");
+    await page.screenshot({
+      path: path.join(screenshotDir, "login-error-state-320x568.png"),
+      fullPage: true,
+    });
+  });
+
+  test("REQ-FE-069: keeps login usable at the 320px effective width of 200% zoom", async ({ page }) => {
+    await installAuthConfig(page, []);
     await page.setViewportSize({ width: 320, height: 568 });
     await page.goto("/login");
-    await page.getByRole("button", { name: "Sign in with a passkey" })
-      .click();
 
-    await expect(page.getByRole("alert")).toHaveText("Passkey unavailable");
+    const brand = page.getByRole("heading", { name: "Ugoite" });
+    const primary = page.locator(".loginPanel > .btn.primary");
+    await expect(brand).toBeVisible();
+    await expect(primary).toBeVisible();
+    await expect(primary).toHaveAccessibleName(/passkey/i);
+    await expectControlFits(primary, 320, 48);
+    await expect.poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth)
+    ).toBeLessThanOrEqual(320);
+    await page.screenshot({
+      path: path.join(screenshotDir, "login-effective-200-percent-320px.png"),
+      fullPage: true,
+    });
+  });
+
+  test("REQ-FE-069: exposes loading and configuration failure with a keyboard retry", async ({ page }) => {
+    let configRequests = 0;
+    let releaseConfigFailure!: () => void;
+    const configFailure = new Promise<void>((resolve) => {
+      releaseConfigFailure = resolve;
+    });
+    let signalConfigRequest!: () => void;
+    const firstConfigRequest = new Promise<void>((resolve) => {
+      signalConfigRequest = resolve;
+    });
+    await page.route("**/api/auth/config", async (route) => {
+      configRequests++;
+      if (configRequests === 1) {
+        signalConfigRequest();
+        await configFailure;
+        return await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({
+            message: "Authentication configuration unavailable",
+          }),
+        });
+      }
+      return await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "active",
+          node_id: "login-responsive-test",
+          issuer: "http://localhost",
+          rp_id: "localhost",
+          passkey: true,
+          oidc: false,
+        }),
+      });
+    });
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.goto("/login");
+
+    await expect(page.getByRole("heading", { name: "Ugoite" })).toBeVisible();
+    await firstConfigRequest;
+    await expect(page.getByRole("status")).toHaveText("Loading…");
+    releaseConfigFailure();
+    await expect(page.getByRole("alert")).toHaveText(
+      "Sign-in options are unavailable.",
+    );
+    const retry = page.locator(".loginPanel > .btn.primary");
+    await expect(retry).toHaveAccessibleName("Retry");
+    await page.getByRole("link", { name: /passkey/i }).focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(retry).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".loginPanel > .btn.primary"))
+      .toHaveAccessibleName(/passkey/i);
+    expect(configRequests).toBe(2);
+  });
+
+  test("REQ-FE-069: exposes authentication failure and retry as accessible state", async ({ page }) => {
+    await installAuthConfig(page, []);
+    let attempts = 0;
+    await page.route("**/api/auth/passkey/start", (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Passkey unavailable" }),
+      }).then(() => attempts++));
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.goto("/login");
+    const primary = page.locator(".loginPanel > .btn.primary");
+    await expect(primary).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByRole("alert")).toHaveText("Sign-in failed.");
     await expect(page.getByRole("alert")).toHaveCount(1);
-    await expect(page.getByRole("button", {
-      name: "Sign in with a passkey",
-    })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Lost your Passkey?" }))
-      .toBeVisible();
+    await expect(primary).toHaveAccessibleName("Try again");
+    await expect(primary).toBeFocused();
+    await expect(page.locator(".loginError details")).not.toHaveAttribute(
+      "open",
+      "",
+    );
+    await expect(page.getByRole("link", { name: /passkey/i })).toBeVisible();
+    await primary.click();
+    await expect.poll(() => attempts).toBe(2);
   });
 });
 

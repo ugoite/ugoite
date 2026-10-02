@@ -27,6 +27,9 @@ Plan mapping: WP-01 §§4–9 (UX Improvement Implementation Plan).
 
 Current UX notes (same plan sections, no new sections):
 
+- The unauthenticated root route exposes one Login action; configured
+  authentication methods and recovery stay on `/login`. Space selection starts
+  after authentication.
 - Navigation is Form-first: Forms is the entry point to Entries, and Entries
   is not an independent destination (§4).
 - Each Form's current Entries live in its Form Entries workspace; there is no
@@ -48,8 +51,8 @@ map to the same surface as their route.
 | 2  | `frontend/src/routes/about.tsx`                                                      | `/about`                                                      | §4                           | Docs redirect (no in-app About surface; deep links continue to Docs) |
 | 3  | `frontend/src/routes/api/[...path].ts`                                               | `/api/...path` (technical proxy, no UX surface)               | §4 (explicit gap, see below) | Server API proxy endpoint, not a rendered surface       |
 | 4  | `frontend/src/routes/device.tsx`                                                     | `/device`                                                     | §4                           | Device session surface (global shell)                   |
-| 5  | `frontend/src/routes/index.tsx`                                                      | `/`                                                           | §4                           | Public landing (global shell)                           |
-| 6  | `frontend/src/routes/login.tsx`                                                      | `/login`                                                      | §4                           | Login surface (global shell)                            |
+| 5  | `frontend/src/routes/index.tsx`                                                      | `/`                                                           | §4                           | Unauthenticated entry (brand and one Login action)                           |
+| 6  | `frontend/src/routes/login.tsx`                                                      | `/login`                                                      | §4                           | Authentication methods, state, and recovery                            |
 | 7  | `frontend/src/routes/recover/account.tsx`                                            | `/recover/account`                                            | §4                           | Account recovery surface (global shell)                 |
 | 8  | `frontend/src/routes/recover/index.tsx`                                              | `/recover`                                                    | §4                           | Recovery index (global shell)                           |
 | 9  | `frontend/src/routes/settings/security.tsx`                                          | `/settings/security`                                          | §4                           | Security settings surface (global shell)                |

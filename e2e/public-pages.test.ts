@@ -71,7 +71,7 @@ test.describe("Public page stability", () => {
 		}
 	});
 
-	test("REQ-OPS-015: home page Log in is the primary CTA and Open Spaces is secondary for unauthenticated visitors", async ({
+	test("REQ-FE-069: unauthenticated home has one primary login action", async ({
 		browser,
 	}) => {
 		const context = await browser.newContext({
@@ -83,16 +83,15 @@ test.describe("Public page stability", () => {
 			await page.goto("/");
 			await page.waitForLoadState("networkidle");
 
-			const loginLink = page.getByRole("link", { name: "Log in" });
-			const spacesLink = page.getByRole("link", { name: "Open Spaces" });
-
+			await expect(page.getByRole("heading", { name: "Ugoite" }))
+				.toBeVisible();
+			const loginLink = page.getByRole("link", { name: "Login" });
 			await expect(loginLink).toHaveAttribute("href", "/login");
-			await expect(loginLink).toHaveClass(/ui-button-primary/);
-			await expect(spacesLink).toHaveAttribute("href", "/spaces");
-			await expect(spacesLink).toHaveClass(/ui-button-secondary/);
-			await expect(page.locator("body")).toContainText(
-				"/spaces requires an authenticated browser session",
-			);
+			await expect(loginLink).toHaveClass(/btn.*primary/);
+			await expect(page.locator(".loginPanel > .btn.primary"))
+				.toHaveCount(1);
+			await expect(page.locator(".loginPanel > a")).toHaveCount(1);
+			await expect(page.locator(".loginPanel > *")).toHaveCount(2);
 		} finally {
 			await context.close();
 		}
@@ -161,10 +160,13 @@ test.describe("Public page stability", () => {
 
 			await expect(page.locator("html")).toHaveAttribute("lang", "ja");
 			await expect(page.locator("html")).toHaveAttribute("data-locale", "ja");
-			await expect(page.locator("main")).toContainText(
-				"ローカルファーストの知識を、検索と自動化のために構造化",
-			);
-			await expect(page.locator("main").getByRole("link", { name: "詳しく見る" })).toBeVisible();
+			await expect(page.getByRole("heading", { name: "Ugoite" }))
+				.toBeVisible();
+			await expect(page.locator("main").getByRole("link", { name: "ログイン" }))
+				.toBeVisible();
+			await expect(page.locator(".loginPanel > .btn.primary"))
+				.toHaveCount(1);
+			await expect(page.locator(".loginPanel > *")).toHaveCount(2);
 		} finally {
 			await context.close();
 		}
