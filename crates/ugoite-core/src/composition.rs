@@ -2884,6 +2884,15 @@ mod tests {
         );
         assert_eq!(plan.component_bindings[2].metric_field_id, None);
         assert_eq!(plan.component_bindings[2].result_property_key, None);
+        let plan_json = serde_json::to_value(&plan).unwrap();
+        assert_eq!(
+            plan_json["component_bindings"][1]["metric_field_id"],
+            json!(101)
+        );
+        assert_eq!(
+            plan_json["component_bindings"][1]["result_property_key"],
+            json!("field_101")
+        );
         assert!(matches!(
             &plan.sources[0],
             ResolvedSourceRequest::EntryQuery { request, .. }
