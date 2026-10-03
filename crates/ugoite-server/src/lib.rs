@@ -55,18 +55,14 @@ use ugoite_api_client::{
     CompositionRevisionReference,
 };
 use ugoite_core::composition::{
-    bind_parameters as bind_composition_parameters,
-    resolve_composition as resolve_composition_core,
-    CompositionDiagnostic as CoreCompositionDiagnostic, CurrentSourceDescriptor, ResolveInput,
-    ResolvedComponentKind, ResolvedCompositionPlan, SavedSqlRevisionMetadata,
+    CompositionDiagnostic as CoreCompositionDiagnostic, ResolvedComponentKind,
+    ResolvedCompositionPlan,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
-use ugoite_core::sql_query::SavedSqlRevisionRef;
 use ugoite_domain::composition::{
-    CompositionDiagnosticCode as DomainCompositionDiagnosticCode,
     CompositionParameter as DomainCompositionParameter,
     CompositionParameterFormat as DomainCompositionParameterFormat,
-    CompositionParameterType as DomainCompositionParameterType, CompositionSource,
+    CompositionParameterType as DomainCompositionParameterType,
 };
 use ugoite_domain::id::{validate_decoded_space_id, validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
@@ -11120,181 +11116,33 @@ async fn resolve_composition_handler(
 
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    let raw = state
+    let resolution = state
         .service
-        .get_composition_raw_revision_authorized_for_principals(
+        .resolve_composition_authorized_for_principals(
             &space_id,
             &composition_id,
             &request.revision_id,
+            &request.parameters,
             &principals,
         )
         .await
         .map_err(ApiError::from_core)?;
-    let Some(yaml) = raw.fields.get("spec").and_then(Value::as_str) else {
-        return Ok(Json(composition_resolve_diagnostic_response(
-            DomainCompositionDiagnosticCode::InvalidComposition,
-            None,
-            None,
-        )));
-    };
-    let document = match ugoite_domain::composition::parse_composition_yaml(yaml) {
-        Ok(document) => document,
-        Err(code) => {
-            return Ok(Json(composition_resolve_diagnostic_response(
-                code, None, None,
-            )));
-        }
-    };
-
-    let parameter_definitions = Some(
-        document
-            .spec
-            .parameters
+    let parameter_definitions = resolution.parameter_definitions.as_ref().map(|parameters| {
+        parameters
             .iter()
             .map(api_composition_parameter_definition)
-            .collect::<Vec<_>>(),
-    );
-
-    let parameter_bindings =
-        bind_composition_parameters(&document.spec.parameters, &request.parameters);
-    if !parameter_bindings.diagnostics.is_empty() {
-        return Ok(Json(composition_resolve_diagnostics_response(
-            parameter_bindings.diagnostics,
-            parameter_definitions.clone(),
-        )));
-    }
-
-    let mut owned_sources = Vec::with_capacity(document.spec.sources.len());
-    for source in &document.spec.sources {
-        match source {
-            CompositionSource::EntryQuery { id, form_id, .. } => {
-                let form = conceal_composition_source_lookup(
-                    state
-                        .service
-                        .get_composition_source_form_authorized_for_principals(
-                            &space_id,
-                            *form_id,
-                            &principals,
-                        )
-                        .await,
-                    ErrorCode::FormNotFound,
-                )
-                .map_err(ApiError::from_core)?;
-                owned_sources.push(OwnedCompositionSourceDescriptor::EntryQuery {
-                    source_id: id.clone(),
-                    form,
-                });
-            }
-            CompositionSource::SavedSql {
-                id,
-                entry_id,
-                revision_id,
-                ..
-            } => {
-                let saved_sql_ref = SavedSqlRevisionRef {
-                    id: entry_id.to_string(),
-                    revision_id: revision_id.to_string(),
-                };
-                let descriptor = conceal_composition_source_lookup(
-                    state
-                        .service
-                        .get_saved_sql_revision_descriptor_authorized_for_principals(
-                            &space_id,
-                            &saved_sql_ref,
-                            &principals,
-                        )
-                        .await,
-                    ErrorCode::EntryNotFound,
-                )
-                .map_err(ApiError::from_core)?
-                .map(|descriptor| SavedSqlRevisionMetadata {
-                    id: descriptor.id,
-                    revision_id: descriptor.revision_id,
-                    variable_types: descriptor
-                        .variables
-                        .into_iter()
-                        .map(|(name, variable)| (name, variable.var_type))
-                        .collect(),
-                });
-                owned_sources.push(OwnedCompositionSourceDescriptor::SavedSql {
-                    source_id: id.clone(),
-                    revision: descriptor,
-                });
-            }
-        }
-    }
-
-    let current_sources = owned_sources
-        .iter()
-        .map(OwnedCompositionSourceDescriptor::as_current_source)
-        .collect::<Vec<_>>();
-    let result = resolve_composition_core(ResolveInput {
-        composition_revision: ugoite_core::composition::CompositionRevisionRef {
-            entry_id: raw.revision.entry_id,
-            revision_id: raw.revision.revision_id,
-        },
-        spec: &document.spec,
-        parameters: &request.parameters,
-        current_sources: &current_sources,
+            .collect::<Vec<_>>()
     });
 
-    match result {
-        Ok(plan) => Ok(Json(composition_resolve_success_response(
+    match resolution.plan {
+        Some(plan) => Ok(Json(composition_resolve_success_response(
             plan,
             parameter_definitions,
         )?)),
-        Err(diagnostics) => Ok(Json(composition_resolve_diagnostics_response(
-            diagnostics,
+        None => Ok(Json(composition_resolve_diagnostics_response(
+            resolution.diagnostics,
             parameter_definitions,
         ))),
-    }
-}
-
-enum OwnedCompositionSourceDescriptor {
-    EntryQuery {
-        source_id: String,
-        form: Option<ugoite_domain::form::FormDefinition>,
-    },
-    SavedSql {
-        source_id: String,
-        revision: Option<SavedSqlRevisionMetadata>,
-    },
-}
-
-impl OwnedCompositionSourceDescriptor {
-    fn as_current_source(&self) -> CurrentSourceDescriptor<'_> {
-        match self {
-            Self::EntryQuery { source_id, form } => CurrentSourceDescriptor::EntryQuery {
-                source_id,
-                current_form: form.as_ref(),
-            },
-            Self::SavedSql {
-                source_id,
-                revision,
-            } => CurrentSourceDescriptor::SavedSql {
-                source_id,
-                current_revision: revision.as_ref(),
-            },
-        }
-    }
-}
-
-fn conceal_composition_source_lookup<T>(
-    result: anyhow::Result<T>,
-    concealed_code: ErrorCode,
-) -> anyhow::Result<Option<T>> {
-    match result {
-        Ok(value) => Ok(Some(value)),
-        Err(error)
-            if error.chain().any(|cause| {
-                cause
-                    .downcast_ref::<AppError>()
-                    .is_some_and(|app| app.code() == concealed_code)
-            }) =>
-        {
-            Ok(None)
-        }
-        Err(error) => Err(error),
     }
 }
 
@@ -11321,17 +11169,6 @@ fn api_composition_parameter_definition(
             DomainCompositionParameterFormat::YearMonth => ApiCompositionParameterFormat::YearMonth,
         }),
     }
-}
-
-fn composition_resolve_diagnostic_response(
-    code: DomainCompositionDiagnosticCode,
-    parameter_id: Option<String>,
-    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
-) -> CompositionResolveResponse {
-    composition_resolve_diagnostics_response(
-        vec![CoreCompositionDiagnostic { code, parameter_id }],
-        parameter_definitions,
-    )
 }
 
 fn composition_resolve_diagnostics_response(
