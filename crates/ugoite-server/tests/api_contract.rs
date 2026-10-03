@@ -1380,6 +1380,53 @@ fn openapi_documents_composition_lint_request_response_and_diagnostics() {
 }
 
 #[test]
+fn openapi_documents_composition_save_request_receipt_and_statuses() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let save = &snapshot["paths"]["/spaces/{space_id}/compositions"]["post"];
+    assert!(save.is_object(), "Composition save route is documented");
+    assert_eq!(
+        save["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionSaveRequest"
+    );
+    for status in ["200", "201"] {
+        assert_eq!(
+            save["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/CompositionSaveResponse"
+        );
+    }
+    for status in ["409", "413", "415", "422"] {
+        assert!(
+            save["responses"].get(status).is_some(),
+            "Composition save documents {status}"
+        );
+    }
+
+    let request = &snapshot["components"]["schemas"]["CompositionSaveRequest"];
+    assert_eq!(request["required"], serde_json::json!(["yaml"]));
+    assert_eq!(request["additionalProperties"], false);
+    assert_eq!(request["properties"]["composition_id"]["format"], "uuid");
+    assert_eq!(request["properties"]["base_revision_id"]["format"], "uuid");
+
+    let response = &snapshot["components"]["schemas"]["CompositionSaveResponse"];
+    assert_eq!(response["additionalProperties"], false);
+    assert_eq!(
+        response["properties"]["receipt"]["$ref"],
+        "#/components/schemas/CompositionPublicationReceipt"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionPublicationReceipt"]["required"],
+        serde_json::json!([
+            "command_id",
+            "catalog_generation",
+            "snapshot_id",
+            "committed_revision_ids",
+            "committed_at_micros",
+            "data_file_count"
+        ])
+    );
+}
+
+#[test]
 fn openapi_documents_the_form_extra_attributes_policy() {
     let snapshot = ugoite_server::openapi_snapshot();
     assert_eq!(

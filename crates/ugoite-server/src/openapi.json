@@ -11555,6 +11555,179 @@
       }
     },
     "/spaces/{space_id}/compositions": {
+      "post": {
+        "summary": "Create or update a saved Composition",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompositionSaveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated using the supplied exact base revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompositionSaveResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompositionSaveResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "409": {
+            "description": "The supplied base revision is stale or the Composition registry conflicts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "413": {
+            "description": "The JSON request body exceeds the bounded parser request size",
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "415": {
+            "description": "Request Content-Type must be application/json",
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "422": {
+            "description": "The request does not match the create/update contract or contains invalid Composition YAML",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": {
+                "$ref": "#/components/headers/X-Ugoite-Key-Id"
+              },
+              "X-Ugoite-Signature": {
+                "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          }
+        },
+        "description": "Creates one Space-owned Composition Entry or publishes an update with an exact base revision. The YAML is parsed and canonicalized before publication."
+      },
       "get": {
         "summary": "List current Composition summaries",
         "parameters": [
@@ -14887,6 +15060,96 @@
             "type": "string"
           }
         }
+      },
+      "CompositionSaveRequest": {
+        "type": "object",
+        "required": [
+          "yaml"
+        ],
+        "properties": {
+          "composition_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Omit with base_revision_id to create; supply both fields to update."
+          },
+          "base_revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Exact current revision required for an update."
+          },
+          "yaml": {
+            "type": "string",
+            "description": "Restricted .ugcomp.yaml v1 document, at most 64 KiB."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionPublicationReceipt": {
+        "type": "object",
+        "required": [
+          "command_id",
+          "catalog_generation",
+          "snapshot_id",
+          "committed_revision_ids",
+          "committed_at_micros",
+          "data_file_count"
+        ],
+        "properties": {
+          "command_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "catalog_generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "snapshot_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "committed_revision_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "committed_at_micros": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "data_file_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionSaveResponse": {
+        "type": "object",
+        "required": [
+          "composition_id",
+          "revision_id",
+          "canonical_yaml",
+          "receipt"
+        ],
+        "properties": {
+          "composition_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "canonical_yaml": {
+            "type": "string"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/CompositionPublicationReceipt"
+          }
+        },
+        "additionalProperties": false
       },
       "CompositionListItem": {
         "type": "object",
