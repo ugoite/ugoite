@@ -271,7 +271,7 @@ export async function gotoPageWithOneEnvironmentRetry(
     waitForReady?: (page: Page) => Promise<void>;
   } = {},
 ): Promise<{ retried: boolean }> {
-  const label = options.label ?? url;
+  const label = options.label ?? safeUrlPath(url);
   const assetErrors: string[] = [];
   let observingNavigation = false;
   page.on("requestfailed", (request) => {

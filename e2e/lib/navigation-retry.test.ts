@@ -595,12 +595,22 @@ Deno.test("gotoPageWithOneEnvironmentRetry: same-page retry policy", async () =>
       return null;
     },
   } as unknown as Page;
-  const recovered = await gotoPageWithOneEnvironmentRetry(
-    page,
-    "http://localhost/settings/security",
-  );
+  const originalLog = console.log;
+  const logMessages: string[] = [];
+  console.log = (...args: unknown[]) => logMessages.push(args.join(" "));
+  let recovered: Awaited<ReturnType<typeof gotoPageWithOneEnvironmentRetry>>;
+  try {
+    recovered = await gotoPageWithOneEnvironmentRetry(
+      page,
+      "http://localhost/settings/security?token=hidden#secret=hidden",
+    );
+  } finally {
+    console.log = originalLog;
+  }
   assert.equal(recovered.retried, true);
   assert.equal(calls, 2);
+  assert.equal(logMessages.join(" ").includes("/settings/security"), true);
+  assert.equal(logMessages.join(" ").includes("hidden"), false);
 
   const forbiddenPage = {
     on() {},
