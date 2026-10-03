@@ -418,6 +418,7 @@ export default function SpaceSqlRunRoute() {
   const saveRequest = async (
     attempt: PendingCompositionSaveAttempt,
     visitId: number | undefined,
+    isRetry = false,
   ) => {
     stagePendingCompositionSaveAttempt(attempt, visitId);
     try {
@@ -442,7 +443,11 @@ export default function SpaceSqlRunRoute() {
           "mutationOutcome" in error
         ? (error as { mutationOutcome?: unknown }).mutationOutcome
         : "unknown";
-      if (outcome === "rejected") {
+      const status = error && typeof error === "object" && "status" in error
+        ? (error as { status?: unknown }).status
+        : undefined;
+      const retryWasDenied = isRetry && (status === 401 || status === 403);
+      if (outcome === "rejected" && !retryWasDenied) {
         clearPendingCompositionSaveAttempt(attempt, "rejected", visitId);
       } else {
         markPendingCompositionSaveAttemptUncertain(attempt, visitId);
@@ -493,7 +498,7 @@ export default function SpaceSqlRunRoute() {
     setSaveError(null);
     setSaveBusy(true);
     try {
-      await saveRequest(attempt, visitId);
+      await saveRequest(attempt, visitId, true);
     } finally {
       if (saveRouteVisitId === visitId) setSaveBusy(false);
     }
