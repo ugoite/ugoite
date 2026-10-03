@@ -110,7 +110,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       receipt: {
         command_id: "command-1",
         catalog_generation: 4,
-        snapshot_id: "snapshot-1",
+        snapshot_id: 42,
         committed_revision_ids: ["tool-revision-3"],
         committed_at_micros: 1,
         data_file_count: 1,
@@ -257,7 +257,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
         receipt: {
           command_id: "command-1",
           catalog_generation: 4,
-          snapshot_id: "snapshot-1",
+          snapshot_id: 42,
           committed_revision_ids: ["tool-revision-3"],
           committed_at_micros: 1,
           data_file_count: 1,
@@ -352,7 +352,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       receipt: {
         command_id: "command-1",
         catalog_generation: 4,
-        snapshot_id: "snapshot-1",
+        snapshot_id: 42,
         committed_revision_ids: ["tool-revision-3"],
         committed_at_micros: 1,
         data_file_count: 1,
@@ -375,7 +375,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       receipt: {
         command_id: string;
         catalog_generation: number;
-        snapshot_id: string;
+        snapshot_id: number;
         committed_revision_ids: string[];
         committed_at_micros: number;
         data_file_count: number;
@@ -392,7 +392,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
         receipt: {
           command_id: `command-${committedPublications.size + 1}`,
           catalog_generation: 4,
-          snapshot_id: "snapshot-1",
+          snapshot_id: 42,
           committed_revision_ids: [
             `tool-revision-${committedPublications.size + 1}`,
           ],
