@@ -357,6 +357,76 @@ Deno.test(
 );
 
 Deno.test(
+  "gotoWithOneEnvironmentRetry: a failed retry navigation does not start a third attempt",
+  async () => {
+    const { browser, contextsCreated, contextsClosed } = fakeBrowser([
+      async (_url, page) => {
+        page.emit("requestfailed", failedFrontendAsset());
+        return okResponse();
+      },
+      async () => {
+        throw NETWORK_CHANGED;
+      },
+      async () => okResponse(),
+    ]);
+
+    await assert.rejects(
+      () =>
+        gotoWithOneEnvironmentRetry(browser, "http://localhost/setup", {
+          waitForReady: async () => await new Promise(() => {}),
+        }),
+      /ERR_NETWORK_CHANGED/,
+    );
+    assert.equal(contextsCreated(), 2);
+    assert.equal(contextsClosed(), 2);
+  },
+);
+
+Deno.test(
+  "gotoWithOneEnvironmentRetry: HTTP 200 script MIME failure fails promptly without retry",
+  async () => {
+    const diagnostics = createSetupReadinessDiagnostics();
+    const { browser, contextsCreated, contextsClosed } = fakeBrowser([
+      async (_url, page) => {
+        page.emit("console", {
+          type: () => "error",
+          text: () =>
+            "Failed to load module script: server responded with a MIME type of text/html",
+          location: () => ({
+            url: "http://localhost/_build/assets/setup.js?secret=hidden",
+          }),
+        });
+        return okResponse();
+      },
+    ]);
+
+    let finalError: unknown;
+    try {
+      await gotoWithOneEnvironmentRetry(browser, "http://localhost/setup", {
+        prepare: async (page) => observeSetupReadiness(page, diagnostics),
+        waitForReady: async () => await new Promise(() => {}),
+      });
+    } catch (error) {
+      finalError = error;
+    }
+
+    assert.equal(safeNavigationFailure(finalError), "readiness-failed");
+    assert.equal(contextsCreated(), 1);
+    assert.equal(contextsClosed(), 1);
+    assert.equal(
+      formatSetupReadinessDiagnostics("http://localhost/setup", diagnostics)
+        .includes("consoleErrors=attempt-1:/_build/<asset>.js"),
+      true,
+    );
+    assert.equal(
+      formatSetupReadinessDiagnostics("http://localhost/setup", diagnostics)
+        .includes("secret"),
+      false,
+    );
+  },
+);
+
+Deno.test(
   "gotoWithOneEnvironmentRetry: persistent asset network failure fails with both attempts",
   async () => {
     const diagnostics = createSetupReadinessDiagnostics();

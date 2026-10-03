@@ -56,6 +56,11 @@ function isFrontendAsset(url: string): boolean {
   }
 }
 
+function isFrontendScriptConsoleFailure(message: string): boolean {
+  return /mime type|refused to execute script|expected a javascript-or-wasm module script/i
+    .test(message);
+}
+
 async function visibleBodyText(page: Page): Promise<string> {
   try {
     return await page.evaluate(() => document.body?.innerText ?? "");
@@ -133,7 +138,16 @@ export async function gotoWithOneEnvironmentRetry(
       markReadinessFailure();
     });
     page.on("console", (message) => {
-      if (message.type() === "error") assetErrors.push(message.text());
+      if (message.type() !== "error") return;
+      if (isFrontendScriptConsoleFailure(message.text())) {
+        // A script can return HTTP 200 and still be rejected by the browser
+        // because the response has an invalid MIME type. Preserve a safe
+        // marker rather than the browser's URL-bearing console text.
+        assetErrors.push("frontend-script-mime-error");
+        markReadinessFailure();
+      } else {
+        assetErrors.push(message.text());
+      }
     });
     let status: number | undefined;
     try {
@@ -188,43 +202,46 @@ export async function gotoWithOneEnvironmentRetry(
     ]);
   };
 
+  let first: Awaited<ReturnType<typeof attempt>>;
   try {
-    const first = await attempt();
-    try {
-      await waitForReady(first);
-    } catch (error) {
-      const probe = await probeForReadyFailure(first);
-      await first.target.close().catch(() => {});
-      // Retry only when the probe identifies a transient frontend asset
-      // network failure. Missing/invalid assets and product failures fail
-      // without rebuilding the context.
-      if (
-        !isProductFailure(error) &&
-        classifyNavigationFailure("readiness check failed", probe) === "retry"
-      ) {
-        const reason = safeNavigationFailure(error);
-        console.log(
-          `[environment] ${label}: ready check observed a frontend asset failure; rebuilding the browser context once: ${reason}`,
-        );
-        const second = await attempt();
-        try {
-          await waitForReady(second);
-        } catch (readyError) {
-          await second.target.close().catch(() => {});
-          throw readyError;
-        }
-        return { target: second.target, page: second.page, retried: true };
-      }
-      throw error;
-    }
-    return { target: first.target, page: first.page, retried: false };
+    first = await attempt();
   } catch (error) {
     if (classifyNavigationFailure(error) !== "retry") throw error;
     const reason = safeNavigationFailure(error);
     console.log(
       `[environment] ${label}: initial navigation hit a browser-level failure; rebuilding the browser context once: ${reason}`,
     );
-    // The second attempt throws through: exactly one rebuild is allowed.
+    // Keep the retry outside the catch below so a failed second attempt
+    // cannot fall through and create an unintended third context.
+    const second = await attempt();
+    try {
+      await waitForReady(second);
+    } catch (readyError) {
+      await second.target.close().catch(() => {});
+      throw readyError;
+    }
+    return { target: second.target, page: second.page, retried: true };
+  }
+
+  try {
+    await waitForReady(first);
+    return { target: first.target, page: first.page, retried: false };
+  } catch (error) {
+    const probe = await probeForReadyFailure(first);
+    await first.target.close().catch(() => {});
+    // Retry only when the probe identifies a transient frontend asset
+    // network failure. Missing/invalid assets and product failures fail
+    // without rebuilding the context.
+    if (
+      isProductFailure(error) ||
+      classifyNavigationFailure("readiness check failed", probe) !== "retry"
+    ) {
+      throw error;
+    }
+    const reason = safeNavigationFailure(error);
+    console.log(
+      `[environment] ${label}: ready check observed a frontend asset failure; rebuilding the browser context once: ${reason}`,
+    );
     const second = await attempt();
     try {
       await waitForReady(second);
