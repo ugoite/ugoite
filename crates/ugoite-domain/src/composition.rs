@@ -474,6 +474,13 @@ pub enum CompositionDiagnosticCode {
     FieldTypeChanged,
     SourceSchemaChanged,
     MetricFieldNotProjected,
+    MetricResultNotScalar,
+    MetricResultTypeMismatch,
+    MetricResultEmpty,
+    MetricResultMultipleRows,
+    MetricResultColumnMissing,
+    MetricResultColumnAmbiguous,
+    MetricResultPageIncomplete,
 }
 
 impl CompositionDiagnosticCode {
@@ -492,6 +499,13 @@ impl CompositionDiagnosticCode {
             Self::FieldTypeChanged => "field_type_changed",
             Self::SourceSchemaChanged => "source_schema_changed",
             Self::MetricFieldNotProjected => "metric_field_not_projected",
+            Self::MetricResultNotScalar => "metric_result_not_scalar",
+            Self::MetricResultTypeMismatch => "metric_result_type_mismatch",
+            Self::MetricResultEmpty => "metric_result_empty",
+            Self::MetricResultMultipleRows => "metric_result_multiple_rows",
+            Self::MetricResultColumnMissing => "metric_result_column_missing",
+            Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
+            Self::MetricResultPageIncomplete => "metric_result_page_incomplete",
         }
     }
 }
