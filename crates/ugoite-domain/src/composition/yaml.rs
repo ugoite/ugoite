@@ -1,8 +1,6 @@
 //! Restricted YAML parsing for the typed Composition v1 contract.
 
-use super::{
-    CompositionDiagnosticCode, CompositionDocument, COMPOSITION_FORMAT, COMPOSITION_FORMAT_VERSION,
-};
+use super::{CompositionDiagnosticCode, CompositionDocument};
 use serde_json::Value;
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy};
 
@@ -36,10 +34,7 @@ pub fn parse_composition_yaml(
         return Err(CompositionDiagnosticCode::InvalidComposition);
     }
 
-    let format_version = probe_format_version(input)?;
-    if format_version != u64::from(COMPOSITION_FORMAT_VERSION) {
-        return Err(CompositionDiagnosticCode::UnsupportedFormatVersion);
-    }
+    probe_document_envelope(input)?;
 
     let document: CompositionDocument =
         serde_saphyr::from_slice_with_options(input.as_bytes(), strict_v1_options())
@@ -49,7 +44,7 @@ pub fn parse_composition_yaml(
     super::canonical::normalize_composition_document(&document)
 }
 
-fn probe_format_version(input: &str) -> Result<u64, CompositionDiagnosticCode> {
+fn probe_document_envelope(input: &str) -> Result<(), CompositionDiagnosticCode> {
     let documents: Vec<Value> =
         serde_saphyr::from_slice_multiple_with_options(input.as_bytes(), version_probe_options())
             .map_err(|_| CompositionDiagnosticCode::InvalidComposition)?;
@@ -57,13 +52,7 @@ fn probe_format_version(input: &str) -> Result<u64, CompositionDiagnosticCode> {
     let Some(document) = documents.first() else {
         return Err(CompositionDiagnosticCode::InvalidComposition);
     };
-    if document.get("format").and_then(Value::as_str) != Some(COMPOSITION_FORMAT) {
-        return Err(CompositionDiagnosticCode::InvalidComposition);
-    }
-    document
-        .get("format_version")
-        .and_then(Value::as_u64)
-        .ok_or(CompositionDiagnosticCode::InvalidComposition)
+    super::validate_composition_document_envelope(document)
 }
 
 fn strict_v1_options() -> serde_saphyr::Options {
