@@ -324,6 +324,132 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       .not.toBeInTheDocument();
   });
 
+  it.each(["space", "sql", "path"] as const)(
+    "closes and resets the save dialog when its %s identity changes during canonicalization",
+    async (changedIdentity) => {
+      let resolveCanonical:
+        | ((
+          value: Awaited<
+            ReturnType<typeof compositionApi.canonicalizeDocument>
+          >,
+        ) => void)
+        | undefined;
+      canonicalizeMock.mockImplementationOnce(() =>
+        new Promise((resolve) => {
+          resolveCanonical = resolve;
+        })
+      );
+      render(() => <SpaceSqlRunRoute />);
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Save as tool" }),
+      );
+      const dialog = screen.getByRole("dialog", { name: "Save as tool" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledTimes(1));
+
+      switch (changedIdentity) {
+        case "space":
+          routeControls.setSpace("other-space");
+          routeControls.setPath(
+            "/spaces/other-space/sql/saved-query/run",
+          );
+          break;
+        case "sql":
+          routeControls.setSql("other-query");
+          routeControls.setPath(
+            "/spaces/default/sql/other-query/run",
+          );
+          break;
+        case "path":
+          routeControls.setPath("/spaces/default/sql/saved-query");
+          break;
+      }
+
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Save as tool" }))
+          .not.toBeInTheDocument()
+      );
+      resolveCanonical?.({
+        document: {},
+        canonical_yaml: "canonical composition yaml",
+        fingerprint: "fingerprint",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(compositionSaveMock).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog", { name: "Save as tool" }))
+        .not.toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
+
+  it("ignores a late canonicalization rejection after a new SQL save dialog opens", async () => {
+    let rejectCanonical: ((error: unknown) => void) | undefined;
+    canonicalizeMock.mockImplementationOnce(() =>
+      new Promise((_resolve, reject) => {
+        rejectCanonical = reject;
+      })
+    );
+    getMock.mockImplementation((_spaceId, requestedSqlId) =>
+      Promise.resolve({
+        id: requestedSqlId,
+        name: requestedSqlId === "other-query" ? "Other query" : "Saved query",
+        kind: "user-query",
+        sql: "SELECT value FROM demo ORDER BY value",
+        variables: [],
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-02T00:00:00Z",
+        revision_id: "rev-1",
+      })
+    );
+    queryMock.mockReset().mockResolvedValue({
+      columns: ["value"],
+      rows: [["result"]],
+      has_more: false,
+    });
+    render(() => <SpaceSqlRunRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save as tool" }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Save as tool" }))
+        .getByRole("button", { name: "Save" }),
+    );
+    await waitFor(() => expect(canonicalizeMock).toHaveBeenCalledTimes(1));
+
+    routeControls.setSql("other-query");
+    routeControls.setPath("/spaces/default/sql/other-query/run");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Save as tool" }))
+        .not.toBeInTheDocument()
+    );
+    await waitFor(() =>
+      expect(getMock).toHaveBeenLastCalledWith("default", "other-query")
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save as tool" }),
+    );
+    const currentDialog = screen.getByRole("dialog", {
+      name: "Save as tool",
+    });
+    expect(screen.getByLabelText("Name", { selector: "input" }))
+      .toHaveValue("Other query");
+
+    rejectCanonical?.(new Error("canonicalization failed"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.getByRole("dialog", { name: "Save as tool" }))
+      .toBe(currentDialog);
+    expect(screen.getByLabelText("Name", { selector: "input" }))
+      .toHaveValue("Other query");
+    expect(within(currentDialog).getByRole("button", { name: "Save" }))
+      .toBeEnabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(compositionSaveMock).not.toHaveBeenCalled();
+  });
+
   it("does not navigate after a save resolves off the run route", async () => {
     let resolveSave:
       | ((value: Awaited<ReturnType<typeof compositionApi.save>>) => void)

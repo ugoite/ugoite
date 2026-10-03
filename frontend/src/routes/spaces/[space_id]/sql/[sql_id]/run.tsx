@@ -111,6 +111,7 @@ export default function SpaceSqlRunRoute() {
   const [saveError, setSaveError] = createSignal<string | null>(null);
   let saveSeed: {
     spaceId: string;
+    sqlId: string;
     routePath: string;
     entry: SqlEntry;
     columns: string[];
@@ -332,6 +333,7 @@ export default function SpaceSqlRunRoute() {
     if (!current || !result) return;
     saveSeed = {
       spaceId: spaceId(),
+      sqlId: sqlId(),
       routePath: location.pathname,
       entry: current,
       columns: [...result.columns],
@@ -377,7 +379,10 @@ export default function SpaceSqlRunRoute() {
     const route = currentSaveRoute();
     const routeVisitId = beginCompositionSaveRouteVisit(route);
     saveRouteVisitId = routeVisitId;
-    if (pendingSave && !isCurrentSaveRoute(pendingSave)) {
+    if (
+      (saveSeed && !isCurrentSaveRoute(saveSeed)) ||
+      (pendingSave && !isCurrentSaveRoute(pendingSave))
+    ) {
       clearSaveForStaleRoute();
     }
     const restoreAttempt = (
@@ -471,15 +476,17 @@ export default function SpaceSqlRunRoute() {
         seed.parameters,
       );
       const canonical = await compositionApi.canonicalizeDocument(document);
+      if (
+        saveRouteVisitId !== visitId || !isCurrentSaveRoute(seed)
+      ) return;
       const attempt: PendingCompositionSaveAttempt = {
         spaceId: seed.spaceId,
-        sqlId: seed.entry.id,
+        sqlId: seed.sqlId,
         routePath: seed.routePath,
         name,
         yaml: canonical.canonical_yaml,
         idempotencyKey: crypto.randomUUID(),
       };
-      if (!isCurrentSaveVisit(attempt, visitId)) return;
       pendingSave = attempt;
       await saveRequest(attempt, visitId);
     } catch {
