@@ -98,6 +98,7 @@ export async function gotoWithOneEnvironmentRetry(
       status?: number;
       assetErrors: string[];
       readinessFailure: Promise<void>;
+      readinessFailed: () => boolean;
     }
   > => {
     const target = await browser.newContext({
@@ -106,25 +107,30 @@ export async function gotoWithOneEnvironmentRetry(
     });
     const page = await target.newPage();
     const assetErrors: string[] = [];
+    let readinessFailed = false;
     let signalReadinessFailure!: () => void;
     const readinessFailure = new Promise<void>((resolve) => {
       signalReadinessFailure = resolve;
     });
+    const markReadinessFailure = () => {
+      readinessFailed = true;
+      signalReadinessFailure();
+    };
     page.on("requestfailed", (request) => {
       if (!isFrontendAsset(request.url())) return;
       const failure = request.failure()?.errorText ?? "requestfailed";
       assetErrors.push(`${request.url()} :: ${failure}`);
-      signalReadinessFailure();
+      markReadinessFailure();
     });
     page.on("response", (response) => {
       if (isFrontendAsset(response.url()) && !response.ok()) {
         assetErrors.push(`${response.url()} :: http-${response.status()}`);
-        signalReadinessFailure();
+        markReadinessFailure();
       }
     });
     page.on("pageerror", () => {
       assetErrors.push("frontend-page-error");
-      signalReadinessFailure();
+      markReadinessFailure();
     });
     page.on("console", (message) => {
       if (message.type() === "error") assetErrors.push(message.text());
@@ -145,7 +151,14 @@ export async function gotoWithOneEnvironmentRetry(
       await target.close().catch(() => {});
       throw error;
     }
-    return { target, page, status, assetErrors, readinessFailure };
+    return {
+      target,
+      page,
+      status,
+      assetErrors,
+      readinessFailure,
+      readinessFailed: () => readinessFailed,
+    };
   };
 
   const probeForReadyFailure = async (
@@ -162,6 +175,9 @@ export async function gotoWithOneEnvironmentRetry(
     entry: Awaited<ReturnType<typeof attempt>>,
   ): Promise<void> => {
     if (!options.waitForReady) return;
+    if (entry.readinessFailed()) {
+      throw new Error("readiness check failed after a frontend load error");
+    }
     await Promise.race([
       options.waitForReady(entry.page),
       entry.readinessFailure.then(() => {
@@ -179,9 +195,9 @@ export async function gotoWithOneEnvironmentRetry(
     } catch (error) {
       const probe = await probeForReadyFailure(first);
       await first.target.close().catch(() => {});
-      // Narrow exception: a 2xx document with an empty DOM plus a frontend
-      // asset environment error earns the single rebuild. Everything else
-      // that fails after load is an application verdict.
+      // Retry only when the probe identifies a transient frontend asset
+      // network failure. Missing/invalid assets and product failures fail
+      // without rebuilding the context.
       if (
         !isProductFailure(error) &&
         classifyNavigationFailure("readiness check failed", probe) === "retry"

@@ -333,7 +333,6 @@ Deno.test(
         prepare: async (page) => observeSetupReadiness(page, diagnostics),
         waitForReady: async () => {
           readinessChecks++;
-          if (readinessChecks === 1) return await new Promise(() => {});
         },
       },
     );
@@ -341,7 +340,7 @@ Deno.test(
     assert.equal(result.retried, true);
     assert.equal(contextsCreated(), 2);
     assert.equal(contextsClosed(), 1);
-    assert.equal(readinessChecks, 2);
+    assert.equal(readinessChecks, 1);
     const output = formatSetupReadinessDiagnostics(
       "http://localhost/setup#secret=hidden",
       diagnostics,
