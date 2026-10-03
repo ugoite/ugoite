@@ -18,6 +18,16 @@ import {
   canCreateSavedSqlComposition,
   compositionApi,
 } from "~/lib/composition-api";
+import {
+  beginCompositionSaveRouteVisit,
+  clearPendingCompositionSaveAttempt,
+  getPendingCompositionSaveAttempt,
+  isCurrentCompositionSaveRouteVisit,
+  markPendingCompositionSaveAttemptUncertain,
+  type PendingCompositionSaveAttempt,
+  stagePendingCompositionSaveAttempt,
+  subscribeToPendingCompositionSaveAttempt,
+} from "~/lib/composition-save-attempt";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { normalizeSqlVariables } from "~/lib/sql";
@@ -106,13 +116,8 @@ export default function SpaceSqlRunRoute() {
     columns: string[];
     parameters: Record<string, unknown>;
   } | undefined;
-  let pendingSave: {
-    spaceId: string;
-    sqlId: string;
-    routePath: string;
-    yaml: string;
-    idempotencyKey: string;
-  } | undefined;
+  let pendingSave: PendingCompositionSaveAttempt | undefined;
+  let saveRouteVisitId: number | undefined;
   const state = createMemo(() => runState(location.state));
 
   const [entry] = createResource(
@@ -346,45 +351,107 @@ export default function SpaceSqlRunRoute() {
     spaceId() === attempt.spaceId && sqlId() === attempt.sqlId &&
     location.pathname === attempt.routePath;
 
+  const isCurrentSaveVisit = (
+    attempt: PendingCompositionSaveAttempt,
+    visitId: number | undefined,
+  ) =>
+    isCurrentSaveRoute(attempt) &&
+    isCurrentCompositionSaveRouteVisit(attempt, visitId);
+
+  const currentSaveRoute = () => ({
+    spaceId: spaceId(),
+    sqlId: sqlId(),
+    routePath: location.pathname,
+  });
+
   const clearSaveForStaleRoute = () => {
     setSaveDialogOpen(false);
+    setSaveBusy(false);
     setSaveRetryAvailable(false);
+    setSaveError(null);
+    saveSeed = undefined;
     pendingSave = undefined;
   };
 
-  const saveRequest = async (attempt: {
-    spaceId: string;
-    sqlId: string;
-    routePath: string;
-    yaml: string;
-    idempotencyKey: string;
-  }) => {
+  createEffect(() => {
+    const route = currentSaveRoute();
+    const routeVisitId = beginCompositionSaveRouteVisit(route);
+    saveRouteVisitId = routeVisitId;
+    if (pendingSave && !isCurrentSaveRoute(pendingSave)) {
+      clearSaveForStaleRoute();
+    }
+    const restoreAttempt = (
+      stored: NonNullable<ReturnType<typeof getPendingCompositionSaveAttempt>>,
+    ) => {
+      pendingSave = stored.attempt;
+      setSaveDialogOpen(true);
+      setSaveBusy(false);
+      setSaveRetryAvailable(true);
+      setSaveError(
+        stored.state === "uncertain" ? t("composition.saveFailed") : null,
+      );
+    };
+    const savedAttempt = getPendingCompositionSaveAttempt(route);
+    if (savedAttempt) restoreAttempt(savedAttempt);
+    const unsubscribe = subscribeToPendingCompositionSaveAttempt(
+      route,
+      (event) => {
+        if (event.type === "pending") {
+          if (event.stored.routeVisitId !== routeVisitId) return;
+          restoreAttempt(event.stored);
+          return;
+        }
+        if (event.routeVisitId !== routeVisitId) return;
+        if (pendingSave?.idempotencyKey !== event.idempotencyKey) return;
+        pendingSave = undefined;
+        setSaveBusy(false);
+        setSaveRetryAvailable(false);
+        setSaveError(
+          event.outcome === "rejected" ? t("composition.saveFailed") : null,
+        );
+        if (!saveSeed) setSaveDialogOpen(false);
+      },
+    );
+    onCleanup(unsubscribe);
+  });
+
+  const saveRequest = async (
+    attempt: PendingCompositionSaveAttempt,
+    visitId: number | undefined,
+    isRetry = false,
+  ) => {
+    stagePendingCompositionSaveAttempt(attempt, visitId);
     try {
       const response = await compositionApi.save(
         attempt.spaceId,
         attempt.yaml,
         attempt.idempotencyKey,
       );
-      if (!isCurrentSaveRoute(attempt)) {
-        clearSaveForStaleRoute();
+      if (!isCurrentSaveVisit(attempt, visitId)) {
+        markPendingCompositionSaveAttemptUncertain(attempt, visitId);
         return;
       }
+      clearPendingCompositionSaveAttempt(attempt, "completed", visitId);
+      pendingSave = undefined;
       navigate(
         `/spaces/${encodeURIComponent(spaceId())}/compositions/${
           encodeURIComponent(response.composition_id)
         }/${encodeURIComponent(response.revision_id)}`,
       );
     } catch (error) {
-      if (!isCurrentSaveRoute(attempt)) {
-        clearSaveForStaleRoute();
-        return;
-      }
       const outcome = error && typeof error === "object" &&
           "mutationOutcome" in error
         ? (error as { mutationOutcome?: unknown }).mutationOutcome
         : "unknown";
-      setSaveRetryAvailable(outcome !== "rejected");
-      setSaveError(t("composition.saveFailed"));
+      const status = error && typeof error === "object" && "status" in error
+        ? (error as { status?: unknown }).status
+        : undefined;
+      const retryWasDenied = isRetry && (status === 401 || status === 403);
+      if (outcome === "rejected" && !retryWasDenied) {
+        clearPendingCompositionSaveAttempt(attempt, "rejected", visitId);
+      } else {
+        markPendingCompositionSaveAttemptUncertain(attempt, visitId);
+      }
     }
   };
 
@@ -392,6 +459,7 @@ export default function SpaceSqlRunRoute() {
     if (saveBusy() || saveRetryAvailable()) return;
     const seed = saveSeed;
     if (!seed || !saveDialogOpen()) return;
+    const visitId = saveRouteVisitId;
     pendingSave = undefined;
     setSaveError(null);
     setSaveBusy(true);
@@ -403,33 +471,36 @@ export default function SpaceSqlRunRoute() {
         seed.parameters,
       );
       const canonical = await compositionApi.canonicalizeDocument(document);
-      if (location.pathname !== seed.routePath) {
-        clearSaveForStaleRoute();
-        return;
-      }
-      pendingSave = {
+      const attempt: PendingCompositionSaveAttempt = {
         spaceId: seed.spaceId,
         sqlId: seed.entry.id,
         routePath: seed.routePath,
+        name,
         yaml: canonical.canonical_yaml,
         idempotencyKey: crypto.randomUUID(),
       };
-      await saveRequest(pendingSave);
+      if (!isCurrentSaveVisit(attempt, visitId)) return;
+      pendingSave = attempt;
+      await saveRequest(attempt, visitId);
     } catch {
-      setSaveError(t("composition.saveFailed"));
+      if (saveRouteVisitId === visitId) {
+        setSaveError(t("composition.saveFailed"));
+      }
     } finally {
-      setSaveBusy(false);
+      if (saveRouteVisitId === visitId) setSaveBusy(false);
     }
   };
 
   const handleRetrySave = async () => {
     if (saveBusy() || !saveRetryAvailable() || !pendingSave) return;
+    const attempt = pendingSave;
+    const visitId = saveRouteVisitId;
     setSaveError(null);
     setSaveBusy(true);
     try {
-      await saveRequest(pendingSave);
+      await saveRequest(attempt, visitId, true);
     } finally {
-      setSaveBusy(false);
+      if (saveRouteVisitId === visitId) setSaveBusy(false);
     }
   };
 
@@ -576,7 +647,8 @@ export default function SpaceSqlRunRoute() {
       </section>
       <Show when={saveDialogOpen()}>
         <SaveAsToolDialog
-          initialName={saveSeed?.entry.name ?? displaySqlName(saveSeed!.entry)}
+          initialName={pendingSave?.name ?? saveSeed?.entry.name ??
+            (saveSeed ? displaySqlName(saveSeed.entry) : "")}
           busy={saveBusy()}
           retryAvailable={saveRetryAvailable()}
           error={saveError()}
