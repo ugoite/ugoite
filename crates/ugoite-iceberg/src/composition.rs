@@ -13,7 +13,8 @@ use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 use ugoite_domain::change::ChangeCommand;
 use ugoite_domain::composition::{
-    canonicalize_composition_yaml, CanonicalComposition, CompositionDocument,
+    canonicalize_composition, canonicalize_composition_yaml, CanonicalComposition,
+    CompositionDocument,
 };
 use ugoite_domain::entry::{
     EntryMetadata, EntryOperation, EntryRevision, EntryRevisionDraft, FieldValue,
@@ -34,6 +35,9 @@ mod history_tests;
 #[cfg(test)]
 #[path = "composition/list_tests.rs"]
 mod list_tests;
+#[cfg(test)]
+#[path = "composition/restore_tests.rs"]
+mod restore_tests;
 
 /// An inspectable stored Composition revision. `revision.values` retains the
 /// stable FieldId keyed carrier while `fields` provides its historical Form
@@ -101,6 +105,18 @@ pub struct CompositionSaveRequest {
 pub struct CompositionSaveResult {
     pub entry_id: EntryId,
     pub revision_id: RevisionId,
+    pub document: CompositionDocument,
+    pub canonical_yaml: String,
+    pub receipt: crate::CommitReceipt,
+}
+
+/// Result of restoring one exact historical Composition revision as a new
+/// append-only Entry revision.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompositionRestoreResult {
+    pub entry_id: EntryId,
+    pub revision_id: RevisionId,
+    pub restored_from_revision_id: RevisionId,
     pub document: CompositionDocument,
     pub canonical_yaml: String,
     pub receipt: crate::CommitReceipt,
@@ -189,8 +205,10 @@ pub(crate) fn validate_composition_revision(
     form: &FormDefinition,
 ) -> Result<CompositionDocument> {
     validate_composition_registry_form(form)?;
-    if revision.operation != EntryOperation::Upsert
-        || !revision.extra_attributes.is_empty()
+    if !matches!(
+        revision.operation,
+        EntryOperation::Upsert | EntryOperation::Restore
+    ) || !revision.extra_attributes.is_empty()
         || !revision.extension_metadata.is_empty()
         || revision.values.len() != form.fields.len()
         || revision.entry.external_id != revision.entry_id.to_string()
@@ -198,6 +216,29 @@ pub(crate) fn validate_composition_revision(
         return Err(registry_conflict(
             "Composition revision has an invalid carrier shape",
         ));
+    }
+    match revision.operation {
+        EntryOperation::Upsert
+            if revision.entry.restored_from.is_some() || revision.source_id.is_some() =>
+        {
+            return Err(registry_conflict(
+                "Composition upsert has restore-only provenance",
+            ));
+        }
+        EntryOperation::Restore => {
+            let Some(restored_from) = revision.entry.restored_from else {
+                return Err(registry_conflict(
+                    "Composition restore is missing its source revision",
+                ));
+            };
+            let restored_from = restored_from.to_string();
+            if revision.source_id.as_deref() != Some(restored_from.as_str()) {
+                return Err(registry_conflict(
+                    "Composition restore source does not match its Entry provenance",
+                ));
+            }
+        }
+        _ => {}
     }
 
     let name = match registry_field_value(form, revision, "name")? {
@@ -384,6 +425,129 @@ pub(crate) async fn save_composition(
     Ok(CompositionSaveResult {
         entry_id,
         revision_id: revision.revision_id,
+        document,
+        canonical_yaml: canonical.yaml,
+        receipt,
+    })
+}
+
+/// Restore one exact historical Composition revision as a new Entry
+/// revision. Both the selected source and the new carrier pass through the
+/// same canonical Composition validator used by ordinary saves.
+pub(crate) async fn restore_composition(
+    operator: &Operator,
+    workspace_path: &str,
+    entry_id: EntryId,
+    source_revision_id: RevisionId,
+    author: &str,
+) -> Result<CompositionRestoreResult> {
+    let workspace =
+        crate::iceberg_store::native_workspace_read_only(operator, workspace_path).await?;
+    let publication = workspace.current_publication().await?;
+    let Some(form) =
+        registry_form_at_publication(workspace.forms_at_publication(&publication).await?)?
+    else {
+        return Err(AppError::not_found(
+            ErrorCode::EntryNotFound,
+            format!("Composition not found: {entry_id}"),
+        )
+        .into());
+    };
+    let checkpoint = workspace.resolve_publication(&publication).await?;
+    let current = workspace
+        .read_revision_view_at_publication_with_scope(
+            &publication,
+            form.id,
+            target_scope(entry_id),
+            crate::RevisionView::LatestIncludingTombstones,
+        )
+        .await?
+        .into_iter()
+        .find(|revision| revision.entry_id == entry_id)
+        .ok_or_else(|| {
+            AppError::not_found(
+                ErrorCode::EntryNotFound,
+                format!("Composition not found: {entry_id}"),
+            )
+        })?;
+    let Some(source) = workspace
+        .read_revision_ids_at_checkpoint_with_scope(
+            &checkpoint,
+            form.id,
+            target_scope(entry_id),
+            &[source_revision_id],
+        )
+        .await?
+        .into_iter()
+        .find(|revision| {
+            revision.entry_id == entry_id && revision.revision_id == source_revision_id
+        })
+    else {
+        return Err(AppError::not_found(
+            ErrorCode::EntryNotFound,
+            format!("Composition not found: {entry_id}"),
+        )
+        .into());
+    };
+
+    let document = validate_composition_revision(&source, &form)?;
+    let canonical = canonicalize_composition(&document)
+        .map_err(|diagnostic| registry_conflict(diagnostic.as_str()))?;
+    let timestamp = Utc::now()
+        .timestamp_micros()
+        .max(current.entry.updated_at_micros.saturating_add(1));
+    let change_id = Uuid::now_v7().to_string();
+    let mut entry = source.entry.clone();
+    entry.external_id = current.entry.external_id.clone();
+    entry.created_at_micros = current.entry.created_at_micros;
+    entry.updated_at_micros = timestamp;
+    entry.updated_by = author.to_string();
+    entry.integrity = current.entry.integrity.clone();
+    entry.deleted = false;
+    entry.deleted_at_micros = None;
+    entry.deleted_by = None;
+    entry.restored_from = Some(source_revision_id);
+    let revision = EntryRevisionDraft {
+        form_id: form.id,
+        entry_id,
+        revision_id: RevisionId::from(Uuid::now_v7()),
+        change_id: change_id.clone(),
+        operation: EntryOperation::Restore,
+        committed_at_micros: timestamp,
+        author_id: current.author_id.clone(),
+        form_version: form.version,
+        source_kind: "api".to_string(),
+        source_id: Some(source_revision_id.to_string()),
+        entry,
+        values: source.values,
+        extra_attributes: source.extra_attributes,
+        extension_metadata: BTreeMap::new(),
+    }
+    .build(&form, Some(&current))
+    .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+    validate_composition_revision(&revision, &form)?;
+    let change = ChangeCommand {
+        change_id,
+        run_id: None,
+        actor_principal_id: author.to_string(),
+        message: Some("Restore Composition".to_string()),
+        reverts_change_id: None,
+        created_at_micros: timestamp,
+    };
+    let publication =
+        crate::publication_context_for_change(&change, "composition.restore", &revision)?;
+    crate::authorization::ensure_authorization_write_fence().await?;
+    let workspace =
+        crate::iceberg_store::native_mutation_workspace(operator, workspace_path).await?;
+    let receipt = workspace
+        .commit(publication)?
+        .append_composition_revision_authorized(revision.clone())
+        .await?;
+
+    Ok(CompositionRestoreResult {
+        entry_id,
+        revision_id: revision.revision_id,
+        restored_from_revision_id: source_revision_id,
         document,
         canonical_yaml: canonical.yaml,
         receipt,
