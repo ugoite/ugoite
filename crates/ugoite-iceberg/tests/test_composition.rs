@@ -1000,11 +1000,13 @@ async fn composition_restore_replays_exact_publication_and_rechecks_authorizatio
     );
     let owner = Uuid::now_v7();
     let viewer = Uuid::now_v7();
+    let editor = Uuid::now_v7();
     let space_id = service
         .create_space_for_principal("composition-restore-idempotency", owner, "Owner")
         .await?
         .to_string();
-    Authorizer::new(op)
+    let authorizer = Authorizer::new(op);
+    authorizer
         .add_human_member(
             &space_id,
             owner,
@@ -1016,6 +1018,20 @@ async fn composition_restore_replays_exact_publication_and_rechecks_authorizatio
                 created_at: Utc::now().to_rfc3339(),
             },
             SpaceRole::Viewer,
+        )
+        .await?;
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: editor,
+                kind: PrincipalKind::Human,
+                display_name: "Editor".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Editor,
         )
         .await?;
 
@@ -1140,6 +1156,79 @@ async fn composition_restore_replays_exact_publication_and_rechecks_authorizatio
         ErrorCode::Forbidden
     );
 
+    let editor_text = editor.to_string();
+    let editor_principals = [editor];
+    let revoked_restore_operation_id = "restore-revoked-replay-1";
+    let revoked_restore_base_revision_id = later.revision_id.to_string();
+    let restore_as_editor = || {
+        service.restore_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            &restore_entry_id,
+            &restore_source_revision_id,
+            &revoked_restore_base_revision_id,
+            &editor_text,
+            &editor_principals,
+            revoked_restore_operation_id,
+        )
+    };
+    let editor_restored = restore_as_editor().await?;
+    let history_before_revoked_replay = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &restore_entry_id,
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    let revision_ids_before_revoked_replay = history_before_revoked_replay
+        .revisions
+        .iter()
+        .map(|item| item.revision.revision_id)
+        .collect::<Vec<_>>();
+    authorizer
+        .revoke_principal(&space_id, owner, editor)
+        .await?;
+
+    let revoked_replay = restore_as_editor()
+        .await
+        .expect_err("a restore retry must recheck access after membership revocation");
+    assert_eq!(
+        revoked_replay.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::Forbidden
+    );
+    let history_after_revoked_replay = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &restore_entry_id,
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    let revision_ids_after_revoked_replay = history_after_revoked_replay
+        .revisions
+        .iter()
+        .map(|item| item.revision.revision_id)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        history_after_revoked_replay.total,
+        history_before_revoked_replay.total
+    );
+    assert_eq!(
+        revision_ids_after_revoked_replay,
+        revision_ids_before_revoked_replay
+    );
+    assert_eq!(
+        history_after_revoked_replay
+            .revisions
+            .last()
+            .unwrap()
+            .revision
+            .revision_id,
+        editor_restored.revision_id
+    );
+
     let stale_base = service
         .restore_composition_authorized_for_principals_with_operation_id(
             &space_id,
@@ -1166,10 +1255,10 @@ async fn composition_restore_replays_exact_publication_and_rechecks_authorizatio
             0,
         )
         .await?;
-    assert_eq!(history.total, 4);
+    assert_eq!(history.total, 5);
     assert_eq!(
         history.revisions.last().unwrap().revision.revision_id,
-        later.revision_id
+        editor_restored.revision_id
     );
     Ok(())
 }
