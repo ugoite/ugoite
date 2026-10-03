@@ -291,6 +291,37 @@ mod tests {
     }
 
     #[test]
+    fn composition_query_accepts_exact_revision_and_typed_parameters_as_a_read() {
+        let cli = Cli::try_parse_from([
+            "ugoite",
+            "composition",
+            "query",
+            "composition-1",
+            "--revision",
+            "revision-1",
+            "--param",
+            "month=2026-10",
+            "--param",
+            "include_archived=true",
+        ])
+        .expect("Composition query command");
+
+        assert!(!cli.is_mutation_command());
+        assert!(matches!(
+            cli.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::Query {
+                    composition_id,
+                    revision: Some(revision),
+                    parameters,
+                }
+            }) if composition_id == "composition-1"
+                && revision == "revision-1"
+                && parameters == ["month=2026-10", "include_archived=true"]
+        ));
+    }
+
+    #[test]
     fn composition_history_accepts_bounded_page_options_without_becoming_a_write() {
         let defaults = Cli::try_parse_from(["ugoite", "composition", "history", "composition-1"])
             .expect("Composition history command");
