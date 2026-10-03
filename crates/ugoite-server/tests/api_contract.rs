@@ -1436,6 +1436,79 @@ fn openapi_documents_composition_save_request_receipt_and_statuses() {
 }
 
 #[test]
+fn openapi_documents_composition_restore_exact_revision_and_idempotency() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let restore = &snapshot["paths"]["/spaces/{space_id}/compositions/{entry_id}/restore"]["post"];
+    assert!(
+        restore.is_object(),
+        "Composition restore route is documented"
+    );
+    assert!(restore["parameters"].as_array().is_some_and(|parameters| {
+        parameters.iter().any(|parameter| {
+            parameter["$ref"] == "#/components/parameters/CompositionIdempotencyKeyHeader"
+        })
+    }));
+    assert_eq!(
+        snapshot["components"]["parameters"]["CompositionIdempotencyKeyHeader"]["required"],
+        true
+    );
+    assert_eq!(
+        restore["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionRestoreRequest"
+    );
+    assert_eq!(
+        restore["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionRestoreResponse"
+    );
+    for status in ["400", "404", "409", "413", "415", "422"] {
+        assert!(
+            restore["responses"].get(status).is_some(),
+            "Composition restore documents {status}"
+        );
+    }
+    for status in [
+        "200", "400", "401", "403", "404", "409", "413", "415", "422", "500",
+    ] {
+        for header in ["X-Ugoite-Key-Id", "X-Ugoite-Signature"] {
+            assert_eq!(
+                restore["responses"][status]["headers"][header]["$ref"],
+                format!("#/components/headers/{header}"),
+                "Composition restore {status} carries {header}"
+            );
+        }
+    }
+
+    let request = &snapshot["components"]["schemas"]["CompositionRestoreRequest"];
+    assert_eq!(
+        request["required"],
+        serde_json::json!(["source_revision_id", "base_revision_id"])
+    );
+    assert_eq!(request["additionalProperties"], false);
+    assert_eq!(
+        request["properties"]["source_revision_id"]["format"],
+        "uuid"
+    );
+    assert_eq!(request["properties"]["base_revision_id"]["format"], "uuid");
+
+    let response = &snapshot["components"]["schemas"]["CompositionRestoreResponse"];
+    assert_eq!(response["additionalProperties"], false);
+    assert_eq!(
+        response["required"],
+        serde_json::json!([
+            "composition_id",
+            "revision_id",
+            "restored_from_revision_id",
+            "canonical_yaml",
+            "receipt"
+        ])
+    );
+    assert_eq!(
+        response["properties"]["receipt"]["$ref"],
+        "#/components/schemas/CompositionPublicationReceipt"
+    );
+}
+
+#[test]
 fn openapi_documents_composition_resolve_metric_result_type() {
     let snapshot = ugoite_server::openapi_snapshot();
     let resolve = &snapshot["paths"]["/spaces/{space_id}/compositions/{entry_id}/resolve"]["post"];

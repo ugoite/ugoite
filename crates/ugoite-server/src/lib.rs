@@ -52,6 +52,7 @@ use ugoite_api_client::{
     CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
     CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
     CompositionResolvedComponentKind, CompositionResolvedSource,
+    CompositionRestoreRequest as ApiCompositionRestoreRequest, CompositionRestoreResponse,
     CompositionResultFieldType as ApiCompositionResultFieldType, CompositionRevisionMetadata,
     CompositionRevisionReference, CompositionSaveRequest as ApiCompositionSaveRequest,
     CompositionSaveResponse,
@@ -1621,7 +1622,7 @@ fn required_composition_command_id(headers: &HeaderMap, operation: &str) -> ApiR
             StatusCode::BAD_REQUEST,
             json!({
                 "code": "IDEMPOTENCY_KEY_REQUIRED",
-                "message": "Idempotency-Key is required for Composition save",
+                "message": "Idempotency-Key is required for a Composition mutation",
             }),
         )
     })?;
@@ -1796,6 +1797,11 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/compositions/{entry_id}/resolve",
             post(resolve_composition_handler)
                 .layer(DefaultBodyLimit::max(COMPOSITION_RESOLVE_MAX_REQUEST_BYTES)),
+        )
+        .route(
+            "/spaces/{space_id}/compositions/{entry_id}/restore",
+            post(restore_composition_handler)
+                .layer(DefaultBodyLimit::max(COMPOSITION_RESTORE_MAX_REQUEST_BYTES)),
         )
         .route(
             "/compositions/lint",
@@ -11173,21 +11179,106 @@ async fn save_composition(
         composition_id: result.entry_id.to_string(),
         revision_id: result.revision_id.to_string(),
         canonical_yaml: result.canonical_yaml,
-        receipt: CompositionPublicationReceipt {
-            command_id: result.receipt.command_id,
-            catalog_generation: result.receipt.catalog_generation,
-            snapshot_id: result.receipt.snapshot_id,
-            committed_revision_ids: result
-                .receipt
-                .committed_revision_ids
-                .into_iter()
-                .map(|revision_id| revision_id.to_string())
-                .collect(),
-            committed_at_micros: result.receipt.committed_at_micros,
-            data_file_count: result.receipt.data_file_count,
-        },
+        receipt: composition_publication_receipt_response(result.receipt),
     };
     Ok((status, Json(response)))
+}
+
+fn composition_publication_receipt_response(
+    receipt: ugoite_iceberg::CommitReceipt,
+) -> CompositionPublicationReceipt {
+    CompositionPublicationReceipt {
+        command_id: receipt.command_id,
+        catalog_generation: receipt.catalog_generation,
+        snapshot_id: receipt.snapshot_id,
+        committed_revision_ids: receipt
+            .committed_revision_ids
+            .into_iter()
+            .map(|revision_id| revision_id.to_string())
+            .collect(),
+        committed_at_micros: receipt.committed_at_micros,
+        data_file_count: receipt.data_file_count,
+    }
+}
+
+const COMPOSITION_RESTORE_MAX_REQUEST_BYTES: usize = 16 * 1024;
+
+async fn restore_composition_handler(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path((space_id, composition_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    request: Result<Json<ApiCompositionRestoreRequest>, JsonRejection>,
+) -> ApiResult<Json<CompositionRestoreResponse>> {
+    let Json(request) = request.map_err(|error| {
+        ApiError::new(
+            error.status(),
+            json!({
+                "code": "INVALID_INPUT",
+                "message": error.body_text(),
+            }),
+        )
+    })?;
+
+    validate_id(&composition_id, "entry_id")?;
+    validate_id(&request.source_revision_id, "revision_id")?;
+    validate_id(&request.base_revision_id, "revision_id")?;
+    let parse_uuid = |value: &str, label: &str| {
+        Uuid::parse_str(value).map_err(|_| {
+            ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({
+                    "code": "INVALID_INPUT",
+                    "message": format!("Composition {label} must be a UUID"),
+                }),
+            )
+        })
+    };
+    parse_uuid(&composition_id, "ID")?;
+    parse_uuid(&request.source_revision_id, "source revision ID")?;
+    parse_uuid(&request.base_revision_id, "base revision ID")?;
+    let operation_id = required_composition_command_id(&headers, "composition-restore")?;
+
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let composition_id_for_write = composition_id.clone();
+    let source_revision_id = request.source_revision_id;
+    let base_revision_id = request.base_revision_id;
+    let result = with_authorized_service_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Update,
+        Some(ResourceRef {
+            kind: ResourceKind::Entry,
+            id: composition_id,
+            parent: None,
+        }),
+        |principal_id, principals| async move {
+            let author = principal_id.to_string();
+            service
+                .restore_composition_authorized_for_principals_with_operation_id(
+                    &space_id_for_write,
+                    &composition_id_for_write,
+                    &source_revision_id,
+                    &base_revision_id,
+                    &author,
+                    &principals,
+                    &operation_id,
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
+
+    Ok(Json(CompositionRestoreResponse {
+        composition_id: result.entry_id.to_string(),
+        revision_id: result.revision_id.to_string(),
+        restored_from_revision_id: result.restored_from_revision_id.to_string(),
+        canonical_yaml: result.canonical_yaml,
+        receipt: composition_publication_receipt_response(result.receipt),
+    }))
 }
 
 async fn get_composition(
@@ -14041,6 +14132,11 @@ mod authentication_regression_tests {
                     .layer(DefaultBodyLimit::max(COMPOSITION_RESOLVE_MAX_REQUEST_BYTES)),
             )
             .route(
+                "/spaces/{space_id}/compositions/{entry_id}/restore",
+                post(restore_composition_handler)
+                    .layer(DefaultBodyLimit::max(COMPOSITION_RESTORE_MAX_REQUEST_BYTES)),
+            )
+            .route(
                 "/compositions/lint",
                 post(lint_composition)
                     .layer(DefaultBodyLimit::max(COMPOSITION_LINT_MAX_REQUEST_BYTES)),
@@ -14429,6 +14525,182 @@ mod authentication_regression_tests {
         let (denied_status, denied) =
             route_json(viewer_route, post_save(json!({"yaml": fixture}))?).await?;
         assert_eq!(denied_status, StatusCode::FORBIDDEN, "{denied}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn composition_restore_route_uses_exact_revisions_and_idempotency() -> anyhow::Result<()>
+    {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-restore-{}",
+            Uuid::now_v7()
+        ))?;
+        let owner_id = Uuid::from_u128(351301);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-restore", owner_id, "Restore test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let owner_route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(owner_id, space_uid),
+        );
+        let fixture = include_str!(
+            "../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml"
+        );
+        let post_save_with_key = |body: Value, key: &str| {
+            Request::post(format!("/spaces/{space_id}/compositions"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("idempotency-key", key)
+                .body(Body::from(
+                    serde_json::to_vec(&body).expect("save request serializes"),
+                ))
+        };
+        let (created_status, created) = route_json(
+            owner_route.clone(),
+            post_save_with_key(json!({"yaml": fixture}), "restore-create")?,
+        )
+        .await?;
+        assert_eq!(created_status, StatusCode::CREATED, "{created}");
+
+        let composition_id = created["composition_id"]
+            .as_str()
+            .expect("create returns Composition identity")
+            .to_string();
+        let source_revision_id = created["revision_id"]
+            .as_str()
+            .expect("create returns source revision")
+            .to_string();
+        let updated_yaml = fixture.replace("Monthly expenses", "Before restore");
+        let (updated_status, updated) = route_json(
+            owner_route.clone(),
+            post_save_with_key(
+                json!({
+                    "composition_id": composition_id,
+                    "base_revision_id": source_revision_id,
+                    "yaml": updated_yaml,
+                }),
+                "restore-update",
+            )?,
+        )
+        .await?;
+        assert_eq!(updated_status, StatusCode::OK, "{updated}");
+        let base_revision_id = updated["revision_id"]
+            .as_str()
+            .expect("update returns current base revision")
+            .to_string();
+        let restore_body = json!({
+            "source_revision_id": source_revision_id,
+            "base_revision_id": base_revision_id,
+        });
+        let restore_path = format!("/spaces/{space_id}/compositions/{composition_id}/restore");
+        let post_restore_with_key = |body: Value, key: &str| {
+            Request::post(&restore_path)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("idempotency-key", key)
+                .body(Body::from(
+                    serde_json::to_vec(&body).expect("restore request serializes"),
+                ))
+        };
+        let missing_key_request = Request::post(&restore_path)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&restore_body)?))?;
+        let (missing_key_status, missing_key) =
+            route_json(owner_route.clone(), missing_key_request).await?;
+        assert_eq!(missing_key_status, StatusCode::BAD_REQUEST, "{missing_key}");
+        assert_eq!(missing_key["code"], "IDEMPOTENCY_KEY_REQUIRED");
+
+        let restore_key = "restore-response-lost";
+        let (restore_status, restored) = route_json(
+            owner_route.clone(),
+            post_restore_with_key(restore_body.clone(), restore_key)?,
+        )
+        .await?;
+        assert_eq!(restore_status, StatusCode::OK, "{restored}");
+        assert_eq!(restored["composition_id"], composition_id);
+        assert_eq!(restored["restored_from_revision_id"], source_revision_id);
+        assert_eq!(restored["canonical_yaml"], created["canonical_yaml"]);
+        assert_ne!(restored["revision_id"], base_revision_id);
+        assert_eq!(
+            restored["receipt"]["committed_revision_ids"],
+            json!([restored["revision_id"].as_str().expect("restore revision")])
+        );
+
+        let (replay_status, replayed) = route_json(
+            owner_route.clone(),
+            post_restore_with_key(restore_body.clone(), restore_key)?,
+        )
+        .await?;
+        assert_eq!(replay_status, restore_status);
+        assert_eq!(replayed, restored);
+
+        let (changed_status, changed) = route_json(
+            owner_route.clone(),
+            post_restore_with_key(
+                json!({
+                    "source_revision_id": base_revision_id,
+                    "base_revision_id": base_revision_id,
+                }),
+                restore_key,
+            )?,
+        )
+        .await?;
+        assert_eq!(changed_status, StatusCode::CONFLICT, "{changed}");
+        assert_eq!(changed["code"], "IDEMPOTENCY_CONFLICT");
+
+        let stale_restore_body = json!({
+            "source_revision_id": source_revision_id,
+            "base_revision_id": base_revision_id,
+        });
+        let (stale_status, stale) = route_json(
+            owner_route.clone(),
+            post_restore_with_key(stale_restore_body, "restore-stale-base")?,
+        )
+        .await?;
+        assert_eq!(stale_status, StatusCode::CONFLICT, "{stale}");
+
+        let missing_source_body = json!({
+            "source_revision_id": Uuid::now_v7().to_string(),
+            "base_revision_id": restored["revision_id"],
+        });
+        let (missing_source_status, missing_source) = route_json(
+            owner_route.clone(),
+            post_restore_with_key(missing_source_body, "restore-missing-source")?,
+        )
+        .await?;
+        assert_eq!(
+            missing_source_status,
+            StatusCode::NOT_FOUND,
+            "{missing_source}"
+        );
+
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let viewer_id = Uuid::from_u128(351302);
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                owner_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Restore viewer".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        let (denied_replay_status, denied_replay) = route_json(
+            reversible_knowledge_route(state, reversible_knowledge_identity(viewer_id, space_uid)),
+            post_restore_with_key(restore_body, "restore-denied-viewer")?,
+        )
+        .await?;
+        assert_eq!(
+            denied_replay_status,
+            StatusCode::FORBIDDEN,
+            "{denied_replay}"
+        );
         Ok(())
     }
 
