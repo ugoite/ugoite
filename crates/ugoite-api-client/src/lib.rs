@@ -19,8 +19,9 @@ pub use composition::{
     CompositionParameterFormat, CompositionParameterType, CompositionPublicationReceipt,
     CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
     CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
-    CompositionResolvedComponentKind, CompositionResolvedSource, CompositionRevisionMetadata,
-    CompositionRevisionReference, CompositionSaveRequest, CompositionSaveResponse,
+    CompositionResolvedComponentKind, CompositionResolvedSource, CompositionResultFieldType,
+    CompositionRevisionMetadata, CompositionRevisionReference, CompositionSaveRequest,
+    CompositionSaveResponse,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -2738,7 +2739,8 @@ mod tests {
                     "label": "Total",
                     "source_id": "monthly-total",
                     "metric_field_id": 202,
-                    "result_property_key": "total_amount"
+                    "result_property_key": "total_amount",
+                    "expected_result_type": "integer"
                 }]
             }
         });

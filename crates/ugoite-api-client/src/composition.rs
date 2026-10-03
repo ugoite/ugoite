@@ -306,6 +306,19 @@ pub enum CompositionResolvedComponentKind {
     Table,
 }
 
+/// Portable logical result type selected by the resolver for a metric.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionResultFieldType {
+    String,
+    Boolean,
+    Integer,
+    Float,
+    Date,
+    Timestamp,
+    Json,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionResolvedComponentBinding {
@@ -318,6 +331,8 @@ pub struct CompositionResolvedComponentBinding {
     pub metric_field_id: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_property_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_result_type: Option<CompositionResultFieldType>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

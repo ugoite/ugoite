@@ -1427,6 +1427,38 @@ fn openapi_documents_composition_save_request_receipt_and_statuses() {
 }
 
 #[test]
+fn openapi_documents_composition_resolve_metric_result_type() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let resolve = &snapshot["paths"]["/spaces/{space_id}/compositions/{entry_id}/resolve"]["post"];
+    assert_eq!(
+        resolve["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionResolveResponse"
+    );
+
+    let binding = &snapshot["components"]["schemas"]["CompositionResolvedComponentBinding"];
+    assert_eq!(
+        binding["properties"]["expected_result_type"]["$ref"],
+        "#/components/schemas/CompositionResultFieldType"
+    );
+    assert!(!binding["required"]
+        .as_array()
+        .expect("required component fields")
+        .contains(&serde_json::json!("expected_result_type")));
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionResultFieldType"]["enum"],
+        serde_json::json!([
+            "string",
+            "boolean",
+            "integer",
+            "float",
+            "date",
+            "timestamp",
+            "json"
+        ])
+    );
+}
+
+#[test]
 fn openapi_documents_the_form_extra_attributes_policy() {
     let snapshot = ugoite_server::openapi_snapshot();
     assert_eq!(

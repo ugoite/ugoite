@@ -51,7 +51,8 @@ use ugoite_api_client::{
     CompositionParameterType as ApiCompositionParameterType, CompositionPublicationReceipt,
     CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
     CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
-    CompositionResolvedComponentKind, CompositionResolvedSource, CompositionRevisionMetadata,
+    CompositionResolvedComponentKind, CompositionResolvedSource,
+    CompositionResultFieldType as ApiCompositionResultFieldType, CompositionRevisionMetadata,
     CompositionRevisionReference, CompositionSaveRequest as ApiCompositionSaveRequest,
     CompositionSaveResponse,
 };
@@ -64,6 +65,7 @@ use ugoite_domain::composition::{
     CompositionParameter as DomainCompositionParameter,
     CompositionParameterFormat as DomainCompositionParameterFormat,
     CompositionParameterType as DomainCompositionParameterType,
+    CompositionResultFieldType as DomainCompositionResultFieldType,
 };
 use ugoite_domain::id::{validate_decoded_space_id, validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
@@ -11334,6 +11336,20 @@ fn composition_resolve_diagnostics_response(
     })
 }
 
+fn api_composition_result_field_type(
+    result_type: DomainCompositionResultFieldType,
+) -> ApiCompositionResultFieldType {
+    match result_type {
+        DomainCompositionResultFieldType::String => ApiCompositionResultFieldType::String,
+        DomainCompositionResultFieldType::Boolean => ApiCompositionResultFieldType::Boolean,
+        DomainCompositionResultFieldType::Integer => ApiCompositionResultFieldType::Integer,
+        DomainCompositionResultFieldType::Float => ApiCompositionResultFieldType::Float,
+        DomainCompositionResultFieldType::Date => ApiCompositionResultFieldType::Date,
+        DomainCompositionResultFieldType::Timestamp => ApiCompositionResultFieldType::Timestamp,
+        DomainCompositionResultFieldType::Json => ApiCompositionResultFieldType::Json,
+    }
+}
+
 fn composition_resolve_success_response(
     plan: ResolvedCompositionPlan,
     parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
@@ -11381,6 +11397,9 @@ fn composition_resolve_success_response(
             source_id: binding.source_id,
             metric_field_id: binding.metric_field_id.map(|field_id| field_id.get()),
             result_property_key: binding.result_property_key,
+            expected_result_type: binding
+                .expected_result_type
+                .map(api_composition_result_field_type),
         })
         .collect();
     Ok(CompositionResolveResponse {
@@ -15082,7 +15101,8 @@ mod authentication_regression_tests {
                     "label":"Monthly total",
                     "source_id":"older_entries",
                     "metric_field_id":value_field_id.get(),
-                    "result_property_key":"total_amount"
+                    "result_property_key":"total_amount",
+                    "expected_result_type":"integer"
                 }
             ])
         );

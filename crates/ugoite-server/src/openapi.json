@@ -14803,9 +14803,14 @@
           "label": { "type": "string" },
           "source_id": { "type": "string" },
           "metric_field_id": { "type": "integer", "format": "int32", "minimum": 1 },
-          "result_property_key": { "type": "string" }
+          "result_property_key": { "type": "string" },
+          "expected_result_type": { "$ref": "#/components/schemas/CompositionResultFieldType" }
         },
         "additionalProperties": false
+      },
+      "CompositionResultFieldType": {
+        "type": "string",
+        "enum": ["string", "boolean", "integer", "float", "date", "timestamp", "json"]
       },
       "CompositionResolveDiagnostic": {
         "type": "object",
