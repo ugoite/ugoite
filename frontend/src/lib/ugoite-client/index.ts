@@ -43,5 +43,8 @@ export {
   UgoiteApiError,
   type UgoiteApiOperation,
   encodeSpreadsheetCsv,
+  evaluateCompositionMetricPage,
+  type CompositionMetricPageEvaluation,
+  type CompositionMetricPageRequest,
   validateAssetReference,
 } from "./protocol";
