@@ -1,5 +1,6 @@
 mod common;
 
+use anyhow::Context;
 use chrono::Utc;
 use common::{seed_preexisting_form, setup_operator};
 use serde_json::{json, Value};
@@ -279,8 +280,11 @@ async fn composition_save_replays_the_original_create_and_update_after_response_
 
 #[tokio::test]
 async fn concurrent_composition_save_retries_share_one_publication() -> anyhow::Result<()> {
-    let op = setup_operator()?;
-    let service = UgoiteService::from_operator(op, "memory://composition-save-idempotency-race");
+    // Keep the detached AssetText refresh from contending for the Space's
+    // single query permit while this test controls the publication race.
+    let service = UgoiteService::new_without_background_refresh(
+        "memory://composition-save-idempotency-race",
+    )?;
     let owner = Uuid::from_u128(3_428_012);
     let space_id = service
         .create_space_for_principal("composition-save-idempotency-race", owner, "Owner")
@@ -316,13 +320,104 @@ async fn concurrent_composition_save_retries_share_one_publication() -> anyhow::
             "concurrent-save-1",
         ),
     );
-    let left = left?;
-    let right = right?;
+    let left = left.context("left create failed")?;
+    let right = right.context("right create failed")?;
     assert_eq!(left, right);
+
+    let mut updated_document = left.document.clone();
+    updated_document.name = "Concurrent update".to_string();
+    let left_update_request = composition::CompositionSaveRequest {
+        entry_id: Some(left.entry_id),
+        base_revision_id: Some(left.revision_id),
+        document: updated_document.clone(),
+    };
+    let right_update_request = composition::CompositionSaveRequest {
+        entry_id: Some(left.entry_id),
+        base_revision_id: Some(left.revision_id),
+        document: updated_document,
+    };
+    let gate = ugoite_iceberg::TestValidationGate::new_for_entry_id(left.entry_id.to_string());
+    ugoite_iceberg::install_test_validation_gate(gate.clone());
+    let left_service = service.clone();
+    let left_space_id = space_id.clone();
+    let left_owner_text = owner_text.clone();
+    let mut left_update = tokio::spawn(async move {
+        left_service
+            .save_composition_local_with_operation_id(
+                &left_space_id,
+                left_update_request,
+                &left_owner_text,
+                "concurrent-update-1",
+            )
+            .await
+    });
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        gate.wait_until_entered_count(1),
+    )
+    .await
+    .expect("first writer should reach the pre-append gate");
+    let right_service = service.clone();
+    let right_space_id = space_id.clone();
+    let right_owner_text = owner_text.clone();
+    let mut right_update = tokio::spawn(async move {
+        right_service
+            .save_composition_local_with_operation_id(
+                &right_space_id,
+                right_update_request,
+                &right_owner_text,
+                "concurrent-update-1",
+            )
+            .await
+    });
+    tokio::select! {
+        entered = tokio::time::timeout(std::time::Duration::from_secs(10), gate.wait_until_entered_count(2)) => {
+            assert!(entered.is_ok(), "expected two writers at the pre-append gate, got {}", gate.entered_count());
+        },
+        result = &mut right_update => panic!("second writer completed before reaching the gate: {result:?}"),
+    }
+    gate.release();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        gate.wait_until_entered_count(4),
+    )
+    .await
+    .expect("both writers should pass the retry preflight before appending");
+    gate.release_one();
+    let (left_update, right_update) = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        async {
+            tokio::select! {
+                result = &mut left_update => {
+                    let left_update = result.context("left update task panicked")?.context("left update failed")?;
+                    ugoite_iceberg::clear_test_validation_gate();
+                    gate.release();
+                    let right_update = right_update.await.context("right update task panicked")?.context("right update failed")?;
+                    Ok::<_, anyhow::Error>((left_update, right_update))
+                },
+                result = &mut right_update => {
+                    let right_update = result.context("right update task panicked")?.context("right update failed")?;
+                    ugoite_iceberg::clear_test_validation_gate();
+                    gate.release();
+                    let left_update = left_update.await.context("left update task panicked")?.context("left update failed")?;
+                    Ok((left_update, right_update))
+                },
+            }
+        },
+    )
+    .await
+    .context("first concurrent update should finish after its publication gate opens")??;
+    assert_eq!(left_update, right_update);
+
     let history = service
         .composition_history_local_page(&space_id, &left.entry_id.to_string(), 10, 0)
-        .await?;
-    assert_eq!(history.total, 1);
+        .await
+        .context("update history read failed")?;
+    assert_eq!(history.total, 2);
+    assert_eq!(
+        history.revisions.last().unwrap().revision.revision_id,
+        left_update.revision_id
+    );
     Ok(())
 }
 

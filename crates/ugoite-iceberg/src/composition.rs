@@ -507,13 +507,40 @@ pub(crate) async fn save_composition(
         .build(&form, current.as_ref())
         .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
     validate_composition_revision(&revision, &form)?;
+    #[cfg(debug_assertions)]
+    crate::wait_at_test_validation_gate(std::slice::from_ref(&revision)).await;
     crate::authorization::ensure_authorization_write_fence().await?;
     let workspace =
         crate::iceberg_store::native_mutation_workspace(operator, workspace_path).await?;
-    let mut receipt = workspace
-        .commit(publication)?
+    let mut receipt = match workspace
+        .commit(publication.clone())?
         .append_composition_revision_authorized(revision.clone())
-        .await?;
+        .await
+    {
+        Ok(receipt) => receipt,
+        Err(error) => {
+            // Another retry with the same operation identity may have
+            // committed after our last preflight but before this append lost
+            // the Head race. Recover its durable result before reporting the
+            // stale-base error from our losing writer.
+            if let Some(result) = resolve_published_composition_save(
+                operator,
+                workspace_path,
+                entry_id,
+                revision_id,
+                request.base_revision_id,
+                &command_id,
+                &canonical.yaml,
+                author,
+                &publication,
+            )
+            .await?
+            {
+                return Ok(result);
+            }
+            return Err(error);
+        }
+    };
 
     let committed = read_composition_raw_revision(
         operator,
