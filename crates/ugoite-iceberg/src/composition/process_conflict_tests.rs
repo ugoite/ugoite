@@ -25,6 +25,7 @@ const MONTHLY_EXPENSE: &str =
 const CHILD_MODE_ENV: &str = "UGOITE_COMPOSITION_CONFLICT_CHILD";
 const TEST_NAME: &str =
     "composition::authorized_raw_read_tests::process_conflict_tests::composition_stale_base_conflicts_across_processes";
+const IDEMPOTENT_TEST_NAME: &str = "composition::authorized_raw_read_tests::process_conflict_tests::composition_identical_save_retries_share_one_publication_across_processes";
 const CHILD_WAIT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,6 +33,7 @@ struct WriterOutcome {
     role: String,
     result: String,
     revision_id: Option<String>,
+    receipt: Option<crate::CommitReceipt>,
     receipt_command_id: Option<String>,
     committed_revision_ids: Vec<String>,
     error_code: Option<String>,
@@ -82,28 +84,34 @@ async fn composition_stale_base_conflicts_across_processes() -> anyhow::Result<(
     let winner_result = directory.path().join("winner-result.json");
     let loser_result = directory.path().join("loser-result.json");
 
-    let mut winner = spawn_writer(WriterSpec {
-        role: "winner",
-        root_uri: &root_uri,
-        space_id: &space_id,
-        entry_id: &entry_id,
-        base_revision_id: &base_revision_id,
-        name: winner_name,
-        gate: &winner_gate,
-        result: &winner_result,
-    })?;
+    let mut winner = spawn_writer(
+        WriterSpec {
+            role: "winner",
+            root_uri: &root_uri,
+            space_id: &space_id,
+            entry_id: &entry_id,
+            base_revision_id: &base_revision_id,
+            name: winner_name,
+            gate: &winner_gate,
+            result: &winner_result,
+        },
+        TEST_NAME,
+    )?;
     winner.wait_for_gate(&winner_gate)?;
 
-    let mut loser = spawn_writer(WriterSpec {
-        role: "loser",
-        root_uri: &root_uri,
-        space_id: &space_id,
-        entry_id: &entry_id,
-        base_revision_id: &base_revision_id,
-        name: loser_name,
-        gate: &loser_gate,
-        result: &loser_result,
-    })?;
+    let mut loser = spawn_writer(
+        WriterSpec {
+            role: "loser",
+            root_uri: &root_uri,
+            space_id: &space_id,
+            entry_id: &entry_id,
+            base_revision_id: &base_revision_id,
+            name: loser_name,
+            gate: &loser_gate,
+            result: &loser_result,
+        },
+        TEST_NAME,
+    )?;
     loser.wait_for_gate(&loser_gate)?;
 
     fs::write(winner_gate.join("release-1"), b"release")?;
@@ -175,6 +183,160 @@ async fn composition_stale_base_conflicts_across_processes() -> anyhow::Result<(
     Ok(())
 }
 
+/// Proves that a retry can adopt an identical publication after it becomes
+/// durable but before its original writer updates Catalog Head. This is the
+/// storage idempotency boundary; neither request passes through the service's
+/// per-Space authorization lease.
+#[tokio::test]
+async fn composition_identical_save_retries_share_one_publication_across_processes(
+) -> anyhow::Result<()> {
+    if std::env::var_os(CHILD_MODE_ENV).is_some() {
+        return run_writer_child().await;
+    }
+
+    let directory = tempfile::tempdir()?;
+    let root_uri = format!("file://{}", directory.path().display());
+    let service = UgoiteService::new_without_background_refresh(&root_uri)?;
+    let owner = Uuid::from_u128(3_482_502);
+    let space_id = service
+        .create_space_for_principal("composition-identical-process-save", owner, "Owner")
+        .await?
+        .to_string();
+    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    document.tags = vec!["composition-identical-process-save".to_string()];
+    let initial = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+
+    let entry_id = initial.entry_id.to_string();
+    let base_revision_id = initial.revision_id.to_string();
+    let same_operation_name = "Same idempotent publication";
+    let first_gate = directory.path().join("first-gate");
+    let retry_gate = directory.path().join("retry-gate");
+    fs::create_dir_all(&first_gate)?;
+    fs::create_dir_all(&retry_gate)?;
+    let first_result = directory.path().join("first-result.json");
+    let retry_result = directory.path().join("retry-result.json");
+
+    let mut first = spawn_writer(
+        WriterSpec {
+            role: "first",
+            root_uri: &root_uri,
+            space_id: &space_id,
+            entry_id: &entry_id,
+            base_revision_id: &base_revision_id,
+            name: same_operation_name,
+            gate: &first_gate,
+            result: &first_result,
+        },
+        IDEMPOTENT_TEST_NAME,
+    )?;
+    first.wait_for_gate(&first_gate)?;
+
+    let retry = spawn_writer(
+        WriterSpec {
+            role: "retry",
+            root_uri: &root_uri,
+            space_id: &space_id,
+            entry_id: &entry_id,
+            base_revision_id: &base_revision_id,
+            name: same_operation_name,
+            gate: &retry_gate,
+            result: &retry_result,
+        },
+        IDEMPOTENT_TEST_NAME,
+    )?;
+    let retry_output = retry.wait()?;
+    assert_child_success("retry", &retry_output);
+    assert!(
+        !retry_gate.join("entered-1").exists(),
+        "the retry should adopt the durable publication before attempting a second publication"
+    );
+
+    fs::write(first_gate.join("release-1"), b"release")?;
+    let first_output = first.wait()?;
+    assert_child_success("first", &first_output);
+
+    let first_outcome: WriterOutcome = serde_json::from_slice(&fs::read(&first_result)?)?;
+    let retry_outcome: WriterOutcome = serde_json::from_slice(&fs::read(&retry_result)?)?;
+    assert_eq!(first_outcome.result, "saved");
+    assert_eq!(retry_outcome.result, "saved");
+    assert_eq!(first_outcome.receipt, retry_outcome.receipt);
+    assert_eq!(
+        first_outcome.revision_id, retry_outcome.revision_id,
+        "same operation identity should resolve to the same revision"
+    );
+    assert_eq!(
+        first_outcome.committed_revision_ids,
+        retry_outcome.committed_revision_ids
+    );
+    let revision_id = first_outcome
+        .revision_id
+        .as_deref()
+        .expect("successful save must report a revision ID");
+    let command_id = first_outcome
+        .receipt_command_id
+        .as_deref()
+        .expect("successful save must report a receipt command ID");
+    let receipt = first_outcome
+        .receipt
+        .as_ref()
+        .expect("successful save must report the complete receipt");
+    assert_eq!(receipt.command_id, command_id);
+    assert_eq!(
+        receipt.committed_revision_ids,
+        [RevisionId::from(Uuid::parse_str(revision_id)?)]
+    );
+    assert_eq!(
+        first_outcome.committed_revision_ids,
+        [revision_id.to_string()]
+    );
+
+    let latest = service
+        .get_composition_raw_authorized_for_principals(&space_id, &entry_id, &[owner])
+        .await?;
+    assert_eq!(latest.revision.revision_id.to_string(), revision_id);
+    assert_eq!(latest.revision.change_id, command_id);
+    assert_eq!(
+        latest.revision.parent_revision_id,
+        Some(initial.revision_id)
+    );
+    assert_eq!(latest.fields["name"], same_operation_name);
+
+    let history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &entry_id,
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(history.total, 2, "only one retry publication is reachable");
+    assert_eq!(history.revisions.len(), 2);
+    assert_eq!(
+        history
+            .revisions
+            .last()
+            .unwrap()
+            .revision
+            .revision_id
+            .to_string(),
+        revision_id
+    );
+    Ok(())
+}
+
 async fn run_writer_child() -> anyhow::Result<()> {
     let role = required_env("UGOITE_COMPOSITION_CONFLICT_ROLE")?;
     let root_uri = required_env("UGOITE_COMPOSITION_CONFLICT_ROOT_URI")?;
@@ -216,6 +378,7 @@ async fn run_writer_child() -> anyhow::Result<()> {
             role,
             result: "saved".to_string(),
             revision_id: Some(saved.revision_id.to_string()),
+            receipt: Some(saved.receipt.clone()),
             receipt_command_id: Some(saved.receipt.command_id),
             committed_revision_ids: saved
                 .receipt
@@ -240,6 +403,7 @@ async fn run_writer_child() -> anyhow::Result<()> {
                 role,
                 result: result.to_string(),
                 revision_id: None,
+                receipt: None,
                 receipt_command_id: None,
                 committed_revision_ids: Vec::new(),
                 error_code: app_error.map(|error| error.code().as_str().to_string()),
@@ -262,11 +426,11 @@ struct WriterSpec<'a> {
     result: &'a Path,
 }
 
-fn spawn_writer(spec: WriterSpec<'_>) -> anyhow::Result<ChildProcess> {
+fn spawn_writer(spec: WriterSpec<'_>, test_name: &str) -> anyhow::Result<ChildProcess> {
     let mut command = Command::new(std::env::current_exe()?);
     command
         .arg("--exact")
-        .arg(TEST_NAME)
+        .arg(test_name)
         .arg("--nocapture")
         .env(CHILD_MODE_ENV, "1")
         .env("UGOITE_TEST_PUBLICATION_GATE_DIR", spec.gate)
