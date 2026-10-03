@@ -155,6 +155,41 @@ fn invoke_konase(request: serde_json::Value) -> String {
 
 fn invoke_domain(request: serde_json::Value) -> String {
     if request.get("action").and_then(serde_json::Value::as_str)
+        == Some("domain.canonicalize_composition_document")
+    {
+        let Some(document) = request
+            .get("value")
+            .and_then(|value| value.get("document"))
+            .cloned()
+        else {
+            return composition_canonicalization_error(
+                ugoite_domain::composition::CompositionDiagnosticCode::InvalidComposition,
+            );
+        };
+
+        let result =
+            serde_json::from_value::<ugoite_domain::composition::CompositionDocument>(document)
+                .map_err(|_| {
+                    ugoite_domain::composition::CompositionDiagnosticCode::InvalidComposition
+                })
+                .and_then(|document| {
+                    ugoite_domain::composition::canonicalize_composition(&document)
+                });
+        return match result {
+            Ok(canonical) => serde_json::json!({
+                "ok": true,
+                "value": {
+                    "document": canonical.document,
+                    "canonical_yaml": canonical.yaml,
+                    "fingerprint": canonical.fingerprint,
+                },
+            })
+            .to_string(),
+            Err(code) => composition_canonicalization_error(code),
+        };
+    }
+
+    if request.get("action").and_then(serde_json::Value::as_str)
         == Some("domain.evaluate_composition_metric_page")
     {
         return invoke_composition_metric_page(request.get("value"));
@@ -185,11 +220,7 @@ fn invoke_domain(request: serde_json::Value) -> String {
                 },
             })
             .to_string(),
-            Err(code) => serde_json::json!({
-                "ok": false,
-                "error": {"kind": "composition_diagnostic", "code": code.as_str()},
-            })
-            .to_string(),
+            Err(code) => composition_canonicalization_error(code),
         };
     }
 
@@ -304,6 +335,16 @@ fn invoke_domain(request: serde_json::Value) -> String {
         Ok(value) => serde_json::json!({"ok": true, "value": value}).to_string(),
         Err(message) => serde_json::json!({"ok": false, "error": {"kind": "domain_validation", "message": message}}).to_string(),
     }
+}
+
+fn composition_canonicalization_error(
+    code: ugoite_domain::composition::CompositionDiagnosticCode,
+) -> String {
+    serde_json::json!({
+        "ok": false,
+        "error": {"kind": "composition_diagnostic", "code": code.as_str()},
+    })
+    .to_string()
 }
 
 fn parse_entry_draft(
@@ -694,6 +735,60 @@ mod tests {
             assert_eq!(response["value"]["canonical_yaml"], native.yaml);
             assert_eq!(response["value"]["fingerprint"], native.fingerprint);
         }
+
+        let native =
+            ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE_COMPOSITION)
+                .unwrap();
+        let typed_request = serde_json::json!({
+            "action": "domain.canonicalize_composition_document",
+            "value": {
+                "document": serde_json::to_value(&native.document).unwrap(),
+            },
+        });
+        let typed_response: Value =
+            serde_json::from_str(&super::invoke_json(&typed_request.to_string())).unwrap();
+        assert_eq!(typed_response["ok"], true, "{typed_response}");
+        assert_eq!(
+            typed_response["value"]["document"],
+            serde_json::to_value(&native.document).unwrap()
+        );
+        assert_eq!(typed_response["value"]["canonical_yaml"], native.yaml);
+        assert_eq!(typed_response["value"]["fingerprint"], native.fingerprint);
+
+        let invalid_typed_request = serde_json::json!({
+            "action": "domain.canonicalize_composition_document",
+            "value": {"document": {"format": "unknown"}},
+        });
+        let invalid_typed_response: Value =
+            serde_json::from_str(&super::invoke_json(&invalid_typed_request.to_string())).unwrap();
+        assert_eq!(invalid_typed_response["ok"], false);
+        assert_eq!(
+            invalid_typed_response["error"]["kind"],
+            "composition_diagnostic"
+        );
+        assert_eq!(
+            invalid_typed_response["error"]["code"],
+            "invalid_composition"
+        );
+
+        let mut unknown_version_document = serde_json::to_value(&native.document).unwrap();
+        unknown_version_document["format_version"] = serde_json::json!(99);
+        let unknown_version_request = serde_json::json!({
+            "action": "domain.canonicalize_composition_document",
+            "value": {"document": unknown_version_document},
+        });
+        let unknown_version_response: Value =
+            serde_json::from_str(&super::invoke_json(&unknown_version_request.to_string()))
+                .unwrap();
+        assert_eq!(unknown_version_response["ok"], false);
+        assert_eq!(
+            unknown_version_response["error"]["kind"],
+            "composition_diagnostic"
+        );
+        assert_eq!(
+            unknown_version_response["error"]["code"],
+            "unsupported_format_version"
+        );
 
         let unreferenced_component = MONTHLY_EXPENSE_COMPOSITION
             .replace("      components: [transactions]", "      components: []");
