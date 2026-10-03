@@ -375,7 +375,8 @@ export default function SpaceSqlRunRoute() {
 
   createEffect(() => {
     const route = currentSaveRoute();
-    saveRouteVisitId = beginCompositionSaveRouteVisit(route);
+    const routeVisitId = beginCompositionSaveRouteVisit(route);
+    saveRouteVisitId = routeVisitId;
     if (pendingSave && !isCurrentSaveRoute(pendingSave)) {
       clearSaveForStaleRoute();
     }
@@ -384,8 +385,8 @@ export default function SpaceSqlRunRoute() {
     ) => {
       pendingSave = stored.attempt;
       setSaveDialogOpen(true);
-      setSaveBusy(stored.state === "in_flight");
-      setSaveRetryAvailable(stored.state === "uncertain");
+      setSaveBusy(false);
+      setSaveRetryAvailable(true);
       setSaveError(
         stored.state === "uncertain" ? t("composition.saveFailed") : null,
       );
@@ -396,9 +397,11 @@ export default function SpaceSqlRunRoute() {
       route,
       (event) => {
         if (event.type === "pending") {
+          if (event.stored.routeVisitId !== routeVisitId) return;
           restoreAttempt(event.stored);
           return;
         }
+        if (event.routeVisitId !== routeVisitId) return;
         if (pendingSave?.idempotencyKey !== event.idempotencyKey) return;
         pendingSave = undefined;
         setSaveBusy(false);
@@ -416,7 +419,7 @@ export default function SpaceSqlRunRoute() {
     attempt: PendingCompositionSaveAttempt,
     visitId: number | undefined,
   ) => {
-    stagePendingCompositionSaveAttempt(attempt);
+    stagePendingCompositionSaveAttempt(attempt, visitId);
     try {
       const response = await compositionApi.save(
         attempt.spaceId,
@@ -424,10 +427,10 @@ export default function SpaceSqlRunRoute() {
         attempt.idempotencyKey,
       );
       if (!isCurrentSaveVisit(attempt, visitId)) {
-        markPendingCompositionSaveAttemptUncertain(attempt);
+        markPendingCompositionSaveAttemptUncertain(attempt, visitId);
         return;
       }
-      clearPendingCompositionSaveAttempt(attempt, "completed");
+      clearPendingCompositionSaveAttempt(attempt, "completed", visitId);
       pendingSave = undefined;
       navigate(
         `/spaces/${encodeURIComponent(spaceId())}/compositions/${
@@ -440,9 +443,9 @@ export default function SpaceSqlRunRoute() {
         ? (error as { mutationOutcome?: unknown }).mutationOutcome
         : "unknown";
       if (outcome === "rejected") {
-        clearPendingCompositionSaveAttempt(attempt, "rejected");
+        clearPendingCompositionSaveAttempt(attempt, "rejected", visitId);
       } else {
-        markPendingCompositionSaveAttemptUncertain(attempt);
+        markPendingCompositionSaveAttemptUncertain(attempt, visitId);
       }
     }
   };

@@ -478,7 +478,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       .toEqual(["tool-revision-1"]);
   });
 
-  it.each(["success", "unknown failure"] as const)(
+  it.each(["success", "unknown failure", "rejected"] as const)(
     "rehydrates an in-flight save after route return and retries its key after %s",
     async (outcome) => {
       const committedPublications = new Map<string, {
@@ -499,8 +499,10 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
         value: Awaited<ReturnType<typeof compositionApi.save>>,
       ) => void;
       let rejectFirst: (error: unknown) => void;
+      let requestCount = 0;
       compositionSaveMock.mockImplementation(
         (_spaceId, yaml, idempotencyKey) => {
+          requestCount += 1;
           const existing = committedPublications.get(idempotencyKey);
           if (existing) return Promise.resolve(existing);
           firstPublication = {
@@ -516,7 +518,10 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
               data_file_count: 1,
             },
           };
-          committedPublications.set(idempotencyKey, firstPublication);
+          if (outcome !== "rejected" || requestCount > 1) {
+            committedPublications.set(idempotencyKey, firstPublication);
+          }
+          if (requestCount > 1) return Promise.resolve(firstPublication);
           return new Promise((resolve, reject) => {
             resolveFirst = resolve;
             rejectFirst = reject;
@@ -565,8 +570,8 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       const recoveredDialog = await screen.findByRole("dialog", {
         name: "Save as tool",
       });
-      expect(within(recoveredDialog).getByRole("button", { name: "Save" }))
-        .toBeDisabled();
+      expect(within(recoveredDialog).getByRole("button", { name: "Retry" }))
+        .toBeEnabled();
       expect(navigateMock).not.toHaveBeenCalled();
 
       if (outcome === "success") {
@@ -574,16 +579,26 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       } else {
         rejectFirst!(
           Object.assign(new Error("response lost after commit"), {
-            mutationOutcome: "unknown",
+            mutationOutcome: outcome === "rejected" ? "rejected" : "unknown",
           }),
         );
       }
-      await waitFor(() =>
-        expect(
-          within(screen.getByRole("dialog", { name: "Save as tool" }))
-            .getByRole("button", { name: "Retry" }),
-        ).toBeEnabled()
-      );
+      if (outcome === "rejected") {
+        await waitFor(() =>
+          expect(getPendingCompositionSaveAttempt(routeIdentity))
+            .toBeUndefined()
+        );
+      } else {
+        await waitFor(() =>
+          expect(getPendingCompositionSaveAttempt(routeIdentity)?.state)
+            .toBe("uncertain")
+        );
+      }
+      expect(screen.getByRole("dialog", { name: "Save as tool" }))
+        .toBe(recoveredDialog);
+      expect(within(recoveredDialog).getByRole("button", { name: "Retry" }))
+        .toBeEnabled();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(navigateMock).not.toHaveBeenCalled();
       fireEvent.click(
         within(screen.getByRole("dialog", { name: "Save as tool" }))
@@ -600,7 +615,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     },
   );
 
-  it.each(["success", "unknown failure"] as const)(
+  it.each(["success", "unknown failure", "rejected"] as const)(
     "does not clear a new route dialog after stale save %s",
     async (outcome) => {
       let resolveFirst: (
@@ -673,7 +688,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       } else {
         rejectFirst!(
           Object.assign(new Error("response lost after commit"), {
-            mutationOutcome: "unknown",
+            mutationOutcome: outcome === "rejected" ? "rejected" : "unknown",
           }),
         );
       }
@@ -683,8 +698,9 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
           .toBe(newDialog);
         expect(screen.getByLabelText("Name", { selector: "input" }))
           .toHaveValue("Other query");
-        expect(within(newDialog).getByRole("button", { name: "Save" }))
-          .toBeEnabled();
+        expect(
+          within(newDialog).getByRole("button", { name: "Save" }),
+        ).toBeEnabled();
       });
       expect(navigateMock).not.toHaveBeenCalled();
     },
