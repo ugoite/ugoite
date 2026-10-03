@@ -25,9 +25,12 @@ map.
 The canonical monthly-expense YAML document is shared with the domain fixture
 set. Two small raw-payload candidates now cover an unsupported format version
 and a missing Form reference. They use the merged typed document shape but are
-not resolver or persistence evidence. The restricted parser, measured resource
-limits, canonicalization, fingerprinting, and native/WASM parity are implemented
-and covered by domain tests. See the
+not resolver or persistence evidence. Domain tests cover the restricted parser,
+measured resource limits, canonicalization, and fingerprint semantics.
+Native/WASM parity is verified by the Domain and WASM test suites; in
+particular, `composition_canonicalization_matches_the_native_domain_contract`
+compares WASM documents, canonical YAML, fingerprints, and diagnostic codes
+with the native Domain contract. See the
 [Composition contract](../contracts/composition.md) and its referenced parser
 fixtures. Space-seed and expected-output files stay planned until their
 integration contracts are reviewed and frozen.
