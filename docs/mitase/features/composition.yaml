@@ -638,7 +638,7 @@ features:
       - id: browser-query-runtime
         role: implementation
         facet: frontend
-        responsibility: Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient.
+        responsibility: Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, tables, and metric values in the Browser.
         targets:
           - id: browser-composition-api
             adapter: typescript
@@ -665,10 +665,32 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.metric-runtime-values
+          - id: browser-composition-renderer
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.tsx
+            selector: { kind: symbol, name: CompositionRenderer }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.metric-runtime-values
+          - id: browser-home-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/dashboard.tsx"
+            selector: { kind: file }
+          - id: browser-composition-list-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/index.tsx"
+            selector: { kind: symbol, name: CompositionListRoute }
+          - id: browser-exact-revision-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx"
+            selector: { kind: symbol, name: CompositionRevisionRoute }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-composition-revision
       - id: browser-query-runtime-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Verify existing source forwarding, exact revision pinning, stale response suppression, opaque continuation pagination, and metric protocol result adaptation.
+        responsibility: Verify Home rediscovery, bounded list pagination, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression.
         targets:
           - id: browser-source-forwarding
             adapter: typescript
@@ -700,3 +722,52 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.metric-runtime-values
+          - id: browser-list-paging
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/index.test.tsx"
+            selector: { kind: test, name: opens a row at the exact revision and pages within the bounded list }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-composition-revision
+          - id: browser-exact-parameter-resolution
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx"
+            selector: { kind: test, name: loads and resolves only the exact revision and binds typed parameter changes }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-composition-revision
+          - id: browser-required-parameter-diagnostic
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx"
+            selector: { kind: test, name: renders deterministic diagnostics and retains the parameter control }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.typed-dashboard-model
+          - id: browser-detail-read-retry
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx"
+            selector: { kind: test, name: retries an exact-revision open after a read failure }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-composition-revision
+          - id: browser-metric-page-rendering
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: renders section order and displays the shared WASM metric result }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.metric-runtime-values
+          - id: browser-metric-continuation-guard
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: keeps the first-page metric when the table advances to a continuation page }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.metric-runtime-values
+          - id: browser-home-reopen
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/dashboard.test.tsx"
+            selector: { kind: test, name: rediscovers saved tools from Home and opens the listed exact revision }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-composition-revision

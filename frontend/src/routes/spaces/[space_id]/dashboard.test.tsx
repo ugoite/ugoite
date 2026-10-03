@@ -4,7 +4,7 @@ import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { compositionApi } from "~/lib/composition-api";
-import { formApi } from "~/lib/ugoite-client";
+import { formApi, protocolFetch } from "~/lib/ugoite-client";
 import SpaceDashboardRoute from "./dashboard";
 
 const navigate = vi.fn();
@@ -39,15 +39,9 @@ vi.mock(
   "~/lib/ugoite-client",
   () => ({
     formApi: { list: vi.fn(), listTypes: vi.fn(), create: vi.fn() },
+    protocolFetch: vi.fn(),
   }),
 );
-vi.mock("~/lib/composition-api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("~/lib/composition-api")>();
-  return {
-    ...actual,
-    compositionApi: { ...actual.compositionApi, list: vi.fn() },
-  };
-});
 
 describe("v5 space Home", () => {
   beforeEach(() => {
@@ -57,12 +51,12 @@ describe("v5 space Home", () => {
     entryStoreMock.loadEntries.mockResolvedValue(undefined);
     entryStoreMock.error.mockReturnValue(null);
     vi.mocked(formApi.listTypes).mockResolvedValue([]);
-    vi.mocked(compositionApi.list).mockResolvedValue({
+    vi.mocked(protocolFetch).mockResolvedValue({
       items: [],
       offset: 0,
       limit: 3,
       has_more: false,
-    });
+    } as never);
   });
   it("renders Continue, Pinned and Recent without metric cards", async () => {
     vi.mocked(formApi.list).mockResolvedValue([{
@@ -85,7 +79,7 @@ describe("v5 space Home", () => {
   });
   it("rediscovers saved tools from Home and opens the listed exact revision", async () => {
     vi.mocked(formApi.list).mockResolvedValue([]);
-    vi.mocked(compositionApi.list).mockResolvedValue({
+    vi.mocked(protocolFetch).mockResolvedValue({
       items: [{
         composition_id: "composition-1",
         revision_id: "revision-7",
@@ -98,7 +92,7 @@ describe("v5 space Home", () => {
       offset: 0,
       limit: 3,
       has_more: false,
-    });
+    } as never);
     render(() => <SpaceDashboardRoute />);
 
     const row = await screen.findByRole("link", { name: /Monthly expenses/ });
