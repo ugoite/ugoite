@@ -14620,6 +14620,8 @@ mod authentication_regression_tests {
             "base_revision_id": base_revision_id,
         });
         let restore_path = format!("/spaces/{space_id}/compositions/{composition_id}/restore");
+        let history_path =
+            format!("/spaces/{space_id}/compositions/{composition_id}/history?limit=20");
         let post_restore_with_key = |body: Value, key: &str| {
             Request::post(&restore_path)
                 .header(header::CONTENT_TYPE, "application/json")
@@ -14635,6 +14637,46 @@ mod authentication_regression_tests {
             route_json(owner_route.clone(), missing_key_request).await?;
         assert_eq!(missing_key_status, StatusCode::BAD_REQUEST, "{missing_key}");
         assert_eq!(missing_key["code"], "IDEMPOTENCY_KEY_REQUIRED");
+
+        let (history_before_whitespace_status, history_before_whitespace) = route_json(
+            owner_route.clone(),
+            Request::get(&history_path).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(
+            history_before_whitespace_status,
+            StatusCode::OK,
+            "{history_before_whitespace}"
+        );
+        let (whitespace_key_status, whitespace_key) = route_json(
+            owner_route.clone(),
+            post_restore_with_key(restore_body.clone(), "   ")?,
+        )
+        .await?;
+        assert_eq!(
+            whitespace_key_status,
+            StatusCode::BAD_REQUEST,
+            "{whitespace_key}"
+        );
+        assert_eq!(whitespace_key["code"], "IDEMPOTENCY_KEY_REQUIRED");
+        let (history_after_whitespace_status, history_after_whitespace) = route_json(
+            owner_route.clone(),
+            Request::get(&history_path).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(
+            history_after_whitespace_status,
+            StatusCode::OK,
+            "{history_after_whitespace}"
+        );
+        assert_eq!(
+            history_after_whitespace["total"],
+            history_before_whitespace["total"]
+        );
+        assert_eq!(
+            history_after_whitespace["revisions"],
+            history_before_whitespace["revisions"]
+        );
 
         let restore_key = "restore-response-lost";
         let (restore_status, restored) = route_json(
@@ -14760,8 +14802,6 @@ mod authentication_regression_tests {
         .await?;
         assert_eq!(editor_restore_status, StatusCode::OK, "{editor_restore}");
 
-        let history_path =
-            format!("/spaces/{space_id}/compositions/{composition_id}/history?limit=20");
         let (history_before_status, history_before) = route_json(
             owner_route.clone(),
             Request::get(&history_path).body(Body::empty())?,
