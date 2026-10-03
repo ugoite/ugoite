@@ -379,6 +379,25 @@ impl CompositionComponent {
             Self::Metric { id, .. } | Self::Table { id, .. } => id,
         }
     }
+
+    pub fn source_id(&self) -> &str {
+        match self {
+            Self::Metric { source, .. } | Self::Table { source, .. } => source,
+        }
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        match self {
+            Self::Metric { label, .. } | Self::Table { label, .. } => label.as_deref(),
+        }
+    }
+
+    pub fn value_field(&self) -> Option<&CompositionMetricValueField> {
+        match self {
+            Self::Metric { value_field, .. } => Some(value_field),
+            Self::Table { .. } => None,
+        }
+    }
 }
 
 /// A named group of dashboard components.
@@ -409,6 +428,7 @@ pub enum CompositionDiagnosticCode {
     MissingField,
     FieldTypeChanged,
     SourceSchemaChanged,
+    MetricFieldNotProjected,
 }
 
 impl CompositionDiagnosticCode {
@@ -426,6 +446,7 @@ impl CompositionDiagnosticCode {
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
             Self::SourceSchemaChanged => "source_schema_changed",
+            Self::MetricFieldNotProjected => "metric_field_not_projected",
         }
     }
 }
@@ -681,6 +702,10 @@ mod tests {
             (
                 CompositionDiagnosticCode::SourceSchemaChanged,
                 "source_schema_changed",
+            ),
+            (
+                CompositionDiagnosticCode::MetricFieldNotProjected,
+                "metric_field_not_projected",
             ),
         ];
 

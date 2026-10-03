@@ -21,6 +21,7 @@ pub enum CompositionDiagnosticCode {
     MissingField,
     FieldTypeChanged,
     SourceSchemaChanged,
+    MetricFieldNotProjected,
     SavedSqlRevisionMissing,
     NotAuthorized,
 }
@@ -38,6 +39,7 @@ impl CompositionDiagnosticCode {
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
             Self::SourceSchemaChanged => "source_schema_changed",
+            Self::MetricFieldNotProjected => "metric_field_not_projected",
             Self::SavedSqlRevisionMissing => "saved_sql_revision_missing",
             Self::NotAuthorized => "not_authorized",
         }
@@ -55,6 +57,7 @@ impl CompositionDiagnosticCode {
             "missing_field" => Some(Self::MissingField),
             "field_type_changed" => Some(Self::FieldTypeChanged),
             "source_schema_changed" => Some(Self::SourceSchemaChanged),
+            "metric_field_not_projected" => Some(Self::MetricFieldNotProjected),
             "saved_sql_revision_missing" => Some(Self::SavedSqlRevisionMissing),
             "not_authorized" => Some(Self::NotAuthorized),
             _ => None,
