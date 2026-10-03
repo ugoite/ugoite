@@ -2,7 +2,10 @@ use super::*;
 
 impl UgoiteService {
     /// Restore one exact historical Composition revision for a trusted local
-    /// Core caller. The restore is an append-only publication.
+    /// Core caller. The restore is an append-only publication. This
+    /// convenience method creates a fresh operation ID, so it is for one-shot
+    /// calls; callers that may retry an uncertain outcome must retain and use
+    /// [`Self::restore_composition_local_with_operation_id`] instead.
     pub async fn restore_composition_local(
         &self,
         space_id: &str,
@@ -33,7 +36,10 @@ impl UgoiteService {
     }
 
     /// Restore one exact historical revision with a caller-stable local
-    /// operation identity and exact current base revision.
+    /// operation identity and exact current base revision. Reuse the same ID
+    /// and publication-defining arguments to recover an uncertain outcome.
+    /// Within a Space, the ID cannot be reused for a different Entry, source
+    /// revision, base revision, or author.
     pub async fn restore_composition_local_with_operation_id(
         &self,
         space_id: &str,
@@ -73,6 +79,11 @@ impl UgoiteService {
 
     /// Restore one exact historical Composition revision after checking the
     /// current Entry and Form permissions under a held authorization lease.
+    /// This convenience method creates a fresh operation ID, so it is for
+    /// one-shot calls; callers that may retry an uncertain outcome must retain
+    /// and use
+    /// [`Self::restore_composition_authorized_for_principals_with_operation_id`]
+    /// instead.
     pub async fn restore_composition_authorized_for_principals(
         &self,
         space_id: &str,
@@ -131,6 +142,10 @@ impl UgoiteService {
 
     /// Restore one exact historical revision through current Composition and
     /// Form authorization, resolving retries from the durable publication.
+    /// Reuse the same ID and publication-defining arguments to recover an
+    /// uncertain outcome. Within a Space, the ID cannot be reused for a
+    /// different Entry, source revision, base revision, or author. Current
+    /// authorization is checked on every call, including retries.
     #[allow(clippy::too_many_arguments)]
     pub async fn restore_composition_authorized_for_principals_with_operation_id(
         &self,

@@ -215,3 +215,21 @@ authorization is re-evaluated by the existing query paths.
 
 Browser page, scroll, result, and cache state are transient Work. They are not
 fields of a Composition and do not become Space Knowledge.
+
+### Restore retry identity
+
+`restore_composition_local` and
+`restore_composition_authorized_for_principals` are one-shot convenience
+methods. Each call creates a fresh operation ID; if a response is lost after a
+restore commits, calling either convenience method again can append another
+restore. A caller that may retry an uncertain outcome uses the corresponding
+`_with_operation_id` method and retains the operation ID and publication-
+defining values for that logical restore.
+
+Callers assign one operation ID to one logical restore and must not reuse it
+for a different restore. Publication identities are scoped by Space; within a
+Space, an ID is bound to its Composition Entry, source revision, exact base
+revision, and author. Reuse in that Space with different publication-defining
+values returns an idempotency conflict. Authorized calls also recheck the
+caller's current Entry and Form permissions on every attempt, including a
+replay. These service methods do not change the REST API or storage contract.
