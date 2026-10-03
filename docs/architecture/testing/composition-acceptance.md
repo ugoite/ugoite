@@ -3,13 +3,13 @@ title: "Composition acceptance plan"
 ---
 
 This is the Lane D acceptance plan for the Composition feature, whose full
-surface and runtime journey remain incomplete. The read-only portable list,
-get, history, and lint operations are implemented, as are the CLI list, history,
-inspect, and lint commands; this does not claim a complete Composition API or
-CLI command set, Browser route, or passing end-to-end runtime journey. The Rust
-domain parser and Core resolver now have focused implementation and test
-evidence, documented below and bound in the Mitase feature.
-The current structured locator map is
+surface and runtime journey remain incomplete. The portable list, get, history,
+lint, resolve, and save operations are implemented, as are the CLI list, history,
+inspect, lint, and query commands. This does not claim a complete Composition
+API or CLI command set, Browser route, or passing end-to-end runtime journey.
+The Rust domain parser and Core resolver have focused implementation and test
+evidence, documented below and bound in the Mitase feature. The current
+structured locator map is
 [`e2e/fixtures/composition/acceptance-plan.json`](../../../e2e/fixtures/composition/acceptance-plan.json).
 
 ## Contract and evidence boundary
@@ -19,8 +19,8 @@ and full-surface runtime evidence land. Focused domain and Core resolver tests
 are bound in `docs/mitase/features/composition.yaml`; they establish those Rust
 contracts only. The reserved selectors in the locator map are not Mitase
 verification bindings until the corresponding integration tests run. The D0
-check validates the map, fixture presence, and selector registration; it does
-not claim runtime evidence.
+check validates the map, fixture presence, and selector inventory; it does not
+claim runtime evidence. Playwright `--list` separately confirms test discovery.
 
 The canonical monthly-expense YAML document is shared with the domain fixture
 set. Two small raw-payload candidates now cover an unsupported format version
@@ -66,6 +66,7 @@ The current CLI command surface includes:
 - `ugoite composition history <id>`
 - `ugoite composition inspect <id> [--revision] [--raw]`
 - `ugoite composition lint <file>`
+- `ugoite composition query <id> [--revision] [--param k=v]`
 
 `composition list` reads one bounded page in local Core or remote mode. Its
 default page size is 100 with offset 0; `--limit` and `--offset` select a
@@ -84,7 +85,6 @@ The remaining planned command surface is:
 
 - `ugoite composition restore <id> --revision <revision>`
 - `ugoite composition save <file>`
-- `ugoite composition query <id> --param k=v`
 - `ugoite composition export <id> --output <path>`
 - `ugoite composition import <file>`
 
@@ -141,12 +141,12 @@ ACL-authorized summary page through the portable operation and server route;
 the CLI uses this operation in remote mode and the matching local Core reader
 in local mode. The list DTO omits `spec`. CLI history uses the portable
 `composition.history` operation remotely and the local raw history reader in
-local mode. Resolve is available as a side-effect-free operation; save, export,
-and restore remain planned, with their relevant contracts and generic-write
-protections still in progress. The Core resolver returns requests for the
-existing query path; it does not itself execute them. The scalar page adapters
-described above are tested Core functions and are not yet evidence of a complete
-CLI or Browser query journey.
+local mode. Resolve is available as a side-effect-free operation, and
+`composition.save` is exposed by the Server API with a publication receipt.
+CLI save/export/import and restore remain planned. The Core resolver returns
+requests for the existing query path; it does not itself execute them. The
+scalar page adapters described above are tested Core functions and are not yet
+evidence of a complete CLI or Browser query journey.
 
 ## Recovery and authorization acceptance
 
@@ -158,12 +158,13 @@ Browser request state. Selectors that depend on storage or resolver service
 APIs remain unbound until those public contracts settle. No DTO field names are
 reserved by this plan.
 
-`composition.save` stays disabled until generic Entry create, update, bulk,
-import, and restore paths cannot bypass Composition validation, and the
-receipt/reconciliation path can establish the exact published revision. A lost
-save response remains outcome-unknown until that reconciliation succeeds; a
-retry must not publish a duplicate. Generic restore of the reserved Form is
-denied while Composition-scoped restore validates and appends a new revision.
+Generic Entry create, update, bulk, import, and restore paths cannot bypass
+Composition validation. The Server save operation returns the publication
+receipt that identifies the exact revision. Browser and CLI save surfaces
+remain planned. If a save response is lost, the outcome remains unknown until
+the exact revision is reconciled; retry idempotency is tracked separately.
+Generic restore of the reserved Form is denied while Composition-scoped restore
+validates and appends a new revision.
 
 Raw inspection, export, and history read the exact stored spec and revision
 metadata independently of strict typed parsing. The version probe runs before
