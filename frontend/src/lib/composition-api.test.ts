@@ -5,6 +5,7 @@ import {
   canCreateSavedSqlComposition,
   compositionApi,
   type CompositionResolvedSource,
+  type CompositionSaveResponse,
 } from "./composition-api";
 import { sqlApi } from "./sql-api";
 import { canonicalizeCompositionDocument } from "./ugoite-client";
@@ -95,21 +96,30 @@ describe("compositionApi", () => {
   });
 
   it("saves canonical YAML through the portable operation with its retry key", async () => {
-    vi.mocked(protocolFetch).mockResolvedValue({
+    const response = {
       composition_id: "tool-1",
       revision_id: "revision-2",
       canonical_yaml: "canonical yaml",
       receipt: {
         command_id: "command-1",
         catalog_generation: 4,
-        snapshot_id: "snapshot-1",
+        snapshot_id: 42,
         committed_revision_ids: ["revision-2"],
         committed_at_micros: 1,
         data_file_count: 1,
       },
-    });
+    } satisfies CompositionSaveResponse;
+    vi.mocked(protocolFetch).mockResolvedValue(response);
 
-    await compositionApi.save("space-1", "canonical yaml", "attempt-1", signal);
+    const saved = await compositionApi.save(
+      "space-1",
+      "canonical yaml",
+      "attempt-1",
+      signal,
+    );
+
+    expect(typeof saved.receipt.snapshot_id).toBe("number");
+    expect(saved.receipt.snapshot_id).toBe(42);
 
     expect(protocolFetch).toHaveBeenCalledWith(
       "composition.save",
