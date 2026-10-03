@@ -2,6 +2,7 @@ import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSpreadsheetCsvRequest,
+  canonicalizeCompositionDocument,
   encodeSpreadsheetCsv,
   evaluateCompositionMetricPage,
   getWasmSupportedOperations,
@@ -25,8 +26,57 @@ const validReference = {
   sha256: "a".repeat(64),
 };
 
+const typedCompositionDocument = {
+  format: "ugoite.composition",
+  format_version: 1,
+  kind: "dashboard",
+  name: "Monthly expenses",
+  tags: [],
+  spec: {
+    parameters: [{
+      id: "month_start",
+      type: "date",
+      required: true,
+      default: "2026-10-01",
+    }],
+    sources: [{
+      id: "sql_results",
+      kind: "saved_sql",
+      entry_id: "00000000-0000-7000-8000-000000000020",
+      revision_id: "00000000-0000-7000-8000-000000000021",
+      expected_result: [{ name: "amount", type: "json" }],
+      variables: { month_start: { parameter: "month_start" } },
+    }],
+    components: [{ id: "results_table", kind: "table", source: "sql_results" }],
+    sections: [{ id: "main", components: ["results_table"] }],
+  },
+};
+
 describe("portable Ugoite API protocol WASM", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("canonicalizes a typed Composition document through the Rust/WASM bridge", async () => {
+    const canonical = await canonicalizeCompositionDocument(
+      typedCompositionDocument,
+    );
+
+    expect(canonical.document).toMatchObject({
+      format: "ugoite.composition",
+      format_version: 1,
+      name: "Monthly expenses",
+      spec: {
+        sources: [{
+          kind: "saved_sql",
+          entry_id: "00000000-0000-7000-8000-000000000020",
+          revision_id: "00000000-0000-7000-8000-000000000021",
+        }],
+      },
+    });
+    expect(canonical.canonical_yaml).toContain(
+      "revision_id: 00000000-0000-7000-8000-000000000021",
+    );
+    expect(canonical.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
 
   it("uses the shared spreadsheet-safe CSV encoder", async () => {
     await expect(
