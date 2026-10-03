@@ -114,6 +114,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     context = navigation.target;
     page = navigation.page;
   } catch (error) {
+    await browser.close().catch(() => {});
     throw new Error(
       `setup navigation failed (${safeNavigationFailure(error)}); ${
         formatSetupReadinessDiagnostics(
@@ -123,12 +124,11 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       }`,
     );
   }
-  const cdp = await context.newCDPSession(page);
-  await cdp.send("WebAuthn.enable");
-  // REQ-SEC-004: the shipped browser gate uses a real WebAuthn ceremony.
-  const firstAuthenticator = await addVirtualAuthenticator(cdp);
-
   try {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("WebAuthn.enable");
+    // REQ-SEC-004: the shipped browser gate uses a real WebAuthn ceremony.
+    const firstAuthenticator = await addVirtualAuthenticator(cdp);
     await assertBuildProvenance(page, baseURL);
     const displayName = page.getByLabel("Display name");
     await displayName.fill("E2E owner");
@@ -245,6 +245,6 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     await expect(page).toHaveURL(/\/spaces$/);
     await context.storageState({ path: ".auth/session.json" });
   } finally {
-    await browser.close();
+    await browser.close().catch(() => {});
   }
 }
