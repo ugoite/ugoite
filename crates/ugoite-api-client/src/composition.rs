@@ -1,4 +1,4 @@
-//! Portable Composition read response DTOs.
+//! Portable Composition operation DTOs.
 //!
 //! These types describe the wire contract without depending on the storage
 //! representation used by the Server.
@@ -110,6 +110,42 @@ pub struct CompositionLintResponse {
     pub value: Option<CompositionLintValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<CompositionLintError>,
+}
+
+/// Create or update one saved Composition through the portable API.
+///
+/// A create omits both `composition_id` and `base_revision_id`. An update
+/// supplies both, and the base revision is checked exactly by the Server.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionSaveRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision_id: Option<String>,
+    pub yaml: String,
+}
+
+/// Portable commit receipt for one Composition publication.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionPublicationReceipt {
+    pub command_id: String,
+    pub catalog_generation: u64,
+    pub snapshot_id: i64,
+    pub committed_revision_ids: Vec<String>,
+    pub committed_at_micros: i64,
+    pub data_file_count: usize,
+}
+
+/// Successful create or update response for `composition.save`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionSaveResponse {
+    pub composition_id: String,
+    pub revision_id: String,
+    pub canonical_yaml: String,
+    pub receipt: CompositionPublicationReceipt,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

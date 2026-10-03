@@ -48,11 +48,12 @@ use ugoite_api_client::{
     CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
     CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
     CompositionParameterDefinition, CompositionParameterFormat as ApiCompositionParameterFormat,
-    CompositionParameterType as ApiCompositionParameterType, CompositionRawRevision,
-    CompositionResolveDiagnostic, CompositionResolvePlan, CompositionResolveRequest,
-    CompositionResolveResponse, CompositionResolvedComponentBinding,
+    CompositionParameterType as ApiCompositionParameterType, CompositionPublicationReceipt,
+    CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
+    CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
     CompositionResolvedComponentKind, CompositionResolvedSource, CompositionRevisionMetadata,
-    CompositionRevisionReference,
+    CompositionRevisionReference, CompositionSaveRequest as ApiCompositionSaveRequest,
+    CompositionSaveResponse,
 };
 use ugoite_core::composition::{
     CompositionDiagnostic as CoreCompositionDiagnostic, ResolvedComponentKind,
@@ -1745,7 +1746,12 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/entries/{entry_id}/restore",
             post(restore_entry),
         )
-        .route("/spaces/{space_id}/compositions", get(list_compositions))
+        .route(
+            "/spaces/{space_id}/compositions",
+            get(list_compositions)
+                .post(save_composition)
+                .layer(DefaultBodyLimit::max(COMPOSITION_SAVE_MAX_REQUEST_BYTES)),
+        )
         .route(
             "/spaces/{space_id}/compositions/{entry_id}",
             get(get_composition),
@@ -11017,6 +11023,142 @@ async fn list_compositions(
     Ok(Json(composition_raw_list_page_response(page)))
 }
 
+const COMPOSITION_SAVE_MAX_REQUEST_BYTES: usize =
+    ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6 + 1024;
+
+async fn save_composition(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    request: Result<Json<ApiCompositionSaveRequest>, JsonRejection>,
+) -> ApiResult<(StatusCode, Json<CompositionSaveResponse>)> {
+    let Json(request) = request.map_err(|error| {
+        ApiError::new(
+            error.status(),
+            json!({
+                "code": "INVALID_INPUT",
+                "message": error.body_text(),
+            }),
+        )
+    })?;
+
+    let (entry_id, base_revision_id) = match (
+        request.composition_id.as_deref(),
+        request.base_revision_id.as_deref(),
+    ) {
+        (None, None) => (None, None),
+        (Some(composition_id), Some(base_revision_id)) => {
+            validate_id(composition_id, "entry_id")?;
+            validate_id(base_revision_id, "revision_id")?;
+            let parse_uuid = |value: &str, label: &str| {
+                Uuid::parse_str(value).map_err(|_| {
+                    ApiError::new(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        json!({
+                            "code": "INVALID_INPUT",
+                            "message": format!("Composition {label} must be a UUID"),
+                        }),
+                    )
+                })
+            };
+            (
+                Some(ugoite_domain::id::EntryId::from_uuid(parse_uuid(
+                    composition_id,
+                    "ID",
+                )?)),
+                Some(ugoite_domain::id::RevisionId::from_uuid(parse_uuid(
+                    base_revision_id,
+                    "base revision ID",
+                )?)),
+            )
+        }
+        _ => {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({
+                    "code": "INVALID_INPUT",
+                    "message": "Composition updates require both composition_id and base_revision_id",
+                }),
+            ));
+        }
+    };
+
+    // Validate and canonicalize before entering the mutation boundary. The
+    // storage service repeats typed validation at publication admission.
+    let canonical = ugoite_domain::composition::canonicalize_composition_yaml(&request.yaml)
+        .map_err(|code| {
+            ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({
+                    "kind": "composition_diagnostic",
+                    "code": code.as_str(),
+                    "message": code.as_str(),
+                }),
+            )
+        })?;
+
+    let action = if entry_id.is_some() {
+        Action::Update
+    } else {
+        Action::Create
+    };
+    let resource = entry_id.map(|entry_id| ResourceRef {
+        kind: ResourceKind::Entry,
+        id: entry_id.to_string(),
+        parent: None,
+    });
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let result = with_authorized_service_mutation(
+        &state,
+        &space_id,
+        &identity,
+        action,
+        resource,
+        |principal_id, principals| async move {
+            service
+                .save_composition_authorized_for_principals(
+                    &space_id_for_write,
+                    ugoite_iceberg::composition::CompositionSaveRequest {
+                        entry_id,
+                        base_revision_id,
+                        document: canonical.document,
+                    },
+                    &principal_id.to_string(),
+                    &principals,
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
+
+    let status = if entry_id.is_some() {
+        StatusCode::OK
+    } else {
+        StatusCode::CREATED
+    };
+    let response = CompositionSaveResponse {
+        composition_id: result.entry_id.to_string(),
+        revision_id: result.revision_id.to_string(),
+        canonical_yaml: result.canonical_yaml,
+        receipt: CompositionPublicationReceipt {
+            command_id: result.receipt.command_id,
+            catalog_generation: result.receipt.catalog_generation,
+            snapshot_id: result.receipt.snapshot_id,
+            committed_revision_ids: result
+                .receipt
+                .committed_revision_ids
+                .into_iter()
+                .map(|revision_id| revision_id.to_string())
+                .collect(),
+            committed_at_micros: result.receipt.committed_at_micros,
+            data_file_count: result.receipt.data_file_count,
+        },
+    };
+    Ok((status, Json(response)))
+}
+
 async fn get_composition(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
@@ -13827,7 +13969,12 @@ mod authentication_regression_tests {
                 "/spaces/{space_id}/entries/{entry_id}/history",
                 get(entry_history),
             )
-            .route("/spaces/{space_id}/compositions", get(list_compositions))
+            .route(
+                "/spaces/{space_id}/compositions",
+                get(list_compositions)
+                    .post(save_composition)
+                    .layer(DefaultBodyLimit::max(COMPOSITION_SAVE_MAX_REQUEST_BYTES)),
+            )
             .route(
                 "/spaces/{space_id}/compositions/{entry_id}",
                 get(get_composition),
@@ -14021,6 +14168,136 @@ mod authentication_regression_tests {
         assert_eq!(denied["limit"], 1);
         assert!(!denied.to_string().contains("Alpha"));
         assert!(!denied.to_string().contains("Beta"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn composition_save_publishes_with_exact_base_and_authorization() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-save-{}",
+            Uuid::now_v7()
+        ))?;
+        let owner_id = Uuid::from_u128(351201);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-save", owner_id, "Save test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let owner_route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(owner_id, space_uid),
+        );
+        let fixture = include_str!(
+            "../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml"
+        );
+        let post_save = |body: Value| {
+            Request::post(format!("/spaces/{space_id}/compositions"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&body).expect("save request serializes"),
+                ))
+        };
+
+        for body in [
+            json!({"yaml": fixture, "composition_id": "00000000-0000-7000-8000-000000000001"}),
+            json!({"yaml": fixture, "base_revision_id": "00000000-0000-7000-8000-000000000001"}),
+            json!({"yaml": fixture, "ignored": true}),
+            json!({"yaml": "format: not-composition\n"}),
+        ] {
+            let (status, _) = route_json(owner_route.clone(), post_save(body)?).await?;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        }
+        let (empty_status, empty_page) = route_json(
+            owner_route.clone(),
+            Request::get(format!("/spaces/{space_id}/compositions?limit=1")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(empty_status, StatusCode::OK, "{empty_page}");
+        assert_eq!(empty_page["items"], json!([]));
+
+        let (create_status, created) =
+            route_json(owner_route.clone(), post_save(json!({"yaml": fixture}))?).await?;
+        assert_eq!(create_status, StatusCode::CREATED, "{created}");
+        let composition_id = created["composition_id"]
+            .as_str()
+            .expect("create returns Composition identity");
+        let first_revision_id = created["revision_id"]
+            .as_str()
+            .expect("create returns revision identity");
+        assert!(Uuid::parse_str(composition_id).is_ok());
+        assert!(Uuid::parse_str(first_revision_id).is_ok());
+        assert_eq!(
+            created["canonical_yaml"],
+            ugoite_domain::composition::canonicalize_composition_yaml(fixture)
+                .expect("fixture canonicalizes")
+                .yaml
+        );
+        assert!(created["receipt"]["command_id"].as_str().is_some());
+        assert!(created["receipt"]["catalog_generation"].as_u64().is_some());
+        assert!(created["receipt"]["snapshot_id"].as_i64().is_some());
+        assert_eq!(
+            created["receipt"]["committed_revision_ids"],
+            json!([first_revision_id])
+        );
+
+        let updated_yaml = fixture.replace("Monthly expenses", "Updated expenses");
+        let (update_status, updated) = route_json(
+            owner_route.clone(),
+            post_save(json!({
+                "composition_id": composition_id,
+                "base_revision_id": first_revision_id,
+                "yaml": updated_yaml,
+            }))?,
+        )
+        .await?;
+        assert_eq!(update_status, StatusCode::OK, "{updated}");
+        assert_eq!(updated["composition_id"], composition_id);
+        assert_ne!(updated["revision_id"], first_revision_id);
+        assert!(updated["canonical_yaml"]
+            .as_str()
+            .is_some_and(|yaml| yaml.contains("name: Updated expenses")));
+
+        let (stale_status, stale) = route_json(
+            owner_route.clone(),
+            post_save(json!({
+                "composition_id": composition_id,
+                "base_revision_id": first_revision_id,
+                "yaml": fixture,
+            }))?,
+        )
+        .await?;
+        assert_eq!(stale_status, StatusCode::CONFLICT, "{stale}");
+
+        let (latest_status, latest) = route_json(
+            owner_route.clone(),
+            Request::get(format!("/spaces/{space_id}/compositions/{composition_id}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(latest_status, StatusCode::OK, "{latest}");
+        assert_eq!(latest["revision"]["revision_id"], updated["revision_id"]);
+
+        let viewer_id = Uuid::from_u128(351202);
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                owner_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Save viewer".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        let viewer_route =
+            reversible_knowledge_route(state, reversible_knowledge_identity(viewer_id, space_uid));
+        let (denied_status, denied) =
+            route_json(viewer_route, post_save(json!({"yaml": fixture}))?).await?;
+        assert_eq!(denied_status, StatusCode::FORBIDDEN, "{denied}");
         Ok(())
     }
 

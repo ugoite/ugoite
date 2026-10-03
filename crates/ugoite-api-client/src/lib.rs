@@ -16,11 +16,11 @@ pub use composition::{
     CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
     CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
     CompositionListItem, CompositionListPage, CompositionParameterDefinition,
-    CompositionParameterFormat, CompositionParameterType, CompositionRawRevision,
-    CompositionResolveDiagnostic, CompositionResolvePlan, CompositionResolveRequest,
-    CompositionResolveResponse, CompositionResolvedComponentBinding,
+    CompositionParameterFormat, CompositionParameterType, CompositionPublicationReceipt,
+    CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
+    CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
     CompositionResolvedComponentKind, CompositionResolvedSource, CompositionRevisionMetadata,
-    CompositionRevisionReference,
+    CompositionRevisionReference, CompositionSaveRequest, CompositionSaveResponse,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -87,6 +87,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "composition.get",
     "composition.history",
     "composition.resolve",
+    "composition.save",
     "sql.list",
     "sql.get",
     "sql.create",
@@ -1079,6 +1080,15 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "composition.save" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to save Composition"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "compositions".into(),
+                ],
+                vec![],
+            ),
             "entry.create" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to create entry"),
                 vec![
@@ -1898,6 +1908,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to resolve Composition",
             RequestBodyKind::Json,
         ),
+        "composition.save" => (
+            HttpMethod::Post,
+            "Failed to save Composition",
+            RequestBodyKind::Json,
+        ),
         "entry.create" => (
             HttpMethod::Post,
             "Failed to create entry",
@@ -2601,6 +2616,63 @@ mod tests {
             serde_json::from_str::<Value>(lint.body.as_deref().expect("lint body"))
                 .expect("lint request JSON"),
             json!({"yaml": "format_version: 1\n"})
+        );
+
+        let save_body = json!({
+            "yaml": "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Monthly\ntags: []\nspec: {}\n"
+        });
+        let save_create = prepare_request(
+            "composition.save",
+            &json!({"space_id": "demo"}),
+            Some(&save_body),
+        )
+        .expect("Composition create request");
+        assert_eq!(save_create.method, HttpMethod::Post);
+        assert_eq!(save_create.path, "/spaces/demo/compositions");
+        assert_eq!(save_create.body_kind, RequestBodyKind::Json);
+        assert_eq!(
+            serde_json::from_str::<Value>(save_create.body.as_deref().expect("save body"))
+                .expect("save request JSON"),
+            save_body
+        );
+
+        let save_update_body = json!({
+            "composition_id": "01900000-0000-7000-8000-000000000002",
+            "base_revision_id": "01900000-0000-7000-8000-000000000003",
+            "yaml": "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Monthly\ntags: []\nspec: {}\n"
+        });
+        let save_update = prepare_request(
+            "composition.save",
+            &json!({"space_id": "demo"}),
+            Some(&save_update_body),
+        )
+        .expect("Composition update request");
+        assert_eq!(save_update.method, HttpMethod::Post);
+        assert_eq!(save_update.path, "/spaces/demo/compositions");
+        assert_eq!(
+            serde_json::from_str::<Value>(save_update.body.as_deref().expect("save body"))
+                .expect("save request JSON"),
+            save_update_body
+        );
+
+        let save_response = json!({
+            "composition_id": "01900000-0000-7000-8000-000000000002",
+            "revision_id": "01900000-0000-7000-8000-000000000003",
+            "canonical_yaml": "format: ugoite.composition\nformat_version: 1\n",
+            "receipt": {
+                "command_id": "command-1",
+                "catalog_generation": 4,
+                "snapshot_id": 12,
+                "committed_revision_ids": ["01900000-0000-7000-8000-000000000003"],
+                "committed_at_micros": 123,
+                "data_file_count": 1
+            }
+        });
+        let save_response_dto: CompositionSaveResponse =
+            serde_json::from_value(save_response.clone()).expect("Composition save response DTO");
+        assert_eq!(
+            serde_json::to_value(&save_response_dto).expect("serialize save response DTO"),
+            save_response
         );
 
         let resolve_body = json!({
