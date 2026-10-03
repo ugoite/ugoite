@@ -190,11 +190,11 @@ locator, mocked operation, or D0 plan check is not a Browser or real-server
 journey pass. The acceptance map records one focused run of
 `Browser saves a tool once, reopens its exact revision from Home, and pages
 parameterized results with model connection disabled` against source and
-candidate commit `482faff2e5303cf6a8abeaefb123abfe79ba7996`. It passed with one
+candidate commit `392204f28cedbbb9531f44864fa78992361a4813`. It passed with one
 test and no skips. The tracked JUnit result is
 [`composition-golden-journey-junit.xml`](../../../e2e/fixtures/composition/evidence/composition-golden-journey-junit.xml),
 with SHA-256
-`24d90eaac4952fca0351af2783e35f908bbfc6819963f73399ccea8ba3d21431`. The run
+`a7da68bb91789b3701f89624c93a28eac633cded59a0316d853d20e5eb9dd108`. The run
 verifies Browser save retry after commit, exact-revision reopen from Home, and
 parameterized paged results with model connection disabled. It does not verify
 stale query response suppression, CLI parity, recovery and ACL selectors,

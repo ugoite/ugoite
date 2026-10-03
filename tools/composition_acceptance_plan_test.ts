@@ -335,7 +335,7 @@ Deno.test(
     assert(journeyEvidence);
     assertEquals(
       journeyEvidence.source_sha,
-      "482faff2e5303cf6a8abeaefb123abfe79ba7996",
+      "392204f28cedbbb9531f44864fa78992361a4813",
     );
     assertEquals(journeyEvidence.candidate_sha, journeyEvidence.source_sha);
     assertEquals(
