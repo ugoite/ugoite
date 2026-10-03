@@ -121,6 +121,10 @@ async function main(): Promise<void> {
     "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml",
     import.meta.url,
   );
+  const unknownFormatVersionPath = new URL(
+    "../../../e2e/fixtures/composition/unknown-format-version.ugcomp.yaml",
+    import.meta.url,
+  );
   const yaml = await Deno.readTextFile(fixturePath);
   const labeledYaml = await Deno.readTextFile(labeledFixturePath);
   const metricValueFieldsYaml = await Deno.readTextFile(metricValueFieldsFixturePath);
@@ -135,6 +139,7 @@ async function main(): Promise<void> {
     await Deno.readTextFile(metricValueFieldsFingerprintPath)
   ).trim();
   const invalidListItemYaml = await Deno.readTextFile(invalidListItemPath);
+  const unknownFormatVersionYaml = await Deno.readTextFile(unknownFormatVersionPath);
   const unreferencedComponentYaml = yaml.replace(
     "      components: [transactions]",
     "      components: []",
@@ -200,13 +205,32 @@ async function main(): Promise<void> {
     throw new Error("Could not build an unknown metric value-field variant fixture");
   }
 
+  // Keep version dispatch separate from complete v1 documents that fail
+  // strict schema or layout validation below.
+  const unsupportedVersionResponse = await invokeWasm(instance.exports, {
+    action: "domain.canonicalize_composition",
+    value: { yaml: unknownFormatVersionYaml },
+  });
+  const unsupportedVersionError = unsupportedVersionResponse.error as Record<
+    string,
+    unknown
+  >;
+  assertEqual(unsupportedVersionResponse.ok, false, "unsupported version result");
+  assertEqual(
+    unsupportedVersionError.kind,
+    "composition_diagnostic",
+    "unsupported version diagnostic kind",
+  );
+  assertEqual(
+    unsupportedVersionError.code,
+    "unsupported_format_version",
+    "unsupported version diagnostic code",
+  );
+
+  // These inputs all carry the complete supported envelope, so they exercise
+  // v1 validation diagnostics rather than YAML or version-probe failures.
   for (
     const [invalidYaml, expectedCode] of [
-      ["format: ugoite.composition\nformat_version: 2\n", "unsupported_format_version"],
-      [
-        "format: ugoite.composition\nformat_version: 1\nname: [invalid\n",
-        "invalid_composition",
-      ],
       [invalidListItemYaml, "invalid_composition"],
       [invalidMetricValueFieldYaml, "invalid_composition"],
       [unreferencedComponentYaml, "invalid_composition"],

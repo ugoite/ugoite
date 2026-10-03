@@ -551,6 +551,8 @@ mod tests {
     const UNKNOWN_LIST_ITEM_FIELD_COMPOSITION: &str = include_str!(
         "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml"
     );
+    const UNKNOWN_FORMAT_VERSION_COMPOSITION: &str =
+        include_str!("../../../e2e/fixtures/composition/unknown-format-version.ugcomp.yaml");
 
     #[test]
     fn test_api_req_api_001_wasm_adapter_exposes_protocol_version() {
@@ -587,14 +589,32 @@ mod tests {
         let unreferenced_component = MONTHLY_EXPENSE_COMPOSITION
             .replace("      components: [transactions]", "      components: []");
         assert_ne!(unreferenced_component, MONTHLY_EXPENSE_COMPOSITION);
+        let invalid_metric_value_field =
+            MONTHLY_EXPENSE_COMPOSITION.replace("kind: sql_column", "kind: unknown_column");
+        assert_ne!(invalid_metric_value_field, MONTHLY_EXPENSE_COMPOSITION);
 
+        // Unsupported versions use their own complete fixture; the v1 cases
+        // below reach strict validation after the supported envelope probe.
+        let version_error = ugoite_domain::composition::canonicalize_composition_yaml(
+            UNKNOWN_FORMAT_VERSION_COMPOSITION,
+        )
+        .unwrap_err();
+        let version_request = serde_json::json!({
+            "action": "domain.canonicalize_composition",
+            "value": {"yaml": UNKNOWN_FORMAT_VERSION_COMPOSITION},
+        });
+        let version_response: Value =
+            serde_json::from_str(&super::invoke_json(&version_request.to_string())).unwrap();
+        assert_eq!(version_error.as_str(), "unsupported_format_version");
+        assert_eq!(version_response["ok"], false, "{version_response}");
+        assert_eq!(version_response["error"]["kind"], "composition_diagnostic");
+        assert_eq!(version_response["error"]["code"], version_error.as_str());
+
+        // Each invalid v1 document has a complete envelope and one strict
+        // schema or layout defect, so the native and WASM codes must agree.
         for (yaml, expected_code) in [
-            (
-                "format: ugoite.composition\nformat_version: 2\nkind: dashboard\nname: Example\ntags: []\nspec: {}\n",
-                "unsupported_format_version",
-            ),
-            ("format_version: 1\nname: [invalid\n", "invalid_composition"),
             (UNKNOWN_LIST_ITEM_FIELD_COMPOSITION, "invalid_composition"),
+            (invalid_metric_value_field.as_str(), "invalid_composition"),
             (unreferenced_component.as_str(), "invalid_composition"),
         ] {
             let native_error =
