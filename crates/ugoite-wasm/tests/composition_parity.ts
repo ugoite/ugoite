@@ -24,6 +24,14 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
   }
 }
 
+function assertJsonEqual(actual: unknown, expected: unknown, label: string): void {
+  assertEqual(
+    JSON.stringify(normalizeJson(actual)),
+    JSON.stringify(normalizeJson(expected)),
+    label,
+  );
+}
+
 function normalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizeJson);
   if (value !== null && typeof value === "object") {
@@ -183,6 +191,50 @@ async function main(): Promise<void> {
   const typedDocument = structuredClone(
     responseValue.document as Record<string, unknown>,
   );
+  const unnormalizedTypedDocument = structuredClone(typedDocument);
+  const typedSpec = unnormalizedTypedDocument.spec as Record<string, unknown>;
+  const typedSources = typedSpec.sources as Record<string, unknown>[];
+  const entryQuerySource = typedSources.find((source) =>
+    source.kind === "entry_query"
+  );
+  if (!entryQuerySource || !Array.isArray(entryQuerySource.field_schema)) {
+    throw new Error("Typed fixture must contain an EntryQuery field schema");
+  }
+  const fieldSchema = entryQuerySource.field_schema;
+  if (fieldSchema.length < 2) {
+    throw new Error("Typed fixture field schema must exercise ordering");
+  }
+  const normalizedFieldSchema = JSON.stringify(normalizeJson(fieldSchema));
+  fieldSchema.reverse();
+  if (JSON.stringify(normalizeJson(fieldSchema)) === normalizedFieldSchema) {
+    throw new Error("Could not make the typed field schema non-normalized");
+  }
+
+  const typedCanonicalResponse = await invokeWasm(instance.exports, {
+    action: "domain.canonicalize_composition_document",
+    value: { document: unnormalizedTypedDocument },
+  });
+  const typedCanonicalValue = typedCanonicalResponse.value as Record<
+    string,
+    unknown
+  >;
+  assertEqual(typedCanonicalResponse.ok, true, "typed normalization result");
+  assertJsonEqual(
+    typedCanonicalValue.document,
+    typedDocument,
+    "typed normalized document",
+  );
+  assertEqual(
+    typedCanonicalValue.canonical_yaml,
+    canonicalYaml,
+    "typed canonical YAML",
+  );
+  assertEqual(
+    typedCanonicalValue.fingerprint,
+    fingerprint,
+    "typed semantic fingerprint",
+  );
+
   const futureVersionDocument = structuredClone(typedDocument);
   futureVersionDocument.format_version = 2;
   futureVersionDocument.future_field = { enabled: true };
