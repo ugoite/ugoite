@@ -1158,6 +1158,21 @@ pub(crate) async fn read_composition_raw(
     workspace_path: &str,
     entry_id: &str,
 ) -> Result<Option<RawCompositionRevision>> {
+    Ok(
+        read_composition_raw_latest_including_tombstones(operator, workspace_path, entry_id)
+            .await?
+            .filter(|revision| !revision.revision.entry.deleted),
+    )
+}
+
+/// Reads the latest Composition revision while retaining a tombstone. This is
+/// used by restore wrappers to bind an operation to the exact current base;
+/// callers must still enforce the appropriate authorization boundary.
+pub(crate) async fn read_composition_raw_latest_including_tombstones(
+    operator: &Operator,
+    workspace_path: &str,
+    entry_id: &str,
+) -> Result<Option<RawCompositionRevision>> {
     let entry_id = validate_raw_read(entry_id)?;
     let workspace =
         crate::iceberg_store::native_workspace_read_only(operator, workspace_path).await?;
@@ -1180,7 +1195,7 @@ pub(crate) async fn read_composition_raw(
         .await?;
     let Some(revision) = revisions
         .drain(..)
-        .find(|revision| revision.entry_id == entry_id && !revision.entry.deleted)
+        .find(|revision| revision.entry_id == entry_id)
     else {
         return Ok(None);
     };
