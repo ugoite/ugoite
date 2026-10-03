@@ -72,3 +72,13 @@ export const spaceHistoryPath = (spaceId: string) =>
 export const spaceSettingsPath = (spaceId: string, query = "") =>
   spacePath(spaceId, query ? `settings${query}` : "settings");
 export const spaceSqlPath = (spaceId: string) => spacePath(spaceId, "sql");
+export const spaceCompositionsPath = (spaceId: string) =>
+  spacePath(spaceId, "compositions");
+export const spaceCompositionRevisionPath = (
+  spaceId: string,
+  compositionId: string,
+  revisionId: string,
+) =>
+  `${spaceCompositionsPath(spaceId)}/${encodeURIComponent(compositionId)}/${
+    encodeURIComponent(revisionId)
+  }`;

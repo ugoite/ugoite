@@ -1,0 +1,25 @@
+version: "0.1"
+updated: "2026-10-03"
+page:
+  id: space-compositions
+  title: Saved tools
+  route: /spaces/{space_id}/compositions
+  implementation: implemented
+components:
+  shared:
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
+  body:
+    - id: saved-tools-heading
+      type: heading
+      title: Saved tools
+      ownership: subordinate-workspace
+    - id: saved-tools-list
+      type: list
+      labelled_by: saved-tools-heading
+      source: composition.list with a bounded page limit of 50
+    - id: saved-tools-pagination
+      type: button
+      title: Previous and Next
+      source: composition.list offset pagination

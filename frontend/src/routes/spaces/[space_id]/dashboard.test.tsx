@@ -1,9 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import { formApi } from "~/lib/ugoite-client";
+import { compositionApi } from "~/lib/composition-api";
+import { formApi, protocolFetch } from "~/lib/ugoite-client";
 import SpaceDashboardRoute from "./dashboard";
 
 const navigate = vi.fn();
@@ -13,7 +14,7 @@ const { entryStoreMock } = vi.hoisted(() => ({
 vi.mock("@solidjs/router", () => ({
   useNavigate: () => navigate,
   useParams: () => ({ space_id: "default" }),
-  A: (props: { href: string; class?: string; children: unknown }) => (
+  A: (props: { href: string; class?: string; children: JSX.Element }) => (
     <a href={props.href} class={props.class}>{props.children}</a>
   ),
 }));
@@ -38,6 +39,7 @@ vi.mock(
   "~/lib/ugoite-client",
   () => ({
     formApi: { list: vi.fn(), listTypes: vi.fn(), create: vi.fn() },
+    protocolFetch: vi.fn(),
   }),
 );
 
@@ -49,6 +51,12 @@ describe("v5 space Home", () => {
     entryStoreMock.loadEntries.mockResolvedValue(undefined);
     entryStoreMock.error.mockReturnValue(null);
     vi.mocked(formApi.listTypes).mockResolvedValue([]);
+    vi.mocked(protocolFetch).mockResolvedValue({
+      items: [],
+      offset: 0,
+      limit: 3,
+      has_more: false,
+    } as never);
   });
   it("renders Continue, Pinned and Recent without metric cards", async () => {
     vi.mocked(formApi.list).mockResolvedValue([{
@@ -69,6 +77,36 @@ describe("v5 space Home", () => {
     expect(document.querySelector(".continueGrid .card")).toBeNull();
     expect(document.querySelector(".pinGrid")).toBeInTheDocument();
   });
+  it("rediscovers saved tools from Home and opens the listed exact revision", async () => {
+    vi.mocked(formApi.list).mockResolvedValue([]);
+    vi.mocked(protocolFetch).mockResolvedValue({
+      items: [{
+        composition_id: "composition-1",
+        revision_id: "revision-7",
+        updated_at: 1772960822,
+        name: "Monthly expenses",
+        kind: "dashboard",
+        format_version: 1,
+        tags: [],
+      }],
+      offset: 0,
+      limit: 3,
+      has_more: false,
+    } as never);
+    render(() => <SpaceDashboardRoute />);
+
+    const row = await screen.findByRole("link", { name: /Monthly expenses/ });
+    expect(row).toHaveAttribute(
+      "href",
+      "/spaces/default/compositions/composition-1/revision-7",
+    );
+    expect(screen.getByRole("link", { name: "All" })).toHaveAttribute(
+      "href",
+      "/spaces/default/compositions",
+    );
+    expect(document.querySelector(".rowList .card")).toBeNull();
+  });
+
   it("starts the dedicated New Entry route when a creatable Form exists", async () => {
     vi.mocked(formApi.list).mockResolvedValue([{
       name: "Notes",
@@ -115,14 +153,22 @@ describe("v5 space Home", () => {
       }),
     );
     render(() => <SpaceDashboardRoute />);
-    expect(screen.getByRole("status")).toHaveTextContent("Loading forms...");
+    expect(screen.getAllByRole("status")[0]).toHaveTextContent(
+      "Loading forms...",
+    );
     expect(screen.getAllByRole("button", { name: /Entry/ })[0]).toBeDisabled();
 
     resolveForms!([{ name: "Notes", version: 1, template: "", fields: {} }]);
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: /Entry/ })[0]).toBeEnabled();
     });
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.queryAllByRole("status").every((status) =>
+          !status.textContent?.includes("Loading forms...")
+        ),
+      ).toBe(true);
+    });
   });
   it("keeps entry creation disabled after a form load failure and offers retry", async () => {
     let rejectForms: (reason?: unknown) => void;
