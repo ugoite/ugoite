@@ -318,7 +318,12 @@ description = "Run workspace Rust tests with nextest and Cargo doctests"
 run = [
   "cargo nextest run --workspace --locked",
   "cargo test --workspace --doc --locked",
+  { task = "test:composition:downgrade" },
 ]
+
+[tasks."test:composition:downgrade"]
+description = "Verify v0.2.1 CLI read/write compatibility with a Composition-bearing Space"
+run = "deno run -A tools/verify_composition_downgrade.ts"
 
 [tasks."test:tools"]
 run = "deno test -A tools/*_test.ts"
