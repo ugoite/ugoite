@@ -34,10 +34,11 @@ with the native Domain contract. See the
 [Composition contract](../contracts/composition.md) and its referenced parser
 fixtures. The E2E seed manifest at
 `e2e/fixtures/composition/space-seed/manifest.json` now supplies the server
-seed, expected page sizes, scalar value, and Browser selectors. The Playwright
-journey consumes it as test input. Its existence and selector binding do not
-record a runtime pass; the focused Browser run remains pending the Home/detail
-routes and is recorded only after it executes successfully.
+seed, expected result counts, save-retry outcome, and Browser selectors. The
+Playwright journey consumes it as test input. Its existence and selector
+binding do not record a runtime pass; the focused Browser run remains pending
+integration of the full journey and is recorded only after it executes
+successfully.
 
 ## Resolver implementation evidence
 
