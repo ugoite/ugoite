@@ -10,22 +10,61 @@ impl UgoiteService {
         source_revision_id: &str,
         author: &str,
     ) -> Result<composition::CompositionRestoreResult> {
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let current = composition::read_composition_raw_latest_including_tombstones(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+        )
+        .await?
+        .ok_or_else(|| super::composition_entry_not_found(entry_id))?;
+        let base_revision_id = current.revision.revision_id.to_string();
+        let operation_id = Uuid::now_v7().to_string();
+        self.restore_composition_local_with_operation_id(
+            space_id,
+            entry_id,
+            source_revision_id,
+            &base_revision_id,
+            author,
+            &operation_id,
+        )
+        .await
+    }
+
+    /// Restore one exact historical revision with a caller-stable local
+    /// operation identity and exact current base revision.
+    pub async fn restore_composition_local_with_operation_id(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        source_revision_id: &str,
+        base_revision_id: &str,
+        author: &str,
+        operation_id: &str,
+    ) -> Result<composition::CompositionRestoreResult> {
+        composition::validate_operation_id(operation_id)?;
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(source_revision_id))?;
+        validate_storage_id(validate_revision_id(base_revision_id))?;
 
         let result = composition::restore_composition(
             &self.operator,
+            space_id,
             &self.workspace_path(space_id),
             parse_entry_id(entry_id)?,
             parse_revision_id(source_revision_id)?,
+            parse_revision_id(base_revision_id)?,
             author,
+            operation_id,
         )
         .await?;
-        self.record_committed_entry_revision(
+        self.record_committed_entry_revision_id(
             space_id,
             entry_id,
+            &result.revision_id.to_string(),
             crate::mutation_audit::ENTRY_UPDATED_ACTION,
         )
         .await;
@@ -42,11 +81,74 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<composition::CompositionRestoreResult> {
+        let current = self
+            .get_composition_raw_latest_authorized_for_principals_including_tombstones(
+                space_id,
+                entry_id,
+                principal_ids,
+            )
+            .await?;
+        let base_revision_id = current.revision.revision_id.to_string();
+        let operation_id = Uuid::now_v7().to_string();
+        self.restore_composition_authorized_for_principals_with_operation_id(
+            space_id,
+            entry_id,
+            source_revision_id,
+            &base_revision_id,
+            author,
+            principal_ids,
+            &operation_id,
+        )
+        .await
+    }
+
+    async fn get_composition_raw_latest_authorized_for_principals_including_tombstones(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<composition::RawCompositionRevision> {
         require_nonempty_authorized_principals(principal_ids)?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let parsed_entry_id = parse_entry_id(entry_id)?;
+        Authorizer::new(self.operator.clone())
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                require_composition_entry_read_scope(&scopes, parsed_entry_id, entry_id)?;
+                composition::read_composition_raw_latest_including_tombstones(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                )
+                .await?
+                .ok_or_else(|| super::composition_entry_not_found(entry_id))
+            })
+            .await
+    }
+
+    /// Restore one exact historical revision through current Composition and
+    /// Form authorization, resolving retries from the durable publication.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn restore_composition_authorized_for_principals_with_operation_id(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        source_revision_id: &str,
+        base_revision_id: &str,
+        author: &str,
+        principal_ids: &[Uuid],
+        operation_id: &str,
+    ) -> Result<composition::CompositionRestoreResult> {
+        require_nonempty_authorized_principals(principal_ids)?;
+        composition::validate_operation_id(operation_id)?;
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(source_revision_id))?;
+        validate_storage_id(validate_revision_id(base_revision_id))?;
         let parsed_entry_id = parse_entry_id(entry_id)?;
 
         let (state, authorization_lease) = Authorizer::new(self.operator.clone())
@@ -88,16 +190,20 @@ impl UgoiteService {
             authorization_lease.write_fence(),
             composition::restore_composition(
                 &self.operator,
+                space_id,
                 &self.workspace_path(space_id),
                 parsed_entry_id,
                 parse_revision_id(source_revision_id)?,
+                parse_revision_id(base_revision_id)?,
                 author,
+                operation_id,
             ),
         )
         .await?;
-        self.record_committed_entry_revision(
+        self.record_committed_entry_revision_id(
             space_id,
             entry_id,
+            &result.revision_id.to_string(),
             crate::mutation_audit::ENTRY_UPDATED_ACTION,
         )
         .await;
