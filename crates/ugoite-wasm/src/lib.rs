@@ -734,14 +734,20 @@ mod tests {
                 .unwrap();
         let normalized_typed_document = serde_json::to_value(&native.document).unwrap();
         let mut unnormalized_typed_document = normalized_typed_document.clone();
-        let field_schema = unnormalized_typed_document["spec"]["sources"][0]["field_schema"]
-            .as_array_mut()
-            .expect("the EntryQuery fixture has a field schema");
-        field_schema.reverse();
-        assert_ne!(
-            unnormalized_typed_document["spec"]["sources"][0]["field_schema"],
-            normalized_typed_document["spec"]["sources"][0]["field_schema"]
-        );
+        {
+            let sources = unnormalized_typed_document["spec"]["sources"]
+                .as_array_mut()
+                .expect("the Composition fixture has a source array");
+            let entry_query_source = sources
+                .iter_mut()
+                .find(|source| source.get("kind").and_then(Value::as_str) == Some("entry_query"))
+                .expect("the Composition fixture has an EntryQuery source");
+            let field_schema = entry_query_source["field_schema"]
+                .as_array_mut()
+                .expect("the EntryQuery fixture has a field schema");
+            field_schema.reverse();
+        }
+        assert_ne!(unnormalized_typed_document, normalized_typed_document);
         let native_typed = ugoite_domain::composition::canonicalize_composition_document_value(
             unnormalized_typed_document.clone(),
         )
