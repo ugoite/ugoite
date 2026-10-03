@@ -32,7 +32,7 @@ type AcceptancePlan = {
     integration_payloads: {
       status: string;
       created: boolean;
-      planned_files: string[];
+      created_files: string[];
     };
   };
   operation_inventory: string[];
@@ -42,6 +42,19 @@ type AcceptancePlan = {
     steps: string[];
   };
   evidence_record_fields: string[];
+  runtime_evidence: Array<{
+    source_sha: string;
+    candidate_sha: string;
+    command: string;
+    selector: string;
+    surface: string;
+    fixture: string;
+    environment: string;
+    result: string;
+    artifact: string;
+    artifact_digest: string;
+    gap: string;
+  }>;
   recovery_and_authorization: {
     status: string;
     selector_binding_status: string;
@@ -63,10 +76,10 @@ type AcceptancePlan = {
 const PLAN_PATH = "e2e/fixtures/composition/acceptance-plan.json";
 
 const EXPECTED_BROWSER_STEPS = [
-  "Save a Composition to the active Space and confirm success only after the Entry receipt identifies the published revision.",
-  "Close the browser context, reopen the Space Home, and open the saved Composition.",
-  "Change a declared parameter and run the source through the existing paged query path.",
-  "Advance a result page and confirm the displayed rows come from the query response without Browser aggregation.",
+  "Open a parameterized Saved SQL result and save it as a tool through the Browser dialog.",
+  "Delay and interrupt the first save response after commit, then retry with the same Idempotency-Key and verify one history publication and the original receipt revision.",
+  "Close the browser context, rediscover the saved tool from Space Home, and open the exact revision named by the receipt.",
+  "Change declared parameters, advance a result page, and confirm the displayed rows come from the existing query response without Browser aggregation.",
   "Change a parameter, Space, or source while an earlier request is delayed and confirm stale success, error, finalization, and loading updates are discarded.",
   "Confirm page, scroll, result, continuation, and cache state are absent from the saved Composition.",
 ];
@@ -189,10 +202,10 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
   B5: [
     "frontend/src/lib/composition-api.ts#test:composition_query_handle_discards_stale_response_state_updates",
     "frontend/src/components/CompositionRenderer.test.tsx#test:composition_renderer_uses_paged_results_without_client_aggregation",
-    "e2e/composition-golden-journey.test.ts#test:Browser reopens a saved Composition with model connection disabled",
+    "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
   ],
   B6: [
-    "e2e/composition-golden-journey.test.ts#test:Composition remains portable across Space reopen and query pagination",
+    "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
     "e2e/composition-cli-parity.test.ts#test:Composition CLI inspect query and export agree in core and remote modes",
     "e2e/composition-recovery-authorization.test.ts#test:Composition raw recovery and ACL denial preserve caller-visible contracts",
     "e2e/composition-save-receipt.test.ts#test:Composition save reconciles a lost response without duplicate publication",
@@ -207,7 +220,7 @@ function selectorDetails({ path, selector }: ReservedSelector): string {
 }
 
 Deno.test(
-  "Composition acceptance plan covers B0 through B6 without claiming runtime verification",
+  "Composition acceptance plan records scoped runtime evidence without claiming release verification",
   async () => {
     const plan = JSON.parse(
       await Deno.readTextFile(PLAN_PATH),
@@ -216,7 +229,7 @@ Deno.test(
     assertEquals(plan.schema, "ugoite/composition-acceptance-plan/v1");
     assertEquals(plan.status, "planned");
     assertEquals(plan.implementation_contract_frozen, false);
-    assertEquals(plan.runtime_evidence_recorded, false);
+    assertEquals(plan.runtime_evidence_recorded, true);
     assertEquals(plan.fixture_layout.root, "e2e/fixtures/composition");
     const sharedFixtures = plan.fixture_layout.shared_document_fixtures;
     assertEquals(sharedFixtures, [
@@ -249,12 +262,17 @@ Deno.test(
         `the raw recovery fixture candidate must exist: ${fixture.path}`,
       );
     }
-    assertEquals(plan.fixture_layout.integration_payloads.status, "planned");
-    assertEquals(plan.fixture_layout.integration_payloads.created, false);
-    assertEquals(plan.fixture_layout.integration_payloads.planned_files, [
+    assertEquals(plan.fixture_layout.integration_payloads.status, "created");
+    assertEquals(plan.fixture_layout.integration_payloads.created, true);
+    assertEquals(plan.fixture_layout.integration_payloads.created_files, [
       "e2e/fixtures/composition/space-seed/manifest.json",
-      "e2e/fixtures/composition/expected/",
     ]);
+    for (const path of plan.fixture_layout.integration_payloads.created_files) {
+      assert(
+        (await Deno.stat(path)).isFile,
+        `the Composition integration payload must exist: ${path}`,
+      );
+    }
     assert(
       !plan.fixture_layout.shared_document_fixtures[0].path.startsWith(
         `${plan.fixture_layout.root}/`,
@@ -286,6 +304,19 @@ Deno.test(
     assertEquals(plan.browser_golden_journey.model_connection, "disabled");
     assertEquals(plan.browser_golden_journey.steps, EXPECTED_BROWSER_STEPS);
 
+    const seedManifest = JSON.parse(
+      await Deno.readTextFile(
+        "e2e/fixtures/composition/space-seed/manifest.json",
+      ),
+    ) as { selectors: string[] };
+    assertEquals(seedManifest.selectors, [
+      EXPECTED_RESERVED_SELECTORS.B5[2],
+    ]);
+    assertEquals(
+      EXPECTED_RESERVED_SELECTORS.B5[2],
+      EXPECTED_RESERVED_SELECTORS.B6[0],
+    );
+
     assertEquals(plan.evidence_record_fields, [
       "source_sha",
       "candidate_sha",
@@ -299,6 +330,43 @@ Deno.test(
       "artifact_digest",
       "gap",
     ]);
+    assertEquals(plan.runtime_evidence.length, 1);
+    const [journeyEvidence] = plan.runtime_evidence;
+    assert(journeyEvidence);
+    assertEquals(
+      journeyEvidence.source_sha,
+      "392204f28cedbbb9531f44864fa78992361a4813",
+    );
+    assertEquals(journeyEvidence.candidate_sha, journeyEvidence.source_sha);
+    assertEquals(
+      journeyEvidence.command,
+      "E2E_BUILD_IMAGES=true bash e2e/scripts/run-e2e-parity.sh composition-golden",
+    );
+    assertEquals(journeyEvidence.selector, EXPECTED_RESERVED_SELECTORS.B5[2]);
+    assertEquals(
+      journeyEvidence.surface,
+      "Browser + Server (Docker Compose E2E)",
+    );
+    assertEquals(
+      journeyEvidence.fixture,
+      "e2e/fixtures/composition/space-seed/manifest.json",
+    );
+    assertEquals(journeyEvidence.result, "passed (1 passed, 0 skipped)");
+    assert(
+      journeyEvidence.gap.includes("exact release-candidate byte promotion"),
+      "the scoped run must retain the release verification gap",
+    );
+    assert(
+      (await Deno.stat(journeyEvidence.artifact)).isFile,
+      "the runtime evidence artifact must be present",
+    );
+    const artifactBytes = await Deno.readFile(journeyEvidence.artifact);
+    const artifactDigest = await crypto.subtle.digest("SHA-256", artifactBytes);
+    const artifactDigestHex = Array.from(
+      new Uint8Array(artifactDigest),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+    assertEquals(artifactDigestHex, journeyEvidence.artifact_digest);
     assertEquals(plan.recovery_and_authorization, {
       status: "planned",
       selector_binding_status: "pending_public_storage_and_resolver_contracts",
@@ -330,7 +398,7 @@ Deno.test(
       );
     }
 
-    for (const path of plan.fixture_layout.integration_payloads.planned_files) {
+    for (const path of plan.fixture_layout.integration_payloads.created_files) {
       assert(path.startsWith("e2e/fixtures/composition/"), path);
     }
   },

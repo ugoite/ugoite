@@ -2,10 +2,10 @@
   "schema": "ugoite/composition-acceptance-plan/v1",
   "status": "planned",
   "implementation_contract_frozen": false,
-  "runtime_evidence_recorded": false,
+  "runtime_evidence_recorded": true,
   "fixture_layout": {
     "root": "e2e/fixtures/composition",
-    "payload_note": "The canonical monthly-expense document belongs to the shared domain fixture set. Two raw recovery candidates are registered below; E2E seed and expected-result payloads remain pending parser and integration contracts.",
+    "payload_note": "The E2E seed manifest is created and drives the Browser journey. The raw recovery candidates remain fixture-only; recovery and release evidence selectors are still unverified.",
     "shared_document_fixtures": [
       {
         "path": "crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
@@ -26,11 +26,10 @@
       }
     ],
     "integration_payloads": {
-      "status": "planned",
-      "created": false,
-      "planned_files": [
-        "e2e/fixtures/composition/space-seed/manifest.json",
-        "e2e/fixtures/composition/expected/"
+      "status": "created",
+      "created": true,
+      "created_files": [
+        "e2e/fixtures/composition/space-seed/manifest.json"
       ]
     }
   },
@@ -58,10 +57,10 @@
   "browser_golden_journey": {
     "model_connection": "disabled",
     "steps": [
-      "Save a Composition to the active Space and confirm success only after the Entry receipt identifies the published revision.",
-      "Close the browser context, reopen the Space Home, and open the saved Composition.",
-      "Change a declared parameter and run the source through the existing paged query path.",
-      "Advance a result page and confirm the displayed rows come from the query response without Browser aggregation.",
+      "Open a parameterized Saved SQL result and save it as a tool through the Browser dialog.",
+      "Delay and interrupt the first save response after commit, then retry with the same Idempotency-Key and verify one history publication and the original receipt revision.",
+      "Close the browser context, rediscover the saved tool from Space Home, and open the exact revision named by the receipt.",
+      "Change declared parameters, advance a result page, and confirm the displayed rows come from the existing query response without Browser aggregation.",
       "Change a parameter, Space, or source while an earlier request is delayed and confirm stale success, error, finalization, and loading updates are discarded.",
       "Confirm page, scroll, result, continuation, and cache state are absent from the saved Composition."
     ]
@@ -78,6 +77,21 @@
     "artifact",
     "artifact_digest",
     "gap"
+  ],
+  "runtime_evidence": [
+    {
+      "source_sha": "392204f28cedbbb9531f44864fa78992361a4813",
+      "candidate_sha": "392204f28cedbbb9531f44864fa78992361a4813",
+      "command": "E2E_BUILD_IMAGES=true bash e2e/scripts/run-e2e-parity.sh composition-golden",
+      "selector": "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
+      "surface": "Browser + Server (Docker Compose E2E)",
+      "fixture": "e2e/fixtures/composition/space-seed/manifest.json",
+      "environment": "macOS arm64 host; Docker Compose linux/arm64; Deno 2.8.3; Playwright Chromium",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-golden-journey-junit.xml",
+      "artifact_digest": "a7da68bb91789b3701f89624c93a28eac633cded59a0316d853d20e5eb9dd108",
+      "gap": "This record covers only the Browser Golden Journey on the stated source commit. CLI parity, recovery/ACL, stale query response suppression, representative performance evidence, and exact release-candidate byte promotion remain unverified. No release candidate was built or promoted."
+    }
   ],
   "recovery_and_authorization": {
     "status": "planned",
@@ -396,7 +410,7 @@
           "path": "e2e/composition-golden-journey.test.ts",
           "selector": {
             "kind": "test",
-            "name": "Browser reopens a saved Composition with model connection disabled"
+            "name": "Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled"
           }
         }
       ]
@@ -410,7 +424,7 @@
           "path": "e2e/composition-golden-journey.test.ts",
           "selector": {
             "kind": "test",
-            "name": "Composition remains portable across Space reopen and query pagination"
+            "name": "Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled"
           }
         },
         {

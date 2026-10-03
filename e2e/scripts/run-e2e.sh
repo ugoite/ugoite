@@ -3,7 +3,7 @@
 # fallback via `run-e2e-parity.sh`.
 #
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
-#   test-type: "smoke", "late-query-response", "asset-owned", "smoke-and-asset-owned",
+#   test-type: "smoke", "late-query-response", "composition-golden", "asset-owned", "smoke-and-asset-owned",
 #     "owner-recovery", "mobile-ui", "query-measurement",
 #     "sql-export-remote-auth", "portable-space",
 #     "entries", "screenshot", or "full"
@@ -284,6 +284,9 @@ case "$TEST_TYPE" in
   late-query-response)
     run_e2e_task late-query-response "$base_report_file"
     ;;
+  composition-golden)
+    run_e2e_task composition-golden "$base_report_file" "$ENFORCE_CI_GATES"
+    ;;
   entries)
     run_e2e_task entries "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
@@ -327,7 +330,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|late-query-response|composition-golden|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|screenshot|full]"
     exit 1
     ;;
 esac

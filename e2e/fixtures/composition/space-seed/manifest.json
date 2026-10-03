@@ -1,0 +1,44 @@
+{
+  "schema": "ugoite/composition-e2e-seed/v1",
+  "materialization": "Create a unique server-backed Space, a Form, one parameterized Saved SQL query, 100 rows for its first result page, one row for its second page, and one row excluded by the date range. The Browser creates the Composition through Save as tool.",
+  "space": "Create a unique server-backed Space for each Playwright run.",
+  "model_connection": "disabled",
+  "composition_name": "Monthly expenses",
+  "page_limit": 100,
+  "parameters": {
+    "month_start": "2026-01-01",
+    "month_end": "2026-02-01",
+    "month_start_after_change": "2026-01-21"
+  },
+  "seed_rows": {
+    "first_page_count": 100,
+    "first_page_date": "2026-01-10",
+    "second_page_date": "2026-01-20",
+    "excluded_date": "2026-02-02"
+  },
+  "saved_sql": {
+    "name": "Golden monthly rows",
+    "sql_template": "SELECT {date_column} AS transaction_date, {merchant_column} AS merchant, {amount_column} AS amount FROM {relation} WHERE {date_column} >= $month_start AND {date_column} < $month_end ORDER BY {date_column} ASC, {merchant_column} ASC",
+    "variables": [
+      {
+        "type": "date",
+        "name": "month_start",
+        "description": "First date included in this month."
+      },
+      {
+        "type": "date",
+        "name": "month_end",
+        "description": "First date excluded from this month."
+      }
+    ]
+  },
+  "expected": {
+    "first_page_rows": 100,
+    "second_page_rows": 1,
+    "after_month_start_change_rows": 0,
+    "composition_publications": 1
+  },
+  "selectors": [
+    "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled"
+  ]
+}
