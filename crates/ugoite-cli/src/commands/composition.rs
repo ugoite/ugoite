@@ -469,8 +469,9 @@ mod tests {
 
     #[test]
     fn lint_returns_the_domain_diagnostic_code_for_unsupported_versions() {
-        let response =
-            lint_yaml_bytes(b"format_version: 22\nname: Future\nkind: dashboard\nspec: {}\n");
+        let response = lint_yaml_bytes(
+            b"format: ugoite.composition\nformat_version: 22\nkind: dashboard\nname: Future\ntags: []\nspec: {}\n",
+        );
 
         assert!(!response.ok);
         assert!(response.value.is_none());
@@ -834,6 +835,9 @@ mod tests {
                 .expect("shared Composition fixture parses")
                 .document;
         document.tags = vec!["first".to_string()];
+        let expected_first_spec = ugoite_domain::composition::canonicalize_composition(&document)
+            .expect("tagged Composition document canonicalizes")
+            .yaml;
         let first = service
             .save_composition_authorized_for_principals(
                 &space_id,
@@ -886,10 +890,7 @@ mod tests {
         ];
         assert!(returned_revisions.contains(&first.revision_id.to_string()));
         assert!(returned_revisions.contains(&second.revision_id.to_string()));
-        assert_eq!(
-            first_page.revisions[0].fields["spec"],
-            MONTHLY_EXPENSE_CANONICAL
-        );
+        assert_eq!(first_page.revisions[0].fields["spec"], expected_first_spec);
         assert!(serde_json::to_value(&first_page)?["revisions"][0]["fields"]
             .get("spec")
             .is_some());
