@@ -59,6 +59,7 @@ type AcceptancePlan = {
     status: string;
     selector_binding_status: string;
     save_enablement: {
+      scope: string;
       enabled: boolean;
       status: string;
       prerequisites: string[];
@@ -371,6 +372,7 @@ Deno.test(
       status: "planned",
       selector_binding_status: "pending_public_storage_and_resolver_contracts",
       save_enablement: {
+        scope: "cross_surface_recovery_and_receipt_acceptance",
         enabled: false,
         status:
           "blocked_until_generic_entry_write_guard_and_receipt_reconciliation",

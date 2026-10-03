@@ -162,6 +162,13 @@ Browser request state. Selectors that depend on storage or resolver service
 APIs remain unbound until those public contracts settle. No DTO field names are
 reserved by this plan.
 
+The plan's `recovery_and_authorization.save_enablement` gate has scope
+`cross_surface_recovery_and_receipt_acceptance`. Its `enabled: false` value
+means that the shared write-guard and receipt-reconciliation acceptance is not
+complete; it does not describe whether the Browser's “Save as tool” action is
+available. Browser availability and the one passing save journey are recorded
+separately from this broader acceptance gate.
+
 Generic Entry create, update, bulk, import, and restore paths cannot bypass
 Composition validation. The Server save operation returns the publication
 receipt that identifies the exact revision. The Browser save flow is
