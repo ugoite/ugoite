@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use ugoite_core::entry_query::EntryPageRequest;
 use ugoite_domain::composition::{
     CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry, CompositionFormat,
-    CompositionKind, CompositionSection, CompositionSource, CompositionSpec,
-    EntryQueryProjectionTemplate, EntryQueryTemplate,
+    CompositionKind, CompositionSection, CompositionSortDirection, CompositionSource,
+    CompositionSpec, EntryQueryProjectionTemplate, EntryQuerySortTemplate, EntryQueryTemplate,
 };
 use ugoite_domain::form::FieldType;
 use ugoite_domain::identity::{
@@ -115,7 +115,10 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
                 query: EntryQueryTemplate {
                     text: None,
                     filters: Vec::new(),
-                    sort: Vec::new(),
+                    sort: vec![EntryQuerySortTemplate {
+                        field_id,
+                        direction: CompositionSortDirection::Asc,
+                    }],
                     page_limit: 2,
                     projection: EntryQueryProjectionTemplate::Preview,
                 },
@@ -184,6 +187,8 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         first_page_after_revoke.rows.is_empty(),
         "the stale resolved request must return no rows after Form access is revoked"
     );
+    assert!(!first_page_after_revoke.has_more);
+    assert!(first_page_after_revoke.next.is_none());
 
     // Restore access, resolve the same exact Composition revision, and issue a
     // continuation. Revoking one later-page Entry must invalidate that cursor.
@@ -218,6 +223,10 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
         .query_entry_page_authorized_for_principals(&space_id, &[viewer], compiled_request.clone())
         .await?;
     assert_eq!(first_page.rows.len(), 2);
+    assert!(first_page
+        .rows
+        .iter()
+        .all(|row| row.id != "composition-query-02"));
     let cursor = first_page
         .next
         .context("first query page should provide a continuation")?;
