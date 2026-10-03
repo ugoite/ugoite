@@ -329,6 +329,7 @@ pub(crate) fn validate_composition_revision(
 /// Append one canonical Composition as one Entry revision. Authorization is
 /// held by the service boundary; the coordinator rechecks Entry revision
 /// parentage against the latest Catalog Head before publication.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn save_composition(
     operator: &Operator,
     space_id: &str,
