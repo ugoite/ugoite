@@ -50,6 +50,7 @@ pub enum ErrorCode {
     SpaceDiscoveryFailed,
     FormVersionConflict,
     CompositionRegistryConflict,
+    IdempotencyConflict,
 }
 
 impl ErrorCode {
@@ -90,6 +91,7 @@ impl ErrorCode {
             Self::SpaceDiscoveryFailed => "SPACE_DISCOVERY_FAILED",
             Self::FormVersionConflict => "FORM_VERSION_CONFLICT",
             Self::CompositionRegistryConflict => "COMPOSITION_REGISTRY_CONFLICT",
+            Self::IdempotencyConflict => "IDEMPOTENCY_CONFLICT",
         }
     }
 }

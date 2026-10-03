@@ -1384,6 +1384,15 @@ fn openapi_documents_composition_save_request_receipt_and_statuses() {
     let snapshot = ugoite_server::openapi_snapshot();
     let save = &snapshot["paths"]["/spaces/{space_id}/compositions"]["post"];
     assert!(save.is_object(), "Composition save route is documented");
+    assert!(save["parameters"].as_array().is_some_and(|parameters| {
+        parameters.iter().any(|parameter| {
+            parameter["$ref"] == "#/components/parameters/CompositionIdempotencyKeyHeader"
+        })
+    }));
+    assert_eq!(
+        snapshot["components"]["parameters"]["CompositionIdempotencyKeyHeader"]["required"],
+        true
+    );
     assert_eq!(
         save["requestBody"]["content"]["application/json"]["schema"]["$ref"],
         "#/components/schemas/CompositionSaveRequest"

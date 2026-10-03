@@ -16,6 +16,18 @@ components:
       level: 1
       text: "{space_name}"
       emphasis: xl
+    - id: saved-tools-heading
+      type: heading
+      title: Saved tools
+      ownership: subordinate-workspace
+    - id: saved-tools-list
+      type: list
+      labelled_by: saved-tools-heading
+      source: composition.list first page
+    - id: saved-tools-all
+      type: link
+      title: All
+      target_page: space-compositions
     - id: quick-actions
       type: grid-list
       item_type: action

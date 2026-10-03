@@ -1,6 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
+import { CompositionRows } from "~/components/CompositionRows";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { createEntryStore } from "~/lib/entry-store";
@@ -8,10 +9,12 @@ import { entryDisplayLabel } from "~/lib/entry-label";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
+import { compositionApi } from "~/lib/composition-api";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
 import {
+  spaceCompositionsPath,
   spaceEntriesPath,
   spaceEntryPath,
   spaceFormEntriesPath,
@@ -37,6 +40,10 @@ export default function SpaceDashboardRoute() {
     formApi.list,
   );
   const [columnTypes] = createResource(spaceId, formApi.listTypes);
+  const [compositionPage, { refetch: refetchCompositions }] = createResource(
+    spaceId,
+    (requestedSpace) => compositionApi.list(requestedSpace, 3, 0),
+  );
   const entryForms = createMemo(() => filterCreatableEntryForms(forms() ?? []));
   const formReadiness = createMemo<"loading" | "failed" | "empty" | "ready">(
     () => {
@@ -209,6 +216,43 @@ export default function SpaceDashboardRoute() {
             )}
           </For>
         </div>
+      </section>
+
+      <section class="section">
+        <div class="sectionHead">
+          <h2 id="saved-tools-heading">{t("composition.homeHeading")}</h2>
+          <A class="ui-link" href={spaceCompositionsPath(spaceId())}>
+            {t("composition.homeMore")}
+          </A>
+        </div>
+        <Show when={compositionPage.loading}>
+          <LocalBusyIndicator label={t("composition.listLoading")} />
+        </Show>
+        <Show when={compositionPage.error}>
+          <p class="ui-text-danger" role="alert">
+            {t("composition.listFailed")}
+          </p>
+          <button
+            class="ui-button ui-button-secondary"
+            type="button"
+            onClick={() => void refetchCompositions()}
+          >
+            {t("composition.retry")}
+          </button>
+        </Show>
+        <Show when={compositionPage() && !compositionPage.error}>
+          <Show
+            when={(compositionPage()?.items.length ?? 0) > 0}
+            fallback={<p class="ui-muted">{t("composition.listEmpty")}</p>}
+          >
+            <CompositionRows
+              spaceId={spaceId()}
+              items={compositionPage()?.items ?? []}
+              label={t("composition.homeHeading")}
+              labelledBy="saved-tools-heading"
+            />
+          </Show>
+        </Show>
       </section>
 
       <section class="section">

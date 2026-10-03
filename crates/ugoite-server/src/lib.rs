@@ -1606,7 +1606,34 @@ fn publication_command_id(
     operation: &str,
     fallback_request_id: Uuid,
 ) -> ApiResult<String> {
-    let key = headers
+    let key =
+        publication_idempotency_key(headers)?.unwrap_or_else(|| fallback_request_id.to_string());
+    validate_publication_idempotency_key(&key)?;
+    Ok(format!(
+        "{operation}-{}",
+        hex::encode(Sha256::digest(key.as_bytes()))
+    ))
+}
+
+fn required_composition_command_id(headers: &HeaderMap, operation: &str) -> ApiResult<String> {
+    let key = publication_idempotency_key(headers)?.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            json!({
+                "code": "IDEMPOTENCY_KEY_REQUIRED",
+                "message": "Idempotency-Key is required for Composition save",
+            }),
+        )
+    })?;
+    validate_publication_idempotency_key(&key)?;
+    Ok(format!(
+        "{operation}-{}",
+        hex::encode(Sha256::digest(key.as_bytes()))
+    ))
+}
+
+fn publication_idempotency_key(headers: &HeaderMap) -> ApiResult<Option<String>> {
+    headers
         .get("idempotency-key")
         .map(|value| {
             value
@@ -1616,18 +1643,17 @@ fn publication_command_id(
                     ApiError::new(StatusCode::BAD_REQUEST, "Idempotency-Key must be ASCII")
                 })
         })
-        .transpose()?
-        .unwrap_or_else(|| fallback_request_id.to_string());
+        .transpose()
+}
+
+fn validate_publication_idempotency_key(key: &str) -> ApiResult<()> {
     if key.is_empty() || key.len() > 256 {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
             "Idempotency-Key must contain 1 to 256 characters",
         ));
     }
-    Ok(format!(
-        "{operation}-{}",
-        hex::encode(Sha256::digest(key.as_bytes()))
-    ))
+    Ok(())
 }
 
 fn protected_routes(state: AppState) -> Router<AppState> {
@@ -11032,6 +11058,7 @@ async fn save_composition(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
+    headers: HeaderMap,
     request: Result<Json<ApiCompositionSaveRequest>, JsonRejection>,
 ) -> ApiResult<(StatusCode, Json<CompositionSaveResponse>)> {
     let Json(request) = request.map_err(|error| {
@@ -11098,6 +11125,7 @@ async fn save_composition(
                 }),
             )
         })?;
+    let operation_id = required_composition_command_id(&headers, "composition-save")?;
 
     let action = if entry_id.is_some() {
         Action::Update
@@ -11119,7 +11147,7 @@ async fn save_composition(
         resource,
         |principal_id, principals| async move {
             service
-                .save_composition_authorized_for_principals(
+                .save_composition_authorized_for_principals_with_operation_id(
                     &space_id_for_write,
                     ugoite_iceberg::composition::CompositionSaveRequest {
                         entry_id,
@@ -11128,6 +11156,7 @@ async fn save_composition(
                     },
                     &principal_id.to_string(),
                     &principals,
+                    &operation_id,
                 )
                 .await
                 .map_err(ApiError::from_core)
@@ -14210,13 +14239,28 @@ mod authentication_regression_tests {
         let fixture = include_str!(
             "../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml"
         );
-        let post_save = |body: Value| {
+        let post_save_with_key = |body: Value, key: &str| {
             Request::post(format!("/spaces/{space_id}/compositions"))
                 .header(header::CONTENT_TYPE, "application/json")
+                .header("idempotency-key", key)
                 .body(Body::from(
                     serde_json::to_vec(&body).expect("save request serializes"),
                 ))
         };
+        let post_save = |body: Value| post_save_with_key(body, &Uuid::now_v7().to_string());
+        let missing_key_request = Request::post(format!("/spaces/{space_id}/compositions"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&json!({"yaml": fixture})).expect("save request serializes"),
+            ))?;
+        let (missing_key_status, missing_key_body) =
+            route_json(owner_route.clone(), missing_key_request).await?;
+        assert_eq!(
+            missing_key_status,
+            StatusCode::BAD_REQUEST,
+            "{missing_key_body}"
+        );
+        assert_eq!(missing_key_body["code"], "IDEMPOTENCY_KEY_REQUIRED");
 
         for body in [
             json!({"yaml": fixture, "composition_id": "00000000-0000-7000-8000-000000000001"}),
@@ -14235,9 +14279,46 @@ mod authentication_regression_tests {
         assert_eq!(empty_status, StatusCode::OK, "{empty_page}");
         assert_eq!(empty_page["items"], json!([]));
 
-        let (create_status, created) =
-            route_json(owner_route.clone(), post_save(json!({"yaml": fixture}))?).await?;
+        let create_key = "composition-create-response-lost";
+        let (create_status, created) = route_json(
+            owner_route.clone(),
+            post_save_with_key(json!({"yaml": fixture}), create_key)?,
+        )
+        .await?;
         assert_eq!(create_status, StatusCode::CREATED, "{created}");
+        let (create_replay_status, create_replay) = route_json(
+            owner_route.clone(),
+            post_save_with_key(json!({"yaml": fixture}), create_key)?,
+        )
+        .await?;
+        assert_eq!(create_replay_status, create_status);
+        assert_eq!(create_replay, created);
+
+        let other_space_id = state
+            .service
+            .create_space_for_principal("composition-save-other-space", owner_id, "Save test")
+            .await?
+            .to_string();
+        let other_space_uid = state.service.space_uid(&other_space_id).await?;
+        let other_space_route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(owner_id, other_space_uid),
+        );
+        let other_space_request = Request::post(format!("/spaces/{other_space_id}/compositions"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("idempotency-key", create_key)
+            .body(Body::from(serde_json::to_vec(&json!({"yaml": fixture}))?))?;
+        let (other_space_status, other_space_created) =
+            route_json(other_space_route, other_space_request).await?;
+        assert_eq!(other_space_status, StatusCode::CREATED);
+        assert_ne!(
+            other_space_created["composition_id"],
+            created["composition_id"]
+        );
+        assert_ne!(
+            other_space_created["receipt"]["command_id"],
+            created["receipt"]["command_id"]
+        );
         let composition_id = created["composition_id"]
             .as_str()
             .expect("create returns Composition identity");
@@ -14261,21 +14342,52 @@ mod authentication_regression_tests {
         );
 
         let updated_yaml = fixture.replace("Monthly expenses", "Updated expenses");
-        let (update_status, updated) = route_json(
-            owner_route.clone(),
-            post_save(json!({
+        let update_yaml = updated_yaml.clone();
+        let update_key = "composition-update-response-lost";
+        let update_body = || {
+            json!({
                 "composition_id": composition_id,
                 "base_revision_id": first_revision_id,
-                "yaml": updated_yaml,
-            }))?,
+                "yaml": update_yaml.clone(),
+            })
+        };
+        let (update_status, updated) = route_json(
+            owner_route.clone(),
+            post_save_with_key(update_body(), update_key)?,
         )
         .await?;
         assert_eq!(update_status, StatusCode::OK, "{updated}");
+        let (update_replay_status, update_replay) = route_json(
+            owner_route.clone(),
+            post_save_with_key(update_body(), update_key)?,
+        )
+        .await?;
+        assert_eq!(update_replay_status, update_status);
+        assert_eq!(update_replay, updated);
         assert_eq!(updated["composition_id"], composition_id);
         assert_ne!(updated["revision_id"], first_revision_id);
         assert!(updated["canonical_yaml"]
             .as_str()
             .is_some_and(|yaml| yaml.contains("name: Updated expenses")));
+
+        let (changed_payload_status, changed_payload) = route_json(
+            owner_route.clone(),
+            post_save_with_key(
+                json!({
+                    "composition_id": composition_id,
+                    "base_revision_id": first_revision_id,
+                    "yaml": fixture.replace("Monthly expenses", "Changed content"),
+                }),
+                update_key,
+            )?,
+        )
+        .await?;
+        assert_eq!(
+            changed_payload_status,
+            StatusCode::CONFLICT,
+            "{changed_payload}"
+        );
+        assert_eq!(changed_payload["code"], "IDEMPOTENCY_CONFLICT");
 
         let (stale_status, stale) = route_json(
             owner_route.clone(),

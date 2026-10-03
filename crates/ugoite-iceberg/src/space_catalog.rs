@@ -74,6 +74,26 @@ pub(crate) struct PublicationOutcome {
     pub command_id: String,
     pub catalog_generation: u64,
     pub snapshot_id: Option<i64>,
+    pub data_file_count: usize,
+}
+
+#[derive(Debug)]
+pub(crate) struct PublicationContentConflict;
+
+impl std::fmt::Display for PublicationContentConflict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("publication command id was reused with different command content")
+    }
+}
+
+impl std::error::Error for PublicationContentConflict {}
+
+fn publication_content_conflict() -> Error {
+    Error::new(
+        ErrorKind::DataInvalid,
+        "publication command id was reused with different command content",
+    )
+    .with_source(PublicationContentConflict)
 }
 
 impl PublicationContext {
@@ -2138,16 +2158,16 @@ impl SpaceCatalog {
         let Some((head, _)) = self.exact_head().await? else {
             return Ok(None);
         };
-        self.find_publication_from_head(head, publication)
-            .await?
-            .map(|record| {
-                Ok(PublicationOutcome {
-                    command_id: record.command_id,
-                    catalog_generation: record.generation,
-                    snapshot_id: record.new_snapshot_id,
-                })
-            })
-            .transpose()
+        let Some(record) = self.find_publication_from_head(head, publication).await? else {
+            return Ok(None);
+        };
+        let data_file_count = self.publication_data_file_count(&record).await?;
+        Ok(Some(PublicationOutcome {
+            command_id: record.command_id,
+            catalog_generation: record.generation,
+            snapshot_id: record.new_snapshot_id,
+            data_file_count,
+        }))
     }
 
     /// Resumes a publication object left behind before its Head CAS. The
@@ -2183,7 +2203,32 @@ impl SpaceCatalog {
             command_id: publication.command_id,
             catalog_generation: publication.generation,
             snapshot_id: publication.new_snapshot_id,
+            // This attempt adopts an immutable publication and does not run
+            // the Iceberg writer, so it created no data files. A replay of a
+            // publication already reachable from Head still returns the
+            // original publication's count through `publication_outcome`.
+            data_file_count: 0,
         }))
+    }
+
+    async fn publication_data_file_count(&self, publication: &PublicationRecord) -> Result<usize> {
+        let Some(snapshot_id) = publication.new_snapshot_id else {
+            return Ok(0);
+        };
+        let metadata =
+            TableMetadata::read_from(&self.file_io, &publication.new_metadata_location).await?;
+        let data_file_count = metadata
+            .snapshots()
+            .find(|snapshot| snapshot.snapshot_id() == snapshot_id)
+            .and_then(|snapshot| {
+                snapshot
+                    .summary()
+                    .additional_properties
+                    .get("added-data-files")
+            })
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or_default();
+        Ok(data_file_count)
     }
 
     async fn find_publication_from_head(
@@ -2230,10 +2275,7 @@ impl SpaceCatalog {
                 if record.command_kind != publication.command_kind
                     || record.command_digest != publication.command_digest
                 {
-                    return Err(Error::new(
-                        ErrorKind::DataInvalid,
-                        "publication command id was reused with different command content",
-                    ));
+                    return Err(publication_content_conflict());
                 }
                 return Ok(Some(record));
             }
@@ -2914,7 +2956,11 @@ impl SpaceCatalog {
         publication.checksum = publication_checksum(&publication)?;
         self.write_publication(&publication).await?;
         #[cfg(debug_assertions)]
-        if let Some(gate) = &self.publication_gate {
+        if let Some(gate) = self
+            .publication_gate
+            .as_ref()
+            .filter(|gate| gate.matches_space_id(&self.space_id.to_string()))
+        {
             // Test-only crash point: the immutable publication is durable,
             // while the authoritative Head still proves the exact base.
             gate.pause().await;
@@ -3048,10 +3094,7 @@ impl SpaceCatalog {
                     }
                     return Ok(true);
                 }
-                return Err(Error::new(
-                    ErrorKind::DataInvalid,
-                    "publication command id was reused with different command content",
-                ));
+                return Err(publication_content_conflict());
             }
             if Some(publication.generation) == attempt.expected_generation {
                 if Some(publication.next_head_checksum.as_str())

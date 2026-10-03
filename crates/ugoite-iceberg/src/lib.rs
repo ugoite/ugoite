@@ -765,7 +765,8 @@ fn composition_admission_conflict(reason: &str) -> anyhow::Error {
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct TestValidationGate {
-    reached: std::sync::atomic::AtomicBool,
+    entry_external_id: Option<String>,
+    entered_count: std::sync::atomic::AtomicUsize,
     entered: Notify,
     release: Notify,
 }
@@ -773,28 +774,67 @@ pub struct TestValidationGate {
 #[cfg(debug_assertions)]
 impl TestValidationGate {
     pub fn new() -> Arc<Self> {
+        Self::for_entry(None)
+    }
+
+    pub fn new_for_entry_id(entry_external_id: impl Into<String>) -> Arc<Self> {
+        Self::for_entry(Some(entry_external_id.into()))
+    }
+
+    fn for_entry(entry_external_id: Option<String>) -> Arc<Self> {
         Arc::new(Self {
-            reached: std::sync::atomic::AtomicBool::new(false),
+            entry_external_id,
+            entered_count: std::sync::atomic::AtomicUsize::new(0),
             entered: Notify::new(),
             release: Notify::new(),
         })
     }
 
     pub async fn wait_until_entered(&self) {
-        while !self.reached.load(std::sync::atomic::Ordering::Acquire) {
+        self.wait_until_entered_count(1).await;
+    }
+
+    pub async fn wait_until_entered_count(&self, count: usize) {
+        while self
+            .entered_count
+            .load(std::sync::atomic::Ordering::Acquire)
+            < count
+        {
             self.entered.notified().await;
         }
     }
 
+    pub fn entered_count(&self) -> usize {
+        self.entered_count
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+
     pub fn release(&self) {
+        self.release.notify_waiters();
+    }
+
+    pub fn release_one(&self) {
         self.release.notify_one();
     }
 
+    fn matches_revisions(&self, revisions: &[EntryRevision]) -> bool {
+        self.entry_external_id
+            .as_ref()
+            .is_none_or(|entry_external_id| {
+                revisions
+                    .iter()
+                    .any(|revision| revision.entry.external_id == *entry_external_id)
+            })
+    }
+
     async fn pause(&self) {
-        self.reached
-            .store(true, std::sync::atomic::Ordering::Release);
-        self.entered.notify_waiters();
-        self.release.notified().await;
+        let released = self.release.notified();
+        tokio::pin!(released);
+        released.as_mut().enable();
+        self.entered_count
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.entered.notify_one();
+        released.await;
     }
 }
 
@@ -826,6 +866,15 @@ fn current_test_validation_gate() -> Option<Arc<TestValidationGate>> {
         .clone()
 }
 
+#[cfg(debug_assertions)]
+pub(crate) async fn wait_at_test_validation_gate(revisions: &[EntryRevision]) {
+    if let Some(gate) =
+        current_test_validation_gate().filter(|gate| gate.matches_revisions(revisions))
+    {
+        gate.pause().await;
+    }
+}
+
 /// Debug-only synchronization for proving recovery after an immutable
 /// publication has been written but before its Catalog Head CAS. It is not
 /// compiled into release builds and exposes no production mutation bypass.
@@ -833,6 +882,7 @@ fn current_test_validation_gate() -> Option<Arc<TestValidationGate>> {
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct TestPublicationGate {
+    space_id: Option<String>,
     reached: std::sync::atomic::AtomicBool,
     entered: Notify,
     release: Notify,
@@ -841,11 +891,26 @@ pub struct TestPublicationGate {
 #[cfg(debug_assertions)]
 impl TestPublicationGate {
     pub fn new() -> Arc<Self> {
+        Self::for_space(None)
+    }
+
+    pub fn new_for_space_id(space_id: impl Into<String>) -> Arc<Self> {
+        Self::for_space(Some(space_id.into()))
+    }
+
+    fn for_space(space_id: Option<String>) -> Arc<Self> {
         Arc::new(Self {
+            space_id,
             reached: std::sync::atomic::AtomicBool::new(false),
             entered: Notify::new(),
             release: Notify::new(),
         })
+    }
+
+    pub(crate) fn matches_space_id(&self, space_id: &str) -> bool {
+        self.space_id
+            .as_ref()
+            .is_none_or(|expected| expected == space_id)
     }
 
     pub async fn wait_until_entered(&self) {
@@ -3366,7 +3431,9 @@ impl SpaceCommitCoordinator {
         })
     }
 
-    async fn publication_outcome(&self) -> Result<Option<space_catalog::PublicationOutcome>> {
+    pub(crate) async fn publication_outcome(
+        &self,
+    ) -> Result<Option<space_catalog::PublicationOutcome>> {
         let catalog = self
             .workspace
             .space_catalog
@@ -3552,7 +3619,7 @@ impl SpaceCommitCoordinator {
                     .map(|revision| revision.committed_at_micros)
                     .max()
                     .unwrap_or_default(),
-                data_file_count: 0,
+                data_file_count: receipt.data_file_count,
             });
         }
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
@@ -3572,7 +3639,7 @@ impl SpaceCommitCoordinator {
                         .map(|revision| revision.committed_at_micros)
                         .max()
                         .unwrap_or_default(),
-                    data_file_count: 0,
+                    data_file_count: receipt.data_file_count,
                 });
             }
             let attempt = self.attempt_workspace().await?;
@@ -3599,7 +3666,7 @@ impl SpaceCommitCoordinator {
                         .map(|revision| revision.committed_at_micros)
                         .max()
                         .unwrap_or_default(),
-                    data_file_count: 0,
+                    data_file_count: publication.data_file_count,
                 });
             }
             let new_entry_ids = revisions
@@ -3625,7 +3692,11 @@ impl SpaceCommitCoordinator {
                 .validate_row_reference_targets(form_id, &revisions, relation_scopes)
                 .await?;
             #[cfg(debug_assertions)]
-            if let Some(gate) = &self.validation_gate {
+            if let Some(gate) = self
+                .validation_gate
+                .as_ref()
+                .filter(|gate| gate.matches_revisions(&revisions))
+            {
                 gate.pause().await;
             }
             let attempt_form = attempt.load_form(form_id).await?;
