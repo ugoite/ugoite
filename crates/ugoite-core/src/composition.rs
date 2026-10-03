@@ -1180,10 +1180,10 @@ pub fn evaluate_saved_sql_metric_page(
     .map_err(metric_page_diagnostic)
 }
 
-fn metric_binding<'a>(
-    binding: &'a ResolvedComponentBinding,
+fn metric_binding(
+    binding: &ResolvedComponentBinding,
     entry_source: bool,
-) -> Result<(CompositionResultFieldType, &'a str), CompositionDiagnostic> {
+) -> Result<(CompositionResultFieldType, &str), CompositionDiagnostic> {
     if binding.kind != ResolvedComponentKind::Metric
         || binding.metric_field_id.is_some() != entry_source
     {
