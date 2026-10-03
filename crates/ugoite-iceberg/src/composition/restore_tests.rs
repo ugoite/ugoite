@@ -3,6 +3,7 @@ use crate::service::UgoiteService;
 use crate::{iceberg_store, publication_context_for_change};
 use serde_json::json;
 use ugoite_domain::change::ChangeCommand;
+use ugoite_domain::composition::parse_composition_yaml;
 
 #[tokio::test]
 async fn restore_rejects_an_unknown_format_revision_without_publishing() -> anyhow::Result<()> {
@@ -157,5 +158,165 @@ async fn composition_revision_admission_is_bound_to_the_validated_batch() -> any
         .recheck(registry.id, &[changed], &registry)
         .expect_err("a batch cannot be changed after Composition validation");
     assert!(error.to_string().contains("composition_registry_conflict"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn restore_after_tombstone_appends_and_clears_deletion_metadata() -> anyhow::Result<()> {
+    let service = UgoiteService::new(format!(
+        "memory://composition-restore-tombstone-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let author = owner.to_string();
+    let space_id = service
+        .create_space_for_principal("composition-restore-tombstone", owner, "Owner")
+        .await?
+        .to_string();
+    let document = parse_composition_yaml(include_str!(
+        "../../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml"
+    ))
+    .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let saved = service
+        .save_composition_local(
+            &space_id,
+            CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            &author,
+        )
+        .await?;
+    let workspace_path = service.workspace_path(&space_id);
+    let registry = ensure_composition_registry(service.operator(), &workspace_path).await?;
+    let current = service
+        .get_composition_raw_local(&space_id, &saved.entry_id.to_string())
+        .await?
+        .revision;
+
+    let committed_at_micros = Utc::now()
+        .timestamp_micros()
+        .max(current.entry.updated_at_micros.saturating_add(1));
+    let mut tombstone_entry = current.entry.clone();
+    tombstone_entry.updated_at_micros = committed_at_micros;
+    tombstone_entry.updated_by = author.clone();
+    tombstone_entry.deleted = true;
+    tombstone_entry.deleted_at_micros = Some(committed_at_micros);
+    tombstone_entry.deleted_by = Some(author.clone());
+    let tombstone_change_id = Uuid::now_v7().to_string();
+    let tombstone = EntryRevisionDraft {
+        form_id: registry.id,
+        entry_id: saved.entry_id,
+        revision_id: RevisionId::from(Uuid::now_v7()),
+        change_id: tombstone_change_id.clone(),
+        operation: EntryOperation::Delete,
+        committed_at_micros,
+        author_id: author.clone(),
+        form_version: registry.version,
+        source_kind: "test".to_string(),
+        source_id: None,
+        entry: tombstone_entry,
+        values: BTreeMap::new(),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    }
+    .build(&registry, Some(&current))?;
+    let change = ChangeCommand {
+        change_id: tombstone_change_id,
+        run_id: None,
+        actor_principal_id: author.clone(),
+        message: Some("seed a Composition tombstone".to_string()),
+        reverts_change_id: None,
+        created_at_micros: committed_at_micros,
+    };
+    // Generic writes are intentionally barred from the reserved Registry;
+    // seed the historical tombstone through the private test fixture path.
+    iceberg_store::native_workspace(service.operator(), &workspace_path)
+        .await?
+        .commit(publication_context_for_change(
+            &change,
+            "test.composition.tombstone",
+            &tombstone,
+        )?)?
+        .append_composition_revisions_authorized(registry.id, vec![tombstone.clone()], None)
+        .await?;
+
+    let tombstone_history = service
+        .composition_history_local_page(
+            &space_id,
+            &saved.entry_id.to_string(),
+            COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(tombstone_history.total, 2);
+    assert!(tombstone_history.revisions.iter().any(|revision| {
+        revision.revision.revision_id == tombstone.revision_id
+            && revision.revision.operation == EntryOperation::Delete
+            && revision.revision.entry.deleted
+    }));
+    let no_current = service
+        .get_composition_raw_local(&space_id, &saved.entry_id.to_string())
+        .await
+        .expect_err("a current tombstone should not appear as a readable Composition");
+    assert_eq!(
+        no_current.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::EntryNotFound
+    );
+
+    let restored = service
+        .restore_composition_local(
+            &space_id,
+            &saved.entry_id.to_string(),
+            &saved.revision_id.to_string(),
+            &author,
+        )
+        .await?;
+    assert_eq!(restored.restored_from_revision_id, saved.revision_id);
+    assert_eq!(
+        restored.receipt.committed_revision_ids,
+        [restored.revision_id]
+    );
+
+    let latest = service
+        .get_composition_raw_local(&space_id, &saved.entry_id.to_string())
+        .await?;
+    assert_eq!(latest.revision.revision_id, restored.revision_id);
+    assert_eq!(
+        latest.revision.parent_revision_id,
+        Some(tombstone.revision_id)
+    );
+    assert_eq!(latest.revision.operation, EntryOperation::Restore);
+    assert_eq!(latest.revision.entry.restored_from, Some(saved.revision_id));
+    assert_eq!(latest.revision.change_id, restored.receipt.command_id);
+    assert!(!latest.revision.entry.deleted);
+    assert_eq!(latest.revision.entry.deleted_at_micros, None);
+    assert_eq!(latest.revision.entry.deleted_by, None);
+
+    let history = service
+        .composition_history_local_page(
+            &space_id,
+            &saved.entry_id.to_string(),
+            COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(history.total, 3);
+    assert!(history.revisions.iter().any(|revision| {
+        revision.revision.revision_id == tombstone.revision_id
+            && revision.revision.operation == EntryOperation::Delete
+    }));
+    assert!(history
+        .revisions
+        .iter()
+        .any(|revision| revision.revision.revision_id == saved.revision_id));
+    assert_eq!(
+        history
+            .revisions
+            .last()
+            .map(|revision| revision.revision.revision_id),
+        Some(restored.revision_id)
+    );
     Ok(())
 }

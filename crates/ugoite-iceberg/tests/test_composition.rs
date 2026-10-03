@@ -476,6 +476,7 @@ async fn composition_restore_appends_exact_historical_revision_with_receipt() ->
         )
         .await?;
     assert_eq!(current.revision.revision_id, restored.revision_id);
+    assert_eq!(current.revision.change_id, restored.receipt.command_id);
     assert_eq!(
         current.revision.parent_revision_id,
         Some(updated.revision_id)
