@@ -281,6 +281,31 @@ async function main(): Promise<void> {
       `metric page evaluation: ${fixture.name}`,
     );
   }
+
+  const oversizedMetricPageResponse = await invokeWasm(instance.exports, {
+    action: "domain.evaluate_composition_metric_page",
+    value: {
+      expected_result_type: "integer",
+      is_complete: true,
+      row_count: 4_294_967_296,
+      selected_column_count: 1,
+    },
+  });
+  const oversizedMetricPageError = oversizedMetricPageResponse.error as Record<
+    string,
+    unknown
+  >;
+  assertEqual(oversizedMetricPageResponse.ok, false, "oversized metric page result");
+  assertEqual(
+    oversizedMetricPageError.kind,
+    "domain_validation",
+    "oversized metric page error kind",
+  );
+  assertEqual(
+    oversizedMetricPageError.message,
+    "value.row_count must be a non-negative integer",
+    "oversized metric page count is target-independent",
+  );
 }
 
 if (import.meta.main) {

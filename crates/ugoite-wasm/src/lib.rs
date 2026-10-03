@@ -430,17 +430,10 @@ fn invoke_composition_metric_page(payload: Option<&serde_json::Value>) -> String
     else {
         return domain_validation_error("value.is_complete must be a boolean");
     };
-    let Some(row_count) = payload
-        .get("row_count")
-        .and_then(serde_json::Value::as_u64)
-        .and_then(|count| usize::try_from(count).ok())
-    else {
+    let Some(row_count) = parse_metric_page_count(payload.get("row_count")) else {
         return domain_validation_error("value.row_count must be a non-negative integer");
     };
-    let Some(selected_column_count) = payload
-        .get("selected_column_count")
-        .and_then(serde_json::Value::as_u64)
-        .and_then(|count| usize::try_from(count).ok())
+    let Some(selected_column_count) = parse_metric_page_count(payload.get("selected_column_count"))
     else {
         return domain_validation_error(
             "value.selected_column_count must be a non-negative integer",
@@ -487,6 +480,13 @@ fn parse_composition_result_field_type(
         "json" => Some(FieldType::Json),
         _ => None,
     }
+}
+
+fn parse_metric_page_count(value: Option<&serde_json::Value>) -> Option<usize> {
+    // Keep the JSON count range target-independent: `usize` is 32-bit in
+    // wasm32, while native builds commonly use 64-bit `usize`.
+    let count = u32::try_from(value?.as_u64()?).ok()?;
+    usize::try_from(count).ok()
 }
 
 fn domain_validation_error(message: &str) -> String {
@@ -824,6 +824,18 @@ mod tests {
                         "expected_result_type": "integer",
                         "is_complete": true,
                         "row_count": -1,
+                        "selected_column_count": 1,
+                    },
+                }),
+                "value.row_count must be a non-negative integer",
+            ),
+            (
+                serde_json::json!({
+                    "action": "domain.evaluate_composition_metric_page",
+                    "value": {
+                        "expected_result_type": "integer",
+                        "is_complete": true,
+                        "row_count": u64::from(u32::MAX) + 1,
                         "selected_column_count": 1,
                     },
                 }),
