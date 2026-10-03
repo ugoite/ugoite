@@ -262,11 +262,11 @@ async fn restore_composition(
     };
 
     anyhow::ensure!(
-        response.composition_id == composition_id,
+        composition_identifiers_match(&response.composition_id, composition_id),
         "Composition restore response names an unexpected Composition"
     );
     anyhow::ensure!(
-        response.restored_from_revision_id == source_revision_id,
+        composition_identifiers_match(&response.restored_from_revision_id, source_revision_id,),
         "Composition restore response names an unexpected source revision"
     );
     anyhow::ensure!(
@@ -274,6 +274,16 @@ async fn restore_composition(
         "Composition restore receipt does not confirm the returned revision"
     );
     Ok(response)
+}
+
+fn composition_identifiers_match(actual: &str, requested: &str) -> bool {
+    match (
+        uuid::Uuid::parse_str(actual),
+        uuid::Uuid::parse_str(requested),
+    ) {
+        (Ok(actual), Ok(requested)) => actual == requested,
+        _ => actual == requested,
+    }
 }
 
 async fn list_compositions(

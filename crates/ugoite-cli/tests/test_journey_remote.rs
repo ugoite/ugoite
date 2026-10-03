@@ -1310,14 +1310,17 @@ async fn test_cli_remote_composition_restore_receipt_replay_and_stale_base() {
     let composition_id = source.entry_id.to_string();
     let source_revision_id = source.revision_id.to_string();
     let base_revision_id = updated.revision_id.to_string();
+    let mixed_case_composition_id = composition_id.to_ascii_uppercase();
+    let mixed_case_source_revision_id = source_revision_id.to_ascii_uppercase();
+    let mixed_case_base_revision_id = base_revision_id.to_ascii_uppercase();
     let args = [
         "composition",
         "restore",
-        composition_id.as_str(),
+        mixed_case_composition_id.as_str(),
         "--revision",
-        source_revision_id.as_str(),
+        mixed_case_source_revision_id.as_str(),
         "--base-revision",
-        base_revision_id.as_str(),
+        mixed_case_base_revision_id.as_str(),
         "--idempotency-key",
         "cli-remote-restore-replay-1",
     ];
@@ -1366,11 +1369,11 @@ async fn test_cli_remote_composition_restore_receipt_replay_and_stale_base() {
         &[
             "composition",
             "restore",
-            composition_id.as_str(),
+            mixed_case_composition_id.as_str(),
             "--revision",
-            source_revision_id.as_str(),
+            mixed_case_source_revision_id.as_str(),
             "--base-revision",
-            base_revision_id.as_str(),
+            mixed_case_base_revision_id.as_str(),
             "--idempotency-key",
             "cli-remote-restore-stale-base-1",
         ],
