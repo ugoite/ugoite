@@ -1606,7 +1606,34 @@ fn publication_command_id(
     operation: &str,
     fallback_request_id: Uuid,
 ) -> ApiResult<String> {
-    let key = headers
+    let key =
+        publication_idempotency_key(headers)?.unwrap_or_else(|| fallback_request_id.to_string());
+    validate_publication_idempotency_key(&key)?;
+    Ok(format!(
+        "{operation}-{}",
+        hex::encode(Sha256::digest(key.as_bytes()))
+    ))
+}
+
+fn required_composition_command_id(headers: &HeaderMap, operation: &str) -> ApiResult<String> {
+    let key = publication_idempotency_key(headers)?.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            json!({
+                "code": "IDEMPOTENCY_KEY_REQUIRED",
+                "message": "Idempotency-Key is required for Composition save",
+            }),
+        )
+    })?;
+    validate_publication_idempotency_key(&key)?;
+    Ok(format!(
+        "{operation}-{}",
+        hex::encode(Sha256::digest(key.as_bytes()))
+    ))
+}
+
+fn publication_idempotency_key(headers: &HeaderMap) -> ApiResult<Option<String>> {
+    headers
         .get("idempotency-key")
         .map(|value| {
             value
@@ -1616,18 +1643,17 @@ fn publication_command_id(
                     ApiError::new(StatusCode::BAD_REQUEST, "Idempotency-Key must be ASCII")
                 })
         })
-        .transpose()?
-        .unwrap_or_else(|| fallback_request_id.to_string());
+        .transpose()
+}
+
+fn validate_publication_idempotency_key(key: &str) -> ApiResult<()> {
     if key.is_empty() || key.len() > 256 {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
             "Idempotency-Key must contain 1 to 256 characters",
         ));
     }
-    Ok(format!(
-        "{operation}-{}",
-        hex::encode(Sha256::digest(key.as_bytes()))
-    ))
+    Ok(())
 }
 
 fn protected_routes(state: AppState) -> Router<AppState> {
@@ -11099,7 +11125,7 @@ async fn save_composition(
                 }),
             )
         })?;
-    let operation_id = publication_command_id(&headers, "composition-save", identity.request_id)?;
+    let operation_id = required_composition_command_id(&headers, "composition-save")?;
 
     let action = if entry_id.is_some() {
         Action::Update
@@ -14222,6 +14248,19 @@ mod authentication_regression_tests {
                 ))
         };
         let post_save = |body: Value| post_save_with_key(body, &Uuid::now_v7().to_string());
+        let missing_key_request = Request::post(format!("/spaces/{space_id}/compositions"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&json!({"yaml": fixture})).expect("save request serializes"),
+            ))?;
+        let (missing_key_status, missing_key_body) =
+            route_json(owner_route.clone(), missing_key_request).await?;
+        assert_eq!(
+            missing_key_status,
+            StatusCode::BAD_REQUEST,
+            "{missing_key_body}"
+        );
+        assert_eq!(missing_key_body["code"], "IDEMPOTENCY_KEY_REQUIRED");
 
         for body in [
             json!({"yaml": fixture, "composition_id": "00000000-0000-7000-8000-000000000001"}),

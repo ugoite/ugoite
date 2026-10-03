@@ -11562,7 +11562,7 @@
             "$ref": "#/components/parameters/SpaceId"
           },
           {
-            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+            "$ref": "#/components/parameters/CompositionIdempotencyKeyHeader"
           }
         ],
         "requestBody": {
@@ -11613,7 +11613,7 @@
             }
           },
           "400": {
-            "description": "Invalid JSON request body",
+            "description": "Invalid JSON request body or missing required Idempotency-Key",
             "content": {
               "application/json": {
                 "schema": {
@@ -12610,6 +12610,17 @@
         "in": "header",
         "required": false,
         "description": "Stable key for retrying the same mutation after an ambiguous response. A missing key uses the server request ID.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "CompositionIdempotencyKeyHeader": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "Required stable key for retrying the same Composition save after an ambiguous response. Reuse the same key and payload until the result is confirmed.",
         "schema": {
           "type": "string",
           "minLength": 1,
