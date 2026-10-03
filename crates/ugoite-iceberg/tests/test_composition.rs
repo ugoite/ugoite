@@ -1090,6 +1090,60 @@ async fn composition_restore_replays_exact_publication_and_rechecks_authorizatio
         [restored.revision_id]
     );
 
+    assert_ne!(restored.revision_id, updated.revision_id);
+    let history_before_changed_base = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &restore_entry_id,
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    let revision_ids_before_changed_base = history_before_changed_base
+        .revisions
+        .iter()
+        .map(|item| item.revision.revision_id)
+        .collect::<Vec<_>>();
+    let changed_base = service
+        .restore_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            &restore_entry_id,
+            &restore_source_revision_id,
+            &restored.revision_id.to_string(),
+            &owner_text,
+            &owner_principals,
+            "restore-response-lost-1",
+        )
+        .await
+        .expect_err("one operation identity cannot be reused with another base revision");
+    assert_eq!(
+        changed_base.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::IdempotencyConflict
+    );
+    let history_after_changed_base = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &restore_entry_id,
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    let revision_ids_after_changed_base = history_after_changed_base
+        .revisions
+        .iter()
+        .map(|item| item.revision.revision_id)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        history_after_changed_base.total,
+        history_before_changed_base.total
+    );
+    assert_eq!(
+        revision_ids_after_changed_base,
+        revision_ids_before_changed_base
+    );
+
     let changed_source = service
         .restore_composition_authorized_for_principals_with_operation_id(
             &space_id,
