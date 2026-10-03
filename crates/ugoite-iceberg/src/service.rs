@@ -22,6 +22,7 @@ use uuid::Uuid;
 
 type HmacSha256 = Hmac<sha2::Sha256>;
 
+mod composition_local_save;
 mod composition_restore;
 
 const CHANGE_PAGE_DEFAULT_LIMIT: usize = 50;

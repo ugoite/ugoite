@@ -833,3 +833,148 @@ async fn registry_marker_and_schema_mismatch_fail_closed() -> anyhow::Result<()>
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn local_composition_save_creates_updates_and_conflicts_with_receipts() -> anyhow::Result<()>
+{
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op.clone(), "memory://composition-local-save");
+    let owner = Uuid::from_u128(3_428_090);
+    let space_id = service
+        .create_space_for_principal("composition-local-save", owner, "Owner")
+        .await?
+        .to_string();
+    let meta_path = format!("spaces/{space_id}/meta.json");
+    let initial_meta: Value = serde_json::from_slice(&op.read(&meta_path).await?.to_bytes())?;
+    assert_eq!(initial_meta["space_version"], "0.1");
+
+    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    document.tags = vec!["local".to_string(), "finance".to_string()];
+    let created = service
+        .save_composition_local(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            "local-cli",
+        )
+        .await?;
+
+    assert_eq!(
+        created.receipt.committed_revision_ids,
+        [created.revision_id]
+    );
+    assert_eq!(created.receipt.command_id.len(), 36);
+    assert!(created.canonical_yaml.ends_with('\n'));
+    let created_raw = service
+        .get_composition_raw_local(&space_id, &created.entry_id.to_string())
+        .await?;
+    assert_eq!(created_raw.revision.change_id, created.receipt.command_id);
+    assert_eq!(created_raw.fields["name"], json!(created.document.name));
+    assert_eq!(created_raw.fields["kind"], json!("dashboard"));
+    assert_eq!(created_raw.fields["format_version"], json!(1));
+    assert_eq!(created_raw.fields["spec"], json!(created.canonical_yaml));
+    assert_eq!(created_raw.revision.entry.tags, ["local", "finance"]);
+
+    let mut updated_document = created.document.clone();
+    updated_document.name = "Local update".to_string();
+    updated_document.tags = vec!["updated".to_string()];
+    let updated = service
+        .save_composition_local(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(created.entry_id),
+                base_revision_id: Some(created.revision_id),
+                document: updated_document.clone(),
+            },
+            "local-cli",
+        )
+        .await?;
+    assert_eq!(updated.entry_id, created.entry_id);
+    assert_ne!(updated.revision_id, created.revision_id);
+    assert_eq!(updated.document, updated_document);
+    assert_eq!(
+        updated.receipt.committed_revision_ids,
+        [updated.revision_id]
+    );
+
+    let stale = service
+        .save_composition_local(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(created.entry_id),
+                base_revision_id: Some(created.revision_id),
+                document: created.document,
+            },
+            "local-cli",
+        )
+        .await
+        .expect_err("stale local updates must conflict");
+    let stale = stale.downcast_ref::<AppError>().unwrap();
+    assert_eq!(stale.code(), ErrorCode::RevisionConflict);
+    assert_eq!(
+        stale
+            .detail()
+            .and_then(|detail| detail["current_revision_id"].as_str()),
+        Some(updated.revision_id.to_string().as_str())
+    );
+    let history = service
+        .composition_history_local_page(&space_id, &created.entry_id.to_string(), 10, 0)
+        .await?;
+    assert_eq!(
+        history.total, 2,
+        "the stale update must not append a revision"
+    );
+    let current_raw = service
+        .get_composition_raw_local(&space_id, &created.entry_id.to_string())
+        .await?;
+    assert_eq!(current_raw.revision.revision_id, updated.revision_id);
+    assert_eq!(current_raw.revision.entry.tags, ["updated"]);
+
+    let final_meta: Value = serde_json::from_slice(&op.read(&meta_path).await?.to_bytes())?;
+    assert_eq!(final_meta["space_version"], initial_meta["space_version"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_local_composition_save_does_not_create_registry() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service =
+        UgoiteService::from_operator(op.clone(), "memory://composition-local-save-invalid");
+    let owner = Uuid::from_u128(3_428_091);
+    let space_id = service
+        .create_space_for_principal("composition-local-save-invalid", owner, "Owner")
+        .await?
+        .to_string();
+    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    document.format_version = 99;
+
+    let error = service
+        .save_composition_local(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            "local-cli",
+        )
+        .await
+        .expect_err("unsupported format versions cannot be persisted");
+    assert_eq!(
+        error.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::InvalidInput
+    );
+    let forms = iceberg_store::native_workspace_read_only(&op, &service.workspace_path(&space_id))
+        .await?
+        .list_forms()
+        .await?;
+    assert!(forms.iter().all(|form| !form
+        .name
+        .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)));
+    Ok(())
+}
