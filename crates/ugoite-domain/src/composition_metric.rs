@@ -6,6 +6,7 @@
 
 use crate::composition::{CompositionDiagnosticCode, CompositionResultFieldType};
 use crate::form::FieldType;
+use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -147,12 +148,16 @@ pub fn evaluate_composition_metric_page(
     }
 
     let matches_expected_type = match expected_type {
-        CompositionResultFieldType::String
-        | CompositionResultFieldType::Date
-        | CompositionResultFieldType::Timestamp => value.is_string(),
+        CompositionResultFieldType::String => value.is_string(),
         CompositionResultFieldType::Boolean => value.is_boolean(),
         CompositionResultFieldType::Integer => value.as_i64().is_some(),
         CompositionResultFieldType::Float => value.as_f64().is_some_and(f64::is_finite),
+        CompositionResultFieldType::Date => value
+            .as_str()
+            .is_some_and(is_normalized_composition_metric_date),
+        CompositionResultFieldType::Timestamp => value
+            .as_str()
+            .is_some_and(is_normalized_composition_metric_timestamp),
         CompositionResultFieldType::Json => false,
     };
     if !matches_expected_type {
@@ -160,6 +165,49 @@ pub fn evaluate_composition_metric_page(
     }
 
     Ok(value.clone())
+}
+
+/// Accept the normalized portable date representation used by metric results.
+/// A date is a four-digit-year Gregorian calendar date in `YYYY-MM-DD` form.
+fn is_normalized_composition_metric_date(value: &str) -> bool {
+    let Some(parsed) = NaiveDate::parse_from_str(value, "%Y-%m-%d").ok() else {
+        return false;
+    };
+    parsed.format("%Y-%m-%d").to_string() == value
+}
+
+/// Accept normalized wall-clock timestamps and RFC 3339 timestamps with an
+/// explicit UTC designator or numeric offset. Wall-clock values retain the
+/// existing minute or seconds/fractional-seconds forms used by Composition
+/// parameter binding; round-tripping rejects non-normalized spellings.
+fn is_normalized_composition_metric_timestamp(value: &str) -> bool {
+    if !value.is_ascii() || value.as_bytes().get(10) != Some(&b'T') {
+        return false;
+    }
+
+    let wall_clock = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
+        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"));
+    if let Ok(parsed) = wall_clock {
+        let seconds = parsed.format("%Y-%m-%dT%H:%M:%S%.f").to_string();
+        let minutes = parsed.format("%Y-%m-%dT%H:%M").to_string();
+        return seconds == value || minutes == value;
+    }
+
+    has_supported_fractional_precision(value) && DateTime::parse_from_rfc3339(value).is_ok()
+}
+
+/// Chrono stores subsecond values at nanosecond precision and otherwise
+/// truncates longer RFC 3339 fractions during parsing. Reject those spellings
+/// instead of silently changing the selected metric value.
+fn has_supported_fractional_precision(value: &str) -> bool {
+    let Some(dot) = value.find('.') else {
+        return true;
+    };
+    let digits = value[dot + 1..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .count();
+    (1..=9).contains(&digits)
 }
 
 #[cfg(test)]
@@ -356,6 +404,58 @@ mod tests {
             assert_eq!(
                 evaluate_page(expected_type, &value),
                 Err(Code::MetricResultTypeMismatch)
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_normalized_composition_metric_dates_and_timestamps() {
+        let dates = ["2026-10-03", "2024-02-29"];
+        for value in dates {
+            assert_eq!(
+                evaluate_page(CompositionResultFieldType::Date, &json!(value)),
+                Ok(json!(value))
+            );
+        }
+
+        let timestamps = [
+            "2026-10-03T12:00",
+            "2026-10-03T12:00:00",
+            "2026-10-03T12:00:00.123456789",
+            "2026-10-03T12:00:00Z",
+            "2026-10-03T12:00:00.123456789+09:00",
+        ];
+        for value in timestamps {
+            assert_eq!(
+                evaluate_page(CompositionResultFieldType::Timestamp, &json!(value)),
+                Ok(json!(value))
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_or_non_normalized_composition_metric_dates_and_timestamps() {
+        for value in ["not-a-date", "2026-02-29", "2026-13-03", "2026-1-03"] {
+            assert_eq!(
+                evaluate_page(CompositionResultFieldType::Date, &json!(value)),
+                Err(Code::MetricResultTypeMismatch),
+                "date value {value:?} should be rejected"
+            );
+        }
+
+        for value in [
+            "not-a-timestamp",
+            "2026-02-30T12:00",
+            "2026-10-03T24:00",
+            "2026-10-03T12:00:00.1200",
+            "2026-10-03t12:00:00Z",
+            "2026-10-03T12:00:00+24:00",
+            "2026-10-03T12:00:00.1234567890Z",
+        ] {
+            assert_eq!(
+                evaluate_page(CompositionResultFieldType::Timestamp, &json!(value)),
+                Err(Code::MetricResultTypeMismatch),
+                "timestamp value {value:?} should be rejected"
             );
         }
     }

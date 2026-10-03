@@ -43,6 +43,17 @@ requirements:
         kind: behavior
         statement: A metric value reference distinguishes an EntryQuery property by stable FieldId from a Saved SQL output column by its exact result name; resolution requires the value-field kind to match its source.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: metric-runtime-values
+        kind: behavior
+        statement: >-
+          Metric date values are valid Gregorian dates in normalized YYYY-MM-DD
+          form. Metric timestamp values are normalized local timestamps in
+          YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS[.fraction] form, or valid
+          RFC 3339 timestamps with an explicit UTC designator or numeric offset.
+          Fractions are limited to nine digits; normalized local fractions have
+          no trailing zeroes. Malformed strings produce
+          metric_result_type_mismatch through the shared Rust domain evaluator.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: ordered-component-layout
         kind: behavior
         statement: Sections define component order by section-array order and component-reference order; component IDs are unique and each component is referenced exactly once. Duplicate IDs, unknown references, duplicate references, or unreferenced components produce invalid_composition, and the empty component/section layout is valid.

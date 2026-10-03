@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 anyhow = "1.0"
+chrono = { version = "0.4.44", default-features = false, features = ["std"] }
 hex = "0.4"
 hmac = "0.13"
 serde = { version = "1.0", features = ["derive"] }
