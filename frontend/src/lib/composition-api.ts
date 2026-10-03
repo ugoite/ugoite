@@ -46,7 +46,7 @@ export interface CompositionSaveResponse {
   receipt: {
     command_id: string;
     catalog_generation: number;
-    snapshot_id: string;
+    snapshot_id: number;
     committed_revision_ids: string[];
     committed_at_micros: number;
     data_file_count: number;
