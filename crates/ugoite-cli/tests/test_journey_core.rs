@@ -913,6 +913,144 @@ fn test_parity_core_restore_unknown_revision_rejected_without_mutation() {
     assert_eq!(revision_ids(&history).len(), 1);
 }
 
+/// Composition restore uses an exact source/base pair and replays the same
+/// publication when the idempotency key is repeated in local Core mode.
+#[tokio::test]
+async fn test_cli_core_composition_restore_receipt_replay_and_stale_base() {
+    use ugoite_domain::composition::{canonicalize_composition, parse_composition_yaml};
+    use ugoite_iceberg::composition::CompositionSaveRequest;
+    use ugoite_iceberg::service::UgoiteService;
+
+    const FIXTURE: &str =
+        include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+    let space = setup_parity_space("{\"Status\":{\"type\":\"string\",\"required\":true}}");
+    let target = ugoite_cli::cli_config::resolve_command_target(
+        Some(&space.config_path),
+        None,
+        "composition restore test seed",
+    )
+    .expect("resolve local test Space");
+    let ugoite_cli::cli_config::SpaceTarget::Core { root, space_id } = target else {
+        panic!("parity setup must resolve to local Core");
+    };
+    let service =
+        UgoiteService::new_without_background_refresh(root).expect("open local Space service");
+    let original = parse_composition_yaml(FIXTURE).expect("parse source fixture");
+    let source = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: original.clone(),
+            },
+            "local-cli-test",
+            "cli-restore-seed-create",
+        )
+        .await
+        .expect("seed source Composition revision");
+
+    let mut updated_document = original;
+    updated_document.name = "Updated monthly expenses".to_string();
+    let updated = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            CompositionSaveRequest {
+                entry_id: Some(source.entry_id),
+                base_revision_id: Some(source.revision_id),
+                document: updated_document,
+            },
+            "local-cli-test",
+            "cli-restore-seed-update",
+        )
+        .await
+        .expect("seed current Composition revision");
+
+    let composition_id = source.entry_id.to_string();
+    let source_revision_id = source.revision_id.to_string();
+    let base_revision_id = updated.revision_id.to_string();
+    let mixed_case_composition_id = composition_id.to_ascii_uppercase();
+    let mixed_case_source_revision_id = source_revision_id.to_ascii_uppercase();
+    let mixed_case_base_revision_id = base_revision_id.to_ascii_uppercase();
+    let args = [
+        "composition",
+        "restore",
+        mixed_case_composition_id.as_str(),
+        "--revision",
+        mixed_case_source_revision_id.as_str(),
+        "--base-revision",
+        mixed_case_base_revision_id.as_str(),
+        "--idempotency-key",
+        "cli-restore-replay-1",
+    ];
+
+    let output = run_cli(&space.config_path, &args);
+    let first = stdout_json(&output, "local Composition restore");
+    assert_eq!(first["composition_id"], composition_id);
+    assert_eq!(first["restored_from_revision_id"], source_revision_id);
+    assert_ne!(first["revision_id"], base_revision_id);
+    assert_eq!(
+        first["canonical_yaml"],
+        canonicalize_composition(&source.document).unwrap().yaml
+    );
+    assert_eq!(
+        first["receipt"]["committed_revision_ids"][0],
+        first["revision_id"]
+    );
+
+    let history_before_replay = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &["composition", "history", composition_id.as_str()],
+        ),
+        "local Composition history after restore",
+    );
+    assert_eq!(history_before_replay["total"], 3);
+
+    let replay = stdout_json(
+        &run_cli(&space.config_path, &args),
+        "local Composition restore replay",
+    );
+    assert_eq!(replay, first);
+    let history_after_replay = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &["composition", "history", composition_id.as_str()],
+        ),
+        "local Composition history after replay",
+    );
+    assert_eq!(history_after_replay["total"], 3);
+
+    let stale = run_cli(
+        &space.config_path,
+        &[
+            "composition",
+            "restore",
+            mixed_case_composition_id.as_str(),
+            "--revision",
+            mixed_case_source_revision_id.as_str(),
+            "--base-revision",
+            mixed_case_base_revision_id.as_str(),
+            "--idempotency-key",
+            "cli-restore-stale-base-1",
+        ],
+    );
+    assert!(!stale.status.success(), "stale base must be rejected");
+    assert!(
+        String::from_utf8_lossy(&stale.stderr).contains("REVISION_CONFLICT"),
+        "stale base must preserve the stable diagnostic code: {}",
+        String::from_utf8_lossy(&stale.stderr)
+    );
+    let history_after_stale = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &["composition", "history", composition_id.as_str()],
+        ),
+        "local Composition history after stale restore",
+    );
+    assert_eq!(history_after_stale["total"], 3);
+}
+
 /// Unknown Forms are rejected with form-identifying classification.
 #[test]
 fn test_parity_core_missing_form_rejected_without_mutation() {

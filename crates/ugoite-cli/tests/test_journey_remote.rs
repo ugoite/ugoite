@@ -167,6 +167,7 @@ async fn journey_cli_remote_reaches_durable_outcome() {
 struct RemoteFixture {
     config_path: std::path::PathBuf,
     space_id: String,
+    storage_root: String,
     owner_principal_id: uuid::Uuid,
     state: AppState,
     sql_export_gate: std::sync::Arc<SqlExportGate>,
@@ -183,11 +184,9 @@ async fn setup_remote() -> RemoteFixture {
     // Without UGOITE_STATIC_DIR the app merges API routes at the root, so
     // the API base is the bare server URL (no /api prefix).
     let api_base = server_url.clone();
-    let state = AppState::new_for_tests_with_origin(
-        format!("memory://cli-journey-remote-{}", uuid::Uuid::now_v7()),
-        &server_url,
-    )
-    .expect("server state");
+    let storage_root = format!("memory://cli-journey-remote-{}", uuid::Uuid::now_v7());
+    let state = AppState::new_for_tests_with_origin(storage_root.clone(), &server_url)
+        .expect("server state");
     state.initialize_node().await.expect("initialize server");
     let (key, public_key_jwk) = test_key_and_jwk();
     let access = state_issue_rest_access(&state, public_key_jwk.clone()).await;
@@ -278,6 +277,7 @@ async fn setup_remote() -> RemoteFixture {
     RemoteFixture {
         config_path,
         space_id: access.space_uid.to_string(),
+        storage_root,
         owner_principal_id: access.principal_id,
         state,
         sql_export_gate,
@@ -1262,6 +1262,138 @@ async fn test_parity_remote_restore_unknown_revision_rejected_without_mutation()
         "parity history after rejected restore",
     );
     assert_eq!(revision_ids(&history).len(), 1);
+}
+
+/// Composition restore uses the same exact source/base pair and retry
+/// identity through the remote portable operation as it does in Core mode.
+#[tokio::test]
+async fn test_cli_remote_composition_restore_receipt_replay_and_stale_base() {
+    use ugoite_domain::composition::{canonicalize_composition, parse_composition_yaml};
+    use ugoite_iceberg::composition::CompositionSaveRequest;
+    use ugoite_iceberg::service::UgoiteService;
+
+    const FIXTURE: &str =
+        include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+    let fixture = setup_remote().await;
+    let service = UgoiteService::new_without_background_refresh(fixture.storage_root.clone())
+        .expect("open remote fixture Space service");
+    let original = parse_composition_yaml(FIXTURE).expect("parse source fixture");
+    let source = service
+        .save_composition_local_with_operation_id(
+            &fixture.space_id,
+            CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: original.clone(),
+            },
+            &fixture.owner_principal_id.to_string(),
+            "cli-remote-restore-seed-create",
+        )
+        .await
+        .expect("seed source Composition revision");
+    let mut updated_document = original;
+    updated_document.name = "Updated monthly expenses".to_string();
+    let updated = service
+        .save_composition_local_with_operation_id(
+            &fixture.space_id,
+            CompositionSaveRequest {
+                entry_id: Some(source.entry_id),
+                base_revision_id: Some(source.revision_id),
+                document: updated_document,
+            },
+            &fixture.owner_principal_id.to_string(),
+            "cli-remote-restore-seed-update",
+        )
+        .await
+        .expect("seed current Composition revision");
+
+    let composition_id = source.entry_id.to_string();
+    let source_revision_id = source.revision_id.to_string();
+    let base_revision_id = updated.revision_id.to_string();
+    let mixed_case_composition_id = composition_id.to_ascii_uppercase();
+    let mixed_case_source_revision_id = source_revision_id.to_ascii_uppercase();
+    let mixed_case_base_revision_id = base_revision_id.to_ascii_uppercase();
+    let args = [
+        "composition",
+        "restore",
+        mixed_case_composition_id.as_str(),
+        "--revision",
+        mixed_case_source_revision_id.as_str(),
+        "--base-revision",
+        mixed_case_base_revision_id.as_str(),
+        "--idempotency-key",
+        "cli-remote-restore-replay-1",
+    ];
+
+    let output = run_cli(&fixture.config_path, &args).await;
+    let first = stdout_json(&output, "remote Composition restore");
+    assert_eq!(first["composition_id"], composition_id);
+    assert_eq!(first["restored_from_revision_id"], source_revision_id);
+    assert_ne!(first["revision_id"], base_revision_id);
+    assert_eq!(
+        first["canonical_yaml"],
+        canonicalize_composition(&source.document).unwrap().yaml
+    );
+    assert_eq!(
+        first["receipt"]["committed_revision_ids"][0],
+        first["revision_id"]
+    );
+
+    let history_before_replay = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["composition", "history", composition_id.as_str()],
+        )
+        .await,
+        "remote Composition history after restore",
+    );
+    assert_eq!(history_before_replay["total"], 3);
+
+    let replay = stdout_json(
+        &run_cli(&fixture.config_path, &args).await,
+        "remote Composition restore replay",
+    );
+    assert_eq!(replay, first);
+    let history_after_replay = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["composition", "history", composition_id.as_str()],
+        )
+        .await,
+        "remote Composition history after replay",
+    );
+    assert_eq!(history_after_replay["total"], 3);
+
+    let stale = run_cli(
+        &fixture.config_path,
+        &[
+            "composition",
+            "restore",
+            mixed_case_composition_id.as_str(),
+            "--revision",
+            mixed_case_source_revision_id.as_str(),
+            "--base-revision",
+            mixed_case_base_revision_id.as_str(),
+            "--idempotency-key",
+            "cli-remote-restore-stale-base-1",
+        ],
+    )
+    .await;
+    assert!(!stale.status.success(), "stale base must be rejected");
+    assert!(
+        String::from_utf8_lossy(&stale.stderr).contains("REVISION_CONFLICT"),
+        "stale base must preserve the stable diagnostic code: {}",
+        String::from_utf8_lossy(&stale.stderr)
+    );
+    let history_after_stale = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["composition", "history", composition_id.as_str()],
+        )
+        .await,
+        "remote Composition history after stale restore",
+    );
+    assert_eq!(history_after_stale["total"], 3);
 }
 
 /// Unknown Forms are rejected with form-identifying classification.
