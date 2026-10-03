@@ -692,8 +692,7 @@ test("records real two-Space query surface measurements", async ({ page, request
           targetSpaceEvents.flatMap((event) => event.entryIds ?? []),
         );
         const abortedInFlightEvents = events.filter((event) =>
-          event.abortedAt !== undefined &&
-          (event.endedAt === undefined || event.abortedAt < event.endedAt)
+          event.abortedBeforeEnd === true
         );
         return {
           events,
