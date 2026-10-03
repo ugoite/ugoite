@@ -189,6 +189,42 @@ async fn composition_save_replays_the_original_create_and_update_after_response_
         .await?;
     assert_eq!(replayed_update, first_update);
 
+    let mut later_document = updated_document.clone();
+    later_document.name = "Later revision".to_string();
+    let later_update = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(first_create.entry_id),
+                base_revision_id: Some(first_update.revision_id),
+                document: later_document,
+            },
+            &owner.to_string(),
+            &[owner],
+            "later-update-1",
+        )
+        .await?;
+    let create_replayed_after_later_update = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            create_request(),
+            &owner.to_string(),
+            &[owner],
+            "create-response-lost-1",
+        )
+        .await?;
+    assert_eq!(create_replayed_after_later_update, first_create);
+    let update_replayed_after_later_update = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            update_request(),
+            &owner.to_string(),
+            &[owner],
+            "update-response-lost-1",
+        )
+        .await?;
+    assert_eq!(update_replayed_after_later_update, first_update);
+
     let mut changed_document = updated_document;
     changed_document.name = "Different payload".to_string();
     let changed_payload = service
@@ -213,11 +249,31 @@ async fn composition_save_replays_the_original_create_and_update_after_response_
     let history = service
         .composition_history_local_page(&space_id, &first_create.entry_id.to_string(), 10, 0)
         .await?;
-    assert_eq!(history.total, 2, "replays must not append revisions");
+    assert_eq!(history.total, 3, "replays must not append revisions");
     let current = service
         .get_composition_raw_local(&space_id, &first_create.entry_id.to_string())
         .await?;
-    assert_eq!(current.revision.revision_id, first_update.revision_id);
+    assert_eq!(current.revision.revision_id, later_update.revision_id);
+    let audit = service.list_space_audit(&space_id, 0, 100).await?;
+    let composition_events = audit["items"]
+        .as_array()
+        .expect("audit items")
+        .iter()
+        .filter(|event| {
+            event["target_type"] == "entry"
+                && event["target_id"] == first_create.entry_id.to_string()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(composition_events.len(), 3);
+    for (revision_id, action) in [
+        (first_create.revision_id, "entry.created"),
+        (first_update.revision_id, "entry.updated"),
+        (later_update.revision_id, "entry.updated"),
+    ] {
+        assert!(composition_events.iter().any(|event| {
+            event["metadata"]["revision_id"] == revision_id.to_string() && event["action"] == action
+        }));
+    }
     Ok(())
 }
 
@@ -329,6 +385,20 @@ async fn composition_save_rechecks_authorization_when_replaying_a_committed_oper
     assert_eq!(
         replay.downcast_ref::<AppError>().unwrap().code(),
         ErrorCode::Forbidden
+    );
+    let different_actor = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            request(),
+            &owner.to_string(),
+            &[owner],
+            "revoked-save-replay-1",
+        )
+        .await
+        .expect_err("the operation digest is bound to its original actor");
+    assert_eq!(
+        different_actor.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::IdempotencyConflict
     );
     let history = service
         .composition_history_local_page(&space_id, &saved.entry_id.to_string(), 10, 0)
@@ -1068,17 +1138,28 @@ async fn local_composition_save_creates_updates_and_conflicts_with_receipts() ->
     let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     document.tags = vec!["local".to_string(), "finance".to_string()];
+    let create_request = || composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document: document.clone(),
+    };
     let created = service
-        .save_composition_local(
+        .save_composition_local_with_operation_id(
             &space_id,
-            composition::CompositionSaveRequest {
-                entry_id: None,
-                base_revision_id: None,
-                document,
-            },
+            create_request(),
             "local-cli",
+            "local-cli-create-response-lost",
         )
         .await?;
+    let replayed_create = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            create_request(),
+            "local-cli",
+            "local-cli-create-response-lost",
+        )
+        .await?;
+    assert_eq!(replayed_create, created);
 
     assert_eq!(
         created.receipt.committed_revision_ids,

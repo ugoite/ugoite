@@ -77,6 +77,25 @@ pub(crate) struct PublicationOutcome {
     pub data_file_count: usize,
 }
 
+#[derive(Debug)]
+pub(crate) struct PublicationContentConflict;
+
+impl std::fmt::Display for PublicationContentConflict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("publication command id was reused with different command content")
+    }
+}
+
+impl std::error::Error for PublicationContentConflict {}
+
+fn publication_content_conflict() -> Error {
+    Error::new(
+        ErrorKind::DataInvalid,
+        "publication command id was reused with different command content",
+    )
+    .with_source(PublicationContentConflict)
+}
+
 impl PublicationContext {
     pub fn command_id(&self) -> &str {
         &self.command_id
@@ -2253,10 +2272,7 @@ impl SpaceCatalog {
                 if record.command_kind != publication.command_kind
                     || record.command_digest != publication.command_digest
                 {
-                    return Err(Error::new(
-                        ErrorKind::DataInvalid,
-                        "publication command id was reused with different command content",
-                    ));
+                    return Err(publication_content_conflict());
                 }
                 return Ok(Some(record));
             }
@@ -3071,10 +3087,7 @@ impl SpaceCatalog {
                     }
                     return Ok(true);
                 }
-                return Err(Error::new(
-                    ErrorKind::DataInvalid,
-                    "publication command id was reused with different command content",
-                ));
+                return Err(publication_content_conflict());
             }
             if Some(publication.generation) == attempt.expected_generation {
                 if Some(publication.next_head_checksum.as_str())

@@ -560,11 +560,7 @@ async fn resolve_published_composition_save(
     let coordinator = workspace.commit(publication.clone())?;
     let outcome = match coordinator.publication_outcome().await {
         Ok(outcome) => outcome,
-        Err(error)
-            if error
-                .to_string()
-                .contains("publication command id was reused with different command content") =>
-        {
+        Err(error) if publication_content_conflict(&error) => {
             return Err(AppError::conflict(
                 ErrorCode::IdempotencyConflict,
                 "Composition operation identity was reused with different save content",
@@ -773,6 +769,14 @@ pub(crate) async fn restore_composition(
         document,
         canonical_yaml: canonical.yaml,
         receipt,
+    })
+}
+
+fn publication_content_conflict(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<crate::space_catalog::PublicationContentConflict>()
+            .is_some()
     })
 }
 

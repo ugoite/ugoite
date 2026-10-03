@@ -5294,9 +5294,11 @@ impl UgoiteService {
             ),
         )
         .await?;
-        self.record_committed_entry_revision(
+        let committed_revision_id = result.revision_id.to_string();
+        self.record_committed_entry_revision_id(
             space_id,
             &entry_id_text,
+            &committed_revision_id,
             if is_create {
                 crate::mutation_audit::ENTRY_CREATED_ACTION
             } else {

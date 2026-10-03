@@ -496,6 +496,33 @@ fn latest_entry_revision(
     Some((revision_id, change_id, operation, author, updated_by))
 }
 
+fn entry_revision_by_id(
+    history: &Value,
+    requested_revision_id: &str,
+) -> Option<(String, Option<String>, String, String, String)> {
+    let revisions = history.get("revisions")?.as_array()?;
+    let revision = revisions.iter().find(|revision| {
+        revision.get("revision_id").and_then(Value::as_str) == Some(requested_revision_id)
+    })?;
+    let revision_id = revision.get("revision_id")?.as_str()?.to_string();
+    let change_id = revision
+        .get("change_id")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let operation = revision.get("operation")?.as_str()?.to_string();
+    let author = revision
+        .get("author")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let updated_by = revision
+        .get("updated_by")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    Some((revision_id, change_id, operation, author, updated_by))
+}
+
 impl UgoiteService {
     #[allow(clippy::too_many_arguments)]
     async fn deliver_entry_revision_audit(
@@ -556,6 +583,44 @@ impl UgoiteService {
             .await?;
             let Some((revision_id, change_id, _, author, updated_by)) =
                 latest_entry_revision(&history)
+            else {
+                return Ok::<(), anyhow::Error>(());
+            };
+            self.deliver_entry_revision_audit(
+                space_id,
+                action,
+                entry_id,
+                &revision_id,
+                change_id.as_deref(),
+                &author,
+                &updated_by,
+            )
+            .await?;
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let _ = delivered;
+    }
+
+    /// Best-effort delivery for one exact committed Entry revision. Retries
+    /// may return an older committed revision after newer work has been
+    /// appended, so they must never infer audit identity from the latest row.
+    pub(crate) async fn record_committed_entry_revision_id(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        revision_id: &str,
+        action: &str,
+    ) {
+        let delivered = async {
+            let history = crate::entry::get_entry_history(
+                self.operator(),
+                &self.workspace_path(space_id),
+                entry_id,
+            )
+            .await?;
+            let Some((revision_id, change_id, _, author, updated_by)) =
+                entry_revision_by_id(&history, revision_id)
             else {
                 return Ok::<(), anyhow::Error>(());
             };

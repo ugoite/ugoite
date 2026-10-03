@@ -1393,7 +1393,7 @@ pub fn prepare_request(
         }
     };
 
-    if matches!(operation, "pin.create" | "pin.delete") {
+    if matches!(operation, "pin.create" | "pin.delete" | "composition.save") {
         if let Some(value) = args.get("idempotency_key").filter(|value| !value.is_null()) {
             let value = value.as_str().ok_or_else(|| {
                 ApiProtocolError::invalid_arguments(
@@ -2635,6 +2635,26 @@ mod tests {
             serde_json::from_str::<Value>(save_create.body.as_deref().expect("save body"))
                 .expect("save request JSON"),
             save_body
+        );
+
+        let save_retry = prepare_request(
+            "composition.save",
+            &json!({"space_id": "demo", "idempotency_key": "composition-attempt-1"}),
+            Some(&save_body),
+        )
+        .expect("Composition save retry request");
+        assert_eq!(
+            save_retry.headers,
+            vec![
+                Header {
+                    name: "content-type".into(),
+                    value: "application/json".into(),
+                },
+                Header {
+                    name: "idempotency-key".into(),
+                    value: "composition-attempt-1".into(),
+                },
+            ]
         );
 
         let save_update_body = json!({
