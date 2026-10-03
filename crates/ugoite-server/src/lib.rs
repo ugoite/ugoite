@@ -14553,6 +14553,106 @@ mod authentication_regression_tests {
         Ok(())
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn composition_save_route_concurrent_same_key_returns_one_publication_and_receipt(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-save-concurrent-{}",
+            Uuid::now_v7()
+        ))?;
+        let owner_id = Uuid::from_u128(351203);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-save-concurrent", owner_id, "Save test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let owner_route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(owner_id, space_uid),
+        );
+        let fixture = include_str!(
+            "../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml"
+        );
+        let key = "composition-save-concurrent-same-key";
+        let request = || {
+            Request::post(format!("/spaces/{space_id}/compositions"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("idempotency-key", key)
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"yaml": fixture})).expect("save request serializes"),
+                ))
+        };
+
+        // Release the test task and both requests together to exercise the
+        // route-level retry race rather than only sequential replay.
+        let release = Arc::new(tokio::sync::Barrier::new(3));
+        let first_gate = release.clone();
+        let first_route = owner_route.clone();
+        let first_request = request()?;
+        let first = tokio::spawn(async move {
+            first_gate.wait().await;
+            route_json(first_route, first_request).await
+        });
+        let second_gate = release.clone();
+        let second_route = owner_route.clone();
+        let second_request = request()?;
+        let second = tokio::spawn(async move {
+            second_gate.wait().await;
+            route_json(second_route, second_request).await
+        });
+        release.wait().await;
+
+        let (first, second) = tokio::join!(first, second);
+        let (first_status, first_body) = first??;
+        let (second_status, second_body) = second??;
+        assert_eq!(first_status, StatusCode::CREATED, "{first_body}");
+        assert_eq!(second_status, first_status, "{second_body}");
+        assert_eq!(first_body, second_body);
+
+        let composition_id = first_body["composition_id"]
+            .as_str()
+            .expect("save response contains Composition ID");
+        let revision_id = first_body["revision_id"]
+            .as_str()
+            .expect("save response contains revision ID");
+        assert_eq!(
+            first_body["receipt"]["committed_revision_ids"],
+            json!([revision_id])
+        );
+        assert_eq!(first_body["receipt"], second_body["receipt"]);
+
+        let (list_status, list) = route_json(
+            owner_route.clone(),
+            Request::get(format!("/spaces/{space_id}/compositions?limit=10")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(list_status, StatusCode::OK, "{list}");
+        let items = list["items"]
+            .as_array()
+            .expect("list response contains Composition items");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["composition_id"], composition_id);
+        assert_eq!(items[0]["revision_id"], revision_id);
+
+        let (history_status, history) = route_json(
+            owner_route,
+            Request::get(format!(
+                "/spaces/{space_id}/compositions/{composition_id}/history?limit=10"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(history_status, StatusCode::OK, "{history}");
+        assert_eq!(history["total"], 1);
+        let revisions = history["revisions"]
+            .as_array()
+            .expect("history response contains revisions");
+        assert_eq!(revisions.len(), 1);
+        assert_eq!(revisions[0]["revision"]["revision_id"], revision_id);
+        Ok(())
+    }
+
     #[tokio::test]
     async fn composition_restore_route_rechecks_current_authorization_after_revocation(
     ) -> anyhow::Result<()> {
