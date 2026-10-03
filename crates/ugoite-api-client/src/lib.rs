@@ -1393,7 +1393,19 @@ pub fn prepare_request(
         }
     };
 
-    if matches!(operation, "pin.create" | "pin.delete") {
+    if operation == "composition.save" {
+        let value = required_string(operation, args, "idempotency_key")?;
+        if value.trim().is_empty() || value.len() > 256 {
+            return Err(ApiProtocolError::invalid_arguments(
+                operation,
+                "argument `idempotency_key` must contain 1 to 256 characters",
+            ));
+        }
+        headers.push(Header {
+            name: "idempotency-key".to_string(),
+            value,
+        });
+    } else if matches!(operation, "pin.create" | "pin.delete") {
         if let Some(value) = args.get("idempotency_key").filter(|value| !value.is_null()) {
             let value = value.as_str().ok_or_else(|| {
                 ApiProtocolError::invalid_arguments(
@@ -2624,17 +2636,39 @@ mod tests {
         });
         let save_create = prepare_request(
             "composition.save",
-            &json!({"space_id": "demo"}),
+            &json!({"space_id": "demo", "idempotency_key": "composition-attempt-create"}),
             Some(&save_body),
         )
         .expect("Composition create request");
         assert_eq!(save_create.method, HttpMethod::Post);
         assert_eq!(save_create.path, "/spaces/demo/compositions");
         assert_eq!(save_create.body_kind, RequestBodyKind::Json);
+        assert_eq!(save_create.headers[1].name, "idempotency-key");
+        assert_eq!(save_create.headers[1].value, "composition-attempt-create");
         assert_eq!(
             serde_json::from_str::<Value>(save_create.body.as_deref().expect("save body"))
                 .expect("save request JSON"),
             save_body
+        );
+
+        let save_retry = prepare_request(
+            "composition.save",
+            &json!({"space_id": "demo", "idempotency_key": "composition-attempt-1"}),
+            Some(&save_body),
+        )
+        .expect("Composition save retry request");
+        assert_eq!(
+            save_retry.headers,
+            vec![
+                Header {
+                    name: "content-type".into(),
+                    value: "application/json".into(),
+                },
+                Header {
+                    name: "idempotency-key".into(),
+                    value: "composition-attempt-1".into(),
+                },
+            ]
         );
 
         let save_update_body = json!({
@@ -2644,7 +2678,7 @@ mod tests {
         });
         let save_update = prepare_request(
             "composition.save",
-            &json!({"space_id": "demo"}),
+            &json!({"space_id": "demo", "idempotency_key": "composition-attempt-update"}),
             Some(&save_update_body),
         )
         .expect("Composition update request");
@@ -2655,6 +2689,21 @@ mod tests {
                 .expect("save request JSON"),
             save_update_body
         );
+
+        let missing_save_key = prepare_request(
+            "composition.save",
+            &json!({"space_id": "demo"}),
+            Some(&save_body),
+        )
+        .expect_err("Composition save requires a stable idempotency key");
+        assert!(missing_save_key.to_string().contains("idempotency_key"));
+        let empty_save_key = prepare_request(
+            "composition.save",
+            &json!({"space_id": "demo", "idempotency_key": "  "}),
+            Some(&save_body),
+        )
+        .expect_err("Composition save rejects an empty idempotency key");
+        assert!(empty_save_key.to_string().contains("1 to 256 characters"));
 
         let save_response = json!({
             "composition_id": "01900000-0000-7000-8000-000000000002",
@@ -3629,6 +3678,9 @@ mod tests {
             "composition.get" | "composition.history" | "composition.resolve"
         ) {
             arguments.insert("composition_id".into(), json!("composition-1"));
+        }
+        if operation == "composition.save" {
+            arguments.insert("idempotency_key".into(), json!("operation-key-1"));
         }
         if matches!(
             operation,

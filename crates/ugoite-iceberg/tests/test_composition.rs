@@ -1,5 +1,6 @@
 mod common;
 
+use anyhow::Context;
 use chrono::Utc;
 use common::{seed_preexisting_form, setup_operator};
 use serde_json::{json, Value};
@@ -119,6 +120,481 @@ async fn composition_save_persists_canonical_carrier_and_receipt() -> anyhow::Re
     assert_eq!(saved.document.tags, ["dashboard", "finance"]);
     assert_eq!(raw.revision.entry.tags, saved.document.tags);
     assert_eq!(raw.revision.revision_id, saved.revision_id);
+    Ok(())
+}
+
+#[tokio::test]
+async fn composition_save_replays_the_original_create_and_update_after_response_loss(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op, "memory://composition-save-idempotency");
+    let owner = Uuid::from_u128(3_428_011);
+    let space_id = service
+        .create_space_for_principal("composition-save-idempotency", owner, "Owner")
+        .await?
+        .to_string();
+    let original = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let create_request = || composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document: original.clone(),
+    };
+
+    // The first response is intentionally discarded to model a committed
+    // publication whose response did not reach the caller.
+    let first_create = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            create_request(),
+            &owner.to_string(),
+            &[owner],
+            "create-response-lost-1",
+        )
+        .await?;
+    let replayed_create = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            create_request(),
+            &owner.to_string(),
+            &[owner],
+            "create-response-lost-1",
+        )
+        .await?;
+    assert_eq!(replayed_create, first_create);
+
+    let mut updated_document = first_create.document.clone();
+    updated_document.name = "Response loss update".to_string();
+    let update_request = || composition::CompositionSaveRequest {
+        entry_id: Some(first_create.entry_id),
+        base_revision_id: Some(first_create.revision_id),
+        document: updated_document.clone(),
+    };
+    let first_update = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            update_request(),
+            &owner.to_string(),
+            &[owner],
+            "update-response-lost-1",
+        )
+        .await?;
+    let replayed_update = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            update_request(),
+            &owner.to_string(),
+            &[owner],
+            "update-response-lost-1",
+        )
+        .await?;
+    assert_eq!(replayed_update, first_update);
+
+    let mut later_document = updated_document.clone();
+    later_document.name = "Later revision".to_string();
+    let later_update = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(first_create.entry_id),
+                base_revision_id: Some(first_update.revision_id),
+                document: later_document,
+            },
+            &owner.to_string(),
+            &[owner],
+            "later-update-1",
+        )
+        .await?;
+    let create_replayed_after_later_update = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            create_request(),
+            &owner.to_string(),
+            &[owner],
+            "create-response-lost-1",
+        )
+        .await?;
+    assert_eq!(create_replayed_after_later_update, first_create);
+    let update_replayed_after_later_update = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            update_request(),
+            &owner.to_string(),
+            &[owner],
+            "update-response-lost-1",
+        )
+        .await?;
+    assert_eq!(update_replayed_after_later_update, first_update);
+
+    let mut changed_document = updated_document;
+    changed_document.name = "Different payload".to_string();
+    let changed_payload = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(first_create.entry_id),
+                base_revision_id: Some(first_create.revision_id),
+                document: changed_document,
+            },
+            &owner.to_string(),
+            &[owner],
+            "update-response-lost-1",
+        )
+        .await
+        .expect_err("an operation identity cannot be reused for different content");
+    assert_eq!(
+        changed_payload.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::IdempotencyConflict
+    );
+
+    let history = service
+        .composition_history_local_page(&space_id, &first_create.entry_id.to_string(), 10, 0)
+        .await?;
+    assert_eq!(history.total, 3, "replays must not append revisions");
+    let current = service
+        .get_composition_raw_local(&space_id, &first_create.entry_id.to_string())
+        .await?;
+    assert_eq!(current.revision.revision_id, later_update.revision_id);
+    let audit = service.list_space_audit(&space_id, 0, 100).await?;
+    let composition_events = audit["items"]
+        .as_array()
+        .expect("audit items")
+        .iter()
+        .filter(|event| {
+            event["target_type"] == "entry"
+                && event["target_id"] == first_create.entry_id.to_string()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(composition_events.len(), 3);
+    for (revision_id, action) in [
+        (first_create.revision_id, "entry.created"),
+        (first_update.revision_id, "entry.updated"),
+        (later_update.revision_id, "entry.updated"),
+    ] {
+        assert!(composition_events.iter().any(|event| {
+            event["metadata"]["revision_id"] == revision_id.to_string() && event["action"] == action
+        }));
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn composition_save_keeps_stable_receipt_when_recovering_pre_head_publication(
+) -> anyhow::Result<()> {
+    let service = UgoiteService::new_without_background_refresh(
+        "memory://composition-save-pre-head-recovery",
+    )?;
+    let owner = Uuid::from_u128(3_428_015);
+    let space_id = service
+        .create_space_for_principal("composition-save-pre-head-recovery", owner, "Owner")
+        .await?
+        .to_string();
+    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let created = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            &owner.to_string(),
+            "pre-head-base-create-1",
+        )
+        .await?;
+    let mut updated_document = created.document.clone();
+    updated_document.name = "Recovered before Head".to_string();
+    let update_request = || composition::CompositionSaveRequest {
+        entry_id: Some(created.entry_id),
+        base_revision_id: Some(created.revision_id),
+        document: updated_document.clone(),
+    };
+
+    let gate = ugoite_iceberg::TestPublicationGate::new_for_space_id(space_id.clone());
+    ugoite_iceberg::install_test_publication_gate(gate.clone());
+    let task_service = service.clone();
+    let task_space_id = space_id.clone();
+    let task_author = owner.to_string();
+    let task_update_request = update_request();
+    let append = tokio::spawn(async move {
+        task_service
+            .save_composition_local_with_operation_id(
+                &task_space_id,
+                task_update_request,
+                &task_author,
+                "pre-head-update-1",
+            )
+            .await
+    });
+    if let Err(error) = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        gate.wait_until_entered(),
+    )
+    .await
+    {
+        ugoite_iceberg::clear_test_publication_gate();
+        gate.release();
+        append.abort();
+        let _ = append.await;
+        return Err(error.into());
+    }
+    append.abort();
+    let append_result = append.await;
+    ugoite_iceberg::clear_test_publication_gate();
+    gate.release();
+    assert!(
+        append_result.is_err(),
+        "the pre-Head save should be discarded"
+    );
+
+    let recovered = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            update_request(),
+            &owner.to_string(),
+            "pre-head-update-1",
+        )
+        .await?;
+    let replayed = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            update_request(),
+            &owner.to_string(),
+            "pre-head-update-1",
+        )
+        .await?;
+
+    assert_eq!(recovered, replayed);
+    assert!(recovered.receipt.data_file_count > 0);
+    let history = service
+        .composition_history_local_page(&space_id, &created.entry_id.to_string(), 10, 0)
+        .await?;
+    assert_eq!(history.total, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_composition_save_retries_share_one_publication() -> anyhow::Result<()> {
+    // Keep the detached AssetText refresh from contending for the Space's
+    // single query permit while this test controls the publication race.
+    let service = UgoiteService::new_without_background_refresh(
+        "memory://composition-save-idempotency-race",
+    )?;
+    let owner = Uuid::from_u128(3_428_012);
+    let space_id = service
+        .create_space_for_principal("composition-save-idempotency-race", owner, "Owner")
+        .await?
+        .to_string();
+    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let left_request = composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document: document.clone(),
+    };
+    let right_request = composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document,
+    };
+    let owner_text = owner.to_string();
+    let owner_principals = [owner];
+    let (left, right) = tokio::join!(
+        service.save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            left_request,
+            &owner_text,
+            &owner_principals,
+            "concurrent-save-1",
+        ),
+        service.save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            right_request,
+            &owner_text,
+            &owner_principals,
+            "concurrent-save-1",
+        ),
+    );
+    let left = left.context("left create failed")?;
+    let right = right.context("right create failed")?;
+    assert_eq!(left, right);
+
+    let mut updated_document = left.document.clone();
+    updated_document.name = "Concurrent update".to_string();
+    let left_update_request = composition::CompositionSaveRequest {
+        entry_id: Some(left.entry_id),
+        base_revision_id: Some(left.revision_id),
+        document: updated_document.clone(),
+    };
+    let right_update_request = composition::CompositionSaveRequest {
+        entry_id: Some(left.entry_id),
+        base_revision_id: Some(left.revision_id),
+        document: updated_document,
+    };
+    let gate = ugoite_iceberg::TestValidationGate::new_for_entry_id(left.entry_id.to_string());
+    ugoite_iceberg::install_test_validation_gate(gate.clone());
+    let left_service = service.clone();
+    let left_space_id = space_id.clone();
+    let left_owner_text = owner_text.clone();
+    let mut left_update = tokio::spawn(async move {
+        left_service
+            .save_composition_local_with_operation_id(
+                &left_space_id,
+                left_update_request,
+                &left_owner_text,
+                "concurrent-update-1",
+            )
+            .await
+    });
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        gate.wait_until_entered_count(1),
+    )
+    .await
+    .expect("first writer should reach the pre-append gate");
+    let right_service = service.clone();
+    let right_space_id = space_id.clone();
+    let right_owner_text = owner_text.clone();
+    let mut right_update = tokio::spawn(async move {
+        right_service
+            .save_composition_local_with_operation_id(
+                &right_space_id,
+                right_update_request,
+                &right_owner_text,
+                "concurrent-update-1",
+            )
+            .await
+    });
+    tokio::select! {
+        entered = tokio::time::timeout(std::time::Duration::from_secs(10), gate.wait_until_entered_count(2)) => {
+            assert!(entered.is_ok(), "expected two writers at the pre-append gate, got {}", gate.entered_count());
+        },
+        result = &mut right_update => panic!("second writer completed before reaching the gate: {result:?}"),
+    }
+    gate.release();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        gate.wait_until_entered_count(4),
+    )
+    .await
+    .expect("both writers should pass the retry preflight before appending");
+    gate.release_one();
+    let (left_update, right_update) = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        async {
+            tokio::select! {
+                result = &mut left_update => {
+                    let left_update = result.context("left update task panicked")?.context("left update failed")?;
+                    ugoite_iceberg::clear_test_validation_gate();
+                    gate.release();
+                    let right_update = right_update.await.context("right update task panicked")?.context("right update failed")?;
+                    Ok::<_, anyhow::Error>((left_update, right_update))
+                },
+                result = &mut right_update => {
+                    let right_update = result.context("right update task panicked")?.context("right update failed")?;
+                    ugoite_iceberg::clear_test_validation_gate();
+                    gate.release();
+                    let left_update = left_update.await.context("left update task panicked")?.context("left update failed")?;
+                    Ok((left_update, right_update))
+                },
+            }
+        },
+    )
+    .await
+    .context("first concurrent update should finish after its publication gate opens")??;
+    assert_eq!(left_update, right_update);
+
+    let history = service
+        .composition_history_local_page(&space_id, &left.entry_id.to_string(), 10, 0)
+        .await
+        .context("update history read failed")?;
+    assert_eq!(history.total, 2);
+    assert_eq!(
+        history.revisions.last().unwrap().revision.revision_id,
+        left_update.revision_id
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn composition_save_rechecks_authorization_when_replaying_a_committed_operation(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op.clone(), "memory://composition-save-replay-auth");
+    let owner = Uuid::from_u128(3_428_013);
+    let editor = Uuid::from_u128(3_428_014);
+    let space_id = service
+        .create_space_for_principal("composition-save-replay-auth", owner, "Owner")
+        .await?
+        .to_string();
+    let authorizer = Authorizer::new(op);
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: editor,
+                kind: PrincipalKind::Human,
+                display_name: "Editor".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Editor,
+        )
+        .await?;
+    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let request = || composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document: document.clone(),
+    };
+    let saved = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            request(),
+            &editor.to_string(),
+            &[editor],
+            "revoked-save-replay-1",
+        )
+        .await?;
+    authorizer
+        .revoke_principal(&space_id, owner, editor)
+        .await?;
+
+    let replay = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            request(),
+            &editor.to_string(),
+            &[editor],
+            "revoked-save-replay-1",
+        )
+        .await
+        .expect_err("a replay must use current authorization");
+    assert_eq!(
+        replay.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::Forbidden
+    );
+    let different_actor = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            request(),
+            &owner.to_string(),
+            &[owner],
+            "revoked-save-replay-1",
+        )
+        .await
+        .expect_err("the operation digest is bound to its original actor");
+    assert_eq!(
+        different_actor.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::IdempotencyConflict
+    );
+    let history = service
+        .composition_history_local_page(&space_id, &saved.entry_id.to_string(), 10, 0)
+        .await?;
+    assert_eq!(history.total, 1);
     Ok(())
 }
 
@@ -853,17 +1329,28 @@ async fn local_composition_save_creates_updates_and_conflicts_with_receipts() ->
     let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     document.tags = vec!["local".to_string(), "finance".to_string()];
+    let create_request = || composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document: document.clone(),
+    };
     let created = service
-        .save_composition_local(
+        .save_composition_local_with_operation_id(
             &space_id,
-            composition::CompositionSaveRequest {
-                entry_id: None,
-                base_revision_id: None,
-                document,
-            },
+            create_request(),
             "local-cli",
+            "local-cli-create-response-lost",
         )
         .await?;
+    let replayed_create = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            create_request(),
+            "local-cli",
+            "local-cli-create-response-lost",
+        )
+        .await?;
+    assert_eq!(replayed_create, created);
 
     assert_eq!(
         created.receipt.committed_revision_ids,

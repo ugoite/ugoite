@@ -191,7 +191,7 @@ async fn run_writer_child() -> anyhow::Result<()> {
     let service = UgoiteService::new_without_background_refresh(&root_uri)?;
     let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
-    document.name = name;
+    document.name = name.clone();
     let canonical = canonicalize_composition(&document)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
     let request = CompositionSaveRequest {
@@ -202,11 +202,13 @@ async fn run_writer_child() -> anyhow::Result<()> {
 
     let outcome = match composition::save_composition(
         service.operator(),
+        &space_id,
         &service.workspace_path(&space_id),
         request,
         entry_id,
         canonical,
         "cross-process-conflict-test",
+        &name,
     )
     .await
     {
