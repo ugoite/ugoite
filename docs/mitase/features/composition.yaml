@@ -715,6 +715,24 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.entry-query-translation
+          - id: browser-saved-sql-pagination
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: reuses the exact Saved SQL revision and opaque continuation for next and previous pages }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-saved-sql-parameter-generation
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: resets Saved SQL continuations on parameter change and discards its stale page }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
           - id: browser-metric-protocol-adapter
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.test.ts
