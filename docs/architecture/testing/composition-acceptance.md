@@ -39,9 +39,9 @@ fixtures. The E2E seed manifest at
 `e2e/fixtures/composition/space-seed/manifest.json` now supplies the server
 seed, expected result counts, save-retry outcome, and Browser selectors. The
 Playwright journey consumes it as test input. Its existence and selector
-binding do not record a runtime pass; the focused Browser run remains pending
-integration of the full journey and is recorded only after it executes
-successfully.
+binding alone do not record a runtime pass. The focused Browser journey has
+passed; its exact source and candidate commit, command, result, and artifact
+are recorded in the run evidence below.
 
 ## Resolver implementation evidence
 
@@ -164,9 +164,10 @@ reserved by this plan.
 
 Generic Entry create, update, bulk, import, and restore paths cannot bypass
 Composition validation. The Server save operation returns the publication
-receipt that identifies the exact revision. Browser and CLI save surfaces
-remain planned. If a save response is lost, the outcome remains unknown until
-the exact revision is reconciled; retry idempotency is tracked separately.
+receipt that identifies the exact revision. The Browser save flow is
+implemented and covered by the seeded Golden Journey; CLI save remains planned.
+If a save response is lost, the outcome remains unknown until the exact
+revision is reconciled; retry idempotency is tracked separately.
 Generic restore of the reserved Form is denied while Composition-scoped restore
 validates and appends a new revision.
 
