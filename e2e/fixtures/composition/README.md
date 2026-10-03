@@ -1,8 +1,9 @@
 # Composition acceptance fixtures
 
 The canonical `monthly-expense.ugcomp.yaml` belongs to the shared domain fixture
-set under `crates/ugoite-domain/tests/fixtures/composition/`. Browser E2E reads
-that file directly and does not maintain another YAML copy.
+set under `crates/ugoite-domain/tests/fixtures/composition/`. The Browser E2E
+uses the Browser save flow so its Composition is produced by the same public
+surface as a user-created tool.
 
 `acceptance-plan.json` describes the full B0–B6 plan. Its planned selectors are
 locators, not release evidence. The Browser journey source is in
@@ -14,16 +15,16 @@ after the focused E2E command runs against the merged routes.
 - `broken-source-reference.ugcomp.yaml` is a raw-payload candidate whose Form ID
   is absent from the Browser seed Space.
 - `space-seed/manifest.json` records the seeded dataset and expected pages. Each
-  run creates a unique server-backed Space and substitutes the server's Form,
-  field, Saved SQL, and revision identities into the shared fixture.
+  run creates a unique server-backed Space, a parameterized Saved SQL query, and
+  101 matching rows across two result pages, plus one excluded row.
 
-The Browser test publishes the seed Composition through the existing API and
-checks that its receipt names the saved revision. A fresh browser context opens
-it from Home, supplies the date parameters, and reads a two-row table page then
-a one-row continuation page. It also checks the scalar metric comes from the
-Saved SQL result and remains unchanged while the table pages. A second browser
-context reopens the same exact revision from Home; parameter state starts empty
-again. The journey does not call a model connection or persist Browser Work.
+The Browser test opens the seeded query, saves it with “Save as tool”, and
+forces a delayed response loss after the server commits. Retrying must reuse the
+same `Idempotency-Key`, return the same receipt and exact revision, and leave
+one history publication. A fresh browser context rediscovers that exact revision
+from Home, applies the Composition's declared parameter defaults, and reads page
+one and page two. Changing the date parameter resets the result page and narrows
+the rows. The journey does not connect a model or persist Browser Work.
 
 The raw recovery candidates and the remaining CLI, recovery, and exact-candidate
 release evidence selectors remain planned. The E2E seed does not implement a

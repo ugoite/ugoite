@@ -63,10 +63,10 @@ type AcceptancePlan = {
 const PLAN_PATH = "e2e/fixtures/composition/acceptance-plan.json";
 
 const EXPECTED_BROWSER_STEPS = [
-  "Save a Composition to the active Space and confirm success only after the Entry receipt identifies the published revision.",
-  "Close the browser context, reopen the Space Home, and open the saved Composition.",
-  "Change a declared parameter and run the source through the existing paged query path.",
-  "Advance a result page and confirm the displayed rows come from the query response without Browser aggregation.",
+  "Open a parameterized Saved SQL result and save it as a tool through the Browser dialog.",
+  "Delay and interrupt the first save response after commit, then retry with the same Idempotency-Key and verify one history publication and the original receipt revision.",
+  "Close the browser context, rediscover the saved tool from Space Home, and open the exact revision named by the receipt.",
+  "Change declared parameters, advance a result page, and confirm the displayed rows come from the existing query response without Browser aggregation.",
   "Change a parameter, Space, or source while an earlier request is delayed and confirm stale success, error, finalization, and loading updates are discarded.",
   "Confirm page, scroll, result, continuation, and cache state are absent from the saved Composition.",
 ];
@@ -189,10 +189,10 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
   B5: [
     "frontend/src/lib/composition-api.ts#test:composition_query_handle_discards_stale_response_state_updates",
     "frontend/src/components/CompositionRenderer.test.tsx#test:composition_renderer_uses_paged_results_without_client_aggregation",
-    "e2e/composition-golden-journey.test.ts#test:Browser reopens a saved Composition with model connection disabled",
+    "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
   ],
   B6: [
-    "e2e/composition-golden-journey.test.ts#test:Composition remains portable across Space reopen and query pagination",
+    "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
     "e2e/composition-cli-parity.test.ts#test:Composition CLI inspect query and export agree in core and remote modes",
     "e2e/composition-recovery-authorization.test.ts#test:Composition raw recovery and ACL denial preserve caller-visible contracts",
     "e2e/composition-save-receipt.test.ts#test:Composition save reconciles a lost response without duplicate publication",
@@ -298,8 +298,11 @@ Deno.test(
     ) as { selectors: string[] };
     assertEquals(seedManifest.selectors, [
       EXPECTED_RESERVED_SELECTORS.B5[2],
-      EXPECTED_RESERVED_SELECTORS.B6[0],
     ]);
+    assertEquals(
+      EXPECTED_RESERVED_SELECTORS.B5[2],
+      EXPECTED_RESERVED_SELECTORS.B6[0],
+    );
 
     assertEquals(plan.evidence_record_fields, [
       "source_sha",

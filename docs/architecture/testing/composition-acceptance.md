@@ -101,16 +101,16 @@ agree on output meaning across the complete command set.
 ## Browser Golden Journey shape
 
 With model connection disabled, the seeded Browser journey creates the Space,
-source entries, Saved SQL, and Composition through the existing server APIs,
-then confirms the Composition save receipt identifies the exact revision. A
-fresh Browser context rediscovers that revision from Home, changes declared
-parameters, and reads bounded result pages through the existing query path. It
-checks that the displayed metric remains the Saved SQL scalar instead of a
-Browser aggregate, and that reopening another context starts with empty
-parameter state. This journey does not exercise the Browser save dialog or
-delayed-response suppression. Those scenarios remain planned. Page, scroll,
-result, continuation, and cache state remain transient Work and are not saved
-with the Composition.
+source entries, and a parameterized Saved SQL query through the existing server
+APIs. The user saves the successful query as a tool through the Browser dialog.
+The E2E delays and interrupts the first save response after the server commits,
+then retries with the same `Idempotency-Key`; the replayed receipt and revision
+must match the first commit and history must contain one publication. A fresh
+Browser context rediscovers that exact revision from Home and applies the
+Composition's declared parameter defaults. It changes its parameters and reads
+bounded result pages through the existing query path. Page, scroll, result,
+continuation, and cache state remain transient Work and are not saved with the
+Composition.
 
 When implementing the surface, follow the existing Mitase UI contract:
 structure comes before explanation, each datum has one visible owner, and

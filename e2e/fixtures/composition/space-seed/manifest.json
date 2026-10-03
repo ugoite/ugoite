@@ -1,24 +1,24 @@
 {
   "schema": "ugoite/composition-e2e-seed/v1",
-  "source_fixture": "crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
-  "materialization": "Replace only the fixture's stable Form, Saved SQL, and field identities with values returned by the server; set the entry_query page limit from this manifest.",
+  "materialization": "Create a unique server-backed Space, a Form, one parameterized Saved SQL query, 100 rows for its first result page, one row for its second page, and one row excluded by the date range. The Browser creates the Composition through Save as tool.",
   "space": "Create a unique server-backed Space for each Playwright run.",
   "model_connection": "disabled",
   "composition_name": "Monthly expenses",
-  "page_limit": 2,
+  "page_limit": 100,
   "parameters": {
     "month_start": "2026-01-01",
     "month_end": "2026-02-01",
-    "month_start_after_change": "2026-01-15"
+    "month_start_after_change": "2026-01-21"
   },
-  "entries": [
-    { "date": "2026-01-10", "amount": 21.5, "page": 2 },
-    { "date": "2026-01-15", "amount": 34.25, "page": 1 },
-    { "date": "2026-01-20", "amount": 58.75, "page": 1 },
-    { "date": "2026-02-02", "amount": 99, "page": "excluded" }
-  ],
+  "seed_rows": {
+    "first_page_count": 100,
+    "first_page_date": "2026-01-10",
+    "second_page_date": "2026-01-20",
+    "excluded_date": "2026-02-02"
+  },
   "saved_sql": {
-    "sql": "SELECT 42.5 AS total WHERE $month_start < $month_end",
+    "name": "Golden monthly rows",
+    "sql_template": "SELECT {date_column} AS transaction_date, {merchant_column} AS merchant, {amount_column} AS amount FROM {relation} WHERE {date_column} >= $month_start AND {date_column} < $month_end ORDER BY {date_column} ASC, {merchant_column} ASC",
     "variables": [
       {
         "type": "date",
@@ -33,15 +33,13 @@
     ]
   },
   "expected": {
-    "first_page_rows": 2,
+    "first_page_rows": 100,
     "second_page_rows": 1,
-    "after_month_start_change_rows": 2,
-    "metric_scalar": 42.5,
-    "metric_source": "Saved SQL page evaluator; not an aggregate of table amounts",
-    "composition_revision": "The exact revision returned by the save receipt"
+    "after_month_start_change_rows": 0,
+    "composition_publications": 1,
+    "receipt_revision": "Must equal the exact revision path opened from Home."
   },
   "selectors": [
-    "e2e/composition-golden-journey.test.ts#test:Browser reopens a saved Composition with model connection disabled",
-    "e2e/composition-golden-journey.test.ts#test:Composition remains portable across Space reopen and query pagination"
+    "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled"
   ]
 }
