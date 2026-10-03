@@ -2199,12 +2199,15 @@ impl SpaceCatalog {
             publication.clone(),
         )
         .await?;
-        let data_file_count = self.publication_data_file_count(&publication).await?;
         Ok(Some(PublicationOutcome {
             command_id: publication.command_id,
             catalog_generation: publication.generation,
             snapshot_id: publication.new_snapshot_id,
-            data_file_count,
+            // This attempt adopts an immutable publication and does not run
+            // the Iceberg writer, so it created no data files. A replay of a
+            // publication already reachable from Head still returns the
+            // original publication's count through `publication_outcome`.
+            data_file_count: 0,
         }))
     }
 
