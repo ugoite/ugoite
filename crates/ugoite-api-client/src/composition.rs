@@ -204,6 +204,8 @@ pub struct CompositionResolveResponse {
 #[serde(deny_unknown_fields)]
 pub struct CompositionParameterDefinition {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     #[serde(rename = "type")]
     pub parameter_type: CompositionParameterType,
     pub required: bool,
@@ -235,6 +237,30 @@ pub enum CompositionParameterFormat {
 pub struct CompositionResolvePlan {
     pub composition_revision: CompositionRevisionReference,
     pub sources: Vec<CompositionResolvedSource>,
+    /// Stable display bindings in the resolver's section order.
+    #[serde(default)]
+    pub component_bindings: Vec<CompositionResolvedComponentBinding>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionResolvedComponentKind {
+    Metric,
+    Table,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionResolvedComponentBinding {
+    pub component_id: String,
+    pub kind: CompositionResolvedComponentKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub source_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metric_field_id: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_property_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

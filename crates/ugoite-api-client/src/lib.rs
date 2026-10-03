@@ -18,7 +18,8 @@ pub use composition::{
     CompositionListItem, CompositionListPage, CompositionParameterDefinition,
     CompositionParameterFormat, CompositionParameterType, CompositionRawRevision,
     CompositionResolveDiagnostic, CompositionResolvePlan, CompositionResolveRequest,
-    CompositionResolveResponse, CompositionResolvedSource, CompositionRevisionMetadata,
+    CompositionResolveResponse, CompositionResolvedComponentBinding,
+    CompositionResolvedComponentKind, CompositionResolvedSource, CompositionRevisionMetadata,
     CompositionRevisionReference,
 };
 
@@ -2628,10 +2629,15 @@ mod tests {
             "ok": true,
             "parameter_definitions": [{
                 "id": "month",
+                "label": "Month",
                 "type": "date",
                 "required": true,
                 "default": "2026-10-01",
                 "format": "year-month"
+            }, {
+                "id": "region",
+                "type": "string",
+                "required": false
             }],
             "plan": {
                 "composition_revision": {
@@ -2649,6 +2655,18 @@ mod tests {
                         }
                     },
                     "source_schema_fingerprint": "b".repeat(64)
+                }],
+                "component_bindings": [{
+                    "component_id": "rows",
+                    "kind": "table",
+                    "source_id": "monthly-total"
+                }, {
+                    "component_id": "total",
+                    "kind": "metric",
+                    "label": "Total",
+                    "source_id": "monthly-total",
+                    "metric_field_id": 202,
+                    "result_property_key": "total_amount"
                 }]
             }
         });

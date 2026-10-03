@@ -50,14 +50,15 @@ use ugoite_api_client::{
     CompositionParameterDefinition, CompositionParameterFormat as ApiCompositionParameterFormat,
     CompositionParameterType as ApiCompositionParameterType, CompositionRawRevision,
     CompositionResolveDiagnostic, CompositionResolvePlan, CompositionResolveRequest,
-    CompositionResolveResponse, CompositionResolvedSource, CompositionRevisionMetadata,
+    CompositionResolveResponse, CompositionResolvedComponentBinding,
+    CompositionResolvedComponentKind, CompositionResolvedSource, CompositionRevisionMetadata,
     CompositionRevisionReference,
 };
 use ugoite_core::composition::{
     bind_parameters as bind_composition_parameters,
     resolve_composition as resolve_composition_core,
     CompositionDiagnostic as CoreCompositionDiagnostic, CurrentSourceDescriptor, ResolveInput,
-    ResolvedCompositionPlan, SavedSqlRevisionMetadata,
+    ResolvedComponentKind, ResolvedCompositionPlan, SavedSqlRevisionMetadata,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::sql_query::SavedSqlRevisionRef;
@@ -11302,6 +11303,7 @@ fn api_composition_parameter_definition(
 ) -> CompositionParameterDefinition {
     CompositionParameterDefinition {
         id: parameter.id.clone(),
+        label: parameter.label.clone(),
         parameter_type: match parameter.parameter_type {
             DomainCompositionParameterType::String => ApiCompositionParameterType::String,
             DomainCompositionParameterType::Boolean => ApiCompositionParameterType::Boolean,
@@ -11384,12 +11386,28 @@ fn composition_resolve_success_response(
             }),
         })
         .collect::<ApiResult<Vec<_>>>()?;
+    let component_bindings = plan
+        .component_bindings
+        .into_iter()
+        .map(|binding| CompositionResolvedComponentBinding {
+            component_id: binding.component_id,
+            kind: match binding.kind {
+                ResolvedComponentKind::Metric => CompositionResolvedComponentKind::Metric,
+                ResolvedComponentKind::Tabular => CompositionResolvedComponentKind::Table,
+            },
+            label: binding.label,
+            source_id: binding.source_id,
+            metric_field_id: binding.metric_field_id.map(|field_id| field_id.get()),
+            result_property_key: binding.result_property_key,
+        })
+        .collect();
     Ok(CompositionResolveResponse {
         ok: true,
         parameter_definitions,
         plan: Some(CompositionResolvePlan {
             composition_revision,
             sources,
+            component_bindings,
         }),
         diagnostics: Vec::new(),
     })
@@ -14681,9 +14699,10 @@ mod authentication_regression_tests {
     async fn composition_resolve_uses_exact_requested_revision_with_newer_revision_available(
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
-            CompositionDocument, CompositionFieldSchemaEntry, CompositionKind,
-            CompositionParameter, CompositionParameterReference, CompositionParameterType,
-            CompositionQueryOperator, CompositionSource, CompositionSpec, CompositionValue,
+            CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry,
+            CompositionKind, CompositionMetricValueField, CompositionParameter,
+            CompositionParameterReference, CompositionParameterType, CompositionQueryOperator,
+            CompositionSection, CompositionSource, CompositionSpec, CompositionValue,
             EntryQueryFilterTemplate, EntryQueryProjectionTemplate, EntryQueryTemplate,
         };
         use ugoite_domain::{form::FieldType, id::FieldId};
@@ -14729,7 +14748,8 @@ mod authentication_regression_tests {
                     "name": "ResolveExactRevisionSource",
                     "version": 1,
                     "fields": {
-                        "month": {"id": source_field_id.get(), "type": "string"}
+                        "month": {"id": source_field_id.get(), "type": "string"},
+                        "total_amount": {"id": 101, "type": "integer"}
                     },
                     "allow_extra_attributes": "deny"
                 }),
@@ -14752,21 +14772,38 @@ mod authentication_regression_tests {
             };
         let month_parameter = || CompositionParameter {
             id: "month".to_string(),
-            label: None,
+            label: Some("Month".to_string()),
             parameter_type: CompositionParameterType::String,
             required: true,
             default: None,
             format: None,
         };
+        let unlabelled_parameter = || CompositionParameter {
+            id: "region".to_string(),
+            label: None,
+            parameter_type: CompositionParameterType::String,
+            required: false,
+            default: None,
+            format: None,
+        };
+        let value_field_id = FieldId::new(101)?;
         let older_source = CompositionSource::EntryQuery {
             id: "older_entries".to_string(),
             form_id: ugoite_domain::id::FormId::from_uuid(source_form_id),
-            field_schema: vec![CompositionFieldSchemaEntry {
-                field_id: source_field_id,
-                field_type: FieldType::String,
-                reference_form: None,
-                list_item: None,
-            }],
+            field_schema: vec![
+                CompositionFieldSchemaEntry {
+                    field_id: source_field_id,
+                    field_type: FieldType::String,
+                    reference_form: None,
+                    list_item: None,
+                },
+                CompositionFieldSchemaEntry {
+                    field_id: value_field_id,
+                    field_type: FieldType::Integer,
+                    reference_form: None,
+                    list_item: None,
+                },
+            ],
             query: EntryQueryTemplate {
                 text: None,
                 filters: vec![EntryQueryFilterTemplate {
@@ -14779,10 +14816,34 @@ mod authentication_regression_tests {
                 sort: Vec::new(),
                 page_limit: 10,
                 projection: EntryQueryProjectionTemplate::Fields {
-                    fields: vec![source_field_id],
+                    fields: vec![source_field_id, value_field_id],
                 },
             },
         };
+        let mut older_document = document(
+            "Older exact revision",
+            vec![month_parameter(), unlabelled_parameter()],
+            vec![older_source],
+        );
+        older_document.spec.components = vec![
+            CompositionComponent::Metric {
+                id: "monthly_total".to_string(),
+                label: Some("Monthly total".to_string()),
+                source: "older_entries".to_string(),
+                value_field: CompositionMetricValueField::EntryField {
+                    field_id: value_field_id,
+                },
+            },
+            CompositionComponent::Table {
+                id: "rows".to_string(),
+                label: None,
+                source: "older_entries".to_string(),
+            },
+        ];
+        older_document.spec.sections = vec![CompositionSection {
+            id: "summary".to_string(),
+            components: vec!["rows".to_string(), "monthly_total".to_string()],
+        }];
         let older = state
             .service
             .save_composition_authorized_for_principals(
@@ -14790,11 +14851,7 @@ mod authentication_regression_tests {
                 ugoite_iceberg::composition::CompositionSaveRequest {
                     entry_id: None,
                     base_revision_id: None,
-                    document: document(
-                        "Older exact revision",
-                        vec![month_parameter()],
-                        vec![older_source],
-                    ),
+                    document: older_document,
                     tags: None,
                 },
                 &principal_id.to_string(),
@@ -14842,7 +14899,10 @@ mod authentication_regression_tests {
         assert_eq!(missing_parameter_body["ok"], false);
         assert_eq!(
             missing_parameter_body["parameter_definitions"],
-            json!([{"id":"month", "type":"string", "required":true}])
+            json!([
+                {"id":"month", "label":"Month", "type":"string", "required":true},
+                {"id":"region", "type":"string", "required":false}
+            ])
         );
         assert_eq!(
             missing_parameter_body["diagnostics"],
@@ -14858,7 +14918,10 @@ mod authentication_regression_tests {
         assert_eq!(older_body["ok"], true);
         assert_eq!(
             older_body["parameter_definitions"],
-            json!([{"id":"month", "type":"string", "required":true}])
+            json!([
+                {"id":"month", "label":"Month", "type":"string", "required":true},
+                {"id":"region", "type":"string", "required":false}
+            ])
         );
         assert_eq!(
             older_body["plan"]["composition_revision"],
@@ -14870,6 +14933,20 @@ mod authentication_regression_tests {
         assert_eq!(
             older_body["plan"]["sources"][0]["source_id"],
             json!("older_entries")
+        );
+        assert_eq!(
+            older_body["plan"]["component_bindings"],
+            json!([
+                {"component_id":"rows", "kind":"table", "source_id":"older_entries"},
+                {
+                    "component_id":"monthly_total",
+                    "kind":"metric",
+                    "label":"Monthly total",
+                    "source_id":"older_entries",
+                    "metric_field_id":value_field_id.get(),
+                    "result_property_key":"total_amount"
+                }
+            ])
         );
         assert_eq!(
             older_body["plan"]["sources"][0]["request"]["query"]["filters"],
