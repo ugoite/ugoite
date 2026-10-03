@@ -12094,6 +12094,106 @@
         }
       }
     },
+    "/spaces/{space_id}/compositions/{entry_id}/restore": {
+      "post": {
+        "summary": "Restore an exact Composition revision",
+        "description": "Publishes the selected historical revision as a new append-only revision. The exact current base revision and a required idempotency key are checked on every attempt, including retries.",
+        "parameters": [
+          { "$ref": "#/components/parameters/SpaceId" },
+          { "$ref": "#/components/parameters/EntryId" },
+          { "$ref": "#/components/parameters/CompositionIdempotencyKeyHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CompositionRestoreRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Restored as a new revision",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CompositionRestoreResponse" }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON request body or missing required Idempotency-Key",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } },
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          },
+          "404": {
+            "description": "Composition or exact source revision not found or concealed by current authorization",
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          },
+          "409": {
+            "description": "The base revision is stale or the idempotency key was reused with different content",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } },
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          },
+          "413": {
+            "description": "The JSON request body exceeds the 16 KiB bound",
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          },
+          "415": {
+            "description": "Request Content-Type must be application/json",
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          },
+          "422": {
+            "description": "Invalid identifiers or request shape",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } },
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } },
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          }
+        }
+      }
+    },
     "/spaces/{space_id}/compositions/{entry_id}/history": {
       "get": {
         "summary": "Get raw Composition history",
@@ -12620,7 +12720,7 @@
         "name": "Idempotency-Key",
         "in": "header",
         "required": true,
-        "description": "Required stable key for retrying the same Composition save after an ambiguous response. Reuse the same key and payload until the result is confirmed.",
+        "description": "Required stable key for retrying the same Composition save or restore after an ambiguous response. Reuse the same key and payload until the result is confirmed.",
         "schema": {
           "type": "string",
           "minLength": 1,
@@ -15103,6 +15203,26 @@
         },
         "additionalProperties": false
       },
+      "CompositionRestoreRequest": {
+        "type": "object",
+        "required": [
+          "source_revision_id",
+          "base_revision_id"
+        ],
+        "properties": {
+          "source_revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Exact historical revision to restore."
+          },
+          "base_revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Exact current revision required to publish the restore."
+          }
+        },
+        "additionalProperties": false
+      },
       "CompositionPublicationReceipt": {
         "type": "object",
         "required": [
@@ -15158,6 +15278,37 @@
             "format": "uuid"
           },
           "revision_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "canonical_yaml": {
+            "type": "string"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/CompositionPublicationReceipt"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionRestoreResponse": {
+        "type": "object",
+        "required": [
+          "composition_id",
+          "revision_id",
+          "restored_from_revision_id",
+          "canonical_yaml",
+          "receipt"
+        ],
+        "properties": {
+          "composition_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "restored_from_revision_id": {
             "type": "string",
             "format": "uuid"
           },
