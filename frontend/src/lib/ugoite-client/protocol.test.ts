@@ -60,6 +60,14 @@ describe("portable Ugoite API protocol WASM", () => {
     });
   });
 
+  it("rethrows non-diagnostic metric protocol failures", async () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    await expect(evaluateCompositionMetricPage(cyclic as never)).rejects
+      .toThrow(TypeError);
+  });
+
   it("measures the exact CSV request envelope without a guessed margin", () => {
     const rows = [["a", "日本語"]];
     const expected = new TextEncoder().encode(
