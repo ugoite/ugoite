@@ -13,6 +13,7 @@ type QueryEvent = {
   startedAt: number;
   endedAt?: number;
   abortedAt?: number;
+  abortedBeforeEnd?: boolean;
   status?: number;
   aborted: boolean;
   error?: string;
@@ -55,6 +56,45 @@ type QueryLifecycleMeasurement = {
   residualPendingCount: number;
   events: QueryEvent[];
 };
+
+function summarizeLifecycleEvents(
+  events: QueryEvent[],
+): QueryLifecycleMeasurement {
+  const abortedEvents = events.filter((event) =>
+    event.abortedBeforeEnd === true
+  );
+  return {
+    supersededInFlightCount: abortedEvents.length,
+    actualAbortCount: abortedEvents.length,
+    endedAbortCount:
+      abortedEvents.filter((event) => event.endedAt !== undefined).length,
+    residualPendingCount:
+      events.filter((event) => event.endedAt === undefined).length,
+    events,
+  };
+}
+
+test("counts an in-flight abort when abort and settlement timestamps tie", () => {
+  const atSameTime: QueryEvent = {
+    path: "/spaces/test/entries/query",
+    method: "POST",
+    startedAt: 1,
+    abortedAt: 2,
+    endedAt: 2,
+    aborted: true,
+    abortedBeforeEnd: true,
+  };
+  const afterSettlement: QueryEvent = {
+    ...atSameTime,
+    abortedBeforeEnd: false,
+  };
+
+  const summary = summarizeLifecycleEvents([atSameTime, afterSettlement]);
+
+  expect(summary.actualAbortCount).toBe(1);
+  expect(summary.endedAbortCount).toBe(1);
+  expect(summary.residualPendingCount).toBe(0);
+});
 
 const MEASUREMENT_SLUGS = ["query-space-a", "query-space-b"] as const;
 const TRIAL_COUNT = 5;
@@ -277,11 +317,13 @@ test("records real two-Space query surface measurements", async ({ page, request
       signal?.addEventListener("abort", () => {
         event.aborted = true;
         event.abortedAt ??= performance.now();
+        if (event.endedAt === undefined) event.abortedBeforeEnd = true;
       }, { once: true });
       measured.__ugoiteQueryEvents!.push(event);
       try {
         const response = await nativeFetch(input, init);
         event.endedAt = performance.now();
+        event.abortedBeforeEnd = false;
         event.status = response.status;
         if (path.includes("/entries/query") && response.ok) {
           const result = await response.clone().json() as {
@@ -299,9 +341,10 @@ test("records real two-Space query surface measurements", async ({ page, request
         // Sample the signal here so an in-flight abort is still ordered before
         // fetch settlement; an abort after a resolved response stays ordered
         // after endedAt and is not counted as cancellation.
-        if (signal?.aborted && event.abortedAt === undefined) {
+        if (signal?.aborted) {
           event.aborted = true;
-          event.abortedAt = performance.now();
+          event.abortedAt ??= performance.now();
+          event.abortedBeforeEnd = true;
         }
         event.endedAt = performance.now();
         event.error = error instanceof Error ? error.message : String(error);
@@ -696,25 +739,6 @@ test("records real two-Space query surface measurements", async ({ page, request
       expect(lifecycle.staleSourceEntryIds).toEqual([]);
       expect(lifecycle.unexpectedTargetEntryIds).toEqual([]);
 
-      const summarizeLifecycleEvents = (
-        events: QueryEvent[],
-      ): QueryLifecycleMeasurement => {
-        const abortedEvents = events.filter((event) =>
-          event.abortedAt !== undefined &&
-          (event.endedAt === undefined || event.abortedAt < event.endedAt)
-        );
-        return {
-          supersededInFlightCount: abortedEvents.length,
-          actualAbortCount: abortedEvents.length,
-          endedAbortCount: abortedEvents.filter((event) =>
-            event.endedAt !== undefined
-          ).length,
-          residualPendingCount: events.filter((event) =>
-            event.endedAt === undefined
-          ).length,
-          events,
-        };
-      };
       const queryText = (event: QueryEvent): string | undefined => {
         const body = event.body as { query?: { text?: unknown } } | undefined;
         return typeof body?.query?.text === "string"
