@@ -79,7 +79,7 @@ type CompositionSaveResponse = {
 };
 
 type CompositionHistoryPage = {
-  revisions: Array<{ revision_id: string }>;
+  revisions: Array<{ revision: { revision_id: string } }>;
   total: number;
   offset: number;
   limit: number;
@@ -405,7 +405,7 @@ test.describe("Composition Golden Journey", () => {
         manifest.expected.composition_publications,
       );
       expect(history.total).toBe(manifest.expected.composition_publications);
-      expect(history.revisions[0]?.revision_id).toBe(revisionId);
+      expect(history.revisions[0]?.revision.revision_id).toBe(revisionId);
     } finally {
       await initialContext.close();
     }
