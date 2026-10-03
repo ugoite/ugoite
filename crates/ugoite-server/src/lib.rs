@@ -11142,7 +11142,7 @@ async fn resolve_composition_handler(
         None => Ok(Json(composition_resolve_diagnostics_response(
             resolution.diagnostics,
             parameter_definitions,
-        ))),
+        )?)),
     }
 }
 
@@ -11174,19 +11174,22 @@ fn api_composition_parameter_definition(
 fn composition_resolve_diagnostics_response(
     diagnostics: Vec<CoreCompositionDiagnostic>,
     parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
-) -> CompositionResolveResponse {
-    CompositionResolveResponse {
+) -> ApiResult<CompositionResolveResponse> {
+    let diagnostics = diagnostics
+        .into_iter()
+        .map(|diagnostic| {
+            Ok(CompositionResolveDiagnostic {
+                code: api_composition_diagnostic_code(diagnostic.code)?,
+                parameter_id: diagnostic.parameter_id,
+            })
+        })
+        .collect::<ApiResult<Vec<_>>>()?;
+    Ok(CompositionResolveResponse {
         ok: false,
         parameter_definitions,
         plan: None,
-        diagnostics: diagnostics
-            .into_iter()
-            .map(|diagnostic| CompositionResolveDiagnostic {
-                code: api_composition_diagnostic_code(diagnostic.code),
-                parameter_id: diagnostic.parameter_id,
-            })
-            .collect(),
-    }
+        diagnostics,
+    })
 }
 
 fn composition_resolve_success_response(
@@ -11262,40 +11265,45 @@ async fn lint_composition(
             }),
         )
     })?;
-    Ok(Json(composition_lint_response(&request.yaml)))
+    Ok(Json(composition_lint_response(&request.yaml)?))
 }
 
 const COMPOSITION_LINT_MAX_REQUEST_BYTES: usize =
     ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES * 6 + 256;
 
-fn composition_lint_response(yaml: &str) -> CompositionLintResponse {
-    match ugoite_domain::composition::canonicalize_composition_yaml(yaml) {
-        Ok(canonical) => CompositionLintResponse {
-            ok: true,
-            value: Some(CompositionLintValue {
-                document: serde_json::to_value(canonical.document)
-                    .expect("Composition domain document is JSON serializable"),
-                canonical_yaml: canonical.yaml,
-                fingerprint: canonical.fingerprint,
-            }),
-            error: None,
+fn composition_lint_response(yaml: &str) -> ApiResult<CompositionLintResponse> {
+    Ok(
+        match ugoite_domain::composition::canonicalize_composition_yaml(yaml) {
+            Ok(canonical) => CompositionLintResponse {
+                ok: true,
+                value: Some(CompositionLintValue {
+                    document: serde_json::to_value(canonical.document)
+                        .expect("Composition domain document is JSON serializable"),
+                    canonical_yaml: canonical.yaml,
+                    fingerprint: canonical.fingerprint,
+                }),
+                error: None,
+            },
+            Err(code) => CompositionLintResponse {
+                ok: false,
+                value: None,
+                error: Some(CompositionLintError {
+                    kind: "composition_diagnostic".to_string(),
+                    code: api_composition_diagnostic_code(code)?,
+                }),
+            },
         },
-        Err(code) => CompositionLintResponse {
-            ok: false,
-            value: None,
-            error: Some(CompositionLintError {
-                kind: "composition_diagnostic".to_string(),
-                code: api_composition_diagnostic_code(code),
-            }),
-        },
-    }
+    )
 }
 
 fn api_composition_diagnostic_code(
     code: ugoite_domain::composition::CompositionDiagnosticCode,
-) -> ApiCompositionDiagnosticCode {
-    ApiCompositionDiagnosticCode::from_code(code.as_str())
-        .expect("domain Composition diagnostics are included in the portable API contract")
+) -> ApiResult<ApiCompositionDiagnosticCode> {
+    ApiCompositionDiagnosticCode::from_code(code.as_str()).ok_or_else(|| {
+        ApiError::from_core(anyhow!(
+            "Composition diagnostic is missing from the portable API contract"
+        ))
+    })
 }
 
 #[derive(Deserialize)]
@@ -14842,19 +14850,30 @@ mod authentication_regression_tests {
     fn composition_lint_diagnostic_codes_match_the_domain_contract() -> anyhow::Result<()> {
         use ugoite_domain::composition::CompositionDiagnosticCode as DomainCode;
 
-        for domain in [
+        let domain_codes = [
             DomainCode::UnsupportedFormatVersion,
             DomainCode::InvalidComposition,
             DomainCode::ParameterUnknown,
             DomainCode::ParameterMissing,
             DomainCode::ParameterTypeMismatch,
             DomainCode::SourceUnavailable,
+            DomainCode::MissingForm,
+            DomainCode::SavedSqlRevisionMissing,
+            DomainCode::NotAuthorized,
             DomainCode::MissingField,
             DomainCode::FieldTypeChanged,
             DomainCode::SourceSchemaChanged,
             DomainCode::MetricFieldNotProjected,
-        ] {
-            let api = ApiCompositionDiagnosticCode::from_code(domain.as_str())
+            DomainCode::MetricResultNotScalar,
+            DomainCode::MetricResultTypeMismatch,
+            DomainCode::MetricResultEmpty,
+            DomainCode::MetricResultMultipleRows,
+            DomainCode::MetricResultColumnMissing,
+            DomainCode::MetricResultColumnAmbiguous,
+            DomainCode::MetricResultPageIncomplete,
+        ];
+        for domain in domain_codes {
+            let api = api_composition_diagnostic_code(domain)
                 .expect("domain diagnostic is represented by the portable API");
             assert_eq!(domain.as_str(), api.as_str());
             assert_eq!(serde_json::to_value(api)?, json!(domain.as_str()));
@@ -14878,6 +14897,52 @@ mod authentication_regression_tests {
             assert_eq!(api.as_str(), expected);
             assert_eq!(ApiCompositionDiagnosticCode::from_code(expected), Some(api));
             assert_eq!(serde_json::to_value(api)?, json!(expected));
+        }
+        let metric_codes = [
+            (
+                ApiCompositionDiagnosticCode::MetricResultNotScalar,
+                "metric_result_not_scalar",
+            ),
+            (
+                ApiCompositionDiagnosticCode::MetricResultTypeMismatch,
+                "metric_result_type_mismatch",
+            ),
+            (
+                ApiCompositionDiagnosticCode::MetricResultEmpty,
+                "metric_result_empty",
+            ),
+            (
+                ApiCompositionDiagnosticCode::MetricResultMultipleRows,
+                "metric_result_multiple_rows",
+            ),
+            (
+                ApiCompositionDiagnosticCode::MetricResultColumnMissing,
+                "metric_result_column_missing",
+            ),
+            (
+                ApiCompositionDiagnosticCode::MetricResultColumnAmbiguous,
+                "metric_result_column_ambiguous",
+            ),
+            (
+                ApiCompositionDiagnosticCode::MetricResultPageIncomplete,
+                "metric_result_page_incomplete",
+            ),
+        ];
+        for &(api, expected) in &metric_codes {
+            assert_eq!(api.as_str(), expected);
+            assert_eq!(ApiCompositionDiagnosticCode::from_code(expected), Some(api));
+            assert_eq!(serde_json::to_value(api)?, json!(expected));
+        }
+        let openapi = openapi_snapshot();
+        let openapi_codes = openapi["components"]["schemas"]["CompositionDiagnosticCode"]["enum"]
+            .as_array()
+            .expect("OpenAPI Composition diagnostic enum");
+        for domain in domain_codes {
+            let expected = domain.as_str();
+            assert!(
+                openapi_codes.contains(&json!(expected)),
+                "OpenAPI must publish Composition diagnostic code {expected}"
+            );
         }
         assert_eq!(
             ApiCompositionDiagnosticCode::from_code("unknown_diagnostic"),

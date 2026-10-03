@@ -2697,6 +2697,49 @@ mod tests {
             CompositionDiagnosticCode::SourceUnavailable.as_str(),
             "source_unavailable"
         );
+        for (code, expected) in [
+            (
+                CompositionDiagnosticCode::MetricResultNotScalar,
+                "metric_result_not_scalar",
+            ),
+            (
+                CompositionDiagnosticCode::MetricResultTypeMismatch,
+                "metric_result_type_mismatch",
+            ),
+            (
+                CompositionDiagnosticCode::MetricResultEmpty,
+                "metric_result_empty",
+            ),
+            (
+                CompositionDiagnosticCode::MetricResultMultipleRows,
+                "metric_result_multiple_rows",
+            ),
+            (
+                CompositionDiagnosticCode::MetricResultColumnMissing,
+                "metric_result_column_missing",
+            ),
+            (
+                CompositionDiagnosticCode::MetricResultColumnAmbiguous,
+                "metric_result_column_ambiguous",
+            ),
+            (
+                CompositionDiagnosticCode::MetricResultPageIncomplete,
+                "metric_result_page_incomplete",
+            ),
+        ] {
+            assert_eq!(code.as_str(), expected);
+            assert_eq!(CompositionDiagnosticCode::from_code(expected), Some(code));
+            let diagnostic = json!({"code": expected});
+            let diagnostic_dto: CompositionResolveResponse = serde_json::from_value(json!({
+                "ok": false,
+                "diagnostics": [diagnostic]
+            }))
+            .expect("metric diagnostic DTO");
+            assert_eq!(
+                serde_json::to_value(&diagnostic_dto).expect("serialize metric diagnostic DTO"),
+                json!({"ok": false, "diagnostics": [{"code": expected}]})
+            );
+        }
 
         let lint_success = json!({
             "ok": true,
