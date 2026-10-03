@@ -13,6 +13,8 @@ import {
   classifyNavigationFailure,
   isEnvironmentFailure,
   isProductFailure,
+  safeNetworkFailureCode,
+  safeNavigationFailure,
   shouldRetryEnvironmentFailure,
 } from "./security-context.ts";
 import {
@@ -23,6 +25,39 @@ import {
 const NETWORK_CHANGED = new Error(
   "page.goto: net::ERR_NETWORK_CHANGED at https://localhost/setup",
 );
+
+Deno.test("safe navigation failure summaries omit URLs and response bodies", () => {
+  const navigation = safeNavigationFailure(
+    new Error(
+      "page.goto: net::ERR_NETWORK_CHANGED at https://localhost/setup#secret=setup-secret",
+    ),
+  );
+  assert.equal(navigation, "ERR_NETWORK_CHANGED");
+  assert.equal(navigation.includes("setup-secret"), false);
+
+  const http = safeNavigationFailure(
+    new Error(
+      "navigation to https://localhost/setup#secret=setup-secret returned 503: recovery-code",
+    ),
+  );
+  assert.equal(http, "http-503");
+  assert.equal(http.includes("setup-secret"), false);
+  assert.equal(http.includes("recovery-code"), false);
+
+  const customName = new Error("recovery-secret");
+  customName.name = "setup-secret";
+  assert.equal(safeNavigationFailure(customName), "navigation-error");
+
+  const customCode = new Error(
+    "page.goto: net::ERR_SETUP_SECRET at https://localhost/setup#secret=recovery-secret",
+  );
+  assert.equal(safeNavigationFailure(customCode), "navigation-error");
+  assert.equal(safeNetworkFailureCode("net::ERR_SETUP_SECRET"), "request-failed");
+  assert.equal(
+    safeNetworkFailureCode("net::ERR_CONNECTION_RESET"),
+    "ERR_CONNECTION_RESET",
+  );
+});
 
 Deno.test("classifier: recognized environment errors earn one recovery", () => {
   for (

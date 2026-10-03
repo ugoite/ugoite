@@ -143,10 +143,96 @@ const STATIC_ASSET_PATTERNS = [
   "modulepreload",
 ];
 
+const SAFE_ERROR_NAMES = new Set([
+  "AbortError",
+  "ConstraintError",
+  "DataError",
+  "Error",
+  "EvalError",
+  "NetworkError",
+  "NotAllowedError",
+  "NotFoundError",
+  "OperationError",
+  "RangeError",
+  "ReferenceError",
+  "SecurityError",
+  "SyntaxError",
+  "TimeoutError",
+  "TypeError",
+  "URIError",
+]);
+
+const SAFE_NETWORK_FAILURE_CODES = new Set([
+  "ERR_ABORTED",
+  "ERR_ADDRESS_UNREACHABLE",
+  "ERR_BLOCKED_BY_CLIENT",
+  "ERR_CONNECTION_CLOSED",
+  "ERR_CONNECTION_REFUSED",
+  "ERR_CONNECTION_RESET",
+  "ERR_CONNECTION_TIMED_OUT",
+  "ERR_FAILED",
+  "ERR_INTERNET_DISCONNECTED",
+  "ERR_NAME_NOT_RESOLVED",
+  "ERR_NETWORK_CHANGED",
+  "ERR_NETWORK_IO_SUSPENDED",
+  "ERR_TIMED_OUT",
+  "NS_ERROR_CONNECTION_REFUSED",
+  "NS_ERROR_NET_RESET",
+  "NS_ERROR_NET_TIMEOUT",
+  "NS_ERROR_UNKNOWN_HOST",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ECONNCLOSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+]);
+
 function messageOf(error: unknown): string {
   return error instanceof Error
     ? `${error.message}\n${error.stack ?? ""}`
     : String(error);
+}
+
+/** Keep error-name diagnostics to platform categories; custom names may contain secrets. */
+export function safeErrorName(name: string): string {
+  return SAFE_ERROR_NAMES.has(name) ? name : "Error";
+}
+
+/** Map browser request failures to a fixed category rather than logging their text. */
+export function safeNetworkFailureCode(value: string | undefined): string {
+  const candidate = value?.match(/(?:^|[^A-Z0-9_])([A-Z][A-Z0-9_]+)(?:$|[^A-Z0-9_])/)
+    ?.[1];
+  return candidate && SAFE_NETWORK_FAILURE_CODES.has(candidate)
+    ? candidate
+    : "request-failed";
+}
+
+/** Return a bounded failure category suitable for logs that contain secrets. */
+export function safeNavigationFailure(error: unknown): string {
+  const message = messageOf(error);
+  const status = message.match(/\b(?:returned\s+|status:?\s*)([45]\d\d)\b/i)?.[1];
+  if (status) return `http-${status}`;
+
+  // Playwright's navigation text places the request URL after this prefix;
+  // never scan URL paths, queries, or fragments for a diagnostic category.
+  const errorPrefix = message.split(/https?:\/\//, 1)[0];
+  const code = [...SAFE_NETWORK_FAILURE_CODES].find((candidate) =>
+    errorPrefix.includes(candidate)
+  );
+  if (code) return code;
+
+  if (/timeout/i.test(message)) return "timeout";
+  const ceremonyError = message.match(
+    /\b(?:NotAllowedError|InvalidStateError|SecurityError|AbortError|ConstraintError)\b/,
+  )?.[0];
+  if (ceremonyError) return ceremonyError;
+  if (/did not become visible|readiness check failed/i.test(message)) {
+    return "readiness-failed";
+  }
+  if (error instanceof Error && safeErrorName(error.name) !== "Error") {
+    return safeErrorName(error.name);
+  }
+  return "navigation-error";
 }
 
 /** True when a failure is harness/environment noise, not an app verdict. */

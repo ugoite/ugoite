@@ -7,6 +7,7 @@ import type {
 import {
   classifyNavigationFailure,
   isEnvironmentFailure,
+  safeNavigationFailure,
   type DocumentProbe,
 } from "./security-context.ts";
 
@@ -137,10 +138,10 @@ export async function gotoWithOneEnvironmentRetry(
       // asset environment error earns the single rebuild. Everything else
       // that fails after load is an application verdict.
       if (classifyNavigationFailure(error, probe) === "retry") {
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = safeNavigationFailure(error);
         console.log(
           `[environment] ${label}: ready check hit an empty document with an asset failure; rebuilding the browser context once: ${
-            reason.slice(0, 500)
+            reason
           }`,
         );
         const second = await attempt();
@@ -157,10 +158,10 @@ export async function gotoWithOneEnvironmentRetry(
     return { target: first.target, page: first.page, retried: false };
   } catch (error) {
     if (classifyNavigationFailure(error) !== "retry") throw error;
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = safeNavigationFailure(error);
     console.log(
       `[environment] ${label}: initial navigation hit a browser-level failure; rebuilding the browser context once: ${
-        reason.slice(0, 500)
+        reason
       }`,
     );
     // The second attempt throws through: exactly one rebuild is allowed.
@@ -226,10 +227,10 @@ export async function gotoPageWithOneEnvironmentRetry(
   } catch (error) {
     observingNavigation = false;
     if (classifyNavigationFailure(error) !== "retry") throw error;
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = safeNavigationFailure(error);
     console.log(
       `[environment] ${label}: navigation hit a browser-level failure; retrying once on the same page: ${
-        reason.slice(0, 500)
+        reason
       }`,
     );
     assetErrors.length = 0;
@@ -250,10 +251,10 @@ export async function gotoPageWithOneEnvironmentRetry(
     ) {
       throw error;
     }
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = safeNavigationFailure(error);
     console.log(
       `[environment] ${label}: ready check hit a failed frontend asset; retrying once on the same page: ${
-        reason.slice(0, 500)
+        reason
       }`,
     );
     assetErrors.length = 0;
