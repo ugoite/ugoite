@@ -428,6 +428,7 @@ pub enum CompositionDiagnosticCode {
     MissingField,
     FieldTypeChanged,
     SourceSchemaChanged,
+    MetricFieldNotProjected,
 }
 
 impl CompositionDiagnosticCode {
@@ -445,6 +446,7 @@ impl CompositionDiagnosticCode {
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
             Self::SourceSchemaChanged => "source_schema_changed",
+            Self::MetricFieldNotProjected => "metric_field_not_projected",
         }
     }
 }
@@ -700,6 +702,10 @@ mod tests {
             (
                 CompositionDiagnosticCode::SourceSchemaChanged,
                 "source_schema_changed",
+            ),
+            (
+                CompositionDiagnosticCode::MetricFieldNotProjected,
+                "metric_field_not_projected",
             ),
         ];
 

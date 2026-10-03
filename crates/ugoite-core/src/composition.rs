@@ -244,7 +244,7 @@ pub fn compile_entry_query_source(
     bindings: &ParameterBindings,
     current_form: &FormDefinition,
 ) -> Result<CompiledEntryQuery, Vec<CompositionDiagnostic>> {
-    compile_entry_query_source_with_required_fields(
+    compile_entry_query_source_with_metric_fields(
         form_id,
         field_schema,
         template,
@@ -254,13 +254,13 @@ pub fn compile_entry_query_source(
     )
 }
 
-fn compile_entry_query_source_with_required_fields(
+fn compile_entry_query_source_with_metric_fields(
     form_id: FormId,
     field_schema: &[CompositionFieldSchemaEntry],
     template: &EntryQueryTemplate,
     bindings: &ParameterBindings,
     current_form: &FormDefinition,
-    required_fields: &[FieldId],
+    metric_fields: &[FieldId],
 ) -> Result<CompiledEntryQuery, Vec<CompositionDiagnostic>> {
     if current_form.id != form_id || current_form.validate().is_err() {
         return Err(vec![CompositionDiagnostic::without_parameter(
@@ -341,16 +341,7 @@ fn compile_entry_query_source_with_required_fields(
     };
     let preview_requested = matches!(template.projection, EntryQueryProjectionTemplate::Preview);
     let projection = match &template.projection {
-        EntryQueryProjectionTemplate::Preview if required_fields.is_empty() => {
-            EntryProjection::Preview
-        }
-        EntryQueryProjectionTemplate::Preview => EntryProjection::Fields {
-            fields: current_form
-                .fields
-                .iter()
-                .map(|field| EntryFieldRef::Property { field_id: field.id })
-                .collect(),
-        },
+        EntryQueryProjectionTemplate::Preview => EntryProjection::Preview,
         EntryQueryProjectionTemplate::Fields { fields } => EntryProjection::Fields {
             fields: fields
                 .iter()
@@ -359,17 +350,6 @@ fn compile_entry_query_source_with_required_fields(
                 .collect(),
         },
     };
-    let mut projection = projection;
-    if let EntryProjection::Fields { fields } = &mut projection {
-        for field_id in required_fields {
-            let field = EntryFieldRef::Property {
-                field_id: *field_id,
-            };
-            if !fields.contains(&field) {
-                fields.push(field);
-            }
-        }
-    }
     let request = EntryPageRequest {
         query,
         projection,
@@ -380,6 +360,24 @@ fn compile_entry_query_source_with_required_fields(
         return Err(vec![CompositionDiagnostic::without_parameter(
             CompositionDiagnosticCode::InvalidComposition,
         )]);
+    }
+
+    if !metric_fields.is_empty() {
+        let projected_fields = match &request.projection {
+            EntryProjection::Preview => None,
+            EntryProjection::Fields { fields } => Some(fields),
+        };
+        if metric_fields.iter().any(|metric_field| {
+            !projected_fields.is_some_and(|fields| {
+                fields.contains(&EntryFieldRef::Property {
+                    field_id: *metric_field,
+                })
+            })
+        }) {
+            return Err(vec![CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::MetricFieldNotProjected,
+            )]);
+        }
     }
 
     let current_by_id = current_form
@@ -406,8 +404,6 @@ fn compile_entry_query_source_with_required_fields(
             EntryFieldRef::Form | EntryFieldRef::CreatedAt | EntryFieldRef::UpdatedAt => None,
         }));
     }
-    explicit_fields.extend(required_fields.iter().copied());
-
     let text_fields = request
         .query
         .text
@@ -902,7 +898,7 @@ pub fn resolve_composition(
                     current_form: Some(current_form),
                     ..
                 }),
-            ) => match compile_entry_query_source_with_required_fields(
+            ) => match compile_entry_query_source_with_metric_fields(
                 *form_id,
                 field_schema,
                 query,
@@ -1152,12 +1148,12 @@ fn wall_timestamp_nanos_are_representable(timestamp: NaiveDateTime) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        bind_parameters, compile_entry_query_source,
-        compile_entry_query_source_with_required_fields, compile_saved_sql_source,
-        resolve_composition, resolve_value_template, CompositionDiagnostic, CompositionRevisionRef,
-        CurrentSourceDescriptor, ParameterBindings, ResolveInput, ResolvedSourceRequest,
-        SavedSqlRevisionMetadata,
+        bind_parameters, compile_entry_query_source, compile_entry_query_source_with_metric_fields,
+        compile_saved_sql_source, resolve_composition, resolve_value_template,
+        CompositionDiagnostic, CompositionRevisionRef, CurrentSourceDescriptor, ParameterBindings,
+        ResolveInput, ResolvedSourceRequest, SavedSqlRevisionMetadata,
     };
+    use crate::entry_query::EntryFieldRef;
     use serde_json::{json, Value};
     use std::collections::BTreeMap;
     use ugoite_domain::composition::{
@@ -1667,7 +1663,7 @@ mod tests {
     }
 
     #[test]
-    fn required_metric_fields_extend_projection_and_schema_fingerprint() {
+    fn metric_fields_preserve_the_source_projection_and_fingerprint() {
         let form = form(&[
             (100, FieldType::String),
             (101, FieldType::Integer),
@@ -1688,53 +1684,50 @@ mod tests {
             &form,
         )
         .expect("the declared query projection compiles");
-        let with_metric = compile_entry_query_source_with_required_fields(
+        let with_metric = compile_entry_query_source_with_metric_fields(
             form.id,
             &schema(&form),
             &template,
             &empty_bindings(),
             &form,
-            &[FieldId::new(102).unwrap()],
+            &[FieldId::new(101).unwrap()],
         )
-        .expect("the metric field is included in the bounded query");
+        .expect("a metric may use a field already selected by its source");
 
+        assert_eq!(with_metric.request, original.request);
         assert_eq!(
-            with_metric.request.projection,
-            crate::entry_query::EntryProjection::Fields {
-                fields: vec![
-                    crate::entry_query::EntryFieldRef::Property {
-                        field_id: FieldId::new(100).unwrap(),
-                    },
-                    crate::entry_query::EntryFieldRef::Property {
-                        field_id: FieldId::new(101).unwrap(),
-                    },
-                    crate::entry_query::EntryFieldRef::Property {
-                        field_id: FieldId::new(102).unwrap(),
-                    },
-                ],
-            }
-        );
-        assert_ne!(
             with_metric.source_schema_fingerprint,
             original.source_schema_fingerprint
         );
         assert_eq!(
             with_metric.source_schema_fingerprint,
-            compile_entry_query_source_with_required_fields(
+            compile_entry_query_source_with_metric_fields(
+                form.id,
+                &schema(&form),
+                &template,
+                &empty_bindings(),
+                &form,
+                &[FieldId::new(101).unwrap()],
+            )
+            .expect("repeated resolution has the same fingerprint")
+            .source_schema_fingerprint
+        );
+
+        assert_eq!(
+            diagnostic_codes(compile_entry_query_source_with_metric_fields(
                 form.id,
                 &schema(&form),
                 &template,
                 &empty_bindings(),
                 &form,
                 &[FieldId::new(102).unwrap()],
-            )
-            .expect("repeated resolution has the same fingerprint")
-            .source_schema_fingerprint
+            )),
+            [CompositionDiagnosticCode::MetricFieldNotProjected]
         );
     }
 
     #[test]
-    fn required_metric_field_turns_preview_into_a_bounded_field_projection() {
+    fn metric_field_does_not_rewrite_a_preview_projection() {
         let form = form(&[(100, FieldType::String), (101, FieldType::Double)]);
         let template = empty_entry_query_template();
         let preview = compile_entry_query_source(
@@ -1745,7 +1738,7 @@ mod tests {
             &form,
         )
         .expect("preview compiles without a metric");
-        let with_metric = compile_entry_query_source_with_required_fields(
+        let with_metric = compile_entry_query_source_with_metric_fields(
             form.id,
             &schema(&form),
             &template,
@@ -1753,34 +1746,28 @@ mod tests {
             &form,
             &[FieldId::new(101).unwrap()],
         )
-        .expect("preview projects fields when a metric needs a scalar");
+        .expect_err("Preview does not promise a scalar metric field");
 
         assert_eq!(
-            with_metric.request.projection,
-            crate::entry_query::EntryProjection::Fields {
-                fields: vec![
-                    crate::entry_query::EntryFieldRef::Property {
-                        field_id: FieldId::new(100).unwrap(),
-                    },
-                    crate::entry_query::EntryFieldRef::Property {
-                        field_id: FieldId::new(101).unwrap(),
-                    },
-                ],
-            }
+            preview.request.projection,
+            crate::entry_query::EntryProjection::Preview
         );
         assert_eq!(
-            with_metric.source_schema_fingerprint,
-            preview.source_schema_fingerprint
+            with_metric
+                .iter()
+                .map(|diagnostic| diagnostic.code)
+                .collect::<Vec<_>>(),
+            [CompositionDiagnosticCode::MetricFieldNotProjected]
         );
     }
 
     #[test]
-    fn required_metric_fields_cannot_exceed_the_entry_query_projection_limit() {
+    fn metric_fields_do_not_expand_the_entry_query_projection_limit() {
         let fields = (100..=164)
             .map(|id| (id, FieldType::String))
             .collect::<Vec<_>>();
         let form = form(&fields);
-        let template = EntryQueryTemplate {
+        let bounded_template = EntryQueryTemplate {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: (100..164).map(|id| FieldId::new(id).unwrap()).collect(),
             },
@@ -1788,15 +1775,32 @@ mod tests {
         };
 
         assert_eq!(
-            diagnostic_codes(compile_entry_query_source_with_required_fields(
+            diagnostic_codes(compile_entry_query_source_with_metric_fields(
                 form.id,
                 &schema(&form),
-                &template,
+                &bounded_template,
                 &empty_bindings(),
                 &form,
                 &[FieldId::new(164).unwrap()],
             )),
-            vec![CompositionDiagnosticCode::InvalidComposition]
+            [CompositionDiagnosticCode::MetricFieldNotProjected]
+        );
+
+        let over_limit_template = EntryQueryTemplate {
+            projection: EntryQueryProjectionTemplate::Fields {
+                fields: (100..=164).map(|id| FieldId::new(id).unwrap()).collect(),
+            },
+            ..empty_entry_query_template()
+        };
+        assert_eq!(
+            diagnostic_codes(compile_entry_query_source(
+                form.id,
+                &schema(&form),
+                &over_limit_template,
+                &empty_bindings(),
+                &form,
+            )),
+            [CompositionDiagnosticCode::InvalidComposition]
         );
     }
 
@@ -2771,7 +2775,7 @@ mod tests {
             &current_form,
             EntryQueryTemplate {
                 projection: EntryQueryProjectionTemplate::Fields {
-                    fields: vec![FieldId::new(100).unwrap()],
+                    fields: vec![FieldId::new(100).unwrap(), FieldId::new(101).unwrap()],
                 },
                 ..empty_entry_query_template()
             },
@@ -2854,6 +2858,22 @@ mod tests {
             Some("total")
         );
         assert_eq!(plan.component_bindings[1].source_id, "entries");
+        let ResolvedSourceRequest::EntryQuery { request, .. } = &plan.sources[0] else {
+            panic!("the first source is the declared EntryQuery source");
+        };
+        assert_eq!(
+            request.projection,
+            crate::entry_query::EntryProjection::Fields {
+                fields: vec![
+                    EntryFieldRef::Property {
+                        field_id: FieldId::new(100).unwrap(),
+                    },
+                    EntryFieldRef::Property {
+                        field_id: FieldId::new(101).unwrap(),
+                    },
+                ],
+            }
+        );
         assert_eq!(
             plan.component_bindings[1].metric_field_id,
             Some(FieldId::new(101).unwrap())
@@ -3053,7 +3073,12 @@ mod tests {
             vec![entry_query_source(
                 "entries",
                 &saved_form,
-                empty_entry_query_template(),
+                EntryQueryTemplate {
+                    projection: EntryQueryProjectionTemplate::Fields {
+                        fields: vec![FieldId::new(101).unwrap()],
+                    },
+                    ..empty_entry_query_template()
+                },
             )],
         );
         spec.components = vec![CompositionComponent::Metric {
@@ -3082,22 +3107,19 @@ mod tests {
             parameters: &BTreeMap::new(),
             current_sources: &current_sources,
         })
-        .expect_err("a missing metric field cannot bind an EntryQuery projection");
+        .expect_err("a missing projected metric field cannot produce a partial plan");
 
         assert_eq!(
             diagnostics
                 .into_iter()
                 .map(|diagnostic| diagnostic.code)
                 .collect::<Vec<_>>(),
-            [
-                CompositionDiagnosticCode::MissingField,
-                CompositionDiagnosticCode::SourceSchemaChanged,
-            ]
+            [CompositionDiagnosticCode::MissingField]
         );
     }
 
     #[test]
-    fn entry_query_metric_requires_its_field_in_the_source_schema_snapshot() {
+    fn unprojected_entry_query_metric_reports_a_stable_diagnostic() {
         let current_form = form(&[(100, FieldType::String), (101, FieldType::Integer)]);
         let mut query_schema = schema(&current_form);
         query_schema.retain(|field| field.field_id == FieldId::new(100).unwrap());
@@ -3139,14 +3161,14 @@ mod tests {
             parameters: &BTreeMap::new(),
             current_sources: &current_sources,
         })
-        .expect_err("metric-only fields belong to the source schema snapshot");
+        .expect_err("the metric cannot change the EntryQuery projection");
 
         assert_eq!(
             diagnostics
                 .into_iter()
                 .map(|diagnostic| diagnostic.code)
                 .collect::<Vec<_>>(),
-            [CompositionDiagnosticCode::SourceSchemaChanged]
+            [CompositionDiagnosticCode::MetricFieldNotProjected]
         );
     }
 
@@ -3159,7 +3181,12 @@ mod tests {
             vec![entry_query_source(
                 "entries",
                 &saved_form,
-                empty_entry_query_template(),
+                EntryQueryTemplate {
+                    projection: EntryQueryProjectionTemplate::Fields {
+                        fields: vec![FieldId::new(101).unwrap()],
+                    },
+                    ..empty_entry_query_template()
+                },
             )],
         );
         spec.components = vec![CompositionComponent::Metric {

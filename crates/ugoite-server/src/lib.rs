@@ -14922,6 +14922,7 @@ mod authentication_regression_tests {
             DomainCode::MissingField,
             DomainCode::FieldTypeChanged,
             DomainCode::SourceSchemaChanged,
+            DomainCode::MetricFieldNotProjected,
         ] {
             let api = ApiCompositionDiagnosticCode::from_code(domain.as_str())
                 .expect("domain diagnostic is represented by the portable API");
@@ -14931,6 +14932,10 @@ mod authentication_regression_tests {
 
         for (api, expected) in [
             (ApiCompositionDiagnosticCode::MissingForm, "missing_form"),
+            (
+                ApiCompositionDiagnosticCode::MetricFieldNotProjected,
+                "metric_field_not_projected",
+            ),
             (
                 ApiCompositionDiagnosticCode::SavedSqlRevisionMissing,
                 "saved_sql_revision_missing",

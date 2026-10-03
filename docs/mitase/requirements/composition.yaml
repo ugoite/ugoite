@@ -55,11 +55,12 @@ requirements:
         kind: behavior
         statement: >-
           An entry_query source records a FieldId and FieldType snapshot for
-          property fields used by its filters, sort, explicit projection, and
-          any EntryQuery metric component bound to it; a preview projection
-          records all current property fields returned by preview. A metric
-          field is included even when the query template does not otherwise use
-          it. The snapshot includes List item and RowReference target
+          property fields used by its filters, sort, and projection; a preview
+          projection records all current property fields returned by preview.
+          An EntryQuery metric must reference a field in an explicit source
+          projection and never widens the source query. Preview does not promise
+          a scalar result field for a metric. The snapshot includes List item
+          and RowReference target
           metadata when present. When text search is present, it also includes
           every text-searchable property field under existing EntryQuery
           semantics, excluding binary, list, object_list, and asset_reference
@@ -100,11 +101,12 @@ requirements:
           FormId and normalized used-field schema snapshot from
           REQ-COMP-002#criterion.used-field-schema-snapshot: explicitly used
           filter, sort, and projection fields (or all property fields returned
-          by preview), the FieldId used by any bound EntryQuery metric, plus
-          the fields searched under existing EntryQuery
+          by preview), plus the fields searched under existing EntryQuery
           text-search semantics when text is present. The snapshot includes
           field IDs and types with typed List item and RowReference target
-          metadata; unrelated fields, labels, and other Composition document
+          metadata. A metric field contributes only when the source projection
+          already includes it; a component never changes the query or its
+          fingerprint. Unrelated fields, labels, and other Composition document
           content are excluded from this fingerprint.
         governed_by: [POL-007#rule.governance]
       - id: exact-saved-sql-revision

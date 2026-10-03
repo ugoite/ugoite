@@ -1365,6 +1365,7 @@ fn openapi_documents_composition_lint_request_response_and_diagnostics() {
             "missing_field",
             "field_type_changed",
             "source_schema_changed",
+            "metric_field_not_projected",
             "saved_sql_revision_missing",
             "not_authorized"
         ])
