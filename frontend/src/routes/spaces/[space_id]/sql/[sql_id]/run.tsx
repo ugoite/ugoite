@@ -101,6 +101,7 @@ export default function SpaceSqlRunRoute() {
   const [saveError, setSaveError] = createSignal<string | null>(null);
   let saveSeed: {
     spaceId: string;
+    routePath: string;
     entry: SqlEntry;
     columns: string[];
     parameters: Record<string, unknown>;
@@ -108,6 +109,7 @@ export default function SpaceSqlRunRoute() {
   let pendingSave: {
     spaceId: string;
     sqlId: string;
+    routePath: string;
     yaml: string;
     idempotencyKey: string;
   } | undefined;
@@ -325,6 +327,7 @@ export default function SpaceSqlRunRoute() {
     if (!current || !result) return;
     saveSeed = {
       spaceId: spaceId(),
+      routePath: location.pathname,
       entry: current,
       columns: [...result.columns],
       parameters: { ...(state().parameters ?? {}) },
@@ -335,9 +338,24 @@ export default function SpaceSqlRunRoute() {
     setSaveDialogOpen(true);
   };
 
+  const isCurrentSaveRoute = (attempt: {
+    spaceId: string;
+    sqlId: string;
+    routePath: string;
+  }) =>
+    spaceId() === attempt.spaceId && sqlId() === attempt.sqlId &&
+    location.pathname === attempt.routePath;
+
+  const clearSaveForStaleRoute = () => {
+    setSaveDialogOpen(false);
+    setSaveRetryAvailable(false);
+    pendingSave = undefined;
+  };
+
   const saveRequest = async (attempt: {
     spaceId: string;
     sqlId: string;
+    routePath: string;
     yaml: string;
     idempotencyKey: string;
   }) => {
@@ -347,10 +365,8 @@ export default function SpaceSqlRunRoute() {
         attempt.yaml,
         attempt.idempotencyKey,
       );
-      if (spaceId() !== attempt.spaceId || sqlId() !== attempt.sqlId) {
-        setSaveDialogOpen(false);
-        setSaveRetryAvailable(false);
-        pendingSave = undefined;
+      if (!isCurrentSaveRoute(attempt)) {
+        clearSaveForStaleRoute();
         return;
       }
       navigate(
@@ -359,6 +375,10 @@ export default function SpaceSqlRunRoute() {
         }/${encodeURIComponent(response.revision_id)}`,
       );
     } catch (error) {
+      if (!isCurrentSaveRoute(attempt)) {
+        clearSaveForStaleRoute();
+        return;
+      }
       const outcome = error && typeof error === "object" &&
           "mutationOutcome" in error
         ? (error as { mutationOutcome?: unknown }).mutationOutcome
@@ -383,9 +403,14 @@ export default function SpaceSqlRunRoute() {
         seed.parameters,
       );
       const canonical = await compositionApi.canonicalizeDocument(document);
+      if (location.pathname !== seed.routePath) {
+        clearSaveForStaleRoute();
+        return;
+      }
       pendingSave = {
         spaceId: seed.spaceId,
         sqlId: seed.entry.id,
+        routePath: seed.routePath,
         yaml: canonical.canonical_yaml,
         idempotencyKey: crypto.randomUUID(),
       };

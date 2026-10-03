@@ -25,6 +25,7 @@ const {
 const routeControls = vi.hoisted(() => ({
   setSpace: (_spaceId: string) => {},
   setSql: (_sqlId: string) => {},
+  setPath: (_path: string) => {},
   setState: (_state: unknown) => {},
 }));
 
@@ -32,15 +33,22 @@ vi.mock("@solidjs/router", async () => {
   const { createSignal } = await import("solid-js");
   const [spaceId, setSpace] = createSignal("default");
   const [sqlId, setSql] = createSignal("saved-query");
+  const [path, setPath] = createSignal(
+    "/spaces/default/sql/saved-query/run",
+  );
   const [state, setState] = createSignal<unknown>(undefined);
   routeControls.setSpace = setSpace;
   routeControls.setSql = setSql;
+  routeControls.setPath = setPath;
   routeControls.setState = setState;
   return {
     A: (props: { href: string; class?: string; children: unknown }) => (
       <a href={props.href} class={props.class}>{props.children}</a>
     ),
     useLocation: () => ({
+      get pathname() {
+        return path();
+      },
       get state() {
         return state();
       },
@@ -75,6 +83,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
   beforeEach(() => {
     routeControls.setSpace("default");
     routeControls.setSql("saved-query");
+    routeControls.setPath("/spaces/default/sql/saved-query/run");
     routeControls.setState(undefined);
     navigateMock.mockReset();
     getMock.mockReset();
@@ -304,6 +313,49 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     await screen.findByRole("alert");
     expect(screen.queryByRole("button", { name: "Save as tool" }))
       .not.toBeInTheDocument();
+  });
+
+  it("does not navigate after a save resolves off the run route", async () => {
+    let resolveSave:
+      | ((value: Awaited<ReturnType<typeof compositionApi.save>>) => void)
+      | undefined;
+    compositionSaveMock.mockImplementationOnce(() =>
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      })
+    );
+    render(() => <SpaceSqlRunRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save as tool" }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Save as tool" }))
+        .getByRole("button", { name: "Save" }),
+    );
+    await waitFor(() => expect(compositionSaveMock).toHaveBeenCalledTimes(1));
+
+    routeControls.setPath("/spaces/default/sql/saved-query");
+    resolveSave?.({
+      composition_id: "tool-1",
+      revision_id: "tool-revision-3",
+      canonical_yaml: "canonical composition yaml",
+      receipt: {
+        command_id: "command-1",
+        catalog_generation: 4,
+        snapshot_id: "snapshot-1",
+        committed_revision_ids: ["tool-revision-3"],
+        committed_at_micros: 1,
+        data_file_count: 1,
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Save as tool" }),
+      ).not.toBeInTheDocument()
+    );
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("aborts the old Space page request and never renders its late response", async () => {
