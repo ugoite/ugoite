@@ -643,6 +643,121 @@ pub struct SpaceCommitCoordinator {
     validation_gate: Option<Arc<TestValidationGate>>,
 }
 
+/// A private proof that an exact revision batch is allowed to reach the shared
+/// publication boundary. Generic callers carry no Composition authority;
+/// Composition authority is minted only after validating the canonical
+/// carrier, then rechecked against the exact batch immediately before append.
+#[derive(Debug)]
+enum RevisionBatchAdmission {
+    GenericEntry,
+    Composition {
+        form_id: FormId,
+        fingerprint: [u8; 32],
+    },
+    #[cfg(test)]
+    RawCompositionFixture {
+        form_id: FormId,
+        fingerprint: [u8; 32],
+    },
+}
+
+impl RevisionBatchAdmission {
+    fn composition(form: &FormDefinition, revisions: &[EntryRevision]) -> Result<Self> {
+        crate::composition::validate_composition_registry_form(form)?;
+        if revisions.is_empty() {
+            return Err(composition_admission_conflict(
+                "a Composition publication batch cannot be empty",
+            ));
+        }
+        for revision in revisions {
+            crate::composition::validate_composition_revision(revision, form)?;
+        }
+        Ok(Self::Composition {
+            form_id: form.id,
+            fingerprint: revision_batch_fingerprint(form.id, revisions)?,
+        })
+    }
+
+    #[cfg(test)]
+    fn raw_composition_fixture(form: &FormDefinition, revisions: &[EntryRevision]) -> Result<Self> {
+        crate::composition::validate_composition_registry_form(form)?;
+        Ok(Self::RawCompositionFixture {
+            form_id: form.id,
+            fingerprint: revision_batch_fingerprint(form.id, revisions)?,
+        })
+    }
+
+    fn recheck(
+        &self,
+        form_id: FormId,
+        revisions: &[EntryRevision],
+        form: &FormDefinition,
+    ) -> Result<()> {
+        if form.id != form_id || revisions.iter().any(|revision| revision.form_id != form_id) {
+            return Err(composition_admission_conflict(
+                "the publication batch does not match its admitted Form",
+            ));
+        }
+
+        match self {
+            Self::GenericEntry => {
+                crate::composition::ensure_generic_entry_write_allowed(&form.name)
+            }
+            Self::Composition {
+                form_id: admitted_form_id,
+                fingerprint,
+            } => {
+                if *admitted_form_id != form_id {
+                    return Err(composition_admission_conflict(
+                        "Composition admission is bound to another Form",
+                    ));
+                }
+                crate::composition::validate_composition_registry_form(form)?;
+                for revision in revisions {
+                    crate::composition::validate_composition_revision(revision, form)?;
+                }
+                if revision_batch_fingerprint(form_id, revisions)? != *fingerprint {
+                    return Err(composition_admission_conflict(
+                        "Composition revision batch changed after admission",
+                    ));
+                }
+                Ok(())
+            }
+            #[cfg(test)]
+            Self::RawCompositionFixture {
+                form_id: admitted_form_id,
+                fingerprint,
+            } => {
+                if *admitted_form_id != form_id {
+                    return Err(composition_admission_conflict(
+                        "raw Composition fixture admission is bound to another Form",
+                    ));
+                }
+                crate::composition::validate_composition_registry_form(form)?;
+                if revision_batch_fingerprint(form_id, revisions)? != *fingerprint {
+                    return Err(composition_admission_conflict(
+                        "raw Composition fixture batch changed after admission",
+                    ));
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+fn revision_batch_fingerprint(form_id: FormId, revisions: &[EntryRevision]) -> Result<[u8; 32]> {
+    let bytes = serde_json::to_vec(&(form_id, revisions))?;
+    Ok(Sha256::digest(bytes).into())
+}
+
+fn composition_admission_conflict(reason: &str) -> anyhow::Error {
+    AppError::conflict(
+        ErrorCode::CompositionRegistryConflict,
+        format!("composition_registry_conflict: {reason}"),
+    )
+    .into()
+}
+
 /// Debug-only synchronization used by the deterministic publication race
 /// tests. It is absent from release builds and cannot affect production
 /// scheduling or persistence.
@@ -3363,10 +3478,13 @@ impl SpaceCommitCoordinator {
         revisions: Vec<EntryRevision>,
         relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     ) -> Result<CommitReceipt> {
-        let form = self.workspace.load_form(form_id).await?;
-        crate::composition::ensure_generic_entry_write_allowed(&form.name)?;
-        self.append_revisions_authorized_inner(form_id, revisions, relation_scopes)
-            .await
+        self.append_revisions_authorized_inner(
+            form_id,
+            revisions,
+            relation_scopes,
+            RevisionBatchAdmission::GenericEntry,
+        )
+        .await
     }
 
     /// Append one Composition revision through the reserved Registry after
@@ -3376,10 +3494,10 @@ impl SpaceCommitCoordinator {
         &self,
         revision: EntryRevision,
     ) -> Result<CommitReceipt> {
-        self.ensure_authoritative_mutation_contract()?;
         let form = self.workspace.load_form(revision.form_id).await?;
-        crate::composition::validate_composition_revision(&revision, &form)?;
-        self.append_revisions_authorized_inner(revision.form_id, vec![revision], None)
+        let revisions = vec![revision];
+        let admission = RevisionBatchAdmission::composition(&form, &revisions)?;
+        self.append_revisions_authorized_inner(revisions[0].form_id, revisions, None, admission)
             .await
     }
 
@@ -3394,8 +3512,8 @@ impl SpaceCommitCoordinator {
         relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     ) -> Result<CommitReceipt> {
         let form = self.workspace.load_form(form_id).await?;
-        crate::composition::validate_composition_registry_form(&form)?;
-        self.append_revisions_authorized_inner(form_id, revisions, relation_scopes)
+        let admission = RevisionBatchAdmission::raw_composition_fixture(&form, &revisions)?;
+        self.append_revisions_authorized_inner(form_id, revisions, relation_scopes, admission)
             .await
     }
 
@@ -3404,8 +3522,11 @@ impl SpaceCommitCoordinator {
         form_id: FormId,
         revisions: Vec<EntryRevision>,
         relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+        admission: RevisionBatchAdmission,
     ) -> Result<CommitReceipt> {
         self.ensure_authoritative_mutation_contract()?;
+        let form = self.workspace.load_form(form_id).await?;
+        admission.recheck(form_id, &revisions, &form)?;
         if self.publication.change.is_some()
             && revisions
                 .iter()
@@ -3455,6 +3576,8 @@ impl SpaceCommitCoordinator {
                 });
             }
             let attempt = self.attempt_workspace().await?;
+            let attempt_form = attempt.load_form(form_id).await?;
+            admission.recheck(form_id, &revisions, &attempt_form)?;
             let recovered = match attempt.recover_existing_publication().await {
                 Ok(recovered) => recovered,
                 Err(error) if is_publication_conflict(&error) => continue,
@@ -3505,6 +3628,8 @@ impl SpaceCommitCoordinator {
             if let Some(gate) = &self.validation_gate {
                 gate.pause().await;
             }
+            let attempt_form = attempt.load_form(form_id).await?;
+            admission.recheck(form_id, &revisions, &attempt_form)?;
             let mut receipt = match attempt.append_revisions(form_id, revisions.clone()).await {
                 Ok(receipt) => receipt,
                 Err(error) if is_publication_conflict(&error) => continue,

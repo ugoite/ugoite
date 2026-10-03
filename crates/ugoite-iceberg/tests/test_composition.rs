@@ -406,6 +406,274 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
 }
 
 #[tokio::test]
+async fn composition_restore_appends_exact_historical_revision_with_receipt() -> anyhow::Result<()>
+{
+    let service = UgoiteService::new(format!(
+        "memory://composition-restore-authorized-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-restore-authorized", owner, "Owner")
+        .await?
+        .to_string();
+    let mut original = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    original.tags = vec!["original".to_string()];
+    let created = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: original.clone(),
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let mut changed = original.clone();
+    changed.name = "Changed after original".to_string();
+    changed.tags = vec!["changed".to_string()];
+    let updated = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(created.entry_id),
+                base_revision_id: Some(created.revision_id),
+                document: changed,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+
+    let restored = service
+        .restore_composition_authorized_for_principals(
+            &space_id,
+            &created.entry_id.to_string(),
+            &created.revision_id.to_string(),
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+
+    assert_eq!(restored.entry_id, created.entry_id);
+    assert_ne!(restored.revision_id, created.revision_id);
+    assert_eq!(restored.restored_from_revision_id, created.revision_id);
+    assert_eq!(restored.document, original);
+    assert_eq!(
+        restored.receipt.committed_revision_ids,
+        [restored.revision_id]
+    );
+    assert_eq!(restored.receipt.command_id.len(), 36);
+    let current = service
+        .get_composition_raw_authorized_for_principals(
+            &space_id,
+            &created.entry_id.to_string(),
+            &[owner],
+        )
+        .await?;
+    assert_eq!(current.revision.revision_id, restored.revision_id);
+    assert_eq!(
+        current.revision.parent_revision_id,
+        Some(updated.revision_id)
+    );
+    assert_eq!(
+        current.revision.operation,
+        ugoite_domain::entry::EntryOperation::Restore
+    );
+    assert_eq!(
+        current.revision.entry.restored_from,
+        Some(created.revision_id)
+    );
+    assert_eq!(
+        current.revision.source_id.as_deref(),
+        Some(created.revision_id.to_string().as_str())
+    );
+    assert_eq!(current.revision.entry.tags, restored.document.tags);
+    let history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &created.entry_id.to_string(),
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(history.total, 3);
+    assert_eq!(
+        history.revisions.last().unwrap().revision.revision_id,
+        restored.revision_id
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn denied_composition_restore_and_missing_source_leave_history_unchanged(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(
+        op.clone(),
+        format!("memory://composition-restore-denied-{}", Uuid::now_v7()),
+    );
+    let owner = Uuid::now_v7();
+    let viewer = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-restore-denied", owner, "Owner")
+        .await?
+        .to_string();
+    Authorizer::new(op)
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let created = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: document.clone(),
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let updated = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(created.entry_id),
+                base_revision_id: Some(created.revision_id),
+                document,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+
+    let denied = service
+        .restore_composition_authorized_for_principals(
+            &space_id,
+            &created.entry_id.to_string(),
+            &created.revision_id.to_string(),
+            &viewer.to_string(),
+            &[viewer],
+        )
+        .await
+        .expect_err("a viewer cannot restore a Composition");
+    assert_eq!(
+        denied.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::Forbidden
+    );
+    let missing = service
+        .restore_composition_authorized_for_principals(
+            &space_id,
+            &created.entry_id.to_string(),
+            &Uuid::now_v7().to_string(),
+            &owner.to_string(),
+            &[owner],
+        )
+        .await
+        .expect_err("restore never falls back when an exact source is missing");
+    assert_eq!(
+        missing.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::EntryNotFound
+    );
+    let history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &created.entry_id.to_string(),
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(history.total, 2);
+    assert_eq!(
+        history.revisions.last().unwrap().revision.revision_id,
+        updated.revision_id
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_composition_restore_uses_an_append_only_revision() -> anyhow::Result<()> {
+    let service = UgoiteService::new(format!(
+        "memory://composition-restore-local-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-restore-local", owner, "Owner")
+        .await?
+        .to_string();
+    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let created = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: document.clone(),
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let mut changed = document;
+    changed.name = "Local restore current state".to_string();
+    let updated = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(created.entry_id),
+                base_revision_id: Some(created.revision_id),
+                document: changed,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+
+    let restored = service
+        .restore_composition_local(
+            &space_id,
+            &created.entry_id.to_string(),
+            &created.revision_id.to_string(),
+            &owner.to_string(),
+        )
+        .await?;
+    assert_eq!(restored.document, created.document);
+    let latest = service
+        .get_composition_raw_local(&space_id, &created.entry_id.to_string())
+        .await?;
+    assert_eq!(latest.revision.revision_id, restored.revision_id);
+    assert_eq!(
+        latest.revision.parent_revision_id,
+        Some(updated.revision_id)
+    );
+    assert_eq!(
+        latest.revision.entry.restored_from,
+        Some(created.revision_id)
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn composition_registry_is_reserved_and_reopens_without_recreation() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "composition-registry", "/tmp").await?;
