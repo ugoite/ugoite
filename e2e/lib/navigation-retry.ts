@@ -11,6 +11,7 @@ import {
   isProductFailure,
   safeNavigationFailure,
 } from "./security-context.ts";
+import { safeUrlPath } from "./readiness-diagnostics.ts";
 
 export type NavigationRetryOptions = {
   /** Human label used in the retry log line. Defaults to the URL. */
@@ -85,7 +86,8 @@ async function visibleBodyText(page: Page): Promise<string> {
  * Code-guard against retrying product work: this helper can only perform
  * navigation. It accepts no generic callback, so product API calls cannot be
  * wrapped in it; non-OK responses and post-navigation readiness failures
- * always throw without retrying unless the empty-DOM asset rule matches.
+ * always throw without retrying unless a transient frontend script failure
+ * matches.
  * Callers must only use it from setup/navigation paths (global setup,
  * initial ceremony navigation).
  */
@@ -94,7 +96,7 @@ export async function gotoWithOneEnvironmentRetry(
   url: string,
   options: NavigationRetryOptions = {},
 ): Promise<NavigationRetryResult> {
-  const label = options.label ?? url;
+  const label = options.label ?? safeUrlPath(url);
 
   const attempt = async (): Promise<
     {

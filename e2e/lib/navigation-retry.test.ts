@@ -280,12 +280,22 @@ Deno.test("gotoWithOneEnvironmentRetry: environment error recovers exactly once"
     },
     async () => okResponse(),
   ]);
-  const result = await gotoWithOneEnvironmentRetry(
-    browser,
-    "http://localhost/setup",
-  );
+  const originalLog = console.log;
+  const logMessages: string[] = [];
+  console.log = (...args: unknown[]) => logMessages.push(args.join(" "));
+  let result: Awaited<ReturnType<typeof gotoWithOneEnvironmentRetry>>;
+  try {
+    result = await gotoWithOneEnvironmentRetry(
+      browser,
+      "http://localhost/setup#secret=hidden",
+    );
+  } finally {
+    console.log = originalLog;
+  }
   assert.equal(result.retried, true);
   assert.equal(contextsCreated(), 2);
+  assert.equal(logMessages.join(" ").includes("/setup"), true);
+  assert.equal(logMessages.join(" ").includes("secret"), false);
 });
 
 function failedFrontendAsset() {
