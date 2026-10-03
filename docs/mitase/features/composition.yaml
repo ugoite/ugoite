@@ -451,6 +451,124 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.used-field-fingerprint
+      - id: saved-sql-resolver
+        role: implementation
+        facet: core
+        responsibility: Compile Saved SQL sources through the exact current revision descriptor and fingerprint the ordered output contract, used variables, and selected metric columns.
+        targets:
+          - id: compile-exact-saved-sql-source
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: compile_saved_sql_source }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+          - id: fingerprint-resolved-saved-sql-source
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: compile_saved_sql_source_with_metric_columns }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+      - id: saved-sql-resolver-evidence
+        role: evidence
+        facet: core-tests
+        responsibility: Verify exact stateless SQL request compilation, rejection of a missing or mismatched current revision descriptor, and deterministic fingerprint inputs including metric selection.
+        targets:
+          - id: exact-stateless-sql-request
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: saved_sql_source_compiles_to_the_exact_stateless_sql_request }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+          - id: missing-or-mismatched-exact-revision
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: saved_sql_source_requires_the_exact_current_revision_descriptor }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+          - id: used-variable-schema-fingerprint
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: saved_sql_schema_fingerprint_tracks_variable_types_deterministically }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+          - id: ordered-result-descriptor-fingerprint
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: saved_sql_schema_fingerprint_tracks_ordered_result_descriptors }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+          - id: selected-metric-column-fingerprint
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: saved_sql_result_fingerprint_tracks_selected_metric_column }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+      - id: metric-page-validation
+        role: implementation
+        facet: core
+        responsibility: Bind metrics to typed source fields or result columns and validate an already-authorized complete query page through the shared Domain evaluator.
+        targets:
+          - id: entry-metric-page-adapter
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: evaluate_entry_metric_page }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+          - id: saved-sql-metric-page-adapter
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: evaluate_saved_sql_metric_page }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+      - id: metric-page-validation-evidence
+        role: evidence
+        facet: core-tests
+        responsibility: Verify scalar descriptor checks and exact one-row, complete-page validation for EntryQuery and Saved SQL metric results.
+        targets:
+          - id: sql-metric-column-before-revision-lookup
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: saved_sql_metric_selector_requires_one_declared_scalar_column_before_revision_lookup }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.saved-sql-result-descriptor
+          - id: entry-metric-current-field-type
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: entry_metric_rejects_a_current_non_scalar_form_field }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.typed-metric-value-field
+          - id: entry-metric-complete-scalar-page
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: entry_metric_page_adapter_checks_one_complete_scalar_row }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.metric-runtime-values
+          - id: saved-sql-metric-alias-and-scalar-page
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: saved_sql_metric_page_adapter_checks_exact_alias_and_scalar_shape }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.saved-sql-result-descriptor
+          - id: metric-page-binding-kind
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: metric_page_adapter_rejects_wrong_binding_kind }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.typed-metric-value-field
       - id: cli-raw-inspection-source-evidence
         role: evidence
         facet: cli

@@ -6,23 +6,50 @@ This is the Lane D acceptance plan for the Composition feature, whose full
 surface and runtime journey remain incomplete. The read-only portable list,
 get, history, and lint operations are implemented, as are the CLI list, history,
 inspect, and lint commands; this does not claim a complete Composition API or
-CLI command set, Browser route, or passing runtime journey.
+CLI command set, Browser route, or passing end-to-end runtime journey. The Rust
+domain parser and Core resolver now have focused implementation and test
+evidence, documented below and bound in the Mitase feature.
 The current structured locator map is
 [`e2e/fixtures/composition/acceptance-plan.json`](../../../e2e/fixtures/composition/acceptance-plan.json).
 
 ## Contract and evidence boundary
 
 The Composition Requirement and Feature remain `planned` until implementation
-and runtime evidence land. The reserved selectors in the locator map are not
-Mitase verification bindings until the corresponding tests exist. The current
-D0 check validates only the completeness and pending status of that map.
+and full-surface runtime evidence land. Focused domain and Core resolver tests
+are bound in `docs/mitase/features/composition.yaml`; they establish those Rust
+contracts only. The reserved selectors in the locator map are not Mitase
+verification bindings until the corresponding integration tests exist. The
+current D0 check validates only the completeness and pending status of that
+map.
 
 The canonical monthly-expense YAML document is shared with the domain fixture
 set. Two small raw-payload candidates now cover an unsupported format version
 and a missing Form reference. They use the merged typed document shape but are
-not parser or runtime evidence; the restricted parser rules and resource
-limits remain in progress. Space-seed and expected-output files stay planned
-until their integration contracts are reviewed and frozen.
+not resolver or persistence evidence. The restricted parser, measured resource
+limits, canonicalization, fingerprinting, and native/WASM parity are implemented
+and covered by domain tests. See the
+[Composition contract](../contracts/composition.md) and its referenced parser
+fixtures. Space-seed and expected-output files stay planned until their
+integration contracts are reviewed and frozen.
+
+## Resolver implementation evidence
+
+The Rust Core resolver binds typed parameters and compiles `entry_query`
+sources into the existing bounded EntryQuery request. It compiles `saved_sql`
+sources against the exact current Entry and Revision descriptor, binds the
+declared variables, and fingerprints the ordered result descriptor, used
+variable schema, exact revision, and selected metric column. A missing or
+mismatched current Saved SQL descriptor does not trigger a latest-revision
+fallback. These behaviors have focused Core tests recorded in the Mitase
+feature bindings.
+
+Metric component bindings use the source's typed field or result-column
+descriptor. The Core page adapters validate one already-authorized page as one
+complete row with exactly one selected scalar value, using the shared Domain
+evaluator. They do not execute a query, fetch another page, or aggregate rows.
+This is source-level resolver and page-validation evidence; it does not prove
+that CLI or Browser query orchestration, result rendering, or the Golden Journey
+is complete.
 
 ## CLI acceptance shape
 
@@ -105,8 +132,11 @@ the CLI uses this operation in remote mode and the matching local Core reader
 in local mode. The list DTO omits `spec`. CLI history uses the portable
 `composition.history` operation remotely and the local raw history reader in
 local mode. Resolve is available as a side-effect-free operation; save, export,
-and restore remain planned, with
-their relevant contracts and generic-write protections still in progress.
+and restore remain planned, with their relevant contracts and generic-write
+protections still in progress. The Core resolver returns requests for the
+existing query path; it does not itself execute them. The scalar page adapters
+described above are tested Core functions and are not yet evidence of a complete
+CLI or Browser query journey.
 
 ## Recovery and authorization acceptance
 

@@ -3,8 +3,11 @@ title: Composition contract
 description: The portable document and semantic boundaries for Composition v1.
 ---
 
-**Status:** accepted semantic boundary; parser and resource limits were selected
-from the COMP-011 native and WASM spike.
+**Status:** the v1 domain model, restricted parser, canonicalization,
+fingerprinting, native/WASM parity, and Rust Core source resolver have focused
+implementation and test evidence. Full persistence, CLI/Browser orchestration,
+and the end-to-end runtime journey remain incomplete; see the
+[acceptance plan](../testing/composition-acceptance.md).
 
 ## Portable document
 
@@ -95,18 +98,32 @@ digits; normalized local timestamps omit trailing zeroes. The shared domain
 evaluator rejects malformed values with `metric_result_type_mismatch`; query
 adapters do not implement a second date/time parser.
 
-The stable diagnostic codes are `unsupported_format_version`,
-`invalid_composition`, `parameter_unknown`, `parameter_missing`,
-`parameter_type_mismatch`, `source_unavailable`, `missing_field`,
-`field_type_changed`, `source_schema_changed`, and
-`metric_field_not_projected`, and `metric_result_type_mismatch`. A missing or
-denied Composition uses the same existing generic 404/error response shape, so
-its existence is not disclosed. `not_authorized` is not a Composition diagnostic.
-After Composition access is authorized, a missing or denied Form or exact
-Saved SQL source has the same caller-visible `source_unavailable` diagnostic,
-with no source ID or metadata. Field-level diagnostics are returned only after
-the source Form is authorized. UI messages are supplied by the consuming
-surface and are not part of this domain contract.
+The Core resolver binds each metric to the current source field or the exact
+Saved SQL revision's declared result column and type. Its EntryQuery and Saved
+SQL page adapters validate one already-authorized page: it must be complete,
+contain exactly one row, and contain exactly one selected scalar value of the
+declared type. The adapters use the shared Domain evaluator and do not execute
+queries, fetch additional pages, or aggregate rows. They are tested Core
+building blocks; full CLI/Browser query orchestration and rendering remain
+planned.
+
+The shared Rust and portable API diagnostic vocabulary includes
+`unsupported_format_version`, `invalid_composition`, `parameter_unknown`,
+`parameter_missing`, `parameter_type_mismatch`, `source_unavailable`,
+`missing_form`, `saved_sql_revision_missing`, `not_authorized`, `missing_field`,
+`field_type_changed`, `source_schema_changed`, `metric_field_not_projected`,
+`metric_result_not_scalar`, `metric_result_type_mismatch`,
+`metric_result_empty`, `metric_result_multiple_rows`,
+`metric_result_column_missing`, `metric_result_column_ambiguous`, and
+`metric_result_page_incomplete`. The current resolver projects a missing,
+denied, or mismatched source descriptor to `source_unavailable`; it does not
+fall back from a missing exact Saved SQL revision to latest. A missing or denied
+Composition read uses the existing generic 404/error response shape, so its
+existence is not disclosed. After Composition access is authorized, source
+availability does not disclose Form or Saved SQL identifiers or metadata.
+Field-level diagnostics are returned only after the source Form is authorized.
+UI messages are supplied by the consuming surface and are not part of this
+domain contract.
 
 ## Semantic authority
 
