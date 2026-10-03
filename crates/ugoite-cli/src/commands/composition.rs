@@ -105,6 +105,18 @@ pub enum CompositionSubCmd {
         #[arg(long, help = "Write the stored spec value without canonicalizing it")]
         raw: bool,
     },
+    /// Export a saved Composition's raw spec to a local file
+    #[command(
+        long_about = "Export the stored raw Composition spec without parsing or re-canonicalizing it. The default selects the current revision; use --revision to export one exact historical revision. Existing output files are never replaced."
+    )]
+    Export {
+        #[arg(value_name = "COMPOSITION_ID")]
+        composition_id: String,
+        #[arg(long, value_name = "REVISION_ID")]
+        revision: Option<String>,
+        #[arg(long, value_name = "FILE")]
+        output: PathBuf,
+    },
     /// Resolve and execute one bounded page for each Composition source
     Query {
         #[arg(value_name = "COMPOSITION_ID")]
@@ -185,6 +197,17 @@ pub async fn run(
             } else {
                 crate::output::print_json(&record);
             }
+        }
+        CompositionSubCmd::Export {
+            composition_id,
+            revision,
+            output,
+        } => {
+            let target =
+                resolve_command_target(explicit_config, context_override, "composition export")?;
+            let receipt =
+                export_composition(&target, &composition_id, revision.as_deref(), &output).await?;
+            crate::output::print_json(&receipt);
         }
         CompositionSubCmd::Query {
             composition_id,
@@ -425,6 +448,30 @@ async fn read_composition(
             serde_json::from_value(result).context("decode Composition read response")
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+struct CompositionExportReceipt {
+    composition_id: String,
+    revision_id: String,
+    output: String,
+    bytes: usize,
+}
+
+async fn export_composition(
+    target: &SpaceTarget,
+    composition_id: &str,
+    revision_id: Option<&str>,
+    output_path: &Path,
+) -> Result<CompositionExportReceipt> {
+    let record = read_composition(target, composition_id, revision_id).await?;
+    let bytes = write_raw_spec_to_path(&record, output_path)?;
+    Ok(CompositionExportReceipt {
+        composition_id: record.revision.entry_id,
+        revision_id: record.revision.revision_id,
+        output: output_path.to_string_lossy().into_owned(),
+        bytes,
+    })
 }
 
 #[derive(Serialize)]
@@ -970,6 +1017,48 @@ fn raw_spec_output(record: &CompositionRawRevision) -> RawSpecOutput {
     }
 }
 
+fn write_raw_spec_to_path(record: &CompositionRawRevision, path: &Path) -> Result<usize> {
+    let bytes = match raw_spec_output(record) {
+        RawSpecOutput::Text(spec) => spec.into_bytes(),
+        RawSpecOutput::Json(value) => {
+            let mut bytes = serde_json::to_vec_pretty(&value)
+                .context("serialize raw Composition carrier for export")?;
+            bytes.push(b'\n');
+            bytes
+        }
+    };
+    let directory = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let temp = tempfile::Builder::new()
+        .prefix(".ugoite-composition-export-")
+        .tempfile_in(directory)
+        .with_context(|| {
+            format!(
+                "failed to create temporary Composition export beside {}",
+                path.display()
+            )
+        })?;
+    let mut writer = temp.reopen()?;
+    writer
+        .write_all(&bytes)
+        .with_context(|| format!("write Composition export {}", path.display()))?;
+    writer.sync_all()?;
+    drop(writer);
+    temp.persist_noclobber(path).map_err(|error| {
+        anyhow::anyhow!(
+            "failed to safely finalize Composition export at {}: {}",
+            path.display(),
+            error.error
+        )
+    })?;
+    if let Ok(directory) = File::open(directory) {
+        let _ = directory.sync_all();
+    }
+    Ok(bytes.len())
+}
+
 fn lint_file(path: &Path) -> Result<CompositionLintResponse> {
     let file =
         File::open(path).with_context(|| format!("open Composition file {}", path.display()))?;
@@ -1022,10 +1111,11 @@ mod tests {
         composition_get_arguments, composition_history_arguments, composition_list_arguments,
         composition_query_plan_from_core, composition_query_plan_from_portable,
         composition_resolve_body, composition_source_dispatch, evaluate_entry_metrics,
-        evaluate_saved_sql_metrics, lint_file, lint_yaml_bytes, list_compositions,
-        local_raw_revision_to_api, parse_cli_parameter_value, parse_cli_parameter_values,
-        raw_spec_output, read_composition, read_composition_history, CompositionParameter,
-        DomainCompositionParameterType, RawSpecOutput,
+        evaluate_saved_sql_metrics, export_composition, lint_file, lint_yaml_bytes,
+        list_compositions, local_raw_revision_to_api, parse_cli_parameter_value,
+        parse_cli_parameter_values, raw_spec_output, read_composition, read_composition_history,
+        write_raw_spec_to_path, CompositionParameter, DomainCompositionParameterType,
+        RawSpecOutput,
     };
     use crate::cli_config::SpaceTarget;
     use anyhow::Result;
@@ -1573,6 +1663,180 @@ mod tests {
 
         let latest = read_composition(&target, &saved.entry_id.to_string(), None).await?;
         assert_eq!(latest.revision.revision_id, saved.revision_id.to_string());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn export_writes_the_exact_local_revision_and_does_not_replace_existing_files(
+    ) -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let root_path = root.path().to_string_lossy().into_owned();
+        let service =
+            ugoite_iceberg::service::UgoiteService::new_without_background_refresh(&root_path)?;
+        let owner = Uuid::from_u128(2_011);
+        let space_id = service
+            .create_space_for_principal("composition-export-exact", owner, "Owner")
+            .await?
+            .to_string();
+        let first_document =
+            ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE)
+                .expect("shared Composition fixture parses")
+                .document;
+        let first = service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: first_document.clone(),
+                },
+                "Owner",
+                &[owner],
+            )
+            .await?;
+        let mut second_document = first_document;
+        second_document.name = "Updated expenses".to_string();
+        let second = service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: Some(first.entry_id),
+                    base_revision_id: Some(first.revision_id),
+                    document: second_document,
+                },
+                "Owner",
+                &[owner],
+            )
+            .await?;
+
+        let target = SpaceTarget::Core {
+            root: root_path,
+            space_id,
+        };
+        let output = root.path().join("exact.ugcomp.yaml");
+        let receipt = export_composition(
+            &target,
+            &first.entry_id.to_string(),
+            Some(&first.revision_id.to_string()),
+            &output,
+        )
+        .await?;
+
+        assert_eq!(receipt.composition_id, first.entry_id.to_string());
+        assert_eq!(receipt.revision_id, first.revision_id.to_string());
+        assert_eq!(receipt.output, output.to_string_lossy());
+        assert_eq!(std::fs::read(&output)?, first.canonical_yaml.as_bytes());
+        assert_eq!(receipt.bytes, first.canonical_yaml.len());
+
+        let latest_output = root.path().join("latest.ugcomp.yaml");
+        let latest_receipt =
+            export_composition(&target, &first.entry_id.to_string(), None, &latest_output).await?;
+        assert_eq!(latest_receipt.revision_id, second.revision_id.to_string());
+        assert_eq!(
+            std::fs::read(&latest_output)?,
+            second.canonical_yaml.as_bytes()
+        );
+
+        let missing_revision_id = Uuid::from_u128(2_012).to_string();
+        let missing_output = root.path().join("missing.ugcomp.yaml");
+        let error = export_composition(
+            &target,
+            &first.entry_id.to_string(),
+            Some(&missing_revision_id),
+            &missing_output,
+        )
+        .await
+        .expect_err("a missing exact revision must not export the current revision");
+        assert!(error
+            .downcast_ref::<AppError>()
+            .is_some_and(|error| error.code() == ErrorCode::EntryNotFound));
+        assert!(!missing_output.exists());
+
+        let error = write_raw_spec_to_path(
+            &read_composition(&target, &first.entry_id.to_string(), None).await?,
+            &output,
+        )
+        .expect_err("export must not replace an existing output file");
+        assert!(error
+            .to_string()
+            .contains("failed to safely finalize Composition export"));
+        assert_eq!(std::fs::read(&output)?, first.canonical_yaml.as_bytes());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn export_remote_selects_exact_revision_and_preserves_unknown_format_yaml() -> Result<()>
+    {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let raw_yaml = "format: ugoite.composition\nformat_version: 99\nkind: future\n";
+        let response_body = json!({
+            "revision": {
+                "form_id": "form-1",
+                "entry_id": "comp-1",
+                "revision_id": "revision-99",
+                "parent_revision_id": null,
+                "entry_version": 4,
+                "change_id": "change-4",
+                "expected_version": 3,
+                "operation": "upsert",
+                "committed_at_micros": 40,
+                "author_id": "owner",
+                "form_version": 1,
+                "source_kind": "core",
+                "source_id": null,
+                "entry": {
+                    "external_id": "comp-1",
+                    "tags": [],
+                    "created_at_micros": 1,
+                    "updated_at_micros": 40,
+                    "updated_by": "owner",
+                    "integrity": {"checksum": "", "signature": ""},
+                    "deleted": false,
+                    "deleted_at_micros": null,
+                    "deleted_by": null,
+                    "restored_from": null
+                },
+                "extra_attributes": {},
+                "extension_metadata": {}
+            },
+            "fields": {"spec": raw_yaml},
+            "unmapped_field_values": {}
+        })
+        .to_string();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept CLI request");
+            let mut request = [0_u8; 4096];
+            let bytes_read = stream.read(&mut request).await.expect("read CLI request");
+            let request = String::from_utf8_lossy(&request[..bytes_read]).to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response_body.len(), response_body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .await
+                .expect("write CLI response");
+            request
+        });
+        let target = SpaceTarget::Remote {
+            base: format!("http://{address}"),
+            space_uid: "demo".to_string(),
+            connection: "test".to_string(),
+            credential: None,
+        };
+        let output_root = tempfile::tempdir()?;
+        let output = output_root.path().join("future.ugcomp.yaml");
+
+        let receipt = export_composition(&target, "comp-1", Some("revision-99"), &output).await?;
+        let request = server.await.expect("mock server completes");
+
+        assert!(request
+            .starts_with("GET /spaces/demo/compositions/comp-1/history/revision-99 HTTP/1.1\r\n"));
+        assert_eq!(receipt.revision_id, "revision-99");
+        assert_eq!(std::fs::read(&output)?, raw_yaml.as_bytes());
         Ok(())
     }
 
