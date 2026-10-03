@@ -12,8 +12,8 @@ import {
   createSetupReadinessDiagnostics,
   formatSetupReadinessDiagnostics,
   observeSetupReadiness,
-  snapshotSetupDom,
   type SetupReadinessDiagnostics,
+  snapshotSetupDom,
 } from "./lib/readiness-diagnostics.ts";
 import { safeNavigationFailure } from "./lib/security-context.ts";
 
@@ -103,15 +103,24 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       requireOkResponse: true,
       prepare: async (page) =>
         observeSetupReadiness(page, readinessDiagnostics),
+      waitForReady: (page) =>
+        waitForSetupState(
+          page,
+          page.getByLabel("Display name"),
+          "setup form",
+          readinessDiagnostics,
+        ),
     });
     context = navigation.target;
     page = navigation.page;
   } catch (error) {
     throw new Error(
-      `setup navigation failed (${safeNavigationFailure(error)}); ${formatSetupReadinessDiagnostics(
-        setupUrl,
-        readinessDiagnostics,
-      )}`,
+      `setup navigation failed (${safeNavigationFailure(error)}); ${
+        formatSetupReadinessDiagnostics(
+          setupUrl,
+          readinessDiagnostics,
+        )
+      }`,
     );
   }
   const cdp = await context.newCDPSession(page);
@@ -122,12 +131,6 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   try {
     await assertBuildProvenance(page, baseURL);
     const displayName = page.getByLabel("Display name");
-    await waitForSetupState(
-      page,
-      displayName,
-      "setup form",
-      readinessDiagnostics,
-    );
     await displayName.fill("E2E owner");
     const createAdministratorPasskey = page.getByRole("button", {
       name: "Create administrator passkey",
@@ -144,9 +147,9 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       }
     } catch (error) {
       throw new Error(
-        `administrator passkey setup failed (${safeNavigationFailure(error)}); ${
-          await setupDiagnostics(page, readinessDiagnostics)
-        }`,
+        `administrator passkey setup failed (${
+          safeNavigationFailure(error)
+        }); ${await setupDiagnostics(page, readinessDiagnostics)}`,
       );
     }
     await waitForSetupState(
@@ -173,13 +176,15 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
         registerSecondPasskey.click(),
       ]);
       if (!passkeyResponse.ok()) {
-        throw new Error(`second Passkey finish returned ${passkeyResponse.status()}`);
+        throw new Error(
+          `second Passkey finish returned ${passkeyResponse.status()}`,
+        );
       }
     } catch (error) {
       throw new Error(
-        `second Passkey setup failed (${safeNavigationFailure(error)}); ${
-          await setupDiagnostics(page, readinessDiagnostics)
-        }`,
+        `second Passkey setup failed (${
+          safeNavigationFailure(error)
+        }); ${await setupDiagnostics(page, readinessDiagnostics)}`,
       );
     }
     const continueButton = page.getByRole("button", { name: "Continue" });

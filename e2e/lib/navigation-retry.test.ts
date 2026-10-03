@@ -13,10 +13,15 @@ import {
   classifyNavigationFailure,
   isEnvironmentFailure,
   isProductFailure,
-  safeNetworkFailureCode,
   safeNavigationFailure,
+  safeNetworkFailureCode,
   shouldRetryEnvironmentFailure,
 } from "./security-context.ts";
+import {
+  createSetupReadinessDiagnostics,
+  formatSetupReadinessDiagnostics,
+  observeSetupReadiness,
+} from "./readiness-diagnostics.ts";
 import {
   gotoPageWithOneEnvironmentRetry,
   gotoWithOneEnvironmentRetry,
@@ -52,7 +57,10 @@ Deno.test("safe navigation failure summaries omit URLs and response bodies", () 
     "page.goto: net::ERR_SETUP_SECRET at https://localhost/setup#secret=recovery-secret",
   );
   assert.equal(safeNavigationFailure(customCode), "navigation-error");
-  assert.equal(safeNetworkFailureCode("net::ERR_SETUP_SECRET"), "request-failed");
+  assert.equal(
+    safeNetworkFailureCode("net::ERR_SETUP_SECRET"),
+    "request-failed",
+  );
   assert.equal(
     safeNetworkFailureCode("net::ERR_CONNECTION_RESET"),
     "ERR_CONNECTION_RESET",
@@ -148,7 +156,7 @@ Deno.test("classifier: static chunk failure and empty 2xx document retry", () =>
   assert.equal(
     classifyNavigationFailure(new Error("setup form did not become visible"), {
       status: 200,
-      bodySnippet: "<html><head></head><body></body></html>",
+      bodySnippet: "",
       assetError:
         "http://localhost/_build/entry.js :: net::ERR_NETWORK_CHANGED",
     }),
@@ -159,7 +167,33 @@ Deno.test("classifier: static chunk failure and empty 2xx document retry", () =>
   assert.equal(
     classifyNavigationFailure(new Error("setup form did not become visible"), {
       status: 200,
-      bodySnippet: "<html><head></head><body></body></html>",
+      bodySnippet: "",
+    }),
+    "no-retry",
+  );
+  assert.equal(
+    classifyNavigationFailure(new Error("readiness check failed"), {
+      status: 200,
+      bodySnippet: "",
+      assetError: "http://localhost/_build/entry.js :: http-404",
+    }),
+    "no-retry",
+  );
+  assert.equal(
+    classifyNavigationFailure(new Error("readiness check failed"), {
+      status: 200,
+      bodyText: "Server rendered setup form",
+      assetError:
+        "http://localhost/_build/entry.js :: net::ERR_NETWORK_CHANGED",
+    }),
+    "retry",
+  );
+  assert.equal(
+    classifyNavigationFailure(new Error("VALIDATION failed for display_name"), {
+      status: 200,
+      bodyText: "Validation failed",
+      assetError:
+        "http://localhost/_build/entry.js :: net::ERR_NETWORK_CHANGED",
     }),
     "no-retry",
   );
@@ -167,44 +201,70 @@ Deno.test("classifier: static chunk failure and empty 2xx document retry", () =>
 
 // --- Helper-level harness with fake Playwright objects. ---
 
+type FakePageEvents = {
+  emit(event: string, value?: unknown): void;
+  setBodyText(value: string): void;
+};
+
 type FakeGoto = (
   url: string,
+  page: FakePageEvents,
 ) => Promise<
   { status(): number; ok(): boolean; text(): Promise<string> } | null
 >;
 
-function fakeBrowser(gotos: FakeGoto[], hooks?: { onReadyFail?: Error }): {
+function fakeBrowser(gotos: FakeGoto[]): {
   browser: Browser;
   contextsCreated: () => number;
+  contextsClosed: () => number;
 } {
   let contexts = 0;
+  let closedContexts = 0;
   let gotoCalls = 0;
   const browser = {
     async newContext(): Promise<BrowserContext> {
       contexts++;
       const listeners: Record<string, Array<(...args: never[]) => void>> = {};
+      const mainFrame = {};
+      let bodyText = "";
+      const fakePage: FakePageEvents = {
+        emit(event, value) {
+          for (const listener of listeners[event] ?? []) {
+            listener(value as never);
+          }
+        },
+        setBodyText(value) {
+          bodyText = value;
+        },
+      };
       const page = {
+        mainFrame: () => mainFrame,
         on(event: string, listener: (...args: never[]) => void) {
           (listeners[event] ??= []).push(listener);
         },
         async goto(url: string) {
           const behavior = gotos[Math.min(gotoCalls++, gotos.length - 1)];
-          return await behavior(url);
+          return await behavior(url, fakePage);
         },
-        async content(): Promise<string> {
-          return "<html><head></head><body></body></html>";
+        async evaluate(): Promise<string> {
+          return bodyText;
         },
       } as unknown as Page;
       return {
         async newPage(): Promise<Page> {
           return page;
         },
-        async close(): Promise<void> {},
+        async close(): Promise<void> {
+          closedContexts++;
+        },
       } as unknown as BrowserContext;
     },
   } as unknown as Browser;
-  void hooks;
-  return { browser, contextsCreated: () => contexts };
+  return {
+    browser,
+    contextsCreated: () => contexts,
+    contextsClosed: () => closedContexts,
+  };
 }
 
 const okResponse = () => ({
@@ -227,6 +287,192 @@ Deno.test("gotoWithOneEnvironmentRetry: environment error recovers exactly once"
   assert.equal(result.retried, true);
   assert.equal(contextsCreated(), 2);
 });
+
+function failedFrontendAsset() {
+  return {
+    isNavigationRequest: () => false,
+    frame: () => ({}),
+    url: () => "http://localhost/_build/assets/setup.js",
+    failure: () => ({ errorText: "net::ERR_NETWORK_CHANGED" }),
+  };
+}
+
+function failedFrontendAssetResponse(status: number) {
+  return {
+    request: () => ({
+      isNavigationRequest: () => false,
+      frame: () => ({}),
+    }),
+    url: () => "http://localhost/_build/assets/setup.js",
+    status: () => status,
+    ok: () => status >= 200 && status < 300,
+  };
+}
+
+Deno.test(
+  "gotoWithOneEnvironmentRetry: transient setup asset failure retries and becomes ready",
+  async () => {
+    const diagnostics = createSetupReadinessDiagnostics();
+    let readinessChecks = 0;
+    const { browser, contextsCreated, contextsClosed } = fakeBrowser([
+      async (_url, page) => {
+        page.setBodyText("Server rendered setup form");
+        page.emit("requestfailed", failedFrontendAsset());
+        return okResponse();
+      },
+      async (_url, page) => {
+        page.setBodyText("Display name");
+        return okResponse();
+      },
+    ]);
+
+    const result = await gotoWithOneEnvironmentRetry(
+      browser,
+      "http://localhost/setup#secret=hidden",
+      {
+        prepare: async (page) => observeSetupReadiness(page, diagnostics),
+        waitForReady: async () => {
+          readinessChecks++;
+          if (readinessChecks === 1) return await new Promise(() => {});
+        },
+      },
+    );
+
+    assert.equal(result.retried, true);
+    assert.equal(contextsCreated(), 2);
+    assert.equal(contextsClosed(), 1);
+    assert.equal(readinessChecks, 2);
+    const output = formatSetupReadinessDiagnostics(
+      "http://localhost/setup#secret=hidden",
+      diagnostics,
+    );
+    assert.equal(
+      output.includes(
+        "assetFailures=attempt-1:/_build/<asset>.js:ERR_NETWORK_CHANGED",
+      ),
+      true,
+    );
+    assert.equal(output.includes("navigationAttempts=2"), true);
+    assert.equal(output.includes("hidden"), false);
+  },
+);
+
+Deno.test(
+  "gotoWithOneEnvironmentRetry: persistent asset network failure fails with both attempts",
+  async () => {
+    const diagnostics = createSetupReadinessDiagnostics();
+    const { browser, contextsCreated, contextsClosed } = fakeBrowser([
+      async (_url, page) => {
+        page.emit("requestfailed", failedFrontendAsset());
+        return okResponse();
+      },
+      async (_url, page) => {
+        page.emit("requestfailed", failedFrontendAsset());
+        return okResponse();
+      },
+    ]);
+
+    let finalError: unknown;
+    try {
+      await gotoWithOneEnvironmentRetry(browser, "http://localhost/setup", {
+        prepare: async (page) => observeSetupReadiness(page, diagnostics),
+        waitForReady: async () => await new Promise(() => {}),
+      });
+    } catch (error) {
+      finalError = error;
+    }
+
+    assert.equal(safeNavigationFailure(finalError), "readiness-failed");
+    assert.equal(contextsCreated(), 2);
+    assert.equal(contextsClosed(), 2);
+    const finalDiagnostic = `setup navigation failed (${
+      safeNavigationFailure(finalError)
+    }); ${
+      formatSetupReadinessDiagnostics(
+        "http://localhost/setup",
+        diagnostics,
+      )
+    }`;
+    assert.equal(
+      finalDiagnostic.includes(
+        "attempt-1:/_build/<asset>.js:ERR_NETWORK_CHANGED",
+      ),
+      true,
+    );
+    assert.equal(
+      finalDiagnostic.includes(
+        "attempt-2:/_build/<asset>.js:ERR_NETWORK_CHANGED",
+      ),
+      true,
+    );
+    assert.equal(finalDiagnostic.includes("navigationAttempts=2"), true);
+  },
+);
+
+Deno.test(
+  "gotoWithOneEnvironmentRetry: missing frontend asset fails promptly without retry",
+  async () => {
+    const diagnostics = createSetupReadinessDiagnostics();
+    const { browser, contextsCreated, contextsClosed } = fakeBrowser([
+      async (_url, page) => {
+        page.emit("response", failedFrontendAssetResponse(404));
+        return okResponse();
+      },
+    ]);
+    let finalError: unknown;
+    try {
+      await gotoWithOneEnvironmentRetry(browser, "http://localhost/setup", {
+        prepare: async (page) => observeSetupReadiness(page, diagnostics),
+        waitForReady: async () => await new Promise(() => {}),
+      });
+    } catch (error) {
+      finalError = error;
+    }
+
+    assert.equal(safeNavigationFailure(finalError), "readiness-failed");
+    assert.equal(contextsCreated(), 1);
+    assert.equal(contextsClosed(), 1);
+    const finalDiagnostic = formatSetupReadinessDiagnostics(
+      "http://localhost/setup",
+      diagnostics,
+    );
+    assert.equal(
+      finalDiagnostic.includes("attempt-1:/_build/<asset>.js:http-404"),
+      true,
+    );
+  },
+);
+
+Deno.test(
+  "gotoWithOneEnvironmentRetry: frontend startup error fails promptly without retry",
+  async () => {
+    const diagnostics = createSetupReadinessDiagnostics();
+    const { browser, contextsCreated, contextsClosed } = fakeBrowser([
+      async (_url, page) => {
+        page.emit("pageerror", new SyntaxError("invalid setup bundle"));
+        return okResponse();
+      },
+    ]);
+    let finalError: unknown;
+    try {
+      await gotoWithOneEnvironmentRetry(browser, "http://localhost/setup", {
+        prepare: async (page) => observeSetupReadiness(page, diagnostics),
+        waitForReady: async () => await new Promise(() => {}),
+      });
+    } catch (error) {
+      finalError = error;
+    }
+
+    assert.equal(safeNavigationFailure(finalError), "readiness-failed");
+    assert.equal(contextsCreated(), 1);
+    assert.equal(contextsClosed(), 1);
+    assert.equal(
+      formatSetupReadinessDiagnostics("http://localhost/setup", diagnostics)
+        .includes("pageErrors=attempt-1:SyntaxError"),
+      true,
+    );
+  },
+);
 
 Deno.test("gotoWithOneEnvironmentRetry: 4xx/5xx fixture does not retry", async () => {
   const { browser, contextsCreated } = fakeBrowser([
@@ -361,7 +607,9 @@ Deno.test(
           "http://localhost/settings/security",
           {
             waitForReady: async () => {
-              throw new Error("account recovery settings did not become visible");
+              throw new Error(
+                "account recovery settings did not become visible",
+              );
             },
           },
         ),
