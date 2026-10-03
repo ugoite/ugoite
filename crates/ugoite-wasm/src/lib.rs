@@ -771,6 +771,25 @@ mod tests {
             "invalid_composition"
         );
 
+        let mut unknown_version_document = serde_json::to_value(&native.document).unwrap();
+        unknown_version_document["format_version"] = serde_json::json!(99);
+        let unknown_version_request = serde_json::json!({
+            "action": "domain.canonicalize_composition_document",
+            "value": {"document": unknown_version_document},
+        });
+        let unknown_version_response: Value =
+            serde_json::from_str(&super::invoke_json(&unknown_version_request.to_string()))
+                .unwrap();
+        assert_eq!(unknown_version_response["ok"], false);
+        assert_eq!(
+            unknown_version_response["error"]["kind"],
+            "composition_diagnostic"
+        );
+        assert_eq!(
+            unknown_version_response["error"]["code"],
+            "unsupported_format_version"
+        );
+
         let unreferenced_component = MONTHLY_EXPENSE_COMPOSITION
             .replace("      components: [transactions]", "      components: []");
         assert_ne!(unreferenced_component, MONTHLY_EXPENSE_COMPOSITION);
