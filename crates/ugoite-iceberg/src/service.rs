@@ -156,6 +156,9 @@ use ugoite_storage::{
     SpaceCatalogStore, StorageBackend,
 };
 
+mod composition_resolver;
+pub use composition_resolver::CompositionResolution;
+
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
     "admin_user_ids",
     "invitations",
