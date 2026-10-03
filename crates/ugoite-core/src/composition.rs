@@ -563,7 +563,8 @@ pub struct SavedSqlRevisionMetadata {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompiledSavedSqlSource {
     pub request: SqlQueryRequest,
-    /// SHA-256 over the exact revision identity and its bound variable schema.
+    /// SHA-256 over the exact revision identity, ordered result schema, used
+    /// variable schema, and selected metric columns when present.
     pub source_schema_fingerprint: String,
 }
 
@@ -577,9 +578,19 @@ pub fn compile_saved_sql_source(
     current_revision: Option<&SavedSqlRevisionMetadata>,
     bindings: &ParameterBindings,
 ) -> Result<CompiledSavedSqlSource, Vec<CompositionDiagnostic>> {
+    compile_saved_sql_source_with_metric_columns(source, current_revision, bindings, &[])
+}
+
+fn compile_saved_sql_source_with_metric_columns(
+    source: &CompositionSource,
+    current_revision: Option<&SavedSqlRevisionMetadata>,
+    bindings: &ParameterBindings,
+    selected_metric_columns: &[String],
+) -> Result<CompiledSavedSqlSource, Vec<CompositionDiagnostic>> {
     let CompositionSource::SavedSql {
         entry_id,
         revision_id,
+        expected_result,
         variables,
         ..
     } = source
@@ -676,12 +687,17 @@ pub fn compile_saved_sql_source(
         id: expected_id,
         revision_id: expected_revision_id,
     };
-    let fingerprint_material =
-        serde_json::to_vec(&(&saved_sql, &used_variable_types)).map_err(|_| {
-            vec![CompositionDiagnostic::without_parameter(
-                CompositionDiagnosticCode::InvalidComposition,
-            )]
-        })?;
+    let fingerprint_material = serde_json::to_vec(&(
+        &saved_sql,
+        expected_result,
+        &used_variable_types,
+        selected_metric_columns,
+    ))
+    .map_err(|_| {
+        vec![CompositionDiagnostic::without_parameter(
+            CompositionDiagnosticCode::InvalidComposition,
+        )]
+    })?;
     let request = SqlQueryRequest {
         // The SQL text is resolved by the existing executor from this exact
         // revision reference. Sending a client copy would create a second
@@ -838,6 +854,7 @@ pub fn resolve_composition(
         .map(|source| (source.id(), source))
         .collect::<BTreeMap<_, _>>();
     let mut metric_fields_by_source: BTreeMap<&str, Vec<FieldId>> = BTreeMap::new();
+    let mut metric_sql_columns_by_source: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
     for component in &render_components {
         let source_id = component.source_id();
         let value_field = component.value_field();
@@ -860,9 +877,14 @@ pub fn resolve_composition(
             }
             (
                 Some(CompositionSource::SavedSql { .. }),
-                Some(CompositionMetricValueField::SqlColumn { .. }),
-            )
-            | (Some(_), None) => {}
+                Some(CompositionMetricValueField::SqlColumn { name }),
+            ) => {
+                metric_sql_columns_by_source
+                    .entry(source_id)
+                    .or_default()
+                    .insert(name.clone());
+            }
+            (Some(_), None) => {}
             _ => {
                 return Err(vec![CompositionDiagnostic::without_parameter(
                     CompositionDiagnosticCode::InvalidComposition,
@@ -921,14 +943,26 @@ pub fn resolve_composition(
                 Some(CurrentSourceDescriptor::SavedSql {
                     current_revision, ..
                 }),
-            ) => match compile_saved_sql_source(source, *current_revision, &bindings) {
-                Ok(compiled) => resolved_sources.push(ResolvedSourceRequest::SavedSql {
-                    source_id: source_id.to_owned(),
-                    request: compiled.request,
-                    source_schema_fingerprint: compiled.source_schema_fingerprint,
-                }),
-                Err(source_diagnostics) => diagnostics.extend(source_diagnostics),
-            },
+            ) => {
+                let selected_metric_columns = metric_sql_columns_by_source
+                    .get(source_id)
+                    .into_iter()
+                    .flat_map(|columns| columns.iter().cloned())
+                    .collect::<Vec<_>>();
+                match compile_saved_sql_source_with_metric_columns(
+                    source,
+                    *current_revision,
+                    &bindings,
+                    &selected_metric_columns,
+                ) {
+                    Ok(compiled) => resolved_sources.push(ResolvedSourceRequest::SavedSql {
+                        source_id: source_id.to_owned(),
+                        request: compiled.request,
+                        source_schema_fingerprint: compiled.source_schema_fingerprint,
+                    }),
+                    Err(source_diagnostics) => diagnostics.extend(source_diagnostics),
+                }
+            }
             _ => diagnostics.push(CompositionDiagnostic::without_parameter(
                 CompositionDiagnosticCode::SourceUnavailable,
             )),
@@ -3331,5 +3365,143 @@ mod tests {
             integer.source_schema_fingerprint,
             repeated.source_schema_fingerprint
         );
+    }
+
+    #[test]
+    fn saved_sql_schema_fingerprint_tracks_ordered_result_descriptors() {
+        let (entry_id, revision_id) = id_pair();
+        let columns = vec![
+            CompositionResultColumn {
+                name: "total".to_owned(),
+                result_type: CompositionResultFieldType::Float,
+            },
+            CompositionResultColumn {
+                name: "count".to_owned(),
+                result_type: CompositionResultFieldType::Integer,
+            },
+        ];
+        let source_for = |expected_result| CompositionSource::SavedSql {
+            id: "monthly-expenses".to_owned(),
+            entry_id,
+            revision_id,
+            expected_result,
+            variables: BTreeMap::new(),
+        };
+        let baseline_source = source_for(columns.clone());
+        let renamed_source = source_for(vec![
+            CompositionResultColumn {
+                name: "amount".to_owned(),
+                result_type: CompositionResultFieldType::Float,
+            },
+            columns[1].clone(),
+        ]);
+        let retyped_source = source_for(vec![
+            CompositionResultColumn {
+                name: "total".to_owned(),
+                result_type: CompositionResultFieldType::Integer,
+            },
+            columns[1].clone(),
+        ]);
+        let reordered_source = source_for(vec![columns[1].clone(), columns[0].clone()]);
+        let current_revision = saved_sql_metadata(entry_id, revision_id, BTreeMap::new());
+        let bindings = empty_bindings();
+
+        let baseline =
+            compile_saved_sql_source(&baseline_source, Some(&current_revision), &bindings)
+                .expect("the source compiles");
+        let renamed = compile_saved_sql_source(&renamed_source, Some(&current_revision), &bindings)
+            .expect("the renamed result schema compiles");
+        let retyped = compile_saved_sql_source(&retyped_source, Some(&current_revision), &bindings)
+            .expect("the retyped result schema compiles");
+        let reordered =
+            compile_saved_sql_source(&reordered_source, Some(&current_revision), &bindings)
+                .expect("the reordered result schema compiles");
+        let repeated =
+            compile_saved_sql_source(&baseline_source, Some(&current_revision), &bindings)
+                .expect("the same source fingerprint is deterministic");
+
+        assert_ne!(
+            baseline.source_schema_fingerprint,
+            renamed.source_schema_fingerprint
+        );
+        assert_ne!(
+            baseline.source_schema_fingerprint,
+            retyped.source_schema_fingerprint
+        );
+        assert_ne!(
+            baseline.source_schema_fingerprint,
+            reordered.source_schema_fingerprint
+        );
+        assert_eq!(
+            baseline.source_schema_fingerprint,
+            repeated.source_schema_fingerprint
+        );
+    }
+
+    #[test]
+    fn saved_sql_result_fingerprint_tracks_selected_metric_column() {
+        let (entry_id, revision_id) = id_pair();
+        let source = CompositionSource::SavedSql {
+            id: "monthly-expenses".to_owned(),
+            entry_id,
+            revision_id,
+            expected_result: vec![
+                CompositionResultColumn {
+                    name: "total".to_owned(),
+                    result_type: CompositionResultFieldType::Float,
+                },
+                CompositionResultColumn {
+                    name: "count".to_owned(),
+                    result_type: CompositionResultFieldType::Integer,
+                },
+            ],
+            variables: BTreeMap::new(),
+        };
+        let current_revision = saved_sql_metadata(entry_id, revision_id, BTreeMap::new());
+        let current_sources = [CurrentSourceDescriptor::SavedSql {
+            source_id: "monthly-expenses",
+            current_revision: Some(&current_revision),
+        }];
+        let resolve_selected_column = |column: &str| {
+            let mut spec = composition_spec(Vec::new(), vec![source.clone()]);
+            spec.components = vec![CompositionComponent::Metric {
+                id: "summary".to_owned(),
+                label: None,
+                source: "monthly-expenses".to_owned(),
+                value_field: CompositionMetricValueField::SqlColumn {
+                    name: column.to_owned(),
+                },
+            }];
+            spec.sections = vec![CompositionSection {
+                id: "main".to_owned(),
+                components: vec!["summary".to_owned()],
+            }];
+
+            let plan = resolve_composition(ResolveInput {
+                composition_revision: CompositionRevisionRef {
+                    entry_id,
+                    revision_id,
+                },
+                spec: &spec,
+                parameters: &BTreeMap::new(),
+                current_sources: &current_sources,
+            })
+            .expect("the selected Saved SQL column resolves");
+            let ResolvedSourceRequest::SavedSql {
+                source_schema_fingerprint,
+                ..
+            } = &plan.sources[0]
+            else {
+                panic!("the plan retains its Saved SQL source");
+            };
+            source_schema_fingerprint.clone()
+        };
+
+        let total = resolve_selected_column("total");
+        let count = resolve_selected_column("count");
+        let repeated_total = resolve_selected_column("total");
+
+        assert_ne!(total, count);
+        assert_eq!(total, repeated_total);
     }
 }
