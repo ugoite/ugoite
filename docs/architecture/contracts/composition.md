@@ -232,4 +232,6 @@ Space, an ID is bound to its Composition Entry, source revision, exact base
 revision, and author. Reuse in that Space with different publication-defining
 values returns an idempotency conflict. Authorized calls also recheck the
 caller's current Entry and Form permissions on every attempt, including a
-replay. These service methods do not change the REST API or storage contract.
+replay, before resolving the durable publication. An authorization denial can
+therefore precede an idempotency conflict on a mismatched retry. These service
+methods do not change the REST API or storage contract.

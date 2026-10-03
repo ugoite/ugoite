@@ -145,7 +145,9 @@ impl UgoiteService {
     /// Reuse the same ID and publication-defining arguments to recover an
     /// uncertain outcome. Within a Space, the ID cannot be reused for a
     /// different Entry, source revision, base revision, or author. Current
-    /// authorization is checked on every call, including retries.
+    /// authorization is checked on every call, including retries, before the
+    /// durable publication is resolved; an authorization denial can therefore
+    /// precede an idempotency conflict.
     #[allow(clippy::too_many_arguments)]
     pub async fn restore_composition_authorized_for_principals_with_operation_id(
         &self,
