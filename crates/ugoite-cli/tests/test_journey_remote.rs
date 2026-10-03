@@ -1313,6 +1313,12 @@ async fn test_cli_remote_composition_restore_receipt_replay_and_stale_base() {
     let mixed_case_composition_id = composition_id.to_ascii_uppercase();
     let mixed_case_source_revision_id = source_revision_id.to_ascii_uppercase();
     let mixed_case_base_revision_id = base_revision_id.to_ascii_uppercase();
+    assert!(
+        mixed_case_composition_id != composition_id
+            || mixed_case_source_revision_id != source_revision_id
+            || mixed_case_base_revision_id != base_revision_id,
+        "at least one restore UUID must contain hexadecimal letters to test case-insensitive parsing"
+    );
     let args = [
         "composition",
         "restore",
