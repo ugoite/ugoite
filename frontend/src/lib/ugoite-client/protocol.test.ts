@@ -17,6 +17,7 @@ import {
 } from "./protocol";
 import { testApiUrl } from "~/test/http-origin";
 import { server } from "~/test/mocks/server";
+import type { CompositionSaveResponse } from "../composition-api";
 
 const validReference = {
   asset_id: "01900000-0000-7000-8000-000000000001",
@@ -317,6 +318,40 @@ describe("portable Ugoite API protocol WASM", () => {
         { id: "entry-1" },
       ),
     ).resolves.toEqual({ id: "entry-1", revision_id: "rev-1" });
+  });
+
+  it("decodes the Composition save snapshot id as a JSON number", async () => {
+    server.use(
+      http.post(
+        testApiUrl("/spaces/demo/compositions"),
+        async ({ request }) => {
+          expect(request.headers.get("idempotency-key")).toBe("attempt-1");
+          expect(await request.json()).toEqual({ yaml: "canonical yaml" });
+          return HttpResponse.json({
+            composition_id: "tool-1",
+            revision_id: "revision-2",
+            canonical_yaml: "canonical yaml",
+            receipt: {
+              command_id: "command-1",
+              catalog_generation: 4,
+              snapshot_id: 42,
+              committed_revision_ids: ["revision-2"],
+              committed_at_micros: 1,
+              data_file_count: 1,
+            },
+          });
+        },
+      ),
+    );
+
+    const response = await protocolFetch<CompositionSaveResponse>(
+      "composition.save",
+      { space_id: "demo", idempotency_key: "attempt-1" },
+      { yaml: "canonical yaml" },
+    );
+
+    expect(typeof response.receipt.snapshot_id).toBe("number");
+    expect(response.receipt.snapshot_id).toBe(42);
   });
 
   it("short-circuits fetch when a signal is aborted during WASM preparation", async () => {
