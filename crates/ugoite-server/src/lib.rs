@@ -1617,15 +1617,17 @@ fn publication_command_id(
 }
 
 fn required_composition_command_id(headers: &HeaderMap, operation: &str) -> ApiResult<String> {
-    let key = publication_idempotency_key(headers)?.ok_or_else(|| {
-        ApiError::new(
-            StatusCode::BAD_REQUEST,
-            json!({
-                "code": "IDEMPOTENCY_KEY_REQUIRED",
-                "message": "Idempotency-Key is required for a Composition mutation",
-            }),
-        )
-    })?;
+    let key = publication_idempotency_key(headers)?
+        .filter(|key| !key.is_empty())
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                json!({
+                    "code": "IDEMPOTENCY_KEY_REQUIRED",
+                    "message": "Idempotency-Key is required for a Composition mutation",
+                }),
+            )
+        })?;
     validate_publication_idempotency_key(&key)?;
     Ok(format!(
         "{operation}-{}",
@@ -14357,6 +14359,29 @@ mod authentication_regression_tests {
             "{missing_key_body}"
         );
         assert_eq!(missing_key_body["code"], "IDEMPOTENCY_KEY_REQUIRED");
+
+        let (whitespace_key_status, whitespace_key_body) = route_json(
+            owner_route.clone(),
+            post_save_with_key(json!({"yaml": fixture}), "   ")?,
+        )
+        .await?;
+        assert_eq!(
+            whitespace_key_status,
+            StatusCode::BAD_REQUEST,
+            "{whitespace_key_body}"
+        );
+        assert_eq!(whitespace_key_body["code"], "IDEMPOTENCY_KEY_REQUIRED");
+        let (whitespace_key_page_status, whitespace_key_page) = route_json(
+            owner_route.clone(),
+            Request::get(format!("/spaces/{space_id}/compositions?limit=1")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(
+            whitespace_key_page_status,
+            StatusCode::OK,
+            "{whitespace_key_page}"
+        );
+        assert_eq!(whitespace_key_page["items"], json!([]));
 
         for body in [
             json!({"yaml": fixture, "composition_id": "00000000-0000-7000-8000-000000000001"}),
