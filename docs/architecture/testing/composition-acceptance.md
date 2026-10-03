@@ -18,9 +18,9 @@ The Composition Requirement and Feature remain `planned` until implementation
 and full-surface runtime evidence land. Focused domain and Core resolver tests
 are bound in `docs/mitase/features/composition.yaml`; they establish those Rust
 contracts only. The reserved selectors in the locator map are not Mitase
-verification bindings until the corresponding integration tests exist. The
-current D0 check validates only the completeness and pending status of that
-map.
+verification bindings until the corresponding integration tests run. The D0
+check validates the map, fixture presence, and selector registration; it does
+not claim runtime evidence.
 
 The canonical monthly-expense YAML document is shared with the domain fixture
 set. Two small raw-payload candidates now cover an unsupported format version
@@ -32,8 +32,12 @@ particular, `composition_canonicalization_matches_the_native_domain_contract`
 compares WASM documents, canonical YAML, fingerprints, and diagnostic codes
 with the native Domain contract. See the
 [Composition contract](../contracts/composition.md) and its referenced parser
-fixtures. Space-seed and expected-output files stay planned until their
-integration contracts are reviewed and frozen.
+fixtures. The E2E seed manifest at
+`e2e/fixtures/composition/space-seed/manifest.json` now supplies the server
+seed, expected page sizes, scalar value, and Browser selectors. The Playwright
+journey consumes it as test input. Its existence and selector binding do not
+record a runtime pass; the focused Browser run remains pending the Home/detail
+routes and is recorded only after it executes successfully.
 
 ## Resolver implementation evidence
 
@@ -96,14 +100,17 @@ agree on output meaning across the complete command set.
 
 ## Browser Golden Journey shape
 
-With model connection disabled, the Browser saves a Composition in the active
-Space, closes the browser context, reopens Home, and opens that saved tool.
-Changing a declared parameter runs the source through the existing paged query
-path; advancing a page displays rows returned by that query without client-side
-aggregation. A delayed old response cannot replace the currently selected
-parameter result or change success, error, finalization, or loading state after
-a parameter, Space, or source switch. Page, scroll, result, continuation, and
-cache state stay in disposable Work and do not appear in the saved Entry.
+With model connection disabled, the seeded Browser journey creates the Space,
+source entries, Saved SQL, and Composition through the existing server APIs,
+then confirms the Composition save receipt identifies the exact revision. A
+fresh Browser context rediscovers that revision from Home, changes declared
+parameters, and reads bounded result pages through the existing query path. It
+checks that the displayed metric remains the Saved SQL scalar instead of a
+Browser aggregate, and that reopening another context starts with empty
+parameter state. This journey does not exercise the Browser save dialog or
+delayed-response suppression. Those scenarios remain planned. Page, scroll,
+result, continuation, and cache state remain transient Work and are not saved
+with the Composition.
 
 When implementing the surface, follow the existing Mitase UI contract:
 structure comes before explanation, each datum has one visible owner, and
