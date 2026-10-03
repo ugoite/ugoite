@@ -36,8 +36,7 @@
     "first_page_rows": 100,
     "second_page_rows": 1,
     "after_month_start_change_rows": 0,
-    "composition_publications": 1,
-    "receipt_revision": "Must equal the exact revision path opened from Home."
+    "composition_publications": 1
   },
   "selectors": [
     "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled"
