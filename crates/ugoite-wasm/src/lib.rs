@@ -155,6 +155,12 @@ fn invoke_konase(request: serde_json::Value) -> String {
 
 fn invoke_domain(request: serde_json::Value) -> String {
     if request.get("action").and_then(serde_json::Value::as_str)
+        == Some("domain.evaluate_composition_metric_page")
+    {
+        return invoke_composition_metric_page(request.get("value"));
+    }
+
+    if request.get("action").and_then(serde_json::Value::as_str)
         == Some("domain.canonicalize_composition")
     {
         let Some(yaml) = request
@@ -390,6 +396,107 @@ fn entry_error_envelope(error: serde_json::Value) -> String {
     envelope.to_string()
 }
 
+fn invoke_composition_metric_page(payload: Option<&serde_json::Value>) -> String {
+    let Some(payload) = payload.and_then(serde_json::Value::as_object) else {
+        return domain_validation_error("value must be an object");
+    };
+
+    const ALLOWED_FIELDS: &[&str] = &[
+        "expected_result_type",
+        "is_complete",
+        "row_count",
+        "selected_column_count",
+        "selected_value",
+    ];
+    if payload
+        .keys()
+        .any(|key| !ALLOWED_FIELDS.contains(&key.as_str()))
+    {
+        return domain_validation_error("value contains an unsupported field");
+    }
+
+    let Some(expected_result_type) = payload
+        .get("expected_result_type")
+        .and_then(serde_json::Value::as_str)
+        .and_then(parse_composition_result_field_type)
+    else {
+        return domain_validation_error(
+            "value.expected_result_type must be a supported result type",
+        );
+    };
+    let Some(is_complete) = payload
+        .get("is_complete")
+        .and_then(serde_json::Value::as_bool)
+    else {
+        return domain_validation_error("value.is_complete must be a boolean");
+    };
+    let Some(row_count) = parse_metric_page_count(payload.get("row_count")) else {
+        return domain_validation_error("value.row_count must be a non-negative integer");
+    };
+    let Some(selected_column_count) = parse_metric_page_count(payload.get("selected_column_count"))
+    else {
+        return domain_validation_error(
+            "value.selected_column_count must be a non-negative integer",
+        );
+    };
+
+    let result = ugoite_domain::composition_metric::evaluate_composition_metric_page(
+        expected_result_type,
+        ugoite_domain::composition_metric::CompositionMetricPage {
+            is_complete,
+            row_count,
+            selected_column_count,
+            // `get` preserves the difference between an absent key and an
+            // explicit JSON null, which the Domain evaluator classifies.
+            selected_value: payload.get("selected_value"),
+        },
+    );
+
+    match result {
+        Ok(value) => serde_json::json!({"ok": true, "value": value}).to_string(),
+        Err(code) => serde_json::json!({
+            "ok": false,
+            "error": {
+                "kind": "composition_diagnostic",
+                "code": ugoite_domain::composition::CompositionDiagnosticCode::from(code).as_str(),
+            },
+        })
+        .to_string(),
+    }
+}
+
+fn parse_composition_result_field_type(
+    value: &str,
+) -> Option<ugoite_domain::composition::CompositionResultFieldType> {
+    use ugoite_domain::composition::CompositionResultFieldType as FieldType;
+
+    match value {
+        "string" => Some(FieldType::String),
+        "boolean" => Some(FieldType::Boolean),
+        "integer" => Some(FieldType::Integer),
+        "float" => Some(FieldType::Float),
+        "date" => Some(FieldType::Date),
+        "timestamp" => Some(FieldType::Timestamp),
+        "json" => Some(FieldType::Json),
+        _ => None,
+    }
+}
+
+fn parse_metric_page_count(value: Option<&serde_json::Value>) -> Option<usize> {
+    // Keep the JSON count range target-independent: `usize` is 32-bit in
+    // wasm32, while native builds commonly use 64-bit `usize`.
+    let count = u32::try_from(value?.as_u64()?).ok()?;
+    usize::try_from(count).ok()
+}
+
+fn domain_validation_error(message: &str) -> String {
+    serde_json::json!({
+        "ok": false,
+        "error": {"kind": "domain_validation", "message": message},
+    })
+    .to_string()
+}
+
 /// Portable Entry authoring boundary (read-only, no Storage).
 ///
 /// - `entry.validate_draft` validates `{form, draft}` with the same
@@ -553,6 +660,8 @@ mod tests {
     );
     const UNKNOWN_FORMAT_VERSION_COMPOSITION: &str =
         include_str!("../../../e2e/fixtures/composition/unknown-format-version.ugcomp.yaml");
+    const COMPOSITION_METRIC_PAGE_FIXTURES: &str =
+        include_str!("../../ugoite-domain/tests/fixtures/composition/metric-page-evaluation.json");
 
     #[test]
     fn test_api_req_api_001_wasm_adapter_exposes_protocol_version() {
@@ -629,6 +738,115 @@ mod tests {
             assert_eq!(response["ok"], false, "{response}");
             assert_eq!(response["error"]["kind"], "composition_diagnostic");
             assert_eq!(response["error"]["code"], native_error.as_str());
+        }
+    }
+
+    #[test]
+    fn composition_metric_page_evaluation_matches_the_native_domain_contract() {
+        let fixtures: Vec<Value> = serde_json::from_str(COMPOSITION_METRIC_PAGE_FIXTURES).unwrap();
+        for fixture in fixtures {
+            let name = fixture["name"].as_str().unwrap();
+            let value = &fixture["value"];
+            let expected_type = super::parse_composition_result_field_type(
+                value["expected_result_type"].as_str().unwrap(),
+            )
+            .unwrap();
+            let page = ugoite_domain::composition_metric::CompositionMetricPage {
+                is_complete: value["is_complete"].as_bool().unwrap(),
+                row_count: usize::try_from(value["row_count"].as_u64().unwrap()).unwrap(),
+                selected_column_count: usize::try_from(
+                    value["selected_column_count"].as_u64().unwrap(),
+                )
+                .unwrap(),
+                selected_value: value.get("selected_value"),
+            };
+            let native_response =
+                match ugoite_domain::composition_metric::evaluate_composition_metric_page(
+                    expected_type,
+                    page,
+                ) {
+                    Ok(value) => serde_json::json!({"ok": true, "value": value}),
+                    Err(code) => serde_json::json!({
+                        "ok": false,
+                        "error": {
+                            "kind": "composition_diagnostic",
+                            "code": ugoite_domain::composition::CompositionDiagnosticCode::from(code).as_str(),
+                        },
+                    }),
+                };
+            let expected = &fixture["expected_response"];
+            assert_eq!(&native_response, expected, "native result for {name}");
+
+            let request = serde_json::json!({
+                "action": "domain.evaluate_composition_metric_page",
+                "value": value,
+            });
+            let wasm_adapter_response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(
+                &wasm_adapter_response, expected,
+                "WASM adapter result for {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn composition_metric_page_adapter_rejects_malformed_payloads() {
+        for (request, expected_message) in [
+            (
+                serde_json::json!({"action": "domain.evaluate_composition_metric_page"}),
+                "value must be an object",
+            ),
+            (
+                serde_json::json!({
+                    "action": "domain.evaluate_composition_metric_page",
+                    "value": [],
+                }),
+                "value must be an object",
+            ),
+            (
+                serde_json::json!({
+                    "action": "domain.evaluate_composition_metric_page",
+                    "value": {
+                        "expected_result_type": "integer",
+                        "is_complete": true,
+                        "row_count": 1,
+                        "selected_column_count": 1,
+                        "unexpected": true,
+                    },
+                }),
+                "value contains an unsupported field",
+            ),
+            (
+                serde_json::json!({
+                    "action": "domain.evaluate_composition_metric_page",
+                    "value": {
+                        "expected_result_type": "integer",
+                        "is_complete": true,
+                        "row_count": -1,
+                        "selected_column_count": 1,
+                    },
+                }),
+                "value.row_count must be a non-negative integer",
+            ),
+            (
+                serde_json::json!({
+                    "action": "domain.evaluate_composition_metric_page",
+                    "value": {
+                        "expected_result_type": "integer",
+                        "is_complete": true,
+                        "row_count": u64::from(u32::MAX) + 1,
+                        "selected_column_count": 1,
+                    },
+                }),
+                "value.row_count must be a non-negative integer",
+            ),
+        ] {
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response["ok"], false, "{response}");
+            assert_eq!(response["error"]["kind"], "domain_validation");
+            assert_eq!(response["error"]["message"], expected_message);
         }
     }
 

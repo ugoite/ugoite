@@ -1,0 +1,210 @@
+[
+  {
+    "name": "string scalar",
+    "value": {
+      "expected_result_type": "string",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": "Coffee"
+    },
+    "expected_response": { "ok": true, "value": "Coffee" }
+  },
+  {
+    "name": "boolean scalar",
+    "value": {
+      "expected_result_type": "boolean",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": false
+    },
+    "expected_response": { "ok": true, "value": false }
+  },
+  {
+    "name": "integer scalar",
+    "value": {
+      "expected_result_type": "integer",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": 0
+    },
+    "expected_response": { "ok": true, "value": 0 }
+  },
+  {
+    "name": "float scalar",
+    "value": {
+      "expected_result_type": "float",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": 12.5
+    },
+    "expected_response": { "ok": true, "value": 12.5 }
+  },
+  {
+    "name": "date scalar",
+    "value": {
+      "expected_result_type": "date",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": "2026-10-03"
+    },
+    "expected_response": { "ok": true, "value": "2026-10-03" }
+  },
+  {
+    "name": "timestamp scalar",
+    "value": {
+      "expected_result_type": "timestamp",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": "2026-10-03T12:30:00Z"
+    },
+    "expected_response": {
+      "ok": true,
+      "value": "2026-10-03T12:30:00Z"
+    }
+  },
+  {
+    "name": "json is not a metric scalar",
+    "value": {
+      "expected_result_type": "json",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": "anything"
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_not_scalar" }
+    }
+  },
+  {
+    "name": "incomplete page",
+    "value": {
+      "expected_result_type": "integer",
+      "is_complete": false,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": 10
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_page_incomplete" }
+    }
+  },
+  {
+    "name": "empty page",
+    "value": {
+      "expected_result_type": "integer",
+      "is_complete": true,
+      "row_count": 0,
+      "selected_column_count": 1,
+      "selected_value": 10
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_empty" }
+    }
+  },
+  {
+    "name": "multiple rows",
+    "value": {
+      "expected_result_type": "integer",
+      "is_complete": true,
+      "row_count": 2,
+      "selected_column_count": 1,
+      "selected_value": 10
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_multiple_rows" }
+    }
+  },
+  {
+    "name": "selected column missing",
+    "value": {
+      "expected_result_type": "integer",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 0,
+      "selected_value": 10
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_column_missing" }
+    }
+  },
+  {
+    "name": "selected value omitted",
+    "value": {
+      "expected_result_type": "integer",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_column_missing" }
+    }
+  },
+  {
+    "name": "selected column ambiguous",
+    "value": {
+      "expected_result_type": "integer",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 2,
+      "selected_value": 10
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_column_ambiguous" }
+    }
+  },
+  {
+    "name": "explicit null value differs from an omitted value",
+    "value": {
+      "expected_result_type": "integer",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": null
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_type_mismatch" }
+    }
+  },
+  {
+    "name": "result type mismatch",
+    "value": {
+      "expected_result_type": "integer",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": 12.5
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_type_mismatch" }
+    }
+  },
+  {
+    "name": "container result is not scalar",
+    "value": {
+      "expected_result_type": "string",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": ["not", "scalar"]
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_not_scalar" }
+    }
+  }
+]
