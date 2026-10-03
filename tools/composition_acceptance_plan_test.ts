@@ -32,7 +32,7 @@ type AcceptancePlan = {
     integration_payloads: {
       status: string;
       created: boolean;
-      planned_files: string[];
+      created_files: string[];
     };
   };
   operation_inventory: string[];
@@ -249,12 +249,17 @@ Deno.test(
         `the raw recovery fixture candidate must exist: ${fixture.path}`,
       );
     }
-    assertEquals(plan.fixture_layout.integration_payloads.status, "planned");
-    assertEquals(plan.fixture_layout.integration_payloads.created, false);
-    assertEquals(plan.fixture_layout.integration_payloads.planned_files, [
+    assertEquals(plan.fixture_layout.integration_payloads.status, "created");
+    assertEquals(plan.fixture_layout.integration_payloads.created, true);
+    assertEquals(plan.fixture_layout.integration_payloads.created_files, [
       "e2e/fixtures/composition/space-seed/manifest.json",
-      "e2e/fixtures/composition/expected/",
     ]);
+    for (const path of plan.fixture_layout.integration_payloads.created_files) {
+      assert(
+        (await Deno.stat(path)).isFile,
+        `the Composition integration payload must exist: ${path}`,
+      );
+    }
     assert(
       !plan.fixture_layout.shared_document_fixtures[0].path.startsWith(
         `${plan.fixture_layout.root}/`,
@@ -285,6 +290,16 @@ Deno.test(
     ]);
     assertEquals(plan.browser_golden_journey.model_connection, "disabled");
     assertEquals(plan.browser_golden_journey.steps, EXPECTED_BROWSER_STEPS);
+
+    const seedManifest = JSON.parse(
+      await Deno.readTextFile(
+        "e2e/fixtures/composition/space-seed/manifest.json",
+      ),
+    ) as { selectors: string[] };
+    assertEquals(seedManifest.selectors, [
+      EXPECTED_RESERVED_SELECTORS.B5[2],
+      EXPECTED_RESERVED_SELECTORS.B6[0],
+    ]);
 
     assertEquals(plan.evidence_record_fields, [
       "source_sha",
@@ -330,7 +345,7 @@ Deno.test(
       );
     }
 
-    for (const path of plan.fixture_layout.integration_payloads.planned_files) {
+    for (const path of plan.fixture_layout.integration_payloads.created_files) {
       assert(path.startsWith("e2e/fixtures/composition/"), path);
     }
   },

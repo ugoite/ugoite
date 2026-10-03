@@ -4,6 +4,7 @@
     "docsite:navigation:raw": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test docsite-mobile-nav.test.ts docsite-links.test.ts",
     "docsite:navigation": "bash scripts/run-docsite-navigation.sh",
     "smoke": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test smoke.test.ts entry-query-late-response.test.ts",
+    "composition-golden": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test composition-golden-journey.test.ts",
     "late-query-response": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entry-query-late-response.test.ts",
     "entries": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entries.test.ts",
     "asset-owned": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entries.test.ts --grep REQ-FE-1877",

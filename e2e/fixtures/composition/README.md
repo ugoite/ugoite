@@ -1,41 +1,30 @@
 # Composition acceptance fixtures
 
-This directory reserves the E2E Space-seed layout and surface acceptance shape
-for Composition. The canonical `monthly-expense.ugcomp.yaml` document belongs
-to the shared domain fixture set under
-`crates/ugoite-domain/tests/fixtures/composition/`; E2E must consume that
-fixture rather than maintain a second copy. The raw recovery candidates below
-use the merged typed shape; Space seed and expected-result payloads still wait
-for parser limits and integration contracts to be reviewed.
+The canonical `monthly-expense.ugcomp.yaml` belongs to the shared domain fixture
+set under `crates/ugoite-domain/tests/fixtures/composition/`. Browser E2E reads
+that file directly and does not maintain another YAML copy.
 
-`acceptance-plan.json` is a plan, not test evidence. Its selectors are reserved
-locators for the B0–B6 work and do not claim that those tests or product
-surfaces exist. The only current executable check verifies that the plan stays
-complete and explicitly pending.
+`acceptance-plan.json` describes the full B0–B6 plan. Its planned selectors are
+locators, not release evidence. The Browser journey source is in
+`e2e/composition-golden-journey.test.ts`; runtime evidence is recorded only
+after the focused E2E command runs against the merged routes.
 
-The shared and E2E-specific document fixtures are:
+- `unknown-format-version.ugcomp.yaml` is a raw-payload candidate for
+  unsupported-format recovery.
+- `broken-source-reference.ugcomp.yaml` is a raw-payload candidate whose Form ID
+  is absent from the Browser seed Space.
+- `space-seed/manifest.json` records the seeded dataset and expected pages. Each
+  run creates a unique server-backed Space and substitutes the server's Form,
+  field, Saved SQL, and revision identities into the shared fixture.
 
-- `monthly-expense.ugcomp.yaml`: canonical dashboard and parameter fixture
-  shared with domain and WASM tests.
-- `unknown-format-version.ugcomp.yaml`: raw-payload candidate for unsupported
-  format recovery. It is not a parser or E2E result fixture yet.
-- `broken-source-reference.ugcomp.yaml`: raw-payload candidate with a Form ID
-  absent from a future Space seed. It is not a resolver or E2E result fixture
-  yet.
-- `space-seed/manifest.json`: E2E seed identity and composition membership,
-  without duplicating the YAML payload.
-- `expected/`: frozen canonical bytes and expected diagnostic codes after the
-  domain format is agreed.
+The Browser test publishes the seed Composition through the existing API and
+checks that its receipt names the saved revision. A fresh browser context opens
+it from Home, supplies the date parameters, and reads a two-row table page then
+a one-row continuation page. It also checks the scalar metric comes from the
+Saved SQL result and remains unchanged while the table pages. A second browser
+context reopens the same exact revision from Home; parameter state starts empty
+again. The journey does not call a model connection or persist Browser Work.
 
-The raw candidates use the merged typed document shape, but their presence
-does not freeze restricted parser rules, establish a Space seed contract, or
-record runtime evidence. The seed manifest and expected outputs remain
-planned.
-
-The Browser journey runs with model connection disabled. It saves one
-Space-owned Composition, closes and reopens the Browser, changes a parameter,
-and advances a paged result. It checks transient Work state and stale-response
-suppression without introducing a TypeScript parser or client-side query
-engine. The CLI acceptance shape covers `list`, `inspect`, `lint`, `save`,
-`query`, `export`, and `import`; exact serialized output remains pending the
-shared DTO contract.
+The raw recovery candidates and the remaining CLI, recovery, and exact-candidate
+release evidence selectors remain planned. The E2E seed does not implement a
+second parser, resolver, or query engine.

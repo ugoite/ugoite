@@ -26,11 +26,10 @@
       }
     ],
     "integration_payloads": {
-      "status": "planned",
-      "created": false,
-      "planned_files": [
-        "e2e/fixtures/composition/space-seed/manifest.json",
-        "e2e/fixtures/composition/expected/"
+      "status": "created",
+      "created": true,
+      "created_files": [
+        "e2e/fixtures/composition/space-seed/manifest.json"
       ]
     }
   },
