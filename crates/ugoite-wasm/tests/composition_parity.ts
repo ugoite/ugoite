@@ -180,6 +180,54 @@ async function main(): Promise<void> {
   assertEqual(responseValue.canonical_yaml, canonicalYaml, "canonical YAML");
   assertEqual(responseValue.fingerprint, fingerprint, "semantic fingerprint");
 
+  const typedDocument = structuredClone(
+    responseValue.document as Record<string, unknown>,
+  );
+  const futureVersionDocument = structuredClone(typedDocument);
+  futureVersionDocument.format_version = 2;
+  futureVersionDocument.future_field = { enabled: true };
+  const futureVersionTypedResponse = await invokeWasm(instance.exports, {
+    action: "domain.canonicalize_composition_document",
+    value: { document: futureVersionDocument },
+  });
+  const futureVersionTypedError = futureVersionTypedResponse.error as Record<
+    string,
+    unknown
+  >;
+  assertEqual(futureVersionTypedResponse.ok, false, "future typed document result");
+  assertEqual(
+    futureVersionTypedError.kind,
+    "composition_diagnostic",
+    "future typed document diagnostic kind",
+  );
+  assertEqual(
+    futureVersionTypedError.code,
+    "unsupported_format_version",
+    "future typed document diagnostic code",
+  );
+
+  const unknownV1FieldDocument = structuredClone(typedDocument);
+  unknownV1FieldDocument.future_field = { enabled: true };
+  const unknownV1FieldResponse = await invokeWasm(instance.exports, {
+    action: "domain.canonicalize_composition_document",
+    value: { document: unknownV1FieldDocument },
+  });
+  const unknownV1FieldError = unknownV1FieldResponse.error as Record<
+    string,
+    unknown
+  >;
+  assertEqual(unknownV1FieldResponse.ok, false, "unknown v1 typed document result");
+  assertEqual(
+    unknownV1FieldError.kind,
+    "composition_diagnostic",
+    "unknown v1 typed document diagnostic kind",
+  );
+  assertEqual(
+    unknownV1FieldError.code,
+    "invalid_composition",
+    "unknown v1 typed document diagnostic code",
+  );
+
   const labeledResponse = await invokeWasm(instance.exports, {
     action: "domain.canonicalize_composition",
     value: { yaml: labeledYaml },

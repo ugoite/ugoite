@@ -4,6 +4,7 @@ use super::{
     CompositionDiagnosticCode, CompositionDocument, CompositionFieldSchemaEntry, CompositionSource,
 };
 use crate::form::{FieldType, ListItemDefinition};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 /// A normalized Composition and its portable canonical representations.
@@ -59,6 +60,21 @@ pub fn canonicalize_composition(
         yaml,
         fingerprint,
     })
+}
+
+/// Validate an already decoded document value, then apply the strict v1 model
+/// and canonicalization rules.
+///
+/// The envelope check deliberately runs before deserialization so a future
+/// format version with fields unknown to v1 reports
+/// `unsupported_format_version` instead of `invalid_composition`.
+pub fn canonicalize_composition_document_value(
+    value: Value,
+) -> Result<CanonicalComposition, CompositionDiagnosticCode> {
+    super::validate_composition_document_envelope(&value)?;
+    let document: CompositionDocument =
+        serde_json::from_value(value).map_err(|_| CompositionDiagnosticCode::InvalidComposition)?;
+    canonicalize_composition(&document)
 }
 
 /// Parse restricted YAML and return the normalized model, canonical YAML, and
@@ -462,6 +478,28 @@ mod tests {
     fn unknown_list_item_schema_fields_are_rejected() {
         assert_eq!(
             canonicalize_composition_yaml(UNKNOWN_LIST_ITEM_FIELD),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn typed_value_checks_version_before_the_strict_v1_schema() {
+        let document = canonicalize_composition_yaml(MONTHLY_EXPENSE)
+            .unwrap()
+            .document;
+
+        let mut future_version = serde_json::to_value(&document).unwrap();
+        future_version["format_version"] = serde_json::json!(2);
+        future_version["future_field"] = serde_json::json!({"enabled": true});
+        assert_eq!(
+            super::canonicalize_composition_document_value(future_version),
+            Err(CompositionDiagnosticCode::UnsupportedFormatVersion)
+        );
+
+        let mut unknown_v1_field = serde_json::to_value(document).unwrap();
+        unknown_v1_field["future_field"] = serde_json::json!({"enabled": true});
+        assert_eq!(
+            super::canonicalize_composition_document_value(unknown_v1_field),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
     }

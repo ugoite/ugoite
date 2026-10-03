@@ -167,14 +167,7 @@ fn invoke_domain(request: serde_json::Value) -> String {
             );
         };
 
-        let result =
-            serde_json::from_value::<ugoite_domain::composition::CompositionDocument>(document)
-                .map_err(|_| {
-                    ugoite_domain::composition::CompositionDiagnosticCode::InvalidComposition
-                })
-                .and_then(|document| {
-                    ugoite_domain::composition::canonicalize_composition(&document)
-                });
+        let result = ugoite_domain::composition::canonicalize_composition_document_value(document);
         return match result {
             Ok(canonical) => serde_json::json!({
                 "ok": true,
@@ -773,6 +766,12 @@ mod tests {
 
         let mut unknown_version_document = serde_json::to_value(&native.document).unwrap();
         unknown_version_document["format_version"] = serde_json::json!(99);
+        unknown_version_document["future_field"] = serde_json::json!({"enabled": true});
+        let native_unknown_version_error =
+            ugoite_domain::composition::canonicalize_composition_document_value(
+                unknown_version_document.clone(),
+            )
+            .unwrap_err();
         let unknown_version_request = serde_json::json!({
             "action": "domain.canonicalize_composition_document",
             "value": {"document": unknown_version_document},
@@ -786,8 +785,33 @@ mod tests {
             "composition_diagnostic"
         );
         assert_eq!(
-            unknown_version_response["error"]["code"],
+            native_unknown_version_error.as_str(),
             "unsupported_format_version"
+        );
+        assert_eq!(
+            unknown_version_response["error"]["code"],
+            native_unknown_version_error.as_str()
+        );
+
+        let mut unknown_v1_field_document = serde_json::to_value(&native.document).unwrap();
+        unknown_v1_field_document["future_field"] = serde_json::json!({"enabled": true});
+        let native_unknown_v1_error =
+            ugoite_domain::composition::canonicalize_composition_document_value(
+                unknown_v1_field_document.clone(),
+            )
+            .unwrap_err();
+        let unknown_v1_field_request = serde_json::json!({
+            "action": "domain.canonicalize_composition_document",
+            "value": {"document": unknown_v1_field_document},
+        });
+        let unknown_v1_field_response: Value =
+            serde_json::from_str(&super::invoke_json(&unknown_v1_field_request.to_string()))
+                .unwrap();
+        assert_eq!(native_unknown_v1_error.as_str(), "invalid_composition");
+        assert_eq!(unknown_v1_field_response["ok"], false);
+        assert_eq!(
+            unknown_v1_field_response["error"]["code"],
+            native_unknown_v1_error.as_str()
         );
 
         let unreferenced_component = MONTHLY_EXPENSE_COMPOSITION

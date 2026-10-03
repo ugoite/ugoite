@@ -15,7 +15,8 @@ mod canonical;
 mod yaml;
 
 pub use canonical::{
-    canonicalize_composition, canonicalize_composition_yaml, CanonicalComposition,
+    canonicalize_composition, canonicalize_composition_document_value,
+    canonicalize_composition_yaml, CanonicalComposition,
 };
 pub use yaml::{
     parse_composition_yaml, MAX_COMPOSITION_COLLECTION_ITEMS, MAX_COMPOSITION_YAML_BYTES,
@@ -24,6 +25,27 @@ pub use yaml::{
 
 pub const COMPOSITION_FORMAT_VERSION: u32 = 1;
 pub const COMPOSITION_FORMAT: &str = "ugoite.composition";
+
+/// Check the portable envelope before applying the strict v1 schema.
+///
+/// Keeping this preflight separate lets adapters receiving an already decoded
+/// JSON value report an unsupported future version even when that document
+/// contains fields that are unknown to v1.
+pub(super) fn validate_composition_document_envelope(
+    value: &Value,
+) -> Result<(), CompositionDiagnosticCode> {
+    if value.get("format").and_then(Value::as_str) != Some(COMPOSITION_FORMAT) {
+        return Err(CompositionDiagnosticCode::InvalidComposition);
+    }
+    let version = value
+        .get("format_version")
+        .and_then(Value::as_u64)
+        .ok_or(CompositionDiagnosticCode::InvalidComposition)?;
+    if version != u64::from(COMPOSITION_FORMAT_VERSION) {
+        return Err(CompositionDiagnosticCode::UnsupportedFormatVersion);
+    }
+    Ok(())
+}
 /// Default page size for an EntryQuery source when the document omits it.
 /// The core resolver still validates the value against EntryQuery's maximum.
 pub const DEFAULT_COMPOSITION_PAGE_LIMIT: usize = 100;
