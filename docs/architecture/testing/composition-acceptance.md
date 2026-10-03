@@ -69,6 +69,7 @@ The current CLI command surface includes:
 - `ugoite composition list`
 - `ugoite composition history <id>`
 - `ugoite composition inspect <id> [--revision] [--raw]`
+- `ugoite composition export <id> --output <path> [--revision <id>]`
 - `ugoite composition restore <id> --revision <source> --base-revision <current> --idempotency-key <key>`
 - `ugoite composition lint <file>`
 - `ugoite composition query <id> [--revision] [--param k=v]`
@@ -86,16 +87,25 @@ remote mode. Its default page size is 100 with offset 0; `--limit` and
 `CompositionHistoryPage` JSON, including each raw revision carrier without
 parsing its stored spec.
 
+`composition export` reuses `composition.get` to read the latest or requested
+exact raw revision and writes the stored `spec` value to a new local file. It
+does not parse or re-canonicalize the document, so unsupported versions and
+broken source references remain exportable. A missing exact revision does not
+fall back to latest, and an existing output file is left untouched. The command
+returns a JSON receipt with the Composition, revision, output path, and byte
+count. Export is CLI file output over `composition.get`, not a separate
+portable operation or REST route.
+
 The remaining planned command surface is:
 
 - `ugoite composition save <file>`
-- `ugoite composition export <id> --output <path>`
 - `ugoite composition import <file>`
 
 Focused CLI tests cover bounded local list and history pages, remote operation
 request and response decoding, summary output shape, exact-revision inspect,
-shared lint diagnostics, and exact Composition restore with receipt, replay,
-stale-base, and local/remote parity assertions. Full cross-surface
+shared lint diagnostics, exact raw export with missing-revision and no-overwrite
+coverage, and exact Composition restore with receipt, replay, stale-base, and
+local/remote parity assertions. Full cross-surface
 list/get/history acceptance and CLI parity acceptance remain planned. History
 and restore preserve append-only revisions, and save success must wait for the
 Entry receipt. Raw
@@ -149,8 +159,9 @@ in local mode. The list DTO omits `spec`. CLI history uses the portable
 `composition.history` operation remotely and the local raw history reader in
 local mode. Resolve is available as a side-effect-free operation, and
 `composition.save` is exposed by the Server API with a publication receipt.
-CLI save/export/import and restore remain planned. The Core resolver returns
-requests for the existing query path; it does not itself execute them. The
+CLI save/import remain planned; full restore acceptance remains planned. The
+Core resolver returns requests for the existing query path; it does not itself
+execute them. The
 scalar page adapters described above are tested Core functions and are not yet
 evidence of a complete CLI or Browser query journey.
 

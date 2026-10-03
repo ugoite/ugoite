@@ -392,6 +392,37 @@ mod tests {
     }
 
     #[test]
+    fn composition_export_accepts_an_exact_revision_and_output_file_as_a_read() {
+        let cli = Cli::try_parse_from([
+            "ugoite",
+            "--context",
+            "research",
+            "composition",
+            "export",
+            "composition-1",
+            "--revision",
+            "revision-2",
+            "--output",
+            "monthly.ugcomp.yaml",
+        ])
+        .expect("Composition export command");
+
+        assert!(!cli.is_mutation_command());
+        assert!(matches!(
+            cli.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::Export {
+                    composition_id,
+                    revision: Some(revision),
+                    output,
+                }
+            }) if composition_id == "composition-1"
+                && revision == "revision-2"
+                && output.as_path() == std::path::Path::new("monthly.ugcomp.yaml")
+        ));
+    }
+
+    #[test]
     fn composition_restore_requires_exact_revisions_and_retry_identity_as_a_write() {
         let cli = Cli::try_parse_from([
             "ugoite",

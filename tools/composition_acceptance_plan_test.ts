@@ -287,7 +287,6 @@ Deno.test(
       "composition.lint",
       "composition.resolve",
       "composition.save",
-      "composition.export",
       "composition.history",
       "composition.restore",
     ]);
