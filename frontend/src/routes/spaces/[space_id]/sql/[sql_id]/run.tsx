@@ -18,6 +18,13 @@ import {
   canCreateSavedSqlComposition,
   compositionApi,
 } from "~/lib/composition-api";
+import {
+  clearPendingCompositionSaveAttempt,
+  getPendingCompositionSaveAttempt,
+  type PendingCompositionSaveAttempt,
+  rememberPendingCompositionSaveAttempt,
+  subscribeToPendingCompositionSaveAttempt,
+} from "~/lib/composition-save-attempt";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { normalizeSqlVariables } from "~/lib/sql";
@@ -106,13 +113,7 @@ export default function SpaceSqlRunRoute() {
     columns: string[];
     parameters: Record<string, unknown>;
   } | undefined;
-  let pendingSave: {
-    spaceId: string;
-    sqlId: string;
-    routePath: string;
-    yaml: string;
-    idempotencyKey: string;
-  } | undefined;
+  let pendingSave: PendingCompositionSaveAttempt | undefined;
   const state = createMemo(() => runState(location.state));
 
   const [entry] = createResource(
@@ -346,43 +347,72 @@ export default function SpaceSqlRunRoute() {
     spaceId() === attempt.spaceId && sqlId() === attempt.sqlId &&
     location.pathname === attempt.routePath;
 
+  const currentSaveRoute = () => ({
+    spaceId: spaceId(),
+    sqlId: sqlId(),
+    routePath: location.pathname,
+  });
+
   const clearSaveForStaleRoute = () => {
     setSaveDialogOpen(false);
     setSaveRetryAvailable(false);
+    setSaveError(null);
+    saveSeed = undefined;
     pendingSave = undefined;
   };
 
-  const saveRequest = async (attempt: {
-    spaceId: string;
-    sqlId: string;
-    routePath: string;
-    yaml: string;
-    idempotencyKey: string;
-  }) => {
+  createEffect(() => {
+    const route = currentSaveRoute();
+    if (pendingSave && !isCurrentSaveRoute(pendingSave)) {
+      clearSaveForStaleRoute();
+    }
+    const restoreAttempt = (attempt: PendingCompositionSaveAttempt) => {
+      pendingSave = attempt;
+      setSaveDialogOpen(true);
+      setSaveRetryAvailable(true);
+      setSaveError(t("composition.saveFailed"));
+    };
+    const savedAttempt = getPendingCompositionSaveAttempt(route);
+    if (savedAttempt) restoreAttempt(savedAttempt);
+    const unsubscribe = subscribeToPendingCompositionSaveAttempt(
+      route,
+      restoreAttempt,
+    );
+    onCleanup(unsubscribe);
+  });
+
+  const saveRequest = async (attempt: PendingCompositionSaveAttempt) => {
     try {
       const response = await compositionApi.save(
         attempt.spaceId,
         attempt.yaml,
         attempt.idempotencyKey,
       );
+      clearPendingCompositionSaveAttempt(attempt);
       if (!isCurrentSaveRoute(attempt)) {
         clearSaveForStaleRoute();
         return;
       }
+      pendingSave = undefined;
       navigate(
         `/spaces/${encodeURIComponent(spaceId())}/compositions/${
           encodeURIComponent(response.composition_id)
         }/${encodeURIComponent(response.revision_id)}`,
       );
     } catch (error) {
-      if (!isCurrentSaveRoute(attempt)) {
-        clearSaveForStaleRoute();
-        return;
-      }
       const outcome = error && typeof error === "object" &&
           "mutationOutcome" in error
         ? (error as { mutationOutcome?: unknown }).mutationOutcome
         : "unknown";
+      if (outcome === "rejected") {
+        clearPendingCompositionSaveAttempt(attempt);
+      } else {
+        rememberPendingCompositionSaveAttempt(attempt);
+      }
+      if (!isCurrentSaveRoute(attempt)) {
+        clearSaveForStaleRoute();
+        return;
+      }
       setSaveRetryAvailable(outcome !== "rejected");
       setSaveError(t("composition.saveFailed"));
     }
@@ -411,6 +441,7 @@ export default function SpaceSqlRunRoute() {
         spaceId: seed.spaceId,
         sqlId: seed.entry.id,
         routePath: seed.routePath,
+        name,
         yaml: canonical.canonical_yaml,
         idempotencyKey: crypto.randomUUID(),
       };
@@ -576,7 +607,8 @@ export default function SpaceSqlRunRoute() {
       </section>
       <Show when={saveDialogOpen()}>
         <SaveAsToolDialog
-          initialName={saveSeed?.entry.name ?? displaySqlName(saveSeed!.entry)}
+          initialName={pendingSave?.name ?? saveSeed?.entry.name ??
+            (saveSeed ? displaySqlName(saveSeed.entry) : "")}
           busy={saveBusy()}
           retryAvailable={saveRetryAvailable()}
           error={saveError()}

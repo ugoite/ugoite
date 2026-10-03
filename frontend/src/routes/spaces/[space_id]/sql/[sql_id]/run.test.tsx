@@ -9,6 +9,10 @@ import {
 } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { compositionApi } from "~/lib/composition-api";
+import {
+  clearPendingCompositionSaveAttempt,
+  getPendingCompositionSaveAttempt,
+} from "~/lib/composition-save-attempt";
 import SpaceSqlRunRoute from "./run";
 
 const {
@@ -84,6 +88,11 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     routeControls.setSpace("default");
     routeControls.setSql("saved-query");
     routeControls.setPath("/spaces/default/sql/saved-query/run");
+    clearPendingCompositionSaveAttempt({
+      spaceId: "default",
+      sqlId: "saved-query",
+      routePath: "/spaces/default/sql/saved-query/run",
+    });
     routeControls.setState(undefined);
     navigateMock.mockReset();
     getMock.mockReset();
@@ -356,6 +365,114 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       ).not.toBeInTheDocument()
     );
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("retries a committed save with the same key after leaving and returning", async () => {
+    const committedPublications = new Map<string, {
+      composition_id: string;
+      revision_id: string;
+      canonical_yaml: string;
+      receipt: {
+        command_id: string;
+        catalog_generation: number;
+        snapshot_id: string;
+        committed_revision_ids: string[];
+        committed_at_micros: number;
+        data_file_count: number;
+      };
+    }>();
+    let loseFirstResponse: ((error: unknown) => void) | undefined;
+    compositionSaveMock.mockImplementation((spaceId, yaml, idempotencyKey) => {
+      const existing = committedPublications.get(idempotencyKey);
+      if (existing) return Promise.resolve(existing);
+      const publication = {
+        composition_id: "tool-1",
+        revision_id: `tool-revision-${committedPublications.size + 1}`,
+        canonical_yaml: yaml,
+        receipt: {
+          command_id: `command-${committedPublications.size + 1}`,
+          catalog_generation: 4,
+          snapshot_id: "snapshot-1",
+          committed_revision_ids: [
+            `tool-revision-${committedPublications.size + 1}`,
+          ],
+          committed_at_micros: 1,
+          data_file_count: 1,
+        },
+      };
+      committedPublications.set(idempotencyKey, publication);
+      expect(spaceId).toBe("default");
+      return new Promise((_resolve, reject) => {
+        loseFirstResponse = reject;
+      });
+    });
+    render(() => <SpaceSqlRunRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save as tool" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Save as tool" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(compositionSaveMock).toHaveBeenCalledTimes(1));
+    const firstCall = compositionSaveMock.mock.calls[0];
+    expect(firstCall[1]).toBe("canonical composition yaml");
+    expect(firstCall[2]).toEqual(expect.any(String));
+    expect(committedPublications.size).toBe(1);
+
+    routeControls.setPath("/spaces/default/sql/saved-query");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Save as tool" }),
+      ).not.toBeInTheDocument()
+    );
+    loseFirstResponse?.(
+      Object.assign(new Error("response lost after commit"), {
+        mutationOutcome: "unknown",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        getPendingCompositionSaveAttempt({
+          spaceId: "default",
+          sqlId: "saved-query",
+          routePath: "/spaces/default/sql/saved-query/run",
+        }),
+      ).toEqual(expect.objectContaining({
+        yaml: firstCall[1],
+        idempotencyKey: firstCall[2],
+      }))
+    );
+    expect(navigateMock).not.toHaveBeenCalled();
+
+    cleanup();
+    routeControls.setPath("/spaces/default/sql/saved-query/run");
+    queryMock.mockReset().mockResolvedValue({
+      columns: ["value"],
+      rows: [["result"]],
+      has_more: false,
+    });
+    render(() => <SpaceSqlRunRoute />);
+    const recoveredDialog = await screen.findByRole("dialog", {
+      name: "Save as tool",
+    });
+    expect(screen.getByLabelText("Name", { selector: "input" }))
+      .toHaveValue("Saved query");
+    fireEvent.click(
+      within(recoveredDialog).getByRole("button", { name: "Retry" }),
+    );
+
+    await waitFor(() => expect(compositionSaveMock).toHaveBeenCalledTimes(2));
+    expect(compositionSaveMock.mock.calls[1]).toEqual(firstCall);
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/default/compositions/tool-1/tool-revision-1",
+      )
+    );
+    expect(committedPublications.size).toBe(1);
+    expect(
+      [...committedPublications.values()].map(({ revision_id }) => revision_id),
+    )
+      .toEqual(["tool-revision-1"]);
   });
 
   it("aborts the old Space page request and never renders its late response", async () => {
