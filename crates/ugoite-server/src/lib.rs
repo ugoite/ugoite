@@ -14529,8 +14529,8 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
-    async fn composition_restore_route_uses_exact_revisions_and_idempotency() -> anyhow::Result<()>
-    {
+    async fn composition_restore_route_rechecks_current_authorization_after_revocation(
+    ) -> anyhow::Result<()> {
         let state = AppState::new_for_tests(format!(
             "memory://server-composition-restore-{}",
             Uuid::now_v7()
@@ -14692,7 +14692,10 @@ mod authentication_regression_tests {
             )
             .await?;
         let (denied_replay_status, denied_replay) = route_json(
-            reversible_knowledge_route(state, reversible_knowledge_identity(viewer_id, space_uid)),
+            reversible_knowledge_route(
+                state.clone(),
+                reversible_knowledge_identity(viewer_id, space_uid),
+            ),
             post_restore_with_key(restore_body, "restore-denied-viewer")?,
         )
         .await?;
@@ -14700,6 +14703,99 @@ mod authentication_regression_tests {
             denied_replay_status,
             StatusCode::FORBIDDEN,
             "{denied_replay}"
+        );
+
+        let editor_id = Uuid::from_u128(351303);
+        let authorizer = Authorizer::new(state.service.operator().clone());
+        authorizer
+            .add_human_member(
+                &space_id,
+                owner_id,
+                SpacePrincipal {
+                    principal_id: editor_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Restore editor".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Editor,
+            )
+            .await?;
+        let editor_route =
+            reversible_knowledge_route(state, reversible_knowledge_identity(editor_id, space_uid));
+        let revoked_restore_body = json!({
+            "source_revision_id": source_revision_id,
+            "base_revision_id": restored["revision_id"],
+        });
+        let revoked_restore_key = "restore-revoked-editor";
+        let (editor_restore_status, editor_restore) = route_json(
+            editor_route.clone(),
+            post_restore_with_key(revoked_restore_body.clone(), revoked_restore_key)?,
+        )
+        .await?;
+        assert_eq!(editor_restore_status, StatusCode::OK, "{editor_restore}");
+
+        let history_path =
+            format!("/spaces/{space_id}/compositions/{composition_id}/history?limit=20");
+        let (history_before_status, history_before) = route_json(
+            owner_route.clone(),
+            Request::get(&history_path).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(history_before_status, StatusCode::OK, "{history_before}");
+        let revision_ids_before = history_before["revisions"]
+            .as_array()
+            .expect("history returns revisions")
+            .iter()
+            .map(|revision| {
+                revision["revision"]["revision_id"]
+                    .as_str()
+                    .expect("history revision has an ID")
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        authorizer
+            .revoke_principal(&space_id, owner_id, editor_id)
+            .await?;
+
+        let (revoked_retry_status, revoked_retry) = route_json(
+            editor_route,
+            post_restore_with_key(revoked_restore_body, revoked_restore_key)?,
+        )
+        .await?;
+        assert_eq!(
+            revoked_retry_status,
+            StatusCode::FORBIDDEN,
+            "{revoked_retry}"
+        );
+        assert_eq!(revoked_retry["code"], "FORBIDDEN");
+
+        let (history_after_status, history_after) = route_json(
+            owner_route,
+            Request::get(&history_path).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(history_after_status, StatusCode::OK, "{history_after}");
+        let revision_ids_after = history_after["revisions"]
+            .as_array()
+            .expect("history returns revisions")
+            .iter()
+            .map(|revision| {
+                revision["revision"]["revision_id"]
+                    .as_str()
+                    .expect("history revision has an ID")
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(history_after["total"], history_before["total"]);
+        assert_eq!(revision_ids_after, revision_ids_before);
+        assert_eq!(
+            history_after["revisions"]
+                .as_array()
+                .expect("history returns revisions")
+                .last()
+                .expect("history is non-empty")["revision"]["revision_id"],
+            editor_restore["revision_id"]
         );
         Ok(())
     }
