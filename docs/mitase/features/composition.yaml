@@ -635,3 +635,68 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-005#criterion.raw-inspection
+      - id: browser-query-runtime
+        role: implementation
+        facet: frontend
+        responsibility: Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient.
+        targets:
+          - id: browser-composition-api
+            adapter: typescript
+            path: frontend/src/lib/composition-api.ts
+            selector: { kind: symbol, name: compositionApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+          - id: browser-query-handle
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.ts
+            selector: { kind: symbol, name: createCompositionQueryHandle }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-shared-metric-evaluator
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.ts
+            selector: { kind: symbol, name: evaluateCompositionMetricPage }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.metric-runtime-values
+      - id: browser-query-runtime-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: Verify existing source forwarding, exact revision pinning, stale response suppression, opaque continuation pagination, and metric protocol result adaptation.
+        targets:
+          - id: browser-source-forwarding
+            adapter: typescript
+            path: frontend/src/lib/composition-api.test.ts
+            selector: { kind: test, name: forwards EntryQuery and Saved SQL pages through their existing query adapters }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+          - id: browser-stale-response-suppression
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: pins get and resolve to the selected revision and ignores a stale parameter response }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-source-pagination
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: uses the existing opaque Entry continuation for next and previous pages }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+          - id: browser-metric-protocol-adapter
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: adapts metric protocol envelopes to scalar and diagnostic results }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.metric-runtime-values
