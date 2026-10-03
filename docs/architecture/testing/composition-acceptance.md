@@ -69,6 +69,7 @@ The current CLI command surface includes:
 - `ugoite composition list`
 - `ugoite composition history <id>`
 - `ugoite composition inspect <id> [--revision] [--raw]`
+- `ugoite composition restore <id> --revision <source> --base-revision <current> --idempotency-key <key>`
 - `ugoite composition lint <file>`
 - `ugoite composition query <id> [--revision] [--param k=v]`
 
@@ -87,16 +88,17 @@ parsing its stored spec.
 
 The remaining planned command surface is:
 
-- `ugoite composition restore <id> --revision <revision>`
 - `ugoite composition save <file>`
 - `ugoite composition export <id> --output <path>`
 - `ugoite composition import <file>`
 
 Focused CLI tests cover bounded local list and history pages, remote operation
 request and response decoding, summary output shape, exact-revision inspect,
-and shared lint diagnostics. Full cross-surface list/get/history acceptance
-and CLI parity acceptance remain planned. History and restore must preserve
-append-only revisions, and save success must wait for the Entry receipt. Raw
+shared lint diagnostics, and exact Composition restore with receipt, replay,
+stale-base, and local/remote parity assertions. Full cross-surface
+list/get/history acceptance and CLI parity acceptance remain planned. History
+and restore preserve append-only revisions, and save success must wait for the
+Entry receipt. Raw
 inspect, export, and history must remain available for unknown versions,
 malformed documents, and broken references. Query must invoke the existing
 resolved query path and preserve paged results. Core and remote modes must

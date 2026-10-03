@@ -9,11 +9,12 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use ugoite_api_client::{
-    CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
-    CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
-    CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
-    CompositionRawRevision, CompositionResolvePlan, CompositionResolveResponse,
-    CompositionResolvedSource, CompositionRevisionMetadata,
+    prepare_request, CompositionDiagnosticCode as ApiCompositionDiagnosticCode,
+    CompositionEntryIntegrity, CompositionEntryMetadata, CompositionHistoryPage,
+    CompositionLintError, CompositionLintResponse, CompositionLintValue, CompositionListItem,
+    CompositionListPage, CompositionPublicationReceipt, CompositionRawRevision,
+    CompositionResolvePlan, CompositionResolveResponse, CompositionResolvedSource,
+    CompositionRestoreRequest, CompositionRestoreResponse, CompositionRevisionMetadata,
 };
 use ugoite_core::composition::{
     evaluate_entry_metric_page, evaluate_saved_sql_metric_page, ResolvedComponentKind,
@@ -72,6 +73,20 @@ pub enum CompositionSubCmd {
             help = "Number of revisions to skip (default: 0)"
         )]
         offset: Option<usize>,
+    },
+    /// Restore one exact historical revision as a new append-only revision
+    #[command(
+        long_about = "Restore the exact source revision as a new append-only revision. The supplied base revision must still be current. Repeat the same --revision, --base-revision, and --idempotency-key values to safely retry an uncertain result."
+    )]
+    Restore {
+        #[arg(value_name = "COMPOSITION_ID")]
+        composition_id: String,
+        #[arg(long, value_name = "SOURCE_REVISION_ID")]
+        revision: String,
+        #[arg(long, value_name = "BASE_REVISION_ID")]
+        base_revision: String,
+        #[arg(long, value_name = "KEY")]
+        idempotency_key: String,
     },
     /// Validate and canonicalize a Composition YAML file without a Space or server
     Lint {
@@ -135,6 +150,24 @@ pub async fn run(
             .await?;
             crate::output::print_json(&page);
         }
+        CompositionSubCmd::Restore {
+            composition_id,
+            revision,
+            base_revision,
+            idempotency_key,
+        } => {
+            let target =
+                resolve_command_target(explicit_config, context_override, "composition restore")?;
+            let restored = restore_composition(
+                &target,
+                &composition_id,
+                &revision,
+                &base_revision,
+                &idempotency_key,
+            )
+            .await?;
+            crate::output::print_json(&restored);
+        }
         CompositionSubCmd::Lint { file } => {
             let response = lint_file(&file)?;
             crate::output::print_json(&response);
@@ -164,6 +197,83 @@ pub async fn run(
         }
     }
     Ok(())
+}
+
+async fn restore_composition(
+    target: &SpaceTarget,
+    composition_id: &str,
+    source_revision_id: &str,
+    base_revision_id: &str,
+    idempotency_key: &str,
+) -> Result<CompositionRestoreResponse> {
+    let request = CompositionRestoreRequest {
+        source_revision_id: source_revision_id.to_owned(),
+        base_revision_id: base_revision_id.to_owned(),
+    };
+    let arguments = json!({
+        "space_id": target_space_id(target),
+        "composition_id": composition_id,
+        "idempotency_key": idempotency_key,
+    });
+    let body = serde_json::to_value(&request).context("encode Composition restore request")?;
+    // Use the shared portable request validator in Core mode too, so argument
+    // and body constraints do not drift between local and remote execution.
+    prepare_request("composition.restore", &arguments, Some(&body))?;
+
+    let response = match target {
+        SpaceTarget::Core { root, space_id } => {
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let result = service
+                .restore_composition_local_with_operation_id(
+                    space_id,
+                    composition_id,
+                    source_revision_id,
+                    base_revision_id,
+                    "local-cli",
+                    idempotency_key,
+                )
+                .await?;
+            CompositionRestoreResponse {
+                composition_id: result.entry_id.to_string(),
+                revision_id: result.revision_id.to_string(),
+                restored_from_revision_id: result.restored_from_revision_id.to_string(),
+                canonical_yaml: result.canonical_yaml,
+                receipt: CompositionPublicationReceipt {
+                    command_id: result.receipt.command_id,
+                    catalog_generation: result.receipt.catalog_generation,
+                    snapshot_id: result.receipt.snapshot_id,
+                    committed_revision_ids: result
+                        .receipt
+                        .committed_revision_ids
+                        .into_iter()
+                        .map(|revision_id| revision_id.to_string())
+                        .collect(),
+                    committed_at_micros: result.receipt.committed_at_micros,
+                    data_file_count: result.receipt.data_file_count,
+                },
+            }
+        }
+        SpaceTarget::Remote { .. } => {
+            let result =
+                http::execute_for_target(target, "composition.restore", arguments, Some(body))
+                    .await?;
+            serde_json::from_value(result).context("decode Composition restore response")?
+        }
+    };
+
+    anyhow::ensure!(
+        response.composition_id == composition_id,
+        "Composition restore response names an unexpected Composition"
+    );
+    anyhow::ensure!(
+        response.restored_from_revision_id == source_revision_id,
+        "Composition restore response names an unexpected source revision"
+    );
+    anyhow::ensure!(
+        response.receipt.committed_revision_ids == [response.revision_id.as_str()],
+        "Composition restore receipt does not confirm the returned revision"
+    );
+    Ok(response)
 }
 
 async fn list_compositions(

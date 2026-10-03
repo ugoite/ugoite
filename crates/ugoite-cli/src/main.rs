@@ -73,7 +73,10 @@ impl Cli {
                         | SavedSqlSubCmd::Delete { .. }
                 )
             ),
-            Commands::Composition(_) => false,
+            Commands::Composition(command) => matches!(
+                &command.sub,
+                commands::composition::CompositionSubCmd::Restore { .. }
+            ),
             Commands::Auth(_)
             | Commands::Config(_)
             | Commands::Context(_)
@@ -385,6 +388,39 @@ mod tests {
                     raw: true,
                 }
             }) if composition_id == "composition-1" && revision == "revision-2"
+        ));
+    }
+
+    #[test]
+    fn composition_restore_requires_exact_revisions_and_retry_identity_as_a_write() {
+        let cli = Cli::try_parse_from([
+            "ugoite",
+            "composition",
+            "restore",
+            "composition-1",
+            "--revision",
+            "source-revision-1",
+            "--base-revision",
+            "base-revision-2",
+            "--idempotency-key",
+            "restore-attempt-1",
+        ])
+        .expect("Composition restore command");
+
+        assert!(cli.is_mutation_command());
+        assert!(matches!(
+            cli.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::Restore {
+                    composition_id,
+                    revision,
+                    base_revision,
+                    idempotency_key,
+                }
+            }) if composition_id == "composition-1"
+                && revision == "source-revision-1"
+                && base_revision == "base-revision-2"
+                && idempotency_key == "restore-attempt-1"
         ));
     }
 }
