@@ -12,40 +12,77 @@ export interface PendingCompositionSaveAttempt {
   idempotencyKey: string;
 }
 
+export interface StoredCompositionSaveAttempt {
+  attempt: PendingCompositionSaveAttempt;
+  state: "in_flight" | "uncertain";
+}
+
 type RouteIdentity = Pick<
   PendingCompositionSaveAttempt,
   "spaceId" | "sqlId" | "routePath"
 >;
-type Listener = (attempt: PendingCompositionSaveAttempt) => void;
+type CompositionSaveAttemptEvent =
+  | { type: "pending"; stored: StoredCompositionSaveAttempt }
+  | {
+    type: "cleared";
+    idempotencyKey: string;
+    outcome: "completed" | "rejected";
+  };
+type Listener = (event: CompositionSaveAttemptEvent) => void;
 
 const pendingAttempts = typeof window === "undefined"
   ? undefined
-  : new Map<string, PendingCompositionSaveAttempt>();
+  : new Map<string, StoredCompositionSaveAttempt>();
 const listeners = typeof window === "undefined"
   ? undefined
   : new Map<string, Set<Listener>>();
+let nextRouteVisitId = 0;
+let activeRouteVisit: { key: string; id: number } | undefined;
 
 const identityKey = ({ spaceId, sqlId, routePath }: RouteIdentity) =>
   JSON.stringify([spaceId, sqlId, routePath]);
 
 export function getPendingCompositionSaveAttempt(
   identity: RouteIdentity,
-): PendingCompositionSaveAttempt | undefined {
+): StoredCompositionSaveAttempt | undefined {
   return pendingAttempts?.get(identityKey(identity));
 }
 
-export function rememberPendingCompositionSaveAttempt(
+export function stagePendingCompositionSaveAttempt(
+  attempt: PendingCompositionSaveAttempt,
+): void {
+  pendingAttempts?.set(identityKey(attempt), { attempt, state: "in_flight" });
+}
+
+export function markPendingCompositionSaveAttemptUncertain(
   attempt: PendingCompositionSaveAttempt,
 ): void {
   const key = identityKey(attempt);
-  pendingAttempts?.set(key, attempt);
-  for (const listener of listeners?.get(key) ?? []) listener(attempt);
+  const stored = { attempt, state: "uncertain" as const };
+  pendingAttempts?.set(key, stored);
+  for (const listener of listeners?.get(key) ?? []) {
+    listener({ type: "pending", stored });
+  }
 }
 
 export function clearPendingCompositionSaveAttempt(
-  identity: RouteIdentity,
+  identity: RouteIdentity & { idempotencyKey?: string },
+  outcome?: "completed" | "rejected",
 ): void {
-  pendingAttempts?.delete(identityKey(identity));
+  const key = identityKey(identity);
+  const existing = pendingAttempts?.get(key);
+  if (
+    identity.idempotencyKey &&
+    existing?.attempt.idempotencyKey !== identity.idempotencyKey
+  ) return;
+  pendingAttempts?.delete(key);
+  if (!existing || !outcome) return;
+  const event: CompositionSaveAttemptEvent = {
+    type: "cleared",
+    idempotencyKey: existing.attempt.idempotencyKey,
+    outcome,
+  };
+  for (const listener of listeners?.get(key) ?? []) listener(event);
 }
 
 export function subscribeToPendingCompositionSaveAttempt(
@@ -61,4 +98,22 @@ export function subscribeToPendingCompositionSaveAttempt(
     routeListeners.delete(listener);
     if (routeListeners.size === 0) listeners.delete(key);
   };
+}
+
+export function beginCompositionSaveRouteVisit(
+  identity: RouteIdentity,
+): number | undefined {
+  if (!pendingAttempts) return undefined;
+  const id = ++nextRouteVisitId;
+  activeRouteVisit = { key: identityKey(identity), id };
+  return id;
+}
+
+export function isCurrentCompositionSaveRouteVisit(
+  identity: RouteIdentity,
+  visitId: number | undefined,
+): boolean {
+  if (visitId === undefined || !pendingAttempts) return true;
+  return activeRouteVisit?.key === identityKey(identity) &&
+    activeRouteVisit.id === visitId;
 }
