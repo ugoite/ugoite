@@ -279,6 +279,102 @@ async fn composition_save_replays_the_original_create_and_update_after_response_
 }
 
 #[tokio::test]
+async fn composition_save_keeps_stable_receipt_when_recovering_pre_head_publication(
+) -> anyhow::Result<()> {
+    let service = UgoiteService::new_without_background_refresh(
+        "memory://composition-save-pre-head-recovery",
+    )?;
+    let owner = Uuid::from_u128(3_428_015);
+    let space_id = service
+        .create_space_for_principal("composition-save-pre-head-recovery", owner, "Owner")
+        .await?
+        .to_string();
+    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let created = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            &owner.to_string(),
+            "pre-head-base-create-1",
+        )
+        .await?;
+    let mut updated_document = created.document.clone();
+    updated_document.name = "Recovered before Head".to_string();
+    let update_request = || composition::CompositionSaveRequest {
+        entry_id: Some(created.entry_id),
+        base_revision_id: Some(created.revision_id),
+        document: updated_document.clone(),
+    };
+
+    let gate = ugoite_iceberg::TestPublicationGate::new_for_space_id(space_id.clone());
+    ugoite_iceberg::install_test_publication_gate(gate.clone());
+    let task_service = service.clone();
+    let task_space_id = space_id.clone();
+    let task_author = owner.to_string();
+    let task_update_request = update_request();
+    let append = tokio::spawn(async move {
+        task_service
+            .save_composition_local_with_operation_id(
+                &task_space_id,
+                task_update_request,
+                &task_author,
+                "pre-head-update-1",
+            )
+            .await
+    });
+    if let Err(error) = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        gate.wait_until_entered(),
+    )
+    .await
+    {
+        ugoite_iceberg::clear_test_publication_gate();
+        gate.release();
+        append.abort();
+        let _ = append.await;
+        return Err(error.into());
+    }
+    append.abort();
+    let append_result = append.await;
+    ugoite_iceberg::clear_test_publication_gate();
+    gate.release();
+    assert!(
+        append_result.is_err(),
+        "the pre-Head save should be discarded"
+    );
+
+    let recovered = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            update_request(),
+            &owner.to_string(),
+            "pre-head-update-1",
+        )
+        .await?;
+    let replayed = service
+        .save_composition_local_with_operation_id(
+            &space_id,
+            update_request(),
+            &owner.to_string(),
+            "pre-head-update-1",
+        )
+        .await?;
+
+    assert_eq!(recovered, replayed);
+    assert!(recovered.receipt.data_file_count > 0);
+    let history = service
+        .composition_history_local_page(&space_id, &created.entry_id.to_string(), 10, 0)
+        .await?;
+    assert_eq!(history.total, 2);
+    Ok(())
+}
+
+#[tokio::test]
 async fn concurrent_composition_save_retries_share_one_publication() -> anyhow::Result<()> {
     // Keep the detached AssetText refresh from contending for the Space's
     // single query permit while this test controls the publication race.

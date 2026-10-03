@@ -542,6 +542,26 @@ pub(crate) async fn save_composition(
         }
     };
 
+    if receipt.data_file_count == 0 {
+        // Generic append recovery reports files created by this attempt. For
+        // Composition saves, return the stable receipt of the durable
+        // publication so a recovered save matches its later idempotent replay.
+        receipt = resolve_published_composition_save(
+            operator,
+            workspace_path,
+            entry_id,
+            revision_id,
+            request.base_revision_id,
+            &command_id,
+            &canonical.yaml,
+            author,
+            &publication,
+        )
+        .await?
+        .ok_or_else(|| registry_conflict("published Composition outcome is missing"))?
+        .receipt;
+    }
+
     let committed = read_composition_raw_revision(
         operator,
         workspace_path,

@@ -882,6 +882,7 @@ pub(crate) async fn wait_at_test_validation_gate(revisions: &[EntryRevision]) {
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct TestPublicationGate {
+    space_id: Option<String>,
     reached: std::sync::atomic::AtomicBool,
     entered: Notify,
     release: Notify,
@@ -890,11 +891,26 @@ pub struct TestPublicationGate {
 #[cfg(debug_assertions)]
 impl TestPublicationGate {
     pub fn new() -> Arc<Self> {
+        Self::for_space(None)
+    }
+
+    pub fn new_for_space_id(space_id: impl Into<String>) -> Arc<Self> {
+        Self::for_space(Some(space_id.into()))
+    }
+
+    fn for_space(space_id: Option<String>) -> Arc<Self> {
         Arc::new(Self {
+            space_id,
             reached: std::sync::atomic::AtomicBool::new(false),
             entered: Notify::new(),
             release: Notify::new(),
         })
+    }
+
+    pub(crate) fn matches_space_id(&self, space_id: &str) -> bool {
+        self.space_id
+            .as_ref()
+            .is_none_or(|expected| expected == space_id)
     }
 
     pub async fn wait_until_entered(&self) {

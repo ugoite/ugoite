@@ -2956,7 +2956,11 @@ impl SpaceCatalog {
         publication.checksum = publication_checksum(&publication)?;
         self.write_publication(&publication).await?;
         #[cfg(debug_assertions)]
-        if let Some(gate) = &self.publication_gate {
+        if let Some(gate) = self
+            .publication_gate
+            .as_ref()
+            .filter(|gate| gate.matches_space_id(&self.space_id.to_string()))
+        {
             // Test-only crash point: the immutable publication is durable,
             // while the authoritative Head still proves the exact base.
             gate.pause().await;
