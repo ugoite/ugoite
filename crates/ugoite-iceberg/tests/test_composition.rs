@@ -5,6 +5,7 @@ use common::{seed_preexisting_form, setup_operator};
 use serde_json::{json, Value};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::composition::parse_composition_yaml;
+use ugoite_domain::id::{EntryId, RevisionId};
 use ugoite_domain::identity::{PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole};
 use ugoite_domain::metadata;
 use ugoite_iceberg::authorization::Authorizer;
@@ -900,6 +901,10 @@ async fn local_composition_save_creates_updates_and_conflicts_with_receipts() ->
         updated.receipt.committed_revision_ids,
         [updated.revision_id]
     );
+    let updated_raw = service
+        .get_composition_raw_local(&space_id, &updated.entry_id.to_string())
+        .await?;
+    assert_eq!(updated_raw.revision.change_id, updated.receipt.command_id);
 
     let stale = service
         .save_composition_local(
@@ -969,6 +974,46 @@ async fn invalid_local_composition_save_does_not_create_registry() -> anyhow::Re
         error.downcast_ref::<AppError>().unwrap().code(),
         ErrorCode::InvalidInput
     );
+    let forms = iceberg_store::native_workspace_read_only(&op, &service.workspace_path(&space_id))
+        .await?
+        .list_forms()
+        .await?;
+    assert!(forms.iter().all(|form| !form
+        .name
+        .eq_ignore_ascii_case(composition::COMPOSITION_REGISTRY_FORM_NAME)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn missing_local_composition_update_does_not_create_registry() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service =
+        UgoiteService::from_operator(op.clone(), "memory://composition-local-save-missing-entry");
+    let owner = Uuid::from_u128(3_428_092);
+    let space_id = service
+        .create_space_for_principal("composition-local-save-missing-entry", owner, "Owner")
+        .await?
+        .to_string();
+    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+
+    let error = service
+        .save_composition_local(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(EntryId::from(Uuid::from_u128(3_428_093))),
+                base_revision_id: Some(RevisionId::from(Uuid::from_u128(3_428_094))),
+                document,
+            },
+            "local-cli",
+        )
+        .await
+        .expect_err("a missing update target must not create a Composition");
+    assert_eq!(
+        error.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::EntryNotFound
+    );
+
     let forms = iceberg_store::native_workspace_read_only(&op, &service.workspace_path(&space_id))
         .await?
         .list_forms()

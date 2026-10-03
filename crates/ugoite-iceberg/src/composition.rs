@@ -307,7 +307,6 @@ pub(crate) async fn save_composition(
         )
         .into());
     }
-    let form = ensure_composition_registry(operator, workspace_path).await?;
     let current_raw = if request.base_revision_id.is_some() {
         read_composition_raw(operator, workspace_path, &entry_id.to_string())
             .await?
@@ -328,6 +327,11 @@ pub(crate) async fn save_composition(
             .into());
         }
     }
+    // Do not create the Registry for a failed update of a missing Entry. A
+    // current Composition update has already proved that its carrier exists;
+    // creates still ensure the Registry only after the canonical input reaches
+    // this storage boundary.
+    let form = ensure_composition_registry(operator, workspace_path).await?;
 
     let timestamp = Utc::now().timestamp_micros().max(
         current
