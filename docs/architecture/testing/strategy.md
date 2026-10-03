@@ -23,6 +23,13 @@ Tests are organized around the shared Rust core and thin adapters.
   `crates/ugoite-iceberg/tests/fixtures/` is exercised through the authoritative
   Space, publication, and history reader paths. It is a semantic oracle rather
   than a byte-for-byte snapshot of Iceberg internals.
+- The Composition downgrade compatibility check runs the pinned v0.2.1 CLI
+  against a Space after the current implementation saves a Composition. It
+  verifies the old CLI can read and append unrelated Knowledge, then checks
+  that reopening with the current implementation preserves both histories.
+  `mise run test:composition:downgrade` downloads and verifies the release
+  manifest and platform archive digest; `mise run test:rust` includes this
+  check.
 - `xtask` checks OpenAPI drift, architectural dependency rules, and stale
   current-stack documentation.
 
