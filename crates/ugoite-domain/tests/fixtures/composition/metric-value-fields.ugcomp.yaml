@@ -1,6 +1,8 @@
+format: ugoite.composition
 format_version: 1
 name: Metric value fields
 kind: dashboard
+tags: []
 spec:
   sources:
     - id: expense_rows
@@ -17,6 +19,9 @@ spec:
       kind: saved_sql
       entry_id: "00000000-0000-7000-8000-000000000020"
       revision_id: "00000000-0000-7000-8000-000000000021"
+      expected_result:
+        - name: total
+          type: float
   components:
     - id: expense_amount
       kind: metric

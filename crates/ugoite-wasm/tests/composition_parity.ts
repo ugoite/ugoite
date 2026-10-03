@@ -202,8 +202,11 @@ async function main(): Promise<void> {
 
   for (
     const [invalidYaml, expectedCode] of [
-      ["format_version: 2\n", "unsupported_format_version"],
-      ["format_version: 1\nname: [invalid\n", "invalid_composition"],
+      ["format: ugoite.composition\nformat_version: 2\n", "unsupported_format_version"],
+      [
+        "format: ugoite.composition\nformat_version: 1\nname: [invalid\n",
+        "invalid_composition",
+      ],
       [invalidListItemYaml, "invalid_composition"],
       [invalidMetricValueFieldYaml, "invalid_composition"],
       [unreferencedComponentYaml, "invalid_composition"],

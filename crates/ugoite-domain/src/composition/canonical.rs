@@ -106,7 +106,8 @@ pub(super) fn normalize_composition_document(
 fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
     let max_items = super::MAX_COMPOSITION_COLLECTION_ITEMS;
     let spec = &document.spec;
-    if spec.parameters.len() > max_items
+    if document.tags.len() > max_items
+        || spec.parameters.len() > max_items
         || spec.sources.len() > max_items
         || spec.components.len() > max_items
         || spec.sections.len() > max_items
@@ -133,8 +134,25 @@ fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
                     return false;
                 }
             }
-            CompositionSource::SavedSql { variables, .. } => {
-                if variables.len() > max_items {
+            CompositionSource::SavedSql {
+                variables,
+                expected_result,
+                ..
+            } => {
+                if variables.len() > max_items
+                    || expected_result.is_empty()
+                    || expected_result.len() > max_items
+                    || expected_result.iter().any(|column| {
+                        column.name.trim().is_empty()
+                            || column.name.len() > super::MAX_COMPOSITION_YAML_BYTES
+                    })
+                    || expected_result
+                        .iter()
+                        .map(|column| column.name.as_str())
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len()
+                        != expected_result.len()
+                {
                     return false;
                 }
             }
@@ -305,8 +323,8 @@ mod tests {
     #[test]
     fn formatting_comments_key_order_and_field_schema_order_do_not_change_fingerprint() {
         let reordered_envelope = MONTHLY_EXPENSE.replacen(
-            "format_version: 1\nname: Monthly expenses\nkind: dashboard",
-            "# a comment\nkind: dashboard\nname: 'Monthly expenses'   \nformat_version: 1",
+            "format: ugoite.composition\nformat_version: 1\nname: Monthly expenses\nkind: dashboard\ntags: []",
+            "# a comment\nkind: dashboard\nname: 'Monthly expenses'   \nformat_version: 1\nformat: ugoite.composition\ntags: []",
             1,
         );
         let reordered_schema = reordered_envelope
@@ -326,6 +344,26 @@ mod tests {
         assert_eq!(baseline.document, reformatted.document);
         assert_eq!(baseline.yaml, reformatted.yaml);
         assert_eq!(baseline.fingerprint, reformatted.fingerprint);
+    }
+
+    #[test]
+    fn tags_and_saved_sql_result_descriptor_are_semantic_fingerprint_inputs() {
+        let baseline = canonicalize_composition_yaml(MONTHLY_EXPENSE).unwrap();
+        let changed_tags = canonicalize_composition_yaml(
+            &MONTHLY_EXPENSE.replace("tags: []", "tags: [monthly, finance]"),
+        )
+        .unwrap();
+        let changed_result_type =
+            canonicalize_composition_yaml(&MONTHLY_EXPENSE.replace("type: float", "type: integer"))
+                .unwrap();
+
+        assert_ne!(baseline.fingerprint, changed_tags.fingerprint);
+        assert_ne!(baseline.fingerprint, changed_result_type.fingerprint);
+        assert_eq!(baseline.document.tags, Vec::<String>::new());
+        assert_eq!(
+            changed_tags.document.tags,
+            ["monthly".to_string(), "finance".to_string()]
+        );
     }
 
     #[test]

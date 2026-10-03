@@ -1,6 +1,8 @@
+format: ugoite.composition
 format_version: 1
-name: Monthly expenses
 kind: dashboard
+name: Monthly expenses
+tags: []
 spec:
   parameters:
     - id: month_start
@@ -46,6 +48,9 @@ spec:
       id: month_total
       entry_id: 00000000-0000-7000-8000-000000000020
       revision_id: 00000000-0000-7000-8000-000000000021
+      expected_result:
+        - name: total
+          type: float
       variables:
         month_end:
           parameter: month_end

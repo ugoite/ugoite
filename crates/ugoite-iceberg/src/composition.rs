@@ -94,8 +94,6 @@ pub struct CompositionSaveRequest {
     pub entry_id: Option<EntryId>,
     pub base_revision_id: Option<RevisionId>,
     pub document: CompositionDocument,
-    /// When omitted on update, the current Entry tags are preserved.
-    pub tags: Option<Vec<String>>,
 }
 
 /// Result of one committed Composition publication.
@@ -241,6 +239,7 @@ pub(crate) fn validate_composition_revision(
         || canonical.document.name != *name
         || expected_kind.as_str() != Some(kind.as_str())
         || i64::from(canonical.document.format_version) != format_version
+        || canonical.document.tags != revision.entry.tags
     {
         return Err(registry_conflict(
             "Composition carrier fields do not match canonical spec",
@@ -339,12 +338,7 @@ pub(crate) async fn save_composition(
         source_id: None,
         entry: EntryMetadata {
             external_id: entry_id.to_string(),
-            tags: request.tags.unwrap_or_else(|| {
-                current
-                    .as_ref()
-                    .map(|revision| revision.entry.tags.clone())
-                    .unwrap_or_default()
-            }),
+            tags: canonical.document.tags.clone(),
             created_at_micros: current
                 .as_ref()
                 .map(|revision| revision.entry.created_at_micros)

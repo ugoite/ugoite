@@ -105,8 +105,9 @@ async fn v021_reader_writer_preserves_composition_and_unrelated_knowledge() -> R
         )
         .await?;
 
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    document.tags = vec!["compatibility".to_owned()];
     let saved = service
         .save_composition_authorized_for_principals(
             &space_id,
@@ -114,7 +115,6 @@ async fn v021_reader_writer_preserves_composition_and_unrelated_knowledge() -> R
                 entry_id: None,
                 base_revision_id: None,
                 document,
-                tags: Some(vec!["compatibility".to_owned()]),
             },
             &owner.to_string(),
             &[owner],

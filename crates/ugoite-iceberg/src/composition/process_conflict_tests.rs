@@ -55,8 +55,9 @@ async fn composition_stale_base_conflicts_across_processes() -> anyhow::Result<(
         .create_space_for_principal("composition-process-conflict", owner, "Owner")
         .await?
         .to_string();
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    document.tags = vec!["composition-process-conflict".to_string()];
     let initial = service
         .save_composition_authorized_for_principals(
             &space_id,
@@ -64,7 +65,6 @@ async fn composition_stale_base_conflicts_across_processes() -> anyhow::Result<(
                 entry_id: None,
                 base_revision_id: None,
                 document,
-                tags: Some(vec!["composition-process-conflict".to_string()]),
             },
             &owner.to_string(),
             &[owner],
@@ -198,7 +198,6 @@ async fn run_writer_child() -> anyhow::Result<()> {
         entry_id: Some(entry_id),
         base_revision_id: Some(base_revision_id),
         document,
-        tags: None,
     };
 
     let outcome = match composition::save_composition(

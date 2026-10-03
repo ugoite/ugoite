@@ -1,6 +1,8 @@
+format: ugoite.composition
 format_version: 1
 name: Unknown List item field
 kind: dashboard
+tags: []
 spec:
   sources:
     - kind: entry_query

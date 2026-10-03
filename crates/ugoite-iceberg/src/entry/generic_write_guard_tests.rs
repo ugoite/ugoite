@@ -322,7 +322,6 @@ async fn revert_change_cannot_write_composition_registry() -> anyhow::Result<()>
                 entry_id: None,
                 base_revision_id: None,
                 document,
-                tags: None,
             },
             &author,
             &[owner_id],

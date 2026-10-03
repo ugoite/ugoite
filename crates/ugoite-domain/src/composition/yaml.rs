@@ -1,6 +1,8 @@
 //! Restricted YAML parsing for the typed Composition v1 contract.
 
-use super::{CompositionDiagnosticCode, CompositionDocument, COMPOSITION_FORMAT_VERSION};
+use super::{
+    CompositionDiagnosticCode, CompositionDocument, COMPOSITION_FORMAT, COMPOSITION_FORMAT_VERSION,
+};
 use serde_json::Value;
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy};
 
@@ -52,9 +54,14 @@ fn probe_format_version(input: &str) -> Result<u64, CompositionDiagnosticCode> {
         serde_saphyr::from_slice_multiple_with_options(input.as_bytes(), version_probe_options())
             .map_err(|_| CompositionDiagnosticCode::InvalidComposition)?;
 
-    documents
-        .first()
-        .and_then(|document| document.get("format_version"))
+    let Some(document) = documents.first() else {
+        return Err(CompositionDiagnosticCode::InvalidComposition);
+    };
+    if document.get("format").and_then(Value::as_str) != Some(COMPOSITION_FORMAT) {
+        return Err(CompositionDiagnosticCode::InvalidComposition);
+    }
+    document
+        .get("format_version")
         .and_then(Value::as_u64)
         .ok_or(CompositionDiagnosticCode::InvalidComposition)
 }
@@ -130,7 +137,12 @@ mod tests {
     fn parses_the_shared_monthly_expense_fixture() {
         let document = parse_composition_yaml(MONTHLY_EXPENSE).unwrap();
 
+        assert_eq!(
+            document.format,
+            crate::composition::CompositionFormat::UgoiteComposition
+        );
         assert_eq!(document.name, "Monthly expenses");
+        assert!(document.tags.is_empty());
         assert_eq!(document.spec.parameters.len(), 2);
         assert_eq!(document.spec.sources.len(), 2);
         assert_eq!(document.spec.components.len(), 2);
@@ -139,6 +151,67 @@ mod tests {
             panic!("first sample source should be an EntryQuery")
         };
         assert_eq!(query.page_limit, DEFAULT_COMPOSITION_PAGE_LIMIT);
+    }
+
+    #[test]
+    fn preserves_ordered_saved_sql_result_descriptors_and_rejects_ambiguous_names() {
+        let ordered = MONTHLY_EXPENSE.replace(
+            "        - name: total\n          type: float",
+            "        - name: count\n          type: integer\n        - name: total\n          type: float",
+        );
+        let parsed = parse_composition_yaml(&ordered).unwrap();
+        let CompositionSource::SavedSql {
+            expected_result, ..
+        } = &parsed.spec.sources[1]
+        else {
+            panic!("second sample source should be Saved SQL")
+        };
+        assert_eq!(
+            expected_result
+                .iter()
+                .map(|column| column.name.as_str())
+                .collect::<Vec<_>>(),
+            ["count", "total"]
+        );
+        assert!(expected_result[0].result_type.supports_metric());
+        assert!(!crate::composition::CompositionResultFieldType::Json.supports_metric());
+        let canonical = crate::composition::canonicalize_composition_yaml(&ordered).unwrap();
+        let count_position = canonical
+            .yaml
+            .find("        - name: count")
+            .expect("ordered descriptor contains count");
+        let total_position = canonical
+            .yaml
+            .find("        - name: total")
+            .expect("ordered descriptor contains total");
+        assert!(count_position < total_position);
+
+        let duplicate = ordered.replace(
+            "        - name: total\n          type: float",
+            "        - name: count\n          type: float",
+        );
+        assert_eq!(
+            parse_composition_yaml(&duplicate),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+        let empty_name = MONTHLY_EXPENSE.replace("name: total", "name: '   '");
+        assert_eq!(
+            parse_composition_yaml(&empty_name),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+        let unsupported_type = MONTHLY_EXPENSE.replace("type: float", "type: decimal");
+        assert_eq!(
+            parse_composition_yaml(&unsupported_type),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+        let unknown_column_field = MONTHLY_EXPENSE.replace(
+            "          type: float",
+            "          type: float\n          nullable: true",
+        );
+        assert_eq!(
+            parse_composition_yaml(&unknown_column_field),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
     }
 
     #[test]
@@ -169,6 +242,7 @@ mod tests {
     #[test]
     fn returns_unsupported_version_before_strict_v1_deserialization() {
         let input = r#"
+format: ugoite.composition
 format_version: 2
 future_data: !future &shared [one, two]
 future_alias: *shared
@@ -183,14 +257,16 @@ future_alias: *shared
     #[test]
     fn rejects_restricted_or_ambiguous_yaml_constructs() {
         let invalid = [
-            "format_version: 1\nname: Example\nname: Duplicate\nkind: dashboard\nspec: {}\n",
-            "format_version: 1\nname: Example\nkind: dashboard\nspec: {}\n---\nformat_version: 1\n",
-            "format_version: 1\nname: &name Example\nkind: dashboard\nspec: {}\n",
-            "format_version: 1\nname: Example\nkind: dashboard\nspec: {<<: {parameters: [], sources: [], components: [], sections: []}}\n",
-            "format_version: 1\nname: !custom Example\nkind: dashboard\nspec: {}\n",
-            "format_version: 1\nname: Example\nkind: dashboard\nspec: {}\nextra: true\n",
-            "format_version: 1\nname: 2026\nkind: dashboard\nspec: {}\n",
-            "format_version: 1\nname: [not, a, string]\nkind: dashboard\nspec: {}\n",
+            "format: ugoite.composition\nformat_version: 1\nname: Example\nname: Duplicate\nkind: dashboard\ntags: []\nspec: {}\n",
+            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec: {}\n---\nformat: ugoite.composition\nformat_version: 1\n",
+            "format: ugoite.composition\nformat_version: 1\nname: &name Example\nkind: dashboard\ntags: []\nspec: {}\n",
+            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec: {<<: {parameters: [], sources: [], components: [], sections: []}}\n",
+            "format: ugoite.composition\nformat_version: 1\nname: !custom Example\nkind: dashboard\ntags: []\nspec: {}\n",
+            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec: {}\nextra: true\n",
+            "format: ugoite.composition\nformat_version: 1\nname: 2026\nkind: dashboard\ntags: []\nspec: {}\n",
+            "format: ugoite.composition\nformat_version: 1\nname: [not, a, string]\nkind: dashboard\ntags: []\nspec: {}\n",
+            "format: other.document\nformat_version: 2\nname: Example\nkind: dashboard\ntags: []\nspec: {}\n",
+            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\nspec: {}\n",
         ];
 
         for input in invalid {
@@ -205,9 +281,11 @@ future_alias: *shared
     #[test]
     fn leaves_date_like_literals_as_strings() {
         let input = r#"
+format: ugoite.composition
 format_version: 1
 name: Example
 kind: dashboard
+tags: []
 spec:
   parameters:
     - id: date_default
@@ -243,6 +321,19 @@ spec:
         let over_limit = parameters_document(MAX_COMPOSITION_COLLECTION_ITEMS + 1);
         assert_eq!(
             parse_composition_yaml(&over_limit),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let tagged_document = |count: usize| {
+            let tags = (0..count)
+                .map(|index| format!("tag_{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            MONTHLY_EXPENSE.replace("tags: []", &format!("tags: [{tags}]"))
+        };
+        assert!(parse_composition_yaml(&tagged_document(MAX_COMPOSITION_COLLECTION_ITEMS)).is_ok());
+        assert_eq!(
+            parse_composition_yaml(&tagged_document(MAX_COMPOSITION_COLLECTION_ITEMS + 1)),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
     }
@@ -333,7 +424,7 @@ spec:
 
     fn parameters_document(count: usize) -> String {
         let mut input = String::from(
-            "format_version: 1\nname: Example\nkind: dashboard\nspec:\n  parameters:\n",
+            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec:\n  parameters:\n",
         );
         for index in 0..count {
             input.push_str(&format!(
@@ -345,7 +436,7 @@ spec:
 
     fn nested_future_document(depth: usize) -> String {
         format!(
-            "format_version: 2\nvalue: {}0{}\n",
+            "format: ugoite.composition\nformat_version: 2\nvalue: {}0{}\n",
             "[".repeat(depth),
             "]".repeat(depth)
         )
