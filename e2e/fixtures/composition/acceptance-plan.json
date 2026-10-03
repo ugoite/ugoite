@@ -2,7 +2,7 @@
   "schema": "ugoite/composition-acceptance-plan/v1",
   "status": "planned",
   "implementation_contract_frozen": false,
-  "runtime_evidence_recorded": false,
+  "runtime_evidence_recorded": true,
   "fixture_layout": {
     "root": "e2e/fixtures/composition",
     "payload_note": "The E2E seed manifest is created and drives the Browser journey. The raw recovery candidates remain fixture-only; recovery and release evidence selectors are still unverified.",
@@ -77,6 +77,21 @@
     "artifact",
     "artifact_digest",
     "gap"
+  ],
+  "runtime_evidence": [
+    {
+      "source_sha": "482faff2e5303cf6a8abeaefb123abfe79ba7996",
+      "candidate_sha": "482faff2e5303cf6a8abeaefb123abfe79ba7996",
+      "command": "E2E_BUILD_IMAGES=true bash e2e/scripts/run-e2e-parity.sh composition-golden",
+      "selector": "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
+      "surface": "Browser + Server (Docker Compose E2E)",
+      "fixture": "e2e/fixtures/composition/space-seed/manifest.json",
+      "environment": "macOS arm64 host; Docker Compose linux/arm64; Deno 2.8.3; Playwright Chromium",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-golden-journey-junit.xml",
+      "artifact_digest": "24d90eaac4952fca0351af2783e35f908bbfc6819963f73399ccea8ba3d21431",
+      "gap": "This record covers only the Browser Golden Journey on the stated source commit. CLI parity, recovery/ACL, stale query response suppression, representative performance evidence, and exact release-candidate byte promotion remain unverified. No release candidate was built or promoted."
+    }
   ],
   "recovery_and_authorization": {
     "status": "planned",

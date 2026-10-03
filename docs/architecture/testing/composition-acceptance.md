@@ -2,11 +2,13 @@
 title: "Composition acceptance plan"
 ---
 
-This is the Lane D acceptance plan for the Composition feature, whose full
-surface and runtime journey remain incomplete. The portable list, get, history,
-lint, resolve, and save operations are implemented, as are the CLI list, history,
-inspect, lint, and query commands. This does not claim a complete Composition
-API or CLI command set, Browser route, or passing end-to-end runtime journey.
+This is the Lane D acceptance plan for the Composition feature. One Browser
+Golden Journey has passed against the exact source commit recorded below; the
+full surface and release evidence remain incomplete. The portable list, get,
+history, lint, resolve, and save operations are implemented, as are the CLI
+list, history, inspect, lint, and query commands. This does not claim a complete
+Composition API or CLI command set or that all Browser acceptance selectors
+pass.
 The Rust domain parser and Core resolver have focused implementation and test
 evidence, documented below and bound in the Mitase feature. The current
 structured locator map is
@@ -19,8 +21,9 @@ and full-surface runtime evidence land. Focused domain and Core resolver tests
 are bound in `docs/mitase/features/composition.yaml`; they establish those Rust
 contracts only. The reserved selectors in the locator map are not Mitase
 verification bindings until the corresponding integration tests run. The D0
-check validates the map, fixture presence, and selector inventory; it does not
-claim runtime evidence. Playwright `--list` separately confirms test discovery.
+check validates the map, fixture presence, selector inventory, and recorded
+JUnit artifact integrity. Playwright `--list` separately confirms test
+discovery.
 
 The canonical monthly-expense YAML document is shared with the domain fixture
 set. Two small raw-payload candidates now cover an unsupported format version
@@ -184,4 +187,16 @@ For every executed acceptance selector, record the exact source and candidate
 SHA, artifact digest, command, selector, surface, fixture, environment, result,
 artifact, and evidence gap. Keep each surface result separate. A static
 locator, mocked operation, or D0 plan check is not a Browser or real-server
-journey pass. The acceptance map contains no runtime evidence record yet.
+journey pass. The acceptance map records one focused run of
+`Browser saves a tool once, reopens its exact revision from Home, and pages
+parameterized results with model connection disabled` against source and
+candidate commit `482faff2e5303cf6a8abeaefb123abfe79ba7996`. It passed with one
+test and no skips. The tracked JUnit result is
+[`composition-golden-journey-junit.xml`](../../../e2e/fixtures/composition/evidence/composition-golden-journey-junit.xml),
+with SHA-256
+`24d90eaac4952fca0351af2783e35f908bbfc6819963f73399ccea8ba3d21431`. The run
+verifies Browser save retry after commit, exact-revision reopen from Home, and
+parameterized paged results with model connection disabled. It does not verify
+stale query response suppression, CLI parity, recovery and ACL selectors,
+performance evidence, or exact release-candidate byte promotion. No release
+candidate was built or promoted.

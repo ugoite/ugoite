@@ -42,6 +42,19 @@ type AcceptancePlan = {
     steps: string[];
   };
   evidence_record_fields: string[];
+  runtime_evidence: Array<{
+    source_sha: string;
+    candidate_sha: string;
+    command: string;
+    selector: string;
+    surface: string;
+    fixture: string;
+    environment: string;
+    result: string;
+    artifact: string;
+    artifact_digest: string;
+    gap: string;
+  }>;
   recovery_and_authorization: {
     status: string;
     selector_binding_status: string;
@@ -207,7 +220,7 @@ function selectorDetails({ path, selector }: ReservedSelector): string {
 }
 
 Deno.test(
-  "Composition acceptance plan covers B0 through B6 without claiming runtime verification",
+  "Composition acceptance plan records scoped runtime evidence without claiming release verification",
   async () => {
     const plan = JSON.parse(
       await Deno.readTextFile(PLAN_PATH),
@@ -216,7 +229,7 @@ Deno.test(
     assertEquals(plan.schema, "ugoite/composition-acceptance-plan/v1");
     assertEquals(plan.status, "planned");
     assertEquals(plan.implementation_contract_frozen, false);
-    assertEquals(plan.runtime_evidence_recorded, false);
+    assertEquals(plan.runtime_evidence_recorded, true);
     assertEquals(plan.fixture_layout.root, "e2e/fixtures/composition");
     const sharedFixtures = plan.fixture_layout.shared_document_fixtures;
     assertEquals(sharedFixtures, [
@@ -317,6 +330,43 @@ Deno.test(
       "artifact_digest",
       "gap",
     ]);
+    assertEquals(plan.runtime_evidence.length, 1);
+    const [journeyEvidence] = plan.runtime_evidence;
+    assert(journeyEvidence);
+    assertEquals(
+      journeyEvidence.source_sha,
+      "482faff2e5303cf6a8abeaefb123abfe79ba7996",
+    );
+    assertEquals(journeyEvidence.candidate_sha, journeyEvidence.source_sha);
+    assertEquals(
+      journeyEvidence.command,
+      "E2E_BUILD_IMAGES=true bash e2e/scripts/run-e2e-parity.sh composition-golden",
+    );
+    assertEquals(journeyEvidence.selector, EXPECTED_RESERVED_SELECTORS.B5[2]);
+    assertEquals(
+      journeyEvidence.surface,
+      "Browser + Server (Docker Compose E2E)",
+    );
+    assertEquals(
+      journeyEvidence.fixture,
+      "e2e/fixtures/composition/space-seed/manifest.json",
+    );
+    assertEquals(journeyEvidence.result, "passed (1 passed, 0 skipped)");
+    assert(
+      journeyEvidence.gap.includes("exact release-candidate byte promotion"),
+      "the scoped run must retain the release verification gap",
+    );
+    assert(
+      (await Deno.stat(journeyEvidence.artifact)).isFile,
+      "the runtime evidence artifact must be present",
+    );
+    const artifactBytes = await Deno.readFile(journeyEvidence.artifact);
+    const artifactDigest = await crypto.subtle.digest("SHA-256", artifactBytes);
+    const artifactDigestHex = Array.from(
+      new Uint8Array(artifactDigest),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+    assertEquals(artifactDigestHex, journeyEvidence.artifact_digest);
     assertEquals(plan.recovery_and_authorization, {
       status: "planned",
       selector_binding_status: "pending_public_storage_and_resolver_contracts",

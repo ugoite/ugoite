@@ -6,9 +6,10 @@ uses the Browser save flow so its Composition is produced by the same public
 surface as a user-created tool.
 
 `acceptance-plan.json` describes the full B0–B6 plan. Its planned selectors are
-locators, not release evidence. The Browser journey source is in
-`e2e/composition-golden-journey.test.ts`; runtime evidence is recorded only
-after the focused E2E command runs against the merged routes.
+locators, not release evidence. One scoped Browser journey result and its JUnit
+artifact are recorded under `evidence/`; the other selectors and release
+criteria remain unverified. The Browser journey source is in
+`e2e/composition-golden-journey.test.ts`.
 
 - `unknown-format-version.ugcomp.yaml` is a raw-payload candidate for
   unsupported-format recovery.
