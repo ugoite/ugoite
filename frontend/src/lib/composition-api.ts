@@ -1,13 +1,16 @@
 import type { EntryPage, EntryPageRequest } from "./entry-query";
 import type { SqlQueryPage, SqlQueryRequest } from "./types";
 import {
+  canonicalizeCompositionDocument,
+  type CompositionDocumentCanonicalization,
+  type CompositionMetricPageEvaluation,
+  type CompositionMetricPageRequest,
   entryApi,
   evaluateCompositionMetricPage,
   protocolFetch,
   sqlApi,
-  type CompositionMetricPageEvaluation,
-  type CompositionMetricPageRequest,
 } from "./ugoite-client";
+import type { SqlEntry } from "./types";
 
 export interface CompositionListItem {
   composition_id: string;
@@ -34,6 +37,50 @@ export interface CompositionRawRevision {
   };
   fields: Record<string, unknown>;
   unmapped_field_values: Record<string, unknown>;
+}
+
+export interface CompositionSaveResponse {
+  composition_id: string;
+  revision_id: string;
+  canonical_yaml: string;
+  receipt: {
+    command_id: string;
+    catalog_generation: number;
+    snapshot_id: string;
+    committed_revision_ids: string[];
+    committed_at_micros: number;
+    data_file_count: number;
+  };
+}
+
+export interface SavedSqlCompositionDocument {
+  format: "ugoite.composition";
+  format_version: 1;
+  kind: "dashboard";
+  name: string;
+  tags: string[];
+  spec: {
+    parameters: Array<{
+      id: string;
+      type: CompositionParameterType;
+      required: true;
+      default?: unknown;
+    }>;
+    sources: Array<{
+      id: string;
+      kind: "saved_sql";
+      entry_id: string;
+      revision_id: string;
+      expected_result: Array<{ name: string; type: "json" }>;
+      variables: Record<string, { parameter: string }>;
+    }>;
+    components: Array<{
+      id: string;
+      kind: "table";
+      source: string;
+    }>;
+    sections: Array<{ id: string; components: string[] }>;
+  };
 }
 
 export type CompositionParameterType =
@@ -113,8 +160,96 @@ export type CompositionSourcePage =
   | { kind: "entry_query"; page: EntryPage }
   | { kind: "saved_sql"; page: SqlQueryPage };
 
+const compositionParameterTypes = new Set<CompositionParameterType>([
+  "string",
+  "boolean",
+  "integer",
+  "float",
+  "date",
+  "timestamp",
+]);
+
+export const canCreateSavedSqlComposition = (entry: SqlEntry): boolean =>
+  entry.kind === "user-query" &&
+  entry.variables.every((variable) =>
+    compositionParameterTypes.has(variable.type as CompositionParameterType)
+  );
+
+/** Build the smallest typed Composition that retains one exact Saved SQL revision. */
+export const buildSavedSqlCompositionDocument = (
+  entry: SqlEntry,
+  name: string,
+  columns: readonly string[],
+  parameterValues: Record<string, unknown>,
+): SavedSqlCompositionDocument => {
+  const parameters = entry.variables.map((variable) => {
+    if (
+      !compositionParameterTypes.has(variable.type as CompositionParameterType)
+    ) {
+      throw new Error(`Unsupported Saved SQL parameter type: ${variable.type}`);
+    }
+    const value = parameterValues[variable.name];
+    return {
+      id: variable.name,
+      type: variable.type as CompositionParameterType,
+      required: true as const,
+      ...(value === null || value === undefined ? {} : { default: value }),
+    };
+  });
+  const sourceId = "sql_results";
+  const componentId = "results_table";
+  return {
+    format: "ugoite.composition",
+    format_version: 1,
+    kind: "dashboard",
+    name: name.trim(),
+    tags: [],
+    spec: {
+      parameters,
+      sources: [{
+        id: sourceId,
+        kind: "saved_sql",
+        entry_id: entry.id,
+        revision_id: entry.revision_id,
+        expected_result: columns.map((column) => ({
+          name: column,
+          type: "json",
+        })),
+        variables: Object.fromEntries(
+          entry.variables.map((variable) => [
+            variable.name,
+            { parameter: variable.name },
+          ]),
+        ),
+      }],
+      components: [{ id: componentId, kind: "table", source: sourceId }],
+      sections: [{ id: "main", components: [componentId] }],
+    },
+  };
+};
+
 /** Thin browser adapter over the portable protocol and existing query paths. */
 export const compositionApi = {
+  async canonicalizeDocument(
+    document: SavedSqlCompositionDocument,
+  ): Promise<CompositionDocumentCanonicalization> {
+    return await canonicalizeCompositionDocument(document);
+  },
+
+  async save(
+    spaceId: string,
+    yaml: string,
+    idempotencyKey: string,
+    signal?: AbortSignal,
+  ): Promise<CompositionSaveResponse> {
+    return await protocolFetch<CompositionSaveResponse>(
+      "composition.save",
+      { space_id: spaceId, idempotency_key: idempotencyKey },
+      { yaml },
+      { signal },
+    );
+  },
+
   async list(
     spaceId: string,
     limit = 100,

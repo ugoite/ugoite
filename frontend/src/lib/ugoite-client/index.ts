@@ -30,6 +30,12 @@ export { sqlApi } from "../sql-api";
 export { RevisionConflictError } from "../entry-api";
 export {
   buildSpreadsheetCsvRequest,
+  canonicalizeCompositionDocument,
+  type CompositionDocumentCanonicalization,
+  type CompositionMetricPageEvaluation,
+  type CompositionMetricPageRequest,
+  encodeSpreadsheetCsv,
+  evaluateCompositionMetricPage,
   getWasmSupportedOperations,
   invokeKonase,
   type KonaseProtocolAction,
@@ -42,9 +48,5 @@ export {
   UGOITE_WASM_PROTOCOL_VERSION,
   UgoiteApiError,
   type UgoiteApiOperation,
-  encodeSpreadsheetCsv,
-  evaluateCompositionMetricPage,
-  type CompositionMetricPageEvaluation,
-  type CompositionMetricPageRequest,
   validateAssetReference,
 } from "./protocol";

@@ -27,6 +27,16 @@ describe("classifyMutationOutcome", () => {
       status: 200,
       kind: "invalid_response",
     })).toBe("receipt_invalid");
+    expect(classifyMutationOutcome({
+      operation: "composition.save",
+      status: 409,
+      kind: "api",
+      code: "IDEMPOTENCY_CONFLICT",
+    })).toBe("rejected");
+    expect(classifyMutationOutcome({
+      operation: "composition.save",
+      kind: "transport",
+    })).toBe("unknown");
   });
 
   it("does not classify reads as mutation outcomes", () => {

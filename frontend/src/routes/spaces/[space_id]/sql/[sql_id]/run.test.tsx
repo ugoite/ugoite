@@ -1,9 +1,22 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { compositionApi } from "~/lib/composition-api";
 import SpaceSqlRunRoute from "./run";
 
-const { navigateMock, getMock, queryMock, countMock } = vi.hoisted(() => ({
+const {
+  navigateMock,
+  getMock,
+  queryMock,
+  countMock,
+} = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   getMock: vi.fn(),
   queryMock: vi.fn(),
@@ -50,7 +63,13 @@ vi.mock("~/lib/ugoite-client", () => ({
     query: queryMock,
     count: countMock,
   },
+  canonicalizeCompositionDocument: vi.fn(),
+  evaluateCompositionMetricPage: vi.fn(),
+  protocolFetch: vi.fn(),
 }));
+
+const canonicalizeMock = vi.spyOn(compositionApi, "canonicalizeDocument");
+const compositionSaveMock = vi.spyOn(compositionApi, "save");
 
 describe("/spaces/:space_id/sql/:sql_id/run", () => {
   beforeEach(() => {
@@ -61,6 +80,24 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     getMock.mockReset();
     queryMock.mockReset();
     countMock.mockReset();
+    canonicalizeMock.mockReset().mockResolvedValue({
+      document: {},
+      canonical_yaml: "canonical composition yaml",
+      fingerprint: "fingerprint",
+    });
+    compositionSaveMock.mockReset().mockResolvedValue({
+      composition_id: "tool-1",
+      revision_id: "tool-revision-3",
+      canonical_yaml: "canonical composition yaml",
+      receipt: {
+        command_id: "command-1",
+        catalog_generation: 4,
+        snapshot_id: "snapshot-1",
+        committed_revision_ids: ["tool-revision-3"],
+        committed_at_micros: 1,
+        data_file_count: 1,
+      },
+    });
     getMock.mockResolvedValue({
       id: "saved-query",
       name: "Saved query",
@@ -175,6 +212,98 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(queryMock).toHaveBeenCalledTimes(2);
     expect(countMock).not.toHaveBeenCalled();
+  });
+
+  it("saves as a tool and retries an uncertain write with identical YAML and key", async () => {
+    const savedSql = {
+      id: "saved-query",
+      name: "Monthly query",
+      kind: "user-query" as const,
+      sql: "SELECT amount FROM expenses WHERE month >= :month_start",
+      variables: [{ name: "month_start", type: "date", description: "" }],
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+      revision_id: "sql-revision-8",
+    };
+    getMock.mockResolvedValue(savedSql);
+    routeControls.setState({
+      parameters: { month_start: "2026-01-01" },
+      parameterTypes: { month_start: "date" },
+    });
+    compositionSaveMock
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce({
+        composition_id: "tool-1",
+        revision_id: "tool-revision-3",
+        canonical_yaml: "canonical composition yaml",
+        receipt: {
+          command_id: "command-1",
+          catalog_generation: 4,
+          snapshot_id: "snapshot-1",
+          committed_revision_ids: ["tool-revision-3"],
+          committed_at_micros: 1,
+          data_file_count: 1,
+        },
+      });
+    render(() => <SpaceSqlRunRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save as tool" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Save as tool" });
+    expect(screen.getByLabelText("Name", { selector: "input" }))
+      .toHaveValue("Monthly query");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByRole("alert"))
+      .toHaveTextContent("Could not save this tool.");
+
+    const firstCall = compositionSaveMock.mock.calls[0];
+    expect(firstCall[0]).toBe("default");
+    expect(firstCall[1]).toBe("canonical composition yaml");
+    expect(firstCall[2]).toEqual(expect.any(String));
+    expect(canonicalizeMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Monthly query",
+      spec: expect.objectContaining({
+        sources: [expect.objectContaining({
+          entry_id: "saved-query",
+          revision_id: "sql-revision-8",
+          variables: { month_start: { parameter: "month_start" } },
+        })],
+      }),
+    }));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(compositionSaveMock).toHaveBeenCalledTimes(2));
+    expect(compositionSaveMock.mock.calls[1]).toEqual(firstCall);
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/default/compositions/tool-1/tool-revision-3",
+      )
+    );
+  });
+
+  it("only offers save-as after a successful user-query result", async () => {
+    getMock.mockResolvedValueOnce({
+      id: "saved-query",
+      name: "History query",
+      kind: "search-history",
+      sql: "SELECT 1",
+      variables: [],
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+      revision_id: "sql-revision-1",
+    });
+    render(() => <SpaceSqlRunRoute />);
+    await screen.findByRole("columnheader", { name: "value" });
+    expect(screen.queryByRole("button", { name: "Save as tool" }))
+      .not.toBeInTheDocument();
+
+    cleanup();
+    getMock.mockReset().mockRejectedValue(new Error("unavailable"));
+    render(() => <SpaceSqlRunRoute />);
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: "Save as tool" }))
+      .not.toBeInTheDocument();
   });
 
   it("aborts the old Space page request and never renders its late response", async () => {
