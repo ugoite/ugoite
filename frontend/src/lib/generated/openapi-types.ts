@@ -33,6 +33,7 @@ export const OPENAPI_SCHEMA_NAMES = [
   "CompositionResolveResponse",
   "CompositionResolvedComponentBinding",
   "CompositionResolvedSource",
+  "CompositionResultFieldType",
   "CompositionRevisionMetadata",
   "CompositionRevisionReference",
   "CompositionSaveRequest",
