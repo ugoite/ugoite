@@ -541,6 +541,24 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-compositions
+            adapter: declared
+            path: docs/spec/ui/pages/space-compositions.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-composition-revision
+            adapter: declared
+            path: docs/spec/ui/pages/space-composition-revision.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
           - id: page-space-entries-object
             adapter: declared
             path: docs/spec/ui/pages/space-entries-object.yaml
@@ -693,6 +711,20 @@ features:
           - id: route-dashboard
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/dashboard.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-compositions
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/index.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-composition-revision
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx"
             selector: { kind: file }
             claims:
               - kind: satisfies

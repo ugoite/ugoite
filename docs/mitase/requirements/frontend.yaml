@@ -2020,6 +2020,8 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-registry
                   - FEAT-FE-013#binding.frontend/target.page-space-assets
                   - FEAT-FE-013#binding.frontend/target.page-space-dashboard
+                  - FEAT-FE-013#binding.frontend/target.page-space-compositions
+                  - FEAT-FE-013#binding.frontend/target.page-space-composition-revision
                   - FEAT-FE-013#binding.frontend/target.page-space-entries-object
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-detail
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-history
@@ -2065,6 +2067,8 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-registry
                   - FEAT-FE-013#binding.frontend/target.page-space-assets
                   - FEAT-FE-013#binding.frontend/target.page-space-dashboard
+                  - FEAT-FE-013#binding.frontend/target.page-space-compositions
+                  - FEAT-FE-013#binding.frontend/target.page-space-composition-revision
                   - FEAT-FE-013#binding.frontend/target.page-space-entries-object
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-detail
                   - FEAT-FE-013#binding.frontend/target.page-space-entry-history
@@ -2080,6 +2084,8 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-space-sql-detail
                   - FEAT-FE-013#binding.frontend/target.page-space-sql
                   - FEAT-FE-013#binding.frontend/target.page-space-test-connection
+                  - FEAT-FE-013#binding.frontend/target.route-compositions
+                  - FEAT-FE-013#binding.frontend/target.route-composition-revision
                   - FEAT-FE-013#binding.frontend/target.route-assets
                   - FEAT-FE-013#binding.frontend/target.route-dashboard
                   - FEAT-FE-013#binding.frontend/target.route-space-entry-list
@@ -2110,7 +2116,10 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-FE-040#criterion.route-coverage
-                covers: [FEAT-FE-013#binding.frontend/target.page-registry]
+                covers:
+                  - FEAT-FE-013#binding.frontend/target.page-registry
+                  - FEAT-FE-013#binding.frontend/target.route-compositions
+                  - FEAT-FE-013#binding.frontend/target.route-composition-revision
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates implemented routes are documented" } }
           - id: placeholder-routes
             adapter: typescript

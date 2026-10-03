@@ -1,0 +1,37 @@
+version: "0.1"
+updated: "2026-10-03"
+page:
+  id: space-composition-revision
+  title: Saved tool revision
+  route: /spaces/{space_id}/compositions/{composition_id}/{revision_id}
+  implementation: implemented
+components:
+  shared:
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
+  body:
+    - id: composition-heading
+      type: heading
+      title: Saved tool name
+      ownership: object-identity
+    - id: composition-parameters
+      type: form
+      title: Declared parameters
+      source: composition.resolve for the selected exact revision
+    - id: composition-diagnostics
+      type: list
+      title: Resolve diagnostics
+      source: current composition.resolve response
+    - id: composition-components
+      type: query-results
+      title: Ordered tables and metrics
+      source: existing entry.query and exact-revision sql.query operations
+      component: PagedResultTable and the shared WASM metric evaluator
+      rendering:
+        mode: bounded-current-page
+        parameters-and-pages: transient-work
+    - id: composition-pagination
+      type: button
+      title: Previous and Next
+      source: existing query continuation

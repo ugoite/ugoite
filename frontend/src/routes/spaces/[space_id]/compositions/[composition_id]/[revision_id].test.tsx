@@ -112,6 +112,35 @@ describe("Composition exact-revision route", () => {
     );
   });
 
+  it("accepts false as a supplied value for a required boolean parameter", async () => {
+    vi.mocked(compositionApi.resolve).mockResolvedValue({
+      ok: true,
+      parameter_definitions: [{
+        id: "include_archived",
+        label: "Include archived",
+        type: "boolean",
+        required: true,
+      }],
+      plan,
+    });
+    render(() => <CompositionRevisionRoute />);
+
+    const select = await screen.findByLabelText("Include archived");
+    expect(select).toBeRequired();
+    expect(select).toHaveValue("");
+    fireEvent.change(select, { target: { value: "false" } });
+
+    await waitFor(() =>
+      expect(compositionApi.resolve).toHaveBeenLastCalledWith(
+        "space-1",
+        "tool-1",
+        "revision-2",
+        { include_archived: false },
+        expect.any(AbortSignal),
+      )
+    );
+  });
+
   it("retries an exact-revision open after a read failure", async () => {
     vi.mocked(compositionApi.get)
       .mockRejectedValueOnce(new Error("temporary read failure"))

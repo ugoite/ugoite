@@ -34,6 +34,7 @@ const serializeParameter = (
   value: string,
 ): unknown | undefined => {
   if (value === "") return undefined;
+  if (definition.type === "boolean") return value === "true";
   if (definition.type === "integer" || definition.type === "float") {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : value;
@@ -144,22 +145,29 @@ export default function CompositionRevisionRoute() {
                             />
                           }
                         >
-                          <input
-                            type="checkbox"
+                          <select
+                            class="ui-input"
                             required={definition.required || undefined}
-                            checked={handle.parameters()[definition.id] ===
-                                true ||
-                              (handle.parameters()[definition.id] ===
-                                  undefined &&
-                                definition.default === true)}
+                            value={value()}
                             aria-invalid={parameterMismatch(definition.id) ||
                               undefined}
                             onChange={(event) =>
                               handle.setParameter(
                                 definition.id,
-                                event.currentTarget.checked,
+                                serializeParameter(
+                                  definition,
+                                  event.currentTarget.value,
+                                ),
                               )}
-                          />
+                          >
+                            <option value="">—</option>
+                            <option value="true">
+                              {t("composition.booleanTrue")}
+                            </option>
+                            <option value="false">
+                              {t("composition.booleanFalse")}
+                            </option>
+                          </select>
                         </Show>
                       </label>
                     </div>
