@@ -83,8 +83,9 @@ async fn composition_save_persists_canonical_carrier_and_receipt() -> anyhow::Re
         .create_space_for_principal("composition-save-create", owner, "Owner")
         .await?
         .to_string();
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    document.tags = vec!["dashboard".to_string(), "finance".to_string()];
 
     let saved = service
         .save_composition_authorized_for_principals(
@@ -93,7 +94,6 @@ async fn composition_save_persists_canonical_carrier_and_receipt() -> anyhow::Re
                 entry_id: None,
                 base_revision_id: None,
                 document,
-                tags: Some(vec!["dashboard".to_string(), "finance".to_string()]),
             },
             &owner.to_string(),
             &[owner],
@@ -115,7 +115,8 @@ async fn composition_save_persists_canonical_carrier_and_receipt() -> anyhow::Re
     assert_eq!(raw.fields["kind"], json!("dashboard"));
     assert_eq!(raw.fields["format_version"], json!(1));
     assert_eq!(raw.fields["spec"], json!(saved.canonical_yaml));
-    assert_eq!(raw.revision.entry.tags, ["dashboard", "finance"]);
+    assert_eq!(saved.document.tags, ["dashboard", "finance"]);
+    assert_eq!(raw.revision.entry.tags, saved.document.tags);
     assert_eq!(raw.revision.revision_id, saved.revision_id);
     Ok(())
 }
@@ -157,7 +158,6 @@ async fn denied_composition_create_and_update_have_no_storage_side_effects() -> 
                 entry_id: None,
                 base_revision_id: None,
                 document: document.clone(),
-                tags: None,
             },
             &viewer.to_string(),
             &[viewer],
@@ -187,7 +187,6 @@ async fn denied_composition_create_and_update_have_no_storage_side_effects() -> 
                 entry_id: None,
                 base_revision_id: None,
                 document: document.clone(),
-                tags: None,
             },
             &owner.to_string(),
             &[owner],
@@ -202,7 +201,6 @@ async fn denied_composition_create_and_update_have_no_storage_side_effects() -> 
                 entry_id: Some(created.entry_id),
                 base_revision_id: Some(created.revision_id),
                 document: changed,
-                tags: None,
             },
             &viewer.to_string(),
             &[viewer],
@@ -251,7 +249,6 @@ async fn invalid_composition_save_does_not_create_registry() -> anyhow::Result<(
                 entry_id: None,
                 base_revision_id: None,
                 document,
-                tags: None,
             },
             &owner.to_string(),
             &[owner],
@@ -283,8 +280,9 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
         .create_space_for_principal("composition-save-update", owner, "Owner")
         .await?
         .to_string();
-    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+    let mut document = parse_composition_yaml(MONTHLY_EXPENSE)
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    document.tags = vec!["original".to_string()];
     let created = service
         .save_composition_authorized_for_principals(
             &space_id,
@@ -292,7 +290,6 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
                 entry_id: None,
                 base_revision_id: None,
                 document: document.clone(),
-                tags: Some(vec!["original".to_string()]),
             },
             &owner.to_string(),
             &[owner],
@@ -301,6 +298,7 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
 
     let mut changed = document;
     changed.name = "Monthly expenses updated".to_string();
+    changed.tags = vec!["updated".to_string()];
     let updated = service
         .save_composition_authorized_for_principals(
             &space_id,
@@ -308,7 +306,6 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
                 entry_id: Some(created.entry_id),
                 base_revision_id: Some(created.revision_id),
                 document: changed.clone(),
-                tags: None,
             },
             &owner.to_string(),
             &[owner],
@@ -324,7 +321,7 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
             &[owner],
         )
         .await?;
-    assert_eq!(current.revision.entry.tags, ["original"]);
+    assert_eq!(current.revision.entry.tags, changed.tags);
 
     let stale = service
         .save_composition_authorized_for_principals(
@@ -333,7 +330,6 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
                 entry_id: Some(created.entry_id),
                 base_revision_id: Some(created.revision_id),
                 document: created.document,
-                tags: None,
             },
             &owner.to_string(),
             &[owner],
@@ -363,7 +359,6 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
                 entry_id: Some(updated.entry_id),
                 base_revision_id: Some(updated.revision_id),
                 document: left_document,
-                tags: None,
             },
             &actor,
             &principals,
@@ -374,7 +369,6 @@ async fn composition_update_requires_exact_base_and_reports_stale_revision() -> 
                 entry_id: Some(updated.entry_id),
                 base_revision_id: Some(updated.revision_id),
                 document: right_document,
-                tags: None,
             },
             &actor,
             &principals,

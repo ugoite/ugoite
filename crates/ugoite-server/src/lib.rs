@@ -14042,7 +14042,9 @@ mod authentication_regression_tests {
 
     #[tokio::test]
     async fn composition_list_returns_bounded_acl_authorized_summary_pages() -> anyhow::Result<()> {
-        use ugoite_domain::composition::{CompositionDocument, CompositionKind, CompositionSpec};
+        use ugoite_domain::composition::{
+            CompositionDocument, CompositionFormat, CompositionKind, CompositionSpec,
+        };
 
         let state = AppState::new_for_tests(format!(
             "memory://server-composition-list-{}",
@@ -14054,10 +14056,12 @@ mod authentication_regression_tests {
             .create_space_for_principal("composition-list", owner_id, "List test")
             .await?
             .to_string();
-        let document = |name: &str| CompositionDocument {
+        let document = |name: &str, tags: Vec<String>| CompositionDocument {
+            format: CompositionFormat::UgoiteComposition,
             format_version: 1,
             name: name.to_string(),
             kind: CompositionKind::Dashboard,
+            tags,
             spec: CompositionSpec {
                 parameters: Vec::new(),
                 sources: Vec::new(),
@@ -14073,8 +14077,7 @@ mod authentication_regression_tests {
                     ugoite_iceberg::composition::CompositionSaveRequest {
                         entry_id: None,
                         base_revision_id: None,
-                        document: document(name),
-                        tags: Some(vec![tag.to_string()]),
+                        document: document(name, vec![tag.to_string()]),
                     },
                     &owner_id.to_string(),
                     &[owner_id],
@@ -14267,7 +14270,14 @@ mod authentication_regression_tests {
         );
         assert_eq!(wrong_content_type_body["code"], "INVALID_INPUT");
 
-        let unsupported_version = "format_version: 99\nname: future\n";
+        let unsupported_version = concat!(
+            "format: ugoite.composition\n",
+            "format_version: 99\n",
+            "kind: dashboard\n",
+            "name: future\n",
+            "tags: []\n",
+            "spec: {}\n",
+        );
         let invalid_request = Request::post("/compositions/lint")
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(serde_json::to_vec(&json!({
@@ -14383,9 +14393,11 @@ mod authentication_regression_tests {
             .await?;
 
         let save_document = |name: &str, form_id: FormId| CompositionDocument {
+            format: ugoite_domain::composition::CompositionFormat::UgoiteComposition,
             format_version: 1,
             name: name.to_string(),
             kind: CompositionKind::Dashboard,
+            tags: Vec::new(),
             spec: CompositionSpec {
                 parameters: Vec::new(),
                 sources: vec![CompositionSource::EntryQuery {
@@ -14415,7 +14427,6 @@ mod authentication_regression_tests {
                         "Missing source",
                         FormId::from_uuid(Uuid::from_u128(347403)),
                     ),
-                    tags: None,
                 },
                 &principal_id.to_string(),
                 &[principal_id],
@@ -14429,7 +14440,6 @@ mod authentication_regression_tests {
                     entry_id: None,
                     base_revision_id: None,
                     document: save_document("Denied source", FormId::from_uuid(source_form_id)),
-                    tags: None,
                 },
                 &principal_id.to_string(),
                 &[principal_id],
@@ -14558,15 +14568,24 @@ mod authentication_regression_tests {
         let exact_revision_id = exact_revision.parse::<Uuid>()?;
         let save_document =
             |name: &str, source_entry_id: Uuid, revision_id: Uuid| CompositionDocument {
+                format: ugoite_domain::composition::CompositionFormat::UgoiteComposition,
                 format_version: 1,
                 name: name.to_string(),
                 kind: CompositionKind::Dashboard,
+                tags: Vec::new(),
                 spec: CompositionSpec {
                     parameters: Vec::new(),
                     sources: vec![CompositionSource::SavedSql {
                         id: "private-sql-source".to_string(),
                         entry_id: ugoite_domain::id::EntryId::from_uuid(source_entry_id),
                         revision_id: ugoite_domain::id::RevisionId::from_uuid(revision_id),
+                        expected_result: vec![
+                            ugoite_domain::composition::CompositionResultColumn {
+                                name: "value".to_string(),
+                                result_type:
+                                    ugoite_domain::composition::CompositionResultFieldType::Integer,
+                            },
+                        ],
                         variables: BTreeMap::new(),
                     }],
                     components: Vec::new(),
@@ -14585,7 +14604,6 @@ mod authentication_regression_tests {
                         saved_sql_uuid,
                         Uuid::from_u128(347414),
                     ),
-                    tags: None,
                 },
                 &principal_id.to_string(),
                 &[principal_id],
@@ -14603,7 +14621,6 @@ mod authentication_regression_tests {
                         saved_sql_uuid,
                         exact_revision_id,
                     ),
-                    tags: None,
                 },
                 &principal_id.to_string(),
                 &[principal_id],
@@ -14621,7 +14638,6 @@ mod authentication_regression_tests {
                         saved_sql_uuid,
                         exact_revision_id,
                     ),
-                    tags: None,
                 },
                 &principal_id.to_string(),
                 &[principal_id],
@@ -14759,9 +14775,11 @@ mod authentication_regression_tests {
         let document =
             |name: &str, parameters: Vec<CompositionParameter>, sources: Vec<CompositionSource>| {
                 CompositionDocument {
+                    format: ugoite_domain::composition::CompositionFormat::UgoiteComposition,
                     format_version: 1,
                     name: name.to_string(),
                     kind: CompositionKind::Dashboard,
+                    tags: Vec::new(),
                     spec: CompositionSpec {
                         parameters,
                         sources,
@@ -14852,7 +14870,6 @@ mod authentication_regression_tests {
                     entry_id: None,
                     base_revision_id: None,
                     document: older_document,
-                    tags: None,
                 },
                 &principal_id.to_string(),
                 &[principal_id],
@@ -14866,7 +14883,6 @@ mod authentication_regression_tests {
                     entry_id: Some(older.entry_id),
                     base_revision_id: Some(older.revision_id),
                     document: document("Newer latest revision", Vec::new(), Vec::new()),
-                    tags: None,
                 },
                 &principal_id.to_string(),
                 &[principal_id],

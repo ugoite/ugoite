@@ -1,4 +1,6 @@
+format: ugoite.composition
 format_version: 2
 name: Unknown format recovery candidate
 kind: dashboard
+tags: []
 spec: {}

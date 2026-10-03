@@ -1160,8 +1160,9 @@ mod tests {
         CompositionComponent, CompositionDiagnosticCode, CompositionFieldSchemaEntry,
         CompositionLiteral, CompositionMetricValueField, CompositionParameter,
         CompositionParameterFormat, CompositionParameterReference, CompositionParameterType,
-        CompositionQueryOperator, CompositionSection, CompositionSortDirection, CompositionSource,
-        CompositionSpec, CompositionValue, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
+        CompositionQueryOperator, CompositionResultColumn, CompositionResultFieldType,
+        CompositionSection, CompositionSortDirection, CompositionSource, CompositionSpec,
+        CompositionValue, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
         EntryQuerySortTemplate, EntryQueryTemplate,
     };
     use ugoite_domain::form::{
@@ -1263,8 +1264,16 @@ mod tests {
             id: "monthly-expenses".to_owned(),
             entry_id,
             revision_id,
+            expected_result: expected_result(),
             variables,
         }
+    }
+
+    fn expected_result() -> Vec<CompositionResultColumn> {
+        vec![CompositionResultColumn {
+            name: "total".to_owned(),
+            result_type: CompositionResultFieldType::Float,
+        }]
     }
 
     fn saved_sql_metadata(
@@ -2655,6 +2664,7 @@ mod tests {
                     id: "report".to_owned(),
                     entry_id,
                     revision_id,
+                    expected_result: expected_result(),
                     variables: BTreeMap::from([("limit".to_owned(), parameter_ref("limit"))]),
                 },
             ],
@@ -2702,6 +2712,7 @@ mod tests {
             id: "report".to_owned(),
             entry_id: sql_entry_id,
             revision_id: sql_revision_id,
+            expected_result: expected_result(),
             variables: BTreeMap::new(),
         };
         let spec = composition_spec(
@@ -2785,6 +2796,7 @@ mod tests {
             id: "report".to_owned(),
             entry_id: sql_entry_id,
             revision_id: sql_revision_id,
+            expected_result: expected_result(),
             variables: BTreeMap::new(),
         };
         let mut spec = composition_spec(Vec::new(), vec![entry_source, sql_source]);
@@ -2957,6 +2969,7 @@ mod tests {
             id: "report".to_owned(),
             entry_id,
             revision_id,
+            expected_result: expected_result(),
             variables: BTreeMap::new(),
         };
         let sql_metadata = saved_sql_metadata(entry_id, revision_id, BTreeMap::new());
@@ -3239,6 +3252,7 @@ mod tests {
                     id: "report".to_owned(),
                     entry_id: sql_entry_id,
                     revision_id: sql_revision_id,
+                    expected_result: expected_result(),
                     variables: BTreeMap::new(),
                 },
             ],

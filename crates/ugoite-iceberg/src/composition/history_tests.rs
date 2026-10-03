@@ -29,7 +29,6 @@ async fn authorized_composition_history_pages_and_exact_reads_reach_revisions_af
                 entry_id: None,
                 base_revision_id: None,
                 document,
-                tags: None,
             },
             &owner.to_string(),
             &[owner],

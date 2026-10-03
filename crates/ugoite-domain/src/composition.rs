@@ -23,6 +23,7 @@ pub use yaml::{
 };
 
 pub const COMPOSITION_FORMAT_VERSION: u32 = 1;
+pub const COMPOSITION_FORMAT: &str = "ugoite.composition";
 /// Default page size for an EntryQuery source when the document omits it.
 /// The core resolver still validates the value against EntryQuery's maximum.
 pub const DEFAULT_COMPOSITION_PAGE_LIMIT: usize = 100;
@@ -31,9 +32,11 @@ pub const DEFAULT_COMPOSITION_PAGE_LIMIT: usize = 100;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionDocument {
+    pub format: CompositionFormat,
     pub format_version: u32,
-    pub name: String,
     pub kind: CompositionKind,
+    pub name: String,
+    pub tags: Vec<String>,
     pub spec: CompositionSpec,
 }
 
@@ -48,6 +51,13 @@ impl CompositionDocument {
             Err(CompositionDiagnosticCode::UnsupportedFormatVersion)
         }
     }
+}
+
+/// The portable envelope marker for Composition documents.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+pub enum CompositionFormat {
+    #[serde(rename = "ugoite.composition")]
+    UgoiteComposition,
 }
 
 /// The executable Composition kind supported by format version 1.
@@ -162,6 +172,7 @@ pub enum CompositionSource {
         id: String,
         entry_id: EntryId,
         revision_id: RevisionId,
+        expected_result: Vec<CompositionResultColumn>,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         variables: BTreeMap<String, CompositionValue>,
     },
@@ -172,6 +183,40 @@ impl CompositionSource {
         match self {
             Self::EntryQuery { id, .. } | Self::SavedSql { id, .. } => id,
         }
+    }
+}
+
+/// One ordered output column declared for an exact Saved SQL revision.
+///
+/// SQL engines do not expose a portable static type system, so this contract
+/// records the logical type the Composition expects rather than backend type
+/// strings. Column order is significant and names must be unique within a
+/// source result.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionResultColumn {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub result_type: CompositionResultFieldType,
+}
+
+/// Portable logical type of a source result column.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionResultFieldType {
+    String,
+    Boolean,
+    Integer,
+    Float,
+    Date,
+    Timestamp,
+    Json,
+}
+
+impl CompositionResultFieldType {
+    /// Whether this result type can be selected by a single-value metric.
+    pub const fn supports_metric(self) -> bool {
+        !matches!(self, Self::Json)
     }
 }
 
@@ -455,9 +500,9 @@ impl CompositionDiagnosticCode {
 mod tests {
     use super::{
         parse_composition_yaml, CompositionComponent, CompositionDiagnosticCode,
-        CompositionDocument, CompositionKind, CompositionMetricValueField, CompositionSection,
-        CompositionSource, CompositionSpec, CompositionValue, EntryQueryTemplate,
-        DEFAULT_COMPOSITION_PAGE_LIMIT,
+        CompositionDocument, CompositionFormat, CompositionKind, CompositionMetricValueField,
+        CompositionSection, CompositionSource, CompositionSpec, CompositionValue,
+        EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
     };
 
     const MONTHLY_EXPENSE: &str =
@@ -557,12 +602,15 @@ mod tests {
     #[test]
     fn document_uses_the_portable_envelope_field_names() {
         let document: CompositionDocument = serde_json::from_str(
-            r#"{"format_version":1,"name":"Example","kind":"dashboard","spec":{"parameters":[],"sources":[],"components":[],"sections":[]}}"#,
+            r#"{"format":"ugoite.composition","format_version":1,"kind":"dashboard","name":"Example","tags":["demo"],"spec":{"parameters":[],"sources":[],"components":[],"sections":[]}}"#,
         )
         .unwrap();
 
+        assert_eq!(document.format, CompositionFormat::UgoiteComposition);
         assert_eq!(document.format_version, 1);
         assert_eq!(document.kind, CompositionKind::Dashboard);
+        assert_eq!(document.name, "Example");
+        assert_eq!(document.tags, ["demo"]);
         assert_eq!(
             document.spec,
             CompositionSpec {
@@ -578,7 +626,7 @@ mod tests {
     #[test]
     fn unknown_model_fields_are_rejected() {
         let result = serde_json::from_str::<CompositionDocument>(
-            r#"{"format_version":1,"name":"Example","kind":"dashboard","spec":{"parameters":[],"sources":[],"components":[],"sections":[]},"extra":true}"#,
+            r#"{"format":"ugoite.composition","format_version":1,"kind":"dashboard","name":"Example","tags":[],"spec":{"parameters":[],"sources":[],"components":[],"sections":[]},"extra":true}"#,
         );
         assert!(result.is_err());
     }
@@ -594,9 +642,11 @@ mod tests {
     #[test]
     fn dashboard_model_carries_exact_sources_and_query_templates() {
         let document: CompositionDocument = serde_json::from_value(serde_json::json!({
+            "format": "ugoite.composition",
             "format_version": 1,
-            "name": "Monthly expenses",
             "kind": "dashboard",
+            "name": "Monthly expenses",
+            "tags": [],
             "spec": {
                 "parameters": [
                     {"id": "search", "type": "string", "required": false},
@@ -620,6 +670,7 @@ mod tests {
                         "id": "monthly_total",
                         "entry_id": "00000000-0000-7000-8000-000000000020",
                         "revision_id": "00000000-0000-7000-8000-000000000021",
+                        "expected_result": [{"name": "total", "type": "float"}],
                         "variables": {"month": {"parameter": "month"}}
                     }
                 ],

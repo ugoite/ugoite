@@ -270,6 +270,10 @@ run = [
 description = "Verify Composition canonicalization and diagnostics in the actual WASM runtime"
 run = "deno run -A crates/ugoite-wasm/tests/composition_parity.ts"
 
+[tasks."profile:composition:parser"]
+description = "Measure the Composition YAML fixture parser budget and local throughput"
+run = "cargo test -p ugoite-domain --locked profile_monthly_expense_fixture -- --ignored --nocapture"
+
 [tasks."check:deno"]
 description = "Run Deno workspace type and framework checks"
 run = "deno task check"
@@ -478,6 +482,10 @@ run = [
 [tasks."test:composition-adapter"]
 description = "Run focused Composition portable protocol and Server adapter tests"
 run = "cargo nextest run -p ugoite-api-client -p ugoite-server -E 'test(composition_operations_prepare_and_decode_through_the_portable_protocol) | test(composition_resolve_conceals_missing_and_denied_forms) | test(composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial) | test(composition_resolve_uses_exact_requested_revision_with_newer_revision_available)' --locked"
+
+[tasks."test:composition:domain"]
+description = "Run the typed Composition domain contract tests"
+run = "cargo nextest run -p ugoite-domain --locked -E 'test(composition::)'"
 
 [tasks."package:docsite"]
 description = "Stage the built docsite under target/artifacts"

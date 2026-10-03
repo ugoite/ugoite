@@ -469,8 +469,9 @@ mod tests {
 
     #[test]
     fn lint_returns_the_domain_diagnostic_code_for_unsupported_versions() {
-        let response =
-            lint_yaml_bytes(b"format_version: 22\nname: Future\nkind: dashboard\nspec: {}\n");
+        let response = lint_yaml_bytes(
+            b"format: ugoite.composition\nformat_version: 22\nkind: dashboard\nname: Future\ntags: []\nspec: {}\n",
+        );
 
         assert!(!response.ok);
         assert!(response.value.is_none());
@@ -653,7 +654,6 @@ mod tests {
                     entry_id: None,
                     base_revision_id: None,
                     document,
-                    tags: None,
                 },
                 "Owner",
                 &[owner],
@@ -697,14 +697,15 @@ mod tests {
             .document;
 
         for index in 0..3 {
+            let mut tagged_document = document.clone();
+            tagged_document.tags = vec![format!("item-{index}")];
             service
                 .save_composition_authorized_for_principals(
                     &space_id,
                     ugoite_iceberg::composition::CompositionSaveRequest {
                         entry_id: None,
                         base_revision_id: None,
-                        document: document.clone(),
-                        tags: Some(vec![format!("item-{index}")]),
+                        document: tagged_document,
                     },
                     "Owner",
                     &[owner],
@@ -829,9 +830,14 @@ mod tests {
             .create_space_for_principal("composition-history-cli", owner, "Owner")
             .await?
             .to_string();
-        let document = ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE)
-            .expect("shared Composition fixture parses")
-            .document;
+        let mut document =
+            ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE)
+                .expect("shared Composition fixture parses")
+                .document;
+        document.tags = vec!["first".to_string()];
+        let expected_first_spec = ugoite_domain::composition::canonicalize_composition(&document)
+            .expect("tagged Composition document canonicalizes")
+            .yaml;
         let first = service
             .save_composition_authorized_for_principals(
                 &space_id,
@@ -839,12 +845,12 @@ mod tests {
                     entry_id: None,
                     base_revision_id: None,
                     document: document.clone(),
-                    tags: Some(vec!["first".to_string()]),
                 },
                 "Owner",
                 &[owner],
             )
             .await?;
+        document.tags = vec!["second".to_string()];
         let second = service
             .save_composition_authorized_for_principals(
                 &space_id,
@@ -852,7 +858,6 @@ mod tests {
                     entry_id: Some(first.entry_id),
                     base_revision_id: Some(first.revision_id),
                     document,
-                    tags: Some(vec!["second".to_string()]),
                 },
                 "Owner",
                 &[owner],
@@ -885,10 +890,7 @@ mod tests {
         ];
         assert!(returned_revisions.contains(&first.revision_id.to_string()));
         assert!(returned_revisions.contains(&second.revision_id.to_string()));
-        assert_eq!(
-            first_page.revisions[0].fields["spec"],
-            MONTHLY_EXPENSE_CANONICAL
-        );
+        assert_eq!(first_page.revisions[0].fields["spec"], expected_first_spec);
         assert!(serde_json::to_value(&first_page)?["revisions"][0]["fields"]
             .get("spec")
             .is_some());

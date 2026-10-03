@@ -217,19 +217,30 @@ Composition.
 
 ## ADR-017 — Composition semantics use a restricted YAML contract
 
-**Accepted.** `.ugcomp.yaml` v1 is a restricted exchange representation. Rust
-typed domain values own its meaning; native and WASM callers use the same
-parser, validation, diagnostics, canonicalization, and fingerprint behavior.
-Adapters do not add a second Composition parser or query engine.
+**Accepted.** `.ugcomp.yaml` v1 is a restricted exchange representation with
+the ordered envelope `format`, `format_version`, `kind`, `name`, `tags`, and
+`spec`. The fixed format marker is `ugoite.composition`. Rust typed domain
+values own its meaning; native and WASM callers use the same parser,
+validation, diagnostics, canonicalization, and fingerprint behavior.
+Adapters do not add a second Composition parser or query engine. The
+document's tags are the same ordered tag list written to the owning Entry.
+
+An exact Saved SQL source carries an ordered `expected_result` descriptor with
+unique output names and portable logical types (`string`, `boolean`, `integer`,
+`float`, `date`, `timestamp`, or `json`). It describes an expected result and
+does not store SQL-backend type names. The resolver derives source-result
+fingerprints from exact revision identity, the normalized descriptor, and
+bound variable schema. No source-result fingerprint is stored in the document.
 
 The parser uses `serde-saphyr` 1.3.0 with duplicate-key errors, strict typed
 deserialization, and explicit resource budgets. It rejects multiple
 documents, anchors and aliases, merge keys, unsupported/custom tags, and
 unknown fields. It limits input to 65,536 bytes, nesting depth to 64, YAML
 nodes to 4,096, parser events to 8,192, total scalar bytes to 32,768, and each
-Composition collection to 256 items. A bounded version probe reads
-`format_version` before strict v1 deserialization. The numeric limits and
-candidate comparison are maintained in [`composition.md`](composition.md).
+Composition collection to 256 items. A bounded probe checks the fixed format
+marker and reads `format_version` before strict v1 deserialization. The
+numeric limits and candidate comparison are maintained in
+[`composition.md`](composition.md).
 
 Canonical output derives from normalized typed values, uses schema field order
 and stable YAML formatting, and does not preserve comments. The semantic

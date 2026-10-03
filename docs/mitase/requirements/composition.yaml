@@ -25,7 +25,15 @@ requirements:
     criteria:
       - id: typed-dashboard-model
         kind: behavior
-        statement: The Composition v1 model represents its name, dashboard kind, parameters, sources, components, and sections as typed Rust domain values.
+        statement: The Composition v1 model represents its fixed envelope marker, version, name, Entry tags, dashboard kind, parameters, sources, components, and sections as typed Rust domain values.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: composition-tags
+        kind: behavior
+        statement: The document tags are the sole Composition tag value and must equal the ordered EntryMetadata.tags stored on its Entry revision.
+        governed_by: [POL-000#rule.foundation-precedence, POL-007#rule.governance]
+      - id: saved-sql-result-descriptor
+        kind: behavior
+        statement: A saved_sql source declares ordered expected_result columns with unique non-empty names and portable logical types; json columns may be rendered in tables but are not scalar metric values.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: optional-display-labels
         kind: behavior
@@ -78,7 +86,7 @@ requirements:
         governed_by: [POL-001#rule.governance, POL-007#rule.governance]
       - id: semantic-fingerprint
         kind: behavior
-        statement: The document-level Composition fingerprint is SHA-256 over the complete normalized typed CompositionDocument, including its envelope, spec, and source schema snapshots, so formatting-only changes do not alter it while any semantic document change does.
+        statement: The document-level Composition fingerprint is SHA-256 over the complete normalized typed CompositionDocument, including its envelope, Entry tags, expected_result descriptors, and spec, so formatting-only changes do not alter it while any semantic document change does.
         governed_by: [POL-007#rule.governance]
       - id: wasm-parity
         kind: behavior
@@ -113,6 +121,10 @@ requirements:
         kind: behavior
         statement: A saved_sql source selects its exact Entry and Revision and never silently falls back to a newer revision.
         governed_by: [POL-014#rule.governance, POL-016#rule.governance]
+      - id: saved-sql-result-fingerprint
+        kind: behavior
+        statement: A resolved saved_sql result fingerprint includes its exact Entry and Revision, normalized ordered expected_result descriptor, used variable schema, and selected metric result column when applicable.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
       - id: exact-composition-revision
         kind: behavior
         statement: >-

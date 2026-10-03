@@ -589,7 +589,10 @@ mod tests {
         assert_ne!(unreferenced_component, MONTHLY_EXPENSE_COMPOSITION);
 
         for (yaml, expected_code) in [
-            ("format_version: 2\n", "unsupported_format_version"),
+            (
+                "format: ugoite.composition\nformat_version: 2\nkind: dashboard\nname: Example\ntags: []\nspec: {}\n",
+                "unsupported_format_version",
+            ),
             ("format_version: 1\nname: [invalid\n", "invalid_composition"),
             (UNKNOWN_LIST_ITEM_FIELD_COMPOSITION, "invalid_composition"),
             (unreferenced_component.as_str(), "invalid_composition"),

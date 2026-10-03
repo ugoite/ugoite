@@ -14,8 +14,11 @@ receipts, and stale-write conflicts use the existing Entry revision contract;
 no separate database or hidden catalog becomes authoritative.
 
 The exchange format is a restricted `.ugcomp.yaml` document at format version
-`1`. Its envelope contains `format_version`, `name`, `kind`, and `spec`; `kind`
-is `dashboard` for v0.2.2. The `spec` contains typed parameters, sources,
+`1`. Its envelope is ordered as `format`, `format_version`, `kind`, `name`,
+`tags`, and `spec`. `format` is the fixed value `ugoite.composition`, and
+`kind` is `dashboard` for v0.2.2. `tags` are the Composition Entry's tags and
+are saved and read as the same ordered list as `EntryMetadata.tags`; a save
+request has no second tag value. The `spec` contains typed parameters, sources,
 components, and sections. A source identifies either an Entry query template
 or an exact Saved SQL revision. Components refer to named sources and sections
 group named components. An `entry_query` source carries a sorted `field_schema`
@@ -54,7 +57,13 @@ or parameter reference; a parameter used for text is bound as a string. Its
 projection is either preview or an ordered list of property `FieldId`s. The
 optional `page_limit` defaults to 100 and is still bounded by the existing
 EntryQuery maximum. A `saved_sql` source carries an `EntryId`, an exact
-`RevisionId`, and literal-or-parameter variables. Dashboard components are
+`RevisionId`, literal-or-parameter variables, and an ordered `expected_result`
+descriptor. Each expected result field has a unique non-empty output name and
+one portable logical type: `string`, `boolean`, `integer`, `float`, `date`,
+`timestamp`, or `json`. The descriptor describes the exact revision's expected
+result shape; it does not claim that a SQL backend can statically infer the
+shape. Backend SQL type names are not part of the portable contract.
+Dashboard components are
 `metric` or `table` and refer to named sources. Sections define component
 render order by section-array order and component-reference order. Every
 component ID is unique and is referenced by exactly one section entry;
@@ -65,12 +74,16 @@ declaration order does not supply a fallback render order.
 A metric `value_field` is a tagged value so an EntryQuery property cannot be
 confused with a Saved SQL result column. EntryQuery metrics use
 `{ kind: entry_field, field_id: 102 }`, where `field_id` is the stable Form
-property identity. Saved SQL metrics use
+property identity and must be in the source's explicit `fields` projection.
+The `preview` projection does not promise a scalar metric property and returns
+`metric_field_not_projected` for one. Saved SQL metrics use
 `{ kind: sql_column, name: total }`, where `name` is the exact output column
-name. Resolution checks that the tag matches the referenced source; for an
-EntryQuery property it carries both the stable `FieldId` and the current Form
-field name used as the `EntryResult.properties` key. A Saved SQL column name
-is matched against the exact selected revision's result.
+name and must uniquely match an `expected_result` field. A metric may select
+only a scalar result type; `json` fields are available to tables. Resolution checks
+that the tag matches the referenced source; for an EntryQuery property it
+carries both the stable `FieldId` and the current Form field name used as the
+`EntryResult.properties` key. A Saved SQL column name is matched against the
+exact selected revision's declared result descriptor and runtime result.
 
 The stable diagnostic codes are `unsupported_format_version`,
 `invalid_composition`, `parameter_unknown`, `parameter_missing`,
@@ -103,25 +116,25 @@ exposes useful parser events, but requires a Ugoite-owned layer for typed value
 construction, duplicate-key detection, and collection budgets. `serde-saphyr`
 was selected because it deserializes directly into the shared Serde model and
 exposes explicit duplicate-key, syntax, and resource-budget controls. The
-domain parser first performs bounded version inspection, then strictly parses
-supported v1 input; both passes use `serde-saphyr`.
+domain parser first performs bounded format-marker and version inspection,
+then strictly parses supported v1 input; both passes use `serde-saphyr`.
 
 The parser accepts at most 65,536 input bytes, 64 levels of nesting, 4,096
 nodes, 8,192 parser events, 32,768 total scalar bytes, and 256 items in any one
 Composition collection. The version probe accepts at most two documents and
 limits anchors, aliases, merge keys, and retained anchor data; strict v1 parse
-rejects those constructs outright. These limits leave substantial room over
-the shared monthly-expense fixture, which measured 1,475 input bytes, 144
-nodes, 181 events, depth 8, and 842 scalar bytes. The ignored profile test
-reported 1,000 full parser calls in about 1.07 seconds in a debug build on the
-implementation host. This is a reproducibility sample, not a performance
-threshold.
+rejects those constructs outright. The shared monthly-expense fixture measured
+1,617 input bytes, 159 nodes, 200 events, depth 8, and 921 scalar bytes. The
+ignored profile test parsed 1,000 full documents in about 1.25 seconds in a
+debug build on the implementation host. Reproduce it with
+`mise run profile:composition:parser`. This is a reproducibility sample, not a
+performance threshold.
 
 Canonical YAML uses schema field order, block collections, two-space
 indentation, LF line endings, and no BOM. Canonical output is derived from the
 normalized typed value; comments are not preserved.
 
-Composition has two distinct fingerprint scopes. The document-level semantic
+Composition has three distinct fingerprint scopes. The document-level semantic
 Composition fingerprint is lowercase hexadecimal SHA-256 over the complete
 normalized `CompositionDocument` serialized as compact JSON. It represents the
 portable document identity, so any semantic change to the envelope or spec
@@ -144,6 +157,13 @@ expansion. The query-template contribution is implemented in
 `compile_entry_query_source` and covered by the focused resolver fingerprint
 tests in `crates/ugoite-core/src/composition.rs`.
 
+Each `saved_sql` result fingerprint includes its exact Saved SQL Entry and
+Revision, the normalized ordered `expected_result` descriptor, the used
+variable schema, and the selected result column when the component is a metric.
+Changing the declared output names, logical types, order, or metric selector
+changes this fingerprint. Saved SQL revision selection remains exact and does
+not fall back to a newer revision.
+
 The shared native/WASM fixture can be executed with
 `deno run -A crates/ugoite-wasm/tests/composition_parity.ts`.
 
@@ -151,8 +171,9 @@ The shared native/WASM fixture can be executed with
 
 Unsupported format versions and invalid documents return stable diagnostic
 codes. They do not make raw inspection, export, or revision history unavailable.
-The parser identifies `format_version` before strict v1 typed deserialization;
-only a supported v1 document is deserialized as `CompositionDocument`. Raw
+The parser identifies the format marker and `format_version` before strict v1
+typed deserialization; only a supported v1 document is deserialized as
+`CompositionDocument`. Raw
 inspection, export, and history use the stored revision independently, so an
 unsupported or malformed document remains recoverable. Broken source
 references are execution failures; they do not erase the stored document.
