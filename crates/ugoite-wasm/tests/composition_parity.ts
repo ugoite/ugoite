@@ -24,6 +24,19 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
   }
 }
 
+function normalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeJson);
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value).sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0
+    );
+    return Object.fromEntries(
+      entries.map(([key, entry]) => [key, normalizeJson(entry)]),
+    );
+  }
+  return value;
+}
+
 async function invokeWasm(
   exports: WebAssembly.Exports,
   request: Record<string, unknown>,
@@ -125,6 +138,10 @@ async function main(): Promise<void> {
     "../../../e2e/fixtures/composition/unknown-format-version.ugcomp.yaml",
     import.meta.url,
   );
+  const metricPageEvaluationPath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/metric-page-evaluation.json",
+    import.meta.url,
+  );
   const yaml = await Deno.readTextFile(fixturePath);
   const labeledYaml = await Deno.readTextFile(labeledFixturePath);
   const metricValueFieldsYaml = await Deno.readTextFile(metricValueFieldsFixturePath);
@@ -140,6 +157,13 @@ async function main(): Promise<void> {
   ).trim();
   const invalidListItemYaml = await Deno.readTextFile(invalidListItemPath);
   const unknownFormatVersionYaml = await Deno.readTextFile(unknownFormatVersionPath);
+  const metricPageEvaluationFixtures = JSON.parse(
+    await Deno.readTextFile(metricPageEvaluationPath),
+  ) as {
+    name: string;
+    value: Record<string, unknown>;
+    expected_response: Record<string, unknown>;
+  }[];
   const unreferencedComponentYaml = yaml.replace(
     "      components: [transactions]",
     "      components: []",
@@ -244,6 +268,18 @@ async function main(): Promise<void> {
     assertEqual(invalidResponse.ok, false, "invalid document result");
     assertEqual(error.kind, "composition_diagnostic", "diagnostic kind");
     assertEqual(error.code, expectedCode, "diagnostic code");
+  }
+
+  for (const fixture of metricPageEvaluationFixtures) {
+    const metricResponse = await invokeWasm(instance.exports, {
+      action: "domain.evaluate_composition_metric_page",
+      value: fixture.value,
+    });
+    assertEqual(
+      JSON.stringify(normalizeJson(metricResponse)),
+      JSON.stringify(normalizeJson(fixture.expected_response)),
+      `metric page evaluation: ${fixture.name}`,
+    );
   }
 }
 
