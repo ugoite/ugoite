@@ -5,7 +5,7 @@
   "runtime_evidence_recorded": false,
   "fixture_layout": {
     "root": "e2e/fixtures/composition",
-    "payload_note": "The canonical monthly-expense document belongs to the shared domain fixture set. Two raw recovery candidates are registered below; E2E seed and expected-result payloads remain pending parser and integration contracts.",
+    "payload_note": "The E2E seed manifest is created and drives the Browser journey. The raw recovery candidates remain fixture-only; recovery and release evidence selectors are still unverified.",
     "shared_document_fixtures": [
       {
         "path": "crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
