@@ -263,6 +263,21 @@ export const evaluateCompositionMetricPage = async (
   }
 };
 
+export type CompositionDocumentCanonicalization = {
+  document: unknown;
+  canonical_yaml: string;
+  fingerprint: string;
+};
+
+/** Canonicalize a typed Composition document through the shared Rust domain. */
+export const canonicalizeCompositionDocument = async (
+  document: unknown,
+): Promise<CompositionDocumentCanonicalization> =>
+  await invokeProtocol<CompositionDocumentCanonicalization>({
+    action: "domain.canonicalize_composition_document",
+    value: { document },
+  });
+
 /** Exact protocol envelope for one spreadsheet-CSV encode request. */
 export const buildSpreadsheetCsvRequest = (
   rows: readonly (readonly string[])[],

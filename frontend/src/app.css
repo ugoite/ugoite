@@ -1557,6 +1557,12 @@ textarea {
   box-shadow: var(--shadow);
   padding: 20px;
 }
+.ui-dialog.composition-save-dialog {
+  width: min(440px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .history-detail-backdrop {
   z-index: 60;
   padding: 0;
