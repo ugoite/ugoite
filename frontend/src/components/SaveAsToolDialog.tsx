@@ -48,26 +48,27 @@ export function SaveAsToolDialog(props: SaveAsToolDialogProps) {
       close();
       return;
     }
-    if (event.key !== "Tab" || !dialog) return;
-    const focusable = Array.from(
-      dialog.querySelectorAll<HTMLElement>(
-        "button:not([disabled]), input:not([disabled])",
-      ),
-    );
-    if (focusable.length === 0) {
+    if (event.key === "Tab" && dialog) {
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), input:not([disabled])",
+        ),
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const currentIndex = focusable.indexOf(
+        document.activeElement as HTMLElement,
+      );
+      const nextIndex = event.shiftKey
+        ? currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1
+        : currentIndex < 0 || currentIndex === focusable.length - 1
+        ? 0
+        : currentIndex + 1;
       event.preventDefault();
-      return;
+      focusable[nextIndex].focus();
     }
-    const currentIndex = focusable.indexOf(
-      document.activeElement as HTMLElement,
-    );
-    const nextIndex = event.shiftKey
-      ? currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1
-      : currentIndex < 0 || currentIndex === focusable.length - 1
-      ? 0
-      : currentIndex + 1;
-    event.preventDefault();
-    focusable[nextIndex].focus();
   };
 
   const handleSubmit = (event: SubmitEvent) => {
