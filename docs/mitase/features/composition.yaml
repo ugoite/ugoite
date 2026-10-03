@@ -31,6 +31,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-002#criterion.typed-metric-value-field
               - kind: documents
+                anchor: REQ-COMP-002#criterion.metric-runtime-values
+              - kind: documents
                 anchor: REQ-COMP-002#criterion.ordered-component-layout
               - kind: documents
                 anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
@@ -254,6 +256,37 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-002#criterion.typed-metric-value-field
+      - id: metric-runtime-value-domain
+        role: implementation
+        facet: domain
+        responsibility: Validate selected date and timestamp metric values with the shared Rust domain semantics.
+        targets:
+          - id: metric-runtime-value-validator
+            adapter: rust
+            path: crates/ugoite-domain/src/composition_metric.rs
+            selector: { kind: symbol, name: evaluate_composition_metric_page }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+      - id: metric-runtime-value-evidence
+        role: evidence
+        facet: domain-tests
+        responsibility: Verify accepted normalized date/time values and stable rejection of invalid calendar, clock, precision, and offset forms.
+        targets:
+          - id: accepted-metric-date-time-values
+            adapter: rust
+            path: crates/ugoite-domain/src/composition_metric.rs
+            selector: { kind: symbol, name: accepts_normalized_composition_metric_dates_and_timestamps }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.metric-runtime-values
+          - id: rejected-metric-date-time-values
+            adapter: rust
+            path: crates/ugoite-domain/src/composition_metric.rs
+            selector: { kind: symbol, name: rejects_malformed_or_non_normalized_composition_metric_dates_and_timestamps }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.metric-runtime-values
       - id: metric-value-field-contract-evidence
         role: evidence
         facet: domain-tests

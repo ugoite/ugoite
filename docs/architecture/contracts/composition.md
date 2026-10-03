@@ -85,13 +85,23 @@ carries both the stable `FieldId` and the current Form field name used as the
 `EntryResult.properties` key. A Saved SQL column name is matched against the
 exact selected revision's declared result descriptor and runtime result.
 
+Runtime metric values declared as `date` must be JSON strings containing a
+valid Gregorian date in normalized `YYYY-MM-DD` form. `timestamp` values may be
+normalized local timestamps at minute precision (`YYYY-MM-DDTHH:MM`) or at
+seconds precision with an optional normalized fractional part
+(`YYYY-MM-DDTHH:MM:SS[.fraction]`), or valid RFC 3339 timestamps with an
+explicit `Z` or numeric `±HH:MM` offset. Fractional seconds have one to nine
+digits; normalized local timestamps omit trailing zeroes. The shared domain
+evaluator rejects malformed values with `metric_result_type_mismatch`; query
+adapters do not implement a second date/time parser.
+
 The stable diagnostic codes are `unsupported_format_version`,
 `invalid_composition`, `parameter_unknown`, `parameter_missing`,
 `parameter_type_mismatch`, `source_unavailable`, `missing_field`,
 `field_type_changed`, `source_schema_changed`, and
-`metric_field_not_projected`. A missing or denied
-Composition uses the same existing generic 404/error response shape, so its
-existence is not disclosed. `not_authorized` is not a Composition diagnostic.
+`metric_field_not_projected`, and `metric_result_type_mismatch`. A missing or
+denied Composition uses the same existing generic 404/error response shape, so
+its existence is not disclosed. `not_authorized` is not a Composition diagnostic.
 After Composition access is authorized, a missing or denied Form or exact
 Saved SQL source has the same caller-visible `source_unavailable` diagnostic,
 with no source ID or metadata. Field-level diagnostics are returned only after
