@@ -3760,11 +3760,14 @@ mod tests {
         }
         if matches!(
             operation,
-            "composition.get" | "composition.history" | "composition.resolve"
+            "composition.get"
+                | "composition.history"
+                | "composition.resolve"
+                | "composition.restore"
         ) {
             arguments.insert("composition_id".into(), json!("composition-1"));
         }
-        if operation == "composition.save" {
+        if matches!(operation, "composition.save" | "composition.restore") {
             arguments.insert("idempotency_key".into(), json!("operation-key-1"));
         }
         if matches!(
