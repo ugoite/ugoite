@@ -988,6 +988,319 @@ async fn composition_restore_appends_exact_historical_revision_with_receipt() ->
 }
 
 #[tokio::test]
+async fn composition_restore_replays_exact_publication_and_rechecks_authorization(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(
+        op.clone(),
+        format!(
+            "memory://composition-restore-idempotency-{}",
+            Uuid::now_v7()
+        ),
+    );
+    let owner = Uuid::now_v7();
+    let viewer = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-restore-idempotency", owner, "Owner")
+        .await?
+        .to_string();
+    Authorizer::new(op)
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+
+    let original = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let created = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: original.clone(),
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let mut updated_document = original.clone();
+    updated_document.name = "Before restore".to_string();
+    let updated = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(created.entry_id),
+                base_revision_id: Some(created.revision_id),
+                document: updated_document,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+
+    let restore_entry_id = created.entry_id.to_string();
+    let restore_source_revision_id = created.revision_id.to_string();
+    let restore_base_revision_id = updated.revision_id.to_string();
+    let owner_text = owner.to_string();
+    let owner_principals = [owner];
+    let restore_request = || {
+        service.restore_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            &restore_entry_id,
+            &restore_source_revision_id,
+            &restore_base_revision_id,
+            &owner_text,
+            &owner_principals,
+            "restore-response-lost-1",
+        )
+    };
+    let restored = restore_request().await?;
+    let replayed = restore_request().await?;
+    assert_eq!(replayed, restored);
+    assert_eq!(restored.document, original);
+    assert_eq!(restored.restored_from_revision_id, created.revision_id);
+    assert_eq!(
+        restored.receipt.committed_revision_ids,
+        [restored.revision_id]
+    );
+
+    let changed_source = service
+        .restore_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            &created.entry_id.to_string(),
+            &updated.revision_id.to_string(),
+            &updated.revision_id.to_string(),
+            &owner.to_string(),
+            &[owner],
+            "restore-response-lost-1",
+        )
+        .await
+        .expect_err("one operation identity cannot target another source revision");
+    assert_eq!(
+        changed_source.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::IdempotencyConflict
+    );
+    let changed_actor = service
+        .restore_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            &created.entry_id.to_string(),
+            &created.revision_id.to_string(),
+            &updated.revision_id.to_string(),
+            "different-actor",
+            &[owner],
+            "restore-response-lost-1",
+        )
+        .await
+        .expect_err("the operation identity is bound to its original actor");
+    assert_eq!(
+        changed_actor.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::IdempotencyConflict
+    );
+
+    let mut later_document = original.clone();
+    later_document.name = "After restore".to_string();
+    let later = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(created.entry_id),
+                base_revision_id: Some(restored.revision_id),
+                document: later_document,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    assert_eq!(restore_request().await?, restored);
+
+    let denied_replay = service
+        .restore_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            &created.entry_id.to_string(),
+            &created.revision_id.to_string(),
+            &updated.revision_id.to_string(),
+            &viewer.to_string(),
+            &[viewer],
+            "restore-response-lost-1",
+        )
+        .await
+        .expect_err("every replay must pass current Entry and Form authorization");
+    assert_eq!(
+        denied_replay.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::Forbidden
+    );
+
+    let stale_base = service
+        .restore_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            &created.entry_id.to_string(),
+            &created.revision_id.to_string(),
+            &updated.revision_id.to_string(),
+            &owner.to_string(),
+            &[owner],
+            "stale-restore-base-1",
+        )
+        .await
+        .expect_err("a new restore must use the exact current base revision");
+    assert_eq!(
+        stale_base.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::RevisionConflict
+    );
+
+    let history = service
+        .composition_history_authorized_for_principals_page(
+            &space_id,
+            &created.entry_id.to_string(),
+            &[owner],
+            composition::COMPOSITION_HISTORY_MAX_PAGE_SIZE,
+            0,
+        )
+        .await?;
+    assert_eq!(history.total, 4);
+    assert_eq!(
+        history.revisions.last().unwrap().revision.revision_id,
+        later.revision_id
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_composition_restore_retries_share_one_publication() -> anyhow::Result<()> {
+    let service = UgoiteService::new_without_background_refresh(format!(
+        "memory://composition-restore-idempotency-race-{}",
+        Uuid::now_v7()
+    ))?;
+    let owner = Uuid::now_v7();
+    let space_id = service
+        .create_space_for_principal("composition-restore-idempotency-race", owner, "Owner")
+        .await?
+        .to_string();
+    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let created = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document: document.clone(),
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+    let mut updated_document = document;
+    updated_document.name = "Restore race base".to_string();
+    let updated = service
+        .save_composition_authorized_for_principals(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(created.entry_id),
+                base_revision_id: Some(created.revision_id),
+                document: updated_document,
+            },
+            &owner.to_string(),
+            &[owner],
+        )
+        .await?;
+
+    let left_service = service.clone();
+    let left_space_id = space_id.clone();
+    let entry_id = created.entry_id.to_string();
+    let source_revision_id = created.revision_id.to_string();
+    let base_revision_id = updated.revision_id.to_string();
+    let author = owner.to_string();
+    let gate = ugoite_iceberg::TestValidationGate::new_for_entry_id(entry_id.clone());
+    ugoite_iceberg::install_test_validation_gate(gate.clone());
+    let mut left_restore = tokio::spawn(async move {
+        left_service
+            .restore_composition_local_with_operation_id(
+                &left_space_id,
+                &entry_id,
+                &source_revision_id,
+                &base_revision_id,
+                &author,
+                "concurrent-restore-1",
+            )
+            .await
+    });
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        gate.wait_until_entered_count(1),
+    )
+    .await
+    .expect("first restore should reach the pre-append gate");
+    let right_service = service.clone();
+    let right_space_id = space_id.clone();
+    let right_entry_id = created.entry_id.to_string();
+    let right_source_revision_id = created.revision_id.to_string();
+    let right_base_revision_id = updated.revision_id.to_string();
+    let right_author = owner.to_string();
+    let mut right_restore = tokio::spawn(async move {
+        right_service
+            .restore_composition_local_with_operation_id(
+                &right_space_id,
+                &right_entry_id,
+                &right_source_revision_id,
+                &right_base_revision_id,
+                &right_author,
+                "concurrent-restore-1",
+            )
+            .await
+    });
+    tokio::select! {
+        entered = tokio::time::timeout(std::time::Duration::from_secs(10), gate.wait_until_entered_count(2)) => {
+            assert!(entered.is_ok(), "expected both restores at the pre-append gate, got {}", gate.entered_count());
+        },
+        result = &mut right_restore => panic!("second restore completed before reaching the gate: {result:?}"),
+    }
+    gate.release_one();
+    let first_result = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        tokio::select! {
+            result = &mut left_restore => (true, result),
+            result = &mut right_restore => (false, result),
+        }
+    })
+    .await;
+    ugoite_iceberg::clear_test_validation_gate();
+    gate.release();
+    let (first_is_left, first_result) =
+        first_result.context("one Composition restore should finish after the gate opens")?;
+    let second_result = if first_is_left {
+        right_restore.await
+    } else {
+        left_restore.await
+    };
+    let first = first_result
+        .context("first restore task panicked")?
+        .context("first Composition restore failed")?;
+    let second = second_result
+        .context("second restore task panicked")?
+        .context("second Composition restore failed")?;
+    let (left, right) = if first_is_left {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    assert_eq!(left, right);
+    let history = service
+        .composition_history_local_page(&space_id, &created.entry_id.to_string(), 10, 0)
+        .await?;
+    assert_eq!(history.total, 3);
+    Ok(())
+}
+
+#[tokio::test]
 async fn denied_composition_restore_and_missing_source_leave_history_unchanged(
 ) -> anyhow::Result<()> {
     let op = setup_operator()?;

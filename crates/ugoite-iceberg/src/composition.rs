@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
-use ugoite_domain::change::{ChangeCommand, ChangeDescriptor};
+use ugoite_domain::change::ChangeDescriptor;
 use ugoite_domain::composition::{
     canonicalize_composition, canonicalize_composition_yaml, CanonicalComposition,
     CompositionDocument,
@@ -146,6 +146,16 @@ fn composition_command_id_for_operation(space_id: &str, operation_id: &str) -> S
     Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()).to_string()
 }
 
+fn composition_restore_revision_id_for_operation(space_id: &str, operation_id: &str) -> RevisionId {
+    let name = format!("ugoite:composition.restore:v1:{space_id}:{operation_id}:revision");
+    RevisionId::from(Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()))
+}
+
+fn composition_restore_command_id_for_operation(space_id: &str, operation_id: &str) -> String {
+    let name = format!("ugoite:composition.restore:v1:{space_id}:{operation_id}:command");
+    Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()).to_string()
+}
+
 pub(crate) fn validate_operation_id(operation_id: &str) -> Result<()> {
     if operation_id.trim().is_empty() || operation_id.len() > COMPOSITION_OPERATION_ID_MAX_BYTES {
         return Err(AppError::invalid_input(
@@ -164,6 +174,15 @@ struct CompositionSaveIdentity<'a> {
     is_create: bool,
     base_revision_id: Option<RevisionId>,
     canonical_yaml: &'a str,
+    actor: &'a str,
+}
+
+#[derive(Serialize)]
+struct CompositionRestoreIdentity<'a> {
+    space_id: &'a str,
+    entry_id: EntryId,
+    source_revision_id: RevisionId,
+    base_revision_id: RevisionId,
     actor: &'a str,
 }
 
@@ -698,20 +717,65 @@ fn validate_saved_composition_revision(
 }
 
 /// Restore one exact historical Composition revision as a new Entry
-/// revision. Both the selected source and the new carrier pass through the
-/// same canonical Composition validator used by ordinary saves.
+/// revision. The operation identity and exact base bind retries to one durable
+/// publication, and both the source and new carrier use the Composition
+/// validator used by ordinary saves.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn restore_composition(
     operator: &Operator,
+    space_id: &str,
     workspace_path: &str,
     entry_id: EntryId,
     source_revision_id: RevisionId,
+    base_revision_id: RevisionId,
     author: &str,
+    operation_id: &str,
 ) -> Result<CompositionRestoreResult> {
+    validate_operation_id(operation_id)?;
+
+    let command_id = composition_restore_command_id_for_operation(space_id, operation_id);
+    let revision_id = composition_restore_revision_id_for_operation(space_id, operation_id);
+    let identity = CompositionRestoreIdentity {
+        space_id,
+        entry_id,
+        source_revision_id,
+        base_revision_id,
+        actor: author,
+    };
+    let publication_context =
+        crate::publication_context(command_id.clone(), "composition.restore", &identity)?
+            .with_change_descriptor(ChangeDescriptor {
+                run_id: None,
+                actor_principal_id: author.to_string(),
+                message: Some("Restore Composition".to_string()),
+                reverts_change_id: None,
+                created_at_micros: Utc::now().timestamp_micros(),
+            })
+            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+
+    // Resolve a durable outcome before comparing the current revision with
+    // the supplied base. A committed retry naturally carries a stale base.
+    if let Some(result) = resolve_published_composition_restore(
+        operator,
+        workspace_path,
+        entry_id,
+        source_revision_id,
+        base_revision_id,
+        revision_id,
+        &command_id,
+        author,
+        &publication_context,
+    )
+    .await?
+    {
+        return Ok(result);
+    }
+
     let workspace =
         crate::iceberg_store::native_workspace_read_only(operator, workspace_path).await?;
-    let publication = workspace.current_publication().await?;
+    let current_publication = workspace.current_publication().await?;
     let Some(form) =
-        registry_form_at_publication(workspace.forms_at_publication(&publication).await?)?
+        registry_form_at_publication(workspace.forms_at_publication(&current_publication).await?)?
     else {
         return Err(AppError::not_found(
             ErrorCode::EntryNotFound,
@@ -719,10 +783,10 @@ pub(crate) async fn restore_composition(
         )
         .into());
     };
-    let checkpoint = workspace.resolve_publication(&publication).await?;
+    let checkpoint = workspace.resolve_publication(&current_publication).await?;
     let current = workspace
         .read_revision_view_at_publication_with_scope(
-            &publication,
+            &current_publication,
             form.id,
             target_scope(entry_id),
             crate::RevisionView::LatestIncludingTombstones,
@@ -756,13 +820,36 @@ pub(crate) async fn restore_composition(
         .into());
     };
 
-    let document = validate_composition_revision(&source, &form)?;
-    let canonical = canonicalize_composition(&document)
-        .map_err(|diagnostic| registry_conflict(diagnostic.as_str()))?;
+    validate_composition_revision(&source, &form)?;
+    if current.revision_id != base_revision_id {
+        // A same-key writer can publish between outcome resolution and this
+        // read. Check once more before reporting its now-stale base.
+        if let Some(result) = resolve_published_composition_restore(
+            operator,
+            workspace_path,
+            entry_id,
+            source_revision_id,
+            base_revision_id,
+            revision_id,
+            &command_id,
+            author,
+            &publication_context,
+        )
+        .await?
+        {
+            return Ok(result);
+        }
+        let current_revision_id = current.revision_id.to_string();
+        return Err(AppError::revision_conflict(
+            &current_revision_id,
+            &base_revision_id.to_string(),
+            &current_revision_id,
+        )
+        .into());
+    }
     let timestamp = Utc::now()
         .timestamp_micros()
         .max(current.entry.updated_at_micros.saturating_add(1));
-    let change_id = Uuid::now_v7().to_string();
     let mut entry = source.entry.clone();
     entry.external_id = current.entry.external_id.clone();
     entry.created_at_micros = current.entry.created_at_micros;
@@ -776,8 +863,8 @@ pub(crate) async fn restore_composition(
     let revision = EntryRevisionDraft {
         form_id: form.id,
         entry_id,
-        revision_id: RevisionId::from(Uuid::now_v7()),
-        change_id: change_id.clone(),
+        revision_id,
+        change_id: command_id.clone(),
         operation: EntryOperation::Restore,
         committed_at_micros: timestamp,
         author_id: current.author_id.clone(),
@@ -792,32 +879,166 @@ pub(crate) async fn restore_composition(
     .build(&form, Some(&current))
     .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
     validate_composition_revision(&revision, &form)?;
-    let change = ChangeCommand {
-        change_id,
-        run_id: None,
-        actor_principal_id: author.to_string(),
-        message: Some("Restore Composition".to_string()),
-        reverts_change_id: None,
-        created_at_micros: timestamp,
-    };
-    let publication =
-        crate::publication_context_for_change(&change, "composition.restore", &revision)?;
     crate::authorization::ensure_authorization_write_fence().await?;
     let workspace =
         crate::iceberg_store::native_mutation_workspace(operator, workspace_path).await?;
-    let receipt = workspace
-        .commit(publication)?
-        .append_composition_revision_authorized(revision.clone())
-        .await?;
+    match workspace
+        .commit(publication_context.clone())?
+        .append_composition_revision_authorized(revision)
+        .await
+    {
+        Ok(_) => resolve_published_composition_restore(
+            operator,
+            workspace_path,
+            entry_id,
+            source_revision_id,
+            base_revision_id,
+            revision_id,
+            &command_id,
+            author,
+            &publication_context,
+        )
+        .await?
+        .ok_or_else(|| registry_conflict("published Composition restore outcome is missing")),
+        Err(error) => {
+            if let Some(result) = resolve_published_composition_restore(
+                operator,
+                workspace_path,
+                entry_id,
+                source_revision_id,
+                base_revision_id,
+                revision_id,
+                &command_id,
+                author,
+                &publication_context,
+            )
+            .await?
+            {
+                return Ok(result);
+            }
+            Err(error)
+        }
+    }
+}
 
-    Ok(CompositionRestoreResult {
+#[allow(clippy::too_many_arguments)]
+async fn resolve_published_composition_restore(
+    operator: &Operator,
+    workspace_path: &str,
+    entry_id: EntryId,
+    source_revision_id: RevisionId,
+    base_revision_id: RevisionId,
+    revision_id: RevisionId,
+    command_id: &str,
+    author: &str,
+    publication: &crate::PublicationContext,
+) -> Result<Option<CompositionRestoreResult>> {
+    let workspace =
+        crate::iceberg_store::native_mutation_workspace(operator, workspace_path).await?;
+    let outcome = match workspace
+        .commit(publication.clone())?
+        .publication_outcome()
+        .await
+    {
+        Ok(outcome) => outcome,
+        Err(error) if publication_content_conflict(&error) => {
+            return Err(AppError::conflict(
+                ErrorCode::IdempotencyConflict,
+                "Composition operation identity was reused with different restore content",
+            )
+            .into());
+        }
+        Err(error) => return Err(error),
+    };
+    let Some(outcome) = outcome else {
+        return Ok(None);
+    };
+    let raw = read_composition_raw_revision(
+        operator,
+        workspace_path,
+        &entry_id.to_string(),
+        &revision_id.to_string(),
+    )
+    .await?
+    .ok_or_else(|| registry_conflict("published Composition restore revision is missing"))?;
+    let document = validate_restored_composition_revision(
+        &raw,
         entry_id,
-        revision_id: revision.revision_id,
+        source_revision_id,
+        base_revision_id,
+        revision_id,
+        command_id,
+        author,
+    )?;
+    let snapshot_id = outcome
+        .snapshot_id
+        .context("Composition restore publication did not create an Iceberg snapshot")?;
+    Ok(Some(CompositionRestoreResult {
+        entry_id,
+        revision_id: raw.revision.revision_id,
         restored_from_revision_id: source_revision_id,
+        canonical_yaml: canonicalize_composition(&document)
+            .map_err(|diagnostic| registry_conflict(diagnostic.as_str()))?
+            .yaml,
         document,
-        canonical_yaml: canonical.yaml,
-        receipt,
-    })
+        receipt: crate::CommitReceipt {
+            command_id: outcome.command_id,
+            catalog_generation: outcome.catalog_generation,
+            snapshot_id,
+            committed_revision_ids: vec![raw.revision.revision_id],
+            committed_at_micros: raw.revision.committed_at_micros,
+            data_file_count: outcome.data_file_count,
+        },
+    }))
+}
+
+fn validate_restored_composition_revision(
+    raw: &RawCompositionRevision,
+    entry_id: EntryId,
+    source_revision_id: RevisionId,
+    base_revision_id: RevisionId,
+    revision_id: RevisionId,
+    command_id: &str,
+    author: &str,
+) -> Result<CompositionDocument> {
+    let spec = raw
+        .fields
+        .get("spec")
+        .and_then(Value::as_str)
+        .ok_or_else(|| registry_conflict("published Composition restore spec is missing"))?;
+    let canonical = canonicalize_composition_yaml(spec)
+        .map_err(|diagnostic| registry_conflict(diagnostic.as_str()))?;
+    let restored_from = source_revision_id.to_string();
+    if raw.revision.entry_id != entry_id
+        || raw.revision.revision_id != revision_id
+        || raw.revision.change_id != command_id
+        || raw.revision.parent_revision_id != Some(base_revision_id)
+        || raw.revision.operation != EntryOperation::Restore
+        || raw.revision.entry.updated_by != author
+        || raw.revision.entry.deleted
+        || raw.revision.entry.restored_from != Some(source_revision_id)
+        || raw.revision.source_id.as_deref() != Some(restored_from.as_str())
+        || raw.revision.entry.tags != canonical.document.tags
+        || raw.fields.len() != 4
+        || !raw.unmapped_field_values.is_empty()
+        || !raw.revision.extra_attributes.is_empty()
+        || !raw.revision.extension_metadata.is_empty()
+        || canonical.yaml != spec
+        || raw.fields.get("name").and_then(Value::as_str) != Some(canonical.document.name.as_str())
+        || raw.fields.get("format_version").and_then(Value::as_i64)
+            != Some(i64::from(canonical.document.format_version))
+    {
+        return Err(registry_conflict(
+            "published Composition restore does not match its command identity",
+        ));
+    }
+    let expected_kind = serde_json::to_value(canonical.document.kind)?;
+    if raw.fields.get("kind").and_then(Value::as_str) != expected_kind.as_str() {
+        return Err(registry_conflict(
+            "published Composition restore kind does not match its canonical spec",
+        ));
+    }
+    Ok(canonical.document)
 }
 
 fn publication_content_conflict(error: &anyhow::Error) -> bool {
