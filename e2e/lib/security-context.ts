@@ -200,7 +200,9 @@ export function safeErrorName(name: string): string {
 
 /** Map browser request failures to a fixed category rather than logging their text. */
 export function safeNetworkFailureCode(value: string | undefined): string {
-  const candidate = value?.match(/(?:^|[^A-Z0-9_])([A-Z][A-Z0-9_]+)(?:$|[^A-Z0-9_])/)
+  const candidate = value?.match(
+    /(?:^|[^A-Z0-9_])([A-Z][A-Z0-9_]+)(?:$|[^A-Z0-9_])/,
+  )
     ?.[1];
   return candidate && SAFE_NETWORK_FAILURE_CODES.has(candidate)
     ? candidate
@@ -210,7 +212,8 @@ export function safeNetworkFailureCode(value: string | undefined): string {
 /** Return a bounded failure category suitable for logs that contain secrets. */
 export function safeNavigationFailure(error: unknown): string {
   const message = messageOf(error);
-  const status = message.match(/\b(?:returned\s+|status:?\s*)([45]\d\d)\b/i)?.[1];
+  const status = message.match(/\b(?:returned\s+|status:?\s*)([45]\d\d)\b/i)
+    ?.[1];
   if (status) return `http-${status}`;
 
   // Playwright's navigation text places the request URL after this prefix;
@@ -260,17 +263,18 @@ export type DocumentProbe = {
   status?: number;
   /** Snippet of the loaded document body, when known. */
   bodySnippet?: string;
+  /** Visible text from the loaded document body, when known. */
+  bodyText?: string;
   /** Recorded failed asset/chunk request text, when known. */
   assetError?: string;
 };
 
 /**
- * Pure retry verdict for a navigation failure. Returns `"retry"` ONLY for:
- * document load failure, recognized ERR_NETWORK_CHANGED, connection
- * reset/refused, static JS chunk request failure, or a 2xx document with an
- * empty DOM plus a frontend asset environment error. Every product verdict
- * (HTTP 4xx/5xx, API validation/authorization, WebAuthn ceremony, visible
- * application error, assertion failure, product state mismatch) returns
+ * Pure retry verdict for a navigation failure. Returns `"retry"` for a
+ * recognized browser network failure or a frontend asset network failure in
+ * the probe. An empty 2xx document plus an asset environment error also earns
+ * one retry. Every product verdict (HTTP 4xx/5xx, API validation/authorization,
+ * WebAuthn ceremony, assertion failure, product state mismatch) returns
  * `"no-retry"`. Product signals take precedence so retry fails closed.
  */
 export function classifyNavigationFailure(
@@ -285,20 +289,21 @@ export function classifyNavigationFailure(
   }
   if (isProductFailure(error)) return "no-retry";
   if (isEnvironmentFailure(error)) return "retry";
+  // The setup page can be server-rendered before its client JavaScript has
+  // hydrated. A failed frontend script therefore earns a rebuild even when
+  // visible SSR text exists; HTTP asset failures and product errors fail fast.
   if (
-    isStaticAssetFailure(error) && isEnvironmentFailure(probe.assetError ?? "")
+    isStaticAssetFailure(probe.assetError ?? "") &&
+    isEnvironmentFailure(probe.assetError ?? "")
   ) {
     return "retry";
   }
-  if (isStaticAssetFailure(probe.assetError ?? "")) return "retry";
   const body = probe.bodySnippet ?? "";
-  const emptyDom = body.length === 0 ||
-    (!body.includes('<div id="app"') && !body.includes("/_build/"));
-  if (
-    emptyDom &&
-    (isEnvironmentFailure(probe.assetError ?? "") ||
-      isStaticAssetFailure(probe.assetError ?? ""))
-  ) {
+  const emptyDom = typeof probe.bodyText === "string"
+    ? probe.bodyText.trim().length === 0
+    : body.length === 0 ||
+      (!body.includes('<div id="app"') && !body.includes("/_build/"));
+  if (emptyDom && isEnvironmentFailure(probe.assetError ?? "")) {
     return "retry";
   }
   return "no-retry";
