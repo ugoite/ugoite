@@ -148,6 +148,27 @@ pub struct CompositionSaveResponse {
     pub receipt: CompositionPublicationReceipt,
 }
 
+/// Restore one exact historical revision as a new append-only Composition
+/// revision. `base_revision_id` must still be the current revision when the
+/// Server publishes the restore.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionRestoreRequest {
+    pub source_revision_id: String,
+    pub base_revision_id: String,
+}
+
+/// Successful exact-revision Composition restore response.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionRestoreResponse {
+    pub composition_id: String,
+    pub revision_id: String,
+    pub restored_from_revision_id: String,
+    pub canonical_yaml: String,
+    pub receipt: CompositionPublicationReceipt,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CompositionRawRevision {
     pub revision: CompositionRevisionMetadata,

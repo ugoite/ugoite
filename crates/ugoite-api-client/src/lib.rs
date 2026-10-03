@@ -19,9 +19,9 @@ pub use composition::{
     CompositionParameterFormat, CompositionParameterType, CompositionPublicationReceipt,
     CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
     CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
-    CompositionResolvedComponentKind, CompositionResolvedSource, CompositionResultFieldType,
-    CompositionRevisionMetadata, CompositionRevisionReference, CompositionSaveRequest,
-    CompositionSaveResponse,
+    CompositionResolvedComponentKind, CompositionResolvedSource, CompositionRestoreRequest,
+    CompositionRestoreResponse, CompositionResultFieldType, CompositionRevisionMetadata,
+    CompositionRevisionReference, CompositionSaveRequest, CompositionSaveResponse,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -89,6 +89,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "composition.history",
     "composition.resolve",
     "composition.save",
+    "composition.restore",
     "sql.list",
     "sql.get",
     "sql.create",
@@ -1090,6 +1091,17 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "composition.restore" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to restore Composition"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "compositions".into(),
+                    required_string(operation, args, "composition_id")?,
+                    "restore".into(),
+                ],
+                vec![],
+            ),
             "entry.create" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to create entry"),
                 vec![
@@ -1393,7 +1405,7 @@ pub fn prepare_request(
         }
     };
 
-    if operation == "composition.save" {
+    if matches!(operation, "composition.save" | "composition.restore") {
         let value = required_string(operation, args, "idempotency_key")?;
         if value.trim().is_empty() || value.len() > 256 {
             return Err(ApiProtocolError::invalid_arguments(
@@ -1924,6 +1936,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
         "composition.save" => (
             HttpMethod::Post,
             "Failed to save Composition",
+            RequestBodyKind::Json,
+        ),
+        "composition.restore" => (
+            HttpMethod::Post,
+            "Failed to restore Composition",
             RequestBodyKind::Json,
         ),
         "entry.create" => (
@@ -2704,6 +2721,52 @@ mod tests {
         )
         .expect_err("Composition save rejects an empty idempotency key");
         assert!(empty_save_key.to_string().contains("1 to 256 characters"));
+        let restore_body = json!({
+            "source_revision_id": "01900000-0000-7000-8000-000000000004",
+            "base_revision_id": "01900000-0000-7000-8000-000000000005"
+        });
+        let restore = prepare_request(
+            "composition.restore",
+            &json!({
+                "space_id": "demo",
+                "composition_id": "01900000-0000-7000-8000-000000000002",
+                "idempotency_key": "restore-attempt-1"
+            }),
+            Some(&restore_body),
+        )
+        .expect("exact Composition restore request");
+        assert_eq!(restore.method, HttpMethod::Post);
+        assert_eq!(
+            restore.path,
+            "/spaces/demo/compositions/01900000-0000-7000-8000-000000000002/restore"
+        );
+        assert_eq!(restore.body_kind, RequestBodyKind::Json);
+        assert_eq!(restore.headers[1].name, "idempotency-key");
+        assert_eq!(restore.headers[1].value, "restore-attempt-1");
+        assert_eq!(
+            serde_json::from_str::<Value>(restore.body.as_deref().expect("restore body"))
+                .expect("restore request JSON"),
+            restore_body
+        );
+
+        let missing_key = prepare_request(
+            "composition.restore",
+            &json!({"space_id": "demo", "composition_id": "comp-1"}),
+            Some(&restore_body),
+        )
+        .expect_err("Composition restore requires a stable operation key");
+        assert!(missing_key.to_string().contains("idempotency_key"));
+        let error = prepare_request(
+            "composition.restore",
+            &json!({
+                "space_id": "demo",
+                "composition_id": "comp-1",
+                "idempotency_key": "  "
+            }),
+            Some(&restore_body),
+        )
+        .expect_err("restore rejects an empty operation key");
+        assert!(error.to_string().contains("1 to 256 characters"));
 
         let save_response = json!({
             "composition_id": "01900000-0000-7000-8000-000000000002",
@@ -2723,6 +2786,28 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&save_response_dto).expect("serialize save response DTO"),
             save_response
+        );
+
+        let restore_response = json!({
+            "composition_id": "01900000-0000-7000-8000-000000000002",
+            "revision_id": "01900000-0000-7000-8000-000000000006",
+            "restored_from_revision_id": "01900000-0000-7000-8000-000000000004",
+            "canonical_yaml": "format: ugoite.composition\nformat_version: 1\n",
+            "receipt": {
+                "command_id": "restore-command-1",
+                "catalog_generation": 5,
+                "snapshot_id": 13,
+                "committed_revision_ids": ["01900000-0000-7000-8000-000000000006"],
+                "committed_at_micros": 456,
+                "data_file_count": 1
+            }
+        });
+        let restore_response_dto: CompositionRestoreResponse =
+            serde_json::from_value(restore_response.clone())
+                .expect("Composition restore response DTO");
+        assert_eq!(
+            serde_json::to_value(&restore_response_dto).expect("serialize restore response DTO"),
+            restore_response
         );
 
         let resolve_body = json!({
