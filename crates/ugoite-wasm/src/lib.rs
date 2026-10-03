@@ -732,21 +732,42 @@ mod tests {
         let native =
             ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE_COMPOSITION)
                 .unwrap();
+        let normalized_typed_document = serde_json::to_value(&native.document).unwrap();
+        let mut unnormalized_typed_document = normalized_typed_document.clone();
+        let field_schema = unnormalized_typed_document["spec"]["sources"][0]["field_schema"]
+            .as_array_mut()
+            .expect("the EntryQuery fixture has a field schema");
+        field_schema.reverse();
+        assert_ne!(
+            unnormalized_typed_document["spec"]["sources"][0]["field_schema"],
+            normalized_typed_document["spec"]["sources"][0]["field_schema"]
+        );
+        let native_typed = ugoite_domain::composition::canonicalize_composition_document_value(
+            unnormalized_typed_document.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&native_typed.document).unwrap(),
+            normalized_typed_document
+        );
+        assert_eq!(native_typed.yaml, native.yaml);
+        assert_eq!(native_typed.fingerprint, native.fingerprint);
         let typed_request = serde_json::json!({
             "action": "domain.canonicalize_composition_document",
-            "value": {
-                "document": serde_json::to_value(&native.document).unwrap(),
-            },
+            "value": {"document": unnormalized_typed_document},
         });
         let typed_response: Value =
             serde_json::from_str(&super::invoke_json(&typed_request.to_string())).unwrap();
         assert_eq!(typed_response["ok"], true, "{typed_response}");
         assert_eq!(
             typed_response["value"]["document"],
-            serde_json::to_value(&native.document).unwrap()
+            serde_json::to_value(native_typed.document).unwrap()
         );
-        assert_eq!(typed_response["value"]["canonical_yaml"], native.yaml);
-        assert_eq!(typed_response["value"]["fingerprint"], native.fingerprint);
+        assert_eq!(typed_response["value"]["canonical_yaml"], native_typed.yaml);
+        assert_eq!(
+            typed_response["value"]["fingerprint"],
+            native_typed.fingerprint
+        );
 
         let invalid_typed_request = serde_json::json!({
             "action": "domain.canonicalize_composition_document",
