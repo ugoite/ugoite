@@ -123,6 +123,221 @@ async fn composition_save_persists_canonical_carrier_and_receipt() -> anyhow::Re
 }
 
 #[tokio::test]
+async fn composition_save_replays_the_original_create_and_update_after_response_loss(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op, "memory://composition-save-idempotency");
+    let owner = Uuid::from_u128(3_428_011);
+    let space_id = service
+        .create_space_for_principal("composition-save-idempotency", owner, "Owner")
+        .await?
+        .to_string();
+    let original = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let create_request = || composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document: original.clone(),
+    };
+
+    // The first response is intentionally discarded to model a committed
+    // publication whose response did not reach the caller.
+    let first_create = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            create_request(),
+            &owner.to_string(),
+            &[owner],
+            "create-response-lost-1",
+        )
+        .await?;
+    let replayed_create = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            create_request(),
+            &owner.to_string(),
+            &[owner],
+            "create-response-lost-1",
+        )
+        .await?;
+    assert_eq!(replayed_create, first_create);
+
+    let mut updated_document = first_create.document.clone();
+    updated_document.name = "Response loss update".to_string();
+    let update_request = || composition::CompositionSaveRequest {
+        entry_id: Some(first_create.entry_id),
+        base_revision_id: Some(first_create.revision_id),
+        document: updated_document.clone(),
+    };
+    let first_update = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            update_request(),
+            &owner.to_string(),
+            &[owner],
+            "update-response-lost-1",
+        )
+        .await?;
+    let replayed_update = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            update_request(),
+            &owner.to_string(),
+            &[owner],
+            "update-response-lost-1",
+        )
+        .await?;
+    assert_eq!(replayed_update, first_update);
+
+    let mut changed_document = updated_document;
+    changed_document.name = "Different payload".to_string();
+    let changed_payload = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            composition::CompositionSaveRequest {
+                entry_id: Some(first_create.entry_id),
+                base_revision_id: Some(first_create.revision_id),
+                document: changed_document,
+            },
+            &owner.to_string(),
+            &[owner],
+            "update-response-lost-1",
+        )
+        .await
+        .expect_err("an operation identity cannot be reused for different content");
+    assert_eq!(
+        changed_payload.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::IdempotencyConflict
+    );
+
+    let history = service
+        .composition_history_local_page(&space_id, &first_create.entry_id.to_string(), 10, 0)
+        .await?;
+    assert_eq!(history.total, 2, "replays must not append revisions");
+    let current = service
+        .get_composition_raw_local(&space_id, &first_create.entry_id.to_string())
+        .await?;
+    assert_eq!(current.revision.revision_id, first_update.revision_id);
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_composition_save_retries_share_one_publication() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op, "memory://composition-save-idempotency-race");
+    let owner = Uuid::from_u128(3_428_012);
+    let space_id = service
+        .create_space_for_principal("composition-save-idempotency-race", owner, "Owner")
+        .await?
+        .to_string();
+    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let left_request = composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document: document.clone(),
+    };
+    let right_request = composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document,
+    };
+    let owner_text = owner.to_string();
+    let owner_principals = [owner];
+    let (left, right) = tokio::join!(
+        service.save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            left_request,
+            &owner_text,
+            &owner_principals,
+            "concurrent-save-1",
+        ),
+        service.save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            right_request,
+            &owner_text,
+            &owner_principals,
+            "concurrent-save-1",
+        ),
+    );
+    let left = left?;
+    let right = right?;
+    assert_eq!(left, right);
+    let history = service
+        .composition_history_local_page(&space_id, &left.entry_id.to_string(), 10, 0)
+        .await?;
+    assert_eq!(history.total, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn composition_save_rechecks_authorization_when_replaying_a_committed_operation(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op.clone(), "memory://composition-save-replay-auth");
+    let owner = Uuid::from_u128(3_428_013);
+    let editor = Uuid::from_u128(3_428_014);
+    let space_id = service
+        .create_space_for_principal("composition-save-replay-auth", owner, "Owner")
+        .await?
+        .to_string();
+    let authorizer = Authorizer::new(op);
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: editor,
+                kind: PrincipalKind::Human,
+                display_name: "Editor".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Editor,
+        )
+        .await?;
+    let document = parse_composition_yaml(MONTHLY_EXPENSE)
+        .map_err(|diagnostic| anyhow::anyhow!(diagnostic.as_str()))?;
+    let request = || composition::CompositionSaveRequest {
+        entry_id: None,
+        base_revision_id: None,
+        document: document.clone(),
+    };
+    let saved = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            request(),
+            &editor.to_string(),
+            &[editor],
+            "revoked-save-replay-1",
+        )
+        .await?;
+    authorizer
+        .revoke_principal(&space_id, owner, editor)
+        .await?;
+
+    let replay = service
+        .save_composition_authorized_for_principals_with_operation_id(
+            &space_id,
+            request(),
+            &editor.to_string(),
+            &[editor],
+            "revoked-save-replay-1",
+        )
+        .await
+        .expect_err("a replay must use current authorization");
+    assert_eq!(
+        replay.downcast_ref::<AppError>().unwrap().code(),
+        ErrorCode::Forbidden
+    );
+    let history = service
+        .composition_history_local_page(&space_id, &saved.entry_id.to_string(), 10, 0)
+        .await?;
+    assert_eq!(history.total, 1);
+    Ok(())
+}
+
+#[tokio::test]
 async fn denied_composition_create_and_update_have_no_storage_side_effects() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let service = UgoiteService::from_operator(

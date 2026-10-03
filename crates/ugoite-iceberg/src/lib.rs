@@ -3366,7 +3366,9 @@ impl SpaceCommitCoordinator {
         })
     }
 
-    async fn publication_outcome(&self) -> Result<Option<space_catalog::PublicationOutcome>> {
+    pub(crate) async fn publication_outcome(
+        &self,
+    ) -> Result<Option<space_catalog::PublicationOutcome>> {
         let catalog = self
             .workspace
             .space_catalog
@@ -3552,7 +3554,7 @@ impl SpaceCommitCoordinator {
                     .map(|revision| revision.committed_at_micros)
                     .max()
                     .unwrap_or_default(),
-                data_file_count: 0,
+                data_file_count: receipt.data_file_count,
             });
         }
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
@@ -3572,7 +3574,7 @@ impl SpaceCommitCoordinator {
                         .map(|revision| revision.committed_at_micros)
                         .max()
                         .unwrap_or_default(),
-                    data_file_count: 0,
+                    data_file_count: receipt.data_file_count,
                 });
             }
             let attempt = self.attempt_workspace().await?;
@@ -3599,7 +3601,7 @@ impl SpaceCommitCoordinator {
                         .map(|revision| revision.committed_at_micros)
                         .max()
                         .unwrap_or_default(),
-                    data_file_count: 0,
+                    data_file_count: publication.data_file_count,
                 });
             }
             let new_entry_ids = revisions

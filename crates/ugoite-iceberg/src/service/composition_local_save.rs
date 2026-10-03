@@ -23,13 +23,15 @@ impl UgoiteService {
             .map_err(|diagnostic| {
                 AppError::invalid_input(ErrorCode::InvalidInput, diagnostic.as_str())
             })?;
+        let operation_id = Uuid::now_v7().to_string();
+        composition::validate_operation_id(&operation_id)?;
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
 
         let is_create = request.entry_id.is_none();
-        let entry_id = request
-            .entry_id
-            .unwrap_or_else(|| EntryId::from(Uuid::now_v7()));
+        let entry_id = request.entry_id.unwrap_or_else(|| {
+            composition::composition_entry_id_for_operation(space_id, &operation_id)
+        });
         let entry_id_text = entry_id.to_string();
         validate_storage_id(validate_entry_id(&entry_id_text))?;
         if let Some(base_revision_id) = request.base_revision_id {
@@ -38,11 +40,13 @@ impl UgoiteService {
 
         let result = composition::save_composition(
             &self.operator,
+            space_id,
             &self.workspace_path(space_id),
             request,
             entry_id,
             canonical,
             author,
+            &operation_id,
         )
         .await?;
         self.record_committed_entry_revision(

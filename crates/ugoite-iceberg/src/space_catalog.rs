@@ -74,6 +74,7 @@ pub(crate) struct PublicationOutcome {
     pub command_id: String,
     pub catalog_generation: u64,
     pub snapshot_id: Option<i64>,
+    pub data_file_count: usize,
 }
 
 impl PublicationContext {
@@ -2138,16 +2139,16 @@ impl SpaceCatalog {
         let Some((head, _)) = self.exact_head().await? else {
             return Ok(None);
         };
-        self.find_publication_from_head(head, publication)
-            .await?
-            .map(|record| {
-                Ok(PublicationOutcome {
-                    command_id: record.command_id,
-                    catalog_generation: record.generation,
-                    snapshot_id: record.new_snapshot_id,
-                })
-            })
-            .transpose()
+        let Some(record) = self.find_publication_from_head(head, publication).await? else {
+            return Ok(None);
+        };
+        let data_file_count = self.publication_data_file_count(&record).await?;
+        Ok(Some(PublicationOutcome {
+            command_id: record.command_id,
+            catalog_generation: record.generation,
+            snapshot_id: record.new_snapshot_id,
+            data_file_count,
+        }))
     }
 
     /// Resumes a publication object left behind before its Head CAS. The
@@ -2179,11 +2180,33 @@ impl SpaceCatalog {
             publication.clone(),
         )
         .await?;
+        let data_file_count = self.publication_data_file_count(&publication).await?;
         Ok(Some(PublicationOutcome {
             command_id: publication.command_id,
             catalog_generation: publication.generation,
             snapshot_id: publication.new_snapshot_id,
+            data_file_count,
         }))
+    }
+
+    async fn publication_data_file_count(&self, publication: &PublicationRecord) -> Result<usize> {
+        let Some(snapshot_id) = publication.new_snapshot_id else {
+            return Ok(0);
+        };
+        let metadata =
+            TableMetadata::read_from(&self.file_io, &publication.new_metadata_location).await?;
+        let data_file_count = metadata
+            .snapshots()
+            .find(|snapshot| snapshot.snapshot_id() == snapshot_id)
+            .and_then(|snapshot| {
+                snapshot
+                    .summary()
+                    .additional_properties
+                    .get("added-data-files")
+            })
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or_default();
+        Ok(data_file_count)
     }
 
     async fn find_publication_from_head(

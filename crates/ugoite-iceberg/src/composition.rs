@@ -3,7 +3,7 @@
 //! This module owns the reserved Registry carrier and its Entry-backed
 //! persistence boundary. YAML semantics remain defined by `ugoite-domain`.
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
-use ugoite_domain::change::ChangeCommand;
+use ugoite_domain::change::{ChangeCommand, ChangeDescriptor};
 use ugoite_domain::composition::{
     canonicalize_composition, canonicalize_composition_yaml, CanonicalComposition,
     CompositionDocument,
@@ -25,6 +25,7 @@ use uuid::Uuid;
 
 pub const COMPOSITION_HISTORY_MAX_PAGE_SIZE: usize = 100;
 pub const COMPOSITION_LIST_MAX_PAGE_SIZE: usize = 100;
+const COMPOSITION_OPERATION_ID_MAX_BYTES: usize = 256;
 
 #[cfg(test)]
 #[path = "composition/authorized_raw_read_tests.rs"]
@@ -128,6 +129,42 @@ fn entry_uuid(entry_id: &str) -> EntryId {
             uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, entry_id.as_bytes())
         }),
     )
+}
+
+pub(crate) fn composition_entry_id_for_operation(space_id: &str, operation_id: &str) -> EntryId {
+    let name = format!("ugoite:composition.save:v1:{space_id}:{operation_id}:entry");
+    EntryId::from(Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()))
+}
+
+fn composition_revision_id_for_operation(space_id: &str, operation_id: &str) -> RevisionId {
+    let name = format!("ugoite:composition.save:v1:{space_id}:{operation_id}:revision");
+    RevisionId::from(Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()))
+}
+
+fn composition_command_id_for_operation(space_id: &str, operation_id: &str) -> String {
+    let name = format!("ugoite:composition.save:v1:{space_id}:{operation_id}:command");
+    Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()).to_string()
+}
+
+pub(crate) fn validate_operation_id(operation_id: &str) -> Result<()> {
+    if operation_id.trim().is_empty() || operation_id.len() > COMPOSITION_OPERATION_ID_MAX_BYTES {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "Composition operation identity must contain 1 to 256 bytes",
+        )
+        .into());
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct CompositionSaveIdentity<'a> {
+    space_id: &'a str,
+    entry_id: EntryId,
+    is_create: bool,
+    base_revision_id: Option<RevisionId>,
+    canonical_yaml: &'a str,
+    actor: &'a str,
 }
 
 fn registry_form_at_publication(forms: Vec<FormDefinition>) -> Result<Option<FormDefinition>> {
@@ -294,12 +331,15 @@ pub(crate) fn validate_composition_revision(
 /// parentage against the latest Catalog Head before publication.
 pub(crate) async fn save_composition(
     operator: &Operator,
+    space_id: &str,
     workspace_path: &str,
     request: CompositionSaveRequest,
     entry_id: EntryId,
     canonical: CanonicalComposition,
     author: &str,
+    operation_id: &str,
 ) -> Result<CompositionSaveResult> {
+    validate_operation_id(operation_id)?;
     if request.entry_id.is_some() != request.base_revision_id.is_some() {
         return Err(AppError::invalid_input(
             ErrorCode::InvalidInput,
@@ -307,6 +347,51 @@ pub(crate) async fn save_composition(
         )
         .into());
     }
+    let command_id = composition_command_id_for_operation(space_id, operation_id);
+    let revision_id = composition_revision_id_for_operation(space_id, operation_id);
+    let identity = CompositionSaveIdentity {
+        space_id,
+        entry_id,
+        is_create: request.entry_id.is_none(),
+        base_revision_id: request.base_revision_id,
+        canonical_yaml: &canonical.yaml,
+        actor: author,
+    };
+    let publication =
+        crate::publication_context(command_id.clone(), "composition.save", &identity)?;
+    let now = Utc::now().timestamp_micros();
+    let publication = publication
+        .with_change_descriptor(ChangeDescriptor {
+            run_id: None,
+            actor_principal_id: author.to_string(),
+            message: Some(if request.entry_id.is_some() {
+                "Update Composition".to_string()
+            } else {
+                "Create Composition".to_string()
+            }),
+            reverts_change_id: None,
+            created_at_micros: now,
+        })
+        .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+
+    // Resolve the durable outcome before checking the base revision. A retry
+    // of a committed update naturally carries the now-stale original base.
+    if let Some(result) = resolve_published_composition_save(
+        operator,
+        workspace_path,
+        entry_id,
+        revision_id,
+        request.base_revision_id,
+        &command_id,
+        &canonical.yaml,
+        author,
+        &publication,
+    )
+    .await?
+    {
+        return Ok(result);
+    }
+
     let current_raw = if request.base_revision_id.is_some() {
         read_composition_raw(operator, workspace_path, &entry_id.to_string())
             .await?
@@ -318,6 +403,24 @@ pub(crate) async fn save_composition(
     let current = current_raw.map(|raw: RawCompositionRevision| raw.revision);
     if let (Some(base_revision), Some(current)) = (request.base_revision_id, current.as_ref()) {
         if base_revision != current.revision_id {
+            // The first outcome check can race the original publication. Give
+            // an identical retry another chance to resolve before returning a
+            // stale-base conflict.
+            if let Some(result) = resolve_published_composition_save(
+                operator,
+                workspace_path,
+                entry_id,
+                revision_id,
+                request.base_revision_id,
+                &command_id,
+                &canonical.yaml,
+                author,
+                &publication,
+            )
+            .await?
+            {
+                return Ok(result);
+            }
             let current_revision_id = current.revision_id.to_string();
             return Err(AppError::revision_conflict(
                 &current_revision_id,
@@ -366,12 +469,11 @@ pub(crate) async fn save_composition(
         values.insert(field_id, value);
     }
 
-    let change_id = Uuid::now_v7().to_string();
     let draft = EntryRevisionDraft {
         form_id: form.id,
         entry_id,
-        revision_id: RevisionId::from(Uuid::now_v7()),
-        change_id: change_id.clone(),
+        revision_id,
+        change_id: command_id.clone(),
         operation: EntryOperation::Upsert,
         committed_at_micros: timestamp,
         author_id: current
@@ -403,36 +505,152 @@ pub(crate) async fn save_composition(
     let revision = draft
         .build(&form, current.as_ref())
         .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
-    let document = validate_composition_revision(&revision, &form)?;
-    let change = ChangeCommand {
-        change_id,
-        run_id: None,
-        actor_principal_id: author.to_string(),
-        message: Some(if current.is_some() {
-            "Update Composition".to_string()
-        } else {
-            "Create Composition".to_string()
-        }),
-        reverts_change_id: None,
-        created_at_micros: timestamp,
-    };
-    let publication =
-        crate::publication_context_for_change(&change, "composition.save", &revision)?;
+    validate_composition_revision(&revision, &form)?;
     crate::authorization::ensure_authorization_write_fence().await?;
     let workspace =
         crate::iceberg_store::native_mutation_workspace(operator, workspace_path).await?;
-    let receipt = workspace
+    let mut receipt = workspace
         .commit(publication)?
         .append_composition_revision_authorized(revision.clone())
         .await?;
 
+    let committed = read_composition_raw_revision(
+        operator,
+        workspace_path,
+        &entry_id.to_string(),
+        &revision_id.to_string(),
+    )
+    .await?
+    .ok_or_else(|| registry_conflict("published Composition revision is missing"))?;
+    let committed_document = validate_saved_composition_revision(
+        &committed,
+        entry_id,
+        revision_id,
+        request.base_revision_id,
+        &command_id,
+        &canonical.yaml,
+        author,
+    )?;
+    receipt.committed_revision_ids = vec![committed.revision.revision_id];
+    receipt.committed_at_micros = committed.revision.committed_at_micros;
+
     Ok(CompositionSaveResult {
         entry_id,
-        revision_id: revision.revision_id,
-        document,
+        revision_id: committed.revision.revision_id,
+        document: committed_document,
         canonical_yaml: canonical.yaml,
         receipt,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn resolve_published_composition_save(
+    operator: &Operator,
+    workspace_path: &str,
+    entry_id: EntryId,
+    revision_id: RevisionId,
+    base_revision_id: Option<RevisionId>,
+    command_id: &str,
+    canonical_yaml: &str,
+    author: &str,
+    publication: &crate::PublicationContext,
+) -> Result<Option<CompositionSaveResult>> {
+    let workspace =
+        crate::iceberg_store::native_mutation_workspace(operator, workspace_path).await?;
+    let coordinator = workspace.commit(publication.clone())?;
+    let outcome = match coordinator.publication_outcome().await {
+        Ok(outcome) => outcome,
+        Err(error)
+            if error
+                .to_string()
+                .contains("publication command id was reused with different command content") =>
+        {
+            return Err(AppError::conflict(
+                ErrorCode::IdempotencyConflict,
+                "Composition operation identity was reused with different save content",
+            )
+            .into());
+        }
+        Err(error) => return Err(error),
+    };
+    let Some(outcome) = outcome else {
+        return Ok(None);
+    };
+    let raw = read_composition_raw_revision(
+        operator,
+        workspace_path,
+        &entry_id.to_string(),
+        &revision_id.to_string(),
+    )
+    .await?
+    .ok_or_else(|| registry_conflict("published Composition revision is missing"))?;
+    let document = validate_saved_composition_revision(
+        &raw,
+        entry_id,
+        revision_id,
+        base_revision_id,
+        command_id,
+        canonical_yaml,
+        author,
+    )?;
+    let snapshot_id = outcome
+        .snapshot_id
+        .context("Composition publication did not create an Iceberg snapshot")?;
+    Ok(Some(CompositionSaveResult {
+        entry_id,
+        revision_id: raw.revision.revision_id,
+        document,
+        canonical_yaml: canonical_yaml.to_string(),
+        receipt: crate::CommitReceipt {
+            command_id: outcome.command_id,
+            catalog_generation: outcome.catalog_generation,
+            snapshot_id,
+            committed_revision_ids: vec![raw.revision.revision_id],
+            committed_at_micros: raw.revision.committed_at_micros,
+            data_file_count: outcome.data_file_count,
+        },
+    }))
+}
+
+fn validate_saved_composition_revision(
+    raw: &RawCompositionRevision,
+    entry_id: EntryId,
+    revision_id: RevisionId,
+    base_revision_id: Option<RevisionId>,
+    command_id: &str,
+    canonical_yaml: &str,
+    author: &str,
+) -> Result<CompositionDocument> {
+    let spec = raw
+        .fields
+        .get("spec")
+        .and_then(Value::as_str)
+        .ok_or_else(|| registry_conflict("published Composition spec is missing"))?;
+    let canonical = canonicalize_composition_yaml(spec)
+        .map_err(|diagnostic| registry_conflict(diagnostic.as_str()))?;
+    if raw.revision.entry_id != entry_id
+        || raw.revision.revision_id != revision_id
+        || raw.revision.change_id != command_id
+        || raw.revision.parent_revision_id != base_revision_id
+        || raw.revision.operation != EntryOperation::Upsert
+        || raw.revision.entry.updated_by != author
+        || raw.revision.entry.tags != canonical.document.tags
+        || canonical.yaml != canonical_yaml
+        || raw.fields.get("name").and_then(Value::as_str) != Some(canonical.document.name.as_str())
+        || raw.fields.get("format_version").and_then(Value::as_i64)
+            != Some(i64::from(canonical.document.format_version))
+    {
+        return Err(registry_conflict(
+            "published Composition revision does not match its command identity",
+        ));
+    }
+    let expected_kind = serde_json::to_value(canonical.document.kind)?;
+    if raw.fields.get("kind").and_then(Value::as_str) != expected_kind.as_str() {
+        return Err(registry_conflict(
+            "published Composition kind does not match its canonical spec",
+        ));
+    }
+    Ok(canonical.document)
 }
 
 /// Restore one exact historical Composition revision as a new Entry

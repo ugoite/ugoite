@@ -5192,7 +5192,30 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<composition::CompositionSaveResult> {
+        let operation_id = Uuid::now_v7().to_string();
+        self.save_composition_authorized_for_principals_with_operation_id(
+            space_id,
+            request,
+            author,
+            principal_ids,
+            &operation_id,
+        )
+        .await
+    }
+
+    /// Create or update one Composition Entry using a caller-stable operation
+    /// identity. The operation identity is scoped by the Space and is checked
+    /// against the canonical request at the Catalog publication boundary.
+    pub async fn save_composition_authorized_for_principals_with_operation_id(
+        &self,
+        space_id: &str,
+        request: composition::CompositionSaveRequest,
+        author: &str,
+        principal_ids: &[Uuid],
+        operation_id: &str,
+    ) -> Result<composition::CompositionSaveResult> {
         require_nonempty_authorized_principals(principal_ids)?;
+        composition::validate_operation_id(operation_id)?;
         if request.entry_id.is_some() != request.base_revision_id.is_some() {
             return Err(AppError::invalid_input(
                 ErrorCode::InvalidInput,
@@ -5208,9 +5231,9 @@ impl UgoiteService {
             })?;
         self.ensure_mutation_admitted(space_id).await?;
         self.validate_complete_space(space_id).await?;
-        let entry_id = request
-            .entry_id
-            .unwrap_or_else(|| EntryId::from(Uuid::now_v7()));
+        let entry_id = request.entry_id.unwrap_or_else(|| {
+            composition::composition_entry_id_for_operation(space_id, operation_id)
+        });
         let entry_id_text = entry_id.to_string();
         validate_storage_id(validate_entry_id(&entry_id_text))?;
         if let Some(base_revision_id) = request.base_revision_id {
@@ -5261,11 +5284,13 @@ impl UgoiteService {
             authorization_lease.write_fence(),
             composition::save_composition(
                 &self.operator,
+                space_id,
                 &workspace,
                 request,
                 entry_id,
                 canonical,
                 author,
+                operation_id,
             ),
         )
         .await?;
