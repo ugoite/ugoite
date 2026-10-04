@@ -1646,8 +1646,8 @@ spec:
         .save_composition_local_with_operation_id(
             &fixture.space_id,
             CompositionSaveRequest {
-                entry_id: Some(saved.entry_id.clone()),
-                base_revision_id: Some(saved.revision_id.clone()),
+                entry_id: Some(saved.entry_id),
+                base_revision_id: Some(saved.revision_id),
                 document: revised_document,
             },
             &fixture.owner_principal_id.to_string(),
