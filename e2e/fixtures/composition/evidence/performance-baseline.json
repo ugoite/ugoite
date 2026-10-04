@@ -1,0 +1,167 @@
+{
+  "schema": "ugoite/composition-performance-baseline/v1",
+  "purpose": "Regression baseline only. NOT an SLA. No thresholds, no gates, no optimization claims.",
+  "source": {
+    "repo": "ugoite/ugoite",
+    "sha": "a46508986e34a22339c7f7dbe175a8371a74977e",
+    "worktree": "/tmp/opencode/v022-perf",
+    "base": "origin/main a4650898",
+    "tree_state_at_record": "clean (git status --short empty before writing this file)"
+  },
+  "environment": {
+    "os": "Linux 7.0.12-linuxkit aarch64",
+    "arch": "aarch64",
+    "cpu_count": 8,
+    "mem_total_mib": 11946,
+    "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+    "cargo": "cargo 1.94.0 (85eff7c80 2026-01-15)",
+    "build_profile": "dev (unoptimized + debuginfo); NO release builds per resource constraints",
+    "cargo_env": "env -u CARGO_TARGET_DIR CARGO_BUILD_JOBS=1 on ALL cargo commands; shared cargo cache used",
+    "cargo_constraint_notes": "No workspace-wide builds; only focused package/test targets were built"
+  },
+  "items": [
+    {
+      "id": "representative-parse-canonicalize",
+      "description": "Canonical representative document parse + canonicalize of crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml (1617 bytes)",
+      "provenance": "measured",
+      "fixture": {
+        "path": "crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
+        "bytes": 1617
+      },
+      "commands": [
+        "env -u CARGO_TARGET_DIR CARGO_BUILD_JOBS=1 cargo test -p ugoite-domain --locked profile_monthly_expense_fixture -- --ignored --nocapture"
+      ],
+      "canonical_profile_task_output": {
+        "fixture_bytes": 1617,
+        "parser_budget_nodes": 159,
+        "parser_budget_events": 200,
+        "parser_budget_max_depth": 8,
+        "parser_budget_scalar_bytes": 921,
+        "parser_budget_documents": 1,
+        "batch": "1000 fixture documents in 1.327624s",
+        "batch_per_document_ns": 1327624
+      },
+      "harness": {
+        "note": "Temp harness outside the repo (/tmp/opencode/perf-harness, NOT committed) with a path dependency on ugoite-domain; times parse_composition_yaml and canonicalize_composition_yaml per iteration with std::time::Instant. Dev profile.",
+        "iterations_parse": 300,
+        "iterations_canonicalize": 300,
+        "parse_ns": { "min": 1251583, "p50": 1307625, "mean": 1311746.1, "max": 1428625 },
+        "canonicalize_ns": { "min": 2862458, "p50": 2952584, "mean": 2966878.1, "max": 3732875 },
+        "stability_note": "parse p50 was 1305042 / 1321000 / 1307625 ns across three harness runs; consistent with the profile-task batch mean of 1327624 ns/doc"
+      },
+      "peak_memory": {
+        "status": "gap",
+        "reason": "No peak-RSS instrumentation available in this box (/usr/bin/time absent; no allocator-level metering wired into the harness). Not recorded as a number."
+      }
+    },
+    {
+      "id": "near-max-parse-canonicalize",
+      "description": "Near-maximum-size valid document (64 KiB YAML limit) parse + canonicalize, built by structural scaling of the representative fixture",
+      "provenance": "measured",
+      "construction": {
+        "method": "Temp uncommitted generator in /tmp/opencode/perf-harness/src/main.rs (function build_scaled): mirrors the monthly-expense fixture envelope and scales structurally with (a) extra string parameters pad_0000.. (b) extra entry_query filters on field 100 bound to month_start (c) short tags. No production code changed. Representative collection counts stay within MAX_COMPOSITION_COLLECTION_ITEMS=256.",
+        "selected_counts": {
+          "parameters_total": 182,
+          "filters_total": 256,
+          "tags": "256 tags of ~55 chars"
+        },
+        "input_bytes": 54266,
+        "fraction_of_65536_byte_limit": 0.828,
+        "validity": "parse_composition_yaml ok AND canonicalize_composition_yaml ok (canonical output re-parses to the normalized model)"
+      },
+      "binding_constraint": "The 64 KiB byte limit itself is NOT binding: structurally larger candidates (e.g. 200 params + 254 extra filters + 256x60-char tags = 56726 bytes; 250 params + 250 filters at any tag size) are rejected by the parser budgets (max_total_scalar_bytes 32 KiB in strict_v1_options, max_nodes 4096 / max_events 8192 in crates/ugoite-domain/src/composition/yaml.rs). 54266 bytes was the largest valid combination found in the searched grid; it is near-maximum-valid, not near-65536.",
+      "harness": {
+        "iterations_parse": 50,
+        "iterations_canonicalize": 50,
+        "parse_ns": { "min": 31799417, "p50": 32456916, "mean": 32501866.7, "max": 34571959 },
+        "canonicalize_ns": { "min": 70933291, "p50": 71948792, "mean": 72044828.4, "max": 74122583 },
+        "command": "env -u CARGO_TARGET_DIR CARGO_BUILD_JOBS=1 cargo run --locked --offline (cwd /tmp/opencode/perf-harness)"
+      },
+      "peak_memory": {
+        "status": "gap",
+        "reason": "Same as representative item: no peak-RSS instrumentation available. Not recorded as a number."
+      }
+    },
+    {
+      "id": "representative-resolver-run",
+      "description": "Representative resolver run via an existing focused server test (no composition resolve benches exist in the repo)",
+      "provenance": "measured",
+      "precision": "Coarse and informational only: focused-test wall time INCLUDING fixture/space setup, NOT an isolated resolver-operation time. No benches found (searched crates/*/benches and composition resolve bench references; none exist).",
+      "command": "env -u CARGO_TARGET_DIR CARGO_BUILD_JOBS=1 cargo test -p ugoite-server --locked --lib composition_resolve_uses_exact_requested_revision_with_newer_revision_available",
+      "test": "authentication_regression_tests::composition_resolve_uses_exact_requested_revision_with_newer_revision_available",
+      "result": "ok, 1 passed, 144 filtered out",
+      "test_body_wall_s": 1.38,
+      "outer_command_wall_s": 97.15,
+      "outer_build_note": "outer wall includes ~1m35s incremental dev-profile build of the ugoite-server test target; it is NOT resolver time",
+      "peak_memory": {
+        "status": "gap",
+        "reason": "No peak-RSS instrumentation available. Not recorded as a number."
+      }
+    },
+    {
+      "id": "composition-save-get-roundtrip",
+      "description": "One Composition save/get round trip wall time from an existing focused CLI journey test",
+      "provenance": "measured",
+      "precision": "Coarse and informational only: focused-test wall time INCLUDING space setup, save, import, list, and history assertions, NOT an isolated save/get latency. Do not treat as operation precision.",
+      "command": "env -u CARGO_TARGET_DIR CARGO_BUILD_JOBS=1 cargo test -p ugoite-cli --locked --test test_journey_core test_cli_core_composition_import_save_receipts_and_prevalidation",
+      "test": "test_cli_core_composition_import_save_receipts_and_prevalidation (crates/ugoite-cli/tests/test_journey_core.rs; uses the monthly-expense representative fixture)",
+      "result": "ok, 1 passed, 13 filtered out",
+      "test_body_wall_s": 1.67,
+      "outer_command_wall_s": 72.83,
+      "outer_build_note": "outer wall includes ~1m10s incremental dev-profile build of the test_journey_core target; it is NOT save/get time",
+      "peak_memory": {
+        "status": "gap",
+        "reason": "No peak-RSS instrumentation available. Not recorded as a number."
+      }
+    },
+    {
+      "id": "browser-100-row-bounded-page",
+      "description": "Browser 100-row bounded page render/query",
+      "provenance": "derived",
+      "live_run": {
+        "status": "gap",
+        "reason": "Impractical in this box: requires the containerized server+frontend stack with Playwright browsers (docker image build, seeded Spaces). No live browser timing was measured here."
+      },
+      "derived_contract_values": {
+        "page_limit": 100,
+        "page_limit_source": "e2e/fixtures/composition/space-seed/manifest.json (page_limit) read by e2e/composition-golden-journey.test.ts; first_page_rows=100, second_page_rows=1",
+        "model_connection": "disabled"
+      },
+      "derived_prior_timings": {
+        "source": "e2e/fixtures/composition/evidence/composition-golden-journey-junit.xml",
+        "testsuite_time_s": 9.805,
+        "testsuites_total_time_s": 82.537898,
+        "timestamp": "2026-10-03T17:04:42.154Z",
+        "label": "DERIVED, not measured in this session: single golden-journey testcase wall time (save-as-tool + reopen + paging + reparameterize) from a prior recorded run, NOT a 100-row render-only time"
+      },
+      "peak_memory": {
+        "status": "gap",
+        "reason": "No live run, no browser memory data. Not recorded as a number."
+      }
+    },
+    {
+      "id": "metric-scalar-evaluation",
+      "description": "Metric scalar evaluation timing",
+      "provenance": "measured",
+      "precision": "Focused unit-test wall time for in-memory single-page metric evaluation (evaluate_entry_metrics over one page via the shared core page evaluator). Informational; single-shape, dev profile.",
+      "command": "env -u CARGO_TARGET_DIR CARGO_BUILD_JOBS=1 cargo test -p ugoite-cli --locked --lib cli_metric_output_uses_the_shared_core_page_evaluator",
+      "test": "commands::composition::tests::cli_metric_output_uses_the_shared_core_page_evaluator (crates/ugoite-cli/src/commands/composition.rs)",
+      "result": "ok, 1 passed, 128 filtered out",
+      "test_body_wall_s": 0.01,
+      "outer_command_wall_s": 102.62,
+      "outer_build_note": "outer wall includes ~1m42s incremental dev-profile build of the ugoite-cli lib test target; it is NOT metric-evaluation time",
+      "related_core_coverage": "crates/ugoite-core/src/composition.rs entry_metric_page_adapter_checks_one_complete_scalar_row and saved_sql_metric_page_adapter_checks_exact_alias_and_scalar_shape cover the core page evaluator; not separately timed here",
+      "peak_memory": {
+        "status": "gap",
+        "reason": "No peak-RSS instrumentation available. Not recorded as a number."
+      }
+    }
+  ],
+  "gaps_summary": [
+    "peak memory: not recorded for any item (no /usr/bin/time, no allocator metering in this box)",
+    "browser 100-row live render: not measured here (containerized Playwright stack impractical); contract page_limit=100 + prior golden-journey junit timings recorded as derived",
+    "no composition resolve benches exist; resolver timing is a focused-test wall time (includes setup), informational only",
+    "save/get timing is a focused CLI journey test wall time (includes setup + multiple operations), informational only"
+  ],
+  "honesty_statement": "Every number above comes from the listed command output or a cited evidence file. Measured vs derived vs gap is explicit per item. No thresholds or SLA semantics are attached."
+}
