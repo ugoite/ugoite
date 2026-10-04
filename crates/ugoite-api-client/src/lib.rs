@@ -1407,6 +1407,15 @@ pub fn prepare_request(
 
     if matches!(operation, "composition.save" | "composition.restore") {
         let value = required_string(operation, args, "idempotency_key")?;
+        if !value
+            .bytes()
+            .all(|byte| byte == b'\t' || (b' '..=b'~').contains(&byte))
+        {
+            return Err(ApiProtocolError::invalid_arguments(
+                operation,
+                "argument `idempotency_key` must contain only valid ASCII header characters",
+            ));
+        }
         if value.trim().is_empty() || value.len() > 256 {
             return Err(ApiProtocolError::invalid_arguments(
                 operation,
@@ -2721,6 +2730,24 @@ mod tests {
         )
         .expect_err("Composition save rejects an empty idempotency key");
         assert!(empty_save_key.to_string().contains("1 to 256 characters"));
+        let non_ascii_save_key = prepare_request(
+            "composition.save",
+            &json!({"space_id": "demo", "idempotency_key": "composition-東京"}),
+            Some(&save_body),
+        )
+        .expect_err("Composition save rejects a non-ASCII HTTP header value");
+        assert_eq!(non_ascii_save_key.kind, "invalid_arguments");
+        assert_eq!(
+            non_ascii_save_key.message,
+            "argument `idempotency_key` must contain only valid ASCII header characters"
+        );
+        let control_save_key = prepare_request(
+            "composition.save",
+            &json!({"space_id": "demo", "idempotency_key": "composition\nretry"}),
+            Some(&save_body),
+        )
+        .expect_err("Composition save rejects an invalid HTTP header control character");
+        assert_eq!(control_save_key.message, non_ascii_save_key.message);
         let restore_body = json!({
             "source_revision_id": "01900000-0000-7000-8000-000000000004",
             "base_revision_id": "01900000-0000-7000-8000-000000000005"
@@ -2767,6 +2794,18 @@ mod tests {
         )
         .expect_err("restore rejects an empty operation key");
         assert!(error.to_string().contains("1 to 256 characters"));
+        let non_ascii_restore_key = prepare_request(
+            "composition.restore",
+            &json!({
+                "space_id": "demo",
+                "composition_id": "comp-1",
+                "idempotency_key": "restore-東京"
+            }),
+            Some(&restore_body),
+        )
+        .expect_err("Composition restore rejects a non-ASCII HTTP header value");
+        assert_eq!(non_ascii_restore_key.kind, "invalid_arguments");
+        assert_eq!(non_ascii_restore_key.message, non_ascii_save_key.message);
 
         let save_response = json!({
             "composition_id": "01900000-0000-7000-8000-000000000002",

@@ -1088,6 +1088,45 @@ async fn test_cli_core_composition_import_save_receipts_and_prevalidation() {
         "_ugoite_compositions"
     ));
 
+    let valid_file = dir.path().join("valid-composition.ugcomp.yaml");
+    std::fs::write(&valid_file, FIXTURE).expect("write valid Composition fixture");
+    let invalid_key = run_cli(
+        &config_path,
+        &[
+            "composition",
+            "import",
+            valid_file.to_str().unwrap(),
+            "--idempotency-key",
+            "core-import-東京",
+        ],
+    );
+    assert!(
+        !invalid_key.status.success(),
+        "Core must reject non-ASCII Composition idempotency keys"
+    );
+    assert!(invalid_key.stdout.is_empty());
+    let invalid_key_error: serde_json::Value = serde_json::from_slice(&invalid_key.stderr)
+        .expect("machine-readable invalid idempotency key diagnostic");
+    assert_eq!(invalid_key_error["error"]["kind"], "invalid_input");
+    assert_eq!(
+        invalid_key_error["error"]["message"],
+        "argument `idempotency_key` must contain only valid ASCII header characters"
+    );
+    assert_eq!(
+        service
+            .list_forms(space_id)
+            .await
+            .expect("list Forms after invalid idempotency key"),
+        forms_before,
+        "invalid idempotency key must not create the Registry Form"
+    );
+    assert!(service
+        .list_compositions_local_page(space_id, 10, 0)
+        .await
+        .expect("Composition page after invalid idempotency key")
+        .items
+        .is_empty());
+
     let invalid_file = dir.path().join("unsupported.ugcomp.yaml");
     std::fs::write(
         &invalid_file,
