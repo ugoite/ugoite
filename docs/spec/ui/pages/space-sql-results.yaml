@@ -43,7 +43,12 @@ components:
       fields: [Name]
       source: typed Composition document canonicalized by Rust/WASM
       operation: composition.save with one Idempotency-Key reused for retry
-      deterministic_rejection: Show the rejection, clear the uncertain attempt, and keep its name available when the user reopens on the same route; clear the rejection and name when the Space or Saved SQL route changes.
+      deterministic_rejection: >-
+        Show a localized summary when composition.save returns an allowlisted
+        composition_diagnostic; use the generic save failure when the
+        diagnostic is absent or unknown. Clear the uncertain attempt, keep its
+        name and feedback available on the same route, and clear both when the
+        Space or Saved SQL route changes.
     - id: saved-query-detail-action
       type: link
       title: Back to Saved SQL
