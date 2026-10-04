@@ -109,6 +109,9 @@ export default function SpaceSqlRunRoute() {
   const [saveBusy, setSaveBusy] = createSignal(false);
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
+  const [rejectedSaveName, setRejectedSaveName] = createSignal<string | null>(
+    null,
+  );
   let saveSeed: {
     spaceId: string;
     sqlId: string;
@@ -340,7 +343,6 @@ export default function SpaceSqlRunRoute() {
       parameters: { ...(state().parameters ?? {}) },
     };
     pendingSave = undefined;
-    setSaveError(null);
     setSaveRetryAvailable(false);
     setSaveDialogOpen(true);
   };
@@ -411,6 +413,9 @@ export default function SpaceSqlRunRoute() {
         pendingSave = undefined;
         setSaveBusy(false);
         setSaveRetryAvailable(false);
+        setRejectedSaveName(
+          event.outcome === "rejected" ? event.attemptName : null,
+        );
         setSaveError(
           event.outcome === "rejected" ? t("composition.saveFailed") : null,
         );
@@ -467,6 +472,7 @@ export default function SpaceSqlRunRoute() {
     const visitId = saveRouteVisitId;
     pendingSave = undefined;
     setSaveError(null);
+    setRejectedSaveName(null);
     setSaveBusy(true);
     try {
       const document = buildSavedSqlCompositionDocument(
@@ -516,7 +522,7 @@ export default function SpaceSqlRunRoute() {
     setSaveDialogOpen(false);
     saveSeed = undefined;
     pendingSave = undefined;
-    setSaveError(null);
+    if (!rejectedSaveName()) setSaveError(null);
   };
 
   const resultColumns = (): ResultColumn<unknown>[] =>
@@ -641,6 +647,11 @@ export default function SpaceSqlRunRoute() {
             scroll: "ui-table-wrapper mt-4 overflow-x-auto",
           }}
         />
+        <Show when={saveError() && !saveDialogOpen()}>
+          <p class="ui-alert ui-alert-error mt-4" role="alert">
+            {saveError()}
+          </p>
+        </Show>
         <Show when={entry.error && !pageError()}>
           <button
             type="button"
@@ -654,7 +665,8 @@ export default function SpaceSqlRunRoute() {
       </section>
       <Show when={saveDialogOpen()}>
         <SaveAsToolDialog
-          initialName={pendingSave?.name ?? saveSeed?.entry.name ??
+          initialName={pendingSave?.name ?? rejectedSaveName() ??
+            saveSeed?.entry.name ??
             (saveSeed ? displaySqlName(saveSeed.entry) : "")}
           busy={saveBusy()}
           retryAvailable={saveRetryAvailable()}

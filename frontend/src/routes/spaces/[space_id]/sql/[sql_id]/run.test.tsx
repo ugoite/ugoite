@@ -880,6 +880,9 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Save as tool" }),
     );
+    fireEvent.input(screen.getByLabelText("Name", { selector: "input" }), {
+      target: { value: "Rejected query" },
+    });
     fireEvent.click(
       within(screen.getByRole("dialog", { name: "Save as tool" }))
         .getByRole("button", { name: "Save" }),
@@ -916,9 +919,8 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     await waitFor(() =>
       expect(getPendingCompositionSaveAttempt(routeIdentity)).toBeUndefined()
     );
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Save as tool" }))
-        .not.toBeInTheDocument()
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not save this tool.",
     );
 
     fireEvent.click(
@@ -927,9 +929,19 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     const correctedDialog = screen.getByRole("dialog", {
       name: "Save as tool",
     });
-    fireEvent.input(screen.getByLabelText("Name", { selector: "input" }), {
-      target: { value: "Corrected query" },
-    });
+    expect(within(correctedDialog).getByRole("alert")).toHaveTextContent(
+      "Could not save this tool.",
+    );
+    expect(
+      within(correctedDialog).getByLabelText("Name", { selector: "input" }),
+    )
+      .toHaveValue("Rejected query");
+    fireEvent.input(
+      within(correctedDialog).getByLabelText("Name", { selector: "input" }),
+      {
+        target: { value: "Corrected query" },
+      },
+    );
     fireEvent.click(
       within(correctedDialog).getByRole("button", { name: "Save" }),
     );

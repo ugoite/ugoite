@@ -43,6 +43,7 @@ components:
       fields: [Name]
       source: typed Composition document canonicalized by Rust/WASM
       operation: composition.save with one Idempotency-Key reused for retry
+      deterministic_rejection: Show the rejection, clear the uncertain attempt, and keep its name available when the user reopens the dialog to edit and save again.
     - id: saved-query-detail-action
       type: link
       title: Back to Saved SQL
