@@ -733,6 +733,32 @@ features:
                 anchor: REQ-COMP-001#criterion.one-entry-revision
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.deterministic-diagnostics
+      - id: composition-write-key-validation-evidence
+        role: evidence
+        facet: api-client-and-cli-tests
+        responsibility: Verify the portable protocol rejects missing, blank, non-ASCII, and control-character Composition save/restore keys, and local Core and remote CLI imports reject the tested non-ASCII key before Registry creation or a remote mutation. This provides partial evidence for the existing one-entry-revision write boundary only for these exercised values; it does not establish idempotency replay behavior or arbitrary-key parity.
+        targets:
+          - id: portable-save-restore-key-validation
+            adapter: rust
+            path: crates/ugoite-api-client/src/lib.rs
+            selector: { kind: symbol, name: composition_operations_prepare_and_decode_through_the_portable_protocol }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-001#criterion.one-entry-revision
+          - id: core-import-invalid-key-no-write
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_core.rs
+            selector: { kind: symbol, name: test_cli_core_composition_import_save_receipts_and_prevalidation }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-001#criterion.one-entry-revision
+          - id: remote-import-invalid-key-no-write
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: symbol, name: test_cli_remote_composition_import_save_receipts_and_prevalidation }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-001#criterion.one-entry-revision
       - id: browser-query-runtime
         role: implementation
         facet: frontend
