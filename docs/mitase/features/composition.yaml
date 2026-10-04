@@ -451,6 +451,18 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.used-field-fingerprint
+      - id: entry-query-current-authorization-evidence
+        role: evidence
+        facet: iceberg-tests
+        responsibility: Show that a Composition-resolved source request does not grant source access, revocation before the first query page returns no rows, and a continuation after access changes fails closed.
+        targets:
+          - id: source-resolution-and-continuation-current-authorization
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
+            selector: { kind: symbol, name: source_resolution_and_continuation_recheck_current_authorization }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.current-authorization
       - id: saved-sql-resolver
         role: implementation
         facet: core
