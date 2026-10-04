@@ -182,9 +182,29 @@ struct RemoteFixture {
     sql_export_gate: std::sync::Arc<SqlExportGate>,
     _config_dir: tempfile::TempDir,
     _server: ServerGuard,
+    // Drop the server task before removing a filesystem-backed Space root.
+    _storage_root_guard: Option<tempfile::TempDir>,
 }
 
 async fn setup_remote() -> RemoteFixture {
+    let storage_root = format!("memory://cli-journey-remote-{}", uuid::Uuid::now_v7());
+    setup_remote_with_storage_root(storage_root, None).await
+}
+
+async fn setup_remote_with_filesystem_storage() -> RemoteFixture {
+    let storage_root_guard = tempdir().expect("remote fixture storage root");
+    let storage_root = storage_root_guard
+        .path()
+        .to_str()
+        .expect("UTF-8 remote fixture storage root")
+        .to_string();
+    setup_remote_with_storage_root(storage_root, Some(storage_root_guard)).await
+}
+
+async fn setup_remote_with_storage_root(
+    storage_root: String,
+    storage_root_guard: Option<tempfile::TempDir>,
+) -> RemoteFixture {
     // Real server over loopback TCP with test-issued REST access: the only
     // fixture is transport and auth ceremony, never business semantics.
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind server");
@@ -193,7 +213,6 @@ async fn setup_remote() -> RemoteFixture {
     // Without UGOITE_STATIC_DIR the app merges API routes at the root, so
     // the API base is the bare server URL (no /api prefix).
     let api_base = server_url.clone();
-    let storage_root = format!("memory://cli-journey-remote-{}", uuid::Uuid::now_v7());
     let state = AppState::new_for_tests_with_origin(storage_root.clone(), &server_url)
         .expect("server state");
     state.initialize_node().await.expect("initialize server");
@@ -291,6 +310,7 @@ async fn setup_remote() -> RemoteFixture {
         state,
         sql_export_gate,
         _config_dir: config_dir,
+        _storage_root_guard: storage_root_guard,
         _server,
     }
 }
@@ -1470,6 +1490,285 @@ async fn test_cli_remote_composition_restore_receipt_replay_and_stale_base() {
         "remote Composition history after stale restore",
     );
     assert_eq!(history_after_stale["total"], 3);
+}
+
+/// Exact-revision inspect, parameterized query, and raw export reach the same
+/// result through Core and Remote CLI transports against one shared Space.
+#[tokio::test]
+async fn test_cli_composition_inspect_query_export_match_core_remote() {
+    use ugoite_domain::composition::parse_composition_yaml;
+    use ugoite_iceberg::composition::CompositionSaveRequest;
+    use ugoite_iceberg::service::UgoiteService;
+
+    let fixture = setup_remote_with_filesystem_storage().await;
+    let service = UgoiteService::new_without_background_refresh(&fixture.storage_root)
+        .expect("open shared Space service");
+    let form_name = format!("CliParity{}", uuid::Uuid::now_v7().simple());
+    service
+        .upsert_form(
+            &fixture.space_id,
+            &json!({
+                "name": form_name,
+                "version": 1,
+                "template": format!("# {form_name}\n\n## Date\n\n## Merchant\n\n## Amount\n"),
+                "fields": {
+                    "Date": {"type": "date", "required": true},
+                    "Merchant": {"type": "string", "required": true},
+                    "Amount": {"type": "double", "required": true}
+                }
+            }),
+        )
+        .await
+        .expect("seed query Form");
+
+    let form = service
+        .get_form(&fixture.space_id, &form_name)
+        .await
+        .expect("read query Form");
+    let form_id = form["id"].as_str().expect("Form ID");
+    let field_id = |name: &str| -> i64 {
+        form.pointer(&format!("/fields/{name}/id"))
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_else(|| panic!("Form field {name} has no numeric ID: {form}"))
+    };
+    let date_id = field_id("Date");
+    let merchant_id = field_id("Merchant");
+    let amount_id = field_id("Amount");
+
+    let entry_prefix = format!("composition-cli-parity-{}", uuid::Uuid::now_v7());
+    for (index, date, merchant, amount) in [
+        (1, "2026-01-10", "January-10", 12.5),
+        (2, "2026-01-20", "January-20", 17.25),
+        (3, "2026-02-02", "February-02", 99.0),
+    ] {
+        service
+            .create_structured_entry_with_receipt(
+                &fixture.space_id,
+                &format!("{entry_prefix}-{index}"),
+                form_name.clone(),
+                Vec::new(),
+                std::collections::BTreeMap::from([
+                    ("Date".to_string(), json!(date)),
+                    ("Merchant".to_string(), json!(merchant)),
+                    ("Amount".to_string(), json!(amount)),
+                ]),
+                std::collections::BTreeMap::new(),
+                &fixture.owner_principal_id.to_string(),
+            )
+            .await
+            .expect("seed query Entry");
+    }
+
+    let yaml = format!(
+        r#"format: ugoite.composition
+format_version: 1
+name: CLI parity
+kind: dashboard
+tags: []
+spec:
+  parameters:
+    - id: month_start
+      type: date
+      required: true
+    - id: month_end
+      type: date
+      required: true
+  sources:
+    - id: expense_rows
+      kind: entry_query
+      form_id: "{form_id}"
+      field_schema:
+        - field_id: {date_id}
+          field_type: date
+        - field_id: {merchant_id}
+          field_type: string
+        - field_id: {amount_id}
+          field_type: double
+      query:
+        filters:
+          - field_id: {date_id}
+            operator: gte
+            value:
+              parameter: month_start
+          - field_id: {date_id}
+            operator: lt
+            value:
+              parameter: month_end
+        sort:
+          - field_id: {date_id}
+            direction: asc
+        projection:
+          kind: fields
+          fields: [{date_id}, {merchant_id}, {amount_id}]
+  components:
+    - id: transactions
+      kind: table
+      source: expense_rows
+  sections:
+    - id: details
+      components: [transactions]
+"#
+    );
+    let document = parse_composition_yaml(&yaml).expect("parse seeded Composition");
+    let saved = service
+        .save_composition_local_with_operation_id(
+            &fixture.space_id,
+            CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            &fixture.owner_principal_id.to_string(),
+            &format!("cli-parity-seed-{}", uuid::Uuid::now_v7()),
+        )
+        .await
+        .expect("seed Composition");
+    let composition_id = saved.entry_id.to_string();
+    let revision_id = saved.revision_id.to_string();
+
+    let core_config_path = fixture
+        .config_path
+        .parent()
+        .expect("fixture config parent")
+        .join("core-config.toml");
+    let mut core_config = ConfigFile::empty();
+    core_config.connections.insert(
+        "local".to_string(),
+        ConnectionConfig::Core {
+            root: fixture.storage_root.clone(),
+        },
+    );
+    core_config.contexts.insert(
+        "local".to_string(),
+        ContextConfig {
+            connection: "local".to_string(),
+            space_uid: uuid::Uuid::parse_str(&fixture.space_id).expect("Space UID"),
+            credential: None,
+        },
+    );
+    core_config.current_context = Some("local".to_string());
+    std::fs::write(
+        &core_config_path,
+        toml::to_string_pretty(&core_config).expect("serialize Core config"),
+    )
+    .expect("write Core config");
+
+    let history_args = ["composition", "history", composition_id.as_str()];
+    let history_before = stdout_json(
+        &run_cli(&core_config_path, &history_args).await,
+        "Core Composition history before read journey",
+    );
+    assert_eq!(history_before["total"], 1);
+    let remote_history_before = stdout_json(
+        &run_cli(&fixture.config_path, &history_args).await,
+        "Remote Composition history before read journey",
+    );
+    assert_eq!(remote_history_before, history_before);
+
+    let inspect_args = [
+        "composition",
+        "inspect",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+    ];
+    let core_inspect = stdout_json(
+        &run_cli(&core_config_path, &inspect_args).await,
+        "Core exact-revision inspect",
+    );
+    let remote_inspect = stdout_json(
+        &run_cli(&fixture.config_path, &inspect_args).await,
+        "Remote exact-revision inspect",
+    );
+    assert_eq!(core_inspect, remote_inspect);
+    assert_eq!(core_inspect["revision"]["revision_id"], revision_id);
+
+    let query_args = [
+        "composition",
+        "query",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+        "--param",
+        "month_start=2026-01-01",
+        "--param",
+        "month_end=2026-02-01",
+    ];
+    let core_query = stdout_json(
+        &run_cli(&core_config_path, &query_args).await,
+        "Core parameterized Composition query",
+    );
+    let remote_query = stdout_json(
+        &run_cli(&fixture.config_path, &query_args).await,
+        "Remote parameterized Composition query",
+    );
+    assert_eq!(core_query["ok"], true);
+    assert_eq!(core_query, remote_query);
+    assert_eq!(
+        core_query["sources"][0]["page"]["rows"]
+            .as_array()
+            .map(Vec::len),
+        Some(2),
+        "the date parameters should include the two January rows only"
+    );
+
+    let output_dir = fixture.config_path.parent().expect("fixture config parent");
+    let core_export_path = output_dir.join("core-composition-export.ugcomp.yaml");
+    let remote_export_path = output_dir.join("remote-composition-export.ugcomp.yaml");
+    let core_export_args = [
+        "composition",
+        "export",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+        "--output",
+        core_export_path.to_str().expect("Core export path"),
+    ];
+    let remote_export_args = [
+        "composition",
+        "export",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+        "--output",
+        remote_export_path.to_str().expect("Remote export path"),
+    ];
+    let mut core_export = stdout_json(
+        &run_cli(&core_config_path, &core_export_args).await,
+        "Core raw Composition export",
+    );
+    let mut remote_export = stdout_json(
+        &run_cli(&fixture.config_path, &remote_export_args).await,
+        "Remote raw Composition export",
+    );
+    core_export
+        .as_object_mut()
+        .expect("Core export receipt object")
+        .remove("output");
+    remote_export
+        .as_object_mut()
+        .expect("Remote export receipt object")
+        .remove("output");
+    assert_eq!(core_export, remote_export);
+    assert_eq!(
+        std::fs::read(&core_export_path).expect("read Core exported bytes"),
+        saved.canonical_yaml.as_bytes()
+    );
+    assert_eq!(
+        std::fs::read(&remote_export_path).expect("read Remote exported bytes"),
+        saved.canonical_yaml.as_bytes()
+    );
+
+    let history_after = stdout_json(
+        &run_cli(&core_config_path, &history_args).await,
+        "Core Composition history after read journey",
+    );
+    let remote_history_after = stdout_json(
+        &run_cli(&fixture.config_path, &history_args).await,
+        "Remote Composition history after read journey",
+    );
+    assert_eq!(history_after, history_before);
+    assert_eq!(remote_history_after, history_before);
 }
 
 #[tokio::test]

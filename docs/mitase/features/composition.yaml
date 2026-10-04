@@ -731,6 +731,18 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-005#criterion.raw-inspection
+      - id: cli-core-remote-read-parity-evidence
+        role: evidence
+        facet: cli-tests
+        responsibility: Verify Core and Remote CLI inspect, parameterized entry_query, and raw export results against one filesystem-backed Space, including byte-identical canonical output and unchanged history. The fixture has one Composition revision, so it does not evidence older-than-latest selector behavior; saved-SQL execution and broken-reference recovery remain separate gaps.
+        targets:
+          - id: core-remote-read-parity
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: symbol, name: test_cli_composition_inspect_query_export_match_core_remote }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
       - id: cli-import-save-evidence
         role: evidence
         facet: cli-tests

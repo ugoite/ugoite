@@ -207,7 +207,7 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
   ],
   B6: [
     "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
-    "e2e/composition-cli-parity.test.ts#test:Composition CLI inspect query and export agree in core and remote modes",
+    "crates/ugoite-cli/tests/test_journey_remote.rs#test:test_cli_composition_inspect_query_export_match_core_remote",
     "e2e/composition-recovery-authorization.test.ts#test:Composition raw recovery and ACL denial preserve caller-visible contracts",
     "e2e/composition-save-receipt.test.ts#test:Composition save reconciles a lost response without duplicate publication",
     "docs/architecture/testing/composition-acceptance.md#file",

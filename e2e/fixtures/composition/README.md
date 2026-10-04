@@ -27,6 +27,12 @@ from Home, applies the Composition's declared parameter defaults, and reads page
 one and page two. Changing the date parameter resets the result page and narrows
 the rows. The journey does not connect a model or persist Browser Work.
 
-The raw recovery candidates and the remaining CLI, recovery, and exact-candidate
-release evidence selectors remain planned. The E2E seed does not implement a
-second parser, resolver, or query engine.
+The CLI Core/Remote parity selector is implemented as a Rust CLI-process
+integration test in `crates/ugoite-cli/tests/test_journey_remote.rs`; it uses
+one shared filesystem-backed Space to compare exact-revision inspect,
+parameterized `entry_query`, and raw export. Its fixture contains one
+Composition revision, so older-than-latest selector behavior is tracked in
+issue #3681. Its scope does not cover saved-SQL query execution or
+unknown/broken raw recovery. The remaining recovery, complete cross-surface,
+and exact-candidate release evidence selectors remain planned. The E2E seed
+does not implement a second parser, resolver, or query engine.
