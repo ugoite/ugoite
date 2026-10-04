@@ -736,7 +736,17 @@ features:
       - id: composition-write-key-validation-evidence
         role: evidence
         facet: api-client-and-cli-tests
-        responsibility: Verify the portable protocol rejects missing, blank, non-ASCII, and control-character Composition save/restore keys, and local Core and remote CLI imports reject the tested non-ASCII key before Registry creation or a remote mutation. This provides partial evidence for the existing one-entry-revision write boundary only for these exercised values; it does not establish idempotency replay behavior or arbitrary-key parity.
+        responsibility: >-
+          Verify the portable protocol rejects missing, blank, and non-ASCII
+          keys for Composition save and restore, plus a line-feed-containing
+          save key. The linked Core and Remote CLI test functions reject the
+          tested non-ASCII import key before Registry creation or a remote
+          mutation; they separately exercise successful receipts and replay
+          for valid keys as covered by cli-import-save-evidence. These
+          invalid-key checks provide only partial evidence for
+          REQ-COMP-001#criterion.one-entry-revision: they do not assert exact
+          revision cardinality or replay for rejected keys, and do not
+          establish arbitrary-key parity.
         targets:
           - id: portable-save-restore-key-validation
             adapter: rust
