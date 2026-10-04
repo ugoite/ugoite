@@ -71,6 +71,9 @@ The current CLI command surface includes:
 - `ugoite composition inspect <id> [--revision] [--raw]`
 - `ugoite composition export <id> --output <path> [--revision <id>]`
 - `ugoite composition restore <id> --revision <source> --base-revision <current> --idempotency-key <key>`
+- `ugoite composition import <file> --idempotency-key <key>`
+- `ugoite composition save <file> --idempotency-key <key>`
+- `ugoite composition save <file> --composition-id <id> --base-revision <revision> --idempotency-key <key>`
 - `ugoite composition lint <file>`
 - `ugoite composition query <id> [--revision] [--param k=v]`
 
@@ -96,10 +99,14 @@ returns a JSON receipt with the Composition, revision, output path, and byte
 count. Export is CLI file output over `composition.get`, not a separate
 portable operation or REST route.
 
-The remaining planned command surface is:
-
-- `ugoite composition save <file>`
-- `ugoite composition import <file>`
+`composition import` always creates a new Space-owned Composition. `composition
+save` creates when both revision preconditions are omitted and updates only when
+`--composition-id` and `--base-revision` are supplied together. Both commands
+validate through the shared Domain parser before mutation, publish canonical
+YAML through local Core or the existing `composition.save` operation, and
+return the save response with its publication receipt. Repeating the same
+`--idempotency-key` with the same file and update preconditions recovers an
+uncertain result; an update with a stale base remains a conflict.
 
 Focused CLI tests cover bounded local list and history pages, remote operation
 request and response decoding, summary output shape, exact-revision inspect,

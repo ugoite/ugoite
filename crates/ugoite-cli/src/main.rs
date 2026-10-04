@@ -76,6 +76,8 @@ impl Cli {
             Commands::Composition(command) => matches!(
                 &command.sub,
                 commands::composition::CompositionSubCmd::Restore { .. }
+                    | commands::composition::CompositionSubCmd::Import { .. }
+                    | commands::composition::CompositionSubCmd::Save { .. }
             ),
             Commands::Auth(_)
             | Commands::Config(_)
@@ -453,5 +455,90 @@ mod tests {
                 && base_revision == "base-revision-2"
                 && idempotency_key == "restore-attempt-1"
         ));
+    }
+
+    #[test]
+    fn composition_import_and_save_require_retry_identity_and_pair_update_preconditions() {
+        let import = Cli::try_parse_from([
+            "ugoite",
+            "composition",
+            "import",
+            "monthly-expense.ugcomp.yaml",
+            "--idempotency-key",
+            "import-attempt-1",
+        ])
+        .expect("Composition import command");
+        assert!(import.is_mutation_command());
+        assert!(matches!(
+            import.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::Import {
+                    ref file,
+                    ref idempotency_key,
+                }
+            }) if file.as_path() == std::path::Path::new("monthly-expense.ugcomp.yaml")
+                && idempotency_key == "import-attempt-1"
+        ));
+
+        let create = Cli::try_parse_from([
+            "ugoite",
+            "composition",
+            "save",
+            "monthly-expense.ugcomp.yaml",
+            "--idempotency-key",
+            "save-create-1",
+        ])
+        .expect("Composition save create command");
+        assert!(create.is_mutation_command());
+        assert!(matches!(
+            create.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::Save {
+                    composition_id: None,
+                    base_revision: None,
+                    ref idempotency_key,
+                    ..
+                }
+            }) if idempotency_key == "save-create-1"
+        ));
+
+        let update = Cli::try_parse_from([
+            "ugoite",
+            "composition",
+            "save",
+            "monthly-expense.ugcomp.yaml",
+            "--composition-id",
+            "composition-1",
+            "--base-revision",
+            "revision-1",
+            "--idempotency-key",
+            "save-update-1",
+        ])
+        .expect("Composition save update command");
+        assert!(matches!(
+            update.command,
+            Commands::Composition(commands::composition::CompositionCmd {
+                sub: commands::composition::CompositionSubCmd::Save {
+                    composition_id: Some(composition_id),
+                    base_revision: Some(base_revision),
+                    idempotency_key,
+                    ..
+                }
+            }) if composition_id == "composition-1"
+                && base_revision == "revision-1"
+                && idempotency_key == "save-update-1"
+        ));
+
+        assert!(Cli::try_parse_from([
+            "ugoite",
+            "composition",
+            "save",
+            "monthly-expense.ugcomp.yaml",
+            "--composition-id",
+            "composition-1",
+            "--idempotency-key",
+            "save-incomplete-update-1",
+        ])
+        .is_err());
     }
 }

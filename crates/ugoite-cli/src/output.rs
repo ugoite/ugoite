@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ugoite_api_client::ApiProtocolError;
 use ugoite_core::error::{AppError, ErrorKind};
+use ugoite_domain::composition::CompositionDiagnosticCode;
 
 pub mod style;
 pub mod table;
@@ -327,6 +328,19 @@ impl std::fmt::Display for UsageError {
 
 impl std::error::Error for UsageError {}
 
+/// A Composition YAML file was rejected by the shared Domain parser before
+/// the CLI sent a save request.
+#[derive(Debug)]
+pub struct CompositionDiagnosticError(pub CompositionDiagnosticCode);
+
+impl std::fmt::Display for CompositionDiagnosticError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "Composition diagnostic: {}", self.0.as_str())
+    }
+}
+
+impl std::error::Error for CompositionDiagnosticError {}
+
 /// Adds the irreversible progress of a streamed SQL export while preserving
 /// the underlying application or protocol error classification.
 #[derive(Debug)]
@@ -353,6 +367,22 @@ impl std::error::Error for ExportProgressError {
 
 /// Project any CLI failure into the shared error shape.
 pub fn project_error(error: &Error) -> CliError {
+    if let Some(composition_diagnostic) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<CompositionDiagnosticError>())
+    {
+        let code = composition_diagnostic.0.as_str();
+        return CliError {
+            code: "INVALID_INPUT".to_string(),
+            kind: "invalid_input".to_string(),
+            message: format!("Composition file rejected: {code}"),
+            detail: Some(serde_json::json!({
+                "kind": "composition_diagnostic",
+                "code": code,
+            })),
+            exit: ExitCode::Usage,
+        };
+    }
     if let Some(outcome_error) = error
         .chain()
         .find_map(|cause| cause.downcast_ref::<MutationOutcomeError>())
@@ -427,6 +457,14 @@ pub fn project_error(error: &Error) -> CliError {
 /// mutation result vocabulary. Read-only command failures should continue to
 /// use [`project_error`] so their established API codes remain unchanged.
 pub fn project_mutation_error(error: &Error) -> CliError {
+    // Shared Domain validation runs before a Composition save request can be
+    // sent, so keep its diagnostic instead of projecting a mutation outcome.
+    if error
+        .chain()
+        .any(|cause| cause.downcast_ref::<CompositionDiagnosticError>().is_some())
+    {
+        return project_error(error);
+    }
     let mut projected = project_error(error);
     let outcome = classify_mutation_error(error);
     let Some(code) = outcome.error_code() else {
@@ -536,6 +574,8 @@ fn is_mutation_operation(operation: &str) -> bool {
             | "entry.update"
             | "entry.delete"
             | "entry.restore"
+            | "composition.save"
+            | "composition.restore"
             | "form.upsert"
             | "asset.upload"
             | "asset.delete"
@@ -1014,6 +1054,36 @@ mod tests {
         };
         let preflight_failure = project_mutation_error(&anyhow::Error::from(preflight_failure));
         assert_eq!(preflight_failure.code, "MUTATION_REJECTED");
+
+        for operation in ["composition.save", "composition.restore"] {
+            let unknown = ApiProtocolError {
+                kind: "dependency_unavailable".to_string(),
+                message: "response was lost".to_string(),
+                operation: Some(operation.to_string()),
+                status: None,
+                detail: None,
+                payload: None,
+            };
+            let unknown = project_mutation_error(&anyhow::Error::from(unknown));
+            assert_eq!(unknown.code, "MUTATION_OUTCOME_UNKNOWN", "{operation}");
+        }
+    }
+
+    #[test]
+    fn composition_diagnostics_keep_the_domain_code_before_write() {
+        let error = anyhow::Error::new(CompositionDiagnosticError(
+            CompositionDiagnosticCode::UnsupportedFormatVersion,
+        ));
+        let projected = project_mutation_error(&error);
+        assert_eq!(projected.code, "INVALID_INPUT");
+        assert_eq!(projected.kind, "invalid_input");
+        assert_eq!(
+            projected.detail.as_ref().unwrap(),
+            &serde_json::json!({
+                "kind": "composition_diagnostic",
+                "code": "unsupported_format_version",
+            })
+        );
     }
 
     #[test]

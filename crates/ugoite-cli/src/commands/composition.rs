@@ -15,6 +15,7 @@ use ugoite_api_client::{
     CompositionListPage, CompositionPublicationReceipt, CompositionRawRevision,
     CompositionResolvePlan, CompositionResolveResponse, CompositionResolvedSource,
     CompositionRestoreRequest, CompositionRestoreResponse, CompositionRevisionMetadata,
+    CompositionSaveRequest as ApiCompositionSaveRequest, CompositionSaveResponse,
 };
 use ugoite_core::composition::{
     evaluate_entry_metric_page, evaluate_saved_sql_metric_page, ResolvedComponentKind,
@@ -23,11 +24,13 @@ use ugoite_core::composition::{
 use ugoite_core::entry_query::EntryPage;
 use ugoite_core::sql_query::SqlQueryPage;
 use ugoite_domain::composition::{
-    canonicalize_composition_yaml, parse_composition_yaml, CompositionDiagnosticCode,
-    CompositionParameter, CompositionParameterType as DomainCompositionParameterType,
-    MAX_COMPOSITION_YAML_BYTES,
+    canonicalize_composition_yaml, parse_composition_yaml, CanonicalComposition,
+    CompositionDiagnosticCode, CompositionParameter,
+    CompositionParameterType as DomainCompositionParameterType, MAX_COMPOSITION_YAML_BYTES,
 };
+use ugoite_domain::id::{EntryId, RevisionId};
 use ugoite_iceberg::service::UgoiteService;
+use uuid::Uuid;
 
 const COMPOSITION_LIST_PAGE_SIZE: usize = 100;
 const COMPOSITION_HISTORY_PAGE_SIZE: usize = 100;
@@ -85,6 +88,30 @@ pub enum CompositionSubCmd {
         revision: String,
         #[arg(long, value_name = "BASE_REVISION_ID")]
         base_revision: String,
+        #[arg(long, value_name = "KEY")]
+        idempotency_key: String,
+    },
+    /// Import a new Composition from a local YAML file
+    #[command(
+        long_about = "Validate and canonicalize the local Composition YAML, then create a new Space-owned Composition. Repeat the same --idempotency-key with the same file to safely recover an uncertain result. Import always creates; use `save` with --composition-id and --base-revision to update."
+    )]
+    Import {
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        #[arg(long, value_name = "KEY")]
+        idempotency_key: String,
+    },
+    /// Save a Composition file by creating or updating one exact revision
+    #[command(
+        long_about = "Validate and canonicalize the local Composition YAML, then publish it to the selected Space. Omit --composition-id and --base-revision to create; provide both to update against that exact current base. Repeat the same --idempotency-key and request to safely recover an uncertain result."
+    )]
+    Save {
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        #[arg(long, value_name = "COMPOSITION_ID", requires = "base_revision")]
+        composition_id: Option<String>,
+        #[arg(long, value_name = "REVISION_ID", requires = "composition_id")]
+        base_revision: Option<String>,
         #[arg(long, value_name = "KEY")]
         idempotency_key: String,
     },
@@ -180,6 +207,33 @@ pub async fn run(
             .await?;
             crate::output::print_json(&restored);
         }
+        CompositionSubCmd::Import {
+            file,
+            idempotency_key,
+        } => {
+            let target =
+                resolve_command_target(explicit_config, context_override, "composition import")?;
+            let saved = save_composition_file(&target, &file, None, None, &idempotency_key).await?;
+            crate::output::print_json(&saved);
+        }
+        CompositionSubCmd::Save {
+            file,
+            composition_id,
+            base_revision,
+            idempotency_key,
+        } => {
+            let target =
+                resolve_command_target(explicit_config, context_override, "composition save")?;
+            let saved = save_composition_file(
+                &target,
+                &file,
+                composition_id.as_deref(),
+                base_revision.as_deref(),
+                &idempotency_key,
+            )
+            .await?;
+            crate::output::print_json(&saved);
+        }
         CompositionSubCmd::Lint { file } => {
             let response = lint_file(&file)?;
             crate::output::print_json(&response);
@@ -220,6 +274,136 @@ pub async fn run(
         }
     }
     Ok(())
+}
+
+async fn save_composition_file(
+    target: &SpaceTarget,
+    file: &Path,
+    composition_id: Option<&str>,
+    base_revision_id: Option<&str>,
+    idempotency_key: &str,
+) -> Result<CompositionSaveResponse> {
+    anyhow::ensure!(
+        composition_id.is_some() == base_revision_id.is_some(),
+        "Composition updates require both --composition-id and --base-revision"
+    );
+
+    // Validate and canonicalize the shared Domain document before a request
+    // can create or mutate the Composition Registry.
+    let canonical = canonicalize_composition_file(file)?;
+    let parsed_entry_id = composition_id
+        .map(|value| parse_composition_uuid(value, "Composition ID").map(EntryId::from_uuid))
+        .transpose()?;
+    let parsed_base_revision_id = base_revision_id
+        .map(|value| parse_composition_uuid(value, "base revision ID").map(RevisionId::from_uuid))
+        .transpose()?;
+    let request = ApiCompositionSaveRequest {
+        composition_id: composition_id.map(str::to_owned),
+        base_revision_id: base_revision_id.map(str::to_owned),
+        yaml: canonical.yaml.clone(),
+    };
+    let arguments = json!({
+        "space_id": target_space_id(target),
+        "idempotency_key": idempotency_key,
+    });
+    let body = serde_json::to_value(&request).context("encode Composition save request")?;
+    // Keep Core and remote request validation aligned with the portable
+    // operation, including required retry identity.
+    prepare_request("composition.save", &arguments, Some(&body))?;
+
+    let response = match target {
+        SpaceTarget::Core { root, space_id } => {
+            let service = UgoiteService::new_without_background_refresh(root)?;
+            let result = service
+                .save_composition_local_with_operation_id(
+                    space_id,
+                    ugoite_iceberg::composition::CompositionSaveRequest {
+                        entry_id: parsed_entry_id,
+                        base_revision_id: parsed_base_revision_id,
+                        document: canonical.document.clone(),
+                    },
+                    "local-cli",
+                    idempotency_key,
+                )
+                .await?;
+            CompositionSaveResponse {
+                composition_id: result.entry_id.to_string(),
+                revision_id: result.revision_id.to_string(),
+                canonical_yaml: result.canonical_yaml,
+                receipt: CompositionPublicationReceipt {
+                    command_id: result.receipt.command_id,
+                    catalog_generation: result.receipt.catalog_generation,
+                    snapshot_id: result.receipt.snapshot_id,
+                    committed_revision_ids: result
+                        .receipt
+                        .committed_revision_ids
+                        .into_iter()
+                        .map(|revision_id| revision_id.to_string())
+                        .collect(),
+                    committed_at_micros: result.receipt.committed_at_micros,
+                    data_file_count: result.receipt.data_file_count,
+                },
+            }
+        }
+        SpaceTarget::Remote { .. } => {
+            let value =
+                http::execute_for_target(target, "composition.save", arguments, Some(body)).await?;
+            serde_json::from_value(value).context("decode Composition save response")?
+        }
+    };
+
+    anyhow::ensure!(
+        Uuid::parse_str(&response.composition_id).is_ok()
+            && composition_id.is_none_or(|expected| {
+                composition_identifiers_match(&response.composition_id, expected)
+            })
+            && Uuid::parse_str(&response.revision_id).is_ok()
+            && response.canonical_yaml == canonical.yaml
+            && response.receipt.committed_revision_ids == [response.revision_id.as_str()],
+        "Composition save receipt does not confirm the canonical publication"
+    );
+    Ok(response)
+}
+
+fn parse_composition_uuid(value: &str, name: &str) -> Result<Uuid> {
+    Uuid::parse_str(value).map_err(|_| {
+        ugoite_core::error::AppError::invalid_input(
+            ugoite_core::error::ErrorCode::InvalidInput,
+            format!("{name} must be a UUID"),
+        )
+        .into()
+    })
+}
+
+fn canonicalize_composition_file(path: &Path) -> Result<CanonicalComposition> {
+    let file = File::open(path).map_err(|error| {
+        ugoite_core::error::AppError::invalid_input(
+            ugoite_core::error::ErrorCode::InvalidInput,
+            format!("open Composition file {}: {error}", path.display()),
+        )
+    })?;
+    let mut bytes = Vec::with_capacity(MAX_COMPOSITION_YAML_BYTES + 1);
+    file.take((MAX_COMPOSITION_YAML_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            ugoite_core::error::AppError::invalid_input(
+                ugoite_core::error::ErrorCode::InvalidInput,
+                format!("read Composition file {}: {error}", path.display()),
+            )
+        })?;
+    if bytes.len() > MAX_COMPOSITION_YAML_BYTES {
+        return Err(crate::output::CompositionDiagnosticError(
+            CompositionDiagnosticCode::InvalidComposition,
+        )
+        .into());
+    }
+    let yaml = std::str::from_utf8(&bytes).map_err(|_| {
+        anyhow::Error::from(crate::output::CompositionDiagnosticError(
+            CompositionDiagnosticCode::InvalidComposition,
+        ))
+    })?;
+    canonicalize_composition_yaml(yaml)
+        .map_err(|code| crate::output::CompositionDiagnosticError(code).into())
 }
 
 async fn restore_composition(

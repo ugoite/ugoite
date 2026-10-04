@@ -1402,6 +1402,195 @@ async fn test_cli_remote_composition_restore_receipt_replay_and_stale_base() {
     assert_eq!(history_after_stale["total"], 3);
 }
 
+#[tokio::test]
+async fn test_cli_remote_composition_import_save_receipts_and_prevalidation() {
+    use ugoite_iceberg::service::UgoiteService;
+
+    const FIXTURE: &str =
+        include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+    let fixture = setup_remote().await;
+    let service = UgoiteService::new_without_background_refresh(&fixture.storage_root)
+        .expect("open remote fixture Space service");
+    let forms_before = service
+        .list_forms(&fixture.space_id)
+        .await
+        .expect("list Forms before");
+    assert!(!contains_string(
+        &serde_json::to_value(&forms_before).unwrap(),
+        "_ugoite_compositions"
+    ));
+
+    let invalid_file = fixture._config_dir.path().join("unsupported.ugcomp.yaml");
+    std::fs::write(
+        &invalid_file,
+        FIXTURE.replacen("format_version: 1", "format_version: 2", 1),
+    )
+    .expect("write unsupported Composition");
+    let invalid = run_cli(
+        &fixture.config_path,
+        &[
+            "composition",
+            "import",
+            invalid_file.to_str().unwrap(),
+            "--idempotency-key",
+            "remote-import-invalid-1",
+        ],
+    )
+    .await;
+    assert!(!invalid.status.success(), "unsupported input must fail");
+    let invalid_error: serde_json::Value =
+        serde_json::from_slice(&invalid.stderr).expect("machine-readable diagnostic");
+    assert_eq!(
+        invalid_error["error"]["detail"]["code"],
+        "unsupported_format_version"
+    );
+    let forms_after = service
+        .list_forms(&fixture.space_id)
+        .await
+        .expect("list Forms after");
+    assert_eq!(
+        forms_after, forms_before,
+        "invalid input must not create the Registry Form"
+    );
+    assert!(service
+        .list_compositions_local_page(&fixture.space_id, 10, 0)
+        .await
+        .expect("Composition page after invalid input")
+        .items
+        .is_empty());
+
+    let file = fixture
+        ._config_dir
+        .path()
+        .join("monthly-expense.ugcomp.yaml");
+    std::fs::write(&file, FIXTURE).expect("write Composition fixture");
+    let imported = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "composition",
+                "import",
+                file.to_str().unwrap(),
+                "--idempotency-key",
+                "remote-import-1",
+            ],
+        )
+        .await,
+        "remote Composition import",
+    );
+    assert_eq!(
+        imported["receipt"]["committed_revision_ids"][0],
+        imported["revision_id"]
+    );
+    let import_replay = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "composition",
+                "import",
+                file.to_str().unwrap(),
+                "--idempotency-key",
+                "remote-import-1",
+            ],
+        )
+        .await,
+        "remote Composition import retry",
+    );
+    assert_eq!(import_replay, imported);
+
+    let saved = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &[
+                "composition",
+                "save",
+                file.to_str().unwrap(),
+                "--idempotency-key",
+                "remote-save-create-1",
+            ],
+        )
+        .await,
+        "remote Composition save create",
+    );
+    assert_ne!(saved["composition_id"], imported["composition_id"]);
+    assert_eq!(
+        saved["receipt"]["committed_revision_ids"][0],
+        saved["revision_id"]
+    );
+
+    let updated_file = fixture
+        ._config_dir
+        .path()
+        .join("updated-monthly-expense.ugcomp.yaml");
+    std::fs::write(
+        &updated_file,
+        FIXTURE.replacen("name: Monthly expenses", "name: Monthly expense report", 1),
+    )
+    .expect("write updated Composition fixture");
+    let composition_id = saved["composition_id"].as_str().unwrap();
+    let base_revision = saved["revision_id"].as_str().unwrap();
+    let update_args = [
+        "composition",
+        "save",
+        updated_file.to_str().unwrap(),
+        "--composition-id",
+        composition_id,
+        "--base-revision",
+        base_revision,
+        "--idempotency-key",
+        "remote-save-update-1",
+    ];
+    let updated = stdout_json(
+        &run_cli(&fixture.config_path, &update_args).await,
+        "remote Composition save update",
+    );
+    assert_eq!(updated["composition_id"], composition_id);
+    assert_eq!(
+        updated["receipt"]["committed_revision_ids"][0],
+        updated["revision_id"]
+    );
+    assert_ne!(updated["revision_id"], saved["revision_id"]);
+    let update_replay = stdout_json(
+        &run_cli(&fixture.config_path, &update_args).await,
+        "remote Composition save update retry",
+    );
+    assert_eq!(update_replay, updated);
+
+    let stale = run_cli(
+        &fixture.config_path,
+        &[
+            "composition",
+            "save",
+            updated_file.to_str().unwrap(),
+            "--composition-id",
+            composition_id,
+            "--base-revision",
+            base_revision,
+            "--idempotency-key",
+            "remote-save-stale-update-1",
+        ],
+    )
+    .await;
+    assert!(
+        !stale.status.success(),
+        "stale Composition base must conflict"
+    );
+    assert!(
+        String::from_utf8_lossy(&stale.stderr).contains("REVISION_CONFLICT"),
+        "stale update should preserve its conflict code: {}",
+        String::from_utf8_lossy(&stale.stderr)
+    );
+    let history = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["composition", "history", composition_id],
+        )
+        .await,
+        "remote Composition history after stale update",
+    );
+    assert_eq!(history["total"], 2);
+}
+
 /// Unknown Forms are rejected with form-identifying classification.
 #[tokio::test]
 async fn test_parity_remote_missing_form_rejected_without_mutation() {
