@@ -1417,6 +1417,20 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
         operation: "composition.save",
         expected: "ツールを保存できませんでした。",
       },
+      {
+        locale: "en",
+        kind: "composition_diagnostic",
+        code: "future_private_code",
+        operation: "composition.save",
+        expected: "Could not save this tool.",
+      },
+      {
+        locale: "ja",
+        kind: "composition_diagnostic",
+        code: "future_private_code",
+        operation: "composition.save",
+        expected: "ツールを保存できませんでした。",
+      },
     ] as const,
   )(
     "shows a localized safe save diagnostic or generic fallback in $locale for $code",
@@ -1465,6 +1479,8 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       const routeAlert = await screen.findByRole("alert");
       expect(routeAlert).toHaveTextContent(expected);
       expect(routeAlert).toHaveAttribute("role", "alert");
+      expect(routeAlert).not.toHaveTextContent("private");
+      expect(routeAlert).not.toHaveTextContent(code);
       expect(screen.getAllByRole("alert")).toHaveLength(1);
 
       fireEvent.click(
@@ -1475,9 +1491,10 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       const reopenedDialog = screen.getByRole("dialog", {
         name: t("composition.saveAsTool"),
       });
-      expect(within(reopenedDialog).getByRole("alert")).toHaveTextContent(
-        expected,
-      );
+      const reopenedAlert = within(reopenedDialog).getByRole("alert");
+      expect(reopenedAlert).toHaveTextContent(expected);
+      expect(reopenedAlert).not.toHaveTextContent("private");
+      expect(reopenedAlert).not.toHaveTextContent(code);
       expect(
         within(reopenedDialog).getByLabelText(t("composition.name"), {
           selector: "input",
