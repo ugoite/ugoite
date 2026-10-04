@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { createEffect, createMemo, Show } from "solid-js";
 import { EntryBrowser } from "~/components/EntryBrowser";
+import { EntryQuerySaveAsTool } from "~/components/EntryQuerySaveAsTool";
 import {
   createEntryQueryController,
   type EntryProjection,
@@ -150,6 +151,20 @@ export default function SpaceFormEntriesPane() {
                 form.name,
               ]),
             )}
+            toolbarNavigation={
+              <EntryQuerySaveAsTool
+                spaceId={spaceId}
+                routePath={() =>
+                  `/spaces/${encodeURIComponent(spaceId())}/forms/${
+                    encodeURIComponent(formRef())
+                  }/entries`}
+                defaultName={formRef}
+                query={controller.query}
+                projection={controller.projection}
+                form={selectedForm}
+                knownForms={() => ctx.forms()}
+              />
+            }
             onSelect={(row) => navigate(spaceEntryPath(spaceId(), row.id))}
           />
         </Show>

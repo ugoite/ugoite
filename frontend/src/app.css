@@ -3357,7 +3357,8 @@ a.tool {
   padding-left: 12px;
   border-left: 1px solid var(--line);
 }
-.entry-browser-sql-link {
+.entry-browser-sql-link,
+.entry-browser-save-tool {
   display: grid;
   flex: 0 0 44px;
   place-items: center;
@@ -3366,11 +3367,13 @@ a.tool {
   min-height: 44px;
   padding: 0;
 }
-.entry-browser-sql-link:focus-visible {
+.entry-browser-sql-link:focus-visible,
+.entry-browser-save-tool:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
-.entry-browser-sql-link .icon {
+.entry-browser-sql-link .icon,
+.entry-browser-save-tool .icon {
   width: 20px;
   height: 20px;
 }

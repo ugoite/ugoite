@@ -5,7 +5,8 @@
  */
 export interface PendingCompositionSaveAttempt {
   spaceId: string;
-  sqlId: string;
+  /** Saved-SQL route identity. EntryQuery saves identify by routePath only. */
+  sqlId?: string;
   routePath: string;
   name: string;
   yaml: string;

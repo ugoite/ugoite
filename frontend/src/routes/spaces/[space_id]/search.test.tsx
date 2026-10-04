@@ -306,4 +306,30 @@ describe("/spaces/:space_id/search", () => {
     expect(await screen.findByText("Space B Form")).toBeInTheDocument();
     expect(screen.queryByText("Space A Form")).not.toBeInTheDocument();
   });
+
+  it("keeps save-as-tool disabled with the All-scope reason and no visible prose", () => {
+    const { container } = render(() => <SpaceSearchRoute />);
+
+    const saveButton = screen.getByRole("button", {
+      name: /Save as tool requires a Form scope/,
+    });
+    expect(saveButton).toBeDisabled();
+    expect(saveButton).toHaveAttribute(
+      "title",
+      "Save as tool, Save as tool requires a Form scope",
+    );
+    expect(saveButton.querySelector("svg")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(saveButton.textContent).toBe("");
+    const navigation = container.querySelector(
+      ".entry-browser-toolbar-navigation",
+    );
+    expect(navigation).not.toBeNull();
+    expect(
+      navigation?.querySelector('[aria-label="Open saved queries"]'),
+    ).not.toBeNull();
+    expect(navigation?.querySelector("button")).toBe(saveButton);
+  });
 });
