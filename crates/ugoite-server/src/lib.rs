@@ -15230,11 +15230,11 @@ mod authentication_regression_tests {
             Request::get(&composition_path).body(Body::empty())?,
         )
         .await?;
+        let missing_entry_id = Uuid::from_u128(34913);
         let (missing_status, missing_body) = route_json(
             viewer_route,
             Request::get(format!(
-                "/spaces/{space_id}/compositions/{}",
-                Uuid::from_u128(34913)
+                "/spaces/{space_id}/compositions/{missing_entry_id}"
             ))
             .body(Body::empty())?,
         )
@@ -15244,6 +15244,14 @@ mod authentication_regression_tests {
         assert_eq!(missing_status, StatusCode::NOT_FOUND, "{missing_body}");
         assert_eq!(denied_body["code"], "ENTRY_NOT_FOUND");
         assert_eq!(denied_body["code"], missing_body["code"]);
+        assert_eq!(
+            denied_body["message"],
+            format!("Entry not found: {}", saved.entry_id)
+        );
+        assert_eq!(
+            missing_body["message"],
+            format!("Entry not found: {missing_entry_id}")
+        );
         assert!(denied_body.get("revision").is_none());
         assert!(denied_body.get("fields").is_none());
         assert!(denied_body.get("unmapped_field_values").is_none());
