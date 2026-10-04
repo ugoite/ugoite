@@ -15975,14 +15975,18 @@ mod authentication_regression_tests {
             assert_eq!(serde_json::to_value(api)?, json!(domain.as_str()));
         }
 
-        for (api, expected) in [(
-            ApiCompositionDiagnosticCode::MetricFieldNotProjected,
-            "metric_field_not_projected",
-        )] {
-            assert_eq!(api.as_str(), expected);
-            assert_eq!(ApiCompositionDiagnosticCode::from_code(expected), Some(api));
-            assert_eq!(serde_json::to_value(api)?, json!(expected));
-        }
+        assert_eq!(
+            ApiCompositionDiagnosticCode::MetricFieldNotProjected.as_str(),
+            "metric_field_not_projected"
+        );
+        assert_eq!(
+            ApiCompositionDiagnosticCode::from_code("metric_field_not_projected"),
+            Some(ApiCompositionDiagnosticCode::MetricFieldNotProjected)
+        );
+        assert_eq!(
+            serde_json::to_value(ApiCompositionDiagnosticCode::MetricFieldNotProjected)?,
+            json!("metric_field_not_projected")
+        );
         // Removed existence-revealing codes must stay out of the portable API.
         for removed in [
             "missing_form",
