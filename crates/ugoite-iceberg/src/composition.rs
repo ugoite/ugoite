@@ -1434,6 +1434,116 @@ pub async fn ensure_composition_registry(
     }
 }
 
+/// Fixture-only carrier for one raw Composition revision.
+///
+/// The typed parser must reject some of these carriers (future
+/// `format_version`, malformed documents); that is the point of the fixture.
+/// The batch still travels through the reserved Registry admission — Registry
+/// identity plus the revision-batch fingerprint — so this is not a generic
+/// write bypass: generic Entry writes still cannot target the Registry, and
+/// production save/restore paths never call this function.
+#[cfg(feature = "test-support")]
+#[derive(Debug, Clone)]
+pub struct RawCompositionSeed {
+    pub name: String,
+    pub kind: String,
+    pub tags: Vec<String>,
+    pub format_version: i64,
+    /// Exact raw YAML bytes preserved verbatim in the `spec` carrier.
+    pub spec: String,
+}
+
+/// Identity of a fixture-seeded raw Composition revision.
+#[cfg(feature = "test-support")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawCompositionSeedIds {
+    pub entry_id: EntryId,
+    pub revision_id: RevisionId,
+}
+
+/// Persist one raw Composition revision through the reserved Registry
+/// admission without typed document validation. Available only with the
+/// `test-support` feature for CLI/E2E recovery journeys.
+#[cfg(feature = "test-support")]
+pub async fn seed_raw_composition_revision(
+    operator: &Operator,
+    workspace_path: &str,
+    seed: RawCompositionSeed,
+    author: &str,
+) -> Result<RawCompositionSeedIds> {
+    use ugoite_domain::change::ChangeCommand;
+
+    let form = ensure_composition_registry(operator, workspace_path).await?;
+    let entry_id = EntryId::from(Uuid::now_v7());
+    let revision_id = RevisionId::from(Uuid::now_v7());
+    let change_id = Uuid::now_v7().to_string();
+    let now = Utc::now().timestamp_micros();
+    let mut values = BTreeMap::new();
+    for (name, value) in [
+        ("name", FieldValue::String(seed.name)),
+        ("kind", FieldValue::String(seed.kind)),
+        ("format_version", FieldValue::Integer(seed.format_version)),
+        ("spec", FieldValue::String(seed.spec)),
+    ] {
+        let field_id = form
+            .fields
+            .iter()
+            .find(|field| field.name == name)
+            .map(|field| field.id)
+            .ok_or_else(|| registry_conflict("registry is missing a required carrier field"))?;
+        values.insert(field_id, value);
+    }
+    let draft = EntryRevisionDraft {
+        form_id: form.id,
+        entry_id,
+        revision_id,
+        change_id: change_id.clone(),
+        operation: EntryOperation::Upsert,
+        committed_at_micros: now,
+        author_id: author.to_string(),
+        form_version: form.version,
+        source_kind: "test".to_string(),
+        source_id: None,
+        entry: EntryMetadata {
+            external_id: entry_id.to_string(),
+            tags: seed.tags,
+            created_at_micros: now,
+            updated_at_micros: now,
+            updated_by: author.to_string(),
+            ..EntryMetadata::default()
+        },
+        values,
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    let revision = draft
+        .build(&form, None)
+        .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+    let change = ChangeCommand {
+        change_id,
+        run_id: None,
+        actor_principal_id: author.to_string(),
+        message: Some("seed a raw Composition revision fixture".to_string()),
+        reverts_change_id: None,
+        created_at_micros: now,
+    };
+    crate::authorization::ensure_authorization_write_fence().await?;
+    let workspace =
+        crate::iceberg_store::native_mutation_workspace(operator, workspace_path).await?;
+    workspace
+        .commit(crate::publication_context_for_change(
+            &change,
+            "test.composition.raw-seed",
+            &revision,
+        )?)?
+        .append_composition_revisions_authorized(form.id, vec![revision], None)
+        .await?;
+    Ok(RawCompositionSeedIds {
+        entry_id,
+        revision_id,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
