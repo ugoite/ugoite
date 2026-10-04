@@ -28,6 +28,7 @@ use ugoite_server::{app, AppState};
 struct SqlExportGate {
     enabled: std::sync::atomic::AtomicBool,
     queries: std::sync::atomic::AtomicUsize,
+    composition_write_requests: std::sync::atomic::AtomicUsize,
     second_page: Notify,
     resume: Notify,
 }
@@ -37,8 +38,16 @@ async fn pause_second_sql_page(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
+    let path = request.uri().path();
+    if request.method() == axum::http::Method::POST
+        && (path.ends_with("/compositions") || path.ends_with("/restore"))
+    {
+        gate.composition_write_requests
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
     if gate.enabled.load(std::sync::atomic::Ordering::SeqCst)
-        && request.uri().path().ends_with("/sql/query")
+        && path.ends_with("/sql/query")
         && request.method() == axum::http::Method::POST
         && gate
             .queries
@@ -1419,6 +1428,61 @@ async fn test_cli_remote_composition_import_save_receipts_and_prevalidation() {
         &serde_json::to_value(&forms_before).unwrap(),
         "_ugoite_compositions"
     ));
+
+    let valid_file = fixture
+        ._config_dir
+        .path()
+        .join("valid-composition.ugcomp.yaml");
+    std::fs::write(&valid_file, FIXTURE).expect("write valid Composition fixture");
+    let writes_before = fixture
+        .sql_export_gate
+        .composition_write_requests
+        .load(std::sync::atomic::Ordering::SeqCst);
+    let invalid_key = run_cli(
+        &fixture.config_path,
+        &[
+            "composition",
+            "import",
+            valid_file.to_str().unwrap(),
+            "--idempotency-key",
+            "remote-import-東京",
+        ],
+    )
+    .await;
+    assert!(
+        !invalid_key.status.success(),
+        "remote must reject non-ASCII Composition idempotency keys"
+    );
+    assert!(invalid_key.stdout.is_empty());
+    let invalid_key_error: serde_json::Value = serde_json::from_slice(&invalid_key.stderr)
+        .expect("machine-readable invalid idempotency key diagnostic");
+    assert_eq!(invalid_key_error["error"]["kind"], "invalid_input");
+    assert_eq!(
+        invalid_key_error["error"]["message"],
+        "argument `idempotency_key` must contain only valid ASCII header characters"
+    );
+    assert_eq!(
+        fixture
+            .sql_export_gate
+            .composition_write_requests
+            .load(std::sync::atomic::Ordering::SeqCst),
+        writes_before,
+        "invalid idempotency key must not send a remote Composition mutation"
+    );
+    assert_eq!(
+        service
+            .list_forms(&fixture.space_id)
+            .await
+            .expect("list Forms after invalid idempotency key"),
+        forms_before,
+        "invalid idempotency key must not create the Registry Form"
+    );
+    assert!(service
+        .list_compositions_local_page(&fixture.space_id, 10, 0)
+        .await
+        .expect("Composition page after invalid idempotency key")
+        .items
+        .is_empty());
 
     let invalid_file = fixture._config_dir.path().join("unsupported.ugcomp.yaml");
     std::fs::write(
