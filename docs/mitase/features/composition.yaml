@@ -466,7 +466,7 @@ features:
       - id: server-authorization-evidence
         role: evidence
         facet: server-tests
-        responsibility: Verify that server list requests honor the current Composition registry read policy and that denied or missing source references collapse to the documented source_unavailable diagnostic without exposing source identifiers.
+        responsibility: Verify current Registry read authorization for Composition list/get, caller-visible concealment of denied existing Compositions, and source_unavailable concealment for denied or missing source references without exposing source identifiers or metadata.
         targets:
           - id: list-with-registry-read-denied
             adapter: rust
@@ -475,6 +475,15 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.current-authorization
+          - id: denied-existing-composition-read-concealment
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: composition_get_conceals_existing_entry_from_denied_viewer }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.current-authorization
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.concealed-unavailable-references
           - id: denied-form-source-concealment
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
