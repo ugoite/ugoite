@@ -1283,4 +1283,85 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     expect(queryMock).toHaveBeenCalledTimes(1);
     expect(countMock).toHaveBeenCalledTimes(2);
   });
+
+  it.each(["space", "sql"] as const)(
+    "clears deterministic save rejection feedback when the %s route changes",
+    async (changedIdentity) => {
+      getMock.mockImplementation((requestedSpaceId, requestedSqlId) =>
+        Promise.resolve({
+          id: requestedSqlId,
+          name: requestedSpaceId === "other-space"
+            ? "Other space query"
+            : requestedSqlId === "other-query"
+            ? "Other query"
+            : "Saved query",
+          kind: "user-query",
+          sql: "SELECT value FROM demo ORDER BY value",
+          variables: [],
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-02T00:00:00Z",
+          revision_id: "rev-1",
+        })
+      );
+      queryMock.mockReset().mockResolvedValue({
+        columns: ["value"],
+        rows: [["result"]],
+        has_more: false,
+      });
+      compositionSaveMock.mockRejectedValue(
+        Object.assign(new Error("invalid Composition"), {
+          mutationOutcome: "rejected",
+          status: 422,
+        }),
+      );
+      render(() => <SpaceSqlRunRoute />);
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Save as tool" }),
+      );
+      const dialog = screen.getByRole("dialog", { name: "Save as tool" });
+      fireEvent.input(
+        within(dialog).getByLabelText("Name", { selector: "input" }),
+        { target: { value: "Rejected query" } },
+      );
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+      await within(dialog).findByRole("alert");
+      expect(compositionSaveMock).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Could not save this tool.",
+      );
+
+      const nextName = changedIdentity === "space"
+        ? "Other space query"
+        : "Other query";
+      if (changedIdentity === "space") {
+        routeControls.setSpace("other-space");
+        routeControls.setPath(
+          "/spaces/other-space/sql/saved-query/run",
+        );
+      } else {
+        routeControls.setSql("other-query");
+        routeControls.setPath(
+          "/spaces/default/sql/other-query/run",
+        );
+      }
+
+      await waitFor(() =>
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Save as tool" }),
+      );
+      const nextDialog = screen.getByRole("dialog", {
+        name: "Save as tool",
+      });
+      expect(
+        within(nextDialog).getByLabelText("Name", { selector: "input" }),
+      ).toHaveValue(nextName);
+      expect(within(nextDialog).queryByRole("alert"))
+        .not.toBeInTheDocument();
+    },
+  );
 });
