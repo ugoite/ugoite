@@ -505,7 +505,7 @@ features:
       - id: field-level-source-diagnostics-authorization-evidence
         role: evidence
         facet: core-tests
-        responsibility: Verify field-level source diagnostics require an authorized Form read, denied reads collapse to source_unavailable without identifiers or schema labels, and an authorized changed Form returns field_type_changed.
+        responsibility: Verify field-level source diagnostics require an authorized Form read, denied reads collapse to source_unavailable without source/component/section names or Form/Field identifiers, and an authorized changed Form returns field_type_changed.
         targets:
           - id: field-level-diagnostic-disclosure
             adapter: rust
