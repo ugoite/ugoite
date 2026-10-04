@@ -502,6 +502,18 @@ features:
                 anchor: REQ-COMP-004#criterion.current-authorization
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+      - id: field-level-source-diagnostics-authorization-evidence
+        role: evidence
+        facet: core-tests
+        responsibility: Verify field-level source diagnostics require an authorized Form read, denied reads collapse to source_unavailable without source/component/section names or Form/Field identifiers, and an authorized changed Form returns field_type_changed.
+        targets:
+          - id: field-level-diagnostic-disclosure
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: field_level_diagnostics_require_an_authorized_source_form_read }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.concealed-unavailable-references
       - id: saved-sql-resolver
         role: implementation
         facet: core
