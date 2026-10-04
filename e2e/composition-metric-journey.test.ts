@@ -7,7 +7,6 @@ import {
 } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 
-const MODEL_CONNECTION = "disabled";
 const METRIC_SCALAR = 40;
 const SECOND_AMOUNT = 2;
 const MULTIPLE_ROWS_DIAGNOSTIC = "The metric returned more than one row.";
@@ -189,7 +188,6 @@ test.describe("Composition Metric Journey", () => {
   test.beforeAll(async ({ request }) => {
     test.setTimeout(120_000);
     await waitForServers(request);
-    expect(MODEL_CONNECTION).toBe("disabled");
     seed = await seedMetricComposition(request);
   });
 
