@@ -1,5 +1,9 @@
 const workspaceRoot = new URL("../../..", import.meta.url).pathname;
 
+const MAX_COMPOSITION_YAML_BYTES = 64 * 1024;
+const MAX_COMPOSITION_YAML_DEPTH = 64;
+const MAX_COMPOSITION_COLLECTION_ITEMS = 256;
+
 async function runCommand(command: string, args: string[]): Promise<string> {
   const result = await new Deno.Command(command, {
     args,
@@ -43,6 +47,60 @@ function normalizeJson(value: unknown): unknown {
     );
   }
   return value;
+}
+
+function compositionYamlResponse(yaml: string): Record<string, unknown> {
+  return {
+    action: "domain.canonicalize_composition",
+    value: { yaml },
+  };
+}
+
+function paddedCompositionYaml(yaml: string, targetBytes: number): string {
+  const currentBytes = new TextEncoder().encode(yaml).length;
+  if (!yaml.endsWith("\n") || currentBytes >= targetBytes) {
+    throw new Error(
+      "Cannot construct the requested Composition byte boundary",
+    );
+  }
+  return `${yaml}#${"x".repeat(targetBytes - currentBytes - 1)}`;
+}
+
+function compositionParametersYaml(count: number): string {
+  const lines = [
+    "format: ugoite.composition",
+    "format_version: 1",
+    "name: Example",
+    "kind: dashboard",
+    "tags: []",
+    "spec:",
+    "  parameters:",
+  ];
+  for (let index = 0; index < count; index += 1) {
+    lines.push(
+      `    - id: parameter_${index}`,
+      "      type: string",
+      "      required: true",
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function nestedFutureCompositionYaml(depth: number): string {
+  return `format: ugoite.composition\nformat_version: 2\nvalue: ${
+    "[".repeat(depth)
+  }0${"]".repeat(depth)}\n`;
+}
+
+function assertCompositionDiagnostic(
+  response: Record<string, unknown>,
+  expectedCode: string,
+  label: string,
+): void {
+  assertEqual(response.ok, false, `${label} result`);
+  const error = response.error as Record<string, unknown>;
+  assertEqual(error.kind, "composition_diagnostic", `${label} diagnostic kind`);
+  assertEqual(error.code, expectedCode, `${label} diagnostic code`);
 }
 
 async function invokeWasm(
@@ -187,6 +245,71 @@ async function main(): Promise<void> {
   assertEqual(response.ok, true, "monthly-expense parse result");
   assertEqual(responseValue.canonical_yaml, canonicalYaml, "canonical YAML");
   assertEqual(responseValue.fingerprint, fingerprint, "semantic fingerprint");
+
+  const atByteLimit = await invokeWasm(
+    instance.exports,
+    compositionYamlResponse(
+      paddedCompositionYaml(yaml, MAX_COMPOSITION_YAML_BYTES),
+    ),
+  );
+  assertEqual(atByteLimit.ok, true, "WASM parser accepts the byte limit");
+  const overByteLimit = await invokeWasm(
+    instance.exports,
+    compositionYamlResponse(
+      paddedCompositionYaml(yaml, MAX_COMPOSITION_YAML_BYTES + 1),
+    ),
+  );
+  assertCompositionDiagnostic(
+    overByteLimit,
+    "invalid_composition",
+    "WASM parser rejects input over the byte limit",
+  );
+
+  const atCollectionLimit = await invokeWasm(
+    instance.exports,
+    compositionYamlResponse(
+      compositionParametersYaml(MAX_COMPOSITION_COLLECTION_ITEMS),
+    ),
+  );
+  assertEqual(
+    atCollectionLimit.ok,
+    true,
+    "WASM parser accepts the collection item limit",
+  );
+  const overCollectionLimit = await invokeWasm(
+    instance.exports,
+    compositionYamlResponse(
+      compositionParametersYaml(MAX_COMPOSITION_COLLECTION_ITEMS + 1),
+    ),
+  );
+  assertCompositionDiagnostic(
+    overCollectionLimit,
+    "invalid_composition",
+    "WASM parser rejects input over the collection item limit",
+  );
+
+  const atDepthLimit = await invokeWasm(
+    instance.exports,
+    compositionYamlResponse(
+      nestedFutureCompositionYaml(MAX_COMPOSITION_YAML_DEPTH - 1),
+    ),
+  );
+  assertCompositionDiagnostic(
+    atDepthLimit,
+    "unsupported_format_version",
+    "WASM parser accepts the nesting limit before version dispatch",
+  );
+  const overDepthLimit = await invokeWasm(
+    instance.exports,
+    compositionYamlResponse(
+      nestedFutureCompositionYaml(MAX_COMPOSITION_YAML_DEPTH),
+    ),
+  );
+  assertCompositionDiagnostic(
+    overDepthLimit,
+    "invalid_composition",
+    "WASM parser rejects input over the nesting limit",
+  );
 
   const typedDocument = structuredClone(
     responseValue.document as Record<string, unknown>,
