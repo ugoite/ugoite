@@ -1,8 +1,16 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, within } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { createMemo, createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EntriesRouteContext } from "~/lib/entries-route-context";
+import { compositionApi } from "~/lib/composition-api";
+import { clearPendingCompositionSaveAttempt } from "~/lib/composition-save-attempt";
 import { createEntryStore } from "~/lib/entry-store";
 import { createSpaceStore } from "~/lib/space-store";
 import { entryApi } from "~/lib/ugoite-client";
@@ -91,6 +99,10 @@ describe("/spaces/:space_id/forms/:form_ref/entries", () => {
     setLocale("en");
     navigate.mockReset();
     params.form_ref = "Notes";
+    clearPendingCompositionSaveAttempt({
+      spaceId: "default",
+      routePath: "/spaces/default/forms/Notes/entries",
+    });
     vi.restoreAllMocks();
     vi.spyOn(entryApi, "query").mockResolvedValue({
       rows: [],
@@ -204,5 +216,67 @@ describe("/spaces/:space_id/forms/:form_ref/entries", () => {
         formatDateLabel(new Date(UPDATED_MICROS / 1_000).toISOString()),
       ).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("offers save-as-tool for the expressible form view and saves through canonicalization", async () => {
+    const canonicalizeMock = vi.spyOn(compositionApi, "canonicalizeDocument")
+      .mockResolvedValue({
+        document: {},
+        canonical_yaml: "canonical composition yaml",
+        fingerprint: "fingerprint",
+      });
+    const saveMock = vi.spyOn(compositionApi, "save").mockResolvedValue({
+      composition_id: "tool-1",
+      revision_id: "tool-rev-1",
+      canonical_yaml: "canonical composition yaml",
+      receipt: {
+        command_id: "command-1",
+        catalog_generation: 4,
+        snapshot_id: 42,
+        committed_revision_ids: ["tool-rev-1"],
+        committed_at_micros: 1,
+        data_file_count: 1,
+      },
+    });
+    renderRoute([noteForm]);
+
+    const saveButton = await screen.findByRole("button", {
+      name: "Save as tool",
+    });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+
+    const dialog = await screen.findByRole("dialog", { name: "Save as tool" });
+    expect(screen.getByLabelText("Name", { selector: "input" }))
+      .toHaveValue("Notes");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
+    expect(canonicalizeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Notes",
+        spec: expect.objectContaining({
+          parameters: [],
+          sources: [expect.objectContaining({
+            kind: "entry_query",
+            form_id: noteForm.id,
+            field_schema: [{ field_id: 7, field_type: "string" }],
+          })],
+          components: [{
+            id: "results_table",
+            kind: "table",
+            source: "entry_rows",
+          }],
+        }),
+      }),
+    );
+    expect(saveMock.mock.calls[0][0]).toBe("default");
+    expect(saveMock.mock.calls[0][1]).toBe("canonical composition yaml");
+    expect(saveMock.mock.calls[0][2]).toEqual(expect.any(String));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        "/spaces/default/compositions/tool-1/tool-rev-1",
+      )
+    );
   });
 });

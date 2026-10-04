@@ -10,6 +10,7 @@ import {
 import { A } from "@solidjs/router";
 import { UiIcon } from "~/components/UiIcon";
 import { EntryBrowser } from "~/components/EntryBrowser";
+import { EntryQuerySaveAsTool } from "~/components/EntryQuerySaveAsTool";
 import { formApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import {
@@ -155,14 +156,26 @@ export default function SpaceSearchRoute() {
           </form>
         }
         toolbarNavigation={
-          <A
-            class="ui-button ui-button-secondary entry-browser-sql-link"
-            href={spaceSqlPath(spaceId())}
-            aria-label={t("searchPage.openSavedQueries")}
-            title={t("searchPage.openSavedQueries")}
-          >
-            <UiIcon name="sql" />
-          </A>
+          <>
+            <A
+              class="ui-button ui-button-secondary entry-browser-sql-link"
+              href={spaceSqlPath(spaceId())}
+              aria-label={t("searchPage.openSavedQueries")}
+              title={t("searchPage.openSavedQueries")}
+            >
+              <UiIcon name="sql" />
+            </A>
+            <EntryQuerySaveAsTool
+              spaceId={spaceId}
+              routePath={() =>
+                `/spaces/${encodeURIComponent(spaceId())}/search`}
+              defaultName={() => t("searchPage.title")}
+              query={controller.query}
+              projection={controller.projection}
+              form={() => undefined}
+              knownForms={() => formMetadata()?.forms ?? []}
+            />
+          </>
         }
       />
       <Show when={formLabelsState() === "loading"}>
