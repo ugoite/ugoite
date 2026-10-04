@@ -1,0 +1,6 @@
+<testsuites id="" name="" tests="1" failures="0" skipped="0" errors="0">
+<testsuite name="composition-metric-journey.test.ts" timestamp="2026-10-04T15:27:23.755Z" hostname="" tests="1" failures="0" skipped="0" time="5.933" errors="0">
+<testcase name="Composition Metric Journey › Browser reopens a metric tool at its exact revision and surfaces the stable multiple-rows diagnostic without aggregation" classname="composition-metric-journey.test.ts" time="5.933">
+</testcase>
+</testsuite>
+</testsuites>
