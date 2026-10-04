@@ -3609,6 +3609,97 @@ mod tests {
     }
 
     #[test]
+    fn field_level_diagnostics_require_an_authorized_source_form_read() {
+        let saved_form = form(&[(101, FieldType::Integer)]);
+        let changed_form = form(&[(101, FieldType::String)]);
+        let source_id = "private-source-name";
+        let field_id = FieldId::new(101).unwrap();
+        let mut spec = composition_spec(
+            Vec::new(),
+            vec![entry_query_source(
+                source_id,
+                &saved_form,
+                EntryQueryTemplate {
+                    projection: EntryQueryProjectionTemplate::Fields {
+                        fields: vec![field_id],
+                    },
+                    ..empty_entry_query_template()
+                },
+            )],
+        );
+        spec.components = vec![CompositionComponent::Metric {
+            id: "private-component".to_owned(),
+            label: None,
+            source: source_id.to_owned(),
+            value_field: CompositionMetricValueField::EntryField { field_id },
+        }];
+        spec.sections = vec![CompositionSection {
+            id: "private-section".to_owned(),
+            components: vec!["private-component".to_owned()],
+        }];
+
+        let denied_sources = [CurrentSourceDescriptor::EntryQuery {
+            source_id,
+            current_form: None,
+        }];
+        let denied_diagnostics = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: id_pair().0,
+                revision_id: id_pair().1,
+            },
+            spec: &spec,
+            parameters: &BTreeMap::new(),
+            current_sources: &denied_sources,
+        })
+        .expect_err("denied source Form reads cannot produce field diagnostics");
+
+        assert_eq!(
+            denied_diagnostics,
+            vec![CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::SourceUnavailable
+            )]
+        );
+        let denied_debug = format!("{denied_diagnostics:?}");
+        let saved_form_id = saved_form.id.to_string();
+        let field_id_string = field_id.get().to_string();
+        for concealed_value in [
+            source_id,
+            "private-component",
+            "private-section",
+            saved_form_id.as_str(),
+            field_id_string.as_str(),
+            "field_101",
+        ] {
+            assert!(
+                !denied_debug.contains(concealed_value),
+                "denied source diagnostics disclosed {concealed_value}"
+            );
+        }
+
+        let authorized_sources = [CurrentSourceDescriptor::EntryQuery {
+            source_id,
+            current_form: Some(&changed_form),
+        }];
+        let authorized_diagnostics = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: id_pair().0,
+                revision_id: id_pair().1,
+            },
+            spec: &spec,
+            parameters: &BTreeMap::new(),
+            current_sources: &authorized_sources,
+        })
+        .expect_err("an authorized schema read exposes deterministic field drift");
+
+        assert_eq!(
+            authorized_diagnostics,
+            vec![CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::FieldTypeChanged
+            )]
+        );
+    }
+
+    #[test]
     fn missing_metric_field_is_reported_without_returning_a_partial_plan() {
         let saved_form = form(&[(100, FieldType::Integer), (101, FieldType::String)]);
         let current_form = form(&[(100, FieldType::Integer)]);
