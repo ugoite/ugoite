@@ -950,3 +950,24 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.exact-composition-revision
+      - id: browser-save-diagnostic-evidence
+        role: evidence
+        facet: browser-tests
+        responsibility: >-
+          Verify the saved-Composition dialog shows the known
+          `invalid_composition` and `unsupported_format_version` codes with
+          safe English and Japanese messages, and uses the generic save
+          failure for `INVALID_INPUT` and an unknown diagnostic code. The
+          selected route test also verifies alert semantics, suppression of
+          response details and diagnostic codes across the dialog, route, and
+          reopened dialog, and retention of the rejected query name. This is
+          UI evidence for code-to-message and safe-fallback behavior; it does
+          not establish domain diagnostic-code stability.
+        targets:
+          - id: browser-localized-save-diagnostic-mapping
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx"
+            selector: { kind: test, name: "shows a localized safe save diagnostic or generic fallback in $locale for $code" }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.deterministic-diagnostics
