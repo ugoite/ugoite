@@ -537,8 +537,8 @@ mod tests {
         CompositionDocument, CompositionFormat, CompositionKind, CompositionMetricValueField,
         CompositionQueryOperator, CompositionResultFieldType, CompositionSection,
         CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
-        EntryQueryTemplate, COMPOSITION_FORMAT, COMPOSITION_FORMAT_VERSION,
-        DEFAULT_COMPOSITION_PAGE_LIMIT,
+        EntryQueryProjectionTemplate, EntryQueryTemplate, COMPOSITION_FORMAT,
+        COMPOSITION_FORMAT_VERSION, DEFAULT_COMPOSITION_PAGE_LIMIT,
     };
 
     const MONTHLY_EXPENSE: &str =
