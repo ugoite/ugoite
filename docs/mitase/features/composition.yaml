@@ -647,6 +647,18 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-005#criterion.raw-inspection
+      - id: cli-raw-export-evidence
+        role: evidence
+        facet: cli-tests
+        responsibility: Verify that remote export selects the requested exact revision and preserves unsupported-format YAML byte for byte without blocking on interpretation; this does not establish broken-reference export or history access.
+        targets:
+          - id: remote-export-preserves-unknown-format-yaml
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: export_remote_selects_exact_revision_and_preserves_unknown_format_yaml }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.raw-inspection
       - id: browser-query-runtime
         role: implementation
         facet: frontend
