@@ -1832,6 +1832,225 @@ spec:
     assert_eq!(remote_history_after, history_before);
 }
 
+/// A broken source reference keeps raw recovery identical through Core and
+/// Remote CLI transports while query reports the same stable diagnostic.
+#[tokio::test]
+async fn test_cli_composition_broken_reference_recovery_matches_core_remote() {
+    use ugoite_domain::composition::parse_composition_yaml;
+    use ugoite_iceberg::composition::CompositionSaveRequest;
+    use ugoite_iceberg::service::UgoiteService;
+
+    let fixture = setup_remote_with_filesystem_storage().await;
+    let service = UgoiteService::new_without_background_refresh(&fixture.storage_root)
+        .expect("open shared Space service");
+    // A Form ID that was never created: the persisted document stays valid
+    // while resolution must conceal the missing source as unavailable.
+    let missing_form_id = uuid::Uuid::now_v7().to_string();
+    let yaml = format!(
+        r#"format: ugoite.composition
+format_version: 1
+name: CLI broken reference
+kind: dashboard
+tags: []
+spec:
+  parameters: []
+  sources:
+    - id: missing_rows
+      kind: entry_query
+      form_id: "{missing_form_id}"
+      field_schema: []
+      query:
+        filters: []
+        sort: []
+        projection:
+          kind: preview
+  components:
+    - id: missing_table
+      kind: table
+      source: missing_rows
+  sections:
+    - id: detail
+      components: [missing_table]
+"#
+    );
+    let document = parse_composition_yaml(&yaml).expect("parse broken Composition");
+    let saved = service
+        .save_composition_local_with_operation_id(
+            &fixture.space_id,
+            CompositionSaveRequest {
+                entry_id: None,
+                base_revision_id: None,
+                document,
+            },
+            &fixture.owner_principal_id.to_string(),
+            &format!("cli-broken-ref-seed-{}", uuid::Uuid::now_v7()),
+        )
+        .await
+        .expect("seed broken Composition");
+    let composition_id = saved.entry_id.to_string();
+    let revision_id = saved.revision_id.to_string();
+
+    let core_config_path = fixture
+        .config_path
+        .parent()
+        .expect("fixture config parent")
+        .join("core-broken-ref-config.toml");
+    let mut core_config = ConfigFile::empty();
+    core_config.connections.insert(
+        "local".to_string(),
+        ConnectionConfig::Core {
+            root: fixture.storage_root.clone(),
+        },
+    );
+    core_config.contexts.insert(
+        "local".to_string(),
+        ContextConfig {
+            connection: "local".to_string(),
+            space_uid: uuid::Uuid::parse_str(&fixture.space_id).expect("Space UID"),
+            credential: None,
+        },
+    );
+    core_config.current_context = Some("local".to_string());
+    std::fs::write(
+        &core_config_path,
+        toml::to_string_pretty(&core_config).expect("serialize Core config"),
+    )
+    .expect("write Core config");
+
+    let history_args = ["composition", "history", composition_id.as_str()];
+    let history_before = stdout_json(
+        &run_cli(&core_config_path, &history_args).await,
+        "Core broken Composition history before read journey",
+    );
+    assert_eq!(history_before["total"], 1);
+    let remote_history_before = stdout_json(
+        &run_cli(&fixture.config_path, &history_args).await,
+        "Remote broken Composition history before read journey",
+    );
+    assert_eq!(remote_history_before, history_before);
+
+    let inspect_args = [
+        "composition",
+        "inspect",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+    ];
+    let core_inspect = stdout_json(
+        &run_cli(&core_config_path, &inspect_args).await,
+        "Core broken Composition inspect",
+    );
+    let remote_inspect = stdout_json(
+        &run_cli(&fixture.config_path, &inspect_args).await,
+        "Remote broken Composition inspect",
+    );
+    assert_eq!(core_inspect, remote_inspect);
+    assert_eq!(core_inspect["revision"]["revision_id"], revision_id);
+    assert_eq!(core_inspect["fields"]["spec"], saved.canonical_yaml);
+
+    let raw_args = [
+        "composition",
+        "inspect",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+        "--raw",
+    ];
+    let core_raw = run_cli(&core_config_path, &raw_args).await;
+    let remote_raw = run_cli(&fixture.config_path, &raw_args).await;
+    assert!(
+        core_raw.status.success(),
+        "Core raw inspect must stay available for broken references"
+    );
+    assert!(
+        remote_raw.status.success(),
+        "Remote raw inspect must stay available for broken references"
+    );
+    assert_eq!(core_raw.stdout, remote_raw.stdout);
+    assert_eq!(core_raw.stdout, saved.canonical_yaml.as_bytes());
+
+    let output_dir = fixture.config_path.parent().expect("fixture config parent");
+    let core_export_path = output_dir.join("core-broken-composition-export.ugcomp.yaml");
+    let remote_export_path = output_dir.join("remote-broken-composition-export.ugcomp.yaml");
+    let core_export_args = [
+        "composition",
+        "export",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+        "--output",
+        core_export_path.to_str().expect("Core export path"),
+    ];
+    let remote_export_args = [
+        "composition",
+        "export",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+        "--output",
+        remote_export_path.to_str().expect("Remote export path"),
+    ];
+    let mut core_export = stdout_json(
+        &run_cli(&core_config_path, &core_export_args).await,
+        "Core broken Composition export",
+    );
+    let mut remote_export = stdout_json(
+        &run_cli(&fixture.config_path, &remote_export_args).await,
+        "Remote broken Composition export",
+    );
+    core_export
+        .as_object_mut()
+        .expect("Core export receipt object")
+        .remove("output");
+    remote_export
+        .as_object_mut()
+        .expect("Remote export receipt object")
+        .remove("output");
+    assert_eq!(core_export, remote_export);
+    assert_eq!(
+        std::fs::read(&core_export_path).expect("read Core exported bytes"),
+        saved.canonical_yaml.as_bytes()
+    );
+    assert_eq!(
+        std::fs::read(&remote_export_path).expect("read Remote exported bytes"),
+        saved.canonical_yaml.as_bytes()
+    );
+
+    let query_args = [
+        "composition",
+        "query",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+    ];
+    let core_query = stdout_json(
+        &run_cli(&core_config_path, &query_args).await,
+        "Core broken Composition query",
+    );
+    let remote_query = stdout_json(
+        &run_cli(&fixture.config_path, &query_args).await,
+        "Remote broken Composition query",
+    );
+    assert_eq!(core_query, remote_query);
+    assert_eq!(core_query["ok"], false);
+    assert_eq!(
+        core_query["diagnostics"],
+        json!([{"code": "source_unavailable"}]),
+        "missing sources must be concealed without source metadata"
+    );
+
+    let history_after = stdout_json(
+        &run_cli(&core_config_path, &history_args).await,
+        "Core broken Composition history after read journey",
+    );
+    let remote_history_after = stdout_json(
+        &run_cli(&fixture.config_path, &history_args).await,
+        "Remote broken Composition history after read journey",
+    );
+    assert_eq!(history_after, history_before);
+    assert_eq!(remote_history_after, history_before);
+}
+
 #[tokio::test]
 async fn test_cli_remote_composition_import_save_receipts_and_prevalidation() {
     use ugoite_iceberg::service::UgoiteService;
