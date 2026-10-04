@@ -39,3 +39,4 @@ rmcp = { version = "3.1", default-features = false, features = ["client", "trans
 axum = "0.8"
 tokio = { version = "1.52", features = ["net", "process", "sync", "time"] }
 ugoite-server = { path = "../ugoite-server", features = ["test-support"] }
+ugoite-iceberg = { package = "ugoite-iceberg", path = "../ugoite-iceberg", features = ["test-support"] }

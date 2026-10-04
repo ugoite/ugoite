@@ -2051,6 +2051,200 @@ spec:
     assert_eq!(remote_history_after, history_before);
 }
 
+/// A future format version keeps raw recovery identical through Core and
+/// Remote CLI transports while typed execution reports the stable
+/// unsupported-version diagnostic.
+#[tokio::test]
+async fn test_cli_composition_unsupported_version_recovery_matches_core_remote() {
+    use ugoite_iceberg::composition::{seed_raw_composition_revision, RawCompositionSeed};
+    use ugoite_iceberg::service::UgoiteService;
+
+    let fixture = setup_remote_with_filesystem_storage().await;
+    let service = UgoiteService::new_without_background_refresh(&fixture.storage_root)
+        .expect("open shared Space service");
+    // Exact raw carrier bytes for a future document version. The typed
+    // parser must reject this revision while raw recovery preserves it
+    // byte for byte.
+    let future_yaml = "format: ugoite.composition\nformat_version: 99\nname: CLI future tool\nkind: dashboard\ntags: []\nspec:\n  parameters: []\n  sources:\n    - id: future_rows\n      kind: entry_query\n      form_id: \"00000000-0000-7000-8000-000000000099\"\n      field_schema: []\n      query:\n        filters: []\n        sort: []\n        projection:\n          kind: preview\n  components:\n    - id: future_table\n      kind: table\n      source: future_rows\n  sections:\n    - id: detail\n      components: [future_table]\n";
+    let seeded = seed_raw_composition_revision(
+        service.operator(),
+        &service.workspace_path(&fixture.space_id),
+        RawCompositionSeed {
+            name: "CLI future tool".to_string(),
+            kind: "dashboard".to_string(),
+            tags: Vec::new(),
+            format_version: 99,
+            spec: future_yaml.to_string(),
+        },
+        &fixture.owner_principal_id.to_string(),
+    )
+    .await
+    .expect("seed future-version Composition");
+    let composition_id = seeded.entry_id.to_string();
+    let revision_id = seeded.revision_id.to_string();
+
+    let core_config_path = fixture
+        .config_path
+        .parent()
+        .expect("fixture config parent")
+        .join("core-future-version-config.toml");
+    let mut core_config = ConfigFile::empty();
+    core_config.connections.insert(
+        "local".to_string(),
+        ConnectionConfig::Core {
+            root: fixture.storage_root.clone(),
+        },
+    );
+    core_config.contexts.insert(
+        "local".to_string(),
+        ContextConfig {
+            connection: "local".to_string(),
+            space_uid: uuid::Uuid::parse_str(&fixture.space_id).expect("Space UID"),
+            credential: None,
+        },
+    );
+    core_config.current_context = Some("local".to_string());
+    std::fs::write(
+        &core_config_path,
+        toml::to_string_pretty(&core_config).expect("serialize Core config"),
+    )
+    .expect("write Core config");
+
+    let history_args = ["composition", "history", composition_id.as_str()];
+    let history_before = stdout_json(
+        &run_cli(&core_config_path, &history_args).await,
+        "Core future Composition history before read journey",
+    );
+    assert_eq!(history_before["total"], 1);
+    let remote_history_before = stdout_json(
+        &run_cli(&fixture.config_path, &history_args).await,
+        "Remote future Composition history before read journey",
+    );
+    assert_eq!(remote_history_before, history_before);
+
+    let inspect_args = [
+        "composition",
+        "inspect",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+    ];
+    let core_inspect = stdout_json(
+        &run_cli(&core_config_path, &inspect_args).await,
+        "Core future Composition inspect",
+    );
+    let remote_inspect = stdout_json(
+        &run_cli(&fixture.config_path, &inspect_args).await,
+        "Remote future Composition inspect",
+    );
+    assert_eq!(core_inspect, remote_inspect);
+    assert_eq!(core_inspect["revision"]["revision_id"], revision_id);
+    assert_eq!(core_inspect["fields"]["format_version"], 99);
+    assert_eq!(core_inspect["fields"]["spec"], future_yaml);
+
+    let raw_args = [
+        "composition",
+        "inspect",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+        "--raw",
+    ];
+    let core_raw = run_cli(&core_config_path, &raw_args).await;
+    let remote_raw = run_cli(&fixture.config_path, &raw_args).await;
+    assert!(
+        core_raw.status.success(),
+        "Core raw inspect must stay available for future versions"
+    );
+    assert!(
+        remote_raw.status.success(),
+        "Remote raw inspect must stay available for future versions"
+    );
+    assert_eq!(core_raw.stdout, remote_raw.stdout);
+    assert_eq!(core_raw.stdout, future_yaml.as_bytes());
+
+    let output_dir = fixture.config_path.parent().expect("fixture config parent");
+    let core_export_path = output_dir.join("core-future-composition-export.ugcomp.yaml");
+    let remote_export_path = output_dir.join("remote-future-composition-export.ugcomp.yaml");
+    let core_export_args = [
+        "composition",
+        "export",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+        "--output",
+        core_export_path.to_str().expect("Core export path"),
+    ];
+    let remote_export_args = [
+        "composition",
+        "export",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+        "--output",
+        remote_export_path.to_str().expect("Remote export path"),
+    ];
+    let mut core_export = stdout_json(
+        &run_cli(&core_config_path, &core_export_args).await,
+        "Core future Composition export",
+    );
+    let mut remote_export = stdout_json(
+        &run_cli(&fixture.config_path, &remote_export_args).await,
+        "Remote future Composition export",
+    );
+    core_export
+        .as_object_mut()
+        .expect("Core export receipt object")
+        .remove("output");
+    remote_export
+        .as_object_mut()
+        .expect("Remote export receipt object")
+        .remove("output");
+    assert_eq!(core_export, remote_export);
+    assert_eq!(
+        std::fs::read(&core_export_path).expect("read Core exported bytes"),
+        future_yaml.as_bytes()
+    );
+    assert_eq!(
+        std::fs::read(&remote_export_path).expect("read Remote exported bytes"),
+        future_yaml.as_bytes()
+    );
+
+    let query_args = [
+        "composition",
+        "query",
+        composition_id.as_str(),
+        "--revision",
+        revision_id.as_str(),
+    ];
+    let core_query = stdout_json(
+        &run_cli(&core_config_path, &query_args).await,
+        "Core future Composition query",
+    );
+    let remote_query = stdout_json(
+        &run_cli(&fixture.config_path, &query_args).await,
+        "Remote future Composition query",
+    );
+    assert_eq!(core_query, remote_query);
+    assert_eq!(core_query["ok"], false);
+    assert_eq!(
+        core_query["diagnostics"],
+        json!([{"code": "unsupported_format_version"}]),
+        "typed execution must stop with the stable version diagnostic"
+    );
+
+    let history_after = stdout_json(
+        &run_cli(&core_config_path, &history_args).await,
+        "Core future Composition history after read journey",
+    );
+    let remote_history_after = stdout_json(
+        &run_cli(&fixture.config_path, &history_args).await,
+        "Remote future Composition history after read journey",
+    );
+    assert_eq!(history_after, history_before);
+    assert_eq!(remote_history_after, history_before);
+}
+
 #[tokio::test]
 async fn test_cli_remote_composition_import_save_receipts_and_prevalidation() {
     use ugoite_iceberg::service::UgoiteService;

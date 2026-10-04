@@ -654,7 +654,7 @@ enum RevisionBatchAdmission {
         form_id: FormId,
         fingerprint: [u8; 32],
     },
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     RawCompositionFixture {
         form_id: FormId,
         fingerprint: [u8; 32],
@@ -678,7 +678,7 @@ impl RevisionBatchAdmission {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     fn raw_composition_fixture(form: &FormDefinition, revisions: &[EntryRevision]) -> Result<Self> {
         crate::composition::validate_composition_registry_form(form)?;
         Ok(Self::RawCompositionFixture {
@@ -723,7 +723,7 @@ impl RevisionBatchAdmission {
                 }
                 Ok(())
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             Self::RawCompositionFixture {
                 form_id: admitted_form_id,
                 fingerprint,
@@ -3571,7 +3571,7 @@ impl SpaceCommitCoordinator {
     /// Test-only publication helper for seeding a valid Composition revision.
     /// Production Composition writes will use a dedicated typed storage path;
     /// generic Entry callers must use [`Self::append_revisions_authorized`].
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) async fn append_composition_revisions_authorized(
         &self,
         form_id: FormId,
