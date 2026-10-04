@@ -2204,6 +2204,31 @@ fn failure(error: ApiProtocolError) -> ProtocolEnvelope {
 mod tests {
     use super::*;
 
+    /// Composition v1 freeze: the exact portable operation inventory.
+    /// composition.save and composition.restore require an Idempotency-Key;
+    /// export stays a CLI file operation over composition.get, not an
+    /// independent REST operation.
+    #[test]
+    fn composition_v1_freeze_pins_operation_inventory() {
+        let operations: Vec<&str> = SUPPORTED_OPERATIONS
+            .iter()
+            .copied()
+            .filter(|operation| operation.starts_with("composition."))
+            .collect();
+        assert_eq!(
+            operations,
+            [
+                "composition.lint",
+                "composition.list",
+                "composition.get",
+                "composition.history",
+                "composition.resolve",
+                "composition.save",
+                "composition.restore",
+            ]
+        );
+    }
+
     fn form_header(name: &str, value: &str) -> Header {
         Header {
             name: name.to_string(),

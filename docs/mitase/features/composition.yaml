@@ -722,7 +722,7 @@ features:
       - id: cli-raw-export-evidence
         role: evidence
         facet: cli-tests
-        responsibility: Verify that remote export selects the requested exact revision and preserves unsupported-format YAML byte for byte without blocking on interpretation; this does not establish broken-reference export or history access.
+        responsibility: Verify that remote export selects the requested exact revision and preserves unsupported-format YAML byte for byte without blocking on interpretation; broken-reference export and history access are covered separately by cli-broken-reference-evidence.
         targets:
           - id: remote-export-preserves-unknown-format-yaml
             adapter: rust
@@ -734,12 +734,99 @@ features:
       - id: cli-core-remote-read-parity-evidence
         role: evidence
         facet: cli-tests
-        responsibility: Verify Core and Remote CLI inspect, parameterized entry_query, and raw export results against one filesystem-backed Space, including byte-identical canonical output and unchanged history. The fixture has one Composition revision, so it does not evidence older-than-latest selector behavior; saved-SQL execution and broken-reference recovery remain separate gaps.
+        responsibility: Verify Core and Remote CLI inspect, parameterized entry_query, and raw export results against one filesystem-backed Space, including byte-identical canonical output and unchanged history. The journey publishes a distinct later revision and exercises the older exact revision throughout, proving --revision selection is not latest by coincidence; saved-SQL execution remains covered by the Browser journey.
         targets:
           - id: core-remote-read-parity
             adapter: rust
             path: crates/ugoite-cli/tests/test_journey_remote.rs
             selector: { kind: symbol, name: test_cli_composition_inspect_query_export_match_core_remote }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-composition-revision
+      - id: cli-broken-reference-evidence
+        role: evidence
+        facet: cli-tests
+        responsibility: >-
+          Verify Core and Remote CLI recovery for one Space-owned Composition
+          revision whose EntryQuery source points at a never-created Form:
+          typed inspect, raw inspect, and raw export stay byte-identical
+          across transports while query reports the same source_unavailable
+          diagnostic without source metadata, and read-only commands leave
+          history unchanged.
+        targets:
+          - id: core-remote-broken-reference-recovery
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: symbol, name: test_cli_composition_broken_reference_recovery_matches_core_remote }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.raw-inspection
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.history-available
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+      - id: cli-unsupported-version-evidence
+        role: evidence
+        facet: cli-tests
+        responsibility: >-
+          Verify Core and Remote CLI recovery for one fixture-seeded
+          future-format-version revision: typed inspect, raw inspect, and raw
+          export preserve the exact raw carrier across transports while typed
+          execution reports the stable unsupported_format_version diagnostic,
+          and read-only commands leave history unchanged. Seeding travels
+          through the reserved Registry admission without typed validation; it
+          is not a generic write bypass.
+        targets:
+          - id: core-remote-unsupported-version-recovery
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: symbol, name: test_cli_composition_unsupported_version_recovery_matches_core_remote }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.raw-inspection
+              - kind: evidences
+                anchor: REQ-COMP-005#criterion.history-available
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.deterministic-diagnostics
+      - id: entry-query-save-builder-evidence
+        role: evidence
+        facet: frontend-tests
+        responsibility: >-
+          Verify the pure EntryQuery to Composition source builder maps
+          Form-scope text, filters, sort, and projection to literals with a
+          field_schema snapshot covering every query-used field
+          (text-searchable expansion and preview-wide coverage included,
+          matching the resolver drift contract), and reports All-scope,
+          system-ref, non-scalar, unmapped-type, and unresolvable-reference
+          states as inexpressible without approximating.
+        targets:
+          - id: builder-round-trip
+            adapter: typescript
+            path: frontend/src/lib/entry-query-composition.test.ts
+            selector: { kind: test, name: round-trips a form-scope text+filter+sort+fields view to a source fragment }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+          - id: builder-preview-snapshot
+            adapter: typescript
+            path: frontend/src/lib/entry-query-composition.test.ts
+            selector: { kind: test, name: snapshots every form field for a preview projection }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+          - id: builder-text-snapshot
+            adapter: typescript
+            path: frontend/src/lib/entry-query-composition.test.ts
+            selector: { kind: test, name: snapshots text-searchable fields when text is set }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+          - id: builder-fail-closed
+            adapter: typescript
+            path: frontend/src/lib/entry-query-composition.test.ts
+            selector: { kind: test, name: reports All-scope as inexpressible without a form }
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.entry-query-translation
