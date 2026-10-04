@@ -1057,6 +1057,193 @@ async fn test_cli_core_composition_restore_receipt_replay_and_stale_base() {
     assert_eq!(history_after_stale["total"], 3);
 }
 
+#[tokio::test]
+async fn test_cli_core_composition_import_save_receipts_and_prevalidation() {
+    use ugoite_iceberg::service::UgoiteService;
+
+    const FIXTURE: &str =
+        include_str!("../../ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+    let dir = tempfile::tempdir().expect("Composition CLI Space directory");
+    let config_path = dir.path().join("cli-config.toml");
+    let space_slug = "composition-cli-core-space";
+    let created = run_cli(&config_path, &["space", "create", space_slug]);
+    assert!(
+        created.status.success(),
+        "Space setup failed: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let created_json = stdout_json(&created, "Core Space create");
+    let space_id = created_json["space"]["space_uid"]
+        .as_str()
+        .expect("created Space UID");
+
+    let service = UgoiteService::new_without_background_refresh(dir.path().to_str().unwrap())
+        .expect("open Core service");
+    let forms_before = service
+        .list_forms(space_id)
+        .await
+        .expect("list Forms before");
+    assert!(!contains_string(
+        &serde_json::to_value(&forms_before).unwrap(),
+        "_ugoite_compositions"
+    ));
+
+    let invalid_file = dir.path().join("unsupported.ugcomp.yaml");
+    std::fs::write(
+        &invalid_file,
+        FIXTURE.replacen("format_version: 1", "format_version: 2", 1),
+    )
+    .expect("write unsupported Composition");
+    let invalid = run_cli(
+        &config_path,
+        &[
+            "composition",
+            "import",
+            invalid_file.to_str().unwrap(),
+            "--idempotency-key",
+            "core-import-invalid-1",
+        ],
+    );
+    assert!(!invalid.status.success(), "unsupported input must fail");
+    let invalid_error: serde_json::Value =
+        serde_json::from_slice(&invalid.stderr).expect("machine-readable diagnostic");
+    assert_eq!(
+        invalid_error["error"]["detail"]["code"],
+        "unsupported_format_version"
+    );
+    let forms_after = service
+        .list_forms(space_id)
+        .await
+        .expect("list Forms after");
+    assert_eq!(
+        forms_after, forms_before,
+        "invalid input must not create the Registry Form"
+    );
+    assert!(service
+        .list_compositions_local_page(space_id, 10, 0)
+        .await
+        .expect("Composition page after invalid input")
+        .items
+        .is_empty());
+
+    let file = dir.path().join("monthly-expense.ugcomp.yaml");
+    std::fs::write(&file, FIXTURE).expect("write Composition fixture");
+    let imported = stdout_json(
+        &run_cli(
+            &config_path,
+            &[
+                "composition",
+                "import",
+                file.to_str().unwrap(),
+                "--idempotency-key",
+                "core-import-1",
+            ],
+        ),
+        "Core Composition import",
+    );
+    assert_eq!(
+        imported["receipt"]["committed_revision_ids"][0],
+        imported["revision_id"]
+    );
+    let import_replay = stdout_json(
+        &run_cli(
+            &config_path,
+            &[
+                "composition",
+                "import",
+                file.to_str().unwrap(),
+                "--idempotency-key",
+                "core-import-1",
+            ],
+        ),
+        "Core Composition import retry",
+    );
+    assert_eq!(import_replay, imported);
+
+    let saved = stdout_json(
+        &run_cli(
+            &config_path,
+            &[
+                "composition",
+                "save",
+                file.to_str().unwrap(),
+                "--idempotency-key",
+                "core-save-create-1",
+            ],
+        ),
+        "Core Composition save create",
+    );
+    assert_ne!(saved["composition_id"], imported["composition_id"]);
+    assert_eq!(
+        saved["receipt"]["committed_revision_ids"][0],
+        saved["revision_id"]
+    );
+
+    let updated_file = dir.path().join("updated-monthly-expense.ugcomp.yaml");
+    std::fs::write(
+        &updated_file,
+        FIXTURE.replacen("name: Monthly expenses", "name: Monthly expense report", 1),
+    )
+    .expect("write updated Composition fixture");
+    let composition_id = saved["composition_id"].as_str().unwrap();
+    let base_revision = saved["revision_id"].as_str().unwrap();
+    let update_args = [
+        "composition",
+        "save",
+        updated_file.to_str().unwrap(),
+        "--composition-id",
+        composition_id,
+        "--base-revision",
+        base_revision,
+        "--idempotency-key",
+        "core-save-update-1",
+    ];
+    let updated = stdout_json(
+        &run_cli(&config_path, &update_args),
+        "Core Composition save update",
+    );
+    assert_eq!(updated["composition_id"], composition_id);
+    assert_eq!(
+        updated["receipt"]["committed_revision_ids"][0],
+        updated["revision_id"]
+    );
+    assert_ne!(updated["revision_id"], saved["revision_id"]);
+    let update_replay = stdout_json(
+        &run_cli(&config_path, &update_args),
+        "Core Composition save update retry",
+    );
+    assert_eq!(update_replay, updated);
+
+    let stale = run_cli(
+        &config_path,
+        &[
+            "composition",
+            "save",
+            updated_file.to_str().unwrap(),
+            "--composition-id",
+            composition_id,
+            "--base-revision",
+            base_revision,
+            "--idempotency-key",
+            "core-save-stale-update-1",
+        ],
+    );
+    assert!(
+        !stale.status.success(),
+        "stale Composition base must conflict"
+    );
+    assert!(
+        String::from_utf8_lossy(&stale.stderr).contains("REVISION_CONFLICT"),
+        "stale update should preserve its conflict code: {}",
+        String::from_utf8_lossy(&stale.stderr)
+    );
+    let history = stdout_json(
+        &run_cli(&config_path, &["composition", "history", composition_id]),
+        "Core Composition history after stale update",
+    );
+    assert_eq!(history["total"], 2);
+}
+
 /// Unknown Forms are rejected with form-identifying classification.
 #[test]
 fn test_parity_core_missing_form_rejected_without_mutation() {

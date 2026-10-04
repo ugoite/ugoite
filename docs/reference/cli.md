@@ -103,6 +103,8 @@ CLI documentation trees:
   remote modes;
 - `sql`: saved-query and read-only SQL workflows (lint, query, count, and
   saved subcommands);
+- `composition`: inspect, query, import, and save Space-owned Composition
+  documents;
 - `change` and `run`: inspect the Space timeline and append inverse Changes for
   recovery;
 - `index`: rebuild derived local indexes; and
@@ -127,6 +129,14 @@ ugoite sql saved get <SQL_ID>
 ugoite sql saved create --sql <SQL_OR_FILE> [--name <NAME>]
 ugoite sql saved update <SQL_ID> [--name <NAME> | --untitled] [--sql <SQL_OR_FILE>]
 ugoite sql saved delete <SQL_ID>
+ugoite composition list
+ugoite composition import <FILE> --idempotency-key <KEY>
+ugoite composition save <FILE> --idempotency-key <KEY>
+ugoite composition save <FILE> --composition-id <ID> --base-revision <REVISION_ID> --idempotency-key <KEY>
+ugoite composition inspect <ID> [--revision <REVISION_ID>] [--raw]
+ugoite composition history <ID> [--limit <N>] [--offset <N>]
+ugoite composition export <ID> --output <FILE> [--revision <REVISION_ID>]
+ugoite composition query <ID> [--revision <REVISION_ID>] [--param KEY=VALUE]
 ugoite sql lint <SQL>
 ugoite sql query <SQL_OR_FILE>
 ugoite sql count <SQL_OR_FILE>
@@ -156,6 +166,13 @@ name represents an untitled query. An omitted Saved SQL update revision uses
 the current revision read by the CLI; `--parent-revision-id` remains available
 when an automation needs an explicit concurrency precondition. Pins capture
 local operator snapshots and are managed with the `pin` command family.
+
+Composition import and save validate the shared `.ugcomp.yaml` format and
+publish its canonical YAML to the selected Space. `import` always creates a
+new Composition. `save` creates when no revision preconditions are given and
+updates only when `--composition-id` and `--base-revision` are supplied
+together. Both commands require an `--idempotency-key`; reuse the same key and
+request after an uncertain result to recover its publication receipt.
 
 | Outcome | Task page | Command authority |
 | --- | --- | --- |
