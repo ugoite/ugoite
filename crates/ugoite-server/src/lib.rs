@@ -15128,6 +15128,138 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn composition_get_conceals_existing_entry_from_denied_viewer() -> anyhow::Result<()> {
+        use ugoite_domain::composition::{
+            CompositionDocument, CompositionFormat, CompositionKind, CompositionSpec,
+        };
+
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-get-denied-existing-{}",
+            Uuid::now_v7()
+        ))?;
+        let owner_id = Uuid::from_u128(34911);
+        let viewer_id = Uuid::from_u128(34912);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-get-denied", owner_id, "Get test")
+            .await?
+            .to_string();
+        let document = CompositionDocument {
+            format: CompositionFormat::UgoiteComposition,
+            format_version: 1,
+            name: "Private Composition".to_string(),
+            kind: CompositionKind::Dashboard,
+            tags: Vec::new(),
+            spec: CompositionSpec {
+                parameters: Vec::new(),
+                sources: Vec::new(),
+                components: Vec::new(),
+                sections: Vec::new(),
+            },
+        };
+        let saved = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document,
+                },
+                &owner_id.to_string(),
+                &[owner_id],
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let owner_route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(owner_id, space_uid),
+        );
+        let composition_path = format!("/spaces/{space_id}/compositions/{}", saved.entry_id);
+        let (owner_status, _) = route_json(
+            owner_route,
+            Request::get(&composition_path).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(owner_status, StatusCode::OK);
+
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                owner_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Composition viewer".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        let viewer_route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(viewer_id, space_uid),
+        );
+        let (inherited_status, _) = route_json(
+            viewer_route.clone(),
+            Request::get(&composition_path).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(inherited_status, StatusCode::OK);
+
+        Authorizer::new(state.service.operator().clone())
+            .set_policy(
+                &space_id,
+                owner_id,
+                &ResourceRef {
+                    kind: ResourceKind::Form,
+                    id: ugoite_iceberg::composition::COMPOSITION_REGISTRY_FORM_NAME.to_string(),
+                    parent: None,
+                },
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
+
+        let (denied_status, denied_body) = route_json(
+            viewer_route.clone(),
+            Request::get(&composition_path).body(Body::empty())?,
+        )
+        .await?;
+        let missing_entry_id = Uuid::from_u128(34913);
+        let (missing_status, missing_body) = route_json(
+            viewer_route,
+            Request::get(format!(
+                "/spaces/{space_id}/compositions/{missing_entry_id}"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+
+        assert_eq!(denied_status, StatusCode::NOT_FOUND, "{denied_body}");
+        assert_eq!(missing_status, StatusCode::NOT_FOUND, "{missing_body}");
+        assert_eq!(denied_body["code"], "ENTRY_NOT_FOUND");
+        assert_eq!(denied_body["code"], missing_body["code"]);
+        assert_eq!(
+            denied_body["message"],
+            format!("Entry not found: {}", saved.entry_id)
+        );
+        assert_eq!(
+            missing_body["message"],
+            format!("Entry not found: {missing_entry_id}")
+        );
+        assert!(denied_body.get("revision").is_none());
+        assert!(denied_body.get("fields").is_none());
+        assert!(denied_body.get("unmapped_field_values").is_none());
+        assert!(!denied_body.to_string().contains("Private Composition"));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn composition_resolve_conceals_missing_and_denied_forms() -> anyhow::Result<()> {
         use ugoite_domain::{
             composition::{
