@@ -830,6 +830,34 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.entry-query-translation
+          - id: builder-fail-closed-system-refs
+            adapter: typescript
+            path: frontend/src/lib/entry-query-composition.test.ts
+            selector: { kind: test, name: reports a system-ref filter as inexpressible }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+          - id: builder-fail-closed-unknown-type
+            adapter: typescript
+            path: frontend/src/lib/entry-query-composition.test.ts
+            selector: { kind: test, name: reports an unknown field type as inexpressible }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+          - id: builder-fail-closed-non-scalar
+            adapter: typescript
+            path: frontend/src/lib/entry-query-composition.test.ts
+            selector: { kind: test, name: reports non-scalar filter values as inexpressible }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+          - id: builder-fail-closed-reference
+            adapter: typescript
+            path: frontend/src/lib/entry-query-composition.test.ts
+            selector: { kind: test, name: reports an unresolvable reference target as inexpressible }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
       - id: cli-import-save-evidence
         role: evidence
         facet: cli-tests

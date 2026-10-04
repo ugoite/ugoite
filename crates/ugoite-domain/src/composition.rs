@@ -879,6 +879,17 @@ mod tests {
             assert_eq!(serde_json::to_string(&direction).unwrap(), spelling);
         }
 
+        // Projection kinds: whole-row preview or explicit field lists.
+        assert_eq!(
+            serde_json::to_value(EntryQueryProjectionTemplate::Preview).unwrap(),
+            serde_json::json!({"kind": "preview"})
+        );
+        assert_eq!(
+            serde_json::to_value(EntryQueryProjectionTemplate::Fields { fields: Vec::new() })
+                .unwrap(),
+            serde_json::json!({"kind": "fields", "fields": []})
+        );
+
         // Portable Saved SQL logical types: the exact frozen set.
         for spelling in [
             "\"string\"",
