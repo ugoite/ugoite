@@ -15263,11 +15263,12 @@ mod authentication_regression_tests {
     async fn composition_resolve_conceals_missing_and_denied_forms() -> anyhow::Result<()> {
         use ugoite_domain::{
             composition::{
-                CompositionComponent, CompositionDocument, CompositionKind, CompositionSection,
-                CompositionSource, CompositionSpec, EntryQueryProjectionTemplate,
-                EntryQueryTemplate,
+                CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry,
+                CompositionKind, CompositionSection, CompositionSource, CompositionSpec,
+                EntryQueryProjectionTemplate, EntryQueryTemplate,
             },
-            id::FormId,
+            form::FieldType,
+            id::{FieldId, FormId},
         };
 
         let state = AppState::new_for_tests(format!(
@@ -15296,6 +15297,8 @@ mod authentication_regression_tests {
             )
             .await?;
         let source_form_id = Uuid::from_u128(347402);
+        let source_field_id = FieldId::new(101)?;
+        let source_field_label = "Hidden payroll field label";
         state
             .service
             .upsert_form(
@@ -15304,11 +15307,25 @@ mod authentication_regression_tests {
                     "id": source_form_id,
                     "name": "ResolveSourceForm",
                     "version": 1,
-                    "fields": {},
+                    "fields": {
+                        "salary_amount": {
+                            "id": source_field_id.get(),
+                            "type": "integer",
+                            "label": source_field_label
+                        }
+                    },
                     "allow_extra_attributes": "deny"
                 }),
             )
             .await?;
+        let stored_source_form = state
+            .service
+            .get_form(&space_id, "ResolveSourceForm")
+            .await?;
+        assert_eq!(
+            stored_source_form["fields"]["salary_amount"]["label"],
+            source_field_label
+        );
 
         let save_document = |name: &str, form_id: FormId| CompositionDocument {
             format: ugoite_domain::composition::CompositionFormat::UgoiteComposition,
@@ -15321,13 +15338,20 @@ mod authentication_regression_tests {
                 sources: vec![CompositionSource::EntryQuery {
                     id: "private-source-id".to_string(),
                     form_id,
-                    field_schema: Vec::new(),
+                    field_schema: vec![CompositionFieldSchemaEntry {
+                        field_id: source_field_id,
+                        field_type: FieldType::Integer,
+                        reference_form: None,
+                        list_item: None,
+                    }],
                     query: EntryQueryTemplate {
                         text: None,
                         filters: Vec::new(),
                         sort: Vec::new(),
                         page_limit: 10,
-                        projection: EntryQueryProjectionTemplate::Preview,
+                        projection: EntryQueryProjectionTemplate::Fields {
+                            fields: vec![source_field_id],
+                        },
                     },
                 }],
                 components: Vec::<CompositionComponent>::new(),
@@ -15422,6 +15446,7 @@ mod authentication_regression_tests {
         assert!(!denied_body
             .to_string()
             .contains(&source_form_id.to_string()));
+        assert!(!denied_body.to_string().contains(source_field_label));
         Ok(())
     }
 
