@@ -106,7 +106,7 @@ features:
       - id: portable-envelope-domain-evidence
         role: evidence
         facet: domain-tests
-        responsibility: Verify the fixed envelope, ordered result descriptors, restrictions, and semantic fingerprint inputs in the shared Rust contract.
+        responsibility: Verify the fixed envelope, ordered result descriptors, restricted YAML constructs, bounded parser inputs, and semantic fingerprint inputs in the shared Rust contract.
         targets:
           - id: portable-envelope-fields
             adapter: rust
@@ -138,6 +138,20 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.bounded-parser
+          - id: bounded-envelope-input-bytes
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/yaml.rs
+            selector: { kind: symbol, name: rejects_input_over_the_byte_limit_and_accepts_the_limit }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.bounded-parser
+          - id: bounded-envelope-nesting-depth
+            adapter: rust
+            path: crates/ugoite-domain/src/composition/yaml.rs
+            selector: { kind: symbol, name: enforces_the_version_probe_nesting_limit }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.bounded-parser
           - id: envelope-fingerprint-inputs
             adapter: rust
             path: crates/ugoite-domain/src/composition/canonical.rs
@@ -160,7 +174,7 @@ features:
       - id: portable-envelope-wasm-parity
         role: evidence
         facet: wasm-tests
-        responsibility: Keep the fixed marker, tags, ordered result descriptors, canonical bytes, fingerprint, and diagnostics aligned between native Rust and WASM.
+        responsibility: Keep the fixed marker, tags, ordered result descriptors, canonical bytes, fingerprint, diagnostics, and parser resource limits aligned between native Rust and WASM.
         targets:
           - id: native-envelope-parity
             adapter: rust
@@ -184,6 +198,13 @@ features:
                 anchor: REQ-COMP-002#criterion.saved-sql-result-descriptor
               - kind: evidences
                 anchor: REQ-COMP-003#criterion.wasm-parity
+          - id: wasm32-bounded-parser-runtime
+            adapter: typescript
+            path: crates/ugoite-wasm/tests/composition_parity.ts
+            selector: { kind: symbol, name: main }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.bounded-parser
       - id: display-label-domain
         role: implementation
         facet: domain
