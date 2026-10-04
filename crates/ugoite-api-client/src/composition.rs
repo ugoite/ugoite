@@ -17,7 +17,6 @@ pub enum CompositionDiagnosticCode {
     ParameterMissing,
     ParameterTypeMismatch,
     SourceUnavailable,
-    MissingForm,
     MissingField,
     FieldTypeChanged,
     SourceSchemaChanged,
@@ -29,8 +28,6 @@ pub enum CompositionDiagnosticCode {
     MetricResultColumnMissing,
     MetricResultColumnAmbiguous,
     MetricResultPageIncomplete,
-    SavedSqlRevisionMissing,
-    NotAuthorized,
 }
 
 impl CompositionDiagnosticCode {
@@ -42,7 +39,6 @@ impl CompositionDiagnosticCode {
             Self::ParameterMissing => "parameter_missing",
             Self::ParameterTypeMismatch => "parameter_type_mismatch",
             Self::SourceUnavailable => "source_unavailable",
-            Self::MissingForm => "missing_form",
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
             Self::SourceSchemaChanged => "source_schema_changed",
@@ -54,8 +50,6 @@ impl CompositionDiagnosticCode {
             Self::MetricResultColumnMissing => "metric_result_column_missing",
             Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
             Self::MetricResultPageIncomplete => "metric_result_page_incomplete",
-            Self::SavedSqlRevisionMissing => "saved_sql_revision_missing",
-            Self::NotAuthorized => "not_authorized",
         }
     }
 
@@ -67,7 +61,6 @@ impl CompositionDiagnosticCode {
             "parameter_missing" => Some(Self::ParameterMissing),
             "parameter_type_mismatch" => Some(Self::ParameterTypeMismatch),
             "source_unavailable" => Some(Self::SourceUnavailable),
-            "missing_form" => Some(Self::MissingForm),
             "missing_field" => Some(Self::MissingField),
             "field_type_changed" => Some(Self::FieldTypeChanged),
             "source_schema_changed" => Some(Self::SourceSchemaChanged),
@@ -79,8 +72,6 @@ impl CompositionDiagnosticCode {
             "metric_result_column_missing" => Some(Self::MetricResultColumnMissing),
             "metric_result_column_ambiguous" => Some(Self::MetricResultColumnAmbiguous),
             "metric_result_page_incomplete" => Some(Self::MetricResultPageIncomplete),
-            "saved_sql_revision_missing" => Some(Self::SavedSqlRevisionMissing),
-            "not_authorized" => Some(Self::NotAuthorized),
             _ => None,
         }
     }

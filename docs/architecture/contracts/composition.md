@@ -110,12 +110,14 @@ planned.
 The shared Rust and portable API diagnostic vocabulary includes
 `unsupported_format_version`, `invalid_composition`, `parameter_unknown`,
 `parameter_missing`, `parameter_type_mismatch`, `source_unavailable`,
-`missing_form`, `saved_sql_revision_missing`, `not_authorized`, `missing_field`,
+`missing_field`,
 `field_type_changed`, `source_schema_changed`, `metric_field_not_projected`,
 `metric_result_not_scalar`, `metric_result_type_mismatch`,
 `metric_result_empty`, `metric_result_multiple_rows`,
 `metric_result_column_missing`, `metric_result_column_ambiguous`, and
-`metric_result_page_incomplete`. The current resolver projects a missing,
+`metric_result_page_incomplete`. Audit note: `missing_form`,
+`saved_sql_revision_missing`, and `not_authorized` were removed from the
+portable vocabulary as unreachable. The current resolver projects a missing,
 denied, or mismatched source descriptor to `source_unavailable`; it does not
 fall back from a missing exact Saved SQL revision to latest. A missing or denied
 Composition read uses the existing generic 404/error response shape, so its

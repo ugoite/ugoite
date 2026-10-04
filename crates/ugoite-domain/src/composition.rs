@@ -480,6 +480,10 @@ pub struct CompositionSection {
 ///
 /// UI wording belongs to adapters and is intentionally not part of this
 /// domain type.
+///
+/// Missing, denied, or mismatched source descriptors are reported as
+/// `SourceUnavailable` without source metadata; the vocabulary carries no
+/// existence-revealing codes.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompositionDiagnosticCode {
@@ -489,9 +493,6 @@ pub enum CompositionDiagnosticCode {
     ParameterMissing,
     ParameterTypeMismatch,
     SourceUnavailable,
-    MissingForm,
-    SavedSqlRevisionMissing,
-    NotAuthorized,
     MissingField,
     FieldTypeChanged,
     SourceSchemaChanged,
@@ -514,9 +515,6 @@ impl CompositionDiagnosticCode {
             Self::ParameterMissing => "parameter_missing",
             Self::ParameterTypeMismatch => "parameter_type_mismatch",
             Self::SourceUnavailable => "source_unavailable",
-            Self::MissingForm => "missing_form",
-            Self::SavedSqlRevisionMissing => "saved_sql_revision_missing",
-            Self::NotAuthorized => "not_authorized",
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
             Self::SourceSchemaChanged => "source_schema_changed",
@@ -775,12 +773,6 @@ mod tests {
                 CompositionDiagnosticCode::SourceUnavailable,
                 "source_unavailable",
             ),
-            (CompositionDiagnosticCode::MissingForm, "missing_form"),
-            (
-                CompositionDiagnosticCode::SavedSqlRevisionMissing,
-                "saved_sql_revision_missing",
-            ),
-            (CompositionDiagnosticCode::NotAuthorized, "not_authorized"),
             (CompositionDiagnosticCode::MissingField, "missing_field"),
             (
                 CompositionDiagnosticCode::FieldTypeChanged,

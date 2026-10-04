@@ -29,7 +29,6 @@ const knownDiagnosticCodes = new Set([
   "parameter_missing",
   "parameter_type_mismatch",
   "source_unavailable",
-  "missing_form",
   "missing_field",
   "field_type_changed",
   "source_schema_changed",
@@ -41,8 +40,6 @@ const knownDiagnosticCodes = new Set([
   "metric_result_column_missing",
   "metric_result_column_ambiguous",
   "metric_result_page_incomplete",
-  "saved_sql_revision_missing",
-  "not_authorized",
 ]);
 
 export const compositionDiagnosticMessage = (
