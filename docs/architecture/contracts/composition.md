@@ -3,13 +3,33 @@ title: Composition contract
 description: The portable document and semantic boundaries for Composition v1.
 ---
 
-**Status:** the v1 domain model, restricted parser, canonicalization,
-fingerprinting, native/WASM parity, Rust Core source resolver, the portable
+**Status:** frozen as Composition v1 (`implementation_contract_frozen = true`).
+The v1 domain model, restricted parser, canonicalization, fingerprinting,
+native/WASM parity, Rust Core source resolver, the portable
 `composition.save`/`composition.restore` persistence operations, the nine CLI
 commands, and the Browser save/list/resolve/query paths have focused
 implementation and test evidence. The full end-to-end runtime journey and
 release acceptance remain incomplete; see the
-[acceptance plan](../testing/composition-acceptance.md).
+[acceptance plan](../testing/composition-acceptance.md). Post-freeze semantic
+changes require a v1 compatibility ruling recorded against this contract.
+
+Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
+`ugoite-domain` and `composition_v1_freeze_pins_operation_inventory` in
+`ugoite-api-client`):
+
+| Item | Frozen value |
+| ---- | ------------ |
+| Envelope | `format: ugoite.composition`, `format_version: 1`, `kind: dashboard` only |
+| Parser limits | 64 KiB YAML bytes, nesting depth 64, 256 collection items |
+| Tags | document tags are the sole semantic value and equal stored Entry tags |
+| Source grammar | `entry_query` (Form scope, six filter operators, two sort directions, fields/preview projection) and exact `saved_sql` (EntryId + RevisionId, ordered unique `expected_result`, seven logical types) |
+| Metric identity | stable FieldId (`entry_field`) versus exact column name (`sql_column`); exact-scalar consumer, no aggregation |
+| Components | `table` / `metric` only; sections order, unique IDs, exactly-once references |
+| Fingerprints | document SHA-256 over normalized value; per-source schema fingerprints over FormId + used-field snapshot |
+| Diagnostics | 17 caller-visible codes; missing/denied sources conceal as `source_unavailable` |
+| Operations | `lint`, `list`, `get`, `history`, `resolve`, `save`, `restore` (export stays a CLI file operation) |
+| Idempotency | `Idempotency-Key` required on save/restore; same key + same payload replays, differing payload conflicts |
+| Raw recovery | unsupported versions and broken references keep raw inspect, export, and history |
 
 ## Portable document
 

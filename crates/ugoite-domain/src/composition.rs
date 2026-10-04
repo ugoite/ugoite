@@ -535,8 +535,10 @@ mod tests {
     use super::{
         parse_composition_yaml, CompositionComponent, CompositionDiagnosticCode,
         CompositionDocument, CompositionFormat, CompositionKind, CompositionMetricValueField,
-        CompositionSection, CompositionSource, CompositionSpec, CompositionValue,
-        EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
+        CompositionQueryOperator, CompositionResultFieldType, CompositionSection,
+        CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
+        EntryQueryProjectionTemplate, EntryQueryTemplate, COMPOSITION_FORMAT,
+        COMPOSITION_FORMAT_VERSION, DEFAULT_COMPOSITION_PAGE_LIMIT,
     };
 
     const MONTHLY_EXPENSE: &str =
@@ -797,5 +799,125 @@ mod tests {
                 code
             );
         }
+    }
+
+    /// Composition v1 implementation-contract freeze.
+    ///
+    /// This test pins the portable values frozen for v1. Any change here is
+    /// a v1 compatibility decision, not a refactor: update the contract
+    /// documents and the Mitase feature status alongside the code, and record
+    /// the ruling. Additions to wire-visible sets remain possible only
+    /// through that same ruling; this test guards the frozen values against
+    /// silent drift, not against ruled extensions.
+    #[test]
+    fn composition_v1_freeze_pins_portable_contract() {
+        use super::yaml::{
+            MAX_COMPOSITION_COLLECTION_ITEMS, MAX_COMPOSITION_YAML_BYTES,
+            MAX_COMPOSITION_YAML_DEPTH,
+        };
+
+        // Canonical envelope: fixed marker, version 1, dashboard only.
+        assert_eq!(COMPOSITION_FORMAT, "ugoite.composition");
+        assert_eq!(COMPOSITION_FORMAT_VERSION, 1);
+        assert_eq!(
+            serde_json::to_value(CompositionKind::Dashboard).unwrap(),
+            serde_json::json!("dashboard")
+        );
+
+        // Restricted YAML resource limits.
+        assert_eq!(MAX_COMPOSITION_YAML_BYTES, 64 * 1024);
+        assert_eq!(MAX_COMPOSITION_YAML_DEPTH, 64);
+        assert_eq!(MAX_COMPOSITION_COLLECTION_ITEMS, 256);
+
+        // Bounded page size shared by Composition query templates.
+        assert_eq!(DEFAULT_COMPOSITION_PAGE_LIMIT, 100);
+
+        // Caller-visible diagnostic vocabulary: the exact frozen wire set in
+        // canonical order. Existence-revealing codes stay out.
+        let frozen_codes = [
+            "unsupported_format_version",
+            "invalid_composition",
+            "parameter_unknown",
+            "parameter_missing",
+            "parameter_type_mismatch",
+            "source_unavailable",
+            "missing_field",
+            "field_type_changed",
+            "source_schema_changed",
+            "metric_field_not_projected",
+            "metric_result_not_scalar",
+            "metric_result_type_mismatch",
+            "metric_result_empty",
+            "metric_result_multiple_rows",
+            "metric_result_column_missing",
+            "metric_result_column_ambiguous",
+            "metric_result_page_incomplete",
+        ];
+        assert_eq!(frozen_codes.len(), 17);
+        for spelling in frozen_codes {
+            let code: CompositionDiagnosticCode =
+                serde_json::from_str(&format!("\"{spelling}\"")).unwrap();
+            assert_eq!(code.as_str(), spelling);
+        }
+
+        // Source grammar: entry_query / saved_sql sources, six filter
+        // operators, two sort directions, two projection kinds.
+        for (operator, spelling) in [
+            (CompositionQueryOperator::Equals, "\"equals\""),
+            (CompositionQueryOperator::Contains, "\"contains\""),
+            (CompositionQueryOperator::Lt, "\"lt\""),
+            (CompositionQueryOperator::Lte, "\"lte\""),
+            (CompositionQueryOperator::Gt, "\"gt\""),
+            (CompositionQueryOperator::Gte, "\"gte\""),
+        ] {
+            assert_eq!(serde_json::to_string(&operator).unwrap(), spelling);
+        }
+        for (direction, spelling) in [
+            (CompositionSortDirection::Asc, "\"asc\""),
+            (CompositionSortDirection::Desc, "\"desc\""),
+        ] {
+            assert_eq!(serde_json::to_string(&direction).unwrap(), spelling);
+        }
+
+        // Projection kinds: whole-row preview or explicit field lists.
+        assert_eq!(
+            serde_json::to_value(EntryQueryProjectionTemplate::Preview).unwrap(),
+            serde_json::json!({"kind": "preview"})
+        );
+        assert_eq!(
+            serde_json::to_value(EntryQueryProjectionTemplate::Fields { fields: Vec::new() })
+                .unwrap(),
+            serde_json::json!({"kind": "fields", "fields": []})
+        );
+
+        // Portable Saved SQL logical types: the exact frozen set.
+        for spelling in [
+            "\"string\"",
+            "\"boolean\"",
+            "\"integer\"",
+            "\"float\"",
+            "\"date\"",
+            "\"timestamp\"",
+            "\"json\"",
+        ] {
+            let result_type: CompositionResultFieldType = serde_json::from_str(spelling).unwrap();
+            assert_eq!(serde_json::to_string(&result_type).unwrap(), spelling);
+        }
+
+        // Metric field identity: stable FieldId versus exact SQL column name.
+        let entry_field = CompositionMetricValueField::EntryField {
+            field_id: crate::id::FieldId::new(100).unwrap(),
+        };
+        assert_eq!(
+            serde_json::to_value(&entry_field).unwrap()["kind"],
+            serde_json::json!("entry_field")
+        );
+        let sql_column = CompositionMetricValueField::SqlColumn {
+            name: "total".to_string(),
+        };
+        assert_eq!(
+            serde_json::to_value(&sql_column).unwrap()["kind"],
+            serde_json::json!("sql_column")
+        );
     }
 }
