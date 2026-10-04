@@ -294,6 +294,11 @@ export const buildEntryQueryComposition = (
       if (field.kind !== "property") continue;
       projectedFieldIds.push(field.field_id);
     }
+    // An empty fields list is rejected by EntryQuery validation, so a
+    // system-ref-only projection has no exact Composition grammar.
+    if (projectedFieldIds.length === 0) {
+      return unsupported("entryQueryToolSave.unsupportedQuery");
+    }
     projection = { kind: "fields", fields: [...projectedFieldIds] };
   }
 

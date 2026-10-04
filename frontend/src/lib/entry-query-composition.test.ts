@@ -171,6 +171,28 @@ describe("buildEntryQueryComposition", () => {
     ]);
   });
 
+  it("rejects a system-ref-only fields projection", () => {
+    const result = buildEntryQueryComposition({
+      query: {
+        scope: { kind: "form", form_id: formId },
+        filters: [],
+        sort: [],
+      },
+      projection: {
+        kind: "fields",
+        fields: [{ kind: "created_at" }, { kind: "updated_at" }],
+      },
+      form: noteForm,
+    });
+
+    // An empty fields list fails EntryQuery validation, so there is no
+    // exact Composition grammar for this view.
+    expect(result).toEqual({
+      status: "inexpressible",
+      reason: "entryQueryToolSave.unsupportedQuery",
+    });
+  });
+
   it("snapshots row_reference targets and list item schemas", () => {
     const form: Form = {
       id: formId,
