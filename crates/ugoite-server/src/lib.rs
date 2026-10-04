@@ -15197,6 +15197,17 @@ mod authentication_regression_tests {
                 SpaceRole::Viewer,
             )
             .await?;
+        let viewer_route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(viewer_id, space_uid),
+        );
+        let (inherited_status, _) = route_json(
+            viewer_route.clone(),
+            Request::get(&composition_path).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(inherited_status, StatusCode::OK);
+
         Authorizer::new(state.service.operator().clone())
             .set_policy(
                 &space_id,
@@ -15214,8 +15225,6 @@ mod authentication_regression_tests {
             )
             .await?;
 
-        let viewer_route =
-            reversible_knowledge_route(state, reversible_knowledge_identity(viewer_id, space_uid));
         let (denied_status, denied_body) = route_json(
             viewer_route.clone(),
             Request::get(&composition_path).body(Body::empty())?,
@@ -15235,6 +15244,9 @@ mod authentication_regression_tests {
         assert_eq!(missing_status, StatusCode::NOT_FOUND, "{missing_body}");
         assert_eq!(denied_body["code"], "ENTRY_NOT_FOUND");
         assert_eq!(denied_body["code"], missing_body["code"]);
+        assert!(denied_body.get("revision").is_none());
+        assert!(denied_body.get("fields").is_none());
+        assert!(denied_body.get("unmapped_field_values").is_none());
         assert!(!denied_body.to_string().contains("Private Composition"));
         Ok(())
     }
