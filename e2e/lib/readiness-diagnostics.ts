@@ -10,6 +10,7 @@ export type SetupReadinessDiagnostics = {
   pageErrors: string[];
   consoleErrors: string[];
   navigationAttempts: number;
+  domSnapshot?: SafeDomSnapshot;
 };
 
 export type SafeDomSnapshot = {
@@ -71,7 +72,8 @@ function isMainNavigation(page: Page, request: {
   frame(): unknown;
 }): boolean {
   try {
-    return request.isNavigationRequest() && request.frame() === page.mainFrame();
+    return request.isNavigationRequest() &&
+      request.frame() === page.mainFrame();
   } catch {
     return false;
   }
@@ -103,14 +105,20 @@ export function observeSetupReadiness(
     const path = safeUrlPath(request.url());
     const code = failureCode(request.failure()?.errorText);
     if (isMainNavigation(page, request)) {
-      remember(diagnostics.navigationFailures, `attempt-${attempt}:${path}:${code}`);
+      remember(
+        diagnostics.navigationFailures,
+        `attempt-${attempt}:${path}:${code}`,
+      );
     } else if (isFrontendAsset(path)) {
       remember(diagnostics.assetFailures, `attempt-${attempt}:${path}:${code}`);
     }
   });
 
   page.on("pageerror", (error) => {
-    remember(diagnostics.pageErrors, `attempt-${attempt}:${safeErrorName(error.name)}`);
+    remember(
+      diagnostics.pageErrors,
+      `attempt-${attempt}:${safeErrorName(error.name)}`,
+    );
   });
 
   page.on("console", (message) => {
@@ -137,11 +145,12 @@ export function formatSetupReadinessDiagnostics(
     `consoleErrors=${diagnostics.consoleErrors.join(",") || "none"}`,
     `navigationAttempts=${diagnostics.navigationAttempts}`,
   ];
-  if (dom) {
+  const snapshot = dom ?? diagnostics.domSnapshot;
+  if (snapshot) {
     values.push(
-      `domReadyState=${dom.readyState}`,
-      `bodyElementCount=${dom.bodyElementCount}`,
-      `bodyTextLength=${dom.bodyTextLength}`,
+      `domReadyState=${snapshot.readyState}`,
+      `bodyElementCount=${snapshot.bodyElementCount}`,
+      `bodyTextLength=${snapshot.bodyTextLength}`,
     );
   }
   return values.join("; ");
@@ -161,4 +170,14 @@ export async function snapshotSetupDom(page: Page): Promise<SafeDomSnapshot> {
       bodyTextLength: 0,
     };
   }
+}
+
+/** Preserve the safe DOM summary for the outer setup failure formatter. */
+export async function recordSetupDomSnapshot(
+  page: Page,
+  diagnostics: SetupReadinessDiagnostics,
+): Promise<SafeDomSnapshot> {
+  const snapshot = await snapshotSetupDom(page);
+  diagnostics.domSnapshot = snapshot;
+  return snapshot;
 }

@@ -4,6 +4,7 @@ import {
   createSetupReadinessDiagnostics,
   formatSetupReadinessDiagnostics,
   observeSetupReadiness,
+  recordSetupDomSnapshot,
   safeUrlPath,
 } from "./readiness-diagnostics.ts";
 
@@ -31,7 +32,8 @@ Deno.test("setup readiness diagnostics report safe navigation and asset state", 
   };
   emit("response", {
     request: () => mainRequest,
-    url: () => "https://localhost/setup?token=query-secret#secret=fragment-secret",
+    url: () =>
+      "https://localhost/setup?token=query-secret#secret=fragment-secret",
     status: () => 200,
     ok: () => true,
   });
@@ -49,7 +51,8 @@ Deno.test("setup readiness diagnostics report safe navigation and asset state", 
   emit("console", {
     type: () => "error",
     location: () => ({
-      url: "https://localhost/settings/recovery-path-secret?token=console-secret",
+      url:
+        "https://localhost/settings/recovery-path-secret?token=console-secret",
     }),
     text: () => "console-secret",
   });
@@ -60,9 +63,14 @@ Deno.test("setup readiness diagnostics report safe navigation and asset state", 
     { readyState: "complete", bodyElementCount: 0, bodyTextLength: 34 },
   );
   assert.equal(output.includes("path=/setup"), true);
-  assert.equal(output.includes("documentResponses=attempt-1:/setup:http-200"), true);
   assert.equal(
-    output.includes("assetFailures=attempt-1:/_build/<asset>.js:request-failed"),
+    output.includes("documentResponses=attempt-1:/setup:http-200"),
+    true,
+  );
+  assert.equal(
+    output.includes(
+      "assetFailures=attempt-1:/_build/<asset>.js:request-failed",
+    ),
     true,
   );
   assert.equal(output.includes("pageErrors=attempt-1:Error"), true);
@@ -85,7 +93,11 @@ Deno.test("setup readiness diagnostics report safe navigation and asset state", 
       "ERR_SETUP_SECRET",
     ]
   ) {
-    assert.equal(output.includes(secret), false, `diagnostics leaked ${secret}`);
+    assert.equal(
+      output.includes(secret),
+      false,
+      `diagnostics leaked ${secret}`,
+    );
   }
   assert.equal(safeUrlPath("not a url"), "<unavailable>");
   assert.equal(safeUrlPath("https://localhost/setup/path-secret"), "<path>");
@@ -94,3 +106,28 @@ Deno.test("setup readiness diagnostics report safe navigation and asset state", 
     "/_build/<asset>.js",
   );
 });
+
+Deno.test(
+  "setup readiness diagnostics retain a safe DOM snapshot for outer failures",
+  async () => {
+    const diagnostics = createSetupReadinessDiagnostics();
+    const page = {
+      evaluate: async () => ({
+        readyState: "complete",
+        bodyElementCount: 0,
+        bodyTextLength: 0,
+      }),
+    } as unknown as Page;
+
+    await recordSetupDomSnapshot(page, diagnostics);
+    const output = formatSetupReadinessDiagnostics(
+      "https://localhost/setup#secret=hidden",
+      diagnostics,
+    );
+
+    assert.equal(output.includes("domReadyState=complete"), true);
+    assert.equal(output.includes("bodyElementCount=0"), true);
+    assert.equal(output.includes("bodyTextLength=0"), true);
+    assert.equal(output.includes("hidden"), false);
+  },
+);

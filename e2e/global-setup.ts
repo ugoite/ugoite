@@ -12,8 +12,8 @@ import {
   createSetupReadinessDiagnostics,
   formatSetupReadinessDiagnostics,
   observeSetupReadiness,
+  recordSetupDomSnapshot,
   type SetupReadinessDiagnostics,
-  snapshotSetupDom,
 } from "./lib/readiness-diagnostics.ts";
 import { safeNavigationFailure } from "./lib/security-context.ts";
 
@@ -50,10 +50,11 @@ async function setupDiagnostics(
   page: import("@playwright/test").Page,
   diagnostics: SetupReadinessDiagnostics,
 ): Promise<string> {
+  const dom = await recordSetupDomSnapshot(page, diagnostics);
   return formatSetupReadinessDiagnostics(
     page.url(),
     diagnostics,
-    await snapshotSetupDom(page),
+    dom,
   );
 }
 
