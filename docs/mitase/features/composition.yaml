@@ -463,6 +463,45 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.current-authorization
+      - id: server-authorization-evidence
+        role: evidence
+        facet: server-tests
+        responsibility: Verify current Registry read authorization for Composition list/get, caller-visible concealment of denied existing Compositions, and source_unavailable concealment for denied or missing source references without exposing source identifiers or metadata.
+        targets:
+          - id: list-with-registry-read-denied
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: composition_list_returns_bounded_acl_authorized_summary_pages }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.current-authorization
+          - id: denied-existing-composition-read-concealment
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: composition_get_conceals_existing_entry_from_denied_viewer }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.current-authorization
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+          - id: denied-form-source-concealment
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: composition_resolve_conceals_missing_and_denied_forms }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.current-authorization
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+          - id: denied-saved-sql-source-concealment
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.current-authorization
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.concealed-unavailable-references
       - id: saved-sql-resolver
         role: implementation
         facet: core
