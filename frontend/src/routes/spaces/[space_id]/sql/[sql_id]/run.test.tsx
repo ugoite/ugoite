@@ -7,8 +7,10 @@ import {
   waitFor,
   within,
 } from "@solidjs/testing-library";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { compositionApi } from "~/lib/composition-api";
+import { setLocale, t } from "~/lib/i18n";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import {
   clearPendingCompositionSaveAttempt,
   getPendingCompositionSaveAttempt,
@@ -85,6 +87,7 @@ const compositionSaveMock = vi.spyOn(compositionApi, "save");
 
 describe("/spaces/:space_id/sql/:sql_id/run", () => {
   beforeEach(() => {
+    setLocale("en");
     routeControls.setSpace("default");
     routeControls.setSql("saved-query");
     routeControls.setPath("/spaces/default/sql/saved-query/run");
@@ -145,6 +148,10 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
         next: "opaque-next",
       });
     countMock.mockResolvedValue(2);
+  });
+
+  afterEach(() => {
+    setLocale("en");
   });
 
   it("renders arbitrary SQL rows and keeps pagination client-held", async () => {
@@ -532,6 +539,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
         loseFirstResponse = reject;
       });
     });
+
     render(() => <SpaceSqlRunRoute />);
 
     fireEvent.click(
@@ -1362,6 +1370,119 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       ).toHaveValue(nextName);
       expect(within(nextDialog).queryByRole("alert"))
         .not.toBeInTheDocument();
+    },
+  );
+
+  it.each(
+    [
+      {
+        locale: "en",
+        kind: "composition_diagnostic",
+        code: "invalid_composition",
+        operation: "composition.save",
+        expected: "The tool definition is invalid.",
+      },
+      {
+        locale: "ja",
+        kind: "composition_diagnostic",
+        code: "invalid_composition",
+        operation: "composition.save",
+        expected: "ツールの定義が正しくありません。",
+      },
+      {
+        locale: "en",
+        kind: "composition_diagnostic",
+        code: "unsupported_format_version",
+        operation: "composition.save",
+        expected: "This tool uses an unsupported format version.",
+      },
+      {
+        locale: "ja",
+        kind: "composition_diagnostic",
+        code: "unsupported_format_version",
+        operation: "composition.save",
+        expected: "このツールの形式バージョンには対応していません。",
+      },
+      {
+        locale: "en",
+        kind: "invalid_arguments",
+        code: "INVALID_INPUT",
+        operation: "composition.save",
+        expected: "Could not save this tool.",
+      },
+      {
+        locale: "ja",
+        kind: "invalid_arguments",
+        code: "INVALID_INPUT",
+        operation: "composition.save",
+        expected: "ツールを保存できませんでした。",
+      },
+    ] as const,
+  )(
+    "shows a localized safe save diagnostic or generic fallback in $locale for $code",
+    async ({ locale, kind, code, operation, expected }) => {
+      setLocale(locale);
+      compositionSaveMock.mockRejectedValueOnce(
+        new UgoiteApiError({
+          kind,
+          code,
+          operation,
+          status: 422,
+          message: "private server message",
+          detail: { message: "private diagnostic detail" },
+          payload: { internal: "private payload" },
+        }),
+      );
+
+      render(() => <SpaceSqlRunRoute />);
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: t("composition.saveAsTool"),
+        }),
+      );
+      const dialog = screen.getByRole("dialog", {
+        name: t("composition.saveAsTool"),
+      });
+      fireEvent.input(
+        within(dialog).getByLabelText(t("composition.name"), {
+          selector: "input",
+        }),
+        { target: { value: "Rejected query" } },
+      );
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: t("composition.save") }),
+      );
+
+      const dialogAlert = await within(dialog).findByRole("alert");
+      expect(dialogAlert).toHaveTextContent(expected);
+      expect(dialogAlert).toHaveAttribute("role", "alert");
+      expect(dialogAlert).not.toHaveTextContent("private");
+      expect(dialogAlert).not.toHaveTextContent(code);
+
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: t("common.cancel") }),
+      );
+      const routeAlert = await screen.findByRole("alert");
+      expect(routeAlert).toHaveTextContent(expected);
+      expect(routeAlert).toHaveAttribute("role", "alert");
+      expect(screen.getAllByRole("alert")).toHaveLength(1);
+
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: t("composition.saveAsTool"),
+        }),
+      );
+      const reopenedDialog = screen.getByRole("dialog", {
+        name: t("composition.saveAsTool"),
+      });
+      expect(within(reopenedDialog).getByRole("alert")).toHaveTextContent(
+        expected,
+      );
+      expect(
+        within(reopenedDialog).getByLabelText(t("composition.name"), {
+          selector: "input",
+        }),
+      ).toHaveValue("Rejected query");
     },
   );
 });

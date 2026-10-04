@@ -18,6 +18,7 @@ import {
   canCreateSavedSqlComposition,
   compositionApi,
 } from "~/lib/composition-api";
+import { compositionSaveErrorMessage } from "~/lib/composition-save-error";
 import {
   beginCompositionSaveRouteVisit,
   clearPendingCompositionSaveAttempt,
@@ -469,6 +470,9 @@ export default function SpaceSqlRunRoute() {
       const retryWasDenied = isRetry && (status === 401 || status === 403);
       if (outcome === "rejected" && !retryWasDenied) {
         clearPendingCompositionSaveAttempt(attempt, "rejected", visitId);
+        if (isCurrentSaveVisit(attempt, visitId)) {
+          setSaveError(compositionSaveErrorMessage(error));
+        }
       } else {
         markPendingCompositionSaveAttemptUncertain(attempt, visitId);
       }
