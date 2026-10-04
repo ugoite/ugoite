@@ -121,6 +121,12 @@ export default function SpaceSqlRunRoute() {
     parameters: Record<string, unknown>;
   } | undefined;
   let pendingSave: PendingCompositionSaveAttempt | undefined;
+  let rejectedSaveRoute:
+    | Pick<
+      PendingCompositionSaveAttempt,
+      "spaceId" | "sqlId" | "routePath"
+    >
+    | undefined;
   let saveRouteVisitId: number | undefined;
   const state = createMemo(() => runState(location.state));
 
@@ -373,6 +379,8 @@ export default function SpaceSqlRunRoute() {
     setSaveBusy(false);
     setSaveRetryAvailable(false);
     setSaveError(null);
+    setRejectedSaveName(null);
+    rejectedSaveRoute = undefined;
     saveSeed = undefined;
     pendingSave = undefined;
   };
@@ -382,6 +390,7 @@ export default function SpaceSqlRunRoute() {
     const routeVisitId = beginCompositionSaveRouteVisit(route);
     saveRouteVisitId = routeVisitId;
     if (
+      (rejectedSaveRoute && !isCurrentSaveRoute(rejectedSaveRoute)) ||
       (saveSeed && !isCurrentSaveRoute(saveSeed)) ||
       (pendingSave && !isCurrentSaveRoute(pendingSave))
     ) {
@@ -413,6 +422,7 @@ export default function SpaceSqlRunRoute() {
         pendingSave = undefined;
         setSaveBusy(false);
         setSaveRetryAvailable(false);
+        rejectedSaveRoute = event.outcome === "rejected" ? route : undefined;
         setRejectedSaveName(
           event.outcome === "rejected" ? event.attemptName : null,
         );
@@ -471,6 +481,7 @@ export default function SpaceSqlRunRoute() {
     if (!seed || !saveDialogOpen()) return;
     const visitId = saveRouteVisitId;
     pendingSave = undefined;
+    rejectedSaveRoute = undefined;
     setSaveError(null);
     setRejectedSaveName(null);
     setSaveBusy(true);
