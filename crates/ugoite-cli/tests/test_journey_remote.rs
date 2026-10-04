@@ -1493,7 +1493,8 @@ async fn test_cli_remote_composition_restore_receipt_replay_and_stale_base() {
 }
 
 /// Exact-revision inspect, parameterized query, and raw export reach the same
-/// result through Core and Remote CLI transports against one shared Space.
+/// result through Core and Remote CLI transports against one shared Space, including
+/// selection of an older revision while a newer one exists.
 #[tokio::test]
 async fn test_cli_composition_inspect_query_export_match_core_remote() {
     use ugoite_domain::composition::parse_composition_yaml;
@@ -1626,6 +1627,37 @@ spec:
     let composition_id = saved.entry_id.to_string();
     let revision_id = saved.revision_id.to_string();
 
+    // Publish a distinct latest revision after the one exercised below. The
+    // extra literal filter makes the older and latest query plans observably
+    // different, so silently ignoring --revision cannot pass by coincidence.
+    let revised_yaml = yaml
+        .replacen("name: CLI parity", "name: CLI parity revised", 1)
+        .replacen(
+            "              parameter: month_end\n        sort:\n",
+            &format!(
+                "              parameter: month_end\n          - field_id: {merchant_id}\n            operator: equals\n            value: January-10\n        sort:\n"
+            ),
+            1,
+        );
+    assert_ne!(revised_yaml, yaml, "the newer document must be distinct");
+    let revised_document =
+        parse_composition_yaml(&revised_yaml).expect("parse newer Composition revision");
+    let latest = service
+        .save_composition_local_with_operation_id(
+            &fixture.space_id,
+            CompositionSaveRequest {
+                entry_id: Some(saved.entry_id.clone()),
+                base_revision_id: Some(saved.revision_id.clone()),
+                document: revised_document,
+            },
+            &fixture.owner_principal_id.to_string(),
+            &format!("cli-parity-update-{}", uuid::Uuid::now_v7()),
+        )
+        .await
+        .expect("publish newer Composition revision");
+    let latest_revision_id = latest.revision_id.to_string();
+    assert_ne!(latest_revision_id, revision_id);
+
     let core_config_path = fixture
         .config_path
         .parent()
@@ -1658,7 +1690,7 @@ spec:
         &run_cli(&core_config_path, &history_args).await,
         "Core Composition history before read journey",
     );
-    assert_eq!(history_before["total"], 1);
+    assert_eq!(history_before["total"], 2);
     let remote_history_before = stdout_json(
         &run_cli(&fixture.config_path, &history_args).await,
         "Remote Composition history before read journey",
@@ -1682,6 +1714,7 @@ spec:
     );
     assert_eq!(core_inspect, remote_inspect);
     assert_eq!(core_inspect["revision"]["revision_id"], revision_id);
+    assert_eq!(core_inspect["fields"]["spec"], saved.canonical_yaml);
 
     let query_args = [
         "composition",
@@ -1710,6 +1743,34 @@ spec:
             .map(Vec::len),
         Some(2),
         "the date parameters should include the two January rows only"
+    );
+
+    let latest_query_args = [
+        "composition",
+        "query",
+        composition_id.as_str(),
+        "--revision",
+        latest_revision_id.as_str(),
+        "--param",
+        "month_start=2026-01-01",
+        "--param",
+        "month_end=2026-02-01",
+    ];
+    let core_latest_query = stdout_json(
+        &run_cli(&core_config_path, &latest_query_args).await,
+        "Core latest-revision Composition query",
+    );
+    let remote_latest_query = stdout_json(
+        &run_cli(&fixture.config_path, &latest_query_args).await,
+        "Remote latest-revision Composition query",
+    );
+    assert_eq!(core_latest_query, remote_latest_query);
+    assert_eq!(
+        core_latest_query["sources"][0]["page"]["rows"]
+            .as_array()
+            .map(Vec::len),
+        Some(1),
+        "the newer literal filter should select one January row"
     );
 
     let output_dir = fixture.config_path.parent().expect("fixture config parent");
