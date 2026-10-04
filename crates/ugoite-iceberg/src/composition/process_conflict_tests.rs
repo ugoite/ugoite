@@ -269,6 +269,8 @@ async fn composition_identical_save_retries_share_one_publication_across_process
 
     let first_outcome: WriterOutcome = serde_json::from_slice(&fs::read(&first_result)?)?;
     let retry_outcome: WriterOutcome = serde_json::from_slice(&fs::read(&retry_result)?)?;
+    assert_eq!(first_outcome.role, "first");
+    assert_eq!(retry_outcome.role, "retry");
     assert_eq!(first_outcome.result, "saved");
     assert_eq!(retry_outcome.result, "saved");
     assert_eq!(first_outcome.receipt, retry_outcome.receipt);
