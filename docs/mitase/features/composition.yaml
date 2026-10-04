@@ -769,6 +769,33 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-001#criterion.one-entry-revision
+      - id: cli-restore-invalid-key-evidence
+        role: evidence
+        facet: cli-tests
+        responsibility: >-
+          Verify the Core and Remote CLI restore journeys reject the exercised
+          non-ASCII restore idempotency key with the same `invalid_input`
+          diagnostic and empty stdout, leave Composition history unchanged,
+          and, for Remote, issue no Composition write request. The selected
+          functions also exercise valid-key replay and stale-base paths, but
+          this evidence claim covers only invalid-key rejection and no
+          mutation; it does not establish idempotency parity beyond the
+          exercised key.
+        targets:
+          - id: core-restore-invalid-key-prevalidation
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_core.rs
+            selector: { kind: symbol, name: test_cli_core_composition_restore_receipt_replay_and_stale_base }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-001#criterion.one-entry-revision
+          - id: remote-restore-invalid-key-prevalidation
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: symbol, name: test_cli_remote_composition_restore_receipt_replay_and_stale_base }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-001#criterion.one-entry-revision
       - id: browser-query-runtime
         role: implementation
         facet: frontend
