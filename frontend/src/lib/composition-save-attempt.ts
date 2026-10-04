@@ -26,6 +26,7 @@ type CompositionSaveAttemptEvent =
   | { type: "pending"; stored: StoredCompositionSaveAttempt }
   | {
     type: "cleared";
+    attemptName: string;
     idempotencyKey: string;
     outcome: "completed" | "rejected";
     routeVisitId: number | undefined;
@@ -98,6 +99,7 @@ export function clearPendingCompositionSaveAttempt(
   if (!existing || !outcome) return;
   const event: CompositionSaveAttemptEvent = {
     type: "cleared",
+    attemptName: existing.attempt.name,
     idempotencyKey: existing.attempt.idempotencyKey,
     outcome,
     routeVisitId: existing.routeVisitId,
