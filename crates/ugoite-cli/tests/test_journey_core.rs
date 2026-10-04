@@ -990,6 +990,52 @@ async fn test_cli_core_composition_restore_receipt_replay_and_stale_base() {
         "cli-restore-replay-1",
     ];
 
+    let history_before_invalid_key = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &["composition", "history", composition_id.as_str()],
+        ),
+        "local Composition history before invalid restore key",
+    );
+    assert_eq!(history_before_invalid_key["total"], 2);
+    let invalid_key = run_cli(
+        &space.config_path,
+        &[
+            "composition",
+            "restore",
+            mixed_case_composition_id.as_str(),
+            "--revision",
+            mixed_case_source_revision_id.as_str(),
+            "--base-revision",
+            mixed_case_base_revision_id.as_str(),
+            "--idempotency-key",
+            "cli-restore-東京",
+        ],
+    );
+    assert!(
+        !invalid_key.status.success(),
+        "Core must reject non-ASCII Composition restore idempotency keys"
+    );
+    assert!(invalid_key.stdout.is_empty());
+    let invalid_key_error: serde_json::Value = serde_json::from_slice(&invalid_key.stderr)
+        .expect("machine-readable invalid restore key diagnostic");
+    assert_eq!(invalid_key_error["error"]["kind"], "invalid_input");
+    assert_eq!(
+        invalid_key_error["error"]["message"],
+        "argument `idempotency_key` must contain only valid ASCII header characters"
+    );
+    let history_after_invalid_key = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &["composition", "history", composition_id.as_str()],
+        ),
+        "local Composition history after invalid restore key",
+    );
+    assert_eq!(
+        history_after_invalid_key["revisions"], history_before_invalid_key["revisions"],
+        "invalid restore key must not append a Composition revision"
+    );
+
     let output = run_cli(&space.config_path, &args);
     let first = stdout_json(&output, "local Composition restore");
     assert_eq!(first["composition_id"], composition_id);

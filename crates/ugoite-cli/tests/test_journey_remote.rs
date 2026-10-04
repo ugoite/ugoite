@@ -1340,6 +1340,67 @@ async fn test_cli_remote_composition_restore_receipt_replay_and_stale_base() {
         "cli-remote-restore-replay-1",
     ];
 
+    let history_before_invalid_key = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["composition", "history", composition_id.as_str()],
+        )
+        .await,
+        "remote Composition history before invalid restore key",
+    );
+    assert_eq!(history_before_invalid_key["total"], 2);
+    let writes_before_invalid_key = fixture
+        .sql_export_gate
+        .composition_write_requests
+        .load(std::sync::atomic::Ordering::SeqCst);
+    let invalid_key = run_cli(
+        &fixture.config_path,
+        &[
+            "composition",
+            "restore",
+            mixed_case_composition_id.as_str(),
+            "--revision",
+            mixed_case_source_revision_id.as_str(),
+            "--base-revision",
+            mixed_case_base_revision_id.as_str(),
+            "--idempotency-key",
+            "cli-remote-restore-東京",
+        ],
+    )
+    .await;
+    assert!(
+        !invalid_key.status.success(),
+        "remote must reject non-ASCII Composition restore idempotency keys"
+    );
+    assert!(invalid_key.stdout.is_empty());
+    let invalid_key_error: serde_json::Value = serde_json::from_slice(&invalid_key.stderr)
+        .expect("machine-readable invalid restore key diagnostic");
+    assert_eq!(invalid_key_error["error"]["kind"], "invalid_input");
+    assert_eq!(
+        invalid_key_error["error"]["message"],
+        "argument `idempotency_key` must contain only valid ASCII header characters"
+    );
+    assert_eq!(
+        fixture
+            .sql_export_gate
+            .composition_write_requests
+            .load(std::sync::atomic::Ordering::SeqCst),
+        writes_before_invalid_key,
+        "invalid restore key must not send a remote Composition mutation"
+    );
+    let history_after_invalid_key = stdout_json(
+        &run_cli(
+            &fixture.config_path,
+            &["composition", "history", composition_id.as_str()],
+        )
+        .await,
+        "remote Composition history after invalid restore key",
+    );
+    assert_eq!(
+        history_after_invalid_key["revisions"], history_before_invalid_key["revisions"],
+        "invalid restore key must not append a Composition revision"
+    );
+
     let output = run_cli(&fixture.config_path, &args).await;
     let first = stdout_json(&output, "remote Composition restore");
     assert_eq!(first["composition_id"], composition_id);
