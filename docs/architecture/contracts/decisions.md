@@ -206,9 +206,13 @@ supported-backend matrix and S1 acceptance contract are maintained in
 revision in its user-owned Space. The Space remains its authority; Entry
 history, restore, receipts, and stale-write conflicts remain the persistence
 contract. A separate database or hidden catalog is not a Composition
-authority. The initial executable kind is `dashboard`. Persistence and browser
-rendering are future implementation work until their own bindings and evidence
-exist.
+authority. The initial executable kind is `dashboard`. The initial
+save/list/get/history/resolve persistence operations, the CLI commands, and
+the Browser save/list/resolve/query paths have landed with focused bindings
+and evidence (see the [Composition contract](composition.md) and the
+[acceptance plan](../testing/composition-acceptance.md); the complete journey
+acceptance, plus chart DSL, layout engine, actions, Konase generation, and
+proposals store, remain future work.
 
 Unsupported format versions and broken source references may prevent execution
 but must not remove raw inspection, export, or revision history. Browser page,

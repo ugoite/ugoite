@@ -103,8 +103,8 @@ CLI documentation trees:
   remote modes;
 - `sql`: saved-query and read-only SQL workflows (lint, query, count, and
   saved subcommands);
-- `composition`: inspect, query, import, and save Space-owned Composition
-  documents;
+- `composition`: list, history, inspect, lint, query, export, import, save,
+  and restore Space-owned Composition documents;
 - `change` and `run`: inspect the Space timeline and append inverse Changes for
   recovery;
 - `index`: rebuild derived local indexes; and
@@ -130,11 +130,13 @@ ugoite sql saved create --sql <SQL_OR_FILE> [--name <NAME>]
 ugoite sql saved update <SQL_ID> [--name <NAME> | --untitled] [--sql <SQL_OR_FILE>]
 ugoite sql saved delete <SQL_ID>
 ugoite composition list
+ugoite composition history <ID> [--limit <N>] [--offset <N>]
+ugoite composition restore <ID> --revision <SOURCE_REVISION_ID> --base-revision <REVISION_ID> --idempotency-key <KEY>
 ugoite composition import <FILE> --idempotency-key <KEY>
 ugoite composition save <FILE> --idempotency-key <KEY>
 ugoite composition save <FILE> --composition-id <ID> --base-revision <REVISION_ID> --idempotency-key <KEY>
 ugoite composition inspect <ID> [--revision <REVISION_ID>] [--raw]
-ugoite composition history <ID> [--limit <N>] [--offset <N>]
+ugoite composition lint <FILE>
 ugoite composition export <ID> --output <FILE> [--revision <REVISION_ID>]
 ugoite composition query <ID> [--revision <REVISION_ID>] [--param KEY=VALUE]
 ugoite sql lint <SQL>
@@ -173,6 +175,10 @@ new Composition. `save` creates when no revision preconditions are given and
 updates only when `--composition-id` and `--base-revision` are supplied
 together. Both commands require an `--idempotency-key`; reuse the same key and
 request after an uncertain result to recover its publication receipt.
+`restore` re-publishes one exact historical revision as a new append-only
+revision against its exact current base. `lint` validates a file offline
+without a Space, and `export` writes the stored raw spec to a new file
+without parsing it.
 
 | Outcome | Task page | Command authority |
 | --- | --- | --- |

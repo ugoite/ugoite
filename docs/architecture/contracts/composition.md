@@ -4,9 +4,11 @@ description: The portable document and semantic boundaries for Composition v1.
 ---
 
 **Status:** the v1 domain model, restricted parser, canonicalization,
-fingerprinting, native/WASM parity, and Rust Core source resolver have focused
-implementation and test evidence. Full persistence, CLI/Browser orchestration,
-and the end-to-end runtime journey remain incomplete; see the
+fingerprinting, native/WASM parity, Rust Core source resolver, the portable
+`composition.save`/`composition.restore` persistence operations, the nine CLI
+commands, and the Browser save/list/resolve/query paths have focused
+implementation and test evidence. The full end-to-end runtime journey and
+release acceptance remain incomplete; see the
 [acceptance plan](../testing/composition-acceptance.md).
 
 ## Portable document
@@ -103,9 +105,10 @@ Saved SQL revision's declared result column and type. Its EntryQuery and Saved
 SQL page adapters validate one already-authorized page: it must be complete,
 contain exactly one row, and contain exactly one selected scalar value of the
 declared type. The adapters use the shared Domain evaluator and do not execute
-queries, fetch additional pages, or aggregate rows. They are tested Core
-building blocks; full CLI/Browser query orchestration and rendering remain
-planned.
+queries, fetch additional pages, or aggregate rows. Focused CLI query
+orchestration (`composition query`) and Browser rendering through the shared
+evaluator are implemented with the test evidence recorded in the acceptance
+plan; complete CLI/Browser query journey acceptance remains planned.
 
 The shared Rust and portable API diagnostic vocabulary includes
 `unsupported_format_version`, `invalid_composition`, `parameter_unknown`,

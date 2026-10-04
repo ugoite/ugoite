@@ -5,10 +5,10 @@ title: "Composition acceptance plan"
 This is the Lane D acceptance plan for the Composition feature. One Browser
 Golden Journey has passed against the exact source commit recorded below; the
 full surface and release evidence remain incomplete. The portable list, get,
-history, lint, resolve, and save operations are implemented, as are the CLI
-list, history, inspect, lint, and query commands. This does not claim a complete
-Composition API or CLI command set or that all Browser acceptance selectors
-pass.
+history, lint, resolve, save, and restore operations are implemented, as are
+the CLI list, history, inspect, lint, query, export, save, import, and restore
+commands. This does not claim complete cross-surface CLI parity or that all
+Browser acceptance selectors pass.
 The Rust domain parser and Core resolver have focused implementation and test
 evidence, documented below and bound in the Mitase feature. The current
 structured locator map is
@@ -173,8 +173,10 @@ the CLI uses this operation in remote mode and the matching local Core reader
 in local mode. The list DTO omits `spec`. CLI history uses the portable
 `composition.history` operation remotely and the local raw history reader in
 local mode. Resolve is available as a side-effect-free operation, and
-`composition.save` is exposed by the Server API with a publication receipt.
-CLI save/import remain planned; full restore acceptance remains planned. The
+`composition.save` and `composition.restore` are exposed by the Server API
+with publication receipts. CLI save, import, and restore commands are
+implemented with focused Core/Remote journey evidence (see the CLI acceptance
+shape above); full cross-surface restore acceptance remains planned. The
 Core resolver returns requests for the existing query path; it does not itself
 execute them. The
 scalar page adapters described above are tested Core functions and are not yet
@@ -200,7 +202,10 @@ separately from this broader acceptance gate.
 Generic Entry create, update, bulk, import, and restore paths cannot bypass
 Composition validation. The Server save operation returns the publication
 receipt that identifies the exact revision. The Browser save flow is
-implemented and covered by the seeded Golden Journey; CLI save remains planned.
+implemented and covered by the seeded Golden Journey; CLI save and import are
+likewise implemented and covered by the focused Core/Remote import/save
+journeys. The broader cross-surface write-guard and receipt-reconciliation
+acceptance tracked by the `save_enablement` gate above remains incomplete.
 If a save response is lost, the outcome remains unknown until the exact
 revision is reconciled; retry idempotency is tracked separately.
 Generic restore of the reserved Form is denied while Composition-scoped restore
@@ -235,5 +240,7 @@ verifies Browser save retry after commit, exact-revision reopen from Home, and
 parameterized paged results with model connection disabled. It does not verify
 stale query response suppression, recovery and ACL selectors, performance
 evidence, or exact release-candidate byte promotion. The separate scoped CLI
-journey covers only Core/Remote inspect, `entry_query`, and export read parity.
+journeys cover Core/Remote inspect, `entry_query`, and export read parity,
+plus Core/Remote import/save receipts with prevalidation and restore
+receipt, replay, and stale-base paths.
 No release candidate was built or promoted.
