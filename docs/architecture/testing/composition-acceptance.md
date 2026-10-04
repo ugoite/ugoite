@@ -112,8 +112,16 @@ Focused CLI tests cover bounded local list and history pages, remote operation
 request and response decoding, summary output shape, exact-revision inspect,
 shared lint diagnostics, exact raw export with missing-revision and no-overwrite
 coverage, and exact Composition restore with receipt, replay, stale-base, and
-local/remote parity assertions. Full cross-surface
-list/get/history acceptance and CLI parity acceptance remain planned. History
+local/remote parity assertions. A real CLI-process integration journey also
+compares Core and Remote exact-revision inspect, a parameterized `entry_query`,
+and exact raw export against the same filesystem-backed Space; it verifies
+matching JSON/result meaning, byte-identical exported specs, and unchanged
+Composition history. This is scoped read-path parity evidence: it does not
+cover every CLI command, saved-SQL query execution, unknown-version or broken-
+reference recovery, or a release candidate. Its fixture contains one
+Composition revision, so it does not test whether an older explicit selector
+wins over a newer revision; issue #3681 tracks that case. Full cross-surface
+list/get/history acceptance and complete CLI parity remain planned. History
 and restore preserve append-only revisions, and save success must wait for the
 Entry receipt. Raw
 inspect, export, and history must remain available for unknown versions,
@@ -225,6 +233,7 @@ with SHA-256
 `a7da68bb91789b3701f89624c93a28eac633cded59a0316d853d20e5eb9dd108`. The run
 verifies Browser save retry after commit, exact-revision reopen from Home, and
 parameterized paged results with model connection disabled. It does not verify
-stale query response suppression, CLI parity, recovery and ACL selectors,
-performance evidence, or exact release-candidate byte promotion. No release
-candidate was built or promoted.
+stale query response suppression, recovery and ACL selectors, performance
+evidence, or exact release-candidate byte promotion. The separate scoped CLI
+journey covers only Core/Remote inspect, `entry_query`, and export read parity.
+No release candidate was built or promoted.

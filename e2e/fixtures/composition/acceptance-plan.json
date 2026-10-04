@@ -428,10 +428,10 @@
           }
         },
         {
-          "path": "e2e/composition-cli-parity.test.ts",
+          "path": "crates/ugoite-cli/tests/test_journey_remote.rs",
           "selector": {
             "kind": "test",
-            "name": "Composition CLI inspect query and export agree in core and remote modes"
+            "name": "test_cli_composition_inspect_query_export_match_core_remote"
           }
         },
         {
