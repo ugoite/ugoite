@@ -947,7 +947,7 @@ features:
       - id: browser-query-runtime
         role: implementation
         facet: frontend
-        responsibility: Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, tables, and metric values in the Browser.
+        responsibility: Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, source-native tables, and metric values in the Browser. Composition table presentation delegates to the source-native Entry or SQL presenter and never defines a third generic table grammar; source query semantics remain unchanged.
         targets:
           - id: browser-composition-api
             adapter: typescript
@@ -967,6 +967,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
           - id: browser-shared-metric-evaluator
             adapter: typescript
             path: frontend/src/lib/ugoite-client/protocol.ts
@@ -981,6 +983,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-002#criterion.metric-runtime-values
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.source-native-composition-rendering
           - id: browser-home-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/dashboard.tsx"

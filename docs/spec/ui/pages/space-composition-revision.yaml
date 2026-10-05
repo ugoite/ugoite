@@ -27,7 +27,12 @@ components:
       type: query-results
       title: Ordered tables and metrics
       source: existing entry.query and exact-revision sql.query operations
-      component: PagedResultTable and the shared WASM metric evaluator
+      table_presentation:
+        entry_query: EntryResultTable
+        saved_sql: SqlResultTable
+      metric_presentation: shared WASM metric evaluator
+      pagination_owner: composition query handle
+      description: Composition table components delegate presentation to the source-native Entry or SQL result presenter. Composition does not implement a third generic table grammar, and source query semantics remain unchanged.
       rendering:
         mode: bounded-current-page
         parameters-and-pages: transient-work

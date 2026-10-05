@@ -149,9 +149,11 @@ Composition.
 When implementing the surface, follow the existing Mitase UI contract:
 structure comes before explanation, each datum has one visible owner, and
 each action has one operative control. Supplementary text is used only to
-resolve ambiguity about the next action. The renderer reuses
-`PagedResultTable`; a metric displays the one scalar returned by the query
-engine without aggregating rows in the Browser.
+resolve ambiguity about the next action. Composition table components
+delegate presentation to the source-native Entry or SQL result presenter.
+Composition does not implement a third generic table grammar, and source
+query semantics remain unchanged. A metric displays the one scalar returned
+by the query engine without aggregating rows in the Browser.
 
 Save as tool covers Form-scoped EntryQuery views and exact Saved SQL
 revisions through the same dialog, receipt, and retry contract. All-Forms

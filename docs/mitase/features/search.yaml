@@ -106,7 +106,7 @@ features:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep the shipped Search route preset and shared EntryBrowser on the canonical EntryQuery controller in the Search feature artifact graph.
+        responsibility: Keep the shipped Search route preset and shared EntryBrowser on the canonical EntryQuery controller in the Search feature artifact graph. UI consistency across result surfaces comes from the shared visual and interaction vocabulary; row semantics stay surface-owned and paging stays controller-owned, so consistency never requires one generic result component.
         targets:
           - id: search-route
             adapter: typescript
@@ -125,7 +125,9 @@ features:
               - kind: satisfies
                 criterion: REQ-SRCH-005#criterion.structured-search-reuse
               - kind: satisfies
-                criterion: REQ-FE-068#criterion.shared-native-table-and-actions
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
           - id: paged-result-table
             adapter: typescript
             path: frontend/src/components/PagedResultTable.tsx
@@ -134,7 +136,11 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.native-page-rows
               - kind: satisfies
-                criterion: REQ-FE-068#criterion.shared-native-table-and-actions
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.keyboard-row-navigation
           - id: entry-query-controller

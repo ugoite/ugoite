@@ -114,6 +114,8 @@ features:
                 criterion: REQ-FE-067#criterion.form-switch-results
               - kind: satisfies
                 criterion: REQ-FE-067#criterion.mobile-table-overflow-and-action
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
       - id: form-entry-browser-specification
         role: contract-source
         facet: frontend
@@ -400,7 +402,11 @@ features:
             selector: { kind: symbol, name: SpaceSqlRunRoute }
             claims:
               - kind: satisfies
-                criterion: REQ-FE-068#criterion.shared-native-table-and-actions
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
 
   - id: FEAT-FE-009
     title: Auth-aware global navigation

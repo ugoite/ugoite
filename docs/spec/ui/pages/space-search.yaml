@@ -14,7 +14,7 @@ components:
   body:
     - id: keyword-result-list
       type: query-results
-      component: EntryBrowser and PagedResultTable
+      component: EntryBrowser with EntryResultTable
       reference: ../components/entry-browser.yaml
       controller: EntryQueryController
       selection_target: space-entry-detail
