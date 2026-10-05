@@ -22375,6 +22375,205 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn issue_3222_authenticated_rest_revert_matches_stored_integrity() -> anyhow::Result<()> {
+        // The authenticated REST revert path returns the Change and revision
+        // that are actually stored: the history reader reports the same
+        // checksum and HMAC signature as the stored inverse revision, which
+        // links the reverted revision as its parent.
+        let state = AppState::new_for_tests(format!(
+            "memory://server-issue-3222-revert-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(32221);
+        let space_id = state
+            .service
+            .create_space_for_principal("issue-3222-revert", principal_id, "Route test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        // Build the read workspace before moving state into the route; the
+        // workspace is owned and needs no further service access.
+        let workspace = ugoite_iceberg::iceberg_store::native_workspace(
+            state.service.operator(),
+            &state.service.workspace_path(&space_id),
+        )
+        .await?;
+        let route = reversible_knowledge_route(
+            state,
+            reversible_knowledge_identity(principal_id, space_uid),
+        );
+
+        let create = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [knowledge_create_operation("integrity-entry", "created")],
+                    "run_id": "run-3222-revert-create",
+                    "message": "create before integrity revert"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(create.0, StatusCode::OK, "{}", create.1);
+        let create_revision = create.1["operations"][0]["revision_id"]
+            .as_str()
+            .expect("create revision token")
+            .to_owned();
+
+        let update = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/apply"),
+                json!({
+                    "operations": [knowledge_update_operation(
+                        "integrity-entry",
+                        &create_revision,
+                        "target update",
+                    )],
+                    "run_id": "run-3222-revert-target",
+                    "message": "target integrity update"
+                }),
+            ),
+        )
+        .await?;
+        assert_eq!(update.0, StatusCode::OK, "{}", update.1);
+
+        let (status, changes_body) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/changes")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{changes_body}");
+        let target_change_id = changes_body
+            .as_array()
+            .expect("change listing array")
+            .iter()
+            .find(|change| change["change"]["message"] == "target integrity update")
+            .and_then(|change| change["change_id"].as_str())
+            .expect("target update is listed")
+            .to_owned();
+
+        let (status, revert_body) = route_json(
+            route.clone(),
+            json_request(
+                Method::POST,
+                format!("/spaces/{space_id}/changes/{target_change_id}/revert"),
+                json!({}),
+            ),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{revert_body}");
+        assert_eq!(revert_body["reverts_change_id"], target_change_id);
+        let inverse_change_id = revert_body["change_id"]
+            .as_str()
+            .expect("inverse change id")
+            .to_owned();
+        assert!(!revert_body["revision_ids"]
+            .as_array()
+            .expect("inverse lists revisions")
+            .is_empty());
+
+        let (status, changes_after_revert) = route_json(
+            route.clone(),
+            Request::get(format!("/spaces/{space_id}/changes")).body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{changes_after_revert}");
+        let inverse = changes_after_revert
+            .as_array()
+            .expect("change listing after revert")
+            .iter()
+            .find(|change| change["change_id"] == inverse_change_id)
+            .expect("inverse Change is reachable after revert");
+        assert_eq!(inverse["change"]["reverts_change_id"], target_change_id);
+        assert_publication_coordinate(&inverse["publication"], space_uid);
+
+        let (status, history_body) = route_json(
+            route.clone(),
+            Request::get(format!(
+                "/spaces/{space_id}/entries/integrity-entry/history"
+            ))
+            .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{history_body}");
+        let history_row = history_body["revisions"]
+            .as_array()
+            .expect("entry history revisions")
+            .iter()
+            .find(|revision| revision["change_id"] == inverse_change_id)
+            .expect("inverse revision is in entry history");
+        for key in ["checksum", "signature"] {
+            assert!(
+                history_row[key]
+                    .as_str()
+                    .is_some_and(|value| !value.is_empty()),
+                "history reports stored integrity {key}"
+            );
+        }
+
+        let form = workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .find(|form| form.name == "Entry")
+            .expect("Entry form exists");
+        let revisions = workspace.read_revisions(form.id).await?;
+        let stored_target = revisions
+            .iter()
+            .find(|revision| revision.change_id == target_change_id)
+            .expect("target revision is stored");
+        let stored_inverse = revisions
+            .iter()
+            .find(|revision| revision.change_id == inverse_change_id)
+            .expect("inverse revision is stored");
+        assert_eq!(
+            stored_inverse.entry.integrity.checksum,
+            history_row["checksum"].as_str().expect("history checksum"),
+            "REST history checksum matches the stored inverse revision"
+        );
+        assert_eq!(
+            stored_inverse.entry.integrity.signature,
+            history_row["signature"]
+                .as_str()
+                .expect("history signature"),
+            "REST history HMAC matches the stored inverse revision"
+        );
+        assert_eq!(
+            stored_inverse.parent_revision_id,
+            Some(stored_target.revision_id)
+        );
+        assert_eq!(
+            stored_inverse.entry_version,
+            stored_target.entry_version + 1
+        );
+
+        let (status, current_entry) = route_json(
+            route,
+            Request::get(format!("/spaces/{space_id}/entries/integrity-entry"))
+                .body(Body::empty())?,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{current_entry}");
+        assert_eq!(current_entry["fields"]["Body"], "created");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn authenticated_rest_run_inspection_returns_committed_changes() -> anyhow::Result<()> {
         let state =
             AppState::new_for_tests(format!("memory://server-run-inspect-{}", Uuid::now_v7()))?;
