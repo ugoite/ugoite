@@ -1,0 +1,72 @@
+version: "0.1"
+updated: "2026-10-05"
+page:
+  id: space-composition-new
+  title: New tool
+  route: /spaces/{space_id}/compositions/new
+  implementation: implemented
+components:
+  shared:
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
+  body:
+    - id: studio-header
+      type: page-header
+      title: Tool name
+      ownership: tool-name-only
+      description: One Back control to the saved-tools list, one tool-name text input owning the name, one Save icon-button.
+    - id: studio-back
+      type: link
+      title: Back to saved tools
+      single_control: true
+    - id: studio-name
+      type: text-input
+      title: Tool name
+      ownership: object-identity
+      source: draft name written through setDraftName
+    - id: studio-save
+      type: icon-button
+      title: Save
+      single_control: true
+      source: canonical draft YAML through composition.save with one Idempotency-Key reused for retry
+      deterministic_rejection: >-
+        Show a localized summary when composition.save returns an allowlisted
+        composition_diagnostic; use the generic save failure when the
+        diagnostic is absent or unknown. Clear the uncertain attempt on
+        rejection and keep retry on the same route with the identical
+        payload and key.
+    - id: studio-data
+      type: list
+      title: Data
+      source: draft sources with human names only
+      selection: full-row-activate
+      reorder: keyboard-operable-move-up-down
+      remove: blocked-while-displays-reference-with-reason
+      revision_identity: advanced-disclosure-only
+    - id: studio-add-data
+      type: button
+      title: Add data
+      single_control: true
+      source: CompositionSourcePicker dialog over Forms and user-query Saved SQL
+    - id: studio-add-data-dialog
+      type: dialog
+      title: Add data
+      source: Forms through form.list and Saved SQL through sql.list
+      selection: full-row-activate
+      rendering: human-name-only rows with loading, empty, and error states
+    - id: studio-tags
+      type: form
+      title: Tags
+      semantics: entry-metadata-tags
+      source: comma-or-space-separated text parsed into draft tags
+    - id: studio-preview
+      type: query-results
+      title: Preview
+      source: canonical draft YAML through composition.preview with debounced side-effect-free resolution
+      result_presentation: CompositionRenderer
+      rendering:
+        mode: shared-composition-renderer
+        rows: first-page-per-source
+      pagination_owner: studio-new route
+      description: Renders the preview plan through the shared renderer without creating persistent execution state.

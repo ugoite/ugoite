@@ -19,7 +19,12 @@ export type CompositionFieldNames = (
 ) => string | undefined;
 
 type RendererProps = {
-  plan: CompositionResolvePlan;
+  /**
+   * Resolved sources with their component bindings. Saved revisions pass
+   * the full resolve plan; unsaved draft previews pass the preview plan,
+   * which carries the same sources and bindings without a revision.
+   */
+  plan: Pick<CompositionResolvePlan, "sources" | "component_bindings">;
   sources: Record<string, CompositionSourcePageState>;
   fieldNames?: CompositionFieldNames;
   onNext: (sourceId: string) => void;
