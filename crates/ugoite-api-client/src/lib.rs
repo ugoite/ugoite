@@ -16,7 +16,8 @@ pub use composition::{
     CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
     CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
     CompositionListItem, CompositionListPage, CompositionParameterDefinition,
-    CompositionParameterFormat, CompositionParameterType, CompositionPublicationReceipt,
+    CompositionParameterFormat, CompositionParameterType, CompositionPreviewPlan,
+    CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
     CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
     CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
     CompositionResolvedComponentKind, CompositionResolvedSource, CompositionRestoreRequest,
@@ -88,6 +89,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "composition.get",
     "composition.history",
     "composition.resolve",
+    "composition.preview",
     "composition.save",
     "composition.restore",
     "sql.list",
@@ -1160,6 +1162,16 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "composition.preview" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to preview Composition"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "compositions".into(),
+                    "preview".into(),
+                ],
+                vec![],
+            ),
             "composition.save" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to save Composition"),
                 vec![
@@ -2020,6 +2032,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to resolve Composition",
             RequestBodyKind::Json,
         ),
+        "composition.preview" => (
+            HttpMethod::Post,
+            "Failed to preview Composition",
+            RequestBodyKind::Json,
+        ),
         "composition.save" => (
             HttpMethod::Post,
             "Failed to save Composition",
@@ -2301,6 +2318,7 @@ mod tests {
                 "composition.get",
                 "composition.history",
                 "composition.resolve",
+                "composition.preview",
                 "composition.save",
                 "composition.restore",
             ]
@@ -3047,6 +3065,51 @@ mod tests {
             CompositionDiagnosticCode::SourceUnavailable.as_str(),
             "source_unavailable"
         );
+
+        let preview_body = json!({
+            "yaml": "format: ugoite.composition\n",
+            "parameters": {"month": "2026-10"}
+        });
+        let preview = prepare_request(
+            "composition.preview",
+            &json!({"space_id": "demo"}),
+            Some(&preview_body),
+        )
+        .expect("preview request");
+        assert_eq!(preview.method, HttpMethod::Post);
+        assert_eq!(preview.path, "/spaces/demo/compositions/preview");
+        assert_eq!(preview.body_kind, RequestBodyKind::Json);
+        assert_eq!(
+            serde_json::from_str::<Value>(preview.body.as_deref().expect("preview body"))
+                .expect("preview request JSON"),
+            preview_body
+        );
+
+        let preview_success = json!({
+            "ok": true,
+            "draft_fingerprint": "f".repeat(64),
+            "parameter_definitions": [{
+                "id": "month",
+                "type": "date",
+                "required": true
+            }],
+            "plan": {
+                "draft_fingerprint": "f".repeat(64),
+                "sources": [],
+                "component_bindings": []
+            }
+        });
+        let preview_success_dto: CompositionPreviewResponse =
+            serde_json::from_value(preview_success.clone()).expect("preview success DTO");
+        assert_eq!(
+            serde_json::to_value(&preview_success_dto).expect("serialize preview success DTO"),
+            preview_success
+        );
+        let preview_error_dto: CompositionPreviewResponse = serde_json::from_value(
+            json!({"ok": false, "diagnostics": [{"code": "invalid_composition"}]}),
+        )
+        .expect("preview diagnostic DTO");
+        assert_eq!(preview_error_dto.draft_fingerprint, None);
         for (code, expected) in [
             (
                 CompositionDiagnosticCode::MetricResultNotScalar,

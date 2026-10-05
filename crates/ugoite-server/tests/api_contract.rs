@@ -1506,6 +1506,38 @@ fn openapi_documents_composition_restore_exact_revision_and_idempotency() {
 }
 
 #[test]
+fn openapi_documents_composition_preview_without_publication() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let preview = &snapshot["paths"]["/spaces/{space_id}/compositions/preview"]["post"];
+    assert_eq!(
+        preview["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionPreviewRequest"
+    );
+    assert_eq!(
+        preview["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/CompositionPreviewResponse"
+    );
+    let plan = &snapshot["components"]["schemas"]["CompositionPreviewPlan"];
+    assert_eq!(
+        plan["properties"]["sources"]["items"]["$ref"],
+        "#/components/schemas/CompositionResolvedSource"
+    );
+    assert_eq!(
+        plan["properties"]["component_bindings"]["items"]["$ref"],
+        "#/components/schemas/CompositionResolvedComponentBinding"
+    );
+    assert!(plan["required"]
+        .as_array()
+        .expect("required preview plan fields")
+        .contains(&serde_json::json!("draft_fingerprint")));
+    assert!(!plan["required"]
+        .as_array()
+        .expect("required preview plan fields")
+        .iter()
+        .any(|field| field == "composition_revision"));
+}
+
+#[test]
 fn openapi_documents_composition_resolve_metric_result_type() {
     let snapshot = ugoite_server::openapi_snapshot();
     let resolve = &snapshot["paths"]["/spaces/{space_id}/compositions/{entry_id}/resolve"]["post"];

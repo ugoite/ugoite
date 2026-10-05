@@ -12094,6 +12094,44 @@
         }
       }
     },
+    "/spaces/{space_id}/compositions/preview": {
+      "post": {
+        "summary": "Preview an unsaved Composition draft",
+        "description": "Parses a candidate Composition document, reads current source descriptors through current ACL checks, and compiles each source into an existing bounded EntryQuery or exact-revision Saved SQL request. It creates no registry, history, or publication state. Missing and denied source references share the source_unavailable diagnostic.",
+        "parameters": [
+          { "$ref": "#/components/parameters/SpaceId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CompositionPreviewRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview plan or stable Composition diagnostics",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CompositionPreviewResponse" }
+              }
+            },
+            "headers": {
+              "X-Ugoite-Key-Id": { "$ref": "#/components/headers/X-Ugoite-Key-Id" },
+              "X-Ugoite-Signature": { "$ref": "#/components/headers/X-Ugoite-Signature" }
+            }
+          },
+          "400": { "description": "Invalid JSON request body", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" },
+          "413": { "description": "The JSON request body exceeds the 256 KiB bound" },
+          "415": { "description": "Request Content-Type must be application/json" },
+          "422": { "description": "Invalid identifiers or request shape", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "500": { "description": "Internal error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
     "/spaces/{space_id}/compositions/{entry_id}/restore": {
       "post": {
         "summary": "Restore an exact Composition revision",
@@ -14845,6 +14883,42 @@
         },
         "additionalProperties": false
       },
+      "CompositionPreviewRequest": {
+        "type": "object",
+        "required": ["yaml"],
+        "properties": {
+          "yaml": {
+            "type": "string",
+            "description": "Candidate Composition YAML; parsed but never stored."
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/components/schemas/JsonValue" },
+            "default": {}
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompositionPreviewPlan": {
+        "type": "object",
+        "required": ["draft_fingerprint", "sources"],
+        "properties": {
+          "draft_fingerprint": {
+            "type": "string",
+            "description": "Semantic draft fingerprint; preview identity, never a revision."
+          },
+          "sources": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CompositionResolvedSource" }
+          },
+          "component_bindings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CompositionResolvedComponentBinding" },
+            "default": []
+          }
+        },
+        "additionalProperties": false
+      },
       "CompositionRevisionReference": {
         "type": "object",
         "required": ["entry_id", "revision_id"],
@@ -14952,6 +15026,42 @@
             "required": ["ok", "diagnostics"],
             "properties": {
               "ok": { "type": "boolean", "const": false },
+              "parameter_definitions": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/CompositionParameterDefinition" }
+              },
+              "diagnostics": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "$ref": "#/components/schemas/CompositionResolveDiagnostic" }
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CompositionPreviewResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["ok", "draft_fingerprint", "plan"],
+            "properties": {
+              "ok": { "type": "boolean", "const": true },
+              "draft_fingerprint": { "type": "string" },
+              "parameter_definitions": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/CompositionParameterDefinition" }
+              },
+              "plan": { "$ref": "#/components/schemas/CompositionPreviewPlan" }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["ok", "diagnostics"],
+            "properties": {
+              "ok": { "type": "boolean", "const": false },
+              "draft_fingerprint": { "type": "string" },
               "parameter_definitions": {
                 "type": "array",
                 "items": { "$ref": "#/components/schemas/CompositionParameterDefinition" }
