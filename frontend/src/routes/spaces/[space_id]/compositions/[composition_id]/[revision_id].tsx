@@ -14,8 +14,25 @@ import {
 import { createCompositionQueryHandle } from "~/lib/composition-query-handle";
 import { formApi } from "~/lib/ugoite-client";
 import { spaceRoute } from "~/lib/space-shell-route";
+import type { Form } from "~/lib/types";
 
 export const route = spaceRoute({ navigation: "home" });
+
+/**
+ * Display-only Form field-name lookup for Composition entry_query tables.
+ * Matches the stable Form id only; display names never participate so a
+ * Form rename cannot change which fields resolve. Query semantics never
+ * depend on this helper — missing metadata returns undefined and the
+ * table falls back to the current row key order.
+ */
+export const resolveCompositionFieldName = (
+  forms: readonly Form[] | undefined,
+  formId: string,
+  fieldId: number,
+): string | undefined =>
+  Object.entries(
+    (forms ?? []).find((form) => form.id === formId)?.fields ?? {},
+  ).find(([, field]) => field.id === fieldId)?.[0];
 
 const parameterValue = (
   definition: CompositionParameterDefinition,
@@ -77,10 +94,7 @@ export default function CompositionRevisionRoute() {
     (spaceId) => formApi.list(spaceId).catch(() => []),
   );
   const fieldNames = (formId: string, fieldId: number): string | undefined =>
-    Object.entries(
-      (forms() ?? []).find((form) => form.id === formId || form.name === formId)
-        ?.fields ?? {},
-    ).find(([, field]) => field.id === fieldId)?.[0];
+    resolveCompositionFieldName(forms(), formId, fieldId);
   const parameterMismatch = (parameterId: string) =>
     diagnostics().some((diagnostic) =>
       diagnostic.parameter_id === parameterId &&
