@@ -80,6 +80,67 @@ Deno.test("required gate accepts only the lanes planned for a docs-only pull req
   );
 });
 
+Deno.test("required gate rejects a contradictory all-scope pull request plan", async () => {
+  // Truth table: scope=all on a pull request must plan every lane.
+  assertEquals(
+    await check(environment({
+      EVENT_NAME: "pull_request",
+      PR_CONTEXT_RESULT: "success",
+    })),
+    true,
+  );
+  const skippedLaneCases: Record<string, string>[] = [
+    {
+      PLAN_RUST_CHECK: "false",
+      RUST_CHECK_RESULT: "skipped",
+      IMPACT_JOBS_SKIPPED: "true",
+    },
+    {
+      PLAN_RUST_TEST: "false",
+      RUST_TEST_RESULT: "skipped",
+      S3_SHARED_AUTHORIZATION_RESULT: "skipped",
+      IMPACT_JOBS_SKIPPED: "true",
+    },
+    {
+      PLAN_WEB: "false",
+      WEB_RESULT: "skipped",
+      IMPACT_JOBS_SKIPPED: "true",
+    },
+    {
+      PLAN_ARTIFACTS: "false",
+      ARTIFACT_BUILD_RESULT: "skipped",
+      E2E_SMOKE_MOBILE_RESULT: "skipped",
+      E2E_OWNER_RESULT: "skipped",
+      E2E_PORTABLE_RESULT: "skipped",
+      IMPACT_JOBS_SKIPPED: "true",
+    },
+    {
+      PLAN_DOCSITE_NAV: "false",
+      DOCSITE_NAV_RESULT: "skipped",
+      IMPACT_JOBS_SKIPPED: "true",
+    },
+    {
+      PLAN_CP1_ACCEPTANCE: "false",
+      CP1_FIXTURES_RESULT: "skipped",
+      CP1_QUERY_RESULT: "skipped",
+      CP1_EXPORT_RESULT: "skipped",
+      IMPACT_JOBS_SKIPPED: "true",
+    },
+  ];
+  for (const overrides of skippedLaneCases) {
+    assertEquals(
+      await check(environment({
+        EVENT_NAME: "pull_request",
+        IMPACT_PLAN_SCOPE: "all",
+        PR_CONTEXT_RESULT: "success",
+        ...overrides,
+      })),
+      false,
+      JSON.stringify(overrides),
+    );
+  }
+});
+
 Deno.test("required gate rejects lane failures, cancellation, and invalid plans", async () => {
   const cases: Record<string, string>[] = [
     { RUST_CHECK_RESULT: "failure" },

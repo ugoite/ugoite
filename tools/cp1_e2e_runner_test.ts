@@ -94,6 +94,18 @@ Deno.test("Compose query fixtures retain caller ownership and private modes", ()
     composeRunner.includes('rm -f "$PORTABLE_PROOF_HOST_FILE"'),
     true,
   );
+  assertEquals(
+    composeRunner.includes("validate_fixture_ownership"),
+    true,
+  );
+  assertEquals(
+    composeRunner.includes('if [ "$STORAGE_ROOT_OWNED" = false ]'),
+    true,
+  );
+  assertEquals(
+    composeRunner.includes("mixed-owner fixture root"),
+    true,
+  );
 });
 
 Deno.test("Compose query runner leaves a caller-owned fixture root in place", async () => {
@@ -212,6 +224,108 @@ exec "$REAL_DENO" "$@"
       true,
     );
     assertEquals((await Deno.stat(fixtureRoot)).mode! & 0o777, initialMode);
+  } finally {
+    await Deno.remove(tempRoot, { recursive: true });
+  }
+});
+
+Deno.test("Compose query refuses a mixed-owner fixture root before any chown", async () => {
+  const tempRoot = await Deno.makeTempDir({
+    prefix: "ugoite-compose-owner-test-",
+  });
+  const fixtureRoot = `${tempRoot}/fixture`;
+  const bin = `${tempRoot}/bin`;
+  const dockerLog = `${tempRoot}/docker.log`;
+  const report = `${tempRoot}/junit.xml`;
+  await Deno.mkdir(`${fixtureRoot}/spaces/mock-space`, { recursive: true });
+  await Deno.mkdir(bin);
+  await Deno.writeTextFile(
+    `${fixtureRoot}/spaces/mock-space/meta.json`,
+    "{}\n",
+  );
+  const before = await Deno.readTextFile(
+    `${fixtureRoot}/spaces/mock-space/meta.json`,
+  );
+
+  const dockerStub = `${bin}/docker`;
+  await Deno.writeTextFile(
+    dockerStub,
+    `#!/usr/bin/env bash
+set -e
+printf '%s\\n' "$*" >>"$DOCKER_LOG"
+case " $* " in
+  *" port ugoite 8000 "*) printf '127.0.0.1:18081\\n' ;;
+  *" logs "*) printf 'ugoite server #secret=fixture-secret\\n' ;;
+esac
+`,
+  );
+  await Deno.chmod(dockerStub, 0o755);
+
+  // Report a foreign UID/GID so the caller-owned tree reads as mixed-owner.
+  const idStub = `${bin}/id`;
+  await Deno.writeTextFile(
+    idStub,
+    `#!/usr/bin/env bash
+set -e
+if [[ "$1" == "-u" ]]; then printf '59999\\n'; exit 0; fi
+if [[ "$1" == "-g" ]]; then printf '59998\\n'; exit 0; fi
+exec /usr/bin/id "$@"
+`,
+  );
+  await Deno.chmod(idStub, 0o755);
+
+  const denoStub = `${bin}/deno`;
+  await Deno.writeTextFile(
+    denoStub,
+    `#!/usr/bin/env bash
+set -e
+if [[ "$1" == "eval" && "$2" == *"Deno.listen"* ]]; then printf '18080\\n'; exit 0; fi
+exec "$REAL_DENO" "$@"
+`,
+  );
+  await Deno.chmod(denoStub, 0o755);
+
+  const git = await new Deno.Command("git", {
+    args: ["rev-parse", "HEAD"],
+  }).output();
+  const sourceSha = new TextDecoder().decode(git.stdout).trim();
+  try {
+    const result = await new Deno.Command("bash", {
+      args: [
+        "e2e/scripts/run-e2e-compose.sh",
+        "query-measurement",
+        "--fixture-root",
+        fixtureRoot,
+      ],
+      env: {
+        PATH: `${bin}:${Deno.env.get("PATH") ?? ""}`,
+        REAL_DENO: Deno.execPath(),
+        DOCKER_LOG: dockerLog,
+        TEST_SOURCE_SHA: sourceSha,
+        UGOITE_SOURCE_SHA: sourceSha,
+        UGOITE_SKIP_PLAYWRIGHT_DEPS: "1",
+        E2E_BUILD_IMAGES: "false",
+        E2E_READINESS_TIMEOUT_SECONDS: "2",
+        E2E_BACKEND_START_TIMEOUT_SECONDS: "2",
+        E2E_OIDC_MOCK_HOST: "192.0.2.2",
+        PLAYWRIGHT_JUNIT_OUTPUT_FILE: report,
+      },
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(result.success, false);
+    assertEquals(
+      new TextDecoder().decode(result.stderr).includes(
+        "mixed-owner fixture root",
+      ),
+      true,
+    );
+    const dockerCalls = await Deno.readTextFile(dockerLog);
+    assertEquals(dockerCalls.includes("chown"), false);
+    assertEquals(
+      await Deno.readTextFile(`${fixtureRoot}/spaces/mock-space/meta.json`),
+      before,
+    );
   } finally {
     await Deno.remove(tempRoot, { recursive: true });
   }

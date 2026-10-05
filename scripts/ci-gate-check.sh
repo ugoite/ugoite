@@ -44,6 +44,12 @@ if [[ "${EVENT_NAME:-}" == "merge_group" || "${EVENT_NAME:-}" == "push" ]]; then
   [[ "$any_skipped" == "false" ]] || fail "$EVENT_NAME must run every lane"
 fi
 
+# A pull request that claims all scope contradicts any unplanned lane. Fail
+# closed: every lane must be planned when the scope is all.
+if [[ "${EVENT_NAME:-}" == "pull_request" && "${IMPACT_PLAN_SCOPE:-}" == "all" ]]; then
+  [[ "$any_skipped" == "false" ]] || fail "pull_request with all scope must plan every lane"
+fi
+
 validate_lane "rust-check" "${PLAN_RUST_CHECK:-missing}" "${RUST_CHECK_RESULT:-missing}"
 validate_lane "rust-test" "${PLAN_RUST_TEST:-missing}" "${RUST_TEST_RESULT:-missing}"
 validate_lane "s3-shared-authorization" "${PLAN_RUST_TEST:-missing}" "${S3_SHARED_AUTHORIZATION_RESULT:-missing}"
