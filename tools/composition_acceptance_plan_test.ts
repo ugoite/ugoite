@@ -202,7 +202,7 @@ const EXPECTED_RESERVED_SELECTORS: Record<string, string[]> = {
   ],
   B5: [
     "frontend/src/lib/composition-api.ts#test:composition_query_handle_discards_stale_response_state_updates",
-    "frontend/src/components/CompositionRenderer.test.tsx#test:composition_renderer_uses_paged_results_without_client_aggregation",
+    "frontend/src/components/CompositionRenderer.test.tsx#test:composition_renderer_delegates_to_source_native_presenters_without_client_aggregation",
     "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
   ],
   B6: [

@@ -7,7 +7,8 @@ components:
   - id: form-entry-table
     type: server-query-results
     implementation: frontend/src/components/EntryBrowser.tsx
-    table_implementation: frontend/src/components/PagedResultTable.tsx
+    result_presentation: frontend/src/components/EntryResultTable.tsx
+    pagination_owner: EntryBrowser
     controller: EntryQueryController
     scope: selected-form
     semantics: native-table

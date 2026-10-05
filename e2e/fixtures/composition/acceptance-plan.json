@@ -442,7 +442,7 @@
     {
       "id": "B5",
       "status": "planned",
-      "outcome": "Browser reopens saved Compositions, uses transient query state, reuses the paged table contract, and never aggregates result rows locally.",
+      "outcome": "Browser reopens saved Compositions, uses transient query state, delegates table presentation to source-native presenters, and never aggregates result rows locally.",
       "reserved_selectors": [
         {
           "path": "frontend/src/lib/composition-api.ts",
@@ -455,7 +455,7 @@
           "path": "frontend/src/components/CompositionRenderer.test.tsx",
           "selector": {
             "kind": "test",
-            "name": "composition_renderer_uses_paged_results_without_client_aggregation"
+            "name": "composition_renderer_delegates_to_source_native_presenters_without_client_aggregation"
           }
         },
         {

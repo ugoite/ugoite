@@ -18,7 +18,8 @@ components:
     - id: sql-results-table
       type: query-results
       source: sql.query using exact Saved SQL ID and revision with server-derived Form bindings
-      component: PagedResultTable
+      result_presentation: SqlResultTable
+      pagination_owner: space-sql-results route
       description: Renders every row in the current SQL page with a native table without creating persistent execution state.
       rendering:
         mode: native-page-table
