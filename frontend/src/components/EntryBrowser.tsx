@@ -451,7 +451,7 @@ export function EntryBrowser(props: EntryBrowserProps) {
           tableLabel={t("entryBrowser.pagination")}
           selectedEntryId={selectedEntryId()}
           onSelectEntry={(row) => setSelectedEntryId(row.id)}
-          actionVariant={mode() === "select_one" ? "confirm" : "open"}
+          trailingAction={mode() === "select_one" ? "confirm" : "open"}
           openLabel={t("entryBrowser.openEntry")}
           confirmLabel={t("entryBrowser.confirm")}
           busy={loadingState()}

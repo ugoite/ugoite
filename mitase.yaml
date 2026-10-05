@@ -216,6 +216,8 @@ inventory:
         - frontend/src/lib/entry-query-composition.test.ts
         - frontend/src/components/CompositionRenderer.tsx
         - frontend/src/components/CompositionRenderer.test.tsx
+        - frontend/src/components/CompositionEntryQueryTable.tsx
+        - frontend/src/components/CompositionEntryQueryTable.test.tsx
     openapi:
       roots:
         - crates/ugoite-server/src/openapi.json

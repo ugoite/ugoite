@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompositionRenderer } from "./CompositionRenderer";
@@ -273,5 +273,125 @@ describe("CompositionRenderer", () => {
     ));
 
     expect(screen.getAllByRole("status")).toHaveLength(1);
+  });
+
+  it("composition_renderer_delegates_to_source_native_presenters_without_client_aggregation", async () => {
+    const delegatedPlan: CompositionResolvePlan = {
+      composition_revision: { entry_id: "tool-1", revision_id: "revision-1" },
+      sources: [
+        {
+          kind: "entry_query",
+          source_id: "entries",
+          source_schema_fingerprint: "fingerprint",
+          request: {
+            query: {
+              scope: { kind: "form", form_id: "form-1" },
+              filters: [],
+              sort: [],
+            },
+            projection: {
+              kind: "fields",
+              fields: [{ kind: "property", field_id: 7 }, { kind: "created_at" }],
+            },
+            limit: 100,
+          },
+        },
+        {
+          kind: "saved_sql",
+          source_id: "summary",
+          source_schema_fingerprint: "fingerprint",
+          request: {
+            sql: "SELECT total",
+            limit: 100,
+            saved_sql: { id: "sql-1", revision_id: "sql-revision-1" },
+          },
+        },
+      ],
+      component_bindings: [
+        {
+          component_id: "entry-table",
+          kind: "table",
+          label: "Entries",
+          source_id: "entries",
+        },
+        {
+          component_id: "sql-table",
+          kind: "table",
+          label: "Totals",
+          source_id: "summary",
+        },
+      ],
+    };
+    render(() => (
+      <CompositionRenderer
+        plan={delegatedPlan}
+        sources={{
+          entries: {
+            status: "ready",
+            cursorStack: [undefined],
+            page: {
+              kind: "entry_query",
+              page: {
+                rows: [{
+                  id: "entry-1",
+                  form_id: "form-1",
+                  revision_id: "revision-1",
+                  created_at_micros: 1_772_960_000_000_000,
+                  updated_at_micros: 1_772_963_000_000_000,
+                  properties: { purpose: "Travel" },
+                  preview: "Travel entry",
+                }],
+                has_more: false,
+              },
+            },
+          },
+          summary: {
+            status: "ready",
+            cursorStack: [undefined],
+            page: {
+              kind: "saved_sql",
+              page: {
+                columns: ["total"],
+                rows: [{ total: 42 }],
+                has_more: false,
+              },
+            },
+          },
+        }}
+        fieldNames={(_formId, fieldId) =>
+          fieldId === 7 ? "purpose" : undefined}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    const entryTable = document.querySelector("table.result-table--entry");
+    expect(entryTable).not.toBeNull();
+    expect(
+      within(entryTable as HTMLElement).getAllByRole("columnheader").map((
+        header,
+      ) => header.textContent),
+    ).toEqual(["purpose", "Created"]);
+    expect(
+      within(entryTable as HTMLElement).getByText("Travel"),
+    ).toBeInTheDocument();
+    expect(
+      entryTable?.querySelector('[data-entry-id="entry-1"]'),
+    ).not.toBeNull();
+
+    const sqlTable = document.querySelector("table.result-table--sql");
+    expect(sqlTable).not.toBeNull();
+    expect(
+      within(sqlTable as HTMLElement).getByRole("columnheader", {
+        name: "total",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(sqlTable as HTMLElement).getByRole("cell", { name: "42" }),
+    ).toBeInTheDocument();
+
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(document.querySelector("output")).toBeNull();
   });
 });

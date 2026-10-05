@@ -2549,12 +2549,49 @@ requirements:
                 criterion: REQ-FE-068#criterion.local-horizontal-overflow
                 covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "keeps the table structure inside a horizontal scroll container" } }
-          # RS0 contract: source-native-composition-rendering table delegation
-          # is specified but not yet implemented; its table-delegation
-          # verification lands with the Composition dispatcher refactor (RS5).
-          # The metric half remains verified through REQ-COMP-002 bindings.
-          # Mobile browser overflow keeps its single REQ-FE-067 owner; RS7
-          # refreshes narrow-viewport evidence on the post-refactor source.
+          # Source-native Composition table delegation is implemented (RS5):
+          # entry_query sources render through Entry presentation,
+          # saved_sql sources through SqlResultTable, metrics through the
+          # shared evaluator. The metric half remains verified through
+          # REQ-COMP-002 bindings. Mobile browser overflow keeps its single
+          # REQ-FE-067 owner; RS7 refreshes narrow-viewport evidence on the
+          # post-refactor source.
+          - id: composition-source-rendering
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: "composition_renderer_delegates_to_source_native_presenters_without_client_aggregation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "composition_renderer_delegates_to_source_native_presenters_without_client_aggregation" } }
+          - id: composition-entry-columns-preview
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: "renders preview projections as Preview, Created, Updated" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "renders preview projections as Preview, Created, Updated" } }
+          - id: composition-entry-columns-fields
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: "renders fields projections in projection order with timestamps last" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "renders fields projections in projection order with timestamps last" } }
+          - id: composition-entry-columns-fallback
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: "falls back to the current row key order without field metadata" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "falls back to the current row key order without field metadata" } }
 
   - id: REQ-FE-069
     title: Unauthenticated Login Boundary
