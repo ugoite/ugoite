@@ -116,6 +116,32 @@
       "artifact": "e2e/fixtures/composition/evidence/composition-stale-response-junit.xml",
       "artifact_digest": "cf7df28ce6357d614a4296ff96a94248c1eb60fbac08280aa17a6897e97f33cf",
       "gap": "This record covers only the stale-response suppression Browser evidence on the stated source commit. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "5565b5170d02f354f551be93705ac4713285fa6a",
+      "candidate_sha": "5565b5170d02f354f551be93705ac4713285fa6a",
+      "command": "backend binary + frontend dev + PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> deno run --node-modules-dir=none -A npm:@playwright/test test --reporter=junit composition-recovery-authorization.test.ts",
+      "selector": "e2e/composition-recovery-authorization.test.ts#test:Composition raw recovery and ACL denial preserve caller-visible contracts",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API (no fixture file): broken-reference Composition saved with Idempotency-Key",
+      "environment": "linux arm64 host; direct-process backend + frontend dev; Deno 2.8.3; Playwright Chromium",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-recovery-authorization-junit.xml",
+      "artifact_digest": "501ec65e4b6d6fecff77503c8b115e931ed643bdcd75c5589eca31281896f202",
+      "gap": "This record covers only the raw recovery and caller-visible contract evidence on the stated source commit. Authenticated-denied reads are covered by Rust storage/ACL tests, not by a second principal here. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "5565b5170d02f354f551be93705ac4713285fa6a",
+      "candidate_sha": "5565b5170d02f354f551be93705ac4713285fa6a",
+      "command": "backend binary + frontend dev + PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> deno run --node-modules-dir=none -A npm:@playwright/test test --reporter=junit composition-save-receipt.test.ts",
+      "selector": "e2e/composition-save-receipt.test.ts#test:Composition save reconciles a lost response without duplicate publication",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API (no fixture file): Form, entry, user-query Saved SQL; composition.save with Idempotency-Key",
+      "environment": "linux arm64 host; direct-process backend + frontend dev; Deno 2.8.3; Playwright Chromium",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-save-receipt-junit.xml",
+      "artifact_digest": "ffbdfec512176e80c838b163f9c3a5736ab28440c64ee82d1de36f54073f527b",
+      "gap": "This record covers only the API-level save receipt reconciliation evidence on the stated source commit. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
     }
   ],
   "recovery_and_authorization": {

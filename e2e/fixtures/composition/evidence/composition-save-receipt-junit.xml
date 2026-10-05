@@ -1,0 +1,6 @@
+<testsuites id="" name="" tests="1" failures="0" skipped="0" errors="0">
+<testsuite name="composition-save-receipt.test.ts" timestamp="2026-10-05T02:24:31.893Z" hostname="" tests="1" failures="0" skipped="0" time="2.381" errors="0">
+<testcase name="Composition Save Receipt › Composition save reconciles a lost response without duplicate publication" classname="composition-save-receipt.test.ts" time="2.381">
+</testcase>
+</testsuite>
+</testsuites>

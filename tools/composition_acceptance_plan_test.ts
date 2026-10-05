@@ -330,12 +330,19 @@ Deno.test(
       "artifact_digest",
       "gap",
     ]);
-    assertEquals(plan.runtime_evidence.length, 3);
-    const [journeyEvidence, metricEvidence, staleEvidence] =
-      plan.runtime_evidence;
+    assertEquals(plan.runtime_evidence.length, 5);
+    const [
+      journeyEvidence,
+      metricEvidence,
+      staleEvidence,
+      recoveryEvidence,
+      receiptEvidence,
+    ] = plan.runtime_evidence;
     assert(journeyEvidence);
     assert(metricEvidence);
     assert(staleEvidence);
+    assert(recoveryEvidence);
+    assert(receiptEvidence);
     assertEquals(
       journeyEvidence.source_sha,
       "392204f28cedbbb9531f44864fa78992361a4813",
@@ -371,23 +378,34 @@ Deno.test(
     ).join("");
     assertEquals(artifactDigestHex, journeyEvidence.artifact_digest);
     for (
-      const [evidence, selector, artifactDigest] of [
+      const [evidence, sourceSha, selector, artifactDigest] of [
         [
           metricEvidence,
+          "a46508986e34a22339c7f7dbe175a8371a74977e",
           "e2e/composition-metric-journey.test.ts#test:Browser reopens a metric tool at its exact revision and surfaces the stable multiple-rows diagnostic without aggregation",
           "52bea6d9a78741090c0827a116207317d57cb686fd22996851bd1bfc7c9f53d1",
         ],
         [
           staleEvidence,
+          "a46508986e34a22339c7f7dbe175a8371a74977e",
           "e2e/composition-stale-response.test.ts#test:Late parameter-A responses change neither rows, metric, error, loading, finalization, nor pagination",
           "cf7df28ce6357d614a4296ff96a94248c1eb60fbac08280aa17a6897e97f33cf",
         ],
+        [
+          recoveryEvidence,
+          "5565b5170d02f354f551be93705ac4713285fa6a",
+          "e2e/composition-recovery-authorization.test.ts#test:Composition raw recovery and ACL denial preserve caller-visible contracts",
+          "501ec65e4b6d6fecff77503c8b115e931ed643bdcd75c5589eca31281896f202",
+        ],
+        [
+          receiptEvidence,
+          "5565b5170d02f354f551be93705ac4713285fa6a",
+          "e2e/composition-save-receipt.test.ts#test:Composition save reconciles a lost response without duplicate publication",
+          "ffbdfec512176e80c838b163f9c3a5736ab28440c64ee82d1de36f54073f527b",
+        ],
       ] as const
     ) {
-      assertEquals(
-        evidence.source_sha,
-        "a46508986e34a22339c7f7dbe175a8371a74977e",
-      );
+      assertEquals(evidence.source_sha, sourceSha);
       assertEquals(evidence.candidate_sha, evidence.source_sha);
       assertEquals(evidence.selector, selector);
       assertEquals(

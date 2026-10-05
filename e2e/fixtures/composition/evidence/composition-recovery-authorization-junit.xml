@@ -1,0 +1,6 @@
+<testsuites id="" name="" tests="1" failures="0" skipped="0" errors="0">
+<testsuite name="composition-recovery-authorization.test.ts" timestamp="2026-10-05T02:24:31.893Z" hostname="" tests="1" failures="0" skipped="0" time="2.303" errors="0">
+<testcase name="Composition Recovery Authorization › Composition raw recovery and ACL denial preserve caller-visible contracts" classname="composition-recovery-authorization.test.ts" time="2.303">
+</testcase>
+</testsuite>
+</testsuites>
