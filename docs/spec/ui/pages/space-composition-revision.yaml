@@ -15,6 +15,19 @@ components:
       type: heading
       title: Saved tool name
       ownership: object-identity
+    - id: composition-actions
+      type: toolbar
+      actions:
+        - id: composition-edit
+          type: icon-button
+          title: Edit
+          status: planned
+          contract: docs/spec/ui/components/composition-studio.yaml
+        - id: composition-history
+          type: icon-button
+          title: History
+          status: planned
+          contract: docs/spec/ui/components/composition-studio.yaml
     - id: composition-parameters
       type: form
       title: Declared parameters

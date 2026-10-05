@@ -15,10 +15,17 @@ components:
       type: heading
       title: Saved tools
       ownership: subordinate-workspace
+    - id: saved-tools-new
+      type: icon-button
+      title: New tool
+      single_control: true
+      status: planned
+      contract: docs/spec/ui/components/composition-studio.yaml
     - id: saved-tools-list
       type: list
       labelled_by: saved-tools-heading
       source: composition.list with a bounded page limit of 50
+      selection: full-row-activate
     - id: saved-tools-pagination
       type: button
       title: Previous and Next

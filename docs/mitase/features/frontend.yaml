@@ -888,3 +888,36 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
+  - id: FEAT-FE-014
+    title: Composition Studio contract
+    summary: Connect the planned Composition Studio authoring contract (structure-first multi-source authoring, typed parameter binding, side-effect-free preview, exact-revision edit) to its declarative component specification while implementation and verification land in later changes.
+    status: planned
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep the Studio authoring contract connected to the declared Studio component specification that the New, Edit, and History routes implement.
+        targets:
+          - id: composition-studio-contract
+            adapter: declared
+            path: docs/spec/ui/components/composition-studio.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.source-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.accessible-icon-actions

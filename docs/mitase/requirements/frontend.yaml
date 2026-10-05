@@ -2667,3 +2667,46 @@ requirements:
                 criterion: REQ-FE-069#criterion.narrow-accessible-entry
                 covers: [FEAT-SEC-002#binding.client/target.login-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/login-responsive.test.ts, test: "REQ-FE-069: keeps login usable at the 320px effective width of 200% zoom" } }
+  - id: REQ-FE-070
+    title: Composition Studio Authoring
+    description: |
+      Composition Studio lets the Browser combine existing Space-owned Knowledge (Saved SQL revisions, Form views, parameters) into a reusable Tool with multiple data sources, table and exact-scalar metric displays, labels, tags, side-effect-free live preview, and exact-revision edit. Richness is typed, reproducible combination of existing Knowledge, not free-form layout. The Browser never owns Composition semantics. Drafts canonicalize through the shared Rust/WASM contract, metric evaluation stays exact-scalar without Browser aggregation, and SQL types stay server-owned without Browser inference. Verification bindings land with the Studio implementation; until then the criteria below are an explicit evidence gap.
+    priority: high
+    status: planned
+    criteria:
+      - id: structure-first-authoring
+        kind: behavior
+        statement: The Studio steady state shows the operative structure (tool name, Data, Display, Parameters, Tags, Preview, Save) without explanatory paragraphs; prose appears only to instruct the next ambiguous operation, recover from errors, warn, disambiguate unavailability, or show one empty-state next action.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance]
+      - id: no-persistent-explanatory-copy
+        kind: behavior
+        statement: Steady-state Studio and saved-Tool surfaces carry no product explanation, tutorial paragraph, repeated context sentence, persistent success prose, or primary-path internal identifiers; each datum keeps one visible owner and each navigation or mutation intent keeps exactly one operative control per surface.
+        governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-003#rule.governance]
+      - id: source-authoring
+        kind: behavior
+        statement: A Tool pins one or more exact sources (Saved SQL at an exact revision, EntryQuery from an existing Form view or Form-scoped query control) with full-row selection, reorder controls, and a guarded remove that blocks while displays reference the source instead of cascading silently.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
+      - id: display-authoring
+        kind: behavior
+        statement: Displays are table or exact-scalar metric components only; a table renders through the source-native Entry or SQL presenter, a metric selects one scalar-compatible field or column with an optional label, and several displays may share one source without duplicate fetching.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
+      - id: typed-parameter-binding
+        kind: behavior
+        statement: Parameters use the existing Composition parameter grammar with labels, defaults, and date/month/timestamp inputs; Saved SQL variables and EntryQuery filter values bind to parameters by reference, and type compatibility is decided by the Rust-owned capability and diagnostics, never by Browser inference.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: side-effect-free-preview
+        kind: behavior
+        statement: Unsaved drafts preview through a side-effect-free resolution that parses the candidate document, applies current source authorization, resolves through the shared Core resolver, and executes only the existing entry.query and sql.query operations without creating registry, history, or publication state.
+        governed_by: [POL-UI-009#rule.governance]
+      - id: exact-revision-edit
+        kind: behavior
+        statement: Editing opens the exact saved revision through composition.get and composition.lint normalization, saves with the exact composition and base revision identity plus idempotency, and appends a new revision on success; stale bases conflict and uncertain saves retry the identical payload and key.
+        governed_by: [POL-UI-008#rule.governance, POL-UI-009#rule.governance]
+      - id: mobile-one-column
+        kind: quality
+        statement: At 390px width (and 320px effective zoom width) the Studio is one column with reachable primary actions, touch-sized controls, no page-level horizontal overflow, and tables scrolling inside their own viewport; reorder and all operations remain available without hover-only or drag-only interaction.
+        governed_by: [POL-UI-004#rule.governance, POL-UI-007#rule.governance]
+      - id: accessible-icon-actions
+        kind: quality
+        statement: Every icon action carries an accessible name, tooltip or title where the visible label collapses, a 44px target, and a focus order matching the visual order.
+        governed_by: [POL-UI-007#rule.governance, POL-UI-012#rule.governance]
