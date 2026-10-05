@@ -2787,3 +2787,44 @@ requirements:
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: reorders sources and displays by keyboard-operable moves } }
+      - id: preview-handle-verification
+        role: verification
+        facet: verification
+        responsibility: Verify draft preview execution identity, stale-response guards, parameter re-preview, and error surfacing through exact frontend unit tests.
+        targets:
+          - id: preview-fingerprint-identity
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: keys execution identity by draft fingerprint }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+                covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: keys execution identity by draft fingerprint } }
+          - id: preview-stale-guard
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: drops stale previews when the draft changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+                covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: drops stale previews when the draft changes } }
+          - id: preview-parameter-repreview
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: re-previews the stored draft when a parameter changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+                covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: re-previews the stored draft when a parameter changes } }
+          - id: preview-error-state
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: surfaces preview errors without stale overwrite }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+                covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: surfaces preview errors without stale overwrite } }
