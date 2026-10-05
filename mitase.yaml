@@ -62,6 +62,8 @@ inventory:
         - frontend/src/lib/form-api.ts
         - frontend/src/components/EntryBrowser.tsx
         - frontend/src/components/EntryBrowser.test.tsx
+        - frontend/src/components/EntryResultTable.tsx
+        - frontend/src/components/EntryResultTable.test.tsx
         - frontend/src/components/PagedResultTable.tsx
         - frontend/src/components/PagedResultTable.test.tsx
         - frontend/src/components/ResultPagination.tsx

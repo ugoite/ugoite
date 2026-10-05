@@ -3673,6 +3673,39 @@ a.tool {
   min-height: 44px;
 }
 
+/* Entry result tables: Entry-owned row interaction on the shared vocabulary.
+ * Selection/open semantics live in EntryResultTable; paging stays with the
+ * EntryBrowser controller. */
+.result-table--entry tbody tr {
+  cursor: pointer;
+}
+
+.result-table--entry tbody tr:hover {
+  background: var(--soft2);
+}
+
+.result-table--entry tbody tr[aria-selected="true"] {
+  background: var(--soft2);
+}
+
+.result-table--entry tbody tr[aria-selected="true"] > td:first-child {
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.result-table--entry
+  tbody
+  tr[aria-selected="true"]
+  > .entry-browser-trailing-cell {
+  background: var(--soft2);
+}
+
+.result-table--entry .result-table-cell {
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .entry-browser-table {
   width: 100%;
   min-width: 36rem;
