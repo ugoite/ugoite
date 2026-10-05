@@ -51,6 +51,8 @@ features:
               - kind: documents
                 anchor: REQ-COMP-004#criterion.exact-composition-revision
               - kind: documents
+                anchor: REQ-COMP-004#criterion.draft-preview
+              - kind: documents
                 anchor: REQ-COMP-004#criterion.concealed-unavailable-references
               - kind: documents
                 anchor: REQ-COMP-005#criterion.raw-inspection
@@ -594,6 +596,42 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+      - id: preview-resolver
+        role: implementation
+        facet: core
+        responsibility: Resolve unsaved candidate documents through the same plan-building core as saved revisions, keyed by draft fingerprint instead of a revision reference.
+        targets:
+          - id: resolve-composition-preview
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: resolve_composition_preview }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.draft-preview
+      - id: preview-service
+        role: evidence
+        facet: service
+        responsibility: Preview candidate YAML against current source descriptors through the caller's authorization boundary without creating registry, history, or publication state.
+        targets:
+          - id: preview-composition-outcome
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: CompositionPreview }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.draft-preview
+      - id: preview-backend
+        role: evidence
+        facet: backend
+        responsibility: Serve the side-effect-free preview operation over the authorized service preview with the existing space-read permission boundary.
+        targets:
+          - id: preview-composition-handler
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: preview_composition_handler }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.draft-preview
       - id: metric-page-validation
         role: implementation
         facet: core

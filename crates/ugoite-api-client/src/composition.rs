@@ -243,6 +243,50 @@ pub struct CompositionListPage {
     pub has_more: bool,
 }
 
+/// Request to preview one unsaved candidate Composition document.
+///
+/// Resolution uses the same semantics as a saved revision but is keyed by
+/// the draft fingerprint and creates no registry, history, or publication
+/// state.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionPreviewRequest {
+    pub yaml: String,
+    #[serde(default)]
+    pub parameters: BTreeMap<String, Value>,
+}
+
+/// Caller-visible result of a side-effect-free Composition preview pass.
+/// Parameter definitions and the draft fingerprint are present whenever the
+/// candidate parsed as a supported Composition document, including responses
+/// with diagnostics.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionPreviewResponse {
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_fingerprint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<CompositionPreviewPlan>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<CompositionResolveDiagnostic>,
+}
+
+/// Side-effect-free preview plan keyed by draft fingerprint instead of a
+/// stored revision reference. Source requests and component bindings reuse
+/// the existing portable resolve shapes.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionPreviewPlan {
+    pub draft_fingerprint: String,
+    pub sources: Vec<CompositionResolvedSource>,
+    /// Stable display bindings in the resolver's section order.
+    #[serde(default)]
+    pub component_bindings: Vec<CompositionResolvedComponentBinding>,
+}
+
 /// Request to resolve one exact Composition revision against current source
 /// metadata. Resolution does not execute any source query or create state.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]

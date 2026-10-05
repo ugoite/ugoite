@@ -369,6 +369,51 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-home-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: rediscovers saved tools from Home and opens the listed exact revision } }
+      - id: draft-preview-verification
+        role: verification
+        facet: verification
+        responsibility: Verify unsaved draft preview resolves through the same semantics without publication, keyed by draft fingerprint, across the Core parity case, the service no-side-effect cases, and the server OpenAPI contract.
+        targets:
+          - id: preview-parity-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::preview_resolves_through_the_same_semantics_without_revision_identity }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.draft-preview
+                covers:
+                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::preview_resolves_through_the_same_semantics_without_revision_identity } }
+          - id: preview-without-publication-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: draft_preview_resolves_without_publication }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.draft-preview
+                covers:
+                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: draft_preview_resolves_without_publication } }
+          - id: preview-invalid-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: invalid_draft_preview_reports_diagnostics_without_identity }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.draft-preview
+                covers:
+                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: invalid_draft_preview_reports_diagnostics_without_identity } }
+          - id: preview-contract-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: openapi_documents_composition_preview_without_publication }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.draft-preview
+                covers:
+                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_documents_composition_preview_without_publication } }
     criteria:
       - id: entry-query-translation
         kind: behavior
@@ -413,6 +458,10 @@ requirements:
         kind: behavior
         statement: Missing and denied Composition reads use the same caller-visible generic error; within an authorized Composition, missing and denied source Form or exact Saved SQL references use the same source_unavailable diagnostic without source identifiers or metadata, and field-level schema diagnostics require an authorized source Form read.
         governed_by: [POL-011#rule.governance]
+      - id: draft-preview
+        kind: behavior
+        statement: composition.preview resolves one unsaved candidate document through the same source compilation and current-authorization semantics as a saved revision; plan identity is the draft fingerprint rather than an entry or revision reference, and preview creates no registry, history, or publication state.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-011#rule.governance]
   - id: REQ-COMP-005
     title: Recoverable invalid or unsupported Compositions
     description: Unsupported versions and broken references may prevent execution but do not remove raw inspection, export, or history access.

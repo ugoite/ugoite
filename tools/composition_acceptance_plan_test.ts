@@ -277,6 +277,7 @@ Deno.test(
       "composition.get",
       "composition.lint",
       "composition.resolve",
+      "composition.preview",
       "composition.save",
       "composition.history",
       "composition.restore",

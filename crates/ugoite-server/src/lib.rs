@@ -48,7 +48,8 @@ use ugoite_api_client::{
     CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
     CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
     CompositionParameterDefinition, CompositionParameterFormat as ApiCompositionParameterFormat,
-    CompositionParameterType as ApiCompositionParameterType, CompositionPublicationReceipt,
+    CompositionParameterType as ApiCompositionParameterType, CompositionPreviewPlan,
+    CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
     CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
     CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
     CompositionResolvedComponentKind, CompositionResolvedSource,
@@ -58,8 +59,8 @@ use ugoite_api_client::{
     CompositionSaveResponse,
 };
 use ugoite_core::composition::{
-    CompositionDiagnostic as CoreCompositionDiagnostic, ResolvedComponentKind,
-    ResolvedCompositionPlan,
+    CompositionDiagnostic as CoreCompositionDiagnostic, PreviewCompositionPlan,
+    ResolvedComponentKind, ResolvedCompositionPlan,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::composition::{
@@ -1799,6 +1800,11 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/compositions/{entry_id}/resolve",
             post(resolve_composition_handler)
                 .layer(DefaultBodyLimit::max(COMPOSITION_RESOLVE_MAX_REQUEST_BYTES)),
+        )
+        .route(
+            "/spaces/{space_id}/compositions/preview",
+            post(preview_composition_handler)
+                .layer(DefaultBodyLimit::max(COMPOSITION_PREVIEW_MAX_REQUEST_BYTES)),
         )
         .route(
             "/spaces/{space_id}/compositions/{entry_id}/restore",
@@ -11382,6 +11388,7 @@ async fn composition_history(
 }
 
 const COMPOSITION_RESOLVE_MAX_REQUEST_BYTES: usize = 256 * 1024;
+const COMPOSITION_PREVIEW_MAX_REQUEST_BYTES: usize = 256 * 1024;
 
 async fn resolve_composition_handler(
     State(state): State<AppState>,
@@ -11429,6 +11436,55 @@ async fn resolve_composition_handler(
         )?)),
         None => Ok(Json(composition_resolve_diagnostics_response(
             resolution.diagnostics,
+            parameter_definitions,
+        )?)),
+    }
+}
+
+async fn preview_composition_handler(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    request: Result<Json<CompositionPreviewRequest>, JsonRejection>,
+) -> ApiResult<Json<CompositionPreviewResponse>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let Json(request) = request.map_err(|error| {
+        ApiError::new(
+            error.status(),
+            json!({
+                "code": "INVALID_INPUT",
+                "message": error.body_text(),
+            }),
+        )
+    })?;
+
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let preview = state
+        .service
+        .preview_composition_authorized_for_principals(
+            &space_id,
+            &request.yaml,
+            &request.parameters,
+            &principals,
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+    let parameter_definitions = preview.parameter_definitions.as_ref().map(|parameters| {
+        parameters
+            .iter()
+            .map(api_composition_parameter_definition)
+            .collect::<Vec<_>>()
+    });
+
+    match preview.plan {
+        Some(plan) => Ok(Json(composition_preview_success_response(
+            plan,
+            parameter_definitions,
+        )?)),
+        None => Ok(Json(composition_preview_diagnostics_response(
+            preview.draft_fingerprint,
+            preview.diagnostics,
             parameter_definitions,
         )?)),
     }
@@ -11502,8 +11558,71 @@ fn composition_resolve_success_response(
         entry_id: plan.composition_revision.entry_id.to_string(),
         revision_id: plan.composition_revision.revision_id.to_string(),
     };
-    let sources = plan
-        .sources
+    let (sources, component_bindings) =
+        api_composition_sources_and_bindings(plan.sources, plan.component_bindings)?;
+    Ok(CompositionResolveResponse {
+        ok: true,
+        parameter_definitions,
+        plan: Some(CompositionResolvePlan {
+            composition_revision,
+            sources,
+            component_bindings,
+        }),
+        diagnostics: Vec::new(),
+    })
+}
+
+fn composition_preview_success_response(
+    plan: PreviewCompositionPlan,
+    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+) -> ApiResult<CompositionPreviewResponse> {
+    let draft_fingerprint = plan.draft_fingerprint.clone();
+    let (sources, component_bindings) =
+        api_composition_sources_and_bindings(plan.sources, plan.component_bindings)?;
+    Ok(CompositionPreviewResponse {
+        ok: true,
+        draft_fingerprint: Some(draft_fingerprint.clone()),
+        parameter_definitions,
+        plan: Some(CompositionPreviewPlan {
+            draft_fingerprint,
+            sources,
+            component_bindings,
+        }),
+        diagnostics: Vec::new(),
+    })
+}
+
+fn composition_preview_diagnostics_response(
+    draft_fingerprint: Option<String>,
+    diagnostics: Vec<CoreCompositionDiagnostic>,
+    parameter_definitions: Option<Vec<CompositionParameterDefinition>>,
+) -> ApiResult<CompositionPreviewResponse> {
+    let diagnostics = diagnostics
+        .into_iter()
+        .map(|diagnostic| {
+            Ok(CompositionResolveDiagnostic {
+                code: api_composition_diagnostic_code(diagnostic.code)?,
+                parameter_id: diagnostic.parameter_id,
+            })
+        })
+        .collect::<ApiResult<Vec<_>>>()?;
+    Ok(CompositionPreviewResponse {
+        ok: false,
+        draft_fingerprint,
+        parameter_definitions,
+        plan: None,
+        diagnostics,
+    })
+}
+
+fn api_composition_sources_and_bindings(
+    sources: Vec<ugoite_core::composition::ResolvedSourceRequest>,
+    component_bindings: Vec<ugoite_core::composition::ResolvedComponentBinding>,
+) -> ApiResult<(
+    Vec<CompositionResolvedSource>,
+    Vec<CompositionResolvedComponentBinding>,
+)> {
+    let sources = sources
         .into_iter()
         .map(|source| match source {
             ugoite_core::composition::ResolvedSourceRequest::EntryQuery {
@@ -11528,8 +11647,7 @@ fn composition_resolve_success_response(
             }),
         })
         .collect::<ApiResult<Vec<_>>>()?;
-    let component_bindings = plan
-        .component_bindings
+    let component_bindings = component_bindings
         .into_iter()
         .map(|binding| CompositionResolvedComponentBinding {
             component_id: binding.component_id,
@@ -11546,16 +11664,7 @@ fn composition_resolve_success_response(
                 .map(api_composition_result_field_type),
         })
         .collect();
-    Ok(CompositionResolveResponse {
-        ok: true,
-        parameter_definitions,
-        plan: Some(CompositionResolvePlan {
-            composition_revision,
-            sources,
-            component_bindings,
-        }),
-        diagnostics: Vec::new(),
-    })
+    Ok((sources, component_bindings))
 }
 
 async fn lint_composition(
@@ -14154,6 +14263,11 @@ mod authentication_regression_tests {
                 "/spaces/{space_id}/compositions/{entry_id}/resolve",
                 post(resolve_composition_handler)
                     .layer(DefaultBodyLimit::max(COMPOSITION_RESOLVE_MAX_REQUEST_BYTES)),
+            )
+            .route(
+                "/spaces/{space_id}/compositions/preview",
+                post(preview_composition_handler)
+                    .layer(DefaultBodyLimit::max(COMPOSITION_PREVIEW_MAX_REQUEST_BYTES)),
             )
             .route(
                 "/spaces/{space_id}/compositions/{entry_id}/restore",

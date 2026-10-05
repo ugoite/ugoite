@@ -824,6 +824,21 @@ pub struct ResolvedCompositionPlan {
     pub component_bindings: Vec<ResolvedComponentBinding>,
 }
 
+/// Complete plan for one unsaved Composition draft.
+///
+/// Identity is the semantic draft fingerprint: there is no entry or revision
+/// reference, and the plan must never be stored, published, or given history.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreviewCompositionPlan {
+    pub draft_fingerprint: String,
+    /// The source order is the document order, regardless of descriptor order.
+    pub sources: Vec<ResolvedSourceRequest>,
+    /// The component order is the section order, regardless of declaration order.
+    #[serde(default)]
+    pub component_bindings: Vec<ResolvedComponentBinding>,
+}
+
 /// Resolve all sources as one all-or-nothing plan.
 ///
 /// Caller parameter diagnostics are a global gate: no source is compiled when
@@ -834,29 +849,61 @@ pub struct ResolvedCompositionPlan {
 pub fn resolve_composition(
     input: ResolveInput<'_>,
 ) -> Result<ResolvedCompositionPlan, Vec<CompositionDiagnostic>> {
-    let bindings = bind_parameters(&input.spec.parameters, input.parameters);
+    let (sources, component_bindings) =
+        resolve_composition_parts(input.spec, input.parameters, input.current_sources)?;
+    Ok(ResolvedCompositionPlan {
+        composition_revision: input.composition_revision,
+        sources,
+        component_bindings,
+    })
+}
+
+/// Resolve one unsaved candidate document through the same semantics as a
+/// saved revision. Identity is the draft fingerprint, never a revision: the
+/// plan carries no entry or revision reference and must not be stored,
+/// published, or given history.
+pub fn resolve_composition_preview(
+    spec: &CompositionSpec,
+    parameters: &BTreeMap<String, Value>,
+    current_sources: &[CurrentSourceDescriptor<'_>],
+    draft_fingerprint: String,
+) -> Result<PreviewCompositionPlan, Vec<CompositionDiagnostic>> {
+    let (sources, component_bindings) =
+        resolve_composition_parts(spec, parameters, current_sources)?;
+    Ok(PreviewCompositionPlan {
+        draft_fingerprint,
+        sources,
+        component_bindings,
+    })
+}
+
+/// Shared plan-building core for saved revisions and unsaved drafts.
+fn resolve_composition_parts(
+    spec: &CompositionSpec,
+    parameters: &BTreeMap<String, Value>,
+    current_sources: &[CurrentSourceDescriptor<'_>],
+) -> Result<(Vec<ResolvedSourceRequest>, Vec<ResolvedComponentBinding>), Vec<CompositionDiagnostic>>
+{
+    let bindings = bind_parameters(&spec.parameters, parameters);
     if !bindings.diagnostics.is_empty() {
         return Err(bindings.diagnostics);
     }
 
-    let render_components = input
-        .spec
+    let render_components = spec
         .components_in_render_order()
         .map_err(|code| vec![CompositionDiagnostic::without_parameter(code)])?;
 
-    let source_ids = input
-        .spec
+    let source_ids = spec
         .sources
         .iter()
         .map(|source| source.id().to_owned())
         .collect::<BTreeSet<_>>();
-    if source_ids.len() != input.spec.sources.len() {
+    if source_ids.len() != spec.sources.len() {
         return Err(vec![CompositionDiagnostic::without_parameter(
             CompositionDiagnosticCode::InvalidComposition,
         )]);
     }
-    let sources_by_id = input
-        .spec
+    let sources_by_id = spec
         .sources
         .iter()
         .map(|source| (source.id(), source))
@@ -926,7 +973,7 @@ pub fn resolve_composition(
     }
 
     let mut current_by_id = BTreeMap::new();
-    for descriptor in input.current_sources {
+    for descriptor in current_sources {
         let source_id = descriptor.source_id();
         if !source_ids.contains(source_id) || current_by_id.insert(source_id, descriptor).is_some()
         {
@@ -936,9 +983,9 @@ pub fn resolve_composition(
         }
     }
 
-    let mut resolved_sources = Vec::with_capacity(input.spec.sources.len());
+    let mut resolved_sources = Vec::with_capacity(spec.sources.len());
     let mut diagnostics = Vec::new();
-    for source in &input.spec.sources {
+    for source in &spec.sources {
         let source_id = source.id();
         match (source, current_by_id.get(source_id).copied()) {
             (
@@ -1008,11 +1055,7 @@ pub fn resolve_composition(
     let component_bindings =
         resolve_component_bindings(&render_components, &sources_by_id, &current_by_id)?;
 
-    Ok(ResolvedCompositionPlan {
-        composition_revision: input.composition_revision,
-        sources: resolved_sources,
-        component_bindings,
-    })
+    Ok((resolved_sources, component_bindings))
 }
 
 fn resolve_component_bindings(
@@ -1336,9 +1379,10 @@ mod tests {
     use super::{
         bind_parameters, compile_entry_query_source, compile_entry_query_source_with_metric_fields,
         compile_saved_sql_source, evaluate_entry_metric_page, evaluate_saved_sql_metric_page,
-        resolve_composition, resolve_value_template, CompositionDiagnostic, CompositionRevisionRef,
-        CurrentSourceDescriptor, ParameterBindings, ResolveInput, ResolvedComponentBinding,
-        ResolvedComponentKind, ResolvedSourceRequest, SavedSqlRevisionMetadata,
+        resolve_composition, resolve_composition_preview, resolve_value_template,
+        CompositionDiagnostic, CompositionRevisionRef, CurrentSourceDescriptor, ParameterBindings,
+        ResolveInput, ResolvedComponentBinding, ResolvedComponentKind, ResolvedSourceRequest,
+        SavedSqlRevisionMetadata,
     };
     use crate::entry_query::{EntryFieldRef, EntryPage, EntryResult};
     use crate::sql_query::SqlQueryPage;
@@ -3057,6 +3101,61 @@ mod tests {
                 ..
             } if source_id == "entries" && source_schema_fingerprint.len() == 64
         ));
+    }
+
+    #[test]
+    fn preview_resolves_through_the_same_semantics_without_revision_identity() {
+        let current_form = form(&[(100, FieldType::String)]);
+        let (sql_entry_id, sql_revision_id) = id_pair();
+        let saved_sql = CompositionSource::SavedSql {
+            id: "report".to_owned(),
+            entry_id: sql_entry_id,
+            revision_id: sql_revision_id,
+            expected_result: expected_result(),
+            variables: BTreeMap::new(),
+        };
+        let spec = composition_spec(
+            Vec::new(),
+            vec![
+                saved_sql,
+                entry_query_source("entries", &current_form, empty_entry_query_template()),
+            ],
+        );
+        let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
+        let current_sources = [
+            CurrentSourceDescriptor::EntryQuery {
+                source_id: "entries",
+                current_form: Some(&current_form),
+            },
+            CurrentSourceDescriptor::SavedSql {
+                source_id: "report",
+                current_revision: Some(&sql_metadata),
+            },
+        ];
+        let (composition_entry_id, composition_revision_id) = id_pair();
+
+        let saved = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: composition_entry_id,
+                revision_id: composition_revision_id,
+            },
+            spec: &spec,
+            parameters: &BTreeMap::new(),
+            current_sources: &current_sources,
+        })
+        .expect("saved revision compiles");
+        let preview = resolve_composition_preview(
+            &spec,
+            &BTreeMap::new(),
+            &current_sources,
+            "draft-fingerprint".to_owned(),
+        )
+        .expect("same draft compiles");
+
+        // Identical sources and bindings; identity is the fingerprint.
+        assert_eq!(preview.sources, saved.sources);
+        assert_eq!(preview.component_bindings, saved.component_bindings);
+        assert_eq!(preview.draft_fingerprint, "draft-fingerprint");
     }
 
     #[test]

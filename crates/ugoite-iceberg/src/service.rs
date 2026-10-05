@@ -160,6 +160,7 @@ use ugoite_storage::{
 };
 
 mod composition_resolver;
+pub use composition_resolver::CompositionPreview;
 pub use composition_resolver::CompositionResolution;
 
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[

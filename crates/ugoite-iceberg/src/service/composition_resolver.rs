@@ -9,13 +9,15 @@ use anyhow::{anyhow, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use ugoite_core::composition::{
-    bind_parameters, resolve_composition, CompositionDiagnostic, CompositionRevisionRef,
-    CurrentSourceDescriptor, ResolveInput, ResolvedCompositionPlan, SavedSqlRevisionMetadata,
+    bind_parameters, resolve_composition, resolve_composition_preview, CompositionDiagnostic,
+    CompositionRevisionRef, CurrentSourceDescriptor, PreviewCompositionPlan, ResolveInput,
+    ResolvedCompositionPlan, SavedSqlRevisionMetadata,
 };
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::sql_query::SavedSqlRevisionRef;
 use ugoite_domain::composition::{
-    parse_composition_yaml, CompositionDiagnosticCode, CompositionParameter, CompositionSource,
+    canonicalize_composition, parse_composition_yaml, CompositionDiagnosticCode,
+    CompositionDocument, CompositionParameter, CompositionSource,
 };
 use ugoite_domain::id::{validate_revision_id, validate_sql_id, FormId};
 use uuid::Uuid;
@@ -37,6 +39,20 @@ use crate::{iceberg_store, saved_sql};
 pub struct CompositionResolution {
     pub parameter_definitions: Option<Vec<CompositionParameter>>,
     pub plan: Option<ResolvedCompositionPlan>,
+    pub diagnostics: Vec<CompositionDiagnostic>,
+}
+
+/// The semantic outcome of previewing one unsaved candidate document.
+///
+/// Identity is the draft fingerprint: there is no entry or revision
+/// reference, and the plan must never be stored, published, or given
+/// history. Storage, identity, and authorization failures remain `Err`,
+/// matching the existing service read boundary.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompositionPreview {
+    pub draft_fingerprint: Option<String>,
+    pub parameter_definitions: Option<Vec<CompositionParameter>>,
+    pub plan: Option<PreviewCompositionPlan>,
     pub diagnostics: Vec<CompositionDiagnostic>,
 }
 
@@ -215,8 +231,147 @@ impl UgoiteService {
             });
         }
 
-        let mut owned_sources = Vec::with_capacity(document.spec.sources.len());
-        for source in &document.spec.sources {
+        let owned_sources = self
+            .read_current_sources(space_id, &document.spec.sources, principal_ids)
+            .await?;
+        let current_sources = owned_sources
+            .iter()
+            .map(OwnedCurrentSourceDescriptor::as_current_source)
+            .collect::<Vec<_>>();
+        let result = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: raw.revision.entry_id,
+                revision_id: raw.revision.revision_id,
+            },
+            spec: &document.spec,
+            parameters,
+            current_sources: &current_sources,
+        });
+
+        Ok(match result {
+            Ok(plan) => CompositionResolution {
+                parameter_definitions,
+                plan: Some(plan),
+                diagnostics: Vec::new(),
+            },
+            Err(diagnostics) => CompositionResolution {
+                parameter_definitions,
+                plan: None,
+                diagnostics,
+            },
+        })
+    }
+
+    /// Preview one unsaved candidate document in the principal-free local
+    /// path. Current source descriptors come from current Space state; the
+    /// plan carries the draft fingerprint and is never persisted.
+    pub async fn preview_composition_local(
+        &self,
+        space_id: &str,
+        yaml: &str,
+        parameters: &BTreeMap<String, Value>,
+    ) -> Result<CompositionPreview> {
+        self.preview_composition_from_yaml(space_id, yaml, parameters, None)
+            .await
+    }
+
+    /// Preview one unsaved candidate document after rechecking current
+    /// Space/source authorization for the supplied principals. This is the
+    /// same semantic entrypoint used by server adapters.
+    pub async fn preview_composition_authorized_for_principals(
+        &self,
+        space_id: &str,
+        yaml: &str,
+        parameters: &BTreeMap<String, Value>,
+        principal_ids: &[Uuid],
+    ) -> Result<CompositionPreview> {
+        self.preview_composition_from_yaml(space_id, yaml, parameters, Some(principal_ids))
+            .await
+    }
+
+    async fn preview_composition_from_yaml(
+        &self,
+        space_id: &str,
+        yaml: &str,
+        parameters: &BTreeMap<String, Value>,
+        principal_ids: Option<&[Uuid]>,
+    ) -> Result<CompositionPreview> {
+        let document = match parse_composition_yaml(yaml) {
+            Ok(document) => document,
+            Err(code) => {
+                return Ok(CompositionPreview {
+                    draft_fingerprint: None,
+                    parameter_definitions: None,
+                    plan: None,
+                    diagnostics: vec![preview_diagnostic(code, None)],
+                });
+            }
+        };
+        self.preview_composition_document(space_id, &document, parameters, principal_ids)
+            .await
+    }
+
+    async fn preview_composition_document(
+        &self,
+        space_id: &str,
+        document: &CompositionDocument,
+        parameters: &BTreeMap<String, Value>,
+        principal_ids: Option<&[Uuid]>,
+    ) -> Result<CompositionPreview> {
+        let draft_fingerprint = match canonicalize_composition(document) {
+            Ok(canonical) => canonical.fingerprint,
+            Err(code) => {
+                return Ok(CompositionPreview {
+                    draft_fingerprint: None,
+                    parameter_definitions: None,
+                    plan: None,
+                    diagnostics: vec![preview_diagnostic(code, None)],
+                });
+            }
+        };
+        let parameter_definitions = Some(document.spec.parameters.clone());
+        let owned_sources = self
+            .read_current_sources(space_id, &document.spec.sources, principal_ids)
+            .await?;
+        let current_sources = owned_sources
+            .iter()
+            .map(OwnedCurrentSourceDescriptor::as_current_source)
+            .collect::<Vec<_>>();
+        let result = resolve_composition_preview(
+            &document.spec,
+            parameters,
+            &current_sources,
+            draft_fingerprint.clone(),
+        );
+
+        Ok(match result {
+            Ok(plan) => CompositionPreview {
+                draft_fingerprint: Some(draft_fingerprint),
+                parameter_definitions,
+                plan: Some(plan),
+                diagnostics: Vec::new(),
+            },
+            Err(diagnostics) => CompositionPreview {
+                draft_fingerprint: Some(draft_fingerprint),
+                parameter_definitions,
+                plan: None,
+                diagnostics,
+            },
+        })
+    }
+
+    /// Read current source descriptors through the caller's authorization
+    /// boundary, shared by saved-revision resolution and draft preview.
+    /// Absent or denied sources stay `None` and compile to the same
+    /// `source_unavailable` diagnostic without revealing existence.
+    async fn read_current_sources(
+        &self,
+        space_id: &str,
+        sources: &[CompositionSource],
+        principal_ids: Option<&[Uuid]>,
+    ) -> Result<Vec<OwnedCurrentSourceDescriptor>> {
+        let mut owned_sources = Vec::with_capacity(sources.len());
+        for source in sources {
             match source {
                 CompositionSource::EntryQuery { id, form_id, .. } => {
                     let form = match principal_ids {
@@ -281,33 +436,15 @@ impl UgoiteService {
             }
         }
 
-        let current_sources = owned_sources
-            .iter()
-            .map(OwnedCurrentSourceDescriptor::as_current_source)
-            .collect::<Vec<_>>();
-        let result = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: raw.revision.entry_id,
-                revision_id: raw.revision.revision_id,
-            },
-            spec: &document.spec,
-            parameters,
-            current_sources: &current_sources,
-        });
-
-        Ok(match result {
-            Ok(plan) => CompositionResolution {
-                parameter_definitions,
-                plan: Some(plan),
-                diagnostics: Vec::new(),
-            },
-            Err(diagnostics) => CompositionResolution {
-                parameter_definitions,
-                plan: None,
-                diagnostics,
-            },
-        })
+        Ok(owned_sources)
     }
+}
+
+fn preview_diagnostic(
+    code: CompositionDiagnosticCode,
+    parameter_id: Option<String>,
+) -> CompositionDiagnostic {
+    CompositionDiagnostic { code, parameter_id }
 }
 
 fn diagnostic_result(
