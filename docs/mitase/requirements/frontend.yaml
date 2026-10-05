@@ -507,6 +507,10 @@ requirements:
                 criterion: REQ-FE-013#criterion.server-persistence
                 covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should update entry with correct parent_revision_id" } }
+              - kind: verifies
+                criterion: REQ-ENTRY-003#criterion.update
+                covers: [FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should update entry with correct parent_revision_id" } }
   - id: REQ-FE-033
     title: Entry Detail Navigation
     description: Selecting or opening an Entry reaches the detail view and correctly handles encoded Entry identifiers.

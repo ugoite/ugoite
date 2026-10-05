@@ -28,6 +28,48 @@ requirements:
                 criterion: REQ-ENTRY-001#criterion.creation
                 covers: [FEAT-ENTRY-001#binding.core/target.create-entry]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_001_create_entry_basic } }
+      - id: backend-creation-test
+        role: verification
+        facet: verification
+        responsibility: Verify Entry creation through the exact backend route test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::entry_routes_keep_input_errors_typed_and_create_atomic }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-001#criterion.creation
+                covers: [FEAT-ENTRY-001#binding.backend/target.create-entry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::entry_routes_keep_input_errors_typed_and_create_atomic } }
+      - id: frontend-creation-test
+        role: verification
+        facet: verification
+        responsibility: Verify Entry creation through the exact browser client test.
+        targets:
+          - id: case
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should create a structured entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-001#criterion.creation
+                covers: [FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should create a structured entry" } }
+      - id: mcp-creation-test
+        role: verification
+        facet: verification
+        responsibility: Verify Entry creation through the exact MCP facade test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-server/src/mcp.rs
+            selector: { kind: symbol, name: tests::save_accepts_structured_entries }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-001#criterion.creation
+                covers: [FEAT-ENTRY-001#binding.mcp/target.save]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: tests::save_accepts_structured_entries } }
   - id: REQ-ENTRY-002
     title: Optimistic concurrency via revisions
     description: Validate parent_revision_id during update; return 409 Conflict on mismatch.
@@ -82,6 +124,20 @@ requirements:
                 criterion: REQ-ENTRY-003#criterion.update
                 covers: [FEAT-ENTRY-001#binding.core/target.update-entry]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_003_update_entry_success } }
+      - id: backend-update-test
+        role: verification
+        facet: verification
+        responsibility: Verify Entry update through the exact backend route test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::structured_entry_routes_use_the_draft_path }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-003#criterion.update
+                covers: [FEAT-ENTRY-001#binding.backend/target.update-entry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::structured_entry_routes_use_the_draft_path } }
   - id: REQ-ENTRY-004
     title: Entry deletion tombstone
     description: Delete an Entry as a tombstone and exclude it from the current list.
@@ -107,6 +163,34 @@ requirements:
                 criterion: REQ-ENTRY-004#criterion.tombstone
                 covers: [FEAT-ENTRY-001#binding.core/target.delete-entry]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: test_entry_req_entry_004_delete_entry } }
+      - id: backend-tombstone-test
+        role: verification
+        facet: verification
+        responsibility: Verify Entry tombstone behavior through the exact backend route test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::delete_route_records_the_authenticated_principal_as_actor }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-004#criterion.tombstone
+                covers: [FEAT-ENTRY-001#binding.backend/target.delete-entry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::delete_route_records_the_authenticated_principal_as_actor } }
+      - id: frontend-tombstone-test
+        role: verification
+        facet: verification
+        responsibility: Verify Entry tombstone behavior through the exact browser client test.
+        targets:
+          - id: case
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should remove entry from list" }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-004#criterion.tombstone
+                covers: [FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should remove entry from list" } }
   - id: REQ-ENTRY-005
     title: Entry history and restore
     description: Every save creates an immutable revision, and history can be browsed and restored.
@@ -141,6 +225,43 @@ requirements:
                 criterion: REQ-ENTRY-005#criterion.history
                 covers: [FEAT-ENTRY-001#binding.core/target.restore-entry]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry, test: restore_replays_historical_references_even_when_targets_are_unavailable } }
+      - id: backend-history-test
+        role: verification
+        facet: verification
+        responsibility: Verify Entry history paging through the exact backend route test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::issue_2746_entry_history_limit_offset_paginates }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-005#criterion.history
+                covers: [FEAT-ENTRY-001#binding.backend/target.entry-history]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2746_entry_history_limit_offset_paginates } }
+      - id: frontend-history-test
+        role: verification
+        facet: verification
+        responsibility: Verify Entry history and restore through exact browser client tests.
+        targets:
+          - id: history-case
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "entryApi.history returns revisions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-005#criterion.history
+                covers: [FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "entryApi.history returns revisions" } }
+          - id: restore-case
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "entryApi.restore succeeds" }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-005#criterion.history
+                covers: [FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "entryApi.restore succeeds" } }
   - id: REQ-ENTRY-007
     title: Properties in list response
     description: Include Form-owned properties when retrieving the Entry list.
