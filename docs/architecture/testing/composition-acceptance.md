@@ -193,19 +193,20 @@ evidence of a complete CLI or Browser query journey.
 
 ## Recovery and authorization acceptance
 
-The structured plan adds pending cases for concealed direct Composition reads,
+The structured plan covers concealed direct Composition reads,
 the shared `source_unavailable` projection, current ACL checks after resolve
 and on every continuation page, exact raw recovery, append-only history and
 restore, generic-write protection, save-receipt reconciliation, and stale
-Browser request state. Selectors that depend on storage or resolver service
-APIs remain unbound until those public contracts settle. No DTO field names are
+Browser request state. Storage and resolver selectors are bound now that
+those public contracts have settled. No DTO field names are
 reserved by this plan.
 
 The plan's `recovery_and_authorization.save_enablement` gate has scope
-`cross_surface_recovery_and_receipt_acceptance`. Its `enabled: false` value
-means that the shared write-guard and receipt-reconciliation acceptance is not
-complete; it does not describe whether the Browser's “Save as tool” action is
-available. Browser availability and the one passing save journey are recorded
+`cross_surface_recovery_and_receipt_acceptance`. Its `enabled: true` value
+means the write-guard and receipt-reconciliation prerequisites are evidenced
+across storage, API, CLI, and Browser; it does not promote the release gate.
+It does not describe whether the Browser's “Save as tool” action is
+available. Browser availability and the passing save journeys are recorded
 separately from this broader acceptance gate.
 
 Generic Entry create, update, bulk, import, and restore paths cannot bypass
@@ -213,8 +214,10 @@ Composition validation. The Server save operation returns the publication
 receipt that identifies the exact revision. The Browser save flow is
 implemented and covered by the seeded Golden Journey; CLI save and import are
 likewise implemented and covered by the focused Core/Remote import/save
-journeys. The broader cross-surface write-guard and receipt-reconciliation
-acceptance tracked by the `save_enablement` gate above remains incomplete.
+journeys. The write-guard and receipt-reconciliation evidence tracked by the
+`save_enablement` gate above spans storage unit tests, API idempotency,
+Core/Remote CLI replay, and Browser retry; release promotion of the broader
+cross-surface acceptance remains planned.
 If a save response is lost, the outcome remains unknown until the exact
 revision is reconciled; retry idempotency is tracked separately.
 Generic restore of the reserved Form is denied while Composition-scoped restore
