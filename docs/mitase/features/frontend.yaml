@@ -407,6 +407,19 @@ features:
                 criterion: REQ-FE-068#criterion.shared-result-visual-language
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.controller-owned-paging
+          - id: sql-result-table
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.tsx
+            selector: { kind: symbol, name: SqlResultTable }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.native-page-rows
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
 
   - id: FEAT-FE-009
     title: Auth-aware global navigation

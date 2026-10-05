@@ -164,6 +164,8 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx
         - frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
+        - frontend/src/components/SqlResultTable.tsx
+        - frontend/src/components/SqlResultTable.test.tsx
         - e2e/qry02-visible-rows.test.ts
         - frontend/src/routes/spaces/[space_id]/settings.tsx
         - frontend/src/routes/spaces/[space_id]/sql.tsx

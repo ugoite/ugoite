@@ -8,10 +8,9 @@ import {
 } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import { SaveAsToolDialog } from "~/components/SaveAsToolDialog";
-import {
-  PagedResultTable,
-  type ResultColumn,
-} from "~/components/PagedResultTable";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { ResultPagination } from "~/components/ResultPagination";
+import { SqlResultTable } from "~/components/SqlResultTable";
 import { sqlApi } from "~/lib/ugoite-client";
 import {
   buildSavedSqlCompositionDocument,
@@ -67,27 +66,6 @@ const runState = (value: unknown): SqlRunState => {
       ? { parameterTypes: parameterTypes as Record<string, string> }
       : {}),
   };
-};
-
-const formatCell = (value: unknown): string => {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-};
-
-const rowCell = (row: unknown, column: string, index: number): unknown => {
-  if (Array.isArray(row)) return row[index];
-  if (row && typeof row === "object") {
-    return (row as Record<string, unknown>)[column];
-  }
-  return index === 0 ? row : undefined;
 };
 
 export default function SpaceSqlRunRoute() {
@@ -540,16 +518,6 @@ export default function SpaceSqlRunRoute() {
     if (!rejectedSaveName()) setSaveError(null);
   };
 
-  const resultColumns = (): ResultColumn<unknown>[] =>
-    (visiblePage()?.columns ?? []).map((column, index) => ({
-      key: `column-${index}`,
-      label: column,
-      cell: (row) => {
-        const value = formatCell(rowCell(row, column, index));
-        return <span title={value}>{value}</span>;
-      },
-    }));
-
   return (
     <>
       <div class="screenHead">
@@ -630,37 +598,53 @@ export default function SpaceSqlRunRoute() {
             </>
           )}
         </Show>
-        <PagedResultTable
-          columns={resultColumns()}
-          rows={visiblePage()?.rows ?? []}
-          rowKey={(_row, index) =>
-            `${visiblePage()?.pageIdentity ?? ""}:${index}`}
-          pageIdentity={visiblePage()?.pageIdentity ?? makeQueryIdentity(
-            spaceId(),
-            sqlId(),
-            request(),
-          )}
-          loading={entry.loading || pageLoading()}
-          loadingLabel={t("sqlPage.loadingResults")}
-          error={resultError()
-            ? formatUserFacingError(resultError(), "sqlPage.failedQuery")
-            : null}
-          emptyLabel={t("sqlPage.noResults")}
-          retryLabel={t("common.retry")}
-          onRetry={pageError() && !entry.error
-            ? () => setPageRetry((value) => value + 1)
-            : undefined}
+        <Show when={entry.loading || pageLoading()}>
+          <LocalBusyIndicator label={t("sqlPage.loadingResults")} />
+        </Show>
+        <Show when={resultError()}>
+          <p class="ui-text-danger" role="alert">
+            {formatUserFacingError(resultError(), "sqlPage.failedQuery")}
+          </p>
+          <Show when={pageError() && !entry.error}>
+            <button
+              type="button"
+              class="ui-button ui-button-secondary"
+              disabled={entry.loading || pageLoading()}
+              onClick={() => setPageRetry((value) => value + 1)}
+            >
+              {t("common.retry")}
+            </button>
+          </Show>
+        </Show>
+        <Show
+          when={!entry.loading && !pageLoading() && !resultError() &&
+            (visiblePage()?.rows ?? []).length === 0}
+        >
+          <p class="ui-muted">{t("sqlPage.noResults")}</p>
+        </Show>
+        <Show
+          when={!resultError() && (visiblePage()?.rows ?? []).length > 0}
+        >
+          <SqlResultTable
+            columns={visiblePage()?.columns ?? []}
+            rows={visiblePage()?.rows ?? []}
+            pageIdentity={visiblePage()?.pageIdentity ?? makeQueryIdentity(
+              spaceId(),
+              sqlId(),
+              request(),
+            )}
+            tableLabel={t("sqlPage.results")}
+          />
+        </Show>
+        <ResultPagination
           canPrevious={continuationStack().length > 0}
           canNext={!!visiblePage()?.has_more && !!visiblePage()?.next}
+          busy={entry.loading || pageLoading() || !!resultError()}
           previousLabel={t("common.previous")}
           nextLabel={t("common.next")}
+          ariaLabel={t("sqlPage.results")}
           onPrevious={handlePrevious}
           onNext={handleNext}
-          paginationLabel={t("sqlPage.results")}
-          classNames={{
-            table: "ui-table",
-            scroll: "ui-table-wrapper mt-4 overflow-x-auto",
-          }}
         />
         <Show when={saveError() && !saveDialogOpen()}>
           <p class="ui-alert ui-alert-error mt-4" role="alert">
