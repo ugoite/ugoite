@@ -23,7 +23,7 @@ const columns = [{
 const renderTable = (overrides?: {
   count?: number;
   selectedEntryId?: string;
-  actionVariant?: "open" | "confirm";
+  trailingAction?: "open" | "confirm";
 }) => {
   const onSelectEntry = vi.fn();
   const onOpenEntry = vi.fn();
@@ -35,7 +35,7 @@ const renderTable = (overrides?: {
       tableLabel="Entry pages"
       selectedEntryId={overrides?.selectedEntryId}
       onSelectEntry={onSelectEntry}
-      actionVariant={overrides?.actionVariant ?? "open"}
+      trailingAction={overrides?.trailingAction ?? "open"}
       openLabel="Open entry"
       confirmLabel="Use this entry"
       busy={false}
@@ -91,7 +91,7 @@ describe("EntryResultTable", () => {
 
   it("confirms from the trailing control in select mode", () => {
     const { onOpenEntry } = renderTable({
-      actionVariant: "confirm",
+      trailingAction: "confirm",
       count: 1,
     });
     fireEvent.click(screen.getByRole("button", { name: "Use this entry" }));

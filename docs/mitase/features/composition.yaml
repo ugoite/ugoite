@@ -983,8 +983,15 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-002#criterion.metric-runtime-values
-              - kind: evidences
-                anchor: REQ-FE-068#criterion.source-native-composition-rendering
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+          - id: browser-entry-query-table
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.tsx
+            selector: { kind: symbol, name: entryQueryDisplayColumns }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
           - id: browser-home-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/dashboard.tsx"

@@ -1,9 +1,8 @@
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { CompositionEntryQueryTable } from "~/components/CompositionEntryQueryTable";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
-import {
-  PagedResultTable,
-  type ResultColumn,
-} from "~/components/PagedResultTable";
+import { ResultPagination } from "~/components/ResultPagination";
+import { SqlResultTable } from "~/components/SqlResultTable";
 import { t, type TranslationKey } from "~/lib/i18n";
 import {
   compositionApi,
@@ -14,9 +13,15 @@ import {
 } from "~/lib/composition-api";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 
+export type CompositionFieldNames = (
+  formId: string,
+  fieldId: number,
+) => string | undefined;
+
 type RendererProps = {
   plan: CompositionResolvePlan;
   sources: Record<string, CompositionSourcePageState>;
+  fieldNames?: CompositionFieldNames;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -102,96 +107,71 @@ const objectValue = (value: unknown): Record<string, unknown> | undefined =>
     ? value as Record<string, unknown>
     : undefined;
 
-const rowValue = (row: unknown, column: string, index: number): unknown => {
-  if (Array.isArray(row)) return row[index];
-  return objectValue(row)?.[column];
-};
-
-const columnsFor = (
-  page: NonNullable<CompositionSourcePageState["page"]>,
-): ResultColumn<unknown>[] => {
-  const names = page.kind === "saved_sql"
-    ? page.page.columns
-    : Object.keys(objectValue(page.page.rows[0]?.properties) ?? {});
-  return names.map((name, index) => ({
-    key: name,
-    label: name,
-    cell: (row) =>
-      displayCell(
-        page.kind === "entry_query"
-          ? objectValue((row as { properties?: unknown }).properties)?.[name]
-          : rowValue(row, name, index),
-      ),
-  }));
-};
-
-const rowsFor = (
-  page: NonNullable<CompositionSourcePageState["page"]>,
-): readonly unknown[] => page.page.rows;
-
-const pageInfo = (
-  page: NonNullable<CompositionSourcePageState["page"]>,
-) => ({ hasMore: page.page.has_more, next: page.page.next });
-
-function CompositionTable(props: {
+function CompositionSavedSqlTable(props: {
   binding: Extract<CompositionResolvedComponentBinding, { kind: "table" }>;
-  source: CompositionResolvedSource;
+  source: Extract<CompositionResolvedSource, { kind: "saved_sql" }>;
   sourceState?: CompositionSourcePageState;
   ownsSourceStatus: boolean;
   onNext: () => void;
   onPrevious: () => void;
   onRetry: () => void;
 }) {
-  const page = () => props.sourceState?.page;
-  const rows = () => page() ? rowsFor(page()!) : [];
-  const resultColumns = () => page() ? columnsFor(page()!) : [];
-  const paging = () =>
-    page() ? pageInfo(page()!) : { hasMore: false, next: undefined };
+  const page = () => {
+    const state = props.sourceState?.page;
+    return state?.kind === "saved_sql" ? state.page : undefined;
+  };
+  const rows = () => page()?.rows ?? [];
   const sourceId = () => props.binding.source_id;
-  const error = () =>
-    props.sourceState?.status === "error" ? t("composition.queryFailed") : null;
+  const status = () => props.sourceState?.status;
+  const loading = () =>
+    props.ownsSourceStatus &&
+    (!props.sourceState || status() === "loading");
+  const failed = () =>
+    props.ownsSourceStatus && status() === "error";
+
   return (
     <section class="section">
       <Show when={props.binding.label}>
         <h2>{props.binding.label}</h2>
       </Show>
       <Show
-        when={props.ownsSourceStatus || props.sourceState?.status === "ready"}
+        when={props.ownsSourceStatus || status() === "ready"}
       >
-        <PagedResultTable
-          columns={resultColumns()}
-          rows={rows()}
-          rowKey={(row, index) => {
-            if (page()?.kind === "entry_query") {
-              const entry = row as { id?: string; revision_id?: string };
-              return `${entry.id ?? "row"}:${entry.revision_id ?? index}`;
-            }
-            return `${sourceId()}:${
-              props.sourceState?.cursor ?? "first"
-            }:${index}`;
-          }}
-          pageIdentity={`${sourceId()}:${props.sourceState?.cursor ?? "first"}`}
-          loading={props.ownsSourceStatus &&
-            (!props.sourceState || props.sourceState.status === "loading")}
-          loadingLabel={t("composition.queryLoading")}
-          error={props.ownsSourceStatus ? error() : null}
-          emptyLabel={t("composition.queryEmpty")}
-          retryLabel={t("composition.retry")}
-          onRetry={props.ownsSourceStatus &&
-              props.sourceState?.status === "error"
-            ? props.onRetry
-            : undefined}
+        <Show when={loading()}>
+          <LocalBusyIndicator label={t("composition.queryLoading")} />
+        </Show>
+        <Show when={failed()}>
+          <p class="ui-text-danger" role="alert">
+            {t("composition.queryFailed")}
+          </p>
+          <button
+            class="ui-button ui-button-secondary"
+            type="button"
+            onClick={props.onRetry}
+          >
+            {t("composition.retry")}
+          </button>
+        </Show>
+        <Show when={status() === "ready" && rows().length === 0 && !failed()}>
+          <p class="ui-muted">{t("composition.queryEmpty")}</p>
+        </Show>
+        <Show when={!failed() && rows().length > 0}>
+          <SqlResultTable
+            columns={page()?.columns ?? []}
+            rows={rows()}
+            pageIdentity={`${sourceId()}:${props.sourceState?.cursor ?? "first"}`}
+            tableLabel={props.binding.label ?? t("composition.resultPages")}
+          />
+        </Show>
+        <ResultPagination
           canPrevious={(props.sourceState?.cursorStack.length ?? 0) > 1}
-          canNext={paging().hasMore && !!paging().next}
+          canNext={!!page()?.has_more && !!page()?.next}
+          busy={status() !== "ready"}
           previousLabel={t("composition.previous")}
           nextLabel={t("composition.next")}
+          ariaLabel={t("composition.resultPages")}
           onPrevious={props.onPrevious}
           onNext={props.onNext}
-          paginationLabel={t("composition.resultPages")}
-          classNames={{
-            table: "ui-table",
-            scroll: "ui-table-wrapper mt-4 overflow-x-auto",
-          }}
         />
       </Show>
     </section>
@@ -381,24 +361,39 @@ export function CompositionRenderer(props: RendererProps) {
           const source = sourceById.get(binding.source_id);
           const sourceState = () => props.sources[binding.source_id];
           if (!source) return null;
-          return binding.kind === "metric"
-            ? (
+          const ownsSourceStatus =
+            sourceStatusOwner.get(binding.source_id) ===
+              binding.component_id;
+          if (binding.kind === "metric") {
+            return (
               <CompositionMetric
                 binding={binding}
                 source={source}
                 sourceState={sourceState()}
-                ownsSourceStatus={sourceStatusOwner.get(binding.source_id) ===
-                  binding.component_id}
+                ownsSourceStatus={ownsSourceStatus}
+                onRetry={() => props.onRetry(binding.source_id)}
+              />
+            );
+          }
+          return source.kind === "entry_query"
+            ? (
+              <CompositionEntryQueryTable
+                binding={binding}
+                source={source}
+                sourceState={sourceState()}
+                ownsSourceStatus={ownsSourceStatus}
+                fieldNames={props.fieldNames}
+                onNext={() => props.onNext(binding.source_id)}
+                onPrevious={() => props.onPrevious(binding.source_id)}
                 onRetry={() => props.onRetry(binding.source_id)}
               />
             )
             : (
-              <CompositionTable
+              <CompositionSavedSqlTable
                 binding={binding}
                 source={source}
                 sourceState={sourceState()}
-                ownsSourceStatus={sourceStatusOwner.get(binding.source_id) ===
-                  binding.component_id}
+                ownsSourceStatus={ownsSourceStatus}
                 onNext={() => props.onNext(binding.source_id)}
                 onPrevious={() => props.onPrevious(binding.source_id)}
                 onRetry={() => props.onRetry(binding.source_id)}

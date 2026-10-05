@@ -3706,6 +3706,16 @@ a.tool {
   white-space: nowrap;
 }
 
+/* Read-only Entry presentation (e.g. Composition entry_query sources):
+ * rows are not selectable and carry no trailing action. */
+.result-table--entry.result-table--static tbody tr {
+  cursor: default;
+}
+
+.result-table--entry.result-table--static tbody tr:hover {
+  background: transparent;
+}
+
 /* History Change tables: Change-owned row interaction on the shared
  * vocabulary. A Change is never an Entry row or a generic query row;
  * selection/open semantics live in HistoryChangeTable and paging stays

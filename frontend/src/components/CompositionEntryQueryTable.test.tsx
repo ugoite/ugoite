@@ -1,0 +1,83 @@
+import { describe, expect, it } from "vitest";
+import { entryQueryDisplayColumns } from "./CompositionEntryQueryTable";
+import type { CompositionResolvedSource } from "~/lib/composition-api";
+import type { EntryQueryResult } from "~/lib/entry-query";
+
+const source = (
+  projection:
+    Extract<CompositionResolvedSource, { kind: "entry_query" } >["request"]["projection"],
+): Extract<CompositionResolvedSource, { kind: "entry_query" }> => ({
+  kind: "entry_query",
+  source_id: "entries",
+  request: {
+    query: {
+      scope: { kind: "form", form_id: "form-1" },
+      filters: [],
+      sort: [],
+    },
+    projection,
+    limit: 100,
+  },
+  source_schema_fingerprint: "fingerprint",
+});
+
+const entryRow = (): EntryQueryResult => ({
+  id: "entry-1",
+  form_id: "form-1",
+  revision_id: "revision-1",
+  created_at_micros: 1_772_960_000_000_000,
+  updated_at_micros: 1_772_963_000_000_000,
+  properties: { purpose: "Travel" },
+  preview: "Travel entry",
+});
+
+const names = (formId: string, fieldId: number): string | undefined =>
+  formId === "form-1" && fieldId === 7 ? "purpose" : undefined;
+
+describe("entryQueryDisplayColumns", () => {
+  it("renders preview projections as Preview, Created, Updated", () => {
+    const columns = entryQueryDisplayColumns(
+      source({ kind: "preview" }),
+      [entryRow()],
+      names,
+    );
+    expect(columns.map((column) => column.label)).toEqual([
+      "Preview",
+      "Created",
+      "Updated",
+    ]);
+    expect(columns[0].text(entryRow())).toBe("Travel entry");
+  });
+
+  it("renders fields projections in projection order with timestamps last", () => {
+    const columns = entryQueryDisplayColumns(
+      source({
+        kind: "fields",
+        fields: [
+          { kind: "property", field_id: 7 },
+          { kind: "created_at" },
+        ],
+      }),
+      [entryRow()],
+      names,
+    );
+    expect(columns.map((column) => column.label)).toEqual([
+      "purpose",
+      "Created",
+    ]);
+    expect(columns[0].text(entryRow())).toBe("Travel");
+  });
+
+  it("falls back to the current row key order without field metadata", () => {
+    const columns = entryQueryDisplayColumns(
+      source({
+        kind: "fields",
+        fields: [{ kind: "property", field_id: 7 }],
+      }),
+      [entryRow()],
+      undefined,
+    );
+    expect(columns.map((column) => column.label)).toEqual(["purpose"]);
+    expect(columns[0].text(entryRow())).toBe("Travel");
+  });
+});

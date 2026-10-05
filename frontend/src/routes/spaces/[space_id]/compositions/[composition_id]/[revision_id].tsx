@@ -1,4 +1,4 @@
-import { createEffect, For, onCleanup, Show } from "solid-js";
+import { createEffect, createResource, For, onCleanup, Show } from "solid-js";
 import { useParams } from "@solidjs/router";
 import {
   CompositionDiagnostics,
@@ -12,6 +12,7 @@ import {
   type CompositionParameterDefinition,
 } from "~/lib/composition-api";
 import { createCompositionQueryHandle } from "~/lib/composition-query-handle";
+import { formApi } from "~/lib/ugoite-client";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "home" });
@@ -67,6 +68,19 @@ export default function CompositionRevisionRoute() {
     );
   const definitions = () => current().resolved?.parameter_definitions ?? [];
   const diagnostics = () => current().resolved?.diagnostics ?? [];
+  // Authorized Form metadata for Entry display names only. Property field
+  // IDs in entry_query projections resolve to names through this existing
+  // read; query semantics never depend on it and missing metadata falls
+  // back to the current row key order.
+  const [forms] = createResource(
+    () => params.space_id,
+    (spaceId) => formApi.list(spaceId).catch(() => []),
+  );
+  const fieldNames = (formId: string, fieldId: number): string | undefined =>
+    Object.entries(
+      (forms() ?? []).find((form) => form.id === formId || form.name === formId)
+        ?.fields ?? {},
+    ).find(([, field]) => field.id === fieldId)?.[0];
   const parameterMismatch = (parameterId: string) =>
     diagnostics().some((diagnostic) =>
       diagnostic.parameter_id === parameterId &&
@@ -192,6 +206,7 @@ export default function CompositionRevisionRoute() {
           <CompositionRenderer
             plan={plan()}
             sources={current().sources}
+            fieldNames={fieldNames}
             onNext={handle.next}
             onPrevious={handle.previous}
             onRetry={handle.retry}
