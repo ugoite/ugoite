@@ -1,5 +1,6 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
+import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import type {
   EntryFieldCapability,
   EntryFieldRef,
@@ -8,6 +9,7 @@ import type {
   EntryProjection,
   EntrySort,
 } from "~/lib/entry-query";
+import { integerFilterTextInRange } from "~/lib/entry-query";
 import { t } from "~/lib/i18n";
 import { UiIcon } from "./UiIcon";
 
@@ -73,9 +75,12 @@ const parseFilterValue = (
     return { value, valid: false };
   }
   if (fieldType === "integer" || fieldType === "long") {
-    if (!/^[+-]?\d+$/.test(trimmed)) return { value, valid: false };
-    const parsed = Number(trimmed);
-    return { value: parsed, valid: Number.isSafeInteger(parsed) };
+    // String-backed editing: keep the exact text for the parser instead of
+    // rounding through JS Number, preserving the full signed int64 range.
+    if (!integerFilterTextInRange(fieldType, trimmed)) {
+      return { value, valid: false };
+    }
+    return { value: trimmed, valid: true };
   }
   if (["numeric", "float", "double"].includes(fieldType)) {
     if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(trimmed)) {
@@ -113,7 +118,16 @@ export function EntryBrowserDisplayDialog(
   props: EntryBrowserDisplayDialogProps,
 ) {
   let dialog: HTMLDivElement | undefined;
-  let returnFocus: HTMLElement | null = null;
+
+  // Inline dialog (rendered inside the app root, so no inert background):
+  // shared Tab cycling and focus return; the safe action keeps initial
+  // focus via the first control.
+  useDialogFocus(() => true, {
+    dialog: () => dialog,
+    returnFocus: () => props.returnFocus ?? null,
+    inert: false,
+    onClose: props.onClose,
+  });
 
   const [projectionKind, setProjectionKind] = createSignal(
     props.projection.kind,
@@ -338,38 +352,8 @@ export function EntryBrowserDisplayDialog(
       ? filterDraftValid()
       : sortDraftValid();
 
-  onMount(() => {
-    returnFocus = props.returnFocus ??
-      (document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null);
-    dialog?.querySelector<HTMLElement>("button, input, select")?.focus();
-    const handleFocus = () => returnFocus?.focus();
-    onCleanup(handleFocus);
-  });
-
-  const handleKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      props.onClose();
-      return;
-    }
-    if (event.key === "Tab" && dialog) {
-      const items = [...dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]',
-      )];
-      if (items.length === 0) return;
-      const first = items[0];
-      const last = items.at(-1)!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-  };
+  const handleKeyDown = (event: KeyboardEvent) =>
+    handleDialogKeyDown(event, dialog, props.onClose);
 
   return (
     <div
@@ -601,15 +585,20 @@ export function EntryBrowserDisplayDialog(
                           fallback={
                             <input
                               class="ui-input"
-                              type={type() === "integer" || type() === "long" ||
-                                  type() === "numeric" || type() === "float" ||
-                                  type() === "double"
+                              type={type() === "integer" || type() === "long"
+                                ? "text"
+                                : type() === "numeric" || type() === "float" ||
+                                    type() === "double"
                                 ? "number"
                                 : type() === "date"
                                 ? "date"
                                 : type().startsWith("timestamp")
                                 ? "datetime-local"
                                 : "text"}
+                              inputMode={type() === "integer" ||
+                                  type() === "long"
+                                ? "numeric"
+                                : undefined}
                               step={type() === "numeric" ||
                                   type() === "float" || type() === "double"
                                 ? "any"

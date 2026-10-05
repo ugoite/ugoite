@@ -5,10 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FieldInput } from "~/components/fields/FieldInput";
 import { FieldValues } from "~/components/fields/FieldValue";
 import { RowReferenceSelect } from "~/components/fields/RowReferenceSelect";
-import {
-  buildRowReferenceOptions,
-  hasRowReferencePicker,
-} from "~/components/fields/row-reference";
+import { hasRowReferencePicker } from "~/components/fields/row-reference";
 import { entryApi } from "~/lib/entry-api";
 import type { Entry } from "~/lib/types";
 
@@ -420,20 +417,6 @@ describe("list<row_reference> rows", () => {
 });
 
 describe("row-reference helpers", () => {
-  it("builds sorted human-readable options with stable ids", () => {
-    expect(
-      buildRowReferenceOptions([
-        { id: "b" },
-        { id: "a" },
-        { id: "c" },
-      ]),
-    ).toEqual([
-      { id: "a", title: "a", label: "a" },
-      { id: "b", title: "b", label: "b" },
-      { id: "c", title: "c", label: "c" },
-    ]);
-  });
-
   it("scopes the picker to the exact target form", () => {
     expect(
       hasRowReferencePicker(

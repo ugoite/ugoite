@@ -485,7 +485,18 @@ describe("FormTable", () => {
     const filterInputs = document.querySelectorAll("input.ui-table-filter");
     fireEvent.input(filterInputs[0], { target: { value: "42" } });
     await waitFor(() => {
-      expect(query.mock.calls.at(-1)?.[1].query.filters[0]?.value).toBe(42);
+      // String-backed (#3200): the exact text travels to the parser so the
+      // full signed int64 range survives without JS Number rounding.
+      expect(query.mock.calls.at(-1)?.[1].query.filters[0]?.value).toBe("42");
+    });
+
+    fireEvent.input(filterInputs[0], {
+      target: { value: "9223372036854775807" },
+    });
+    await waitFor(() => {
+      expect(query.mock.calls.at(-1)?.[1].query.filters[0]?.value).toBe(
+        "9223372036854775807",
+      );
     });
 
     fireEvent.input(filterInputs[1], { target: { value: "1.5" } });
@@ -494,7 +505,7 @@ describe("FormTable", () => {
         {
           field: { kind: "property", field_id: 1 },
           operator: "equals",
-          value: 42,
+          value: "9223372036854775807",
         },
         {
           field: { kind: "property", field_id: 2 },

@@ -218,6 +218,17 @@ impl ApiProtocolError {
         }
     }
 
+    fn unauthenticated(operation: &str, message: impl Into<String>) -> Self {
+        Self {
+            kind: "unauthenticated".to_string(),
+            message: message.into(),
+            operation: Some(operation.to_string()),
+            status: None,
+            detail: None,
+            payload: None,
+        }
+    }
+
     fn invalid_response(operation: &str, status: u16, message: impl Into<String>) -> Self {
         Self {
             kind: "invalid_response".to_string(),
@@ -307,6 +318,17 @@ impl fmt::Display for ApiProtocolError {
 
 impl std::error::Error for ApiProtocolError {}
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthIntent {
+    /// Reads and token-bearing flows that may proceed without a session
+    /// credential. The server remains the authorization authority.
+    AllowAnonymous,
+    /// Mutations that must fail fast before transport when no credential is
+    /// present, instead of sending an anonymous request the server rejects.
+    RequireCredential,
+}
+
 #[derive(Clone, Copy)]
 struct OperationSpec {
     method: HttpMethod,
@@ -346,6 +368,62 @@ impl OperationSpec {
             body_kind: RequestBodyKind::Multipart,
         }
     }
+}
+
+/// Authentication intent for one stable operation, read from the operation
+/// registry. GET reads and side-effect-free query POSTs may intentionally
+/// stay anonymous; every other mutation requires a session credential except
+/// the token-bearing auth flows whose request body carries its own
+/// authorization (invitation acceptance and owner recovery, which must work
+/// while logged out).
+pub fn operation_auth_intent(operation: &str) -> Option<AuthIntent> {
+    let method = operation_spec(operation)?.method;
+    if matches!(method, HttpMethod::Get) {
+        return Some(AuthIntent::AllowAnonymous);
+    }
+    if matches!(
+        operation,
+        "auth.accept_invitation"
+            | "auth.recovery.owner_start"
+            | "auth.recovery.owner_finish"
+            | "entry.query"
+            | "entry.query.count"
+            | "sql.query"
+            | "sql.query.count"
+            | "composition.lint"
+    ) {
+        return Some(AuthIntent::AllowAnonymous);
+    }
+    Some(AuthIntent::RequireCredential)
+}
+
+/// Whether `operation` must fail fast before transport when no credential is
+/// present. Unknown operations report `false` so [`prepare_request`] keeps
+/// reporting them as `invalid_operation`.
+pub fn operation_requires_credential(operation: &str) -> bool {
+    matches!(
+        operation_auth_intent(operation),
+        Some(AuthIntent::RequireCredential)
+    )
+}
+
+/// Fail fast for remote mutations attempted with anonymous credentials.
+/// Reads and token-bearing auth flows pass through; unknown operations pass
+/// through so [`prepare_request`] reports them as `invalid_operation`.
+pub fn require_operation_credential(
+    operation: &str,
+    has_credential: bool,
+) -> Result<(), ApiProtocolError> {
+    if has_credential || !operation_requires_credential(operation) {
+        return Ok(());
+    }
+    Err(ApiProtocolError::unauthenticated(
+        operation,
+        format!(
+            "Refusing to send anonymous {operation} request: this mutation requires a credential. \
+             Pair one with `ugoite auth login` instead of relying on a server rejection."
+        ),
+    ))
 }
 
 /// Build one transport-neutral request from a stable operation name.
@@ -3930,5 +4008,80 @@ mod tests {
             arguments.insert("resource_id".into(), json!("entry-1"));
         }
         Value::Object(arguments)
+    }
+
+    #[test]
+    fn anonymous_mutations_fail_fast_from_registry_intent() {
+        // Every registered operation declares an auth intent.
+        for operation in SUPPORTED_OPERATIONS {
+            assert!(
+                operation_auth_intent(operation).is_some(),
+                "missing auth intent for {operation}"
+            );
+        }
+        // Reads may intentionally stay anonymous, including side-effect-free
+        // query POSTs.
+        for operation in [
+            "space.list",
+            "space.get",
+            "entry.list",
+            "entry.query",
+            "entry.query.count",
+            "sql.query",
+            "sql.query.count",
+            "composition.lint",
+            "form.list",
+            "auth.get_session",
+        ] {
+            assert_eq!(
+                operation_auth_intent(operation),
+                Some(AuthIntent::AllowAnonymous),
+                "{operation}"
+            );
+            assert!(!operation_requires_credential(operation));
+            require_operation_credential(operation, false).expect("reads pass through");
+        }
+        // Token-bearing auth flows carry their own authorization.
+        for operation in [
+            "auth.accept_invitation",
+            "auth.recovery.owner_start",
+            "auth.recovery.owner_finish",
+        ] {
+            assert_eq!(
+                operation_auth_intent(operation),
+                Some(AuthIntent::AllowAnonymous),
+                "{operation}"
+            );
+            require_operation_credential(operation, false).expect("token flow passes");
+        }
+        // Mutations require a credential and fail fast without one.
+        for operation in [
+            "space.create",
+            "space.patch",
+            "entry.create",
+            "entry.update",
+            "entry.delete",
+            "form.upsert",
+            "sql.create",
+            "asset.upload",
+            "auth.revoke_session",
+            "pin.create",
+        ] {
+            assert_eq!(
+                operation_auth_intent(operation),
+                Some(AuthIntent::RequireCredential),
+                "{operation}"
+            );
+            assert!(operation_requires_credential(operation));
+            require_operation_credential(operation, true).expect("credentialed passes");
+            let error = require_operation_credential(operation, false).expect_err("must fail fast");
+            assert_eq!(error.kind, "unauthenticated");
+            assert_eq!(error.operation.as_deref(), Some(operation));
+            assert!(!error.message.contains("401"), "no transport involved");
+        }
+        // Unknown operations defer to prepare_request's invalid_operation.
+        assert_eq!(operation_auth_intent("nope.missing"), None);
+        assert!(!operation_requires_credential("nope.missing"));
+        require_operation_credential("nope.missing", false).expect("unknown passes through");
     }
 }

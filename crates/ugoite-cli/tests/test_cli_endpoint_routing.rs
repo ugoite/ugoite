@@ -1,6 +1,8 @@
 //! Canonical CLI routing and help contracts.
 //! These tests exercise named connections/contexts only.
 
+use base64::Engine;
+use p256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng, pkcs8::EncodePrivateKey};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -26,6 +28,9 @@ fn run(config: &Path, args: &[&str]) -> Output {
     let mut command = Command::new(ugoite_bin());
     command.args(["--config", config.to_string_lossy().as_ref()]);
     command.args(args);
+    // Credentials resolve from the user-global store: scope every CLI
+    // invocation at the fixture home so stub-paired profiles apply.
+    command.env("HOME", config.parent().expect("config parent").join("home"));
     command.output().expect("failed to execute CLI")
 }
 
@@ -53,7 +58,7 @@ fn set_connection(config: &Path, kind: &str, value: &str) {
     );
 }
 
-fn add_context(config: &Path, uid: &str) {
+fn add_context(config: &Path, uid: &str, base_url: &str) {
     let output = run(
         config,
         &[
@@ -64,6 +69,8 @@ fn add_context(config: &Path, uid: &str) {
             "local",
             "--space",
             uid,
+            "--credential",
+            "stub-cred",
         ],
     );
     assert!(
@@ -77,6 +84,51 @@ fn add_context(config: &Path, uid: &str) {
         "context use failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    seed_stub_credential(config, uid, base_url);
+}
+
+/// Remote-mutation tests pair a stub credential on the fixture connection
+/// (#2963): anonymous mutations fail fast before transport, so routing
+/// success paths carry a real ES256 session. The stub ignores auth headers;
+/// only the CLI-side gate and session binding observe it.
+fn seed_stub_credential(config: &Path, uid: &str, base_url: &str) {
+    let key = SigningKey::random(&mut OsRng);
+    let point = key.verifying_key().to_encoded_point(false);
+    let session = serde_json::json!({
+        "credential_id": uuid::Uuid::now_v7().to_string(),
+        "device_name": "routing stub test",
+        "public_key_jwk": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+                point.x().expect("public key x"),
+            ),
+            "y": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+                point.y().expect("public key y"),
+            ),
+        },
+        "private_key_pkcs8": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+            key.to_pkcs8_der().expect("encode test private key").as_bytes(),
+        ),
+        "access_token": "stub-access",
+        "refresh_token": "stub-refresh",
+        "expires_at": chrono::Utc::now().timestamp() + 3600,
+        "base_url": base_url,
+        "resource": null,
+        "space_uid": uid,
+        "connection": "local",
+    });
+    let credentials = serde_json::json!({
+        "version": 1,
+        "credentials": { "stub-cred": session },
+    });
+    let home = config.parent().expect("config parent").join("home/.ugoite");
+    std::fs::create_dir_all(&home).expect("create fixture credentials directory");
+    std::fs::write(
+        home.join("credentials.json"),
+        serde_json::to_vec_pretty(&credentials).expect("serialize credential store"),
+    )
+    .expect("write fixture credential");
 }
 
 fn spawn_recording_server(
@@ -223,6 +275,7 @@ fn test_create_space_req_api_001_routes_to_backend_post_spaces() {
     );
     init_config(&config);
     set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(
         &config,
@@ -255,6 +308,7 @@ fn test_create_space_req_api_001_routes_to_api_post_spaces() {
     );
     init_config(&config);
     set_connection(&config, "api", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(
         &config,
@@ -287,6 +341,7 @@ fn test_space_create_sends_independent_display_name() {
     );
     init_config(&config);
     set_connection(&config, "backend", &base_url);
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(
         &config,
@@ -315,7 +370,7 @@ fn test_entry_create_req_api_002_routes_to_backend_post_entries() {
     );
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(
         &config,
@@ -356,7 +411,7 @@ fn test_entry_list_uses_canonical_entry_query_route_and_dto() {
         spawn_recording_server("HTTP/1.1 200 OK", r#"{"rows":[],"has_more":false}"#);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(
         &config,
@@ -408,7 +463,7 @@ fn test_sql_query_uses_stateless_route_and_dto() {
     );
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(
         &config,
@@ -460,7 +515,7 @@ fn test_sql_export_reuses_stateless_route_and_continuation() {
     ]);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
     let path = dir.path().join("remote.ndjson");
 
     let output = run(
@@ -555,7 +610,7 @@ fn test_sql_export_rejects_malformed_continuation_and_changed_columns() {
         let (base_url, request_rx, server) = spawn_recording_server_responses(responses);
         init_config(&config);
         set_connection(&config, "backend", &base_url);
-        add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+        add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
         let path = dir.path().join("invalid.ndjson");
         let output = run(
             &config,
@@ -615,7 +670,7 @@ fn test_sql_export_output_finalize_failure_reports_progress_and_cleans_temp() {
     );
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
     let path = dir.path().join("output-directory");
     std::fs::create_dir(&path).unwrap();
 
@@ -662,9 +717,10 @@ fn test_sql_export_ctrl_c_is_nonzero_and_cleans_temporary_file() {
     );
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
     let path = dir.path().join("interrupted.ndjson");
     let child = Command::new(ugoite_bin())
+        .env("HOME", config.parent().expect("config parent").join("home"))
         .args([
             "--config",
             config.to_str().unwrap(),
@@ -720,8 +776,9 @@ fn test_sql_export_broken_stdout_pipe_is_nonzero_and_reports_progress() {
     let (base_url, request_rx, server) = spawn_recording_server("HTTP/1.1 200 OK", body);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
     let mut child = Command::new(ugoite_bin())
+        .env("HOME", config.parent().expect("config parent").join("home"))
         .args([
             "--config",
             config.to_str().unwrap(),
@@ -770,7 +827,7 @@ fn test_sql_export_discards_file_after_remote_failure_without_leaking_token() {
     ]);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
     let path = dir.path().join("revoked.ndjson");
 
     let output = run(
@@ -815,7 +872,7 @@ fn test_sql_query_count_uses_separate_stateless_route() {
         spawn_recording_server("HTTP/1.1 200 OK", r#"{"count":7}"#);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(&config, &["sql", "count", "SELECT 1"]);
     let request = request_rx.recv().unwrap();
@@ -856,7 +913,7 @@ fn test_saved_sql_create_req_api_006_uses_server_generated_id() {
     ]);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(&config, &["sql", "saved", "create", "--sql", "SELECT 1"]);
     let unnamed_request = request_rx.recv().unwrap();
@@ -919,7 +976,7 @@ fn test_saved_sql_update_req_api_006_sends_parent_revision_without_author() {
     ]);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(
         &config,
@@ -979,7 +1036,7 @@ fn test_saved_sql_update_defaults_to_current_revision() {
     ]);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(
         &config,
@@ -1022,7 +1079,7 @@ fn test_entry_create_structured_routes_form_fields_without_markdown() {
     );
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(
         &config,
@@ -1074,7 +1131,7 @@ fn test_entry_patch_remote_reads_merges_and_pins_the_read_revision() {
     ]);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(
         &config,
@@ -1137,7 +1194,7 @@ fn test_entry_patch_remote_conflict_is_not_reported_as_success() {
     ]);
     init_config(&config);
     set_connection(&config, "backend", &base_url);
-    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab");
+    add_context(&config, "019f1234-5678-7abc-8def-0123456789ab", &base_url);
 
     let output = run(
         &config,

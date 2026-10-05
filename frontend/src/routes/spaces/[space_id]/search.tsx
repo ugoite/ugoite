@@ -78,6 +78,10 @@ export default function SpaceSearchRoute() {
   // `?q=` is an initialization/explicit-navigation input only; committed
   // query state never flows back into the draft.
   const [draftText, setDraftText] = createSignal(initialText());
+  // While an IME composition is active (e.g. Japanese input), the browser
+  // owns the in-progress text; the controlled draft stays untouched until
+  // compositionend adopts the confirmed value.
+  const [composing, setComposing] = createSignal(false);
   const controller = createEntryQueryController(
     spaceId,
     {
@@ -142,7 +146,15 @@ export default function SpaceSearchRoute() {
                 type="text"
                 placeholder={t("searchPage.keywordPlaceholder")}
                 value={draftText()}
-                onInput={(event) => setDraftText(event.currentTarget.value)}
+                onCompositionStart={() => setComposing(true)}
+                onCompositionEnd={(event) => {
+                  setComposing(false);
+                  setDraftText(event.currentTarget.value);
+                }}
+                onInput={(event) => {
+                  if (composing() || event.isComposing) return;
+                  setDraftText(event.currentTarget.value);
+                }}
               />
             </div>
             <button

@@ -159,6 +159,50 @@ describe("/spaces/:space_id/search", () => {
     );
   });
 
+  it("holds the draft during IME composition and adopts it on compositionend", async () => {
+    render(() => <SpaceSearchRoute />);
+    const field = screen.getByRole("textbox", {
+      name: "Search keywords",
+    }) as HTMLInputElement;
+
+    // Japanese input: romaji keystrokes compose kana under browser control.
+    fireEvent.compositionStart(field);
+    fireEvent.input(field, { target: { value: "あ" } });
+    fireEvent.input(field, { target: { value: "あい" } });
+    // Submitting mid-composition must not commit the unconfirmed text.
+    fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
+    for (const call of vi.mocked(entryApi.query).mock.calls) {
+      expect(call[1].query.text).not.toContain("あ");
+    }
+
+    // Confirming the composition adopts the exact confirmed text as draft.
+    field.value = "あいうえお";
+    fireEvent.compositionEnd(field);
+    expect(
+      (screen.getByRole("textbox", {
+        name: "Search keywords",
+      }) as HTMLInputElement)
+        .value,
+    ).toBe("あいうえお");
+    fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
+    await waitFor(() => {
+      const texts = vi.mocked(entryApi.query).mock.calls.map(
+        (call) => call[1].query.text,
+      );
+      expect(texts).toContain("あいうえお");
+    });
+
+    // Normal input works again after composition ends.
+    fireEvent.input(field, { target: { value: "あいうえお!" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search entries" }));
+    await waitFor(() => {
+      const texts = vi.mocked(entryApi.query).mock.calls.map(
+        (call) => call[1].query.text,
+      );
+      expect(texts).toContain("あいうえお!");
+    });
+  });
+
   it("opens the selected result as an Entry", async () => {
     vi.mocked(entryApi.query).mockResolvedValue({
       rows: [entryRow("entry-1", "Readable entry")],

@@ -22,6 +22,7 @@ import {
   type EntryProjection,
   type EntryQueryCapabilities,
   type EntryQueryResult,
+  integerFilterTextInRange,
   systemEntryCapabilities,
 } from "~/lib/entry-query";
 import { t } from "~/lib/i18n";
@@ -397,10 +398,11 @@ export function FormTable(props: FormTableProps) {
     if (
       (capability.field_type === "integer" ||
         capability.field_type === "long") &&
-      /^[+-]?\d+$/.test(trimmed)
+      integerFilterTextInRange(capability.field_type, trimmed)
     ) {
-      const parsed = Number(trimmed);
-      if (Number.isSafeInteger(parsed)) return parsed;
+      // String-backed: hand the exact text to the parser so the full
+      // signed int64 range survives without JS Number rounding.
+      return trimmed;
     }
     if (
       capability.field_type === "numeric" ||

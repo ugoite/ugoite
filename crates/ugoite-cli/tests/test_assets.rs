@@ -1,6 +1,8 @@
 //! Integration tests for asset lifecycle management.
 //! REQ-ASSET-001
 
+use base64::Engine;
+use p256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng, pkcs8::EncodePrivateKey};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -211,6 +213,12 @@ fn run_cli(config_path: &std::path::Path, args: &[&str]) -> std::process::Output
     Command::new(ugoite_bin())
         .args(full)
         .env("UGOITE_CLI_CONFIG_PATH", config_path)
+        // Credentials resolve from the user-global store: scope every CLI
+        // invocation at the fixture home so stub-paired profiles apply.
+        .env(
+            "HOME",
+            config_path.parent().expect("config parent").join("home"),
+        )
         .output()
         .expect("run CLI")
 }
@@ -260,7 +268,9 @@ fn init_backend_config(config_path: &std::path::Path, url: &str, space_uid: &str
             "--connection",
             "local",
             "--space",
-            space_uid
+            space_uid,
+            "--credential",
+            "stub-cred",
         ]
     )
     .status
@@ -268,6 +278,55 @@ fn init_backend_config(config_path: &std::path::Path, url: &str, space_uid: &str
     assert!(run_cli(config_path, &["context", "use", "test"])
         .status
         .success());
+    seed_stub_credential(config_path, url, space_uid);
+}
+
+/// Pair a stub credential for the fixture connection (#2963): remote
+/// mutations fail fast without a credential, so stub success-path tests
+/// carry a real ES256 session. The stub ignores auth headers; only the
+/// CLI-side gate and session binding observe it.
+fn seed_stub_credential(config_path: &std::path::Path, base_url: &str, space_uid: &str) {
+    let key = SigningKey::random(&mut OsRng);
+    let point = key.verifying_key().to_encoded_point(false);
+    let public_key_jwk = serde_json::json!({
+        "kty": "EC",
+        "crv": "P-256",
+        "x": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+            point.x().expect("public key x"),
+        ),
+        "y": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+            point.y().expect("public key y"),
+        ),
+    });
+    let session = serde_json::json!({
+        "credential_id": uuid::Uuid::now_v7().to_string(),
+        "device_name": "asset stub test",
+        "public_key_jwk": public_key_jwk,
+        "private_key_pkcs8": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+            key.to_pkcs8_der().expect("encode test private key").as_bytes(),
+        ),
+        "access_token": "stub-access",
+        "refresh_token": "stub-refresh",
+        "expires_at": chrono::Utc::now().timestamp() + 3600,
+        "base_url": base_url,
+        "resource": null,
+        "space_uid": space_uid,
+        "connection": "local",
+    });
+    let credentials = serde_json::json!({
+        "version": 1,
+        "credentials": { "stub-cred": session },
+    });
+    let home = config_path
+        .parent()
+        .expect("config parent")
+        .join("home/.ugoite");
+    std::fs::create_dir_all(&home).expect("create fixture credentials directory");
+    std::fs::write(
+        home.join("credentials.json"),
+        serde_json::to_vec_pretty(&credentials).expect("serialize credential store"),
+    )
+    .expect("write fixture credential");
 }
 
 fn json_of(output: &std::process::Output) -> serde_json::Value {
@@ -1420,6 +1479,60 @@ fn test_asset_attach_create_reads_name_back_remote() {
         asset_read_context(request_line).expect("asset.read carries form and entry_id");
     assert_eq!(form, "Doc", "{request_line}");
     assert_eq!(entry_id, "doc-1", "{request_line}");
+}
+
+/// Anonymous remote mutations fail fast before transport (#2963): no request
+/// reaches the server and the error names the missing credential.
+#[test]
+fn test_asset_upload_without_credential_fails_fast_before_transport() {
+    let asset_id = "asset-anon-1";
+    let asset = stub_asset(asset_id, "note.txt", 17);
+    let asset_bytes = b"anonymous bytes".to_vec();
+    let harness = spawn_stub(
+        start_stub(asset, asset_bytes.clone(), vec![], serde_json::json!([])),
+        0,
+    );
+
+    // Same stub connection through a credential-less context.
+    assert!(run_cli(
+        &harness.config_path,
+        &[
+            "context",
+            "add",
+            "anon",
+            "--connection",
+            "local",
+            "--space",
+            &harness.uid,
+        ]
+    )
+    .status
+    .success());
+    assert!(run_cli(&harness.config_path, &["context", "use", "anon"])
+        .status
+        .success());
+
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("note.txt");
+    std::fs::write(&file, &asset_bytes).unwrap();
+    let upload = run_cli(
+        &harness.config_path,
+        &["asset", "upload", file.to_str().unwrap()],
+    );
+    assert!(
+        !upload.status.success(),
+        "anonymous upload must fail fast before transport"
+    );
+    let stderr = String::from_utf8_lossy(&upload.stderr);
+    assert!(
+        stderr.contains("requires a credential"),
+        "fail-fast must name the missing credential: {stderr}"
+    );
+    harness.handle.join().unwrap();
+    assert!(
+        harness.backend.seen.lock().unwrap().is_empty(),
+        "no request may reach the server"
+    );
 }
 
 /// The stub gate itself fails closed: every partial or renamed `asset.read`

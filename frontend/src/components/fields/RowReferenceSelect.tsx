@@ -1,14 +1,13 @@
-import {
-  createEffect,
-  createResource,
-  createSignal,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createResource, createSignal, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import {
+  handleDialogKeyDown as trapDialogKeys,
+  useDialogFocus,
+} from "~/components/dialog-focus";
 import { EntryBrowser } from "~/components/EntryBrowser";
 import {
   buildRowReferencePreview,
+  humanRowReferenceFormName,
   rowReferenceTargetMatches,
 } from "~/components/fields/row-reference";
 import {
@@ -96,7 +95,6 @@ function CanonicalRowReferenceSelect(props: RowReferenceSelectProps) {
   let triggerRef: HTMLButtonElement | undefined;
   let dialogRef: HTMLDivElement | undefined;
   let cancelRef: HTMLButtonElement | undefined;
-  let opener: HTMLElement | null = null;
 
   const storedId = () => props.value.trim();
 
@@ -116,12 +114,11 @@ function CanonicalRowReferenceSelect(props: RowReferenceSelectProps) {
     if (!entry) return { kind: "unavailable" };
     const target = form();
     if (!rowReferenceTargetMatches(entry.form, target)) {
-      return {
-        kind: "wrong-form",
-        actual: typeof entry.form === "string" && entry.form.trim() !== ""
-          ? entry.form.trim()
-          : target.name,
-      };
+      // Human Form name, never a stable id: resolve through the catalog.
+      const actual = typeof entry.form === "string" && entry.form.trim() !== ""
+        ? humanRowReferenceFormName(entry.form, props.forms)
+        : target.name;
+      return { kind: "wrong-form", actual };
     }
     return {
       kind: "ready",
@@ -167,7 +164,6 @@ function CanonicalRowReferenceSelect(props: RowReferenceSelectProps) {
   };
 
   const openPicker = () => {
-    opener = triggerRef ?? null;
     setPending(null);
     setOpen(true);
     void controller.invalidate().then(() => {
@@ -214,51 +210,17 @@ function CanonicalRowReferenceSelect(props: RowReferenceSelectProps) {
     props.onPendingChange?.(false);
   });
 
-  createEffect(() => {
-    if (!open()) return;
-    // Cancel is the safe action: focus lands there first, Tab cycles
-    // inside the dialog, and the background stays inert while open.
-    queueMicrotask(() => cancelRef?.focus());
-    const appRoot = document.getElementById("app");
-    appRoot?.setAttribute("inert", "");
-    onCleanup(() => {
-      appRoot?.removeAttribute("inert");
-      const target = opener instanceof HTMLElement ? opener : null;
-      opener = null;
-      // Return focus to the invoking control on dismiss.
-      queueMicrotask(() => {
-        if (target?.isConnected) target.focus();
-      });
-    });
+  useDialogFocus(open, {
+    dialog: () => dialogRef,
+    initialFocus: () => cancelRef,
+    // The trigger opens the picker; focus returns there on dismiss even
+    // when the opening click leaves focus elsewhere.
+    returnFocus: () => triggerRef,
+    onClose: cancel,
   });
 
-  const handleDialogKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      cancel();
-      return;
-    }
-    if (event.key !== "Tab" || !dialogRef) return;
-    const focusable = Array.from(
-      dialogRef.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    );
-    if (focusable.length === 0) {
-      event.preventDefault();
-      return;
-    }
-    const currentIndex = focusable.indexOf(
-      document.activeElement as HTMLElement,
-    );
-    const nextIndex = event.shiftKey
-      ? currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1
-      : currentIndex < 0 || currentIndex === focusable.length - 1
-      ? 0
-      : currentIndex + 1;
-    event.preventDefault();
-    focusable[nextIndex].focus();
-  };
+  const handleDialogKeyDown = (event: KeyboardEvent) =>
+    trapDialogKeys(event, dialogRef, cancel);
 
   return (
     <>

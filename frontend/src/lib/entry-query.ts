@@ -99,6 +99,31 @@ export const allEntryScope = (): EntryQueryScope => ({ kind: "all" });
 
 export const previewProjection = (): EntryProjection => ({ kind: "preview" });
 
+const INT32_BOUNDS: readonly [bigint, bigint] = [-(2n ** 31n), 2n ** 31n - 1n];
+const INT64_BOUNDS: readonly [bigint, bigint] = [-(2n ** 63n), 2n ** 63n - 1n];
+
+/**
+ * Validate exact integer filter text for `integer` (int32) and `long`
+ * (int64) fields without passing through JS Number, which would silently
+ * round values outside the safe-integer range. Editors keep the trimmed
+ * text and hand it to the parser; the backend accepts the same string
+ * form and parses it as i32/i64.
+ */
+export function integerFilterTextInRange(
+  fieldType: string,
+  trimmed: string,
+): boolean {
+  if (!/^[+-]?\d+$/.test(trimmed)) return false;
+  let magnitude: bigint;
+  try {
+    magnitude = BigInt(trimmed);
+  } catch {
+    return false;
+  }
+  const [min, max] = fieldType === "long" ? INT64_BOUNDS : INT32_BOUNDS;
+  return magnitude >= min && magnitude <= max;
+}
+
 export const systemEntryCapabilities = (
   scope: EntryQueryScope = allEntryScope(),
 ): EntryQueryCapabilities => ({

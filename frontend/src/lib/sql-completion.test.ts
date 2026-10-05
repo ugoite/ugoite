@@ -28,4 +28,28 @@ describe("SQL Form completion", () => {
       apply: '"1-Expense"',
     });
   });
+
+  it("completes __proto__ as an ordinary Form name", () => {
+    const schema = buildSqlSchema([
+      {
+        name: "__proto__",
+        version: 1,
+        template: "",
+        fields: {},
+      },
+    ]);
+    const query = "SELECT * FROM __";
+    const state = EditorState.create({
+      doc: query,
+      extensions: [sql({ schema })],
+    });
+    const context = new CompletionContext(state, query.length, true);
+    const result = sqlCompletionSource(schema)(context);
+
+    expect(result?.options).toContainEqual({
+      label: "__proto__",
+      type: "type",
+      apply: '"__proto__"',
+    });
+  });
 });

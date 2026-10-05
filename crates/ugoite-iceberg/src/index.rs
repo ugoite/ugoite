@@ -4215,6 +4215,21 @@ fn filter_literal(value: &Value, field_type: &str) -> Result<Expr> {
                 .as_i64()
                 .context("long filter value must be an integer")?,
         )),
+        // Editors keep integer text string-backed so the full signed range
+        // survives without JSON/JS Number rounding; parse the exact text.
+        ("integer" | "int32", Value::String(text)) => ScalarValue::Int32(Some(
+            i32::try_from(
+                text.trim()
+                    .parse::<i64>()
+                    .context("integer filter value must be an integer")?,
+            )
+            .context("integer filter value is outside the Int32 range")?,
+        )),
+        ("long" | "int64", Value::String(text)) => ScalarValue::Int64(Some(
+            text.trim()
+                .parse::<i64>()
+                .context("long filter value must be an integer")?,
+        )),
         ("float" | "float32", Value::Number(value)) => ScalarValue::Float32(Some(
             value
                 .as_f64()
@@ -4510,6 +4525,23 @@ mod tests {
             literal(&serde_json::json!(7), "long"),
             ScalarValue::Int64(Some(7))
         ));
+        // String-backed editors hand exact integer text to the parser so the
+        // full signed int64 range survives without Number rounding.
+        assert!(matches!(
+            literal(&Value::String("9223372036854775807".into()), "long"),
+            ScalarValue::Int64(Some(9_223_372_036_854_775_807))
+        ));
+        assert!(matches!(
+            literal(&Value::String("-9223372036854775808".into()), "long"),
+            ScalarValue::Int64(Some(i64::MIN))
+        ));
+        assert!(matches!(
+            literal(&Value::String("2147483647".into()), "integer"),
+            ScalarValue::Int32(Some(2_147_483_647))
+        ));
+        assert!(filter_literal(&Value::String("9223372036854775808".into()), "long").is_err());
+        assert!(filter_literal(&Value::String("2147483648".into()), "integer").is_err());
+        assert!(filter_literal(&Value::String("7.5".into()), "long").is_err());
         assert!(matches!(
             literal(&serde_json::json!(1.25), "float"),
             ScalarValue::Float32(Some(value)) if (value - 1.25).abs() < f32::EPSILON

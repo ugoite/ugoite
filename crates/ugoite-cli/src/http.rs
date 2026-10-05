@@ -2,9 +2,24 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::sync::OnceLock;
 use ugoite_api_client::{
-    decode_response, parse_form_upsert_metadata, prepare_request, ApiResponse,
-    FormUpsertResponseMetadata, Header, HttpMethod, PreparedRequest, RequestBodyKind,
+    decode_response, parse_form_upsert_metadata, prepare_request, require_operation_credential,
+    ApiResponse, FormUpsertResponseMetadata, Header, HttpMethod, PreparedRequest, RequestBodyKind,
 };
+
+/// Fail fast before transport when a mutation has no credential to send.
+/// Reads may intentionally stay anonymous; the operation registry owns that
+/// intent so individual commands need no auth if-chains.
+fn fail_fast_for_anonymous(
+    operation: &str,
+    connection: &str,
+    credential: Option<&str>,
+) -> Result<()> {
+    require_operation_credential(operation, credential.is_some()).map_err(|error| {
+        anyhow::anyhow!(
+            "{error} Connection {connection:?} carries no credential profile; run `ugoite auth login --connection {connection} --credential <NAME>`."
+        )
+    })
+}
 
 /// Execute against an explicit [`crate::cli_config::SpaceTarget`].
 ///
@@ -66,6 +81,7 @@ pub async fn execute_form_upsert_for_target(
         .context("Form definition missing 'name' field")?
         .to_owned();
     let prepared = prepare_request("form.upsert", &arguments, Some(&body))?;
+    fail_fast_for_anonymous("form.upsert", &connection, credential.as_deref())?;
     let (result, headers) = execute_prepared_for_target_with_headers(
         &base,
         &connection,
@@ -105,6 +121,7 @@ pub async fn execute_for_connection(
     arguments: Value,
     body: Option<Value>,
 ) -> Result<Value> {
+    fail_fast_for_anonymous(operation, connection, credential)?;
     let prepared = prepare_request(operation, &arguments, body.as_ref())?;
     if prepared.body_kind == RequestBodyKind::Multipart {
         bail!("operation {operation} requires the multipart transport");
@@ -129,6 +146,7 @@ pub async fn execute_bytes_for_target(
             ..
         } => (base.clone(), connection.clone(), credential.clone()),
     };
+    fail_fast_for_anonymous(operation, &connection, credential.as_deref())?;
     let prepared = prepare_request(operation, &arguments, None)?;
     if prepared.body_kind != RequestBodyKind::None {
         bail!("operation {operation} does not return raw bytes");
@@ -188,6 +206,7 @@ pub async fn execute_multipart_for_target(
             ..
         } => (base.clone(), connection.clone(), credential.clone()),
     };
+    fail_fast_for_anonymous(operation, &connection, credential.as_deref())?;
     let prepared = prepare_request(operation, &arguments, None)?;
     if prepared.body_kind != RequestBodyKind::Multipart {
         bail!("operation {operation} does not use the multipart transport");
