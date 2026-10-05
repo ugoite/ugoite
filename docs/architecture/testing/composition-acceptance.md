@@ -150,6 +150,12 @@ resolve ambiguity about the next action. The renderer reuses
 `PagedResultTable`; a metric displays the one scalar returned by the query
 engine without aggregating rows in the Browser.
 
+Save as tool covers Form-scoped EntryQuery views and exact Saved SQL
+revisions through the same dialog, receipt, and retry contract. All-Forms
+Search (`/search`, All scope) carries no `form_id`, so the v1 EntryQuery
+source grammar cannot express it: the action stays disabled fail-closed with
+an accessible reason instead of approximating a Form scope.
+
 ## API/server implementation locator
 
 The portable operation inventory is mirrored by
@@ -238,9 +244,24 @@ with SHA-256
 `a7da68bb91789b3701f89624c93a28eac633cded59a0316d853d20e5eb9dd108`. The run
 verifies Browser save retry after commit, exact-revision reopen from Home, and
 parameterized paged results with model connection disabled. It does not verify
-stale query response suppression, recovery and ACL selectors, performance
-evidence, or exact release-candidate byte promotion. The separate scoped CLI
-journeys cover Core/Remote inspect, `entry_query`, and export read parity,
+recovery and ACL selectors, performance evidence, or exact release-candidate
+byte promotion. Two further Browser runs are recorded as JUnit artifacts without
+promoting the release gate: the metric reopen journey
+([`composition-metric-journey-junit.xml`](../../../e2e/fixtures/composition/evidence/composition-metric-journey-junit.xml),
+SHA-256
+`52bea6d9a78741090c0827a116207317d57cb686fd22996851bd1bfc7c9f53d1`)
+verifies exact-revision metric scalar display and the stable multiple-rows
+diagnostic with no Browser aggregation, and the stale-response journey
+([`composition-stale-response-junit.xml`](../../../e2e/fixtures/composition/evidence/composition-stale-response-junit.xml),
+SHA-256
+`cf7df28ce6357d614a4296ff96a94248c1eb60fbac08280aa17a6897e97f33cf`)
+verifies a late parameter-A response changes neither rows, metric, error,
+loading, finalization, nor pagination. A representative performance baseline
+(`e2e/fixtures/composition/evidence/performance-baseline.json`, regression
+reference only, explicit gaps) is recorded separately. The separate scoped CLI
+journeys cover Core/Remote inspect, `entry_query`, and export read parity
+including an older-than-latest exact revision, broken-reference raw recovery
+with `source_unavailable` concealment, unsupported-version raw recovery,
 plus Core/Remote import/save receipts with prevalidation and restore
 receipt, replay, and stale-base paths.
 No release candidate was built or promoted.

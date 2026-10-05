@@ -30,6 +30,7 @@ Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
 | Operations | `lint`, `list`, `get`, `history`, `resolve`, `save`, `restore` (export stays a CLI file operation) |
 | Idempotency | `Idempotency-Key` required on save/restore; same key + same payload replays, differing payload conflicts |
 | Raw recovery | unsupported versions and broken references keep raw inspect, export, and history |
+| Save-as-tool scope | Form-scoped EntryQuery views and exact Saved SQL revisions save as tools; All-Forms Search (`/search`, All scope, no `form_id`) is inexpressible in v1 and stays disabled fail-closed rather than approximated |
 
 ## Portable document
 
