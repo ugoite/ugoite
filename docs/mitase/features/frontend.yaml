@@ -939,3 +939,21 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
+          - id: composition-studio-shell
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.source-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+          - id: composition-source-picker
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.source-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.structure-first-authoring

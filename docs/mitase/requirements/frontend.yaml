@@ -2828,3 +2828,86 @@ requirements:
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
                 covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: surfaces preview errors without stale overwrite } }
+      - id: studio-shell-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio shell route and data-source picker (one Back, one Save, tool-name-owned structure, full-row selection, keyboard-operable reorder, guarded remove, canonical create-save with a stable idempotency key) through exact frontend unit tests.
+        targets:
+          - id: studio-shell-structure
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "renders one back control, one save, and data-first studio structure" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "renders one back control, one save, and data-first studio structure" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "renders one back control, one save, and data-first studio structure" } }
+          - id: studio-shell-sources
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "adds data sources with full-row selection and keyboard-operable reorder" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "adds data sources with full-row selection and keyboard-operable reorder" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "adds data sources with full-row selection and keyboard-operable reorder" } }
+          - id: studio-shell-save
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "saves the canonical draft with a stable idempotency key" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "saves the canonical draft with a stable idempotency key" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "saves the canonical draft with a stable idempotency key" } }
+          - id: studio-shell-save-retry
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "retries an uncertain save with the identical payload and key" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "retries an uncertain save with the identical payload and key" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "retries an uncertain save with the identical payload and key" } }
+          - id: studio-source-picker-list
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "lists forms and saved sql with full-row selection" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "lists forms and saved sql with full-row selection" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "lists forms and saved sql with full-row selection" } }
+          - id: studio-source-picker-pin
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "pins the exact saved sql revision with server-owned column types" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "pins the exact saved sql revision with server-owned column types" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "pins the exact saved sql revision with server-owned column types" } }
