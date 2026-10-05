@@ -28,6 +28,8 @@ export interface DraftSavedSqlSeed {
   name: string;
   expectedResult: Array<{ name: string; type: CompositionResultType }>;
   variables: Record<string, { parameter: string }>;
+  /** Declared Saved SQL variable types for parameter provisioning. */
+  variableTypes?: Record<string, CompositionParameterType>;
 }
 
 export interface DraftEntryQuerySeed {
@@ -419,6 +421,38 @@ export const addParameter = (
   draft.parameters.some((item) => item.id === parameter.id)
     ? { ok: false, error: "duplicate-parameter" }
     : upsertParameter(draft, parameter);
+
+/**
+ * Provision required parameters for Saved SQL variable bindings. Existing
+ * parameters are kept as-is (type mismatches surface as Rust-owned resolve
+ * diagnostics, never silent rebinds); missing ones are added from the
+ * server-declared variable types.
+ */
+export const ensureParametersForVariables = (
+  draft: CompositionDraft,
+  variableTypes: Readonly<Record<string, CompositionParameterType>>,
+): CompositionDraft => {
+  let next = draft;
+  for (const [id, type] of Object.entries(variableTypes)) {
+    if (next.parameters.some((item) => item.id === id)) continue;
+    const added = addParameter(next, { id, type, required: true });
+    if (added.ok) next = added.draft;
+  }
+  return next;
+};
+
+/** Caller parameter values carried by defaults; inputs stay Work. */
+export const defaultParameterValues = (
+  draft: CompositionDraft,
+): Record<string, unknown> => {
+  const values: Record<string, unknown> = {};
+  for (const parameter of draft.parameters) {
+    if (parameter.default !== undefined) {
+      values[parameter.id] = parameter.default;
+    }
+  }
+  return values;
+};
 
 /** Parameters referenced by sources or filters cannot be removed silently. */
 export const removeParameter = (

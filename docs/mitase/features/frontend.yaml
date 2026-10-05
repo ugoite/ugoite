@@ -957,6 +957,15 @@ features:
                 criterion: REQ-FE-070#criterion.display-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
+          - id: composition-parameter-list
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
           - id: composition-studio-shell
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.tsx

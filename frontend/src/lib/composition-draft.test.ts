@@ -7,7 +7,9 @@ import {
   addTableDisplay,
   canonicalizeDraft,
   createEmptyDraft,
+  defaultParameterValues,
   displaysUsingSource,
+  ensureParametersForVariables,
   moveDisplay,
   moveSource,
   removeDisplay,
@@ -197,5 +199,33 @@ describe("composition draft model", () => {
     const receipt = await canonicalizeDraft(draft);
     expect(receipt.canonical_yaml).toBe("canonical");
     expect(compositionApi).toBeDefined();
+  });
+
+  it("provisions missing variable parameters without touching existing ones", () => {
+    const existing = addParameter(createEmptyDraft(), {
+      id: "month",
+      type: "string",
+      required: false,
+    });
+    if (!existing.ok) throw new Error("expected parameter");
+    const provisioned = ensureParametersForVariables(existing.draft, {
+      month: "date",
+      region: "string",
+    });
+    // Existing parameters keep their declared shape; mismatches surface
+    // as Rust-owned resolve diagnostics, never silent rebinds.
+    expect(provisioned.parameters).toEqual([
+      { id: "month", type: "string", required: false },
+      { id: "region", type: "string", required: true },
+    ]);
+    expect(defaultParameterValues(provisioned)).toEqual({});
+    const withDefault = upsertParameter(provisioned, {
+      id: "region",
+      type: "string",
+      required: false,
+      default: "eu",
+    });
+    if (!withDefault.ok) throw new Error("expected update");
+    expect(defaultParameterValues(withDefault.draft)).toEqual({ region: "eu" });
   });
 });

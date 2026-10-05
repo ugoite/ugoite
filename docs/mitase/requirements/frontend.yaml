@@ -2898,6 +2898,51 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "disables sources without scalar candidates" } }
+      - id: studio-parameter-verification
+        role: verification
+        facet: verification
+        responsibility: Verify typed parameter provisioning, inline default editing, guarded removal, and preview default values through exact frontend unit tests. Rust-owned type compatibility stays covered by resolve diagnostics.
+        targets:
+          - id: parameter-provisioning
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: provisions missing variable parameters without touching existing ones }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: provisions missing variable parameters without touching existing ones } }
+          - id: parameter-inline-edit
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: adds typed parameters and edits defaults inline }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: adds typed parameters and edits defaults inline } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: adds typed parameters and edits defaults inline } }
+          - id: parameter-guarded-remove
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: surfaces guarded removal without deleting }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: surfaces guarded removal without deleting } }
+          - id: parameter-route-provisioning
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: provisions typed parameters from saved sql variables and guards removal }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: provisions typed parameters from saved sql variables and guards removal } }
       - id: studio-shell-verification
         role: verification
         facet: verification

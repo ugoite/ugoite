@@ -9,6 +9,7 @@ import {
 } from "~/lib/entry-query-composition";
 import {
   canCreateSavedSqlComposition,
+  type CompositionParameterType,
   type CompositionResultType,
 } from "~/lib/composition-api";
 import type {
@@ -235,6 +236,12 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
             current.variables.map((variable) => [
               variable.name,
               { parameter: variable.name },
+            ]),
+          ),
+          variableTypes: Object.fromEntries(
+            current.variables.map((variable) => [
+              variable.name,
+              variable.type as CompositionParameterType,
             ]),
           ),
         },
