@@ -210,6 +210,8 @@ inventory:
         - crates/ugoite-wasm/tests/composition_parity.ts
         - frontend/src/lib/composition-api.ts
         - frontend/src/lib/composition-api.test.ts
+        - frontend/src/lib/composition-draft.ts
+        - frontend/src/lib/composition-draft.test.ts
         - frontend/src/lib/composition-query-handle.ts
         - frontend/src/lib/composition-query-handle.test.ts
         - frontend/src/lib/entry-query-composition.test.ts

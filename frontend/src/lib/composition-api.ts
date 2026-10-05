@@ -1,4 +1,5 @@
 import type { EntryPage, EntryPageRequest } from "./entry-query";
+import type { CompositionStudioDocument } from "./composition-draft";
 import type { EntryQueryCompositionDocument } from "./entry-query-composition";
 import type { SqlQueryPage, SqlQueryRequest, SqlResultColumn } from "./types";
 import {
@@ -243,7 +244,7 @@ export const buildSavedSqlCompositionDocument = (
 /** Thin browser adapter over the portable protocol and existing query paths. */
 export const compositionApi = {
   async canonicalizeDocument(
-    document: CompositionSaveDocument,
+    document: CompositionSaveDocument | CompositionStudioDocument,
   ): Promise<CompositionDocumentCanonicalization> {
     return await canonicalizeCompositionDocument(document);
   },

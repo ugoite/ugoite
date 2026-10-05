@@ -2706,7 +2706,7 @@ requirements:
   - id: REQ-FE-070
     title: Composition Studio Authoring
     description: |
-      Composition Studio lets the Browser combine existing Space-owned Knowledge (Saved SQL revisions, Form views, parameters) into a reusable Tool with multiple data sources, table and exact-scalar metric displays, labels, tags, side-effect-free live preview, and exact-revision edit. Richness is typed, reproducible combination of existing Knowledge, not free-form layout. The Browser never owns Composition semantics. Drafts canonicalize through the shared Rust/WASM contract, metric evaluation stays exact-scalar without Browser aggregation, and SQL types stay server-owned without Browser inference. Verification bindings land with the Studio implementation; until then the criteria below are an explicit evidence gap.
+      Composition Studio lets the Browser combine existing Space-owned Knowledge (Saved SQL revisions, Form views, parameters) into a reusable Tool with multiple data sources, table and exact-scalar metric displays, labels, tags, side-effect-free live preview, and exact-revision edit. Richness is typed, reproducible combination of existing Knowledge, not free-form layout. The Browser never owns Composition semantics. Drafts canonicalize through the shared Rust/WASM contract, metric evaluation stays exact-scalar without Browser aggregation, and SQL types stay server-owned without Browser inference. Verification bindings for the draft Work state land with this change; route, picker, preview, and edit-surface verification lands with the Studio implementation, and the remaining criteria stay an explicit evidence gap until then.
     priority: high
     status: planned
     criteria:
@@ -2746,3 +2746,44 @@ requirements:
         kind: quality
         statement: Every icon action carries an accessible name, tooltip or title where the visible label collapses, a 44px target, and a focus order matching the visual order.
         governed_by: [POL-UI-007#rule.governance, POL-UI-012#rule.governance]
+    bindings:
+      - id: draft-model-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio draft Work state (stable identities, blocked removes, keyboard-operable reorder, typed document assembly, shared-contract canonicalization) through exact frontend unit tests. Route, picker, preview, and edit-surface verification lands with the Studio implementation.
+        targets:
+          - id: draft-identities
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: builds stable draft identities without owning semantics }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: builds stable draft identities without owning semantics } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: builds stable draft identities without owning semantics } }
+          - id: draft-blocked-remove
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: blocks source removal while displays reference it }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: blocks source removal while displays reference it } }
+          - id: draft-reorder
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: reorders sources and displays by keyboard-operable moves }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: reorders sources and displays by keyboard-operable moves } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: reorders sources and displays by keyboard-operable moves } }
