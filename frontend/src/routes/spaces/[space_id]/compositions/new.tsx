@@ -31,10 +31,10 @@ import {
   defaultParameterValues,
   type DraftParameter,
   type DraftSource,
+  ensureParametersForVariables,
   moveDisplay,
   moveSource,
   removeDisplay,
-  ensureParametersForVariables,
   removeParameter,
   removeSource,
   setDisplayLabel,
@@ -248,29 +248,6 @@ export default function CompositionNewRoute() {
       return t("composition.studioParameterReferenced");
     }
     return t("composition.studioCannotRemoveParameter");
-  };
-
-  const referencedParameterIds = (): Set<string> => {
-    const ids = new Set<string>();
-    for (const source of draft().sources) {
-      if (source.kind === "saved_sql") {
-        for (const binding of Object.values(source.variables)) {
-          ids.add(binding.parameter);
-        }
-      } else {
-        const mentions = (value: unknown): void => {
-          if (
-            typeof value === "object" && value !== null && "parameter" in value
-          ) {
-            const id = (value as { parameter: unknown }).parameter;
-            if (typeof id === "string") ids.add(id);
-          }
-        };
-        mentions(source.query.text);
-        for (const filter of source.query.filters) mentions(filter.value);
-      }
-    }
-    return ids;
   };
 
   const saveRequest = async (

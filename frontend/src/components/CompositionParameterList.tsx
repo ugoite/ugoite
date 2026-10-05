@@ -40,7 +40,6 @@ const parseValue = (
 interface CompositionParameterListProps {
   parameters: DraftParameter[];
   headingId: string;
-  referencedIds: ReadonlySet<string>;
   onAdd: (parameter: DraftParameter) => void;
   onUpdate: (parameter: DraftParameter) => void;
   onRemove: (parameterId: string) => string | undefined;
@@ -191,6 +190,9 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
                 <input
                   type="checkbox"
                   checked={parameter.required}
+                  aria-label={t("composition.studioParameterRequiredName", {
+                    name: parameter.id,
+                  })}
                   onChange={(event) =>
                     props.onUpdate({
                       ...parameter,

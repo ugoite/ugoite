@@ -153,7 +153,13 @@ describe("Composition studio shell", () => {
     const headings = screen.getAllByRole("heading", { level: 2 }).map(
       (heading) => heading.textContent,
     );
-    expect(headings).toEqual(["Data", "Display", "Parameters", "Tags", "Preview"]);
+    expect(headings).toEqual([
+      "Data",
+      "Display",
+      "Parameters",
+      "Tags",
+      "Preview",
+    ]);
 
     // The tool-name input owns the name: typing updates the heading owner.
     const nameInput = screen.getByLabelText("Name");
@@ -236,7 +242,7 @@ describe("Composition studio shell", () => {
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
         heading.textContent
       );
-    expect(headings()).toEqual(["Data", "Display", "Tags", "Preview"]);
+    expect(headings()).toEqual(["Data", "Display", "Parameters", "Tags", "Preview"]);
 
     // Displays need a source first.
     expect(screen.getByRole("button", { name: "Add display" })).toBeDisabled();
@@ -264,7 +270,7 @@ describe("Composition studio shell", () => {
     });
 
     // The display row owns its default source name; headers stay ordered.
-    expect(headings()).toEqual(["Data", "Display", "Tags", "Preview"]);
+    expect(headings()).toEqual(["Data", "Display", "Parameters", "Tags", "Preview"]);
     expect(screen.getByText("Table")).toBeInTheDocument();
     expect(
       within(container).getAllByRole("button", { name: "Tasks" }),
