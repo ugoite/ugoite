@@ -1,6 +1,9 @@
 services:
   ugoite:
-    image: ugoite:e2e
+    # The runtime image identity shared with the image build
+    # (mise build:image) and the ownership repair in
+    # e2e/scripts/run-e2e-compose.sh, all via UGOITE_IMAGE_TAG.
+    image: ${UGOITE_IMAGE_TAG:-ugoite:e2e}
     build:
       context: .
       dockerfile: Dockerfile

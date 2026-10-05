@@ -222,6 +222,11 @@ compose_cmd=(docker compose -f "$COMPOSE_FILE")
 
 cleanup() {
   local exit_status=$?
+  # Failure-safe cleanup (issue #3225): the runner executes under `set -e`,
+  # so disable it here to attempt every step even when an earlier step
+  # fails. The original test exit status is preserved: a cleanup failure
+  # only upgrades a passing run, never masks a failing one.
+  set +e
   local cleanup_status=0
   if [ "$exit_status" -ne 0 ]; then
     echo ""
@@ -236,12 +241,19 @@ cleanup() {
   if [ "$STORAGE_ROOT_OWNERSHIP_ATTEMPTED" = true ] && [ -d "$E2E_COMPOSE_STORAGE_ROOT" ]; then
     # Restore the caller's ownership without changing private file modes. A
     # supplied fixture root belongs to its caller and is never removed here.
-    docker run --rm \
+    # The image resolves through UGOITE_IMAGE_TAG, the same identity the
+    # Compose service runs (docker-compose.e2e.yml). A failed repair warns
+    # and continues so the storage removal and build-info restore below
+    # still run.
+    if ! docker run --rm \
       --user 0:0 \
       --volume "$E2E_COMPOSE_STORAGE_ROOT:/data" \
       --entrypoint /bin/sh \
       "${UGOITE_IMAGE_TAG:-ugoite:e2e}" \
-      -c "chown -R $(id -u):$(id -g) /data" || cleanup_status=1
+      -c "chown -R $(id -u):$(id -g) /data"; then
+      echo "warning: post-shutdown ownership repair failed; continuing cleanup" >&2
+      cleanup_status=1
+    fi
   fi
   if [ "$STORAGE_ROOT_OWNED" = true ] && [ -d "$E2E_COMPOSE_STORAGE_ROOT" ]; then
     rm -rf "$E2E_COMPOSE_STORAGE_ROOT" || cleanup_status=1
