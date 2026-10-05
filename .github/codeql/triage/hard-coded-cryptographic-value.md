@@ -50,3 +50,12 @@ Space filesystem; they are path constants, not keys or credentials.
 - Alerts outside this triage (for example in `entry_query.rs`,
   `sql_query.rs`, or `node_identity.rs`) are intentionally unsuppressed
   here and need their own review before any suppression.
+
+## Dismissal record
+
+Alerts 138, 140–145, 150, 167–171 were dismissed via the code-scanning
+API with reason `false positive`, each pointing at this triage. No query
+was excluded and no detection configuration changed: the inline
+`// codeql[rust/hard-coded-cryptographic-value]` comments mark the
+reviewed lines in tree, while GitHub records the per-alert dismissal
+state.
