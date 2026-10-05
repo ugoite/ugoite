@@ -214,6 +214,8 @@ inventory:
         - frontend/src/lib/composition-draft.test.ts
         - frontend/src/lib/composition-query-handle.ts
         - frontend/src/lib/composition-query-handle.test.ts
+        - frontend/src/lib/composition-preview-handle.ts
+        - frontend/src/lib/composition-preview-handle.test.ts
         - frontend/src/lib/entry-query-composition.test.ts
         - frontend/src/components/CompositionRenderer.tsx
         - frontend/src/components/CompositionRenderer.test.tsx

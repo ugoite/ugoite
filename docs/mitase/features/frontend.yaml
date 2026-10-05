@@ -932,3 +932,10 @@ features:
                 criterion: REQ-FE-070#criterion.source-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.display-authoring
+          - id: composition-preview-handle
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.ts
+            selector: { kind: symbol, name: createCompositionPreviewHandle }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
