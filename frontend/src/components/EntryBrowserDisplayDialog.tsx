@@ -8,6 +8,7 @@ import type {
   EntryProjection,
   EntrySort,
 } from "~/lib/entry-query";
+import { integerFilterTextInRange } from "~/lib/entry-query";
 import { t } from "~/lib/i18n";
 import { UiIcon } from "./UiIcon";
 
@@ -73,9 +74,12 @@ const parseFilterValue = (
     return { value, valid: false };
   }
   if (fieldType === "integer" || fieldType === "long") {
-    if (!/^[+-]?\d+$/.test(trimmed)) return { value, valid: false };
-    const parsed = Number(trimmed);
-    return { value: parsed, valid: Number.isSafeInteger(parsed) };
+    // String-backed editing: keep the exact text for the parser instead of
+    // rounding through JS Number, preserving the full signed int64 range.
+    if (!integerFilterTextInRange(fieldType, trimmed)) {
+      return { value, valid: false };
+    }
+    return { value: trimmed, valid: true };
   }
   if (["numeric", "float", "double"].includes(fieldType)) {
     if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(trimmed)) {
@@ -601,15 +605,20 @@ export function EntryBrowserDisplayDialog(
                           fallback={
                             <input
                               class="ui-input"
-                              type={type() === "integer" || type() === "long" ||
-                                  type() === "numeric" || type() === "float" ||
-                                  type() === "double"
+                              type={type() === "integer" || type() === "long"
+                                ? "text"
+                                : type() === "numeric" || type() === "float" ||
+                                    type() === "double"
                                 ? "number"
                                 : type() === "date"
                                 ? "date"
                                 : type().startsWith("timestamp")
                                 ? "datetime-local"
                                 : "text"}
+                              inputMode={type() === "integer" ||
+                                  type() === "long"
+                                ? "numeric"
+                                : undefined}
                               step={type() === "numeric" ||
                                   type() === "float" || type() === "double"
                                 ? "any"

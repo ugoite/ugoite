@@ -1,6 +1,10 @@
 import { createRoot, createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createEntryQueryController, previewProjection } from "./entry-query";
+import {
+  createEntryQueryController,
+  integerFilterTextInRange,
+  previewProjection,
+} from "./entry-query";
 
 const queryMock = vi.fn();
 
@@ -465,5 +469,34 @@ describe("EntryQueryController", () => {
         .toEqual(["new-space"])
     );
     dispose();
+  });
+});
+
+describe("integerFilterTextInRange", () => {
+  it("accepts the full signed int64 range for long fields", () => {
+    expect(integerFilterTextInRange("long", "9223372036854775807")).toBe(true);
+    expect(integerFilterTextInRange("long", "-9223372036854775808")).toBe(true);
+    expect(integerFilterTextInRange("long", "0")).toBe(true);
+    expect(integerFilterTextInRange("long", "+42")).toBe(true);
+    expect(integerFilterTextInRange("long", "9007199254740993")).toBe(true);
+  });
+
+  it("rejects text outside the signed int64 range", () => {
+    expect(integerFilterTextInRange("long", "9223372036854775808")).toBe(false);
+    expect(integerFilterTextInRange("long", "-9223372036854775809")).toBe(
+      false,
+    );
+    expect(integerFilterTextInRange("long", "7.5")).toBe(false);
+    expect(integerFilterTextInRange("long", "")).toBe(false);
+    expect(integerFilterTextInRange("long", "12a")).toBe(false);
+  });
+
+  it("bounds integer fields to the int32 range", () => {
+    expect(integerFilterTextInRange("integer", "2147483647")).toBe(true);
+    expect(integerFilterTextInRange("integer", "-2147483648")).toBe(true);
+    expect(integerFilterTextInRange("integer", "2147483648")).toBe(false);
+    expect(integerFilterTextInRange("integer", "9223372036854775807")).toBe(
+      false,
+    );
   });
 });
