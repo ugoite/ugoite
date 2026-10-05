@@ -324,51 +324,80 @@ async fn create_structured_entry(
         );
     };
     let merged = merge_structured_fields(fields, fields_files)?;
-    if let SpaceTarget::Remote { space_uid, .. } = target {
-        if author.is_some() {
-            return Err(UsageError(
-                "entry create --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
-                    .to_string(),
-            )
-            .into());
+    match target {
+        SpaceTarget::Remote { .. } => {
+            create_structured_entry_remote(target, fmt, entry_id, form_name, merged, author).await
         }
-        let mut body = serde_json::json!({
-            "form": form_name,
-            "fields": merged,
-        });
-        if let Some(entry_id) = entry_id {
-            body["id"] = serde_json::json!(entry_id);
+        SpaceTarget::Core { .. } => {
+            create_structured_entry_core(target, fmt, entry_id, form_name, merged, author).await
         }
-        let result = http::execute_for_target(
-            target,
-            "entry.create",
-            serde_json::json!({"space_id": space_uid}),
-            Some(body),
-        )
-        .await?;
-        let created_id = result
-            .get("id")
-            .and_then(|value| value.as_str())
-            .ok_or_else(|| anyhow::anyhow!("entry.create response is missing id"))?
-            .to_owned();
-        let receipt = entry_receipt(
-            created_id,
-            result
-                .get("revision_id")
-                .and_then(|value| value.as_str())
-                .map(str::to_string),
-            result
-                .get("change_id")
-                .and_then(|value| value.as_str())
-                .map(str::to_string),
-        );
-        emit_mutation(
-            &receipt,
-            fmt,
-            Some(render_receipt(&receipt, &stdout_style())),
-        );
-        return Ok(());
     }
+}
+
+async fn create_structured_entry_remote(
+    target: &SpaceTarget,
+    fmt: &Format,
+    entry_id: Option<String>,
+    form_name: String,
+    merged: std::collections::BTreeMap<String, serde_json::Value>,
+    author: Option<String>,
+) -> Result<()> {
+    let SpaceTarget::Remote { space_uid, .. } = target else {
+        anyhow::bail!("operation entry.create does not use the local core transport")
+    };
+    if author.is_some() {
+        return Err(UsageError(
+            "entry create --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
+                .to_string(),
+        )
+        .into());
+    }
+    let mut body = serde_json::json!({
+        "form": form_name,
+        "fields": merged,
+    });
+    if let Some(entry_id) = entry_id {
+        body["id"] = serde_json::json!(entry_id);
+    }
+    let result = http::execute_for_target(
+        target,
+        "entry.create",
+        serde_json::json!({"space_id": space_uid}),
+        Some(body),
+    )
+    .await?;
+    let created_id = result
+        .get("id")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| anyhow::anyhow!("entry.create response is missing id"))?
+        .to_owned();
+    let receipt = entry_receipt(
+        created_id,
+        result
+            .get("revision_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        result
+            .get("change_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+    );
+    emit_mutation(
+        &receipt,
+        fmt,
+        Some(render_receipt(&receipt, &stdout_style())),
+    );
+    Ok(())
+}
+
+async fn create_structured_entry_core(
+    target: &SpaceTarget,
+    fmt: &Format,
+    entry_id: Option<String>,
+    form_name: String,
+    merged: std::collections::BTreeMap<String, serde_json::Value>,
+    author: Option<String>,
+) -> Result<()> {
     let SpaceTarget::Core { root, space_id } = target else {
         anyhow::bail!("operation entry.create does not use the remote transport")
     };
@@ -424,66 +453,115 @@ async fn update_structured_entry(
         .into());
     }
     let fields = merge_structured_fields(fields, fields_files)?;
-    if let SpaceTarget::Remote { space_uid, .. } = target {
-        if author != "cli" {
-            return Err(UsageError(
-                "entry update --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
-                    .to_string(),
+    match target {
+        SpaceTarget::Remote { .. } => {
+            update_structured_entry_remote(
+                target,
+                fmt,
+                entry_id,
+                form,
+                fields,
+                parent_revision_id,
+                author,
             )
-            .into());
+            .await
         }
-        let current = http::execute_for_target(
-            target,
-            "entry.get",
-            serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
-            None,
-        )
-        .await?;
-        let mut extra_attributes = entry_object_map(&current, "extra_attributes")?;
-        // Explicit structured inputs are the complete post-update field map:
-        // they replace preserved extra_attributes on key overlap. The shared
-        // Rust boundary rejects overlap instead of preferring a side, so the
-        // caller resolves it here, explicitly, before sending.
-        for key in fields.keys() {
-            extra_attributes.remove(key);
+        SpaceTarget::Core { .. } => {
+            update_structured_entry_core(
+                target,
+                fmt,
+                entry_id,
+                form,
+                fields,
+                parent_revision_id,
+                author,
+            )
+            .await
         }
-        let parent_revision_id = match parent_revision_id {
-            Some(parent_revision_id) => parent_revision_id,
-            None => current_entry_revision_id(&current)?,
-        };
-        let mut body = serde_json::json!({
-            "fields": fields,
-            "extra_attributes": extra_attributes,
-        });
-        if let Some(form) = form.as_deref() {
-            body["form"] = serde_json::json!(form);
-        }
-        body["parent_revision_id"] = serde_json::json!(parent_revision_id);
-        let result = http::execute_for_target(
-            target,
-            "entry.update",
-            serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
-            Some(body),
-        )
-        .await?;
-        let receipt = entry_receipt(
-            entry_id,
-            result
-                .get("revision_id")
-                .and_then(|value| value.as_str())
-                .map(str::to_string),
-            result
-                .get("change_id")
-                .and_then(|value| value.as_str())
-                .map(str::to_string),
-        );
-        emit_mutation(
-            &receipt,
-            fmt,
-            Some(render_receipt(&receipt, &stdout_style())),
-        );
-        return Ok(());
     }
+}
+
+async fn update_structured_entry_remote(
+    target: &SpaceTarget,
+    fmt: &Format,
+    entry_id: String,
+    form: Option<String>,
+    fields: std::collections::BTreeMap<String, serde_json::Value>,
+    parent_revision_id: Option<String>,
+    author: String,
+) -> Result<()> {
+    let SpaceTarget::Remote { space_uid, .. } = target else {
+        anyhow::bail!("operation entry.update does not use the local core transport")
+    };
+    if author != "cli" {
+        return Err(UsageError(
+            "entry update --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
+                .to_string(),
+        )
+        .into());
+    }
+    let current = http::execute_for_target(
+        target,
+        "entry.get",
+        serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
+        None,
+    )
+    .await?;
+    let mut extra_attributes = entry_object_map(&current, "extra_attributes")?;
+    // Explicit structured inputs are the complete post-update field map:
+    // they replace preserved extra_attributes on key overlap. The shared
+    // Rust boundary rejects overlap instead of preferring a side, so the
+    // caller resolves it here, explicitly, before sending.
+    for key in fields.keys() {
+        extra_attributes.remove(key);
+    }
+    let parent_revision_id = match parent_revision_id {
+        Some(parent_revision_id) => parent_revision_id,
+        None => current_entry_revision_id(&current)?,
+    };
+    let mut body = serde_json::json!({
+        "fields": fields,
+        "extra_attributes": extra_attributes,
+    });
+    if let Some(form) = form.as_deref() {
+        body["form"] = serde_json::json!(form);
+    }
+    body["parent_revision_id"] = serde_json::json!(parent_revision_id);
+    let result = http::execute_for_target(
+        target,
+        "entry.update",
+        serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
+        Some(body),
+    )
+    .await?;
+    let receipt = entry_receipt(
+        entry_id,
+        result
+            .get("revision_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        result
+            .get("change_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+    );
+    emit_mutation(
+        &receipt,
+        fmt,
+        Some(render_receipt(&receipt, &stdout_style())),
+    );
+    Ok(())
+}
+
+async fn update_structured_entry_core(
+    target: &SpaceTarget,
+    fmt: &Format,
+    entry_id: String,
+    form: Option<String>,
+    fields: std::collections::BTreeMap<String, serde_json::Value>,
+    parent_revision_id: Option<String>,
+    author: String,
+) -> Result<()> {
     let SpaceTarget::Core { root, space_id } = target else {
         anyhow::bail!("operation entry.update does not use the remote transport")
     };
@@ -830,58 +908,19 @@ pub async fn run(
                 );
                 return Ok(());
             }
-            if human_approval.is_some() {
-                return Err(UsageError(
-                    "--human-approval is only supported on a remote backend/api connection"
-                        .to_string(),
-                )
-                .into());
-            }
-            let SpaceTarget::Core { root, space_id } = &target else {
-                anyhow::bail!("operation entry.delete does not use the remote transport")
-            };
-            // Do not wait for Derived refreshes in a one-shot mutation.
-            let service = UgoiteService::new_without_background_refresh(root)?;
-            let result = service
-                .delete_entry_with_receipt(space_id, &entry_id, &author)
-                .await?;
-            let receipt = entry_receipt(
-                entry_id,
-                result
-                    .get("revision_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-                result
-                    .get("change_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-            );
-            emit_mutation(
-                &receipt,
-                &fmt,
-                Some(render_receipt(&receipt, &stdout_style())),
-            );
+            delete_entry_core(&target, &fmt, entry_id, human_approval, author).await?;
         }
         EntrySubCmd::History { entry_id } => {
             let target =
                 resolve_command_target(explicit_config, context_override, "entry history")?;
-            if let SpaceTarget::Remote { space_uid, .. } = &target {
-                let result = http::execute_for_target(
-                    &target,
-                    "entry.history",
-                    serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
-                    None,
-                )
-                .await?;
-                emit_success(&result, &fmt, None);
-                return Ok(());
+            match &target {
+                SpaceTarget::Remote { .. } => {
+                    entry_history_remote(&target, &fmt, entry_id).await?;
+                }
+                SpaceTarget::Core { .. } => {
+                    entry_history_core(&target, &fmt, entry_id).await?;
+                }
             }
-            let SpaceTarget::Core { root, space_id } = &target else {
-                anyhow::bail!("operation entry.history does not use the remote transport")
-            };
-            let service = UgoiteService::new_without_background_refresh(root)?;
-            let history = service.entry_history(space_id, &entry_id).await?;
-            emit_success(&history, &fmt, None);
         }
         EntrySubCmd::Revision {
             entry_id,
@@ -920,64 +959,157 @@ pub async fn run(
         } => {
             let target =
                 resolve_command_target(explicit_config, context_override, "entry restore")?;
-            if let SpaceTarget::Remote { space_uid, .. } = &target {
-                if author != "cli" {
-                    return Err(UsageError(
-                        "entry restore --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
-                            .to_string(),
-                    )
-                    .into());
+            match &target {
+                SpaceTarget::Remote { .. } => {
+                    restore_entry_remote(&target, &fmt, entry_id, revision_id, author).await?;
                 }
-                let result = http::execute_for_target(
-                    &target,
-                    "entry.restore",
-                    serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
-                    Some(serde_json::json!({"revision_id": revision_id})),
-                )
-                .await?;
-                let receipt = entry_receipt(
-                    entry_id,
-                    result
-                        .get("revision_id")
-                        .and_then(|value| value.as_str())
-                        .map(str::to_string),
-                    result
-                        .get("change_id")
-                        .and_then(|value| value.as_str())
-                        .map(str::to_string),
-                );
-                emit_mutation(
-                    &receipt,
-                    &fmt,
-                    Some(render_receipt(&receipt, &stdout_style())),
-                );
-                return Ok(());
+                SpaceTarget::Core { .. } => {
+                    restore_entry_core(&target, &fmt, entry_id, revision_id, author).await?;
+                }
             }
-            let SpaceTarget::Core { root, space_id } = &target else {
-                anyhow::bail!("operation entry.restore does not use the remote transport")
-            };
-            // Do not wait for Derived refreshes in a one-shot mutation.
-            let service = UgoiteService::new_without_background_refresh(root)?;
-            let result = service
-                .restore_entry(space_id, &entry_id, &revision_id, &author)
-                .await?;
-            let receipt = entry_receipt(
-                entry_id,
-                result
-                    .get("revision_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-                result
-                    .get("change_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-            );
-            emit_mutation(
-                &receipt,
-                &fmt,
-                Some(render_receipt(&receipt, &stdout_style())),
-            );
         }
     }
+    Ok(())
+}
+
+async fn delete_entry_core(
+    target: &SpaceTarget,
+    fmt: &Format,
+    entry_id: String,
+    human_approval: Option<String>,
+    author: String,
+) -> Result<()> {
+    if human_approval.is_some() {
+        return Err(UsageError(
+            "--human-approval is only supported on a remote backend/api connection".to_string(),
+        )
+        .into());
+    }
+    let SpaceTarget::Core { root, space_id } = target else {
+        anyhow::bail!("operation entry.delete does not use the remote transport")
+    };
+    // Do not wait for Derived refreshes in a one-shot mutation.
+    let service = UgoiteService::new_without_background_refresh(root)?;
+    let result = service
+        .delete_entry_with_receipt(space_id, &entry_id, &author)
+        .await?;
+    let receipt = entry_receipt(
+        entry_id,
+        result
+            .get("revision_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        result
+            .get("change_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+    );
+    emit_mutation(
+        &receipt,
+        fmt,
+        Some(render_receipt(&receipt, &stdout_style())),
+    );
+    Ok(())
+}
+
+async fn entry_history_remote(target: &SpaceTarget, fmt: &Format, entry_id: String) -> Result<()> {
+    let SpaceTarget::Remote { space_uid, .. } = target else {
+        anyhow::bail!("operation entry.history does not use the local core transport")
+    };
+    let result = http::execute_for_target(
+        target,
+        "entry.history",
+        serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
+        None,
+    )
+    .await?;
+    emit_success(&result, fmt, None);
+    Ok(())
+}
+
+async fn entry_history_core(target: &SpaceTarget, fmt: &Format, entry_id: String) -> Result<()> {
+    let SpaceTarget::Core { root, space_id } = target else {
+        anyhow::bail!("operation entry.history does not use the remote transport")
+    };
+    let service = UgoiteService::new_without_background_refresh(root)?;
+    let history = service.entry_history(space_id, &entry_id).await?;
+    emit_success(&history, fmt, None);
+    Ok(())
+}
+
+async fn restore_entry_remote(
+    target: &SpaceTarget,
+    fmt: &Format,
+    entry_id: String,
+    revision_id: String,
+    author: String,
+) -> Result<()> {
+    let SpaceTarget::Remote { space_uid, .. } = target else {
+        anyhow::bail!("operation entry.restore does not use the local core transport")
+    };
+    if author != "cli" {
+        return Err(UsageError(
+            "entry restore --author is only supported on a local core connection; remote backend/api connections derive author from the authenticated identity"
+                .to_string(),
+        )
+        .into());
+    }
+    let result = http::execute_for_target(
+        target,
+        "entry.restore",
+        serde_json::json!({"space_id": space_uid, "entry_id": entry_id}),
+        Some(serde_json::json!({"revision_id": revision_id})),
+    )
+    .await?;
+    let receipt = entry_receipt(
+        entry_id,
+        result
+            .get("revision_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        result
+            .get("change_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+    );
+    emit_mutation(
+        &receipt,
+        fmt,
+        Some(render_receipt(&receipt, &stdout_style())),
+    );
+    Ok(())
+}
+
+async fn restore_entry_core(
+    target: &SpaceTarget,
+    fmt: &Format,
+    entry_id: String,
+    revision_id: String,
+    author: String,
+) -> Result<()> {
+    let SpaceTarget::Core { root, space_id } = target else {
+        anyhow::bail!("operation entry.restore does not use the remote transport")
+    };
+    // Do not wait for Derived refreshes in a one-shot mutation.
+    let service = UgoiteService::new_without_background_refresh(root)?;
+    let result = service
+        .restore_entry(space_id, &entry_id, &revision_id, &author)
+        .await?;
+    let receipt = entry_receipt(
+        entry_id,
+        result
+            .get("revision_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        result
+            .get("change_id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+    );
+    emit_mutation(
+        &receipt,
+        fmt,
+        Some(render_receipt(&receipt, &stdout_style())),
+    );
     Ok(())
 }

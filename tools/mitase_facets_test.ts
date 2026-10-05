@@ -62,3 +62,36 @@ Deno.test("report facets rejects unsupported sources without an envelope", async
   assertEquals(result.stdout, "");
   assertEquals(result.stderr.includes("facet projection source"), true);
 });
+
+Deno.test("entry capability projects one outcome across honest facets", async () => {
+  const result = await reportFacets("FEAT-ENTRY-001");
+  assertEquals(result.success, true, result.stderr);
+  const report = JSON.parse(result.stdout);
+  const byCriterion = new Map(
+    report.criteria.map((entry: { criterion: string; facets: unknown[] }) => [
+      entry.criterion,
+      entry.facets,
+    ]),
+  );
+  const creation = byCriterion.get("REQ-ENTRY-001#criterion.creation") as Array<
+    {
+      facet: string;
+      declared_verification: { status: string };
+    }
+  >;
+  assertEquals(
+    creation.map((row) => row.facet),
+    ["backend", "cli-core", "cli-remote", "core", "frontend", "mcp"],
+  );
+  for (const row of creation) {
+    assertEquals(row.declared_verification.status, "verified", row.facet);
+  }
+  const tombstone = byCriterion.get(
+    "REQ-ENTRY-004#criterion.tombstone",
+  ) as Array<{
+    facet: string;
+  }>;
+  const tombstoneFacets = tombstone.map((row) => row.facet).sort();
+  assertEquals(tombstoneFacets.includes("cli-remote"), false);
+  assertEquals(tombstoneFacets.includes("mcp"), false);
+});

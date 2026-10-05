@@ -174,6 +174,20 @@ requirements:
                   - FEAT-API-001#binding.cli-implementation/target.entry-command
                   - FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_journey_cli_core_local_durable_outcome } }
+              - kind: verifies
+                criterion: REQ-ENTRY-001#criterion.creation
+                covers: [FEAT-ENTRY-001#binding.cli-core/target.create-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_journey_cli_core_local_durable_outcome } }
+              - kind: verifies
+                criterion: REQ-ENTRY-003#criterion.update
+                covers: [FEAT-ENTRY-001#binding.cli-core/target.update-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_journey_cli_core_local_durable_outcome } }
+              - kind: verifies
+                criterion: REQ-ENTRY-005#criterion.history
+                covers:
+                  - FEAT-ENTRY-001#binding.cli-core/target.entry-history
+                  - FEAT-ENTRY-001#binding.cli-core/target.restore-entry
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_journey_cli_core_local_durable_outcome } }
           - id: parent-revision-matrix-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_journey_core.rs
@@ -228,6 +242,16 @@ requirements:
                   - FEAT-API-001#binding.cli-implementation/target.entry-command
                   - FEAT-JOURNEY-001#binding.cli-core/target.entry-list-command
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: journey_cli_remote_reaches_durable_outcome } }
+              - kind: verifies
+                criterion: REQ-ENTRY-001#criterion.creation
+                covers: [FEAT-ENTRY-001#binding.cli-remote/target.create-entry]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: journey_cli_remote_reaches_durable_outcome } }
+              - kind: verifies
+                criterion: REQ-ENTRY-005#criterion.history
+                covers:
+                  - FEAT-ENTRY-001#binding.cli-remote/target.entry-history
+                  - FEAT-ENTRY-001#binding.cli-remote/target.restore-entry
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: journey_cli_remote_reaches_durable_outcome } }
           - id: parent-revision-matrix-case
             adapter: rust
             path: crates/ugoite-cli/tests/test_journey_remote.rs
@@ -240,6 +264,10 @@ requirements:
               - kind: verifies
                 criterion: REQ-JOURNEY-002#criterion.stale-revision
                 covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_cli_remote_entry_update_parent_revision_matrix } }
+              - kind: verifies
+                criterion: REQ-ENTRY-003#criterion.update
+                covers: [FEAT-ENTRY-001#binding.cli-remote/target.update-entry]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_cli_remote_entry_update_parent_revision_matrix } }
 
   - id: REQ-JOURNEY-002
@@ -339,6 +367,10 @@ requirements:
               - kind: verifies
                 criterion: REQ-JOURNEY-002#criterion.entry-delete
                 covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_parity_core_delete_tombstone_keeps_history } }
+              - kind: verifies
+                criterion: REQ-ENTRY-004#criterion.tombstone
+                covers: [FEAT-ENTRY-001#binding.cli-core/target.delete-entry]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_parity_core_delete_tombstone_keeps_history } }
       - id: journey-parity-remote-verification
         role: verification

@@ -70,6 +70,142 @@ features:
                 criterion: REQ-FORM-009#criterion.updated-by-restore
               - kind: satisfies
                 criterion: REQ-FORM-009#criterion.restore-clears-deleted-by
+      - id: backend
+        role: implementation
+        facet: backend
+        responsibility: Implement the Entry HTTP create, update, delete, and history handlers with the same lifecycle semantics as the core.
+        targets:
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: create_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-001#criterion.creation
+          - id: update-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: update_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-003#criterion.update
+          - id: delete-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: delete_entry }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-004#criterion.tombstone
+          - id: entry-history
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: entry_history }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-005#criterion.history
+      - id: frontend-implementation
+        role: implementation
+        facet: frontend
+        responsibility: Expose Entry creation, update, deletion, history, and restore through the browser client with the same lifecycle semantics as the core.
+        targets:
+          - id: entry-api
+            adapter: typescript
+            path: frontend/src/lib/entry-api.ts
+            selector: { kind: symbol, name: entryApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-001#criterion.creation
+              - kind: satisfies
+                criterion: REQ-ENTRY-003#criterion.update
+              - kind: satisfies
+                criterion: REQ-ENTRY-004#criterion.tombstone
+              - kind: satisfies
+                criterion: REQ-ENTRY-005#criterion.history
+      - id: mcp
+        role: implementation
+        facet: mcp
+        responsibility: Expose Entry creation through the small MCP semantic facade without mirroring the full REST surface.
+        targets:
+          - id: save
+            adapter: rust
+            path: crates/ugoite-server/src/mcp.rs
+            selector: { kind: symbol, name: save }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-001#criterion.creation
+      - id: cli-core
+        role: implementation
+        facet: cli-core
+        responsibility: Reach the Entry lifecycle directly from the local workspace through exact transport-specific helpers.
+        targets:
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry.rs
+            selector: { kind: symbol, name: create_structured_entry_core }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-001#criterion.creation
+          - id: update-entry
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry.rs
+            selector: { kind: symbol, name: update_structured_entry_core }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-003#criterion.update
+          - id: delete-entry
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry.rs
+            selector: { kind: symbol, name: delete_entry_core }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-004#criterion.tombstone
+          - id: entry-history
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry.rs
+            selector: { kind: symbol, name: entry_history_core }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-005#criterion.history
+          - id: restore-entry
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry.rs
+            selector: { kind: symbol, name: restore_entry_core }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-005#criterion.history
+      - id: cli-remote
+        role: implementation
+        facet: cli-remote
+        responsibility: Reach the Entry lifecycle through the backend API from exact transport-specific helpers.
+        targets:
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry.rs
+            selector: { kind: symbol, name: create_structured_entry_remote }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-001#criterion.creation
+          - id: update-entry
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry.rs
+            selector: { kind: symbol, name: update_structured_entry_remote }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-003#criterion.update
+          - id: entry-history
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry.rs
+            selector: { kind: symbol, name: entry_history_remote }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-005#criterion.history
+          - id: restore-entry
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/entry.rs
+            selector: { kind: symbol, name: restore_entry_remote }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-005#criterion.history
       - id: service
         role: operation
         facet: service
@@ -159,12 +295,8 @@ features:
       - id: frontend
         role: operation
         facet: frontend
-        responsibility: Keep the shipped Entry API client connected to the complete Entry lifecycle and read-surface contract.
+        responsibility: Keep the shipped Entry query controller connected to the complete Entry lifecycle and read-surface contract.
         targets:
-          - id: entry-api
-            adapter: typescript
-            path: frontend/src/lib/entry-api.ts
-            selector: { kind: symbol, name: entryApi }
           - id: entry-query-controller
             adapter: typescript
             path: frontend/src/lib/entry-query.ts
@@ -241,7 +373,7 @@ features:
             role: service
           - target: FEAT-ENTRY-001#binding.server/target.list-entries
             role: backend
-          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
           - target: FEAT-ENTRY-001#binding.cli/target.entry-command
             role: operator
@@ -250,14 +382,24 @@ features:
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.create-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.core/target.create-entry
+            role: canonical
           - target: FEAT-ENTRY-001#binding.service/target.create-entry
             role: service
           - target: FEAT-ENTRY-001#binding.server/target.create-entry
             role: backend
-          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
-            role: client
           - target: FEAT-ENTRY-001#binding.cli/target.entry-command
             role: operator
+          - target: FEAT-ENTRY-001#binding.backend/target.create-entry
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
+            role: client
+          - target: FEAT-ENTRY-001#binding.mcp/target.save
+            role: mcp-facade
+          - target: FEAT-ENTRY-001#binding.cli-core/target.create-entry
+            role: cli-core
+          - target: FEAT-ENTRY-001#binding.cli-remote/target.create-entry
+            role: cli-remote
         guarantees: [REQ-ENTRY-001#criterion.creation]
       - id: options
         kind: http
@@ -287,7 +429,7 @@ features:
             role: service
           - target: FEAT-ENTRY-001#binding.server/target.get-entry
             role: backend
-          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
           - target: FEAT-ENTRY-001#binding.cli/target.entry-command
             role: operator
@@ -296,40 +438,68 @@ features:
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.update-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.core/target.update-entry
+            role: canonical
           - target: FEAT-ENTRY-001#binding.service/target.update-entry
             role: service
           - target: FEAT-ENTRY-001#binding.server/target.update-entry
             role: backend
-          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
-            role: client
           - target: FEAT-ENTRY-001#binding.cli/target.entry-command
             role: operator
+          - target: FEAT-ENTRY-001#binding.backend/target.update-entry
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
+            role: client
+          - target: FEAT-ENTRY-001#binding.cli-core/target.update-entry
+            role: cli-core
+          - target: FEAT-ENTRY-001#binding.cli-remote/target.update-entry
+            role: cli-remote
         guarantees: [REQ-ENTRY-003#criterion.update]
       - id: delete
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.delete-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.core/target.delete-entry
+            role: canonical
           - target: FEAT-ENTRY-001#binding.service/target.delete-entry
             role: service
           - target: FEAT-ENTRY-001#binding.server/target.delete-entry
             role: backend
-          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
-            role: client
           - target: FEAT-ENTRY-001#binding.cli/target.entry-command
             role: operator
+          - target: FEAT-ENTRY-001#binding.backend/target.delete-entry
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
+            role: client
+          - target: FEAT-ENTRY-001#binding.cli-core/target.delete-entry
+            role: cli-core
         guarantees: [REQ-ENTRY-004#criterion.tombstone]
       - id: history
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.history-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.core/target.entry-history
+            role: canonical
+          - target: FEAT-ENTRY-001#binding.core/target.restore-entry
+            role: canonical
           - target: FEAT-ENTRY-001#binding.service/target.entry-history
             role: service
           - target: FEAT-ENTRY-001#binding.server/target.entry-history
             role: backend
-          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
-            role: client
           - target: FEAT-ENTRY-001#binding.cli/target.entry-command
             role: operator
+          - target: FEAT-ENTRY-001#binding.backend/target.entry-history
+            role: backend
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
+            role: client
+          - target: FEAT-ENTRY-001#binding.cli-core/target.entry-history
+            role: cli-core
+          - target: FEAT-ENTRY-001#binding.cli-core/target.restore-entry
+            role: cli-core
+          - target: FEAT-ENTRY-001#binding.cli-remote/target.entry-history
+            role: cli-remote
+          - target: FEAT-ENTRY-001#binding.cli-remote/target.restore-entry
+            role: cli-remote
         guarantees: [REQ-ENTRY-005#criterion.history]
       - id: revision
         kind: http
@@ -339,7 +509,7 @@ features:
             role: service
           - target: FEAT-ENTRY-001#binding.server/target.entry-revision
             role: backend
-          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
           - target: FEAT-ENTRY-001#binding.cli/target.entry-command
             role: operator
@@ -348,14 +518,20 @@ features:
         kind: http
         source: FEAT-ENTRY-001#binding.contract/target.restore-contract
         participants:
+          - target: FEAT-ENTRY-001#binding.core/target.restore-entry
+            role: canonical
           - target: FEAT-ENTRY-001#binding.service/target.restore-entry
             role: service
           - target: FEAT-ENTRY-001#binding.server/target.restore-entry
             role: backend
-          - target: FEAT-ENTRY-001#binding.frontend/target.entry-api
-            role: client
           - target: FEAT-ENTRY-001#binding.cli/target.entry-command
             role: operator
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
+            role: client
+          - target: FEAT-ENTRY-001#binding.cli-core/target.restore-entry
+            role: cli-core
+          - target: FEAT-ENTRY-001#binding.cli-remote/target.restore-entry
+            role: cli-remote
         guarantees: [REQ-ENTRY-005#criterion.history]
   - id: FEAT-ENTRY-002
     title: Title-less Entry model

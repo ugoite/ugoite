@@ -157,19 +157,8 @@ requirements:
       - id: backend-verification
         role: verification
         facet: verification
-        responsibility: Verify the backend Entry create, retrieve, update, and delete handlers through exact Rust route tests; CLI and frontend evidence remain separate bindings.
+        responsibility: Verify the backend Entry retrieve handler through the exact Rust route test; CLI evidence remains a separate binding. Entry create, update, and delete evidence moved to FEAT-ENTRY-001.
         targets:
-          - id: create-and-update-entry
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: authentication_regression_tests::entry_routes_keep_input_errors_typed_and_create_atomic }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-002#criterion.entry-lifecycle
-                covers:
-                  - FEAT-API-001#binding.backend-implementation/target.create-entry
-                  - FEAT-API-001#binding.backend-implementation/target.update-entry
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::entry_routes_keep_input_errors_typed_and_create_atomic } }
           - id: retrieve-entry
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
@@ -179,65 +168,6 @@ requirements:
                 criterion: REQ-API-002#criterion.entry-lifecycle
                 covers: [FEAT-API-001#binding.backend-implementation/target.get-entry]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2037_authenticated_rest_apply_supports_create_update_remove } }
-          - id: delete-entry
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: authentication_regression_tests::delete_route_records_the_authenticated_principal_as_actor }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-002#criterion.entry-lifecycle
-                covers: [FEAT-API-001#binding.backend-implementation/target.delete-entry]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::delete_route_records_the_authenticated_principal_as_actor } }
-      - id: frontend-crud-verification
-        role: verification
-        facet: verification
-        responsibility: Verify the frontend Entry list, create, retrieve, update, and delete adapters through exact MSW-backed Vitest cases.
-        targets:
-          - id: list-entries
-            adapter: typescript
-            path: frontend/src/lib/client.test.ts
-            selector: { kind: test, name: "should return all entries in space" }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-002#criterion.entry-lifecycle
-                covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should return all entries in space" } }
-          - id: create-entry
-            adapter: typescript
-            path: frontend/src/lib/client.test.ts
-            selector: { kind: test, name: "should create a structured entry" }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-002#criterion.entry-lifecycle
-                covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should create a structured entry" } }
-          - id: get-entry
-            adapter: typescript
-            path: frontend/src/lib/client.test.ts
-            selector: { kind: test, name: "should return full entry fields" }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-002#criterion.entry-lifecycle
-                covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should return full entry fields" } }
-          - id: update-entry
-            adapter: typescript
-            path: frontend/src/lib/client.test.ts
-            selector: { kind: test, name: "entryApi.update throws generic error on non-409 failure" }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-002#criterion.entry-lifecycle
-                covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "entryApi.update throws generic error on non-409 failure" } }
-          - id: delete-entry
-            adapter: typescript
-            path: frontend/src/lib/client.test.ts
-            selector: { kind: test, name: "should remove entry from list" }
-            claims:
-              - kind: verifies
-                criterion: REQ-API-002#criterion.entry-lifecycle
-                covers: [FEAT-API-001#binding.frontend-implementation/target.entry-api]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should remove entry from list" } }
       - id: cli-verification
         role: verification
         facet: verification

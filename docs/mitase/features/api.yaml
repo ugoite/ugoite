@@ -287,33 +287,12 @@ features:
       - id: backend-implementation
         role: implementation
         facet: backend
-        responsibility: Implement the API Entry handlers exercised by the canonical backend route tests.
+        responsibility: Implement the API Entry retrieve handler exercised by the canonical backend route tests. Entry create, update, and delete semantics are owned by FEAT-ENTRY-001.
         targets:
-          - id: create-entry
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: create_entry }
-            claims:
-              - kind: satisfies
-                criterion: REQ-API-002#criterion.entry-lifecycle
           - id: get-entry
             adapter: rust
             path: crates/ugoite-server/src/lib.rs
             selector: { kind: symbol, name: get_entry }
-            claims:
-              - kind: satisfies
-                criterion: REQ-API-002#criterion.entry-lifecycle
-          - id: update-entry
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: update_entry }
-            claims:
-              - kind: satisfies
-                criterion: REQ-API-002#criterion.entry-lifecycle
-          - id: delete-entry
-            adapter: rust
-            path: crates/ugoite-server/src/lib.rs
-            selector: { kind: symbol, name: delete_entry }
             claims:
               - kind: satisfies
                 criterion: REQ-API-002#criterion.entry-lifecycle
@@ -349,7 +328,7 @@ features:
       - id: frontend-implementation
         role: implementation
         facet: frontend
-        responsibility: Implement the Space and Entry API adapters used by the shipped frontend client.
+        responsibility: Implement the Space API adapter used by the shipped frontend client. Entry semantics are owned by FEAT-ENTRY-001.
         targets:
           - id: space-api
             adapter: typescript
@@ -360,13 +339,6 @@ features:
                 criterion: REQ-API-001#criterion.space-lifecycle
               - kind: satisfies
                 criterion: REQ-FE-043#criterion.readable-errors
-          - id: entry-api
-            adapter: typescript
-            path: frontend/src/lib/entry-api.ts
-            selector: { kind: symbol, name: entryApi }
-            claims:
-              - kind: satisfies
-                criterion: REQ-API-002#criterion.entry-lifecycle
       - id: cli-implementation
         role: implementation
         facet: cli
@@ -680,9 +652,9 @@ features:
         participants:
           - target: FEAT-API-001#binding.service-implementation/target.create-entry
             role: service
-          - target: FEAT-API-001#binding.backend-implementation/target.create-entry
+          - target: FEAT-ENTRY-001#binding.backend/target.create-entry
             role: backend
-          - target: FEAT-API-001#binding.frontend-implementation/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.entry-command
             role: operator
@@ -695,7 +667,7 @@ features:
             role: service
           - target: FEAT-API-001#binding.backend/target.list-entries
             role: backend
-          - target: FEAT-API-001#binding.frontend-implementation/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
         guarantees: [REQ-API-002#criterion.entry-lifecycle]
       - id: get-entry
@@ -706,7 +678,7 @@ features:
             role: service
           - target: FEAT-API-001#binding.backend-implementation/target.get-entry
             role: backend
-          - target: FEAT-API-001#binding.frontend-implementation/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
         guarantees: [REQ-API-002#criterion.entry-lifecycle]
       - id: update-entry
@@ -715,19 +687,30 @@ features:
         participants:
           - target: FEAT-API-001#binding.service-implementation/target.update-entry-authorized
             role: service
-          - target: FEAT-API-001#binding.backend-implementation/target.update-entry
+          - target: FEAT-ENTRY-001#binding.backend/target.update-entry
             role: backend
-          - target: FEAT-API-001#binding.frontend-implementation/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
         guarantees: [REQ-API-002#criterion.entry-lifecycle]
       - id: delete-entry
         kind: http
         source: FEAT-API-001#binding.contract/target.delete-entry
         participants:
-          - target: FEAT-API-001#binding.backend-implementation/target.delete-entry
+          - target: FEAT-ENTRY-001#binding.backend/target.delete-entry
             role: backend
-          - target: FEAT-API-001#binding.frontend-implementation/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
+        guarantees: [REQ-API-002#criterion.entry-lifecycle]
+      - id: entry-lifecycle
+        kind: http
+        source: FEAT-API-001#binding.contract/target.get-entry
+        participants:
+          - target: FEAT-API-001#binding.service-implementation/target.create-entry
+            role: service
+          - target: FEAT-API-001#binding.backend-implementation/target.get-entry
+            role: backend
+          - target: FEAT-API-001#binding.cli-implementation/target.entry-command
+            role: operator
         guarantees: [REQ-API-002#criterion.entry-lifecycle]
       - id: get-preferences
         kind: http
