@@ -111,7 +111,9 @@ mise run e2e:smoke
 
 ## Version boundary
 
-The v0.1 line is published and maintained; the current product line is v0.1.1.
+The v0.1 line is published and in maintenance; v0.1.2 is the published final
+0.1.x patch. The current published baseline is v0.2.1, a compatible patch over
+the published v0.2.0 release.
 The active v0.2 direction is Product UX around completion, discoverability,
 cross-surface consistency, validation clarity, recovery, and documentation
 correctness. Knowledge-to-tools remains a North Star, not a shipped acceptance

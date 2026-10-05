@@ -200,6 +200,20 @@ features:
             adapter: rust
             path: crates/ugoite-cli/src/commands/index.rs
             selector: { kind: symbol, name: run }
+      - id: user-search-guide
+        role: documentation
+        facet: documentation
+        responsibility: Record the user search guide as the bounded documentation of keyword search and structured filtering reaching the same Entry set on Browser and CLI. This documents verified behavior; it does not execute verification.
+        targets:
+          - id: search-guide-outcome
+            adapter: markdown
+            path: docs/use/search.mdx
+            selector: { kind: heading, value: "Outcome" }
+            claims:
+              - kind: documents
+                anchor: REQ-SRCH-001#criterion.keyword-search
+              - kind: documents
+                anchor: REQ-SRCH-005#criterion.structured-search-reuse
       - id: contract
         role: contract-source
         facet: api
