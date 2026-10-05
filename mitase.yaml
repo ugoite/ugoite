@@ -180,6 +180,7 @@ inventory:
         - e2e/docsite-theme-controls.test.ts
         - e2e/docsite-onboarding.test.ts
         - e2e/login-responsive.test.ts
+        - e2e/result-surface-narrow.test.ts
         - e2e/global-setup.ts
         - e2e/account-self-recovery.test.ts
         - e2e/owner-space-recovery.test.ts

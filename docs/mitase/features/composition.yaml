@@ -992,6 +992,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.source-native-composition-rendering
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
           - id: browser-home-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/dashboard.tsx"
