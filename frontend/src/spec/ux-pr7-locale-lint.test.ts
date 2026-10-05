@@ -5,8 +5,8 @@ import uiDictionary from "../../../shared/i18n/ui.json";
 // Spaces table-column labels and the long-form entry create label (issue
 // #2865, removed in PR-7); PR-5 removed the in-app About dictionary
 // (nav.about plus the about.* and aboutPage.* families, removed in PR-5).
-// PR-6 orphans (issue #2872) stay live until PR-6 merges and are intentionally
-// absent from this list: every entry here must be absent from the shipped
+// PR-6 renames orphaned the keys below (issue #2872, removed after PR-6
+// #2871 merged): every entry here must be absent from the shipped
 // dictionary at this base.
 const STALE_KEY_DENYLIST = [
   "entriesPage.newButton",
@@ -14,9 +14,16 @@ const STALE_KEY_DENYLIST = [
   "spacesPage.columnOpen",
   "spacesPage.columnSettings",
   "nav.about",
+  "sqlPage.createButton",
+  "spaceHistory.backToSpace",
+  "spaceHistory.changeId",
+  "spaceHistory.runId",
+  "assetsPage.details",
+  "assetsPage.id",
+  "spaceSettings.storageTopology",
 ];
 
-const STALE_KEY_PREFIXES = ["about.", "aboutPage."];
+const STALE_KEY_PREFIXES = ["about.", "aboutPage.", "searchPage.mode."];
 
 const checkLocale = (locale: "en" | "ja") => {
   const keys = Object.keys(uiDictionary[locale]);

@@ -11,7 +11,7 @@ features:
       - id: documentation
         role: documentation
         facet: documentation
-        responsibility: Keep the operator guides, testing contracts, version declarations, and legacy registries connected as repository documentation artifacts. The legacy registries remain read-only migration evidence for this focused slice.
+        responsibility: Keep the operator guides, testing contracts, the v0.3 preflight authority record, version declarations, and legacy registries connected as repository documentation artifacts. The legacy registries remain read-only migration evidence for this focused slice. The CI gate contract below is the single bounded documentation target for ci-cd.md; policy design-references must not re-bind that path.
         targets:
           - id: operations-guide
             adapter: declared
@@ -30,9 +30,9 @@ features:
               - kind: documents
                 anchor: REQ-OPS-002#criterion.release-container-validation
           - id: testing-ci-cd
-            adapter: declared
+            adapter: markdown
             path: docs/architecture/testing/ci-cd.md
-            selector: { kind: file }
+            selector: { kind: heading, value: "Release contract" }
             claims:
               - kind: documents
                 anchor: REQ-OPS-005#criterion.repository-quality-gates
@@ -40,6 +40,13 @@ features:
                 anchor: REQ-OPS-006#criterion.root-rust-gate
               - kind: documents
                 anchor: REQ-OPS-007#criterion.docsite-gate
+          - id: preflight-authority-record
+            adapter: markdown
+            path: docs/architecture/release/v0.3-preflight.md
+            selector: { kind: heading, value: "Authority map and design gate" }
+            claims:
+              - kind: documents
+                anchor: REQ-OPS-025#criterion.product-ux-authority
           - id: testing-strategy
             adapter: declared
             path: docs/architecture/testing/strategy.md

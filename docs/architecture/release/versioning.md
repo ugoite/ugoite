@@ -5,10 +5,10 @@ title: "Versions overview"
 Machine-readable status lives under `docs/version/`; these pages explain the
 product meaning.
 
-| Stream | Status      | Current meaning                                                                                                                                                               |
-| ------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `v0.1` | v0.1.2 prepared | Foundation Freeze for user-owned Knowledge, portable history, and thin adapters; v0.1.1 is the current published compatible patch, and v0.1.2 is the final planned 0.1.x patch before v0.2 |
-| `v0.2` | planned     | Product UX sole authority: make the frozen v0.1 Foundation completable, discoverable, and consistent; Knowledge-to-tools remains a North Star, not a shipped acceptance claim |
+| Stream | Status           | Current meaning                                                                                                                                                                                                             |
+| ------ | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `v0.1` | v0.1.2 published | Foundation Freeze for user-owned Knowledge, portable history, and thin adapters; v0.1.2 is the published final 0.1.x patch and the line is in maintenance                                                                   |
+| `v0.2` | v0.2.1 published | Product UX sole authority: make the frozen v0.1 Foundation completable, discoverable, and consistent; v0.2.1 is the current published baseline, and Knowledge-to-tools remains a North Star, not a shipped acceptance claim |
 
 A task marked done means its described implementation exists. Planned
 capabilities must not be inferred from a version heading or roadmap file.

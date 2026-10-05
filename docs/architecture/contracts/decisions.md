@@ -14,9 +14,9 @@ cases in another runtime.
 ## ADR-002 — Space files are authoritative
 
 **Accepted.** A Space directory/prefix is the portable source of truth. Indexes,
-projections, and SQL query continuations are disposable. Backups operate on the complete Space
-prefix; pre-release format migrations are unsupported. Node control state and
-the node secret are separate node-local recovery inputs.
+projections, and SQL query continuations are disposable. Backups operate on the
+complete Space prefix; pre-release format migrations are unsupported. Node
+control state and the node secret are separate node-local recovery inputs.
 
 ## ADR-003 — Forms provide typed Markdown structure
 
@@ -130,12 +130,12 @@ slice.
 **Accepted.** A normal stateless SQL request resolves a quoted Form name against
 the Forms already authorized for that request's pinned Publication. A SQL
 relation named `"Expense"` therefore identifies the uniquely matching Form in
-that Publication at execution time. Name matching is exact and
-case-sensitive. Form names use the existing identifier grammar (ASCII letters,
-digits, `_`, and `-`; digits may be first), and name references must use SQL
-double quotes; an unquoted identifier is not a Form-name reference. A missing
-or ambiguous name is an error. SQL parsing and
-relation collection use the Rust SQL parser, never SQL-text replacement.
+that Publication at execution time. Name matching is exact and case-sensitive.
+Form names use the existing identifier grammar (ASCII letters, digits, `_`, and
+`-`; digits may be first), and name references must use SQL double quotes; an
+unquoted identifier is not a Form-name reference. A missing or ambiguous name is
+an error. SQL parsing and relation collection use the Rust SQL parser, never
+SQL-text replacement.
 
 The legacy `form_<UUID>` relation remains valid and continues to identify the
 same physical Form relation. Physical table names and `sql_relation_name()` do
@@ -148,24 +148,23 @@ remain mandatory after resolution.
 Saved SQL stores its original SQL text and a versioned set of resolved Form
 bindings in that saved revision's integrity-protected metadata. The service
 derives the bindings when creating or updating Saved SQL; client-supplied
-bindings are not trusted. At execution, the saved SQL ID and revision select
-the exact historical payload and bindings. Each bound Form ID must still exist
-in the selected Publication and remain authorized. A missing, renamed, or
+bindings are not trusted. At execution, the saved SQL ID and revision select the
+exact historical payload and bindings. Each bound Form ID must still exist in
+the selected Publication and remain authorized. A missing, renamed, or
 unauthorized bound Form fails closed; it never falls back to a same-name Form.
-The SQL text is not rewritten on Form rename. Diagnostics expose the bound
-name and current Form name so a user can explicitly edit and save a new
-revision.
+The SQL text is not rewritten on Form rename. Diagnostics expose the bound name
+and current Form name so a user can explicitly edit and save a new revision.
 
 The existing Saved SQL metadata object is the version boundary. Readers that do
 not recognize a binding version or its metadata fields fail closed because the
 Saved SQL metadata decoder rejects unknown fields. They must not return an
-apparently usable definition or append a revision that omits the bindings.
-Older Saved SQL revisions without binding metadata remain readable and retain
-their current behavior, including `form_<UUID>` references. No migration or
-rewrite occurs during read. This forward-reader boundary is intentional for
-the pre-1.0 format; mixed-version write access to a Space containing bound Saved
-SQL is unsupported. Rollback means deploying a reader that understands the
-binding format, not reopening the Space with an older binary.
+apparently usable definition or append a revision that omits the bindings. Older
+Saved SQL revisions without binding metadata remain readable and retain their
+current behavior, including `form_<UUID>` references. No migration or rewrite
+occurs during read. This forward-reader boundary is intentional for the pre-1.0
+format; mixed-version write access to a Space containing bound Saved SQL is
+unsupported. Rollback means deploying a reader that understands the binding
+format, not reopening the Space with an older binary.
 
 Query page, count, export, and continuation execution share the Rust SQL
 execution path. A continuation remains pinned to its Publication and SQL
@@ -205,11 +204,11 @@ supported-backend matrix and S1 acceptance contract are maintained in
 **Accepted target contract for v0.2.2.** A saved Composition is one Entry
 revision in its user-owned Space. The Space remains its authority; Entry
 history, restore, receipts, and stale-write conflicts remain the persistence
-contract. A separate database or hidden catalog is not a Composition
-authority. The initial executable kind is `dashboard`. The initial
-save/list/get/history/resolve persistence operations, the CLI commands, and
-the Browser save/list/resolve/query paths have landed with focused bindings
-and evidence (see the [Composition contract](composition.md) and the
+contract. A separate database or hidden catalog is not a Composition authority.
+The initial executable kind is `dashboard`. The initial
+save/list/get/history/resolve persistence operations, the CLI commands, and the
+Browser save/list/resolve/query paths have landed with focused bindings and
+evidence (see the [Composition contract](composition.md) and the
 [acceptance plan](../testing/composition-acceptance.md); the complete journey
 acceptance, plus chart DSL, layout engine, actions, Konase generation, and
 proposals store, remain future work.
@@ -221,30 +220,29 @@ Composition.
 
 ## ADR-017 — Composition semantics use a restricted YAML contract
 
-**Accepted.** `.ugcomp.yaml` v1 is a restricted exchange representation with
-the ordered envelope `format`, `format_version`, `kind`, `name`, `tags`, and
-`spec`. The fixed format marker is `ugoite.composition`. Rust typed domain
-values own its meaning; native and WASM callers use the same parser,
-validation, diagnostics, canonicalization, and fingerprint behavior.
-Adapters do not add a second Composition parser or query engine. The
-document's tags are the same ordered tag list written to the owning Entry.
+**Accepted.** `.ugcomp.yaml` v1 is a restricted exchange representation with the
+ordered envelope `format`, `format_version`, `kind`, `name`, `tags`, and `spec`.
+The fixed format marker is `ugoite.composition`. Rust typed domain values own
+its meaning; native and WASM callers use the same parser, validation,
+diagnostics, canonicalization, and fingerprint behavior. Adapters do not add a
+second Composition parser or query engine. The document's tags are the same
+ordered tag list written to the owning Entry.
 
 An exact Saved SQL source carries an ordered `expected_result` descriptor with
 unique output names and portable logical types (`string`, `boolean`, `integer`,
 `float`, `date`, `timestamp`, or `json`). It describes an expected result and
 does not store SQL-backend type names. The resolver derives source-result
-fingerprints from exact revision identity, the normalized descriptor, and
-bound variable schema. No source-result fingerprint is stored in the document.
+fingerprints from exact revision identity, the normalized descriptor, and bound
+variable schema. No source-result fingerprint is stored in the document.
 
 The parser uses `serde-saphyr` 1.3.0 with duplicate-key errors, strict typed
-deserialization, and explicit resource budgets. It rejects multiple
-documents, anchors and aliases, merge keys, unsupported/custom tags, and
-unknown fields. It limits input to 65,536 bytes, nesting depth to 64, YAML
-nodes to 4,096, parser events to 8,192, total scalar bytes to 32,768, and each
-Composition collection to 256 items. A bounded probe checks the fixed format
-marker and reads `format_version` before strict v1 deserialization. The
-numeric limits and candidate comparison are maintained in
-[`composition.md`](composition.md).
+deserialization, and explicit resource budgets. It rejects multiple documents,
+anchors and aliases, merge keys, unsupported/custom tags, and unknown fields. It
+limits input to 65,536 bytes, nesting depth to 64, YAML nodes to 4,096, parser
+events to 8,192, total scalar bytes to 32,768, and each Composition collection
+to 256 items. A bounded probe checks the fixed format marker and reads
+`format_version` before strict v1 deserialization. The numeric limits and
+candidate comparison are maintained in [`composition.md`](composition.md).
 
 Canonical output derives from normalized typed values, uses schema field order
 and stable YAML formatting, and does not preserve comments. The semantic
@@ -252,10 +250,9 @@ fingerprint is SHA-256 over the normalized semantic value, not the source YAML
 bytes. Normalization sorts each `entry_query` field-schema snapshot by
 `FieldId`, rejects duplicate or inconsistent entries, and includes a typed
 List's `items` definition and a RowReference's `reference_form` when present.
-The fingerprint hashes compact JSON serialization of the normalized typed
-value; the public digest is lowercase hexadecimal. Rust's domain and WASM
-paths return the same canonical YAML, fingerprint, and diagnostic code for a
-given fixture.
+The fingerprint hashes compact JSON serialization of the normalized typed value;
+the public digest is lowercase hexadecimal. Rust's domain and WASM paths return
+the same canonical YAML, fingerprint, and diagnostic code for a given fixture.
 
 The complete current contract is maintained in
 [`composition.md`](composition.md); the shared example is

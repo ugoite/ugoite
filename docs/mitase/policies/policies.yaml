@@ -111,7 +111,7 @@ policies:
       - id: design-references
         role: documentation
         facet: design-reference
-        responsibility: Preserve the deployment and CI references that define the minimal-node boundary.
+        responsibility: Preserve the deployment references that define the minimal-node boundary. The CI gate contract is bound once under FEAT-OPS-001, not here.
         targets:
           - id: architecture-stack
             adapter: declared
@@ -121,11 +121,6 @@ policies:
           - id: architecture-future-proofing
             adapter: declared
             path: docs/architecture/contracts/future-proofing.md
-            selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-003#rule.governance }]
-          - id: testing-cicd
-            adapter: declared
-            path: docs/architecture/testing/ci-cd.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-003#rule.governance }]
   - id: POL-004
@@ -188,7 +183,7 @@ policies:
       - id: design-references
         role: documentation
         facet: design-reference
-        responsibility: Preserve the CLI, operator-surface, testing, and CI references for this policy.
+        responsibility: Preserve the CLI, operator-surface, and testing-strategy references for this policy. The CI gate contract is bound once under FEAT-OPS-001, not here.
         targets:
           - id: architecture-stack
             adapter: declared
@@ -203,11 +198,6 @@ policies:
           - id: testing-strategy
             adapter: declared
             path: docs/architecture/testing/strategy.md
-            selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-005#rule.governance }]
-          - id: testing-cicd
-            adapter: declared
-            path: docs/architecture/testing/ci-cd.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-005#rule.governance }]
   - id: POL-006
@@ -319,16 +309,11 @@ policies:
       - id: design-references
         role: documentation
         facet: design-reference
-        responsibility: Preserve the testing and error-handling references for requirement-to-test traceability.
+        responsibility: Preserve the testing-strategy and error-handling references for requirement-to-test traceability. The CI gate contract is bound once under FEAT-OPS-001, not here.
         targets:
           - id: testing-strategy
             adapter: declared
             path: docs/architecture/testing/strategy.md
-            selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-008#rule.governance }]
-          - id: testing-cicd
-            adapter: declared
-            path: docs/architecture/testing/ci-cd.md
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-008#rule.governance }]
           - id: quality-errors
@@ -361,13 +346,8 @@ policies:
       - id: design-references
         role: documentation
         facet: design-reference
-        responsibility: Preserve the CI, testing, and product-metrics references for pre-integration quality gates.
+        responsibility: Preserve the testing-strategy and product-metrics references for pre-integration quality gates. CI enforcement lives in the required workflow binding above, and the CI gate contract document is bound once under FEAT-OPS-001, not here.
         targets:
-          - id: testing-cicd
-            adapter: declared
-            path: docs/architecture/testing/ci-cd.md
-            selector: { kind: file }
-            claims: [{ kind: documents, anchor: POL-009#rule.governance }]
           - id: testing-strategy
             adapter: declared
             path: docs/architecture/testing/strategy.md
@@ -760,8 +740,8 @@ policies:
     bindings:
       - id: context-evidence
         role: evidence
-        facet: navigation
-        responsibility: Record the entry workspace component that carries the single context heading.
+        facet: semantic-ownership
+        responsibility: 'Evidence the single-semantic-owner principle itself: each surface gives each piece of information one visible owner. The entry workspace component below is the recorded exemplar carrying the single context heading. Single-context verification for the join, setup, Space dashboard, and Spaces index surfaces lives under REQ-UX-NAV-001#criterion.no-duplicate-context; equivalent semantic-ownership evidence for the remaining surfaces remains an explicit evidence gap and must not be inferred from this exemplar.'
         targets:
           - id: entry-detail-surface
             adapter: declared

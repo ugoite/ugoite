@@ -215,6 +215,14 @@ inventory:
     openapi:
       roots:
         - crates/ugoite-server/src/openapi.json
+    # Bounded user/release documentation evidence (#3162). Exact file roots
+    # only: do not widen this provider to whole documentation directories.
+    markdown:
+      roots:
+        - docs/use/search.mdx
+        - docs/get-started/quickstart.mdx
+        - docs/architecture/release/v0.3-preflight.md
+        - docs/architecture/testing/ci-cd.md
     declared:
       roots:
         - AGENTS.md
