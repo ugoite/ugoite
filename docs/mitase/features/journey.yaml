@@ -338,8 +338,6 @@ features:
         participants:
           - target: FEAT-JOURNEY-001#binding.frontend/target.space-api
             role: client
-          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
-            role: client
           - target: FEAT-JOURNEY-001#binding.frontend/target.entry-query
             role: client
           - target: FEAT-STO-001#binding.routing/target.space-command-routing

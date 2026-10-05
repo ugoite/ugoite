@@ -130,8 +130,6 @@ features:
               - kind: satisfies
                 criterion: REQ-JOURNEY-001#criterion.entry-restore
               - kind: satisfies
-                criterion: REQ-JOURNEY-001#criterion.reopen
-              - kind: satisfies
                 criterion: REQ-JOURNEY-002#criterion.stale-revision
       - id: mcp
         role: implementation
