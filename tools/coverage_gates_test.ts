@@ -407,6 +407,19 @@ async function assertAggregateWorkflow(
     false,
     "artifact build must not upload a duplicate combined E2E bundle",
   );
+  for (
+    const [step, subject] of [
+      ["Upload runtime image artifact", "runtime image artifact upload"],
+      ["Upload CLI artifact", "CLI artifact upload"],
+      ["Upload artifact manifest", "artifact manifest upload"],
+    ]
+  ) {
+    assertContainsAll(
+      workflowStepBlock(artifactBuildJob, step),
+      ["retention-days: 14"],
+      `${subject} retention`,
+    );
+  }
   assertContainsAll(
     e2eSmokeMobileJob,
     [
