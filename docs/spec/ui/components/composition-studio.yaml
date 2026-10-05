@@ -1,0 +1,75 @@
+version: "0.1"
+updated: "2026-10-05"
+component_group:
+  id: composition-studio
+  title: Composition Studio
+  status: planned
+  routes:
+    - /spaces/{space_id}/compositions/new
+    - /spaces/{space_id}/compositions/{composition_id}/{revision_id}/edit
+    - /spaces/{space_id}/compositions/{composition_id}/history
+  notes: Planned authoring contract for the Composition Studio uplift. The New, Edit, and History routes do not exist yet; page specs land with their routes. Steady-state surfaces carry no explanatory paragraphs.
+components:
+  - id: studio-header
+    type: page-header
+    ownership: tool-name-only
+    actions:
+      - id: studio-back
+        type: icon-button
+        title: Back
+        single_control: true
+      - id: studio-save
+        type: icon-button
+        title: Save
+        single_control: true
+        async_state: explicit-busy-without-layout-shift
+  - id: studio-data
+    type: list
+    title: Data
+    label_kind: compact-section-label
+    rows:
+      selection: full-row-activate
+      reorder: keyboard-operable-move-up-down
+      remove: blocked-while-displays-reference-with-reason
+      source_kinds: [saved-sql-exact-revision, entry-query]
+      identity_display: human-name-only
+      revision_identity: advanced-disclosure-only
+  - id: studio-display
+    type: list
+    title: Display
+    label_kind: compact-section-label
+    rows:
+      selection: full-row-activate
+      reorder: keyboard-operable-move-up-down
+      display_kinds: [table, metric]
+      table_presentation:
+        entry_query: EntryResultTable
+        saved_sql: SqlResultTable
+      metric_semantics: exact-scalar-no-aggregation
+  - id: studio-parameters
+    type: form
+    title: Parameters
+    label_kind: compact-section-label
+    binding: existing-composition-parameter-grammar-by-reference
+    type_compatibility: rust-owned-diagnostics
+  - id: studio-tags
+    type: form
+    title: Tags
+    label_kind: compact-section-label
+    semantics: entry-metadata-tags
+  - id: studio-preview
+    type: query-results
+    title: Preview
+    label_kind: compact-section-label
+    semantics: side-effect-free-draft-resolution
+    execution: existing-entry-query-and-sql-query-operations-only
+    rendering:
+      mode: shared-composition-renderer
+      stale_responses: generation-guarded
+    async_state: explicit-loading-empty-error
+  - id: studio-layout
+    type: two-column-workspace
+    desktop: editor-and-preview-split
+    narrow: one-column-stacked
+    narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color

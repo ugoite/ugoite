@@ -261,3 +261,30 @@ The complete current contract is maintained in
 Local CLI operator authority remains distinct from remote Server principal
 authorization. The storage layer supplies conditional publication mechanics;
 `ugoite-iceberg::authorization` remains the owner of ACL state and decisions.
+
+## ADR-018 — Composition Studio preview and typed SQL result schema
+
+**Accepted ruling for the v0.2.2 Composition Studio uplift.** This ruling
+authorizes two additive extensions without reopening the Composition v1
+grammar freeze recorded in [`composition.md`](composition.md):
+
+1. `composition.preview`: a side-effect-free authoring adapter that parses a
+   candidate document, applies current source authorization, resolves through
+   the shared Core resolver, and executes only the existing `entry.query` and
+   `sql.query` operations. It creates no registry, history, or publication
+   state; it stores no fingerprints; it changes no query grammar. It requires
+   current ACL exactly like saved-revision resolution.
+2. `sql.query` `result_schema`: a backward-compatible response extension
+   carrying the server-owned portable logical column types (`string`,
+   `boolean`, `integer`, `float`, `date`, `timestamp`, `json`) mapped from
+   DataFusion/Arrow output in Rust. Existing `columns` and `rows` are
+   unchanged. The Browser performs no type inference and keeps no type
+   mapping; it stores the descriptor unchanged in the Composition
+   `expected_result`. Null and empty results retain their types;
+   duplicate or ambiguous columns fail closed.
+
+Document grammar, storage layout, mutation operations, query grammar, metric
+exact-scalar semantics, generic write guard, idempotency semantics, raw
+recovery, downgrade compatibility, and the `string` spec carrier are
+unchanged. The operation inventory and freeze tests are updated in the same
+change that introduces `composition.preview`.
