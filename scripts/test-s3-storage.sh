@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# S3 recovery fixtures (issue #3266) live under unique
+# `ugoite/l12/<suite>/<uuid>` prefixes and are best-effort removed after
+# each run; still, point these suites at a dedicated test bucket, since
+# interrupted runs may leave orphaned prefixes behind.
 if [[ -z "${UGOITE_S3_TEST_ENDPOINT:-}" || -z "${UGOITE_S3_TEST_BUCKET:-}" ]]; then
   echo "UGOITE_S3_TEST_ENDPOINT and UGOITE_S3_TEST_BUCKET must select a configured S3-compatible deployment backend" >&2
   exit 2

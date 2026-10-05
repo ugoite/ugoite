@@ -114,17 +114,93 @@ esac
   };
 }
 
+function concatChunks(chunks: Uint8Array[]): Uint8Array<ArrayBuffer> {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
 async function runScript(
   harness: Awaited<ReturnType<typeof createHarness>>,
   overrides: Record<string, string> = {},
+  options: { timeoutMs?: number } = {},
 ): Promise<Deno.CommandOutput> {
-  return await new Deno.Command("bash", {
+  // Issue #3203: a stalled fake `curl`/`uname` must fail with a diagnostic
+  // instead of holding up the complete Deno tools suite. Bound every
+  // bootstrap invocation with a deadline; on expiry the child is killed and
+  // the caller gets a timeout error carrying the partial stderr.
+  //
+  // Output is pumped manually instead of `child.output()`: a killed
+  // script's descendants inherit its pipes, and `output()` would wait out
+  // their EOF instead of returning after the kill. Cancelling the readers
+  // once the direct child exits releases our end of the pipes regardless
+  // of orphaned descendants.
+  const timeoutMs = options.timeoutMs ??
+    Number(Deno.env.get("MITASE_BOOTSTRAP_TEST_TIMEOUT_MS") ?? "30000");
+  const child = new Deno.Command("bash", {
     args: [scriptPath, "check", "."],
     cwd: harness.root,
     env: { ...harness.env, ...overrides },
+    stdin: "null",
     stdout: "piped",
     stderr: "piped",
-  }).output();
+  }).spawn();
+  const stdoutReader = child.stdout.getReader();
+  const stderrReader = child.stderr.getReader();
+  const pump = async (
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+  ): Promise<Uint8Array<ArrayBuffer>> => {
+    const chunks: Uint8Array[] = [];
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+    } catch {
+      // Cancelled below once the child exits; partial bytes are kept.
+    } finally {
+      reader.releaseLock();
+    }
+    return concatChunks(chunks);
+  };
+  const pumped = [pump(stdoutReader), pump(stderrReader)];
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      // The child already exited; its status below carries the result.
+    }
+  }, timeoutMs);
+  try {
+    const status = await child.status;
+    await Promise.allSettled([stdoutReader.cancel(), stderrReader.cancel()]);
+    const [stdout, stderr] = await Promise.all(pumped);
+    if (timedOut) {
+      throw new Error(
+        `Mitase bootstrap exceeded the ${timeoutMs}ms deadline and was killed ` +
+          `(code ${status.code}, signal ${status.signal ?? "none"}); stderr: ${
+            new TextDecoder().decode(stderr).slice(-2000)
+          }`,
+      );
+    }
+    return {
+      success: status.success,
+      code: status.code,
+      signal: status.signal,
+      stdout,
+      stderr,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 Deno.test("Mitase is a pinned standalone consumer tool", async () => {
@@ -233,6 +309,40 @@ esac
       true,
       stderr,
     );
+  } finally {
+    await Deno.remove(harness.root, { recursive: true });
+  }
+});
+
+Deno.test("Mitase bootstrap kills a stalled download with a diagnostic", async () => {
+  const harness = await createHarness();
+  try {
+    await executable(
+      `${harness.root}/bin/curl`,
+      // A bare `sleep` keeps holding the script's stdio descriptors as a
+      // descendant process: a piped harness would wait out its EOF, while
+      // the bounded harness must kill and report instead.
+      `#!/usr/bin/env bash
+sleep 60
+`,
+    );
+    const started = Date.now();
+    let error: unknown;
+    try {
+      await runScript(harness, {}, { timeoutMs: 2000 });
+    } catch (caught) {
+      error = caught;
+    }
+    const elapsed = Date.now() - started;
+    assertEquals(error instanceof Error, true, `${error}`);
+    assertEquals(
+      (error as Error).message.includes("exceeded the 2000ms deadline"),
+      true,
+      (error as Error).message,
+    );
+    // The regression is a hang: the bounded run must return far sooner
+    // than the stalled fake command would on its own.
+    assertEquals(elapsed < 30000, true, `elapsed ${elapsed}ms`);
   } finally {
     await Deno.remove(harness.root, { recursive: true });
   }
