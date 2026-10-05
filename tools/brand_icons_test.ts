@@ -66,6 +66,26 @@ Deno.test("brand icon provenance matches all generated files", async () => {
   assert((await Deno.stat(social.path)).size < 1_000_000);
 });
 
+Deno.test("social preview wordmark renders without host fonts", async () => {
+  const generator = await Deno.readTextFile(
+    "frontend/scripts/generate-brand-icons.ts",
+  );
+  assertEquals(
+    /<text[\s>/]/.test(generator),
+    false,
+    "social preview must not use SVG text elements",
+  );
+  assertEquals(
+    generator.includes("font-family"),
+    false,
+    "social preview must not resolve host fonts",
+  );
+  assert(
+    generator.includes("socialWordmark"),
+    "social preview wordmark must be embedded vector geometry",
+  );
+});
+
 Deno.test("favicon is an ICO with 16, 32, 48, and 64 pixel PNG frames", async () => {
   const bytes = await Deno.readFile("frontend/public/favicon.ico");
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);

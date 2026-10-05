@@ -463,6 +463,11 @@ jobs:
           path: target/artifacts/docsite/site
           if-no-files-found: error
 
+      # Build-input retention policy: the runtime image, CLI, and manifest
+      # are consumed by same-run E2E jobs and (on main pushes) by the Docsite
+      # Pages promotion workflow right after this run completes. Keep them for
+      # 14 days so reruns and the promotion window stay covered without
+      # retaining large short-lived artifacts on the repository default.
       - name: Upload runtime image artifact
         id: upload-image
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -472,6 +477,7 @@ jobs:
           path: target/artifacts/image/ugoite-e2e-docker.tar.gz
           if-no-files-found: error
           compression-level: 0
+          retention-days: 14
 
       - name: Upload CLI artifact
         id: upload-cli
@@ -482,6 +488,7 @@ jobs:
           path: target/artifacts/cli/*
           if-no-files-found: error
           compression-level: 0
+          retention-days: 14
 
       - name: Upload Helm artifact
         id: upload-helm
@@ -504,6 +511,7 @@ jobs:
             target/artifacts/SHA256SUMS
           if-no-files-found: error
           compression-level: 0
+          retention-days: 14
 
       - name: Summarize artifact lane
         if: always()

@@ -31,6 +31,7 @@ jobs:
     outputs:
       head_sha: ${{ steps.resolve-run.outputs.head_sha }}
       run_id: ${{ steps.resolve-run.outputs.run_id }}
+      skip: ${{ steps.resolve-run.outputs.skip }}
       pages_configured: ${{ steps.pages.outcome == 'success' }}
     steps:
       - name: Resolve trusted CI run
@@ -81,6 +82,18 @@ jobs:
           if event_name == "workflow_run":
               payload = json.load(open(event_path, "r", encoding="utf-8"))
               workflow_run = payload.get("workflow_run") or {}
+              # A failed or cancelled upstream run carries no promotable
+              # artifact. Skip gracefully so this optional workflow stays
+              # green; manual dispatch below stays fail-closed.
+              if workflow_run.get("conclusion") != "success":
+                  print(
+                      f"upstream run conclusion is {workflow_run.get('conclusion')!r}; skipping Pages promotion without failing",
+                  )
+                  with open(output_path, "a", encoding="utf-8") as output:
+                      output.write("skip=true\n")
+                      output.write("run_id=\n")
+                      output.write("head_sha=\n")
+                  raise SystemExit(0)
               run_id, head_sha = normalize_run(workflow_run)
           elif event_name == "workflow_dispatch":
               run_id = os.environ.get("MANUAL_RUN_ID", "").strip()
@@ -109,6 +122,7 @@ jobs:
           PY
 
       - name: Download docsite artifact
+        if: steps.resolve-run.outputs.skip != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ugoite-docsite-pages
@@ -119,6 +133,7 @@ jobs:
           digest-mismatch: error
 
       - name: Download artifact manifest
+        if: steps.resolve-run.outputs.skip != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ugoite-artifact-manifest
@@ -130,11 +145,16 @@ jobs:
 
       - name: Resolve Pages metadata
         id: pages
+        if: steps.resolve-run.outputs.skip != 'true'
         continue-on-error: true
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
+      - name: Report skipped Pages promotion
+        if: steps.resolve-run.outputs.skip == 'true'
+        run: echo "::notice::Upstream CI run was not successful; skipping docsite promotion."
+
       - name: Report unavailable Pages promotion
-        if: steps.pages.outcome != 'success'
+        if: steps.pages.outcome != 'success' && steps.resolve-run.outputs.skip != 'true'
         run: echo "::notice::GitHub Pages is not configured; skipping docsite promotion."
 
       - name: Validate promoted docsite artifact

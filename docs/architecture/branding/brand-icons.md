@@ -21,7 +21,9 @@ of the original mark geometry. The original transparent SVG remains in the
 sidebar and login UI.
 
 The social preview is 1280×640 PNG with a white background, the mark, and the
-name “Ugoite”. The organization avatar image is square and leaves room for
+name “Ugoite”. The name is drawn from fixed vector geometry embedded in the
+generator, never from a host-resolved system font, so regenerating the image
+on a machine without the original fonts produces byte-identical output. The organization avatar image is square and leaves room for
 GitHub's circular crop. Both are prepared images; committing them does not
 change GitHub settings. An organization owner must decide whether to apply the
 avatar because it affects the whole `ugoite` organization. A repository

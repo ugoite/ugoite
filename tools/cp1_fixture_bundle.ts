@@ -1089,13 +1089,20 @@ function validateTarPath(path: string, kind: TarMember["kind"]): string {
   return normalized;
 }
 
-function validatePaxHeaderPath(path: string): void {
+function validatePaxHeaderPath(
+  path: string,
+  nameFieldTruncated: boolean,
+): void {
   // POSIX tar writers commonly store per-entry metadata under
   // ./PaxHeaders/<member>, <parent>/PaxHeader(s)/<member>, or <parent>/Pax.
   // GNU tar can truncate its synthetic PaxHeaders marker to "PaxHead" when
-  // the parent prefix leaves only seven bytes in the USTAR name field. This
-  // header is metadata, not an extracted member, but constrain its path too so
-  // malformed archives fail closed.
+  // the parent prefix leaves only seven bytes in the USTAR name field, and
+  // it can truncate a long member name itself for the metadata header that
+  // carries that member's path attribute. A full 100-byte USTAR name field
+  // therefore means the marker shape is unreliable: the header is still
+  // metadata, not an extracted member, but only its normalized path can be
+  // constrained. Safety then rests on the separately validated effective
+  // path from the PAX payload, so malformed archives still fail closed.
   const normalized = path.startsWith("./") ? path.slice(2) : path;
   const segments = normalized.split("/");
   const hasPaxHeaderDirectory = segments.slice(0, -1).some((segment) =>
@@ -1107,7 +1114,7 @@ function validatePaxHeaderPath(path: string): void {
     !normalized ||
     (
       !hasPaxHeaderDirectory && !hasPaxMarkerName &&
-      !hasTruncatedGnuMarkerName
+      !hasTruncatedGnuMarkerName && !nameFieldTruncated
     )
   ) {
     throw new Error(`unsafe CP1 fixture PAX header path: ${path}`);
@@ -1158,7 +1165,13 @@ export async function readTarMembers(
         if (pendingPaxAttributes !== null) {
           throw new Error("CP1 fixture archive has nested PAX headers");
         }
-        validatePaxHeaderPath(name);
+        // A full 100-byte USTAR name field means GNU tar may have truncated
+        // the metadata marker (or the member name it mirrors) to fit, so the
+        // marker shape alone cannot be trusted; the normalized path is still
+        // validated, and the effective path from the payload is validated
+        // separately below.
+        const nameFieldTruncated = !header.subarray(0, 100).includes(0);
+        validatePaxHeaderPath(name, nameFieldTruncated);
         const size = parseTarOctal(
           header.subarray(124, 136),
           "PAX header size",

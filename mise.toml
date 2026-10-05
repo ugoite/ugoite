@@ -186,6 +186,7 @@ run = [
 
 [tasks."build:rust:release"]
 description = "Build supported release binaries"
+depends = ["record:rust:source-sha"]
 sources = [
   "Cargo.toml",
   "Cargo.lock",
@@ -205,6 +206,10 @@ outputs = [
   "target/rust/release/ugoite.source-sha",
 ]
 run = "cargo build -p ugoite-server -p ugoite-cli --release --locked && printf '%s\\n' \"${UGOITE_SOURCE_SHA:-$(git rev-parse HEAD)}\" > target/rust/release/ugoite.source-sha"
+
+[tasks."record:rust:source-sha"]
+description = "Refresh the release CLI provenance sidecar for the requested source SHA without rebuilding the binary"
+run = "mkdir -p target/rust/release && tmpfile=\"$(mktemp)\" && printf '%s\\n' \"${UGOITE_SOURCE_SHA:-$(git rev-parse HEAD)}\" > \"$tmpfile\" && if ! cmp -s \"$tmpfile\" target/rust/release/ugoite.source-sha 2>/dev/null; then mv \"$tmpfile\" target/rust/release/ugoite.source-sha; else rm -f \"$tmpfile\"; fi"
 
 [tasks."build:image"]
 description = "Build the runtime image once for E2E and packaging"

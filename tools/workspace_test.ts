@@ -631,6 +631,13 @@ Deno.test("Pages promotion consumes trusted artifacts without rebuilding", async
       "GitHub Pages is not configured; skipping docsite promotion.",
       "if: steps.pages.outcome == 'success'",
       "if: needs.prepare.outputs.pages_configured == 'true'",
+      "skip: ${{ steps.resolve-run.outputs.skip }}",
+      "if: steps.resolve-run.outputs.skip != 'true'",
+      "if: steps.resolve-run.outputs.skip == 'true'",
+      'output.write("skip=true\\n")',
+      "skipping Pages promotion without failing",
+      "Upstream CI run was not successful; skipping docsite promotion.",
+      'fail(f"upstream run conclusion must be success, got {conclusion!r}")',
     ]
   ) {
     assertEquals(workflow.includes(required), true, required);

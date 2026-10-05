@@ -262,6 +262,20 @@ async function assertAggregateWorkflow(
     "release CLI source identity output",
   );
   assertContainsAll(
+    releaseBuild,
+    ["record:rust:source-sha"],
+    "release build refreshes CLI provenance before fingerprinting",
+  );
+  assertContainsAll(
+    taskBlock(mise, "record:rust:source-sha"),
+    [
+      "target/rust/release/ugoite.source-sha",
+      "UGOITE_SOURCE_SHA",
+      "cmp -s",
+    ],
+    "release CLI provenance refreshes without rebuilding",
+  );
+  assertContainsAll(
     releaseCliSeed,
     [
       'PORTABLE_CLI_BINARY="${UGOITE_PORTABLE_CLI_BINARY:-}"',
@@ -393,6 +407,19 @@ async function assertAggregateWorkflow(
     false,
     "artifact build must not upload a duplicate combined E2E bundle",
   );
+  for (
+    const [step, subject] of [
+      ["Upload runtime image artifact", "runtime image artifact upload"],
+      ["Upload CLI artifact", "CLI artifact upload"],
+      ["Upload artifact manifest", "artifact manifest upload"],
+    ]
+  ) {
+    assertContainsAll(
+      workflowStepBlock(artifactBuildJob, step),
+      ["retention-days: 14"],
+      `${subject} retention`,
+    );
+  }
   assertContainsAll(
     e2eSmokeMobileJob,
     [
@@ -1026,3 +1053,116 @@ function requirementBlock(source: string, id: string): string {
   const end = source.indexOf("\n- set_id:", start);
   return source.slice(start, end === -1 ? undefined : end);
 }
+
+function composeRunnerHelper(source: string): string {
+  const start = source.indexOf("run_verified_portable_cli() {");
+  assertEquals(start >= 0, true, "post-claim CLI helper must exist");
+  const end = source.indexOf("\n}", start);
+  assertEquals(end >= 0, true, "post-claim CLI helper must terminate");
+  return source.slice(start, end + "\n}".length);
+}
+
+Deno.test("portable post-claim verification reuses the verified CLI", async () => {
+  const composeRunner = await Deno.readTextFile(
+    new URL("../e2e/scripts/run-e2e-compose.sh", import.meta.url),
+  );
+  assertContainsAll(
+    composeRunner,
+    [
+      "run_verified_portable_cli",
+      'run_verified_portable_cli "$PORTABLE_CLI_CONFIG" space verify --deep --format json',
+      'local binary="${UGOITE_PORTABLE_CLI_BINARY:-}"',
+      '[ ! -x "$binary" ]',
+      '"${binary}.source-sha"',
+      '"$(cat "$source_sha_file")" != "$CHECKOUT_SOURCE_SHA"',
+      "cargo run -q --manifest-path",
+    ],
+    "portable post-claim CLI selection and provenance checks",
+  );
+  assertEquals(
+    (composeRunner.match(/cargo run -q --manifest-path/g) ?? []).length,
+    1,
+    "post-claim verification uses the selected CLI runner instead of recompiling",
+  );
+});
+
+Deno.test("verified post-claim CLI fails closed on provenance mismatch", async () => {
+  const composeRunner = await Deno.readTextFile(
+    new URL("../e2e/scripts/run-e2e-compose.sh", import.meta.url),
+  );
+  const helper = composeRunnerHelper(composeRunner);
+  const root = await Deno.makeTempDir({ prefix: "ugoite-post-claim-cli-" });
+  try {
+    const binDir = `${root}/rel`;
+    await Deno.mkdir(binDir, { recursive: true });
+    const fakeBinary = `${binDir}/ugoite`;
+    await Deno.writeTextFile(
+      fakeBinary,
+      "#!/bin/sh\nprintf 'fake-cli %s\\n' \"$@\"\n",
+    );
+    await Deno.chmod(fakeBinary, 0o755);
+    const checkoutSha = "0".repeat(40);
+    await Deno.writeTextFile(`${fakeBinary}.source-sha`, `${checkoutSha}\n`);
+
+    const runHelper = async (
+      cliBinary: string | null,
+      sidecar: string,
+    ): Promise<{ success: boolean; stdout: string; stderr: string }> => {
+      await Deno.writeTextFile(`${fakeBinary}.source-sha`, sidecar);
+      const harness =
+        `${helper}\nrun_verified_portable_cli "$UGOITE_PORTABLE_CLI_CONFIG" space verify --deep --format json\n`;
+      const env: Record<string, string> = {
+        ...Deno.env.toObject(),
+        ROOT_DIR: root,
+        CHECKOUT_SOURCE_SHA: checkoutSha,
+        UGOITE_PORTABLE_CLI_CONFIG: `${root}/cli-config.toml`,
+      };
+      if (cliBinary !== null) env.UGOITE_PORTABLE_CLI_BINARY = cliBinary;
+      else delete env.UGOITE_PORTABLE_CLI_BINARY;
+      const output = await new Deno.Command("bash", {
+        args: ["-c", harness],
+        env,
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      const decoder = new TextDecoder();
+      return {
+        success: output.success,
+        stdout: decoder.decode(output.stdout),
+        stderr: decoder.decode(output.stderr),
+      };
+    };
+
+    const verified = await runHelper("rel/ugoite", `${checkoutSha}\n`);
+    assertEquals(verified.success, true, verified.stderr);
+    assertContainsAll(
+      verified.stdout,
+      [
+        "fake-cli --config",
+        "fake-cli space",
+        "fake-cli verify",
+        "fake-cli --deep",
+        "fake-cli json",
+      ],
+      "verified CLI receives the post-claim verify arguments",
+    );
+
+    const mismatched = await runHelper("rel/ugoite", "f".repeat(40) + "\n");
+    assertEquals(mismatched.success, false);
+    assertEquals(
+      mismatched.stderr.includes("source SHA does not match checkout"),
+      true,
+      mismatched.stderr,
+    );
+
+    const missing = await runHelper("rel/missing-ugoite", `${checkoutSha}\n`);
+    assertEquals(missing.success, false);
+    assertEquals(
+      missing.stderr.includes("is not executable"),
+      true,
+      missing.stderr,
+    );
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
