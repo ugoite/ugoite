@@ -127,9 +127,10 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
       close();
       return;
     }
-    if (event.key === "Tab" && dialog) {
+    if (event.key === "Tab") {
+      const container = event.currentTarget as HTMLElement;
       const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
+        container.querySelectorAll<HTMLElement>(
           "button:not([disabled])",
         ),
       );
