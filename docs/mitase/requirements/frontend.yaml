@@ -2500,6 +2500,37 @@ requirements:
                 criterion: REQ-FE-068#criterion.controller-owned-paging
                 covers: [FEAT-FE-007#binding.frontend/target.sql-run-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "renders arbitrary SQL rows and keeps pagination client-held" } }
+          - id: sql-result-table-rendering
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: "renders the 100-row page as a complete native table" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.native-page-rows
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "renders the 100-row page as a complete native table" } }
+          - id: sql-result-table-ownership
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: "formats scalar and structured values without selection semantics" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "formats scalar and structured values without selection semantics" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "formats scalar and structured values without selection semantics" } }
+          - id: sql-result-table-viewport
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: "fits narrow results without a fixed giant width" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "fits narrow results without a fixed giant width" } }
           - id: composition-paging-ownership
             adapter: typescript
             path: frontend/src/lib/composition-query-handle.test.ts

@@ -3797,6 +3797,13 @@ a.tool {
   outline-offset: -2px;
 }
 
+/* SQL result tables: exact column order with intrinsic width. Narrow
+ * results fit the viewport; wide results scroll inside the result viewport
+ * only. No fixed giant minimum width is imposed. */
+.result-table--sql .result-table-cell {
+  white-space: nowrap;
+}
+
 .entry-browser-table {
   width: 100%;
   min-width: 36rem;
