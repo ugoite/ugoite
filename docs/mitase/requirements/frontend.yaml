@@ -2336,6 +2336,33 @@ requirements:
                 criterion: REQ-FE-068#criterion.semantic-row-ownership
                 covers: [FEAT-SRCH-001#binding.frontend/target.paged-result-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/PagedResultTable.test.tsx, test: "supports row selection and a native trailing action column" } }
+          - id: result-pagination-shared-control
+            adapter: typescript
+            path: frontend/src/components/ResultPagination.test.tsx
+            selector: { kind: test, name: "moves to the previous page through the shared control" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+                covers: [FEAT-SRCH-001#binding.frontend/target.result-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ResultPagination.test.tsx, test: "moves to the previous page through the shared control" } }
+          - id: result-pagination-single-page
+            adapter: typescript
+            path: frontend/src/components/ResultPagination.test.tsx
+            selector: { kind: test, name: "renders no navigation for a single page" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-SRCH-001#binding.frontend/target.result-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ResultPagination.test.tsx, test: "renders no navigation for a single page" } }
+          - id: row-action-keyboard-helper
+            adapter: typescript
+            path: frontend/src/lib/row-action-focus.test.tsx
+            selector: { kind: test, name: "moves focus to the action in the next and previous rows" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.keyboard-row-navigation
+                covers: [FEAT-SRCH-001#binding.frontend/target.row-action-focus-helper]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/row-action-focus.test.tsx, test: "moves focus to the action in the next and previous rows" } }
           - id: entry-browser-selection
             adapter: typescript
             path: frontend/src/components/EntryBrowser.test.tsx

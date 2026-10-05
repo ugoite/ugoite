@@ -64,6 +64,10 @@ inventory:
         - frontend/src/components/EntryBrowser.test.tsx
         - frontend/src/components/PagedResultTable.tsx
         - frontend/src/components/PagedResultTable.test.tsx
+        - frontend/src/components/ResultPagination.tsx
+        - frontend/src/components/ResultPagination.test.tsx
+        - frontend/src/lib/row-action-focus.ts
+        - frontend/src/lib/row-action-focus.test.tsx
         - frontend/src/lib/virtual-rows.ts
         - frontend/src/lib/virtual-rows.test.ts
         - frontend/src/lib/ugoite-client/protocol.ts

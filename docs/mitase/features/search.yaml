@@ -143,6 +143,22 @@ features:
                 criterion: REQ-FE-068#criterion.controller-owned-paging
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.keyboard-row-navigation
+          - id: result-pagination
+            adapter: typescript
+            path: frontend/src/components/ResultPagination.tsx
+            selector: { kind: symbol, name: ResultPagination }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+          - id: row-action-focus-helper
+            adapter: typescript
+            path: frontend/src/lib/row-action-focus.ts
+            selector: { kind: symbol, name: createRowActionKeyHandler }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.keyboard-row-navigation
           - id: entry-query-controller
             adapter: typescript
             path: frontend/src/lib/entry-query.ts
