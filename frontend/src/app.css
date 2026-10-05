@@ -3591,12 +3591,6 @@ a.tool {
   }
 }
 
-.paged-result-table-element {
-  width: 100%;
-  min-width: 36rem;
-  border-collapse: collapse;
-}
-
 .entry-browser-table th,
 .entry-browser-table td {
   padding: 10px 12px;
@@ -3610,25 +3604,6 @@ a.tool {
   font-size: 12px;
   font-weight: 700;
   color: var(--muted);
-}
-
-.entry-browser-table .paged-result-cell {
-  max-width: 24rem;
-}
-
-.paged-result-cell {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.paged-result-pagination {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 16px;
 }
 
 /* Shared result-table visual vocabulary (REQ-FE-068). Semantic tables
@@ -3889,24 +3864,7 @@ a.tool {
   background: var(--soft2);
 }
 
-.entry-browser-table tbody tr.paged-result-row {
-  cursor: pointer;
-}
-
 .entry-browser-table tbody tr:hover {
-  background: var(--soft2);
-}
-
-.entry-browser-table tbody tr.paged-result-row-selected > td:first-child {
-  box-shadow: inset 3px 0 0 var(--brand);
-}
-
-.entry-browser-table tbody tr.paged-result-row-selected {
-  background: var(--soft2);
-}
-
-.entry-browser-table tbody tr.paged-result-row-selected
-  > .entry-browser-trailing-cell {
   background: var(--soft2);
 }
 

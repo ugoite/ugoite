@@ -145,21 +145,6 @@ features:
                 criterion: REQ-FE-068#criterion.controller-owned-paging
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.keyboard-row-navigation
-          - id: paged-result-table
-            adapter: typescript
-            path: frontend/src/components/PagedResultTable.tsx
-            selector: { kind: symbol, name: PagedResultTable }
-            claims:
-              - kind: satisfies
-                criterion: REQ-FE-068#criterion.native-page-rows
-              - kind: satisfies
-                criterion: REQ-FE-068#criterion.semantic-row-ownership
-              - kind: satisfies
-                criterion: REQ-FE-068#criterion.shared-result-visual-language
-              - kind: satisfies
-                criterion: REQ-FE-068#criterion.controller-owned-paging
-              - kind: satisfies
-                criterion: REQ-FE-068#criterion.keyboard-row-navigation
           - id: result-pagination
             adapter: typescript
             path: frontend/src/components/ResultPagination.tsx
