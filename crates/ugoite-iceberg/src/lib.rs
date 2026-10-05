@@ -33,6 +33,9 @@ pub mod space;
 pub mod verify;
 
 pub use health::SpaceHealthReport;
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub use space_catalog::with_injected_unknown_head_publication_outcome;
 use space_catalog::SpaceCatalog;
 pub use space_catalog::{
     ChangeHistoryChainCursor, PublicationContext, PublishedChange, PublishedChangePage,

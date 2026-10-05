@@ -247,17 +247,23 @@ pub struct AuthorizationWriteFence {
     space_id: Option<String>,
     space_uid: Option<Uuid>,
     pending_authorization_snapshot: Arc<Mutex<Option<PendingAuthorizationSnapshot>>>,
+    /// Revision most recently committed to the Catalog Head by this fence's
+    /// own atomic content publication. A compound mutation may publish more
+    /// than once under one lease (for example an asset receipt followed by
+    /// its owning Entry); after the first publication atomically carries the
+    /// staged approval snapshot, the fence's effective revision advances so
+    /// the follow-up publication still binds the same lease instead of
+    /// failing closed on the Head the lease itself advanced.
+    applied_authorization_revision: Arc<Mutex<Option<u64>>>,
 }
 
 #[derive(Clone)]
 pub(crate) struct PendingAuthorizationSnapshot {
     // The revision and Space identity are compared by the Catalog Head
-    // publication check that consumes this snapshot. That catalog-side wiring
-    // lands in a follow-up slice; unit tests in this module stage the snapshot
-    // until then.
-    #[allow(dead_code)]
+    // publication check that consumes this snapshot (see
+    // `SpaceCatalog::verify_authorization_fence` and
+    // `apply_pending_authorization_snapshot`).
     pub revision: u64,
-    #[allow(dead_code)]
     pub space_uid: Uuid,
     pub bytes: Vec<u8>,
 }
@@ -374,6 +380,7 @@ impl AuthorizationLease {
             space_id: Some(self.space_id.clone()),
             space_uid: Some(self.initial_state.space_uid),
             pending_authorization_snapshot: self.pending_authorization_snapshot.clone(),
+            applied_authorization_revision: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -464,8 +471,10 @@ pub async fn ensure_authorization_write_fence() -> Result<()> {
 }
 
 /// Returns the authorization revision captured by the Server's current
-/// protected-mutation lease. The Catalog Head CAS compares this revision at
-/// publication; local CLI writes intentionally have no remote principal fence.
+/// protected-mutation lease. Test-only accessor for the raw fence revision;
+/// production publication paths use the effective revision, which advances
+/// when the fence's own atomic publication commits a staged snapshot.
+#[cfg(test)]
 pub(crate) fn authorization_write_revision() -> Option<u64> {
     AUTHORIZATION_WRITE_FENCE
         .try_with(|fence| fence.authorization_revision)
@@ -477,14 +486,37 @@ pub(crate) fn authorization_write_revision() -> Option<u64> {
 /// protected-mutation fence. Catalog publication checks it alongside the
 /// authorization revision so a task-local fence cannot be reused for another
 /// Space that happens to have the same revision.
-// Catalog-side publication wiring lands in a follow-up slice; unit tests in
-// this module are the only callers until then.
-#[allow(dead_code)]
 pub(crate) fn authorization_write_space_uid() -> Option<Uuid> {
     AUTHORIZATION_WRITE_FENCE
         .try_with(|fence| fence.space_uid)
         .ok()
         .flatten()
+}
+
+/// Returns the fence revision a Catalog Head publication must match: the
+/// revision the fence advanced itself to through its own atomic publication
+/// when present, otherwise the revision captured when the lease was acquired.
+/// Comparing revisions is sufficient because authorization snapshots are
+/// immutable and content-addressed: the first publisher of a revision wins
+/// its Head CAS, so a Head carrying the expected revision carries the exact
+/// bytes the lease authorized against.
+pub(crate) async fn authorization_write_effective_revision() -> Option<u64> {
+    let fence = AUTHORIZATION_WRITE_FENCE.try_with(Clone::clone).ok()?;
+    if let Some(applied) = *fence.applied_authorization_revision.lock().await {
+        return Some(applied);
+    }
+    fence.authorization_revision
+}
+
+/// Records that this fence's own content publication atomically committed
+/// `revision` to the Catalog Head. Later publications under the same lease
+/// bind the advanced revision instead of the lease's original one.
+pub(crate) async fn note_applied_authorization_revision(revision: u64) {
+    if let Ok(applied) =
+        AUTHORIZATION_WRITE_FENCE.try_with(|fence| fence.applied_authorization_revision.clone())
+    {
+        *applied.lock().await = Some(revision);
+    }
 }
 
 fn inherited_authorization_write_fence(space_id: &str) -> Option<AuthorizationWriteFence> {
@@ -556,6 +588,7 @@ pub(crate) fn test_authorization_write_fence(revision: u64) -> AuthorizationWrit
         space_id: None,
         space_uid: None,
         pending_authorization_snapshot: Arc::new(Mutex::new(None)),
+        applied_authorization_revision: Arc::new(Mutex::new(None)),
     }
 }
 
@@ -570,6 +603,7 @@ pub(crate) fn test_authorization_write_fence_for_space(
         space_id: None,
         space_uid: Some(space_uid),
         pending_authorization_snapshot: Arc::new(Mutex::new(None)),
+        applied_authorization_revision: Arc::new(Mutex::new(None)),
     }
 }
 
@@ -579,16 +613,27 @@ pub(crate) fn test_authorization_write_fence_with_pending_snapshot(
     space_uid: Uuid,
     bytes: Vec<u8>,
 ) -> AuthorizationWriteFence {
+    test_authorization_write_fence_with_pending_revision(revision, revision + 1, space_uid, bytes)
+}
+
+#[cfg(test)]
+pub(crate) fn test_authorization_write_fence_with_pending_revision(
+    revision: u64,
+    pending_revision: u64,
+    space_uid: Uuid,
+    bytes: Vec<u8>,
+) -> AuthorizationWriteFence {
     AuthorizationWriteFence {
         durable: None,
         authorization_revision: Some(revision),
         space_id: None,
         space_uid: Some(space_uid),
         pending_authorization_snapshot: Arc::new(Mutex::new(Some(PendingAuthorizationSnapshot {
-            revision: revision + 1,
+            revision: pending_revision,
             space_uid,
             bytes,
         }))),
+        applied_authorization_revision: Arc::new(Mutex::new(None)),
     }
 }
 
@@ -1695,8 +1740,9 @@ impl Authorizer {
             // not publish content still linearize, and a concurrent
             // revocation wins the CAS and fails this closed. Mutations that
             // publish (content or authorization writes) consume the staged
-            // snapshot atomically instead; full single-CAS atomicity for
-            // those arrives with the catalog-side pending application.
+            // snapshot atomically in their own Head CAS instead, and the
+            // drain below converges idempotently when the Head already
+            // carries the staged revision.
             self.drain_pending_approval_snapshot(space_id, lease)
                 .await?;
         }
@@ -3112,6 +3158,11 @@ impl Authorizer {
         if pending_authorization_snapshot().await.is_some() {
             clear_pending_authorization_snapshot().await;
         }
+        // The lease advanced the Head itself through the exact CAS above, so
+        // later content publications under the same fence bind the advanced
+        // revision instead of failing closed on the lease's own Head. Outside
+        // a fence this is a no-op.
+        note_applied_authorization_revision(committed_state.revision).await;
         #[cfg(test)]
         if self
             .ambiguous_write_with_post_commit_writer_once
@@ -3791,8 +3842,9 @@ mod tests {
         // A mutation that does not publish through the Catalog Head must not
         // strand the staged consumption: it commits directly through the Head
         // CAS, conditional on the lease revision so a concurrent revocation
-        // still wins. (Single-CAS atomicity for publishing mutations arrives
-        // with the catalog-side pending application.)
+        // still wins. (Publishing mutations consume the staged snapshot
+        // atomically in their own Head CAS via the catalog-side pending
+        // application.)
         let before = authorizer.state(&space_id).await?;
         let (_, mutation) = authorizer
             .consume_human_approval_with_audit_and(
@@ -3819,6 +3871,136 @@ mod tests {
                 |approval| approval.token_hash == hex::encode(Sha256::digest(token.as_bytes()))
                     && approval.consumed_at.is_some()
             ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn approval_consumption_and_content_publication_share_one_head_cas() -> Result<()> {
+        let op = operator_from_uri("memory://approval-atomic-content-publication")?;
+        let space_uid = Uuid::now_v7();
+        let space_id = space_uid.to_string();
+        crate::space::create_space_with_identity_and_name(
+            &op,
+            space_uid,
+            "approval-atomic",
+            "Approval Atomic",
+            ".",
+        )
+        .await?;
+        let authorizer = Authorizer::new(op.clone());
+        let owner = Uuid::now_v7();
+        let credential = Uuid::now_v7();
+        authorizer
+            .initialize_owner(&space_id, space_uid, owner, "Owner")
+            .await?;
+        let resource = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: "entry-atomic".to_owned(),
+            parent: None,
+        };
+        let (_, token) = authorizer
+            .issue_human_approval(
+                &space_id,
+                HumanApprovalIssue {
+                    operation: "entry.create".to_owned(),
+                    action: Action::Create,
+                    resource: resource.clone(),
+                    intent_hash: "f".repeat(64),
+                    actor_principal_id: owner,
+                    actor_credential_id: credential,
+                    issuer_principal_id: owner,
+                    issuer_account_id: Uuid::now_v7(),
+                    issuer_credential_id: credential,
+                    issuer_credential_generation: 0,
+                    issuer_node_account_lifecycle_epoch: 0,
+                    ttl: chrono::Duration::seconds(30),
+                },
+            )
+            .await?;
+
+        // The nested mutation publishes content through the same Catalog Head
+        // CAS that must atomically carry the staged approval consumption: a
+        // single Head advance, never content first and approval later.
+        let before = authorizer.state(&space_id).await?;
+        let asset_id = Uuid::now_v7().to_string();
+        let nested_asset_id = asset_id.clone();
+        let nested_operator = op.clone();
+        let nested_space = format!("spaces/{space_id}");
+        let (_, mutation) = authorizer
+            .consume_human_approval_with_audit_and(
+                &space_id,
+                &token,
+                "entry.create",
+                Action::Create,
+                &resource,
+                &"f".repeat(64),
+                owner,
+                credential,
+                |_, _, _, _| Vec::new(),
+                move || async move {
+                    // Memory is a local operator, so the plain store carries
+                    // the SingleProcess mutation contract, exactly like the
+                    // production local path.
+                    let store = SpaceCatalogStore::new(nested_operator, nested_space)?;
+                    let catalog = crate::space_catalog::SpaceCatalog::new(
+                        store,
+                        ugoite_domain::id::SpaceId::from(space_uid),
+                    )
+                    .map_err(anyhow::Error::from)?;
+                    catalog
+                        .publish_asset_upload(
+                            &nested_asset_id,
+                            "prepared/asset-atomic",
+                            &"0".repeat(64),
+                        )
+                        .await
+                        .map_err(anyhow::Error::from)?;
+                    Ok::<(), anyhow::Error>(())
+                },
+            )
+            .await
+            .expect("consumption and content share one Catalog Head CAS");
+        mutation?;
+        let state = authorizer.state(&space_id).await?;
+        assert_eq!(state.revision, before.revision + 1);
+        assert!(state
+            .human_approvals
+            .values()
+            .any(
+                |approval| approval.token_hash == hex::encode(Sha256::digest(token.as_bytes()))
+                    && approval.consumed_at.is_some()
+            ));
+        // The Head-embedded snapshot already carries the consumption: the
+        // drain has nothing left to commit, and the asset receipt is
+        // reachable from the same Head.
+        let store = SpaceCatalogStore::new(op.clone(), format!("spaces/{space_id}"))?;
+        let catalog = crate::space_catalog::SpaceCatalog::new(
+            store,
+            ugoite_domain::id::SpaceId::from(space_uid),
+        )
+        .map_err(anyhow::Error::from)?;
+        let (revision, bytes) = catalog
+            .authorization_snapshot()
+            .await
+            .map_err(anyhow::Error::from)?
+            .expect("authorization snapshot is Head-reachable");
+        assert_eq!(revision, state.revision);
+        let snapshot: AuthorizationState = serde_json::from_slice(&bytes)?;
+        assert!(snapshot
+            .human_approvals
+            .values()
+            .any(
+                |approval| approval.token_hash == hex::encode(Sha256::digest(token.as_bytes()))
+                    && approval.consumed_at.is_some()
+            ));
+        assert_eq!(
+            catalog
+                .published_asset_location(&asset_id)
+                .await
+                .map_err(anyhow::Error::from)?
+                .as_deref(),
+            Some("prepared/asset-atomic")
+        );
         Ok(())
     }
 

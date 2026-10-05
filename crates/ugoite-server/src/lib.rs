@@ -7581,11 +7581,14 @@ where
         return Err(error);
     }
     let fence = lease.write_fence();
+    // Box the operation subtree: protected mutations compose several
+    // publication attempts into one future, and holding the lease across
+    // that inline would keep the whole tree on the caller's stack.
     let result = match lease
         .run_while_held(|| {
             ugoite_iceberg::authorization::with_authorization_write_fence(
                 fence.clone(),
-                operation(principal_id, principals),
+                Box::pin(operation(principal_id, principals)),
             )
         })
         .await
@@ -7841,6 +7844,14 @@ where
         })()
     };
     if let Err(error) = authorization_result {
+        let _ = lease.release().await;
+        return Err(error);
+    }
+    // Bind pre-Catalog authorization state to the Head before the fenced
+    // Form publication, like every other protected mutation prelude. Without
+    // this, a pre-fence Space has no Head snapshot for the publication-time
+    // fence check to revalidate, and the Form write would fail closed.
+    if let Err(error) = lease.prepare_mutation().await.map_err(ApiError::from_core) {
         let _ = lease.release().await;
         return Err(error);
     }
@@ -10463,7 +10474,12 @@ async fn apply_operations(
                 }
             };
         }
-        let result = with_authorized_service_mutation(
+        // The batch publishes through the Catalog Head CAS, so the
+        // non-approval path holds the authorization lease like every other
+        // protected mutation: a concurrent revocation fails the batch closed
+        // instead of racing it. (The approval path above is fenced by the
+        // consumed approval itself.)
+        let result = with_authorized_mutation(
             &state,
             &space_id,
             &identity,
@@ -10490,7 +10506,7 @@ async fn apply_operations(
         .await?;
         return Ok(Json(result));
     }
-    let result = with_authorized_service_mutation(
+    let result = with_authorized_mutation(
         &state,
         &space_id,
         &identity,
@@ -10540,7 +10556,10 @@ async fn create_pin(
     let state_for_step_up = state.clone();
     let identity_for_step_up = identity.clone();
     let binding_space = space_id.clone();
-    let pin = with_authorized_service_mutation(
+    // The pin publication shares the Catalog Head CAS with authorization
+    // state, so this mutation holds the authorization lease: a concurrent
+    // revocation fails the publication closed instead of racing it.
+    let pin = with_authorized_mutation(
         &state,
         &space_id,
         &identity,
@@ -10600,7 +10619,10 @@ async fn delete_pin(
     let state_for_step_up = state.clone();
     let identity_for_step_up = identity.clone();
     let binding_space = space_id.clone();
-    with_authorized_service_mutation(
+    // The pin publication shares the Catalog Head CAS with authorization
+    // state, so this mutation holds the authorization lease: a concurrent
+    // revocation fails the publication closed instead of racing it.
+    with_authorized_mutation(
         &state,
         &space_id,
         &identity,
