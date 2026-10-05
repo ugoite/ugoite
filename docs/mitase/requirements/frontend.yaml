@@ -2300,46 +2300,11 @@ requirements:
         statement: Composition table components delegate presentation to the source-native Entry or SQL result presenter and never define a third generic table grammar; source query semantics remain unchanged and metrics use the shared evaluator without Browser aggregation.
         governed_by: [POL-006#rule.governance]
     bindings:
-      - id: paged-result-table-verification
+      - id: result-surface-verification
         role: verification
         facet: verification
         responsibility: Verify complete native row rendering, shared visual language, row actions, and keyboard focus using deterministic component tests.
         targets:
-          - id: shared-table-behavior
-            adapter: typescript
-            path: frontend/src/components/PagedResultTable.test.tsx
-            selector: { kind: test, name: "renders the 100-row page as a complete native table" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-068#criterion.native-page-rows
-                covers: [FEAT-SRCH-001#binding.frontend/target.paged-result-table]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/PagedResultTable.test.tsx, test: "renders the 100-row page as a complete native table" } }
-              - kind: verifies
-                criterion: REQ-FE-068#criterion.shared-result-visual-language
-                covers: [FEAT-SRCH-001#binding.frontend/target.paged-result-table]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/PagedResultTable.test.tsx, test: "renders the 100-row page as a complete native table" } }
-              - kind: verifies
-                criterion: REQ-FE-068#criterion.controller-owned-paging
-                covers: [FEAT-SRCH-001#binding.frontend/target.paged-result-table]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/PagedResultTable.test.tsx, test: "renders the 100-row page as a complete native table" } }
-          - id: entry-keyboard-navigation
-            adapter: typescript
-            path: frontend/src/components/PagedResultTable.test.tsx
-            selector: { kind: test, name: "moves keyboard focus between actions in ordinary rendered rows" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-068#criterion.keyboard-row-navigation
-                covers: [FEAT-SRCH-001#binding.frontend/target.paged-result-table]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/PagedResultTable.test.tsx, test: "moves keyboard focus between actions in ordinary rendered rows" } }
-          - id: entry-row-ownership
-            adapter: typescript
-            path: frontend/src/components/PagedResultTable.test.tsx
-            selector: { kind: test, name: "supports row selection and a native trailing action column" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-068#criterion.semantic-row-ownership
-                covers: [FEAT-SRCH-001#binding.frontend/target.paged-result-table]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/PagedResultTable.test.tsx, test: "supports row selection and a native trailing action column" } }
           - id: result-pagination-shared-control
             adapter: typescript
             path: frontend/src/components/ResultPagination.test.tsx

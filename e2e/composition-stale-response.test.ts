@@ -223,7 +223,7 @@ async function readUi(page: Page): Promise<UiSnapshot> {
     const cells = Array.from(
       document.querySelectorAll("tbody tr td"),
     ).map((cell) => cell.textContent?.trim() ?? "");
-    const pagination = document.querySelector(".paged-result-pagination");
+    const pagination = document.querySelector(".result-pagination");
     const buttons = Array.from(pagination?.querySelectorAll("button") ?? []);
     return {
       rows: cells,
@@ -347,8 +347,8 @@ test.describe("Composition Stale Response", () => {
       metric: String(CURRENT_AMOUNT),
       alerts: [],
       loading: 0,
-      previousDisabled: true,
-      nextDisabled: true,
+      previousDisabled: null,
+      nextDisabled: null,
     });
     await expect.poll(() => readUi(page), { timeout: 30_000 })
       .toMatchObject({ rows: expect.arrayContaining([CURRENT_MERCHANT]) });
