@@ -409,6 +409,8 @@ export function EntryBrowser(props: EntryBrowserProps) {
           <EntryBrowserDisplayDialog
             mode={mode()}
             returnFocus={dialogTrigger()}
+            // One capability rule for columns, filter, and sort: all-scope
+            // offers system fields only (property kinds are backend-rejected).
             fields={props.capabilities.fields.filter((field) =>
               props.capabilities.scope.kind !== "all" ||
               field.field.kind !== "property"

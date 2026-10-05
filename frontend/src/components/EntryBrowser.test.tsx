@@ -651,8 +651,23 @@ describe("EntryBrowser", () => {
       .toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Updated" }))
       .toBeInTheDocument();
-    // A smuggled heterogeneous property is never offered as a column.
+    // A smuggled heterogeneous property is never offered as a column,
+    // a filter field, or a sort field under the all-scope rule.
     expect(screen.queryByRole("checkbox", { name: "status" }))
+      .not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    expect(screen.getByRole("combobox", { name: "Filter field 1" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "status" }))
+      .not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add sort" }));
+    expect(screen.getByRole("combobox", { name: "Sort field 1" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "status" }))
       .not.toBeInTheDocument();
   });
 
