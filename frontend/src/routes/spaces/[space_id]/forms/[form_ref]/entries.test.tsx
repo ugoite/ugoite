@@ -135,6 +135,24 @@ describe("/spaces/:space_id/forms/:form_ref/entries", () => {
     );
   });
 
+  it("passes the selected Form ID scope into the Entry query request", async () => {
+    renderRoute([noteForm]);
+
+    await waitFor(() =>
+      expect(vi.mocked(entryApi.query)).toHaveBeenCalled()
+    );
+    await screen.findByRole("toolbar", { name: "Entry browser" });
+    const calls = vi.mocked(entryApi.query).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call[0]).toBe("default");
+      expect(call[1].query.scope).toEqual({
+        kind: "form",
+        form_id: noteForm.id,
+      });
+    }
+  });
+
   it("selects a row to open its Entry", async () => {
     vi.mocked(entryApi.query).mockResolvedValue({
       rows: [{

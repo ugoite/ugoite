@@ -182,6 +182,82 @@ async fn quoted_form_name_with_digits_hyphen_and_parameter_resolves() -> Result<
 }
 
 #[tokio::test]
+async fn quoted_form_names_differing_only_by_case_resolve_to_their_own_rows() -> Result<()> {
+    let space = setup_sql_space_with_form_name(
+        "memory://sql-stateless-form-name-case",
+        "sqlformnamecase",
+        "Ledger",
+    )
+    .await?;
+    // A second Form whose name differs only by ASCII case keeps its own row;
+    // each quoted reference must resolve to its own Form.
+    space
+        .service
+        .upsert_form(
+            &space.space_id,
+            &json!({
+                "name": "ledger",
+                "fields": {
+                    "Status": {"type": "string"},
+                    "Priority": {"type": "long"},
+                },
+            }),
+        )
+        .await?;
+    space
+        .service
+        .create_structured_entry_with_receipt(
+            &space.space_id,
+            "sql-lower-00",
+            "ledger".to_string(),
+            Vec::new(),
+            BTreeMap::from([
+                ("Status".to_string(), Value::String("open".to_string())),
+                ("Priority".to_string(), json!(1)),
+            ]),
+            BTreeMap::new(),
+            "owner",
+        )
+        .await?;
+    let upper = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_request(
+                "SELECT \"_ugoite_id\" FROM \"Ledger\" ORDER BY \"_ugoite_id\"".to_string(),
+                10,
+            ),
+        )
+        .await?;
+    assert_eq!(upper.rows.len(), 5);
+    assert!(upper.rows.iter().all(|row| row["_ugoite_id"]
+        .as_str()
+        .is_some_and(|id| id.starts_with("sql-0"))));
+    let lower = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_request(
+                "SELECT \"_ugoite_id\" FROM \"ledger\" ORDER BY \"_ugoite_id\"".to_string(),
+                10,
+            ),
+        )
+        .await?;
+    assert_eq!(lower.rows.len(), 1);
+    assert_eq!(lower.rows[0]["_ugoite_id"], "sql-lower-00");
+    // Any other ASCII case still rejects instead of resolving either Form.
+    assert!(space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_request("SELECT * FROM \"LEDGER\"".to_string(), 10),
+        )
+        .await
+        .is_err());
+    Ok(())
+}
+
+#[tokio::test]
 async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() -> Result<()> {
     let space = setup_sql_space("memory://sql-saved-binding", "sqlsavedbinding").await?;
     let sql = format!(

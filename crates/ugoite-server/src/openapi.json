@@ -4785,7 +4785,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Bounded committed Changes in reverse publication order with current target visibility",
+            "description": "Bounded committed Changes for a Run in reverse publication order with current target visibility. Each Change includes target_visibility and the shared evidence-backed summary when current read scopes cover every Form and its required revisions are read within the page-wide budget of 10,000 revision rows. A null summary can occur with complete target_visibility when the page-wide budget is exhausted; partial visibility also produces a null summary. Null summaries reveal no hidden counts, Form IDs, target IDs, or field groups.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/JsonValue" }

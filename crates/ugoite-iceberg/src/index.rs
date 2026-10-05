@@ -654,10 +654,11 @@ fn canonical_hydration_identity_columns() -> BTreeSet<String> {
 
 /// Computes the per-Form physical columns a canonical hydration must read.
 ///
-/// The set is the projection-owned payload plus preview-required fields plus
-/// the minimal identity/revision envelope. Filter-only and sort-only fields
-/// are not re-read here, and identity/sort control columns never become
-/// response properties: `canonical_entry_result` in `service.rs` projects only
+/// The set is the projection-owned payload plus the minimal
+/// identity/revision envelope. A field projection reads only its named
+/// properties, while `Preview` reads every Form field. Filter-only and
+/// sort-only fields are not re-read here, and identity/sort control columns
+/// never become response properties: `canonical_entry_result` in `service.rs` projects only
 /// the requested `EntryProjection` from the hydrated `fields` object.
 pub(crate) fn canonical_hydration_columns(
     form: &FormDefinition,
@@ -4727,5 +4728,59 @@ mod tests {
         // field in the pushed projection.
         assert!(!rendered.contains("_ugoite_tags"), "{rendered}");
         assert!(!rendered.contains("__FORM_ID__"), "{rendered}");
+    }
+
+    #[test]
+    fn canonical_hydration_rows_decode_only_projected_columns() {
+        use arrow_array::TimestampMicrosecondArray;
+        use arrow_schema::TimeUnit;
+        let form = hydration_test_form();
+        // A pruned scan materializes identity columns plus the projected
+        // `title` column only; filter/sort-only `status`/`score` columns are
+        // absent from the batch rather than null-filled.
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("_ugoite_id", DataType::Utf8, false),
+            Field::new("_ugoite_revision_id", DataType::Utf8, false),
+            Field::new(
+                "_ugoite_created_at",
+                DataType::Timestamp(TimeUnit::Microsecond, None),
+                false,
+            ),
+            Field::new(
+                "_ugoite_updated_at",
+                DataType::Timestamp(TimeUnit::Microsecond, None),
+                false,
+            ),
+            Field::new("field_100", DataType::Utf8, true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(StringArray::from(vec!["entry-1"])) as ArrayRef,
+                Arc::new(StringArray::from(vec![
+                    "00000000-0000-7000-8000-000000000001",
+                ])) as ArrayRef,
+                Arc::new(TimestampMicrosecondArray::from(vec![1_772_960_000_000_000])) as ArrayRef,
+                Arc::new(TimestampMicrosecondArray::from(vec![1_772_963_000_000_000])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["hello"])) as ArrayRef,
+            ],
+        )
+        .expect("pruned hydration batch");
+        let rows =
+            super::canonical_hydrated_rows_from_batches(&form, &[batch]).expect("hydrated rows");
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.entry_id, "entry-1");
+        assert_eq!(row.form, "Tasks");
+        assert_eq!(row.revision_id, "00000000-0000-7000-8000-000000000001");
+        assert!(row.created_at > 0.0);
+        assert!(row.updated_at >= row.created_at);
+        let fields = row.fields.as_object().expect("row fields");
+        assert_eq!(
+            fields.get("title"),
+            Some(&Value::String("hello".to_string()))
+        );
+        assert!(!fields.contains_key("status"), "{fields:?}");
+        assert!(!fields.contains_key("score"), "{fields:?}");
     }
 }
