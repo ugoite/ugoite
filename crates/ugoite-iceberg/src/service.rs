@@ -11383,7 +11383,7 @@ mod tests {
             )
             .await?;
         let note_fields = |body: &str| {
-            [(("Body".to_string(), Value::String(body.to_string())))]
+            [("Body".to_string(), Value::String(body.to_string()))]
                 .into_iter()
                 .collect()
         };
