@@ -143,6 +143,8 @@ inventory:
         - frontend/src/lib/change-api.ts
         - frontend/src/routes/spaces/[space_id]/history.tsx
         - frontend/src/routes/spaces/[space_id]/history.test.tsx
+        - frontend/src/components/HistoryChangeTable.tsx
+        - frontend/src/components/HistoryChangeTable.test.tsx
         - e2e/search-ui.test.ts
         - e2e/smoke.test.ts
         - e2e/navigation.test.ts

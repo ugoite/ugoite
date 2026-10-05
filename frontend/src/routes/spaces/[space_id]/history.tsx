@@ -2,8 +2,9 @@ import { useLocation, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
-import { PagedResultTable, type ResultColumn } from "~/components/PagedResultTable";
-import { RowListChevron } from "~/components/RowList";
+import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { ResultPagination } from "~/components/ResultPagination";
+import { HistoryChangeTable, type HistoryChangeColumn } from "~/components/HistoryChangeTable";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { actorDisplayNameLookup, shortActorFallback } from "~/lib/entry-history";
 import { t } from "~/lib/i18n";
@@ -455,8 +456,8 @@ export default function SpaceHistoryRoute() {
       setRecoveryBusy(false);
     }
   };
-  const columns = createMemo((): ResultColumn<SpaceChangeQueryRow>[] => {
-    const result: ResultColumn<SpaceChangeQueryRow>[] = [
+  const columns = createMemo((): HistoryChangeColumn[] => {
+    const result: HistoryChangeColumn[] = [
       { key: "target", label: t("spaceHistory.target"), cell: (row) => <span title={targetLabel(row)}>{targetLabel(row)}</span> },
       { key: "summary", label: t("spaceHistory.summary"), cell: (row) => <span title={showSummary(row)}>{showSummary(row)}</span> },
     ];
@@ -520,34 +521,59 @@ export default function SpaceHistoryRoute() {
           </div>
         </details>
       </div>
-      <Show when={page() || page.loading}>
-        <PagedResultTable
+      <Show when={page.loading}>
+        <LocalBusyIndicator label={t("spaceHistory.loading")} />
+      </Show>
+      <Show when={page.error}>
+        <p class="ui-text-danger" role="alert">{t("spaceHistory.loadError")}</p>
+        <button
+          type="button"
+          class="ui-button ui-button-secondary"
+          disabled={page.loading}
+          onClick={() => void refetch()}
+        >
+          {t("common.retry")}
+        </button>
+      </Show>
+      <Show when={!page.loading && !page.error && currentRows().length === 0}>
+        <p class="ui-muted">{t("spaceHistory.empty")}</p>
+      </Show>
+      <Show when={!page.error && currentRows().length > 0}>
+        <HistoryChangeTable
           columns={columns()}
           rows={currentRows()}
-          rowKey={(row) => row.change_id}
           pageIdentity={queryKey()}
-          loading={!!page.loading}
-          loadingLabel={t("spaceHistory.loading")}
-          error={page.error ? t("spaceHistory.loadError") : null}
-          emptyLabel={t("spaceHistory.empty")}
-          retryLabel={t("common.retry")}
-          onRetry={() => void refetch()}
-          canPrevious={cursors().length > 1}
-          canNext={!!page()?.next_cursor}
-          previousLabel={t("common.previous")}
-          nextLabel={t("common.next")}
-          onPrevious={() => { setCursors((current) => current.slice(0, -1)); setSelectedChange(undefined); }}
-          onNext={() => { const next = page()?.next_cursor; if (next) { setCursors((current) => [...current, next]); setSelectedChange(undefined); } }}
-          selectedRowKey={selectedChange()}
-          onRowSelect={(row) => setSelectedChange(row.change_id)}
-          renderTrailingAction={(row) => <button type="button" class="entry-browser-open" aria-label={t("spaceHistory.openChange")} title={t("spaceHistory.openChange")} onClick={(event) => { event.stopPropagation(); detailOpener = event.currentTarget; setSelectedChange(row.change_id); setDetail(row.change_id); }}><RowListChevron /></button>}
-          trailingActionLabel={t("spaceHistory.openChange")}
-          trailingActionClassName="entry-browser-trailing-cell"
-          trailingHeaderClassName="entry-browser-trailing-header"
-          paginationLabel={t("spaceHistory.pagination")}
-          classNames={{ table: "entry-browser-table history-change-table", scroll: "entry-browser-table-scroll" }}
+          tableLabel={t("spaceHistory.pagination")}
+          selectedChangeId={selectedChange()}
+          onSelectChange={(row) => setSelectedChange(row.change_id)}
+          openLabel={t("spaceHistory.openChange")}
+          busy={page.loading}
+          onOpenChange={(row, opener) => {
+            detailOpener = opener;
+            setSelectedChange(row.change_id);
+            setDetail(row.change_id);
+          }}
         />
       </Show>
+      <ResultPagination
+        canPrevious={cursors().length > 1}
+        canNext={!!page()?.next_cursor}
+        busy={page.loading || !!page.error}
+        previousLabel={t("common.previous")}
+        nextLabel={t("common.next")}
+        ariaLabel={t("spaceHistory.pagination")}
+        onPrevious={() => {
+          setCursors((current) => current.slice(0, -1));
+          setSelectedChange(undefined);
+        }}
+        onNext={() => {
+          const next = page()?.next_cursor;
+          if (next) {
+            setCursors((current) => [...current, next]);
+            setSelectedChange(undefined);
+          }
+        }}
+      />
       <Show when={openChange()}>
         {(row) => (
           <Portal>

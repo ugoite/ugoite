@@ -3706,6 +3706,97 @@ a.tool {
   white-space: nowrap;
 }
 
+/* History Change tables: Change-owned row interaction on the shared
+ * vocabulary. A Change is never an Entry row or a generic query row;
+ * selection/open semantics live in HistoryChangeTable and paging stays
+ * with the history route. */
+.result-table--history {
+  min-width: 48rem;
+}
+
+.result-table--history th:nth-child(1),
+.result-table--history td:nth-child(1) {
+  min-width: 10rem;
+}
+
+.result-table--history th:nth-child(2),
+.result-table--history td:nth-child(2) {
+  min-width: 20rem;
+  max-width: 36rem;
+}
+
+.result-table--history .result-table-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-table--history tbody tr {
+  cursor: pointer;
+}
+
+.result-table--history tbody tr:hover {
+  background: var(--soft2);
+}
+
+.result-table--history tbody tr[aria-selected="true"] {
+  background: var(--soft2);
+}
+
+.result-table--history tbody tr[aria-selected="true"] > td:first-child {
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.result-table--history
+  tbody
+  tr[aria-selected="true"]
+  > .history-change-trailing-cell {
+  background: var(--soft2);
+}
+
+.history-change-trailing-cell,
+.history-change-trailing-header {
+  position: sticky;
+  right: 0;
+  width: 52px;
+  min-width: 52px;
+  padding: 2px 4px;
+  background: var(--panel);
+  text-align: center;
+}
+
+.history-change-trailing-header {
+  z-index: 2;
+  background: var(--panel);
+}
+
+.history-change-trailing-cell {
+  z-index: 1;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-change-open {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.history-change-open:hover {
+  background: var(--soft2);
+}
+
+.history-change-open:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
 .entry-browser-table {
   width: 100%;
   min-width: 36rem;
