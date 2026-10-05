@@ -40,7 +40,7 @@ async fn run_recovery_proof(root_uri: &str, endpoint: &str, space_slug: &str) ->
 
     let service = open_verified_service(root_uri, endpoint, space_slug).await?;
     let space_id = service
-        .create_space_for_principal(&space_slug, owner, "S3 recovery test")
+        .create_space_for_principal(space_slug, owner, "S3 recovery test")
         .await?
         .to_string();
     service
@@ -109,7 +109,7 @@ async fn run_recovery_proof(root_uri: &str, endpoint: &str, space_slug: &str) ->
 
     // A newly constructed service/operator must recover the same Space and its
     // append-only Change history from the remote store.
-    let reopened = open_verified_service(&root_uri, &endpoint, &space_slug).await?;
+    let reopened = open_verified_service(root_uri, endpoint, space_slug).await?;
     let recovery = reopened.open_space(&space_id).await?;
     assert_eq!(recovery["space_id"], space_id);
     // Discovery enumerates Space directory IDs (immutable UUIDs), not slugs.
