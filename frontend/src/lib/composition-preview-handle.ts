@@ -1,8 +1,10 @@
 import { createSignal } from "solid-js";
 import type {
-  CompositionParameterDefinition,
+  CompositionPreviewResponse,
+  CompositionResolvedSource,
   CompositionSourcePage,
 } from "./composition-api";
+import { compositionApi } from "./composition-api";
 
 /** Execution identity of one draft preview: the draft fingerprint. */
 export interface CompositionPreviewIdentity {
@@ -10,40 +12,7 @@ export interface CompositionPreviewIdentity {
   fingerprint: string;
 }
 
-export interface CompositionPreviewSource {
-  source_id: string;
-  request: unknown;
-  source_schema_fingerprint: string;
-  kind: string;
-}
-
-export interface CompositionPreviewComponentBinding {
-  component_id: string;
-  kind: string;
-  label?: string;
-  source_id: string;
-}
-
-export interface CompositionPreviewPlan {
-  draft_fingerprint: string;
-  sources: CompositionPreviewSource[];
-  component_bindings: CompositionPreviewComponentBinding[];
-}
-
-export interface CompositionPreviewDiagnostic {
-  code: string;
-  parameter_id?: string;
-}
-
-export interface CompositionPreviewResponse {
-  ok: boolean;
-  draft_fingerprint?: string;
-  parameter_definitions?: CompositionParameterDefinition[];
-  plan?: CompositionPreviewPlan;
-  diagnostics?: CompositionPreviewDiagnostic[];
-}
-
-export interface CompositionPreviewSourcePageState {
+export interface CompositionResolvedSourcePageState {
   status: "loading" | "ready" | "error";
   cursorStack: (string | undefined)[];
   cursor?: string;
@@ -59,7 +28,7 @@ export interface CompositionPreviewHandleState {
   previewing: boolean;
   preview?: CompositionPreviewResponse;
   previewError?: unknown;
-  sources: Record<string, CompositionPreviewSourcePageState>;
+  sources: Record<string, CompositionResolvedSourcePageState>;
 }
 
 export interface CompositionPreviewQueryApi {
@@ -71,7 +40,7 @@ export interface CompositionPreviewQueryApi {
   ) => Promise<CompositionPreviewResponse>;
   querySource: (
     spaceId: string,
-    source: CompositionPreviewSource,
+    source: CompositionResolvedSource,
     cursor: string | undefined,
     signal: AbortSignal,
   ) => Promise<CompositionSourcePage>;
@@ -91,7 +60,7 @@ const sourcePageNext = (page: CompositionSourcePage | undefined) =>
  * through the existing query paths; preview itself creates no state.
  */
 export function createCompositionPreviewHandle(
-  api: CompositionPreviewQueryApi,
+  api: CompositionPreviewQueryApi = compositionApi,
 ) {
   const [state, setState] = createSignal<CompositionPreviewHandleState>({
     previewing: false,
@@ -104,7 +73,7 @@ export function createCompositionPreviewHandle(
   let previewController: AbortController | undefined;
   const sourceControllers = new Map<string, AbortController>();
   const sourceGenerations = new Map<string, number>();
-  const resolvedSources = new Map<string, CompositionPreviewSource>();
+  const resolvedSources = new Map<string, CompositionResolvedSource>();
 
   const isCurrent = (requestGeneration: number) =>
     !disposed && requestGeneration === generation;
@@ -186,7 +155,7 @@ export function createCompositionPreviewHandle(
   const requestSource = async (
     requestGeneration: number,
     spaceId: string,
-    source: CompositionPreviewSource,
+    source: CompositionResolvedSource,
     cursor: string | undefined,
     cursorStack: (string | undefined)[],
   ) => {

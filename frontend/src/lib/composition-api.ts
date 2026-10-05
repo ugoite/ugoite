@@ -162,6 +162,20 @@ export interface CompositionResolveResponse {
   diagnostics?: CompositionResolveDiagnostic[];
 }
 
+export interface CompositionPreviewPlan {
+  draft_fingerprint: string;
+  sources: CompositionResolvedSource[];
+  component_bindings: CompositionResolvedComponentBinding[];
+}
+
+export interface CompositionPreviewResponse {
+  ok: boolean;
+  draft_fingerprint?: string;
+  parameter_definitions?: CompositionParameterDefinition[];
+  plan?: CompositionPreviewPlan;
+  diagnostics?: CompositionResolveDiagnostic[];
+}
+
 export type CompositionSourcePage =
   | { kind: "entry_query"; page: EntryPage }
   | { kind: "saved_sql"; page: SqlQueryPage };
@@ -306,6 +320,21 @@ export const compositionApi = {
       "composition.resolve",
       { space_id: spaceId, composition_id: compositionId },
       { revision_id: revisionId, parameters },
+      { signal },
+    );
+  },
+
+  /** Side-effect-free draft preview through the portable operation. */
+  async preview(
+    spaceId: string,
+    yaml: string,
+    parameters: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<CompositionPreviewResponse> {
+    return await protocolFetch<CompositionPreviewResponse>(
+      "composition.preview",
+      { space_id: spaceId },
+      { yaml, parameters },
       { signal },
     );
   },
