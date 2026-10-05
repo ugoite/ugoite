@@ -44,3 +44,10 @@ Treat `crates/ugoite-server` as the REST implementation and `/openapi.json` as t
 - Mitase validates declared specification relationships and evidence. It does
   not execute Ugoite tests, own repository delivery, or become a second
   Knowledge authority.
+- New cross-surface features follow facet-oriented authoring: one semantic
+  capability feature, one implementation binding per opaque facet from the
+  vocabulary in `docs/architecture/principles/control-surfaces.md`, direct
+  `satisfies` claims against surface-independent criteria, exact verification
+  per facet target in the same change, and no invented parity. Check the
+  projection with `./scripts/mitase report facets <FEAT-*> .` before opening
+  a PR.

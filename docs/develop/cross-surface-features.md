@@ -36,6 +36,45 @@ database is not an acceptable second implementation.
 Do not copy REST semantics into a second adapter or make UI labels the product
 model. The task outcome comes first; the surface is a variation.
 
+## Facet-oriented capability authoring
+
+New and reworked capability features use the facet-oriented pattern over the
+unchanged Mitase authoring contract (Mitase 0.2.2 `report facets`):
+
+1. Requirement criteria stay surface-independent outcomes and invariants.
+   A surface-specific criterion is allowed only when the boundary itself
+   carries meaning (for example, an HTTP status code).
+2. One semantic capability feature carries the current implementation
+   targets that reach the same outcome, one `role: implementation` binding
+   per project-defined facet with direct `satisfies` claims.
+3. `role: operation` bindings stay routing-only; they never substitute for
+   semantic implementation. OpenAPI stays `role: contract-source`.
+4. Every new implementation target ships its exact verification claim in
+   the same change, covering the target through the test that exercises
+   that facet.
+5. Mitase never decides which facets are required. A missing facet is a
+   product decision, never a validation failure. Never invent a target or
+   a claim to fill a blank cell.
+6. One exact artifact has one implementation owner. Splitting shared
+   transport code into exact helper symbols comes before claiming
+   separate `cli-core` / `cli-remote` facets.
+
+Old-style specifications stay valid and migrate on touch. Inspect the
+current projection at any time:
+
+```bash
+./scripts/mitase report facets FEAT-ENTRY-001 . --format json
+./scripts/mitase report facets 'REQ-ENTRY-001#criterion.creation' . --format json
+```
+
+## Capability versus Journey responsibilities
+
+A semantic capability feature answers one question: which facets reach
+the same meaning. A journey answers a different one: do capabilities
+A → B → C compose into a durable end-to-end outcome. Journeys verify
+composition through capability-owned targets; they do not re-own surface
+targets and they do not own surface completeness.
+
 ## Verification and evidence
 
 Cover the operation at the owning layer, then add adapter parity where the
