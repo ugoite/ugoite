@@ -4,10 +4,18 @@ sidebar:
   order: 2
 ---
 
-This page records the capability boundary of published v0.2.0 so packaging,
-support, and product claims stay aligned with the implementation. The next
-v0.2.1 release is not prepared; its acceptance and claim status is tracked in
-the [product journey and evidence index](v0.2.1-product-journeys.md).
+This page defines what "current" and "stable" mean for Ugoite documentation so
+packaging, support, and product claims stay aligned with the implementation.
+
+- "Current" describes this documentation build and the implementation it was
+  written against. It is never a release claim.
+- "Stable" describes only a published release. A published release is identified
+  by its immutable release tag and manifest, and described by its versioned
+  release note under `docs/version/releases/`. Drafts, journey indexes,
+  trackers, and roadmaps never define stable behavior.
+
+The boundary below is the one this documentation build describes. Stable claims
+resolve to the versioned release note, not to this page.
 
 ## Included
 

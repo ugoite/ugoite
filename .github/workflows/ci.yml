@@ -454,19 +454,9 @@ jobs:
         if: always()
         run: sccache --show-stats
 
-      - name: Upload docsite artifact
-        id: upload-docsite
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ugoite-docsite-pages
-          path: target/artifacts/docsite/site
-          if-no-files-found: error
-
       # Build-input retention policy: the runtime image, CLI, and manifest
-      # are consumed by same-run E2E jobs and (on main pushes) by the Docsite
-      # Pages promotion workflow right after this run completes. Keep them for
-      # 14 days so reruns and the promotion window stay covered without
+      # are consumed by same-run E2E jobs. Keep them for
+      # 14 days so reruns stay covered without
       # retaining large short-lived artifacts on the repository default.
       - name: Upload runtime image artifact
         id: upload-image
@@ -529,7 +519,6 @@ jobs:
           DENO_CACHE_HIT: ${{ steps.deno-cache-restore.outputs.cache-hit }}
           DENO_CACHE_PRIMARY_KEY: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
           DENO_CACHE_MATCHED_KEY: ${{ steps.deno-cache-restore.outputs.cache-matched-key }}
-          DOCSITE_ARTIFACT_DIGEST: ${{ steps.upload-docsite.outputs.artifact-digest }}
           IMAGE_ARTIFACT_DIGEST: ${{ steps.upload-image.outputs.artifact-digest }}
           CLI_ARTIFACT_DIGEST: ${{ steps.upload-cli.outputs.artifact-digest }}
           HELM_ARTIFACT_DIGEST: ${{ steps.upload-helm.outputs.artifact-digest }}
@@ -582,7 +571,6 @@ jobs:
             echo
             echo "### Artifact Digests"
             echo
-            echo "- ugoite-docsite-pages: \`${DOCSITE_ARTIFACT_DIGEST:-not-uploaded}\`"
             echo "- ugoite-runtime-image: \`${IMAGE_ARTIFACT_DIGEST:-not-uploaded}\`"
             echo "- ugoite-cli-linux: \`${CLI_ARTIFACT_DIGEST:-not-uploaded}\`"
             echo "- ugoite-helm-chart: \`${HELM_ARTIFACT_DIGEST:-not-uploaded}\`"

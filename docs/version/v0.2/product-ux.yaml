@@ -7,13 +7,11 @@ goal: >
   changing v0.1 ownership, authority, history, or adapter boundaries. Success is
   judged through completion, discoverability, cross-surface consistency,
   validation clarity, recovery, and documentation correctness.
-  v0.2.0 is published with Form-first Browser navigation, structured Entries,
-  canonical EntryQuery, Saved SQL, stateless SQL, and CLI Context / Receipt
-  workflows. The published release note and current code establish those shipped
-  capabilities. Broader Product UX acceptance criteria below remain unverified
-  where the repository does not provide direct evidence; they are follow-up
-  work, not implied complete by publication. Knowledge-to-tools remains a North
-  Star, not a shipped acceptance claim.
+  Form-first Browser navigation, structured Entries, canonical EntryQuery,
+  Saved SQL, stateless SQL, and CLI Context / Receipt workflows are established
+  in the implementation. Broader Product UX acceptance criteria below remain
+  unverified where the repository does not provide direct evidence; they are
+  follow-up work.
 verification_evidence:
   - id: form-entry-browser-regression
     scope: >-
@@ -208,7 +206,7 @@ phases:
   - id: implementation
     status: in_progress
     tasks:
-      - description: "Shipped in v0.2.0: Form-first Browser navigation; structured Entry authoring and reads; canonical EntryQuery across Browser, local CLI, and remote API; Saved SQL lifecycle and stateless SQL query; CLI Context selection and durable mutation Receipt output"
+      - description: "Shipped in the implementation: Form-first Browser navigation; structured Entry authoring and reads; canonical EntryQuery across Browser, local CLI, and remote API; Saved SQL lifecycle and stateless SQL query; CLI Context selection and durable mutation Receipt output"
         done: true
       - description: "Unverified follow-up: make existing journeys completable and discoverable without new authority or storage semantics"
         done: false

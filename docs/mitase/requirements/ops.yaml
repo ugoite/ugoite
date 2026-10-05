@@ -1092,12 +1092,12 @@ requirements:
           - id: sole-authority-case
             adapter: rust
             path: crates/xtask/src/main.rs
-            selector: { kind: test, name: gate_contract_tests::v02_tracker_with_sole_product_ux_passes }
+            selector: { kind: test, name: gate_contract_tests::v02_tracker_with_product_ux_milestone_passes }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-025#criterion.product-ux-authority
                 covers: [FEAT-OPS-001#binding.release-authority/target.authority-gate]
-                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::v02_tracker_with_sole_product_ux_passes } }
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::v02_tracker_with_product_ux_milestone_passes } }
           - id: authority-goal-case
             adapter: rust
             path: crates/xtask/src/main.rs
