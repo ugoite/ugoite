@@ -2,9 +2,13 @@
 title: "Composition acceptance plan"
 ---
 
-This is the Lane D acceptance plan for the Composition feature. One Browser
-Golden Journey has passed against the exact source commit recorded below; the
-full surface and release evidence remain incomplete. The portable list, get,
+This document defines the Composition acceptance meaning: the selector and
+boundary inventory, the evidence recording method, and the
+recovery/authorization expectations. Implementation status for the
+Composition Requirements and Feature is recorded in Mitase
+(`docs/mitase/requirements/composition.yaml` and
+`docs/mitase/features/composition.yaml`); this document carries no plan
+status. The portable list, get,
 history, lint, resolve, save, and restore operations are implemented, as are
 the CLI list, history, inspect, lint, query, export, save, import, and restore
 commands. This does not claim complete cross-surface CLI parity or that all
@@ -16,8 +20,9 @@ structured locator map is
 
 ## Contract and evidence boundary
 
-The Composition Requirement and Feature remain `planned` until implementation
-and full-surface runtime evidence land. Focused domain and Core resolver tests
+Implementation status for the Composition Requirements and Feature is
+recorded in Mitase; this document does not restate it. Focused domain and
+Core resolver tests
 are bound in `docs/mitase/features/composition.yaml`; they establish those Rust
 contracts only. The reserved selectors in the locator map are not Mitase
 verification bindings until the corresponding integration tests run. The D0
@@ -39,9 +44,10 @@ fixtures. The E2E seed manifest at
 `e2e/fixtures/composition/space-seed/manifest.json` now supplies the server
 seed, expected result counts, save-retry outcome, and Browser selectors. The
 Playwright journey consumes it as test input. Its existence and selector
-binding alone do not record a runtime pass. The focused Browser journey has
-passed; its exact source and candidate commit, command, result, and artifact
-are recorded in the run evidence below.
+binding alone do not record a runtime pass. Scoped Browser journeys have
+executed; their source and candidate commits, commands, results, and
+artifacts are recorded as historical runs in
+`e2e/fixtures/composition/evidence-archive.json` (see Run evidence below).
 
 ## Resolver implementation evidence
 
@@ -123,8 +129,8 @@ exercises the older exact revision throughout, so explicit older-revision
 selection is covered (issue #3681 closed by that journey). Unknown-version
 and broken-reference raw recovery are covered by their own dedicated
 Core/Remote journeys with byte-identity and stable-diagnostic parity. Full
-cross-surface list/get/history acceptance and complete CLI parity remain
-planned. History
+cross-surface list/get/history acceptance and
+complete CLI parity are outside that scoped evidence. History
 and restore preserve append-only revisions, and save success must wait for the
 Entry receipt. Raw
 inspect, export, and history must remain available for unknown versions,
@@ -187,7 +193,8 @@ local mode. Resolve is available as a side-effect-free operation, and
 `composition.save` and `composition.restore` are exposed by the Server API
 with publication receipts. CLI save, import, and restore commands are
 implemented with focused Core/Remote journey evidence (see the CLI acceptance
-shape above); full cross-surface restore acceptance remains planned. The
+shape above); full cross-surface restore acceptance is outside that scoped
+evidence. The
 Core resolver returns requests for the existing query path; it does not itself
 execute them. The
 scalar page adapters described above are tested Core functions and are not yet
@@ -203,10 +210,11 @@ Browser request state. Storage and resolver selectors are bound now that
 those public contracts have settled. No DTO field names are
 reserved by this plan.
 
-The plan's `recovery_and_authorization.save_enablement` gate has scope
-`cross_surface_recovery_and_receipt_acceptance`. Its `enabled: true` value
-means the write-guard and receipt-reconciliation prerequisites are evidenced
-across storage, API, CLI, and Browser; it does not promote the release gate.
+The plan's `recovery_and_authorization.save_enablement` entry scopes
+`cross_surface_recovery_and_receipt_acceptance` and lists the write-guard
+and receipt-reconciliation prerequisites evidenced across storage, API, CLI,
+and Browser. The entry carries no `enabled` or status value and does not
+promote the release gate.
 It does not describe whether the Browser's “Save as tool” action is
 available. Browser availability and the passing save journeys are recorded
 separately from this broader acceptance gate.
@@ -218,8 +226,8 @@ implemented and covered by the seeded Golden Journey; CLI save and import are
 likewise implemented and covered by the focused Core/Remote import/save
 journeys. The write-guard and receipt-reconciliation evidence tracked by the
 `save_enablement` gate above spans storage unit tests, API idempotency,
-Core/Remote CLI replay, and Browser retry; release promotion of the broader
-cross-surface acceptance remains planned.
+Core/Remote CLI replay, and Browser retry; whether the broader
+cross-surface acceptance is promoted is not decided by this document or gate.
 If a save response is lost, the outcome remains unknown until the exact
 revision is reconciled; retry idempotency is tracked separately.
 Generic restore of the reserved Form is denied while Composition-scoped restore
@@ -242,29 +250,21 @@ For every executed acceptance selector, record the exact source and candidate
 SHA, artifact digest, command, selector, surface, fixture, environment, result,
 artifact, and evidence gap. Keep each surface result separate. A static
 locator, mocked operation, or D0 plan check is not a Browser or real-server
-journey pass. The acceptance map records one focused run of
-`Browser saves a tool once, reopens its exact revision from Home, and pages
-parameterized results with model connection disabled` against source and
-candidate commit `392204f28cedbbb9531f44864fa78992361a4813`. It passed with one
-test and no skips. The tracked JUnit result is
-[`composition-golden-journey-junit.xml`](../../../e2e/fixtures/composition/evidence/composition-golden-journey-junit.xml),
-with SHA-256
-`a7da68bb91789b3701f89624c93a28eac633cded59a0316d853d20e5eb9dd108`. The run
-verifies Browser save retry after commit, exact-revision reopen from Home, and
-parameterized paged results with model connection disabled. It does not verify
-recovery and ACL selectors, performance evidence, or exact release-candidate
-byte promotion. Two further Browser runs are recorded as JUnit artifacts without
-promoting the release gate: the metric reopen journey
-([`composition-metric-journey-junit.xml`](../../../e2e/fixtures/composition/evidence/composition-metric-journey-junit.xml),
-SHA-256
-`52bea6d9a78741090c0827a116207317d57cb686fd22996851bd1bfc7c9f53d1`)
-verifies exact-revision metric scalar display and the stable multiple-rows
-diagnostic with no Browser aggregation, and the stale-response journey
-([`composition-stale-response-junit.xml`](../../../e2e/fixtures/composition/evidence/composition-stale-response-junit.xml),
-SHA-256
-`cf7df28ce6357d614a4296ff96a94248c1eb60fbac08280aa17a6897e97f33cf`)
-verifies a late parameter-A response changes neither rows, metric, error,
-loading, finalization, nor pagination. A representative performance baseline
+journey pass.
+
+Historical scoped runtime evidence is recorded in
+[`evidence-archive.json`](../../../e2e/fixtures/composition/evidence-archive.json).
+Each record describes one past run only; records do not assert current plan
+status and are not release verification. The archive holds the Browser golden
+save/reopen/paged-results journey (save retry after commit, exact-revision
+reopen from Home, parameterized paged results with model connection
+disabled), the metric reopen journey (exact-revision metric scalar display
+and the stable multiple-rows diagnostic with no Browser aggregation), the
+stale-response journey (a late parameter-A response changes neither rows,
+metric, error, loading, finalization, nor pagination), the raw recovery and
+caller-visible contract journey, and the save-receipt reconciliation journey.
+Each record states its own gap; unexecuted selectors remain unverified. A
+representative performance baseline
 (`e2e/fixtures/composition/evidence/performance-baseline.json`, regression
 reference only, explicit gaps) is recorded separately. The separate scoped CLI
 journeys cover Core/Remote inspect, `entry_query`, and export read parity
@@ -272,4 +272,5 @@ including an older-than-latest exact revision, broken-reference raw recovery
 with `source_unavailable` concealment, unsupported-version raw recovery,
 plus Core/Remote import/save receipts with prevalidation and restore
 receipt, replay, and stale-base paths.
-No release candidate was built or promoted.
+Exact-byte verification of a release candidate is a later phase; no
+release-candidate promotion is recorded here.
