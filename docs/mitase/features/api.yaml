@@ -147,6 +147,15 @@ features:
                 criterion: REQ-API-018#criterion.current-form-authorization
               - kind: satisfies
                 criterion: REQ-API-018#criterion.legacy-saved-sql-preservation
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.typed-result-schema
+          - id: result-schema-mapping
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: sql_result_column_type }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.typed-result-schema
           - id: count-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs

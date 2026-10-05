@@ -6781,7 +6781,7 @@ impl UgoiteService {
             .limit
             .checked_add(1)
             .ok_or_else(|| anyhow!("SQL query page limit overflows"))?;
-        let (columns, mut rows, has_order) =
+        let (columns, result_schema, mut rows, has_order) =
             index::execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
                 &self.operator,
                 &self.workspace_path(space_id),
@@ -6829,6 +6829,7 @@ impl UgoiteService {
             rows,
             has_more,
             next,
+            result_schema: Some(result_schema),
         })
     }
 
@@ -7026,7 +7027,7 @@ impl UgoiteService {
             .limit
             .checked_add(1)
             .ok_or_else(|| anyhow!("SQL query page limit overflows"))?;
-        let (columns, mut rows, has_order) =
+        let (columns, result_schema, mut rows, has_order) =
             index::execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
                 &self.operator,
                 &self.workspace_path(space_id),
@@ -7074,6 +7075,7 @@ impl UgoiteService {
             rows,
             has_more,
             next,
+            result_schema: Some(result_schema),
         })
     }
 

@@ -122,6 +122,52 @@ pub struct SqlQueryPage {
     pub has_more: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next: Option<String>,
+    /// Server-owned portable column types in `columns` order. `None` only
+    /// when read from a response written before this extension; new pages
+    /// always carry the descriptor, including null and empty results whose
+    /// types come from the planned output schema rather than row values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_schema: Option<Vec<SqlResultColumn>>,
+}
+
+/// One ordered output column with its server-mapped portable logical type.
+///
+/// The vocabulary intentionally matches the Composition
+/// `expected_result` logical types so the Browser can store the descriptor
+/// unchanged; the Browser performs no type inference of its own.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlResultColumn {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub column_type: SqlResultColumnType,
+}
+
+/// Portable logical type of a SQL output column.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SqlResultColumnType {
+    String,
+    Boolean,
+    Integer,
+    Float,
+    Date,
+    Timestamp,
+    Json,
+}
+
+impl SqlResultColumnType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::Float => "float",
+            Self::Date => "date",
+            Self::Timestamp => "timestamp",
+            Self::Json => "json",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -319,5 +365,54 @@ mod tests {
             continuation.authorize("different"),
             Err(SqlQueryError::AuthorizationChanged)
         ));
+    }
+
+    #[test]
+    fn result_schema_is_backward_compatible_and_round_trips() {
+        // Responses written before the extension omit the descriptor.
+        let legacy: SqlQueryPage =
+            serde_json::from_str(r#"{"columns":["a"],"rows":[],"has_more":false}"#)
+                .expect("legacy page");
+        assert_eq!(legacy.result_schema, None);
+
+        let typed = SqlQueryPage {
+            columns: vec!["total".to_string(), "label".to_string()],
+            rows: vec![],
+            has_more: false,
+            next: None,
+            result_schema: Some(vec![
+                SqlResultColumn {
+                    name: "total".to_string(),
+                    column_type: SqlResultColumnType::Float,
+                },
+                SqlResultColumn {
+                    name: "label".to_string(),
+                    column_type: SqlResultColumnType::String,
+                },
+            ]),
+        };
+        let encoded = serde_json::to_value(&typed).expect("encode");
+        assert_eq!(encoded["result_schema"][0]["type"], "float");
+        assert_eq!(
+            serde_json::from_value::<SqlQueryPage>(encoded).expect("decode"),
+            typed
+        );
+
+        // The portable vocabulary keeps stable wire spellings.
+        for (column_type, spelling) in [
+            (SqlResultColumnType::String, "string"),
+            (SqlResultColumnType::Boolean, "boolean"),
+            (SqlResultColumnType::Integer, "integer"),
+            (SqlResultColumnType::Float, "float"),
+            (SqlResultColumnType::Date, "date"),
+            (SqlResultColumnType::Timestamp, "timestamp"),
+            (SqlResultColumnType::Json, "json"),
+        ] {
+            assert_eq!(column_type.as_str(), spelling);
+            assert_eq!(
+                serde_json::to_string(&column_type).expect("encode type"),
+                format!("\"{spelling}\"")
+            );
+        }
     }
 }

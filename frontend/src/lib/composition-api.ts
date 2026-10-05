@@ -1,6 +1,6 @@
 import type { EntryPage, EntryPageRequest } from "./entry-query";
 import type { EntryQueryCompositionDocument } from "./entry-query-composition";
-import type { SqlQueryPage, SqlQueryRequest } from "./types";
+import type { SqlQueryPage, SqlQueryRequest, SqlResultColumn } from "./types";
 import {
   canonicalizeCompositionDocument,
   type CompositionDocumentCanonicalization,
@@ -72,7 +72,7 @@ export interface SavedSqlCompositionDocument {
       kind: "saved_sql";
       entry_id: string;
       revision_id: string;
-      expected_result: Array<{ name: string; type: "json" }>;
+      expected_result: Array<{ name: string; type: CompositionResultType }>;
       variables: Record<string, { parameter: string }>;
     }>;
     components: Array<{
@@ -186,6 +186,7 @@ export const buildSavedSqlCompositionDocument = (
   name: string,
   columns: readonly string[],
   parameterValues: Record<string, unknown>,
+  resultSchema?: readonly SqlResultColumn[],
 ): SavedSqlCompositionDocument => {
   const parameters = entry.variables.map((variable) => {
     if (
@@ -203,6 +204,12 @@ export const buildSavedSqlCompositionDocument = (
   });
   const sourceId = "sql_results";
   const componentId = "results_table";
+  // The descriptor stores the server-owned column types unchanged; columns
+  // absent from the schema keep the previous json fallback. The Browser
+  // never infers types from row values.
+  const schemaByName = new Map(
+    (resultSchema ?? []).map((column) => [column.name, column.type]),
+  );
   return {
     format: "ugoite.composition",
     format_version: 1,
@@ -218,7 +225,7 @@ export const buildSavedSqlCompositionDocument = (
         revision_id: entry.revision_id,
         expected_result: columns.map((column) => ({
           name: column,
-          type: "json",
+          type: schemaByName.get(column) ?? "json",
         })),
         variables: Object.fromEntries(
           entry.variables.map((variable) => [

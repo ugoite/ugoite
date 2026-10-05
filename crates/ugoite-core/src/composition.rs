@@ -1569,6 +1569,7 @@ mod tests {
             rows,
             has_more,
             next: next.map(str::to_owned),
+            result_schema: None,
         }
     }
 
