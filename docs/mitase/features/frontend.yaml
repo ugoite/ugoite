@@ -420,6 +420,8 @@ features:
                 criterion: REQ-FE-068#criterion.shared-result-visual-language
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.controller-owned-paging
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
 
   - id: FEAT-FE-009
     title: Auth-aware global navigation

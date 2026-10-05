@@ -2514,6 +2514,42 @@ requirements:
                 criterion: REQ-FE-068#criterion.local-horizontal-overflow
                 covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "keeps the table structure inside a horizontal scroll container" } }
+          - id: result-surface-narrow-composition-one-column
+            adapter: typescript
+            path: e2e/result-surface-narrow.test.ts
+            selector: { kind: test, name: "REQ-FE-068: Composition 1-column fits 320px and 390px without page overflow" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: Composition 1-column fits 320px and 390px without page overflow" } }
+          - id: result-surface-narrow-composition-two-column
+            adapter: typescript
+            path: e2e/result-surface-narrow.test.ts
+            selector: { kind: test, name: "REQ-FE-068: Composition 2-column confines overflow to the result viewport" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: Composition 2-column confines overflow to the result viewport" } }
+          - id: result-surface-narrow-sql-one-column
+            adapter: typescript
+            path: e2e/result-surface-narrow.test.ts
+            selector: { kind: test, name: "REQ-FE-068: Saved SQL 1-column keeps Count and Save-as-tool operable at narrow widths" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: Saved SQL 1-column keeps Count and Save-as-tool operable at narrow widths" } }
+          - id: result-surface-narrow-sql-many-column
+            adapter: typescript
+            path: e2e/result-surface-narrow.test.ts
+            selector: { kind: test, name: "REQ-FE-068: Saved SQL many-column localizes overflow in the result viewport" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: Saved SQL many-column localizes overflow in the result viewport" } }
           # Source-native Composition table delegation is implemented (RS5):
           # entry_query sources render through Entry presentation,
           # saved_sql sources through SqlResultTable, metrics through the
