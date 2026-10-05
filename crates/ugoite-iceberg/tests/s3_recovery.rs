@@ -1016,7 +1016,7 @@ async fn open_verified_service(
 }
 
 fn s3_test_config() -> Result<Option<(String, String)>> {
-    let required = env::var_os("UGOITE_S3_TEST_REQUIRED").is_some();
+    let required = s3_test_required()?;
     let endpoint = env::var("UGOITE_S3_TEST_ENDPOINT").ok();
     let bucket = env::var("UGOITE_S3_TEST_BUCKET").ok();
     match (endpoint, bucket) {
@@ -1032,5 +1032,47 @@ fn s3_test_config() -> Result<Option<(String, String)>> {
         }
         (Some(_), Some(_)) => bail!("S3 test endpoint and bucket must not be empty"),
         _ => bail!("S3 test endpoint and bucket must be configured together"),
+    }
+}
+
+/// Explicit opt-in parser for `UGOITE_S3_TEST_REQUIRED` (issue #3262).
+/// Unset or empty means the S3 backend stays optional; `1`/`true`/`yes`/`on`
+/// require it, `0`/`false`/`no`/`off` skip it, and anything else fails with
+/// a diagnostic instead of silently requiring (or skipping) the backend.
+fn parse_s3_test_required(raw: Option<&str>) -> Result<bool> {
+    match raw
+        .map(|value| value.trim().to_ascii_lowercase())
+        .as_deref()
+    {
+        None | Some("") => Ok(false),
+        Some("1" | "true" | "yes" | "on") => Ok(true),
+        Some("0" | "false" | "no" | "off") => Ok(false),
+        Some(other) => bail!(
+            "UGOITE_S3_TEST_REQUIRED has an unsupported value {other:?}; expected one of \
+             1/true/yes/on to require S3 or 0/false/no/off (or unset) to skip it"
+        ),
+    }
+}
+
+fn s3_test_required() -> Result<bool> {
+    parse_s3_test_required(env::var("UGOITE_S3_TEST_REQUIRED").ok().as_deref())
+}
+
+#[test]
+fn s3_test_required_flag_parses_explicitly() {
+    assert!(!parse_s3_test_required(None).unwrap());
+    assert!(!parse_s3_test_required(Some("")).unwrap());
+    for value in ["0", "false", "FALSE", "no", "off", " 0 "] {
+        assert!(!parse_s3_test_required(Some(value)).unwrap(), "{value}");
+    }
+    for value in ["1", "true", "TRUE", "yes", "on", " 1 "] {
+        assert!(parse_s3_test_required(Some(value)).unwrap(), "{value}");
+    }
+    for value in ["2", "required", "yes please"] {
+        let error = parse_s3_test_required(Some(value)).unwrap_err();
+        assert!(
+            error.to_string().contains("UGOITE_S3_TEST_REQUIRED"),
+            "{error:?}"
+        );
     }
 }
