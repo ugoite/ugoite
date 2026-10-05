@@ -8,6 +8,14 @@ use uuid::Uuid;
 
 /// Optional end-to-end proof through the same application service used by the
 /// server. Set UGOITE_S3_TEST_REQUIRED=1 to make missing configuration fail.
+///
+/// Isolated-prefix contract (issue #3266): the proof writes a uniquely
+/// prefixed Space, Entry, Form, Asset, and Change history under
+/// `ugoite/l12/recovery/<uuid>` and best-effort removes exactly that prefix
+/// after success and failure alike, without masking the proof result.
+/// Point the suite at a dedicated test bucket: cleanup deletes only this
+/// run's prefix, so interrupted runs may still leave orphaned unique
+/// prefixes behind, and nothing outside the prefix is ever touched.
 #[tokio::test]
 async fn s3_backed_space_survives_service_reopen_and_revert() -> Result<()> {
     let Some((endpoint, bucket)) = s3_test_config()? else {
@@ -15,10 +23,22 @@ async fn s3_backed_space_survives_service_reopen_and_revert() -> Result<()> {
     };
     let prefix = format!("ugoite/l12/recovery/{}", Uuid::now_v7());
     let root_uri = format!("s3://{bucket}/{prefix}");
-    let owner = Uuid::now_v7();
     let space_slug = format!("recovery-{}", Uuid::now_v7().simple());
 
-    let service = open_verified_service(&root_uri, &endpoint, &space_slug).await?;
+    let outcome = run_recovery_proof(&root_uri, &endpoint, &space_slug).await;
+    if let Err(error) = cleanup_recovery_prefix(&root_uri, &endpoint).await {
+        eprintln!("warning: S3 recovery fixture cleanup failed for {prefix}: {error:#}");
+    }
+    outcome
+}
+
+/// Recovery proof body shared by the outer test: build the fixture Space,
+/// mutate it, reopen through a fresh service, and verify the same Space and
+/// append-only Change history recover from the remote store.
+async fn run_recovery_proof(root_uri: &str, endpoint: &str, space_slug: &str) -> Result<()> {
+    let owner = Uuid::now_v7();
+
+    let service = open_verified_service(root_uri, endpoint, space_slug).await?;
     let space_id = service
         .create_space_for_principal(&space_slug, owner, "S3 recovery test")
         .await?
@@ -121,6 +141,66 @@ async fn s3_backed_space_survives_service_reopen_and_revert() -> Result<()> {
                 .and_then(Value::as_str)
                 == Some(update_change_id.as_str())
     }));
+    Ok(())
+}
+
+/// Best-effort removal of one recovery fixture prefix (issue #3266). The
+/// operator is rooted at the test's own `root_uri`, so only objects under
+/// this run's unique prefix can be listed and deleted. Failures warn via
+/// the caller and never mask the proof result.
+async fn cleanup_recovery_prefix(root_uri: &str, endpoint: &str) -> Result<()> {
+    let operator = ugoite_storage::operator_from_uri_with_endpoint(root_uri, Some(endpoint))?;
+    remove_prefix_tree(&operator, "").await
+}
+
+/// Recursively delete every object under `dir` using only the confirmed
+/// list/delete operator surface. S3 prefixes are implicit, so removing all
+/// enclosed objects removes the fixture; empty prefixes need no extra step.
+async fn remove_prefix_tree(operator: &opendal::Operator, dir: &str) -> Result<()> {
+    for entry in operator.list(dir).await? {
+        let path = entry.path().to_owned();
+        // `list` returns the queried directory itself alongside its
+        // children; descending into it would recurse forever.
+        if path.trim_matches('/') == dir.trim_matches('/') {
+            continue;
+        }
+        if entry.metadata().is_dir() {
+            Box::pin(remove_prefix_tree(operator, &path)).await?;
+        } else {
+            operator.delete(&path).await?;
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn recovery_prefix_cleanup_removes_nested_fixture_objects() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let operator = opendal::Operator::new(
+        opendal::services::Fs::default().root(root.path().to_string_lossy().as_ref()),
+    )?;
+    operator
+        .write("spaces/space-1/meta.json", b"{}".to_vec())
+        .await?;
+    operator
+        .write("spaces/space-1/changes/0001.json", b"{}".to_vec())
+        .await?;
+    operator
+        .write("_ugoite/assets/prepared/asset-1", b"bytes".to_vec())
+        .await?;
+    remove_prefix_tree(&operator, "").await?;
+    // `list("")` always reports the root itself, so assert the fixture
+    // objects themselves are gone instead of asserting an empty listing.
+    for path in [
+        "spaces/space-1/meta.json",
+        "spaces/space-1/changes/0001.json",
+        "_ugoite/assets/prepared/asset-1",
+    ] {
+        assert!(
+            !operator.exists(path).await?,
+            "fixture object {path} was not removed"
+        );
+    }
     Ok(())
 }
 
