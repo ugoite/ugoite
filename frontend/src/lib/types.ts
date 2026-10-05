@@ -384,7 +384,29 @@ export interface SqlQueryPage {
   rows: unknown[];
   has_more: boolean;
   next?: string;
+  /**
+   * Server-owned portable column types in `columns` order. Absent only on
+   * responses written before the extension; the Browser never infers types
+   * from row values.
+   */
+  result_schema?: SqlResultColumn[];
 }
+
+/** One SQL output column with its server-mapped portable logical type. */
+export interface SqlResultColumn {
+  name: string;
+  type: SqlResultColumnType;
+}
+
+/** Portable logical type of a SQL output column (server-mapped). */
+export type SqlResultColumnType =
+  | "string"
+  | "boolean"
+  | "integer"
+  | "float"
+  | "date"
+  | "timestamp"
+  | "json";
 
 export interface SqlQueryCountRequest {
   sql: string;

@@ -195,6 +195,10 @@ requirements:
         kind: behavior
         statement: A saved_sql source declares ordered expected_result columns with unique non-empty names and portable logical types; json columns may be rendered in tables but are not scalar metric values.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: server-typed-result-descriptor
+        kind: behavior
+        statement: Browser save-as-tool stores the sql.query result_schema column types unchanged in the saved_sql expected_result; columns absent from the descriptor keep the json fallback, and the Browser never infers types from row values.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: optional-display-labels
         kind: behavior
         statement: Composition parameters and Metric/Table components may carry optional display labels; present labels round-trip through canonical YAML and the semantic fingerprint, do not replace stable IDs or change source and query binding semantics, and absent labels remain omitted from canonical output.

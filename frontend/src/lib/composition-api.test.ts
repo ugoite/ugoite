@@ -221,6 +221,37 @@ describe("compositionApi", () => {
     }]);
   });
 
+  it("stores the server-owned column types unchanged and never infers from rows", () => {
+    const entry = {
+      id: "sql-1",
+      name: "Monthly expenses",
+      kind: "user-query" as const,
+      sql: "SELECT total, label FROM monthly",
+      variables: [],
+      created_at: "2026-10-01T00:00:00Z",
+      updated_at: "2026-10-02T00:00:00Z",
+      revision_id: "sql-revision-3",
+    };
+
+    const document = buildSavedSqlCompositionDocument(
+      entry,
+      "Monthly expenses",
+      ["total", "label", "note"],
+      {},
+      [
+        { name: "total", type: "float" },
+        { name: "label", type: "string" },
+      ],
+    );
+
+    expect(document.spec.sources[0].expected_result).toEqual([
+      { name: "total", type: "float" },
+      { name: "label", type: "string" },
+      // Columns absent from the server descriptor keep the json fallback.
+      { name: "note", type: "json" },
+    ]);
+  });
+
   it("does not offer save-as for search history or unsupported parameter types", () => {
     const base = {
       id: "sql-1",

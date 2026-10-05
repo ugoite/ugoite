@@ -18,6 +18,7 @@ import {
   compositionApi,
 } from "~/lib/composition-api";
 import { compositionSaveErrorMessage } from "~/lib/composition-save-error";
+import type { SqlResultColumn } from "~/lib/types";
 import {
   beginCompositionSaveRouteVisit,
   clearPendingCompositionSaveAttempt,
@@ -97,6 +98,7 @@ export default function SpaceSqlRunRoute() {
     routePath: string;
     entry: SqlEntry;
     columns: string[];
+    resultSchema?: SqlResultColumn[];
     parameters: Record<string, unknown>;
   } | undefined;
   let pendingSave: PendingCompositionSaveAttempt | undefined;
@@ -325,6 +327,9 @@ export default function SpaceSqlRunRoute() {
       routePath: location.pathname,
       entry: current,
       columns: [...result.columns],
+      resultSchema: result.result_schema
+        ? [...result.result_schema]
+        : undefined,
       parameters: { ...(state().parameters ?? {}) },
     };
     pendingSave = undefined;
@@ -473,6 +478,7 @@ export default function SpaceSqlRunRoute() {
         name,
         seed.columns,
         seed.parameters,
+        seed.resultSchema,
       );
       const canonical = await compositionApi.canonicalizeDocument(document);
       if (

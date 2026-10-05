@@ -516,6 +516,10 @@ requirements:
         kind: security
         statement: A SQL page that exceeds its limit must have an explicit ORDER BY; unordered results are rejected instead of silently discarding rows or issuing an unsafe continuation.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: typed-result-schema
+        kind: behavior
+        statement: Every SQL query page carries a server-owned portable column descriptor in column order alongside the unchanged columns and rows; null and empty results keep their planned output types, and the Browser stores the descriptor unchanged without inferring types from row values.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
     bindings:
       - id: cli-verification
         role: verification
@@ -557,6 +561,47 @@ requirements:
                 criterion: REQ-API-015#criterion.canonical-sql-count
                 covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_cli_sql_query_and_count_use_stateless_local_contract } }
+      - id: result-schema-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the server-owned portable result descriptor on SQL pages, the Arrow mapping pins, and the Browser storing the descriptor unchanged through exact Rust and frontend tests.
+        targets:
+          - id: typed-page-and-empty-page
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: sql_query_page_carries_server_owned_result_schema }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.typed-result-schema
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.query-sql]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: sql_query_page_carries_server_owned_result_schema } }
+          - id: arrow-mapping-pin
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: result_schema_tests::arrow_output_types_map_to_portable_result_types }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.typed-result-schema
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.result-schema-mapping]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: query_context::result_schema_tests::arrow_output_types_map_to_portable_result_types } }
+          - id: arrow-fallback-pin
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: result_schema_tests::non_scalar_arrow_outputs_stay_json_without_inference }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.typed-result-schema
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.result-schema-mapping]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: query_context::result_schema_tests::non_scalar_arrow_outputs_stay_json_without_inference } }
+          - id: descriptor-passthrough
+            adapter: typescript
+            path: frontend/src/lib/composition-api.test.ts
+            selector: { kind: test, name: stores the server-owned column types unchanged and never infers from rows }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.server-typed-result-descriptor
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: stores the server-owned column types unchanged and never infers from rows } }
   - id: REQ-API-016
     title: Bounded stateless SQL export
     description: The CLI can stream a complete, explicitly bounded multi-page SQL result as NDJSON through the existing stateless SQL query operation in local and remote mode.

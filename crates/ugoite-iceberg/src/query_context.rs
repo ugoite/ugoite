@@ -23,7 +23,8 @@ use std::sync::Arc;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
 use ugoite_core::sql_query::{
-    MAX_SQL_COLUMN_METADATA_BYTES, MAX_SQL_COLUMN_NAME_BYTES, MAX_SQL_OUTPUT_COLUMNS,
+    SqlResultColumn, SqlResultColumnType, MAX_SQL_COLUMN_METADATA_BYTES, MAX_SQL_COLUMN_NAME_BYTES,
+    MAX_SQL_OUTPUT_COLUMNS,
 };
 use ugoite_domain::form::sql_column_name;
 
@@ -1202,7 +1203,7 @@ impl AuthorizedQueryContext {
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
         offset: usize,
         limit: usize,
-    ) -> Result<(Vec<String>, Vec<arrow_array::RecordBatch>, bool)> {
+    ) -> Result<StatelessSqlPage> {
         let _permit = self
             .permits
             .clone()
@@ -1306,7 +1307,7 @@ impl AuthorizedQueryContext {
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
         offset: usize,
         limit: usize,
-    ) -> Result<(Vec<String>, Vec<arrow_array::RecordBatch>, bool)> {
+    ) -> Result<StatelessSqlPage> {
         if limit == 0 || limit > self.limits.max_rows {
             return Err(AuthorizedQueryError::resource_limit(anyhow!(
                 "SQL query page exceeds its configured row limit"
@@ -1314,7 +1315,7 @@ impl AuthorizedQueryContext {
             .into());
         }
         let plan = self.prepared_plan(sql, parameters).await?;
-        let columns = sql_output_columns(&plan)?;
+        let (columns, result_schema) = sql_output_shape(&plan)?;
         let has_order = stateless_query_has_top_level_order(sql)?;
         let validation_plan = plan.clone();
         let frame = self
@@ -1327,7 +1328,12 @@ impl AuthorizedQueryContext {
             .map_err(AuthorizedQueryError::resource_limit)?;
         let batches = self.collect_frame(page).await?;
         self.validate_revision_invariants(&validation_plan).await?;
-        Ok((columns, batches, has_order))
+        Ok(StatelessSqlPage {
+            columns,
+            result_schema,
+            batches,
+            has_order,
+        })
     }
 
     async fn execute_stateless_count_with_permit(
@@ -1495,7 +1501,48 @@ fn collect_scanned_provider_addresses(plan: &LogicalPlan, providers: &mut BTreeS
     }
 }
 
-fn sql_output_columns(plan: &LogicalPlan) -> Result<Vec<String>> {
+/// One bounded stateless SQL page with its server-owned output shape.
+///
+/// `result_schema` mirrors `columns` positionally from the planned output
+/// schema, so null and empty results keep their types without the Browser
+/// inferring types from row values.
+pub struct StatelessSqlPage {
+    pub columns: Vec<String>,
+    pub result_schema: Vec<SqlResultColumn>,
+    pub batches: Vec<arrow_array::RecordBatch>,
+    pub has_order: bool,
+}
+
+/// Map one Arrow output type to its portable logical column type.
+///
+/// Only exact portable equivalents map to a scalar type; every other
+/// output (nested, binary, temporal-without-date-semantics, decimal, null,
+/// or dictionary-encoded values) stays `json` so the transported rows keep
+/// their exact values and later metric authoring rejects ambiguity instead
+/// of guessing.
+pub(crate) fn sql_result_column_type(
+    data_type: &datafusion::arrow::datatypes::DataType,
+) -> SqlResultColumnType {
+    use datafusion::arrow::datatypes::DataType as Arrow;
+    match data_type {
+        Arrow::Boolean => SqlResultColumnType::Boolean,
+        Arrow::Int8
+        | Arrow::Int16
+        | Arrow::Int32
+        | Arrow::Int64
+        | Arrow::UInt8
+        | Arrow::UInt16
+        | Arrow::UInt32
+        | Arrow::UInt64 => SqlResultColumnType::Integer,
+        Arrow::Float16 | Arrow::Float32 | Arrow::Float64 => SqlResultColumnType::Float,
+        Arrow::Utf8 | Arrow::LargeUtf8 | Arrow::Utf8View => SqlResultColumnType::String,
+        Arrow::Date32 | Arrow::Date64 => SqlResultColumnType::Date,
+        Arrow::Timestamp(_, _) => SqlResultColumnType::Timestamp,
+        _ => SqlResultColumnType::Json,
+    }
+}
+
+fn sql_output_shape(plan: &LogicalPlan) -> Result<(Vec<String>, Vec<SqlResultColumn>)> {
     let fields = plan.schema().fields();
     if fields.len() > MAX_SQL_OUTPUT_COLUMNS {
         return Err(AuthorizedQueryError::resource_limit(anyhow!(
@@ -1504,31 +1551,34 @@ fn sql_output_columns(plan: &LogicalPlan) -> Result<Vec<String>> {
         .into());
     }
     let mut metadata_bytes = 0usize;
-    let columns = fields
-        .iter()
-        .map(|field| {
-            let name = field.name().to_string();
-            if name.len() > MAX_SQL_COLUMN_NAME_BYTES {
-                return Err(AuthorizedQueryError::resource_limit(anyhow!(
-                    "SQL output column name exceeds its byte limit"
-                ))
-                .into());
-            }
-            metadata_bytes = metadata_bytes.checked_add(name.len()).ok_or_else(|| {
-                AuthorizedQueryError::resource_limit(anyhow!(
-                    "SQL output column metadata exceeds its byte limit"
-                ))
-            })?;
-            if metadata_bytes > MAX_SQL_COLUMN_METADATA_BYTES {
-                return Err(AuthorizedQueryError::resource_limit(anyhow!(
-                    "SQL output column metadata exceeds its byte limit"
-                ))
-                .into());
-            }
-            Ok(name)
-        })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(columns)
+    let mut columns = Vec::with_capacity(fields.len());
+    let mut result_schema = Vec::with_capacity(fields.len());
+    for field in fields {
+        let name = field.name().to_string();
+        if name.len() > MAX_SQL_COLUMN_NAME_BYTES {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "SQL output column name exceeds its byte limit"
+            ))
+            .into());
+        }
+        metadata_bytes = metadata_bytes.checked_add(name.len()).ok_or_else(|| {
+            AuthorizedQueryError::resource_limit(anyhow!(
+                "SQL output column metadata exceeds its byte limit"
+            ))
+        })?;
+        if metadata_bytes > MAX_SQL_COLUMN_METADATA_BYTES {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "SQL output column metadata exceeds its byte limit"
+            ))
+            .into());
+        }
+        result_schema.push(SqlResultColumn {
+            name: name.clone(),
+            column_type: sql_result_column_type(field.data_type()),
+        });
+        columns.push(name);
+    }
+    Ok((columns, result_schema))
 }
 
 fn stateless_query_has_top_level_order(sql: &str) -> Result<bool> {
@@ -2006,6 +2056,75 @@ mod cancellation_tests {
             !query_active.load(Ordering::SeqCst),
             "query active guard leaked"
         );
+    }
+}
+
+#[cfg(test)]
+mod result_schema_tests {
+    use super::sql_result_column_type;
+    use datafusion::arrow::datatypes::{DataType, Field, TimeUnit};
+    use std::sync::Arc;
+    use ugoite_core::sql_query::SqlResultColumnType;
+
+    #[test]
+    fn arrow_output_types_map_to_portable_result_types() {
+        let cases = [
+            (DataType::Boolean, SqlResultColumnType::Boolean),
+            (DataType::Int8, SqlResultColumnType::Integer),
+            (DataType::Int16, SqlResultColumnType::Integer),
+            (DataType::Int32, SqlResultColumnType::Integer),
+            (DataType::Int64, SqlResultColumnType::Integer),
+            (DataType::UInt8, SqlResultColumnType::Integer),
+            (DataType::UInt16, SqlResultColumnType::Integer),
+            (DataType::UInt32, SqlResultColumnType::Integer),
+            (DataType::UInt64, SqlResultColumnType::Integer),
+            (DataType::Float16, SqlResultColumnType::Float),
+            (DataType::Float32, SqlResultColumnType::Float),
+            (DataType::Float64, SqlResultColumnType::Float),
+            (DataType::Utf8, SqlResultColumnType::String),
+            (DataType::LargeUtf8, SqlResultColumnType::String),
+            (DataType::Utf8View, SqlResultColumnType::String),
+            (DataType::Date32, SqlResultColumnType::Date),
+            (DataType::Date64, SqlResultColumnType::Date),
+            (
+                DataType::Timestamp(TimeUnit::Microsecond, None),
+                SqlResultColumnType::Timestamp,
+            ),
+            (
+                DataType::Timestamp(TimeUnit::Nanosecond, Some(Arc::from("+00:00"))),
+                SqlResultColumnType::Timestamp,
+            ),
+        ];
+        for (arrow, portable) in cases {
+            assert_eq!(sql_result_column_type(&arrow), portable, "{arrow:?}");
+        }
+    }
+
+    #[test]
+    fn non_scalar_arrow_outputs_stay_json_without_inference() {
+        // Nested, binary, time-of-day, interval, decimal, null, and
+        // dictionary outputs keep their exact row values as json instead of
+        // guessing a scalar portable type from the physical representation.
+        let cases = [
+            DataType::Null,
+            DataType::Binary,
+            DataType::LargeBinary,
+            DataType::Time32(datafusion::arrow::datatypes::TimeUnit::Second),
+            DataType::Time64(datafusion::arrow::datatypes::TimeUnit::Microsecond),
+            DataType::Duration(datafusion::arrow::datatypes::TimeUnit::Millisecond),
+            DataType::Interval(datafusion::arrow::datatypes::IntervalUnit::MonthDayNano),
+            DataType::Decimal128(10, 2),
+            DataType::List(Arc::new(Field::new("item", DataType::Int32, true))),
+            DataType::Struct(vec![Field::new("a", DataType::Int32, true)].into()),
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+        ];
+        for arrow in cases {
+            assert_eq!(
+                sql_result_column_type(&arrow),
+                SqlResultColumnType::Json,
+                "{arrow:?}"
+            );
+        }
     }
 }
 

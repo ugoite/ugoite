@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use ugoite_core::sql_query::SqlResultColumn;
 use ugoite_domain::form::{
     sql_column_name, sql_relation_name, FieldType, FormDefinition, FormField,
 };
@@ -1944,18 +1945,18 @@ pub(crate) async fn query_form_projected_page_authorized(
         "SELECT {projection} FROM {relation} ORDER BY {} ASC",
         quote_identifier("_ugoite_id")
     );
-    let (_, batches, has_order) = context
+    let page = context
         .execute_stateless_page(&sql, HashMap::new(), offset, page_limit)
         .await
         .map_err(map_sql_error)?;
-    if !has_order {
+    if !page.has_order {
         return Err(anyhow!(
             "projected Entry page query has no deterministic order"
         ));
     }
 
     let mut rows = Vec::new();
-    for batch in &batches {
+    for batch in &page.batches {
         for row in 0..batch.num_rows() {
             let mut fields = BTreeMap::new();
             for field in &selected_fields {
@@ -2821,7 +2822,7 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     limit: usize,
     forms: Vec<FormDefinition>,
     checkpoint: SpaceCheckpoint,
-) -> Result<(Vec<String>, Vec<Value>, bool)> {
+) -> Result<(Vec<String>, Vec<SqlResultColumn>, Vec<Value>, bool)> {
     let context = datafusion_sql_context_with_form_definitions(
         op,
         ws_path,
@@ -2836,14 +2837,18 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     )
     .await
     .map_err(map_sql_error)?;
-    let (columns, batches, has_order) = context
+    let page = context
         .execute_stateless_page(sql_query, parameters, offset, limit)
         .await
         .map_err(map_sql_error)?;
     Ok((
-        columns,
-        record_batches_to_values_bounded(&batches, ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES)?,
-        has_order,
+        page.columns,
+        page.result_schema,
+        record_batches_to_values_bounded(
+            &page.batches,
+            ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES,
+        )?,
+        page.has_order,
     ))
 }
 

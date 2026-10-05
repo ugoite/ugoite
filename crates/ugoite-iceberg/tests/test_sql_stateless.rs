@@ -425,6 +425,61 @@ fn query_request(sql: String, limit: usize) -> SqlQueryRequest {
 }
 
 #[tokio::test]
+async fn sql_query_page_carries_server_owned_result_schema() -> Result<()> {
+    let space = setup_sql_space("memory://sql-stateless-result-schema", "sqlresultschema").await?;
+    let page = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_request(
+                format!(
+                    "SELECT \"{}\" AS status, \"{}\" AS priority FROM \"{}\" ORDER BY \"_ugoite_id\"",
+                    space.status_column, space.priority_column, space.form_name
+                ),
+                10,
+            ),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("typed page failed: {error:#}"));
+    assert_eq!(page.columns, vec!["status", "priority"]);
+    assert_eq!(page.rows.len(), 5);
+    let schema = page.result_schema.expect("page carries a result schema");
+    assert_eq!(
+        schema
+            .iter()
+            .map(|column| (column.name.as_str(), column.column_type.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("status", "string"), ("priority", "integer")]
+    );
+
+    // An empty result keeps the planned output types instead of losing them.
+    let empty = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_request(
+                format!(
+                    "SELECT \"{}\" AS status, \"{}\" AS priority FROM \"{}\" WHERE 1 = 0 ORDER BY \"_ugoite_id\"",
+                    space.status_column, space.priority_column, space.form_name
+                ),
+                10,
+            ),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("empty typed page failed: {error:#}"));
+    assert!(empty.rows.is_empty());
+    let schema = empty.result_schema.expect("empty page keeps its schema");
+    assert_eq!(
+        schema
+            .iter()
+            .map(|column| (column.name.as_str(), column.column_type.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("status", "string"), ("priority", "integer")]
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn listing_empty_saved_sql_does_not_create_its_form() -> Result<()> {
     let service = UgoiteService::new("memory://sql-read-only-list")?;
     service.create_space("sqlreadonlylist").await?;

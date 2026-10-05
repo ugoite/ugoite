@@ -1525,7 +1525,7 @@ impl IcebergWorkspace {
         // to the query planner.
         let page_window_end = offset.checked_add(page_limit);
         if page_window_end.is_some_and(|end| i64::try_from(end).is_ok()) {
-            let (_, batches, has_order) = context
+            let page = context
                 .execute_stateless_page(
                     "SELECT * FROM revisions ORDER BY committed_at ASC, revision_id ASC",
                     HashMap::new(),
@@ -1533,10 +1533,10 @@ impl IcebergWorkspace {
                     page_limit,
                 )
                 .await?;
-            if !has_order {
+            if !page.has_order {
                 bail!("revision history page query has no deterministic order");
             }
-            for batch in &batches {
+            for batch in &page.batches {
                 revisions.extend(revisions_from_batch(batch, &form, &schema)?);
             }
         }

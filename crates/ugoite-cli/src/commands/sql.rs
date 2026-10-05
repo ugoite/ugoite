@@ -402,6 +402,7 @@ mod export_sink_tests {
             rows: vec![serde_json::json!({"row": 1})],
             has_more: true,
             next: Some(next.to_string()),
+            result_schema: None,
         };
         let mut validator = ExportPageValidator::default();
         validator.accept(&page(&["one"], "token-1"), 1).unwrap();
@@ -426,6 +427,7 @@ mod export_sink_tests {
             rows: vec![serde_json::json!({"row": 1})],
             has_more: true,
             next: None,
+            result_schema: None,
         };
         let error = validator
             .accept(&page, 1)
