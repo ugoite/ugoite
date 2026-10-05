@@ -419,12 +419,12 @@ Deno.test(
     }
     assertEquals(plan.recovery_and_authorization, {
       status: "planned",
-      selector_binding_status: "pending_public_storage_and_resolver_contracts",
+      selector_binding_status: "bound_storage_resolver_and_b6_e2e_selectors",
       save_enablement: {
         scope: "cross_surface_recovery_and_receipt_acceptance",
-        enabled: false,
+        enabled: true,
         status:
-          "blocked_until_generic_entry_write_guard_and_receipt_reconciliation",
+          "evidenced_across_storage_api_cli_browser_pending_release_promotion",
         prerequisites: [
           "Generic Entry create, update, bulk, import, and restore paths cannot bypass Composition validation.",
           "Generic restore of the reserved Composition Form is denied while Composition-scoped restore validates.",

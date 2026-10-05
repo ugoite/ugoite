@@ -117,11 +117,14 @@ compares Core and Remote exact-revision inspect, a parameterized `entry_query`,
 and exact raw export against the same filesystem-backed Space; it verifies
 matching JSON/result meaning, byte-identical exported specs, and unchanged
 Composition history. This is scoped read-path parity evidence: it does not
-cover every CLI command, saved-SQL query execution, unknown-version or broken-
-reference recovery, or a release candidate. Its fixture contains one
-Composition revision, so it does not test whether an older explicit selector
-wins over a newer revision; issue #3681 tracks that case. Full cross-surface
-list/get/history acceptance and complete CLI parity remain planned. History
+cover every CLI command, saved-SQL query execution through the CLI, or a
+release candidate. The journey publishes a distinct later revision and
+exercises the older exact revision throughout, so explicit older-revision
+selection is covered (issue #3681 closed by that journey). Unknown-version
+and broken-reference raw recovery are covered by their own dedicated
+Core/Remote journeys with byte-identity and stable-diagnostic parity. Full
+cross-surface list/get/history acceptance and complete CLI parity remain
+planned. History
 and restore preserve append-only revisions, and save success must wait for the
 Entry receipt. Raw
 inspect, export, and history must remain available for unknown versions,
