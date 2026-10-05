@@ -10486,6 +10486,81 @@ mod tests {
         Ok((service, space_id, principal))
     }
 
+    /// Append one manual multi-Entry Change through the workspace commit path,
+    /// mirroring how a single Change can touch several Entries of one Form.
+    async fn append_manual_entry_updates(
+        service: &UgoiteService,
+        space_id: &str,
+        principal: Uuid,
+        change_id: &str,
+        updates: &[(&str, &str)],
+    ) -> anyhow::Result<()> {
+        let workspace =
+            iceberg_store::native_workspace(&service.operator, &service.workspace_path(space_id))
+                .await?;
+        let form = workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .find(|form| form.name == "Entry")
+            .expect("Entry form exists");
+        let body_field = form
+            .fields
+            .iter()
+            .find(|field| field.name == "Body")
+            .expect("Body field exists")
+            .id;
+        let provider =
+            crate::integrity::RealIntegrityProvider::from_space(&service.operator, space_id)
+                .await?;
+        let current = workspace.read_revisions(form.id).await?;
+        let change = ugoite_domain::change::ChangeCommand {
+            change_id: change_id.to_string(),
+            run_id: None,
+            actor_principal_id: principal.to_string(),
+            message: Some(format!("manual update {updates:?}")),
+            reverts_change_id: None,
+            created_at_micros: chrono::Utc::now().timestamp_micros(),
+        };
+        let mut changed = Vec::new();
+        for (id, body) in updates {
+            let previous = current
+                .iter()
+                .filter(|revision| revision.entry.external_id == *id)
+                .max_by_key(|revision| revision.entry_version)
+                .expect("current Entry revision exists");
+            let mut revision = previous.clone();
+            let committed_at_micros = chrono::Utc::now().timestamp_micros();
+            revision.revision_id = ugoite_domain::id::RevisionId::from_uuid(Uuid::now_v7());
+            revision.parent_revision_id = Some(previous.revision_id);
+            revision.entry_version = previous.entry_version + 1;
+            revision.change_id = change.change_id.clone();
+            revision.expected_version = Some(previous.entry_version);
+            revision.operation = ugoite_domain::entry::EntryOperation::Upsert;
+            revision.committed_at_micros = committed_at_micros;
+            revision.author_id = principal.to_string();
+            revision.entry.updated_at_micros = committed_at_micros;
+            revision.entry.updated_by = principal.to_string();
+            revision.values.insert(
+                body_field,
+                ugoite_domain::entry::FieldValue::String((*body).to_string()),
+            );
+            revision.entry.integrity =
+                crate::entry::integrity_for_domain_revision(&form, &revision, &provider)?;
+            changed.push(revision);
+        }
+        let context = crate::publication_context_for_change(
+            &change,
+            "entry.update",
+            &serde_json::json!({"test": "manual-entry-updates"}),
+        )?;
+        workspace
+            .commit(context)?
+            .append_revisions(form.id, changed)
+            .await?;
+        Ok(())
+    }
+
     #[tokio::test]
     async fn run_inspection_is_bounded_and_follows_reverse_publication_order() -> anyhow::Result<()>
     {
@@ -11099,6 +11174,476 @@ mod tests {
         assert_eq!(
             service.get_entry(&space_id, "multi-target-z").await?["fields"]["Body"],
             "changed"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_undo_appends_integrity_verified_inverse_revisions() -> anyhow::Result<()> {
+        // Every Run undo inverse must carry the checksum and HMAC signature
+        // that the revision reader reconstructs from stored rows and Space
+        // key material.
+        let (service, space_id, principal) = batch_test_space("undo-integrity").await?;
+        let run_id = "run-undo-integrity";
+        let created = service
+            .apply_operations(
+                &space_id,
+                vec![batch_create("undo-entry")],
+                &principal.to_string(),
+                &[principal],
+                Some(run_id),
+                Some("create in Run"),
+            )
+            .await?;
+        let create_revision = created["operations"][0]["revision_id"]
+            .as_str()
+            .expect("create revision token")
+            .to_owned();
+        service
+            .apply_operations(
+                &space_id,
+                vec![ApplyOperation::Update {
+                    id: "undo-entry".into(),
+                    version_token: create_revision,
+                    form: Some("Entry".into()),
+                    tags: Some(Vec::new()),
+                    fields: [("Body".into(), Value::String("updated".into()))]
+                        .into_iter()
+                        .collect(),
+                    extra_attributes: Default::default(),
+                }],
+                &principal.to_string(),
+                &[principal],
+                Some(run_id),
+                Some("update in Run"),
+            )
+            .await?;
+        let undone = service
+            .undo_run(&space_id, run_id, &principal.to_string())
+            .await?;
+        assert_eq!(
+            undone.get("reverted_change_count").and_then(Value::as_u64),
+            Some(2)
+        );
+        let inverses = undone["inverses"]
+            .as_array()
+            .expect("undo reports inverse Changes");
+        assert_eq!(inverses.len(), 2);
+        for inverse in inverses {
+            assert!(
+                inverse["change_id"].is_string(),
+                "inverse Change carries an identity"
+            );
+            assert!(
+                inverse["reverts_change_id"].is_string(),
+                "inverse Change links its target"
+            );
+            assert!(!inverse["revision_ids"]
+                .as_array()
+                .expect("inverse lists revisions")
+                .is_empty());
+        }
+
+        let workspace =
+            iceberg_store::native_workspace(&service.operator, &service.workspace_path(&space_id))
+                .await?;
+        let form = workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .find(|form| form.name == "Entry")
+            .expect("Entry form exists");
+        let provider =
+            crate::integrity::RealIntegrityProvider::from_space(&service.operator, &space_id)
+                .await?;
+        let revisions = workspace.read_revisions(form.id).await?;
+        assert_eq!(revisions.len(), 4);
+        for inverse in inverses {
+            let inverse_change_id = inverse["change_id"].as_str().expect("inverse change id");
+            let stored = revisions
+                .iter()
+                .find(|revision| revision.change_id == inverse_change_id)
+                .expect("inverse revision is stored");
+            let expected = crate::entry::integrity_for_domain_revision(&form, stored, &provider)?;
+            assert_eq!(
+                expected.checksum, stored.entry.integrity.checksum,
+                "stored checksum matches the revision-reader reconstruction"
+            );
+            assert_eq!(
+                expected.signature, stored.entry.integrity.signature,
+                "stored HMAC matches the revision-reader reconstruction"
+            );
+            assert!(!stored.entry.integrity.checksum.is_empty());
+            assert!(!stored.entry.integrity.signature.is_empty());
+            assert!(
+                stored.parent_revision_id.is_some(),
+                "inverse revision links its parent"
+            );
+        }
+        // The read-only history verifier reconstructs the same checksum and
+        // HMAC for every stored revision, including both inverses.
+        let (entry_count, revision_count, _) = crate::entry::verify_history_integrity(
+            &service.operator,
+            &service.workspace_path(&space_id),
+        )
+        .await?;
+        assert_eq!(entry_count, 1);
+        assert_eq!(revision_count, 4);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn multi_entry_change_revert_prepares_all_inverses_before_any_append(
+    ) -> anyhow::Result<()> {
+        // A multi-Entry revert that fails while preparing any inverse must
+        // append no partial Change: preparation completes for every target
+        // before the single inverse Change is committed.
+        let (service, space_id, principal) = batch_test_space("revert-no-partial").await?;
+        for id in ["no-partial-a", "no-partial-b"] {
+            service
+                .apply_operations(
+                    &space_id,
+                    vec![batch_create(id)],
+                    &principal.to_string(),
+                    &[principal],
+                    None,
+                    Some("seed entry"),
+                )
+                .await?;
+        }
+        append_manual_entry_updates(
+            &service,
+            &space_id,
+            principal,
+            "no-partial-change",
+            &[("no-partial-a", "changed"), ("no-partial-b", "changed")],
+        )
+        .await?;
+        // A later update moves one target forward, so preparing its inverse
+        // must conflict after the other inverse was already prepared.
+        append_manual_entry_updates(
+            &service,
+            &space_id,
+            principal,
+            "no-partial-later",
+            &[("no-partial-b", "external")],
+        )
+        .await?;
+
+        let before = service.list_changes(&space_id).await?;
+        let error = service
+            .revert_change(
+                &space_id,
+                "no-partial-change",
+                &principal.to_string(),
+                None,
+                Some("revert both Entries"),
+            )
+            .await
+            .expect_err("conflicted second target must fail the revert");
+        assert_eq!(
+            error
+                .downcast_ref::<AppError>()
+                .expect("typed revert conflict")
+                .code(),
+            ErrorCode::RevisionConflict
+        );
+        assert_eq!(
+            service.list_changes(&space_id).await?,
+            before,
+            "failed preparation appends no partial Change"
+        );
+        assert_eq!(
+            service.get_entry(&space_id, "no-partial-a").await?["fields"]["Body"],
+            "changed"
+        );
+        assert_eq!(
+            service.get_entry(&space_id, "no-partial-b").await?["fields"]["Body"],
+            "external"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn revert_after_compatible_form_rename_renders_under_current_schema() -> anyhow::Result<()>
+    {
+        // Compatible evolutions keep stable FieldIds: renaming the Form and
+        // adding an optional field must not break reverts, and the inverse
+        // renders under the current schema. A dedicated Form is used so the
+        // starter Entry Form keeps its bootstrap name.
+        let (service, space_id, principal) = batch_test_space("revert-rename").await?;
+        service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Note",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let note_fields = |body: &str| {
+            [("Body".to_string(), Value::String(body.to_string()))]
+                .into_iter()
+                .collect()
+        };
+        let created = service
+            .apply_operations(
+                &space_id,
+                vec![ApplyOperation::Create {
+                    id: Some("rename-entry".to_string()),
+                    form: "Note".to_string(),
+                    tags: Vec::new(),
+                    fields: note_fields("content"),
+                    extra_attributes: Default::default(),
+                }],
+                &principal.to_string(),
+                &[principal],
+                None,
+                Some("create entry"),
+            )
+            .await?;
+        let create_revision = created["operations"][0]["revision_id"]
+            .as_str()
+            .expect("create revision token")
+            .to_owned();
+        let updated = service
+            .apply_operations(
+                &space_id,
+                vec![ApplyOperation::Update {
+                    id: "rename-entry".into(),
+                    version_token: create_revision,
+                    form: Some("Note".into()),
+                    tags: Some(Vec::new()),
+                    fields: note_fields("target update"),
+                    extra_attributes: Default::default(),
+                }],
+                &principal.to_string(),
+                &[principal],
+                None,
+                Some("target update"),
+            )
+            .await?;
+        let target_change_id = updated["operations"][0]["change_id"]
+            .as_str()
+            .expect("update change id")
+            .to_owned();
+
+        let workspace = iceberg_store::native_mutation_workspace(
+            &service.operator,
+            &service.workspace_path(&space_id),
+        )
+        .await?;
+        let form = workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .find(|form| form.name == "Note")
+            .expect("Note form exists");
+        let body_field = form
+            .fields
+            .iter()
+            .find(|field| field.name == "Body")
+            .expect("Body field exists")
+            .id;
+        let notes_field = ugoite_domain::id::FieldId::new(
+            form.fields
+                .iter()
+                .map(|field| field.id.get())
+                .max()
+                .unwrap_or(100)
+                + 1,
+        )
+        .expect("valid test field id");
+        let evolution = ugoite_domain::form::FormChangeSet {
+            form_id: form.id,
+            expected_version: Some(form.version),
+            changes: vec![
+                ugoite_domain::form::FormChange::RenameForm {
+                    name: "Journal".to_string(),
+                },
+                ugoite_domain::form::FormChange::AddField(ugoite_domain::form::FormField {
+                    id: notes_field,
+                    name: "Notes".to_string(),
+                    field_type: ugoite_domain::form::FieldType::String,
+                    required: false,
+                    label: None,
+                    description: None,
+                    semantic_role: None,
+                    reference_form: None,
+                    list_item: None,
+                    validation: None,
+                    enum_values: Vec::new(),
+                    deprecated: false,
+                }),
+            ],
+        };
+        let evolution_context = crate::system_publication_context(
+            format!("form-evolve:{}:{}", form.id, form.version.get()),
+            "form.evolve",
+            &evolution.changes,
+        )?;
+        let (evolved, _) = workspace
+            .commit(evolution_context)?
+            .evolve_form_with_receipt(&evolution)
+            .await?;
+        assert_eq!(evolved.name, "Journal");
+        assert!(
+            evolved
+                .fields
+                .iter()
+                .find(|field| field.name == "Body")
+                .is_some_and(|field| field.id == body_field),
+            "compatible evolution keeps the stable FieldId"
+        );
+
+        // History renders under the current schema with the renamed Form.
+        let current_entry = service.get_entry(&space_id, "rename-entry").await?;
+        assert_eq!(current_entry["form"], "Journal");
+        assert_eq!(current_entry["fields"]["Body"], "target update");
+
+        let changes_before = service.list_changes(&space_id).await?;
+        let reverted = service
+            .revert_change(
+                &space_id,
+                &target_change_id,
+                &principal.to_string(),
+                None,
+                Some("revert after rename"),
+            )
+            .await?;
+        let inverse_change_id = reverted["change_id"]
+            .as_str()
+            .expect("inverse change id")
+            .to_owned();
+        assert_eq!(reverted["reverts_change_id"], target_change_id);
+        assert_eq!(
+            service
+                .list_changes(&space_id)
+                .await?
+                .as_array()
+                .map(Vec::len),
+            changes_before.as_array().map(Vec::len).map(|len| len + 1)
+        );
+        let restored = service.get_entry(&space_id, "rename-entry").await?;
+        assert_eq!(restored["form"], "Journal");
+        assert_eq!(restored["fields"]["Body"], "content");
+        let revisions =
+            iceberg_store::native_workspace(&service.operator, &service.workspace_path(&space_id))
+                .await?
+                .read_revisions(form.id)
+                .await?;
+        let inverse = revisions
+            .iter()
+            .find(|revision| revision.change_id == inverse_change_id)
+            .expect("inverse revision is stored");
+        assert_eq!(inverse.form_version, evolved.version);
+        assert_eq!(
+            inverse.values.get(&body_field),
+            Some(&ugoite_domain::entry::FieldValue::String(
+                "content".to_string()
+            )),
+            "inverse keeps the value under the stable FieldId"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn revert_against_incompatible_evolved_schema_fails_without_mutation(
+    ) -> anyhow::Result<()> {
+        // History that no longer validates under the current Form (a new
+        // required field the old revisions lack) fails with
+        // REVISION_CONFLICT and does not mutate history.
+        let (service, space_id, principal) = batch_test_space("revert-evolved").await?;
+        let created = service
+            .apply_operations(
+                &space_id,
+                vec![batch_create("evolved-entry")],
+                &principal.to_string(),
+                &[principal],
+                None,
+                Some("create entry"),
+            )
+            .await?;
+        let create_revision = created["operations"][0]["revision_id"]
+            .as_str()
+            .expect("create revision token")
+            .to_owned();
+        let updated = service
+            .apply_operations(
+                &space_id,
+                vec![ApplyOperation::Update {
+                    id: "evolved-entry".into(),
+                    version_token: create_revision,
+                    form: Some("Entry".into()),
+                    tags: Some(Vec::new()),
+                    fields: [("Body".into(), Value::String("target update".into()))]
+                        .into_iter()
+                        .collect(),
+                    extra_attributes: Default::default(),
+                }],
+                &principal.to_string(),
+                &[principal],
+                None,
+                Some("target update"),
+            )
+            .await?;
+        let target_change_id = updated["operations"][0]["change_id"]
+            .as_str()
+            .expect("update change id")
+            .to_owned();
+
+        service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {
+                        "Body": {"type": "markdown"},
+                        "Title": {"type": "string", "required": true}
+                    },
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+
+        let before = service.list_changes(&space_id).await?;
+        let preview_error = service
+            .preview_revert_change(&space_id, &target_change_id, &principal.to_string())
+            .await
+            .expect_err("incompatible history must fail preview");
+        assert_eq!(
+            preview_error
+                .downcast_ref::<AppError>()
+                .expect("typed preview conflict")
+                .code(),
+            ErrorCode::RevisionConflict
+        );
+        let error = service
+            .revert_change(
+                &space_id,
+                &target_change_id,
+                &principal.to_string(),
+                None,
+                Some("revert against evolved schema"),
+            )
+            .await
+            .expect_err("incompatible history must fail with REVISION_CONFLICT");
+        assert_eq!(
+            error
+                .downcast_ref::<AppError>()
+                .expect("typed revert conflict")
+                .code(),
+            ErrorCode::RevisionConflict
+        );
+        assert_eq!(
+            service.list_changes(&space_id).await?,
+            before,
+            "failed revert mutates no history"
+        );
+        assert_eq!(
+            service.get_entry(&space_id, "evolved-entry").await?["fields"]["Body"],
+            "target update"
         );
         Ok(())
     }
