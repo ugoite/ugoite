@@ -133,6 +133,7 @@ verification_evidence:
     artifact: none; the local test runner output is the execution record.
     limitations:
       - This mocked component run does not establish server-backed browser behavior.
+      - The Composition delegation case proves component delegation only; Composition narrow-viewport, golden, metric, and stale behavior is proven only by the separate real-Browser journeys.
       - It does not establish screen-reader or large-result performance acceptance.
     broader_product_ux_tasks_completed: false
     cp1_acceptance_tasks_completed: false
@@ -167,9 +168,12 @@ verification_evidence:
       name: ugoite-browser-e2e-evidence-37283391954
       url: https://github.com/ugoite/ugoite/actions/runs/37283391954
     limitations:
-      - This lane evidence covers Entry narrow viewports and smoke stale
-        suppression; Composition golden/metric/stale journeys are re-run
-        separately for the B6 evidence refresh.
+      - >-
+        This lane evidence covers Entry narrow viewports and smoke stale
+        suppression only; it does not establish Composition
+        narrow-viewport behavior. Composition golden/metric/stale Browser
+        evidence is recorded separately in
+        e2e/fixtures/composition/evidence-archive.json.
       - It does not establish screen-reader acceptance.
     broader_product_ux_tasks_completed: false
     cp1_acceptance_tasks_completed: false
