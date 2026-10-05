@@ -357,7 +357,8 @@ impl SpaceCatalog {
     /// "Catalog Head changed") while unfenced writers keep their existing
     /// retry behavior by receiving `None`.
     async fn fenced_publication_conflict(&self) -> Result<Option<Error>> {
-        let Some(expected) = crate::authorization::authorization_write_revision() else {
+        let Some(expected) = crate::authorization::authorization_write_effective_revision().await
+        else {
             return Ok(None);
         };
         let current = self
@@ -375,13 +376,129 @@ impl SpaceCatalog {
         )))
     }
 
+    /// Publication-time revalidation of the Server's protected-mutation
+    /// fence against the exact base Head of this attempt. A conflict alone
+    /// only proves concurrent publication, so every content publication
+    /// checks before writing: the Head the attempt was bound to must still
+    /// carry the fence's effective authorization revision. Revision equality
+    /// is sufficient because authorization snapshots are immutable and
+    /// content-addressed: the first publisher of a revision wins its Head
+    /// CAS, so a Head carrying the expected revision carries the exact bytes
+    /// the lease authorized against. The message deliberately avoids the
+    /// "Catalog Head changed" conflict marker so coordinator retry loops
+    /// fail closed on stale authorization instead of retrying a revoked
+    /// principal's write with a freshly bound Head.
+    async fn verify_authorization_fence(&self, attempt: &PublicationAttempt) -> Result<()> {
+        let Some(expected) = crate::authorization::authorization_write_effective_revision().await
+        else {
+            return Ok(());
+        };
+        if let Some(space_uid) = crate::authorization::authorization_write_space_uid() {
+            if space_uid != self.space_id.as_uuid() {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Space authorization fence belongs to a different Space",
+                ));
+            }
+        }
+        let current = attempt
+            .expected_head
+            .as_ref()
+            .and_then(|head| head.authorization_snapshot.as_ref())
+            .map(|reference| reference.revision);
+        if current != Some(expected) {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                format!(
+                    "Space authorization changed before publication: fenced revision {expected} is not authoritative"
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Atomically carries this fence's staged approval-consumption snapshot
+    /// in the same Catalog Head CAS as the content publication. The snapshot
+    /// object itself is immutable and unreachable until a Head references
+    /// it, so preparing it here creates no intermediate externally-visible
+    /// state; content and approval become visible together or not at all.
+    /// The staged bytes must describe exactly the revision following the
+    /// fence's effective revision for this Space, and preparation is
+    /// idempotent so a lost CAS response never double-publishes on retry.
+    async fn apply_pending_authorization_snapshot(&self, next: &mut CatalogHead) -> Result<bool> {
+        let Some(pending) = crate::authorization::pending_authorization_snapshot().await else {
+            return Ok(false);
+        };
+        let Some(expected) = crate::authorization::authorization_write_effective_revision().await
+        else {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Space authorization snapshot is staged without a protected-mutation fence",
+            ));
+        };
+        if pending.space_uid != self.space_id.as_uuid() {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Space authorization snapshot belongs to a different Space",
+            ));
+        }
+        let expected_revision = expected.checked_add(1).ok_or_else(|| {
+            Error::new(
+                ErrorKind::DataInvalid,
+                "Space authorization revision overflow",
+            )
+        })?;
+        if pending.revision != expected_revision {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                format!(
+                    "Space authorization changed before publication: fenced revision {expected} is not authoritative"
+                ),
+            ));
+        }
+        let staged: Value = serde_json::from_slice(&pending.bytes).map_err(json_error)?;
+        if staged.get("revision").and_then(Value::as_u64) != Some(pending.revision)
+            || staged.get("space_uid").and_then(Value::as_str)
+                != Some(pending.space_uid.to_string()).as_deref()
+        {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "staged Space authorization snapshot does not match its fence binding",
+            ));
+        }
+        let snapshot_checksum = checksum(&pending.bytes);
+        let location = self
+            .store
+            .authorization_snapshot_path(pending.revision, &snapshot_checksum)
+            .map_err(storage_error)?;
+        if let Err(error) = self
+            .store
+            .write_authorization_snapshot(&location, pending.bytes.clone())
+            .await
+        {
+            // Immutable preparation may have succeeded while its response was
+            // lost. It is not authoritative until a Head references it, so a
+            // read proves whether the exact prepared bytes exist.
+            let observed = self.store.read_authorization_snapshot(&location).await;
+            if !observed.is_ok_and(|observed| checksum(&observed) == snapshot_checksum) {
+                return Err(storage_error(error));
+            }
+        }
+        next.authorization_snapshot = Some(AuthorizationSnapshotReference {
+            revision: pending.revision,
+            location,
+            checksum: snapshot_checksum,
+        });
+        Ok(true)
+    }
+
     /// Publishes a new immutable authorization snapshot by advancing the same
     /// exact Catalog Head used for protected content. A concurrent content
     /// publication may win first; in that case this writer retries from the
     /// new Head only while the expected authorization revision is unchanged.
-    // Service-layer wiring lands in a follow-up slice; unit tests in this
-    // module are the only callers until then.
-    #[allow(dead_code)]
+    /// Consumed-approval drains and authorization-only writers enter here;
+    /// content publications carry staged snapshots atomically through
+    /// `publish_new_head` instead.
     pub(crate) async fn publish_authorization_snapshot(
         &self,
         expected_revision: Option<u64>,
@@ -2840,6 +2957,9 @@ impl SpaceCatalog {
         publication_path: &str,
         publication: PublicationRecord,
     ) -> Result<()> {
+        // A stale fence must not adopt an immutable publication prepared
+        // against a superseded authorization revision.
+        self.verify_authorization_fence(attempt).await?;
         match (attempt.expected_head.as_ref(), self.exact_head().await?) {
             (Some(expected), Some((head, exact))) => {
                 if expected != &head || attempt.expected_head_etag != exact.etag {
@@ -2901,6 +3021,8 @@ impl SpaceCatalog {
         mut next: CatalogHead,
         update: PublicationUpdate,
     ) -> Result<()> {
+        self.verify_authorization_fence(attempt).await?;
+        let applied_pending = self.apply_pending_authorization_snapshot(&mut next).await?;
         let previous_generation = attempt.expected_generation;
         let previous_publication = attempt.expected_previous_publication.clone();
         let previous_head_checksum = attempt.expected_head_checksum.clone();
@@ -2983,6 +3105,9 @@ impl SpaceCatalog {
             // before replacing it.
             let current = self.exact_head().await?.map(|(head, _)| head);
             if current != attempt.expected_head {
+                if let Some(fenced) = self.fenced_publication_conflict().await? {
+                    return Err(fenced);
+                }
                 return Err(Error::new(
                     ErrorKind::DataInvalid,
                     "Catalog Head changed before this publication could be committed",
@@ -2998,7 +3123,31 @@ impl SpaceCatalog {
             self.store.create_head(&permit, bytes).await
         };
         match result {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                // Test-only ambiguity hook: the Head CAS committed, but the
+                // caller observes a lost response and must resolve the exact
+                // outcome by re-reading Head. The staged snapshot stays staged
+                // so the recovery path matches a genuine lost response; the
+                // drain's idempotent Head CAS then converges without a second
+                // publication.
+                #[cfg(debug_assertions)]
+                if take_injected_unknown_head_outcome() {
+                    return Err(Error::new(
+                        ErrorKind::Unexpected,
+                        "Catalog publication outcome is unknown after Head CAS request: injected ambiguous Head response",
+                    ));
+                }
+                if applied_pending {
+                    if let Some(reference) = next.authorization_snapshot.as_ref() {
+                        crate::authorization::note_applied_authorization_revision(
+                            reference.revision,
+                        )
+                        .await;
+                    }
+                    crate::authorization::clear_pending_authorization_snapshot().await;
+                }
+                Ok(())
+            }
             Err(error) if is_condition_conflict(&error) => {
                 if let Some(fenced) = self.fenced_publication_conflict().await? {
                     return Err(fenced);
@@ -3993,6 +4142,37 @@ fn is_condition_conflict(error: &anyhow::Error) -> bool {
         .is_some_and(|error| error.kind() == opendal::ErrorKind::ConditionNotMatch)
 }
 
+// Task-local Head-state ambiguity flag: the next Catalog Head CAS in scope
+// reports a lost response after committing. Task-local so parallel tests
+// cannot steal or observe each other's injection.
+#[cfg(debug_assertions)]
+tokio::task_local! {
+    static INJECT_UNKNOWN_HEAD_OUTCOME: std::cell::Cell<bool>;
+}
+
+/// Debug-only Head-state ambiguity fixture: arm one injected lost Head-CAS
+/// response for a single publication within `operation`. The next successful
+/// Catalog Head CAS in scope observes a lost response; resolution must
+/// re-read Head and converge on the already-committed publication instead of
+/// publishing twice or reusing a stale approval. Not compiled into release
+/// builds; exposes no production mutation bypass.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub async fn with_injected_unknown_head_publication_outcome<T>(
+    operation: impl std::future::Future<Output = T>,
+) -> T {
+    INJECT_UNKNOWN_HEAD_OUTCOME
+        .scope(std::cell::Cell::new(true), operation)
+        .await
+}
+
+#[cfg(debug_assertions)]
+fn take_injected_unknown_head_outcome() -> bool {
+    INJECT_UNKNOWN_HEAD_OUTCOME
+        .try_with(|flag| flag.take())
+        .unwrap_or(false)
+}
+
 /// Cross-process deterministic race hook for shared-backend acceptance
 /// tests. After the immutable publication is durable and immediately before
 /// the Catalog Head CAS, a child process signals `entered-{n}` in
@@ -4161,6 +4341,364 @@ mod tests {
                 .map(|snapshot| snapshot.revision),
             Some(2)
         );
+        Ok(())
+    }
+
+    fn fenced_test_update(
+        namespace: Vec<String>,
+        table: &str,
+        location: &str,
+    ) -> PublicationUpdate {
+        PublicationUpdate {
+            affected_table: TableCoordinates {
+                namespace,
+                table: table.to_owned(),
+            },
+            base_metadata_location: None,
+            new_metadata_location: location.to_owned(),
+            base_snapshot_id: None,
+            base_schema_id: None,
+            new_snapshot_id: None,
+            new_schema_id: 0,
+        }
+    }
+
+    fn staged_pending_bytes(space_uid: Uuid, revision: u64) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "revision": revision,
+            "space_uid": space_uid.to_string(),
+        }))
+        .expect("staged pending snapshot serializes")
+    }
+
+    async fn publish_test_content(
+        catalog: &SpaceCatalog,
+        command_id: &str,
+        location: &str,
+    ) -> Result<()> {
+        let (head, exact) = catalog.exact_head().await?.expect("test Head exists");
+        let attempt = PublicationAttempt::from_exact(
+            &PublicationContext::new(command_id, "entry.update"),
+            Some((head.clone(), exact)),
+        )?;
+        let mut next = head.next_generation();
+        next.generation = attempt.expected_generation.map_or(0, |value| value + 1);
+        catalog
+            .publish_new_head(
+                &attempt,
+                next,
+                fenced_test_update(head.namespace, "entries", location),
+            )
+            .await
+    }
+
+    #[tokio::test]
+    async fn fenced_content_publication_fails_closed_on_stale_revision() -> AnyResult<()> {
+        let operator = operator_from_uri("memory://fenced-stale-revision")?;
+        let uid = Uuid::now_v7();
+        let store = SpaceCatalogStore::new(operator, "spaces/demo")?.single_process();
+        let catalog = SpaceCatalog::new(store.clone(), SpaceId::from(uid))?;
+        catalog
+            .publish_authorization_snapshot(None, 1, b"authorization-v1".to_vec())
+            .await?;
+        let (stale_head, stale_exact) = catalog
+            .exact_head()
+            .await?
+            .expect("authorization publication creates the common Head");
+        let attempt = PublicationAttempt::from_exact(
+            &PublicationContext::new("stale-fenced-write", "entry.update"),
+            Some((stale_head.clone(), stale_exact)),
+        )?;
+        let mut next = stale_head.next_generation();
+        next.generation = attempt.expected_generation.map_or(0, |value| value + 1);
+
+        // A concurrent revocation wins the common Head before publication.
+        catalog
+            .publish_authorization_snapshot(Some(1), 2, b"authorization-v2-revoked".to_vec())
+            .await?;
+        let fence = crate::authorization::test_authorization_write_fence_for_space(1, uid);
+        let result = crate::authorization::with_authorization_write_fence(
+            fence,
+            catalog.publish_new_head(
+                &attempt,
+                next,
+                fenced_test_update(stale_head.namespace, "entries", "entry-metadata-stale"),
+            ),
+        )
+        .await;
+        let error = result.expect_err("a stale fence must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("fenced revision 1 is not authoritative"),
+            "unexpected error: {error}"
+        );
+        // The stale write must not be retried as a plain Head conflict: the
+        // message avoids the coordinator's conflict marker on purpose.
+        assert!(!error.to_string().contains("Catalog Head changed"));
+
+        let (current, _) = catalog
+            .exact_head()
+            .await?
+            .expect("revocation remains the authoritative Head");
+        assert_eq!(current.generation, 0);
+        assert!(current.publication_location.is_none());
+        assert_eq!(
+            current
+                .authorization_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.revision),
+            Some(2)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fenced_content_publication_rejects_a_foreign_space_fence() -> AnyResult<()> {
+        let operator = operator_from_uri("memory://fenced-foreign-space")?;
+        let uid = Uuid::now_v7();
+        let store = SpaceCatalogStore::new(operator, "spaces/demo")?.single_process();
+        let catalog = SpaceCatalog::new(store.clone(), SpaceId::from(uid))?;
+        catalog
+            .publish_authorization_snapshot(None, 1, b"authorization-v1".to_vec())
+            .await?;
+        let fence =
+            crate::authorization::test_authorization_write_fence_for_space(1, Uuid::now_v7());
+        let result = crate::authorization::with_authorization_write_fence(
+            fence,
+            publish_test_content(&catalog, "foreign-fenced-write", "entry-metadata-foreign"),
+        )
+        .await;
+        let error = result.expect_err("a foreign Space fence must fail closed");
+        assert!(
+            error.to_string().contains("belongs to a different Space"),
+            "unexpected error: {error}"
+        );
+        let (current, _) = catalog.exact_head().await?.expect("Head is unchanged");
+        assert!(current.publication_location.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fenced_content_publication_applies_the_staged_snapshot_in_one_head_cas(
+    ) -> AnyResult<()> {
+        let operator = operator_from_uri("memory://fenced-atomic-apply")?;
+        let uid = Uuid::now_v7();
+        let store = SpaceCatalogStore::new(operator, "spaces/demo")?.single_process();
+        let catalog = SpaceCatalog::new(store.clone(), SpaceId::from(uid))?;
+        catalog
+            .publish_authorization_snapshot(None, 1, b"authorization-v1".to_vec())
+            .await?;
+        let pending_bytes = staged_pending_bytes(uid, 2);
+        let fence = crate::authorization::test_authorization_write_fence_with_pending_snapshot(
+            1,
+            uid,
+            pending_bytes.clone(),
+        );
+        crate::authorization::with_authorization_write_fence(fence, async {
+            publish_test_content(&catalog, "atomic-content-approval", "entry-metadata-v2").await?;
+            let (current, _) = catalog.exact_head().await?.expect("published Head");
+            assert_eq!(
+                current
+                    .authorization_snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.revision),
+                Some(2)
+            );
+            // The content publication record itself carries the staged
+            // snapshot: content and approval became visible in one CAS,
+            // with no intermediate externally-visible state.
+            let publication_path = current
+                .publication_location
+                .as_deref()
+                .expect("content publication is reachable");
+            let record =
+                decode_publication(&catalog.store.read_publication(publication_path).await?)?;
+            assert_eq!(
+                record
+                    .next_head
+                    .authorization_snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.revision),
+                Some(2)
+            );
+            // The staged snapshot was consumed by the publication.
+            assert!(crate::authorization::pending_authorization_snapshot()
+                .await
+                .is_none());
+            assert_eq!(
+                crate::authorization::authorization_write_effective_revision().await,
+                Some(2)
+            );
+            // A follow-up publication under the same lease binds the
+            // revision the lease itself advanced instead of failing
+            // closed on its own Head.
+            publish_test_content(&catalog, "atomic-follow-up", "entry-metadata-v3").await?;
+            let (advanced, _) = catalog.exact_head().await?.expect("advanced Head");
+            assert_eq!(
+                advanced
+                    .authorization_snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.revision),
+                Some(2)
+            );
+            assert!(advanced.publication_location.is_some());
+            Ok::<(), anyhow::Error>(())
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// Local-filesystem parity: the same single-CAS atomicity holds on the
+    /// plain filesystem store, where the Head replacement is serializer
+    /// guarded instead of ETag conditional.
+    #[tokio::test]
+    async fn fenced_atomic_apply_has_filesystem_parity() -> AnyResult<()> {
+        let temp = tempdir()?;
+        let operator = Operator::new(Fs::default().root(temp.path().to_string_lossy().as_ref()))?;
+        let uid = Uuid::now_v7();
+        let store = SpaceCatalogStore::new(operator, "spaces/demo")?.single_process();
+        let catalog = SpaceCatalog::new(store.clone(), SpaceId::from(uid))?;
+        catalog
+            .publish_authorization_snapshot(None, 1, b"authorization-v1".to_vec())
+            .await?;
+        let pending_bytes = staged_pending_bytes(uid, 2);
+        let fence = crate::authorization::test_authorization_write_fence_with_pending_snapshot(
+            1,
+            uid,
+            pending_bytes,
+        );
+        crate::authorization::with_authorization_write_fence(fence, async {
+            publish_test_content(&catalog, "fs-atomic-content", "entry-metadata-fs").await?;
+            let (current, _) = catalog.exact_head().await?.expect("published Head");
+            assert_eq!(
+                current
+                    .authorization_snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.revision),
+                Some(2)
+            );
+            assert!(current.publication_location.is_some());
+            assert!(crate::authorization::pending_authorization_snapshot()
+                .await
+                .is_none());
+            Ok::<(), anyhow::Error>(())
+        })
+        .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn staged_snapshot_with_unexpected_revision_fails_closed() -> AnyResult<()> {
+        let operator = operator_from_uri("memory://fenced-unexpected-pending")?;
+        let uid = Uuid::now_v7();
+        let store = SpaceCatalogStore::new(operator, "spaces/demo")?.single_process();
+        let catalog = SpaceCatalog::new(store.clone(), SpaceId::from(uid))?;
+        catalog
+            .publish_authorization_snapshot(None, 1, b"authorization-v1".to_vec())
+            .await?;
+        // The staged revision skips ahead of the fence: this cannot be the
+        // lease's own consumption, so publication fails closed.
+        let fence = crate::authorization::test_authorization_write_fence_with_pending_revision(
+            1,
+            5,
+            uid,
+            staged_pending_bytes(uid, 5),
+        );
+        let result = crate::authorization::with_authorization_write_fence(
+            fence,
+            publish_test_content(&catalog, "skipped-pending-write", "entry-metadata-skipped"),
+        )
+        .await;
+        let error = result.expect_err("an unexpected staged revision must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("fenced revision 1 is not authoritative"),
+            "unexpected error: {error}"
+        );
+        let (current, _) = catalog.exact_head().await?.expect("Head is unchanged");
+        assert!(current.publication_location.is_none());
+        assert_eq!(
+            current
+                .authorization_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.revision),
+            Some(1)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn injected_unknown_head_outcome_resolves_by_reread_without_replay() -> AnyResult<()> {
+        let operator = operator_from_uri("memory://fenced-ambiguous-outcome")?;
+        let uid = Uuid::now_v7();
+        let store = SpaceCatalogStore::new(operator, "spaces/demo")?.single_process();
+        let catalog = SpaceCatalog::new(store.clone(), SpaceId::from(uid))?;
+        catalog
+            .publish_authorization_snapshot(None, 1, b"authorization-v1".to_vec())
+            .await?;
+        let pending_bytes = staged_pending_bytes(uid, 2);
+        let fence = crate::authorization::test_authorization_write_fence_with_pending_snapshot(
+            1,
+            uid,
+            pending_bytes.clone(),
+        );
+        crate::authorization::with_authorization_write_fence(fence, async {
+            let (head, exact) = catalog.exact_head().await?.expect("test Head exists");
+            let attempt = PublicationAttempt::from_exact(
+                &PublicationContext::new("ambiguous-write", "entry.update"),
+                Some((head.clone(), exact)),
+            )?;
+            let mut next = head.next_generation();
+            next.generation = attempt.expected_generation.map_or(0, |value| value + 1);
+            let ambiguous =
+                super::with_injected_unknown_head_publication_outcome(catalog.publish_new_head(
+                    &attempt,
+                    next,
+                    fenced_test_update(head.namespace, "entries", "entry-metadata-ambiguous"),
+                ))
+                .await;
+            let error = ambiguous.expect_err("the injected response loss must surface");
+            assert!(
+                error.to_string().contains("outcome is unknown"),
+                "unexpected error: {error}"
+            );
+            assert!(!error.to_string().contains("Catalog Head changed"));
+            // Exact outcome resolution re-reads Head: the publication
+            // committed, so no replay and no second publication.
+            assert!(catalog.resolve_unknown_outcome(&attempt).await?);
+            let (current, _) = catalog.exact_head().await?.expect("recovered Head");
+            assert_eq!(
+                current
+                    .authorization_snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.revision),
+                Some(2)
+            );
+            assert!(current.publication_location.is_some());
+            // The staged snapshot survives the ambiguous outcome exactly
+            // like a genuine lost response; the drain's Head CAS then
+            // converges idempotently on the already-committed revision.
+            let pending = crate::authorization::pending_authorization_snapshot()
+                .await
+                .expect("staged snapshot survives the ambiguous outcome");
+            assert_eq!(pending.revision, 2);
+            catalog
+                .publish_authorization_snapshot(Some(1), 2, pending.bytes.clone())
+                .await?;
+            let (converged, _) = catalog.exact_head().await?.expect("converged Head");
+            assert_eq!(
+                converged
+                    .authorization_snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.revision),
+                Some(2)
+            );
+            assert_eq!(converged.publication_location, current.publication_location);
+            Ok::<(), anyhow::Error>(())
+        })
+        .await?;
         Ok(())
     }
 
