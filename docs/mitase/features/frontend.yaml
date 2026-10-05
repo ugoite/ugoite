@@ -923,3 +923,12 @@ features:
                 criterion: REQ-FE-070#criterion.mobile-one-column
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.accessible-icon-actions
+          - id: composition-draft-model
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.ts
+            selector: { kind: symbol, name: createEmptyDraft }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.source-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
