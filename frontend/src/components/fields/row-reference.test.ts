@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildRowReferencePreview,
   displayableRowReferenceValue,
+  humanRowReferenceFormName,
   rowReferencePreviewCharLimit,
   rowReferenceTargetMatches,
 } from "~/components/fields/row-reference";
@@ -46,6 +47,53 @@ describe("buildRowReferencePreview", () => {
     ).toBe('Tags: ["a","b"] · Meta: {"owner":"ada"}');
   });
 
+  it("prefers the field label over the field name like the backend preview", () => {
+    const labeledForm = {
+      id: "form-project",
+      name: "Project",
+      fields: {
+        Title: { type: "string", label: "Project title" },
+        Budget: { type: "double" },
+      },
+    };
+    expect(
+      buildRowReferencePreview(
+        { Title: "Alpha", Budget: 42 },
+        labeledForm,
+      ),
+    ).toBe("Project title: Alpha · Budget: 42");
+  });
+
+  it("prefers the field label over the field name like the backend preview", () => {
+    const labeledForm = {
+      id: "form-project",
+      name: "Project",
+      fields: {
+        Title: { type: "string", label: "Project title" },
+        Budget: { type: "double" },
+      },
+    };
+    expect(
+      buildRowReferencePreview(
+        { Title: "Alpha", Budget: 42 },
+        labeledForm,
+      ),
+    ).toBe("Project title: Alpha · Budget: 42");
+  });
+
+  it("falls back to the field name for blank labels", () => {
+    const blankLabelForm = {
+      id: "form-project",
+      name: "Project",
+      fields: {
+        Title: { type: "string", label: "  " },
+      },
+    };
+    expect(
+      buildRowReferencePreview({ Title: "Alpha" }, blankLabelForm),
+    ).toBe("Title: Alpha");
+  });
+
   it("truncates to the backend preview char budget", () => {
     const preview = buildRowReferencePreview(
       { Title: "x".repeat(rowReferencePreviewCharLimit + 100) },
@@ -85,5 +133,24 @@ describe("rowReferenceTargetMatches", () => {
     expect(rowReferenceTargetMatches("", projectForm)).toBe(false);
     expect(rowReferenceTargetMatches(undefined, projectForm)).toBe(false);
     expect(rowReferenceTargetMatches(null, projectForm)).toBe(false);
+  });
+});
+
+describe("humanRowReferenceFormName", () => {
+  const forms = [
+    { id: "form-project", name: "Project" },
+    { id: "form-task", name: "Task" },
+  ];
+
+  it("resolves stable ids to human Form names", () => {
+    expect(humanRowReferenceFormName("form-task", forms)).toBe("Task");
+    expect(humanRowReferenceFormName("Task", forms)).toBe("Task");
+  });
+
+  it("leaves unknown references verbatim only when the catalog cannot resolve them", () => {
+    expect(humanRowReferenceFormName("form-missing", forms)).toBe(
+      "form-missing",
+    );
+    expect(humanRowReferenceFormName("form-missing")).toBe("form-missing");
   });
 });

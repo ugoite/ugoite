@@ -1,12 +1,7 @@
-import {
-  createEffect,
-  createUniqueId,
-  type JSX,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createUniqueId, type JSX, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ButtonSpinner } from "~/components/ButtonSpinner";
+import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import { t } from "~/lib/i18n";
 
 export interface ConfirmDestructiveActionProps {
@@ -46,62 +41,23 @@ export function ConfirmDestructiveAction(
   const bodyId = `confirm-destructive-body-${createUniqueId()}`;
   let dialogRef: HTMLDivElement | undefined;
   let cancelRef: HTMLButtonElement | undefined;
-  let opener: Element | null = null;
 
   const busy = () => props.busy ?? false;
-
-  createEffect(() => {
-    if (!props.open) return;
-    opener = document.activeElement instanceof Element
-      ? document.activeElement
-      : null;
-    // Cancel is the default: focus lands on the safe action first.
-    queueMicrotask(() => cancelRef?.focus());
-    const appRoot = document.getElementById("app");
-    appRoot?.setAttribute("inert", "");
-    onCleanup(() => {
-      appRoot?.removeAttribute("inert");
-      const target = opener instanceof HTMLElement ? opener : null;
-      opener = null;
-      // Return focus to the invoking control on dismiss.
-      queueMicrotask(() => {
-        if (target?.isConnected) target.focus();
-      });
-    });
-  });
 
   const close = () => {
     if (busy()) return;
     props.onClose();
   };
 
-  const handleKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      close();
-      return;
-    }
-    if (event.key !== "Tab" || !dialogRef) return;
-    const focusable = Array.from(
-      dialogRef.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    );
-    if (focusable.length === 0) {
-      event.preventDefault();
-      return;
-    }
-    const currentIndex = focusable.indexOf(
-      document.activeElement as HTMLElement,
-    );
-    const nextIndex = event.shiftKey
-      ? currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1
-      : currentIndex < 0 || currentIndex === focusable.length - 1
-      ? 0
-      : currentIndex + 1;
-    event.preventDefault();
-    focusable[nextIndex].focus();
-  };
+  // Cancel is the default: focus lands on the safe action first.
+  useDialogFocus(() => props.open, {
+    dialog: () => dialogRef,
+    initialFocus: () => cancelRef,
+    onClose: close,
+  });
+
+  const handleKeyDown = (event: KeyboardEvent) =>
+    handleDialogKeyDown(event, dialogRef, close);
 
   return (
     <Portal>

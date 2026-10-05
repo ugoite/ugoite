@@ -25,9 +25,7 @@ export {
   type SearchableSelectProps,
 } from "~/components/fields/SearchableSelect";
 export {
-  buildRowReferenceOptions,
   hasRowReferencePicker,
   normalizeRowReferenceTargetForm,
-  type RowReferenceOption,
   rowReferenceSuggestionLimit,
 } from "~/components/fields/row-reference";

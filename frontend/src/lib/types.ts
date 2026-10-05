@@ -270,6 +270,8 @@ export interface FormField {
   id?: number;
   type: string;
   required: boolean;
+  /** Human label; the backend falls back to the field name when omitted. */
+  label?: string;
   /** Deprecated fields remain readable but are not required for new entries. */
   deprecated?: boolean;
   target_form?: string;

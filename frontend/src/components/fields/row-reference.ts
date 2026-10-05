@@ -16,12 +16,6 @@
  * used as human-facing labels.
  */
 
-export interface RowReferenceOption {
-  id: string;
-  title: string;
-  label: string;
-}
-
 export const rowReferenceSuggestionLimit = 8;
 
 export const normalizeRowReferenceTargetForm = (def: {
@@ -42,7 +36,7 @@ export const rowReferencePreviewCharLimit = 512;
 export interface RowReferencePreviewForm {
   id?: string;
   name: string;
-  fields: Record<string, { type: string }>;
+  fields: Record<string, { type: string; label?: string }>;
 }
 
 /**
@@ -73,8 +67,10 @@ export const displayableRowReferenceValue = (value: unknown): string => {
 
 /**
  * Derive the human Preview for a point-read Entry, mirroring the backend
- * `entry_preview`: target-Form field order, `name: value` parts joined
- * with " · ", truncated to the backend char budget. Reads the structured
+ * `entry_preview`: target-Form field order, `label: value` parts joined
+ * with " · ", truncated to the backend char budget. Like the backend, the
+ * part key is the field label with a fallback to the field name, so
+ * label!=name Forms render identically on both sides. Reads the structured
  * fields from the Entry fields object; non-object fields yields
  * an empty Preview (callers fall back to a safe generic label, never the
  * raw entry id).
@@ -91,7 +87,8 @@ export const buildRowReferencePreview = (
     if (value === null || value === undefined) continue;
     const rendered = displayableRowReferenceValue(value);
     if (rendered === "") continue;
-    parts.push(`${name}: ${rendered}`);
+    const label = form.fields[name].label?.trim() || name;
+    parts.push(`${label}: ${rendered}`);
   }
   const preview = parts.join(" · ");
   return Array.from(preview).slice(0, rowReferencePreviewCharLimit).join("");
@@ -111,17 +108,19 @@ export const rowReferenceTargetMatches = (
   return actual === target.name || (target.id ?? "") === actual;
 };
 
-export const buildRowReferenceOptions = (
-  entries: Array<{ id: string }>,
-): RowReferenceOption[] =>
-  entries
-    .map((entry) => {
-      return {
-        id: entry.id,
-        title: entry.id,
-        label: entry.id,
-      };
-    })
-    .sort(
-      (left, right) => left.id.localeCompare(right.id),
-    );
+/**
+ * Resolve a stored Entry Form reference to its human Form name through the
+ * loaded catalog. A stable id never surfaces as display text; unknown
+ * references fall back to the verbatim value only when the catalog cannot
+ * resolve them.
+ */
+export const humanRowReferenceFormName = (
+  entryForm: string,
+  forms?: readonly { id?: string; name: string }[],
+): string => {
+  const actual = entryForm.trim();
+  const known = forms?.find((form) =>
+    form.id === actual || form.name === actual
+  );
+  return known?.name ?? actual;
+};

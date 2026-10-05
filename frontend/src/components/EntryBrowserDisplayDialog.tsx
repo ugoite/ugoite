@@ -1,5 +1,6 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
+import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import type {
   EntryFieldCapability,
   EntryFieldRef,
@@ -117,7 +118,16 @@ export function EntryBrowserDisplayDialog(
   props: EntryBrowserDisplayDialogProps,
 ) {
   let dialog: HTMLDivElement | undefined;
-  let returnFocus: HTMLElement | null = null;
+
+  // Inline dialog (rendered inside the app root, so no inert background):
+  // shared Tab cycling and focus return; the safe action keeps initial
+  // focus via the first control.
+  useDialogFocus(() => true, {
+    dialog: () => dialog,
+    returnFocus: () => props.returnFocus ?? null,
+    inert: false,
+    onClose: props.onClose,
+  });
 
   const [projectionKind, setProjectionKind] = createSignal(
     props.projection.kind,
@@ -342,38 +352,8 @@ export function EntryBrowserDisplayDialog(
       ? filterDraftValid()
       : sortDraftValid();
 
-  onMount(() => {
-    returnFocus = props.returnFocus ??
-      (document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null);
-    dialog?.querySelector<HTMLElement>("button, input, select")?.focus();
-    const handleFocus = () => returnFocus?.focus();
-    onCleanup(handleFocus);
-  });
-
-  const handleKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      props.onClose();
-      return;
-    }
-    if (event.key === "Tab" && dialog) {
-      const items = [...dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]',
-      )];
-      if (items.length === 0) return;
-      const first = items[0];
-      const last = items.at(-1)!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-  };
+  const handleKeyDown = (event: KeyboardEvent) =>
+    handleDialogKeyDown(event, dialog, props.onClose);
 
   return (
     <div
