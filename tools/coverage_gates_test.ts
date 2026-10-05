@@ -262,6 +262,20 @@ async function assertAggregateWorkflow(
     "release CLI source identity output",
   );
   assertContainsAll(
+    releaseBuild,
+    ["record:rust:source-sha"],
+    "release build refreshes CLI provenance before fingerprinting",
+  );
+  assertContainsAll(
+    taskBlock(mise, "record:rust:source-sha"),
+    [
+      "target/rust/release/ugoite.source-sha",
+      "UGOITE_SOURCE_SHA",
+      "cmp -s",
+    ],
+    "release CLI provenance refreshes without rebuilding",
+  );
+  assertContainsAll(
     releaseCliSeed,
     [
       'PORTABLE_CLI_BINARY="${UGOITE_PORTABLE_CLI_BINARY:-}"',
