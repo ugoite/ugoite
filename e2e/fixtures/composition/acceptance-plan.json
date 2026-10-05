@@ -1,7 +1,7 @@
 {
   "schema": "ugoite/composition-acceptance-plan/v1",
   "status": "planned",
-  "implementation_contract_frozen": false,
+  "implementation_contract_frozen": true,
   "runtime_evidence_recorded": true,
   "fixture_layout": {
     "root": "e2e/fixtures/composition",
@@ -90,6 +90,32 @@
       "artifact": "e2e/fixtures/composition/evidence/composition-golden-journey-junit.xml",
       "artifact_digest": "a7da68bb91789b3701f89624c93a28eac633cded59a0316d853d20e5eb9dd108",
       "gap": "This record covers only the Browser Golden Journey on the stated source commit. CLI parity, recovery/ACL, stale query response suppression, representative performance evidence, and exact release-candidate byte promotion remain unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "a46508986e34a22339c7f7dbe175a8371a74977e",
+      "candidate_sha": "a46508986e34a22339c7f7dbe175a8371a74977e",
+      "command": "backend binary + frontend dev + PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> deno run --node-modules-dir=none -A npm:@playwright/test test --reporter=junit composition-metric-journey.test.ts",
+      "selector": "e2e/composition-metric-journey.test.ts#test:Browser reopens a metric tool at its exact revision and surfaces the stable multiple-rows diagnostic without aggregation",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API (no fixture file): Form, entry, user-query Saved SQL, composition.save with Idempotency-Key",
+      "environment": "linux arm64 host; direct-process backend + frontend dev; Deno 2.8.3; Playwright Chromium",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-metric-journey-junit.xml",
+      "artifact_digest": "52bea6d9a78741090c0827a116207317d57cb686fd22996851bd1bfc7c9f53d1",
+      "gap": "This record covers only the metric reopen Browser evidence on the stated source commit. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "a46508986e34a22339c7f7dbe175a8371a74977e",
+      "candidate_sha": "a46508986e34a22339c7f7dbe175a8371a74977e",
+      "command": "backend binary + frontend dev + PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> deno run --node-modules-dir=none -A npm:@playwright/test test --reporter=junit composition-stale-response.test.ts",
+      "selector": "e2e/composition-stale-response.test.ts#test:Late parameter-A responses change neither rows, metric, error, loading, finalization, nor pagination",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API (no fixture file): Form, two entries, parameterized user-query Saved SQL, composition.save with Idempotency-Key",
+      "environment": "linux arm64 host; direct-process backend + frontend dev; Deno 2.8.3; Playwright Chromium",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-stale-response-junit.xml",
+      "artifact_digest": "cf7df28ce6357d614a4296ff96a94248c1eb60fbac08280aa17a6897e97f33cf",
+      "gap": "This record covers only the stale-response suppression Browser evidence on the stated source commit. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
     }
   ],
   "recovery_and_authorization": {

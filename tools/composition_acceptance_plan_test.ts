@@ -229,7 +229,7 @@ Deno.test(
 
     assertEquals(plan.schema, "ugoite/composition-acceptance-plan/v1");
     assertEquals(plan.status, "planned");
-    assertEquals(plan.implementation_contract_frozen, false);
+    assertEquals(plan.implementation_contract_frozen, true);
     assertEquals(plan.runtime_evidence_recorded, true);
     assertEquals(plan.fixture_layout.root, "e2e/fixtures/composition");
     const sharedFixtures = plan.fixture_layout.shared_document_fixtures;
@@ -330,9 +330,12 @@ Deno.test(
       "artifact_digest",
       "gap",
     ]);
-    assertEquals(plan.runtime_evidence.length, 1);
-    const [journeyEvidence] = plan.runtime_evidence;
+    assertEquals(plan.runtime_evidence.length, 3);
+    const [journeyEvidence, metricEvidence, staleEvidence] =
+      plan.runtime_evidence;
     assert(journeyEvidence);
+    assert(metricEvidence);
+    assert(staleEvidence);
     assertEquals(
       journeyEvidence.source_sha,
       "392204f28cedbbb9531f44864fa78992361a4813",
@@ -367,6 +370,53 @@ Deno.test(
       (byte) => byte.toString(16).padStart(2, "0"),
     ).join("");
     assertEquals(artifactDigestHex, journeyEvidence.artifact_digest);
+    for (
+      const [evidence, selector, artifactDigest] of [
+        [
+          metricEvidence,
+          "e2e/composition-metric-journey.test.ts#test:Browser reopens a metric tool at its exact revision and surfaces the stable multiple-rows diagnostic without aggregation",
+          "52bea6d9a78741090c0827a116207317d57cb686fd22996851bd1bfc7c9f53d1",
+        ],
+        [
+          staleEvidence,
+          "e2e/composition-stale-response.test.ts#test:Late parameter-A responses change neither rows, metric, error, loading, finalization, nor pagination",
+          "cf7df28ce6357d614a4296ff96a94248c1eb60fbac08280aa17a6897e97f33cf",
+        ],
+      ] as const
+    ) {
+      assertEquals(
+        evidence.source_sha,
+        "a46508986e34a22339c7f7dbe175a8371a74977e",
+      );
+      assertEquals(evidence.candidate_sha, evidence.source_sha);
+      assertEquals(evidence.selector, selector);
+      assertEquals(
+        evidence.surface,
+        "Browser + Server (direct-process dev E2E)",
+      );
+      assertEquals(evidence.result, "passed (1 passed, 0 skipped)");
+      assert(
+        evidence.gap.includes(
+          "Release-candidate byte promotion remains unverified",
+        ),
+        "each scoped run must retain the release verification gap",
+      );
+      assert(
+        (await Deno.stat(evidence.artifact)).isFile,
+        "the runtime evidence artifact must be present",
+      );
+      const evidenceBytes = await Deno.readFile(evidence.artifact);
+      const evidenceDigest = await crypto.subtle.digest(
+        "SHA-256",
+        evidenceBytes,
+      );
+      const evidenceDigestHex = Array.from(
+        new Uint8Array(evidenceDigest),
+        (byte) => byte.toString(16).padStart(2, "0"),
+      ).join("");
+      assertEquals(evidenceDigestHex, evidence.artifact_digest);
+      assertEquals(evidence.artifact_digest, artifactDigest);
+    }
     assertEquals(plan.recovery_and_authorization, {
       status: "planned",
       selector_binding_status: "pending_public_storage_and_resolver_contracts",
