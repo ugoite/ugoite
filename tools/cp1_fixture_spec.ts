@@ -28,6 +28,11 @@ export const CP1_FIXTURE_SPEC_SCHEMA_VERSION = 1;
  * - export totals divisible by both page sizes (100 x 10 pages, 1,000 x 1).
  * Trial counts, page sizes, lifecycle assertions, and the zero-skip policy
  * are unchanged. Slugs, seeds, scenario, and owners are unchanged.
+ *
+ * Sizing policy: the required lane uses only these minimal structural
+ * fixtures. Larger fixed-count volumes stay outside the required lane as
+ * scheduled or profile-only measurements; never add a fixed large-count
+ * release contract here. See `docs/architecture/testing/ci-cd.md`.
  */
 
 /**

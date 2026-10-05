@@ -652,7 +652,8 @@ jobs:
           restore-keys: playwright-v1-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install browser dependencies
-        run: deno task e2e:install:browsers
+        id: browser-deps
+        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers
 
       - name: Start artifact transfer measurement
         id: transfer-start
@@ -711,6 +712,7 @@ jobs:
           CLI_EXTRACT_SECONDS: ${{ steps.load-artifacts.outputs.cli_extract_seconds }}
           IMAGE_LOAD_SECONDS: ${{ steps.load-artifacts.outputs.image_load_seconds }}
           E2E_SECONDS: ${{ steps.e2e.outputs.duration_seconds }}
+          BROWSER_DEPS_SECONDS: ${{ steps.browser-deps.outputs.duration_seconds }}
         run: |
           {
             echo "## Smoke and mobile E2E timing"
@@ -721,6 +723,7 @@ jobs:
             echo "- Docker image load: ${IMAGE_LOAD_SECONDS:-n/a}s"
             echo "- Total artifact load step: ${LOAD_SECONDS:-n/a}s"
             echo "- E2E lane: ${E2E_SECONDS:-n/a}s"
+            echo "- Browser setup: ${BROWSER_DEPS_SECONDS:-n/a}s"
           } >>"$GITHUB_STEP_SUMMARY"
 
   e2e-owner:
@@ -767,7 +770,8 @@ jobs:
           key: playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('e2e/deno.json', 'deno.lock') }}
           restore-keys: playwright-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: Install browser dependencies
-        run: deno task e2e:install:browsers
+        id: browser-deps
+        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers
       - name: Start artifact transfer measurement
         id: transfer-start
         run: echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
@@ -810,6 +814,7 @@ jobs:
           CLI_EXTRACT_SECONDS: ${{ steps.load-artifacts.outputs.cli_extract_seconds }}
           IMAGE_LOAD_SECONDS: ${{ steps.load-artifacts.outputs.image_load_seconds }}
           E2E_SECONDS: ${{ steps.e2e.outputs.duration_seconds }}
+          BROWSER_DEPS_SECONDS: ${{ steps.browser-deps.outputs.duration_seconds }}
         run: |
           {
             echo "## Owner recovery E2E timing"
@@ -820,6 +825,7 @@ jobs:
             echo "- Docker image load: ${IMAGE_LOAD_SECONDS:-n/a}s"
             echo "- Total artifact load step: ${LOAD_SECONDS:-n/a}s"
             echo "- E2E lane: ${E2E_SECONDS:-n/a}s"
+            echo "- Browser setup: ${BROWSER_DEPS_SECONDS:-n/a}s"
           } >>"$GITHUB_STEP_SUMMARY"
 
   e2e-portable:
@@ -866,7 +872,8 @@ jobs:
           key: playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('e2e/deno.json', 'deno.lock') }}
           restore-keys: playwright-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: Install browser dependencies
-        run: deno task e2e:install:browsers
+        id: browser-deps
+        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers
       - name: Start artifact transfer measurement
         id: transfer-start
         run: echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
@@ -913,6 +920,7 @@ jobs:
           CLI_EXTRACT_SECONDS: ${{ steps.load-artifacts.outputs.cli_extract_seconds }}
           IMAGE_LOAD_SECONDS: ${{ steps.load-artifacts.outputs.image_load_seconds }}
           E2E_SECONDS: ${{ steps.e2e.outputs.duration_seconds }}
+          BROWSER_DEPS_SECONDS: ${{ steps.browser-deps.outputs.duration_seconds }}
           PORTABLE_SEED_SECONDS: ${{ steps.e2e.outputs.portable_seed_duration_seconds }}
           PORTABLE_SEED_EXIT_CODE: ${{ steps.e2e.outputs.portable_seed_exit_code }}
         run: |
@@ -925,6 +933,7 @@ jobs:
             echo "- Docker image load: ${IMAGE_LOAD_SECONDS:-n/a}s"
             echo "- Total artifact load step: ${LOAD_SECONDS:-n/a}s"
             echo "- E2E lane: ${E2E_SECONDS:-n/a}s"
+            echo "- Browser setup: ${BROWSER_DEPS_SECONDS:-n/a}s"
             echo "- Portable fixture seed: ${PORTABLE_SEED_SECONDS:-n/a}s (exit ${PORTABLE_SEED_EXIT_CODE:-n/a})"
           } >>"$GITHUB_STEP_SUMMARY"
 
@@ -1154,7 +1163,8 @@ jobs:
           restore-keys: playwright-v1-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install Playwright browser dependencies
-        run: deno task e2e:install:browsers
+        id: browser-deps
+        run: scripts/measure-step.sh browser-deps deno task e2e:install:browsers
 
       - name: Start artifact transfer measurement
         id: transfer-start
@@ -1217,6 +1227,7 @@ jobs:
           VERIFY_SECONDS: ${{ steps.load-artifacts.outputs.verification_seconds }}
           IMAGE_LOAD_SECONDS: ${{ steps.load-artifacts.outputs.image_load_seconds }}
           QUERY_SECONDS: ${{ steps.cp1-query.outputs.duration_seconds }}
+          BROWSER_DEPS_SECONDS: ${{ steps.browser-deps.outputs.duration_seconds }}
         run: |
           {
             echo "## CP1 query timing"
@@ -1225,6 +1236,7 @@ jobs:
             echo "- Artifact verification: ${VERIFY_SECONDS:-n/a}s"
             echo "- Docker image load: ${IMAGE_LOAD_SECONDS:-n/a}s"
             echo "- Total artifact load step: ${LOAD_SECONDS:-n/a}s"
+            echo "- Browser setup: ${BROWSER_DEPS_SECONDS:-n/a}s"
             echo "- Query acceptance: ${QUERY_SECONDS:-n/a}s"
           } >>"$GITHUB_STEP_SUMMARY"
 

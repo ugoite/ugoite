@@ -101,6 +101,21 @@ Playwright worker count at one. The standalone
 docsite-navigation lane runs through `mise run ci:lane:docsite-nav` so broken
 links and navigation can fail before the artifact build completes.
 
+The split-E2E pilot decision (#3307) is to keep the three independent E2E
+consumer jobs. Fourteen successful merge-group runs on 2026-09-28 showed
+workflow-to-gate times of 28–46 minutes with the consumers starting within
+about two minutes of artifact availability and finishing in 2–8 minutes, while
+the then-single `ci-cp1-acceptance` lane held the critical path at 27–42
+minutes; after the CP1 fixtures/query/export trio landed, merge-group run
+37278654095 gated in under 19 minutes with the parallel consumers finishing
+within about eight minutes of artifact availability. Consolidating the suites
+into one job would not move `ci-required` p95 by the one-minute pilot
+threshold — the gate was CP1-bound, not E2E-bound — while it would serialize
+three browser suites onto one runner and lose per-lane failure isolation. Keep
+the independent jobs; revisit only with new same-topology comparison data.
+Rust test sharding stays out of scope until runtime, compile/link, cache, and
+shard-comparison data show a clear improvement.
+
 Pull requests also run a separate `ci-pr-context-report` job. It checks out
 the exact PR base and head commits, writes Mitase PR-context JSON and Markdown
 reports, and uploads both as an artifact. This report job is an additional
@@ -143,12 +158,26 @@ upload the verified artifact set using the logical names `ugoite-docsite-pages`,
 `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and
 `ugoite-artifact-manifest`.
 
+Every browser lane pins `ubuntu-24.04` and the Playwright browser/runtime
+versions in `e2e/deno.json` plus `deno.lock`, and times its OS-dependency
+install step (`browser-deps`) into the lane summary so future setup regressions
+are diagnosable (#3438). The 26m42s OS-package install seen in one owner run
+was an archive-mirror outlier against typical sub-minute installs (33–44 s
+across the three E2E jobs in merge-group run 37278654095); OS dependencies
+are not skipped because ephemeral runners need them, and a prebuilt runner
+image remains a follow-up only if timed setup data shows the install
+dominating the gate again.
+
 The `ci:impact` planner selects CP1 acceptance for changes to EntryQuery, SQL
 query/count, or SQL export implementation and acceptance paths. Merge groups
 and main pushes run it unconditionally. It uses a fixed-seed 1,200/800
 two-Space browser fixture for stale-result, count, cancellation, retry, and
 pagination assertions, then checks bounded 1,000-row export completion. Its
 100,000-row/RSS/p95 performance measurements stay outside the required lane.
+The required CP1 lane uses only these minimal structural fixtures. Larger
+fixed-count volumes (the retired 10,000-row/two-Space lane and any larger
+probes) belong to scheduled or profile-only measurement; they are never merge
+gates and never release contracts (#3324).
 
 The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies
 the canonical frontend and Rust release outputs into the image instead of
@@ -181,6 +210,14 @@ run ID, digest, and size before extraction; each consumer repeats the canonical
 readback in a fresh private root. The fixture manifest records the verified
 Space UIDs, counts, Form distribution, owner mode, generator fingerprint, and
 measurement schema. There is no cross-run fixture cache.
+
+Seed profiling stays instrumentation-only over the single shared sample-data
+generation path: there are no profiling-only seed paths and no CP1-only
+engine, so no profiled/unprofiled semantics oracle is added (#3344).
+Seed-phase profiles are diagnostic evidence, not optimization targets:
+fixture-seed micro-optimization is out of the product roadmap and returns
+only with real product-bottleneck evidence from a user-facing path, never
+from fixture wall time alone (#3403).
 
 The query measurement can run its existing seeded fixture through either the
 direct host runner (default) or `run-e2e-compose.sh` by setting

@@ -437,6 +437,23 @@ async function assertAggregateWorkflow(
     ],
     "smoke/mobile E2E consumer lane",
   );
+  for (
+    const [job, subject] of [
+      [e2eSmokeMobileJob, "smoke/mobile E2E consumer lane"],
+      [e2eOwnerJob, "owner recovery E2E consumer lane"],
+      [e2ePortableJob, "portable-space E2E consumer lane"],
+    ] as const
+  ) {
+    assertContainsAll(
+      job,
+      [
+        "runs-on: ubuntu-24.04",
+        "scripts/measure-step.sh browser-deps deno task e2e:install:browsers",
+        "BROWSER_DEPS_SECONDS",
+      ],
+      `${subject} records pinned-runner browser setup duration`,
+    );
+  }
   assertContainsAll(
     e2eOwnerJob,
     [
@@ -650,6 +667,8 @@ async function assertAggregateWorkflow(
       "target/cp1-seeder",
       "scripts/measure-step.sh load-artifacts mise run ci:artifacts:load",
       "scripts/measure-step.sh cp1-query mise run ci:lane:cp1-query",
+      "scripts/measure-step.sh browser-deps deno task e2e:install:browsers",
+      "BROWSER_DEPS_SECONDS",
       "target/cp1-profiling/",
       "target/query-surfaces-measurement.json",
     ],
