@@ -11,7 +11,7 @@ features:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep the shipped portable-protocol API modules connected to the journey outcome criteria.
+        responsibility: Keep the shipped portable-protocol API modules connected to the journey outcome criteria. Entry API ownership lives with FEAT-ENTRY-001; journey verification covers the capability target.
         targets:
           - id: space-api
             adapter: typescript
@@ -29,23 +29,6 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-JOURNEY-001#criterion.form-establish
-          - id: entry-api
-            adapter: typescript
-            path: frontend/src/lib/entry-api.ts
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-JOURNEY-001#criterion.entry-create
-              - kind: satisfies
-                criterion: REQ-JOURNEY-001#criterion.entry-edit
-              - kind: satisfies
-                criterion: REQ-JOURNEY-001#criterion.entry-history
-              - kind: satisfies
-                criterion: REQ-JOURNEY-001#criterion.entry-restore
-              - kind: satisfies
-                criterion: REQ-JOURNEY-001#criterion.reopen
-              - kind: satisfies
-                criterion: REQ-JOURNEY-002#criterion.stale-revision
           - id: entry-query
             adapter: typescript
             path: frontend/src/lib/entry-query.ts
@@ -293,7 +276,7 @@ features:
         kind: http
         source: FEAT-JOURNEY-001#binding.contract/target.create-entry
         participants:
-          - target: FEAT-JOURNEY-001#binding.frontend/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.entry-command
             role: operator
@@ -302,7 +285,7 @@ features:
         kind: http
         source: FEAT-JOURNEY-001#binding.contract/target.update-entry
         participants:
-          - target: FEAT-JOURNEY-001#binding.frontend/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.entry-command
             role: operator
@@ -311,7 +294,7 @@ features:
         kind: http
         source: FEAT-JOURNEY-001#binding.contract/target.entry-history
         participants:
-          - target: FEAT-JOURNEY-001#binding.frontend/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.entry-command
             role: operator
@@ -322,7 +305,7 @@ features:
         kind: http
         source: FEAT-JOURNEY-001#binding.contract/target.entry-revision
         participants:
-          - target: FEAT-JOURNEY-001#binding.frontend/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.entry-command
             role: operator
@@ -333,7 +316,7 @@ features:
         kind: http
         source: FEAT-JOURNEY-001#binding.contract/target.restore-entry
         participants:
-          - target: FEAT-JOURNEY-001#binding.frontend/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.entry-command
             role: operator
@@ -355,7 +338,7 @@ features:
         participants:
           - target: FEAT-JOURNEY-001#binding.frontend/target.space-api
             role: client
-          - target: FEAT-JOURNEY-001#binding.frontend/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
           - target: FEAT-JOURNEY-001#binding.frontend/target.entry-query
             role: client
@@ -370,7 +353,7 @@ features:
         kind: http
         source: FEAT-JOURNEY-001#binding.contract/target.update-entry
         participants:
-          - target: FEAT-JOURNEY-001#binding.frontend/target.entry-api
+          - target: FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
             role: client
           - target: FEAT-API-001#binding.cli-implementation/target.entry-command
             role: operator

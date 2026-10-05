@@ -380,7 +380,7 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       "REQ-API-002#criterion.entry-lifecycle",
     ],
     feature_binding_refs: [
-      "FEAT-JOURNEY-001#binding.frontend/target.entry-api",
+      "FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api",
       "FEAT-API-001#binding.cli-implementation/target.entry-command",
     ],
     artifact_paths: [
