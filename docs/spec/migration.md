@@ -109,3 +109,16 @@ repository delivery, or become a second Knowledge authority.
 - Mitase stays pinned to an immutable `0.2.x` release via
   `tools/mitase.lock.toml` and `scripts/mitase`. Migration
   work never pins Mitase HEAD or a mutable branch.
+
+## Facet-oriented authoring adoption (Mitase 0.2.2)
+
+- Old-style specifications stay valid. Facet-oriented authoring applies to
+  new and reworked capability features on touch; there is no bulk migration.
+- The facet vocabulary lives in
+  `docs/architecture/principles/control-surfaces.md`; Mitase treats facets
+  as opaque strings and never requires any facet to exist.
+- Capability features own cross-surface projection (which facets reach the
+  same meaning). Journeys own capability composition and move away from
+  re-owning surface targets; capability-owned surface targets referenced by
+  a journey migrate to `covers` on capability targets instead of duplicated
+  bindings.
