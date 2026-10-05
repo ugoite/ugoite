@@ -3,7 +3,10 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { compositionApi } from "~/lib/composition-api";
 import { setLocale } from "~/lib/i18n";
-import CompositionRevisionRoute from "./[revision_id]";
+import CompositionRevisionRoute, {
+  resolveCompositionFieldName,
+} from "./[revision_id]";
+import type { Form } from "~/lib/types";
 
 vi.mock("@solidjs/router", () => ({
   useParams: () => ({
@@ -160,6 +163,48 @@ describe("Composition exact-revision route", () => {
       "tool-1",
       "revision-2",
       expect.any(AbortSignal),
+    );
+  });
+});
+
+describe("resolveCompositionFieldName", () => {
+  const forms = (): Form[] => [
+    {
+      id: "form-1",
+      name: "Expenses",
+      version: 1,
+      template: "entry",
+      fields: {
+        amount: { id: 101, type: "number", required: true },
+      },
+    },
+  ];
+
+  it("resolves a field label by stable form id", () => {
+    expect(resolveCompositionFieldName(forms(), "form-1", 101)).toBe("amount");
+  });
+
+  it("does not resolve by display name", () => {
+    expect(resolveCompositionFieldName(forms(), "Expenses", 101))
+      .toBeUndefined();
+  });
+
+  it("is rename-stable and display-only", () => {
+    const renamed = forms();
+    renamed[0].name = "Renamed expenses";
+    // Display metadata renames never change id-based resolution.
+    expect(resolveCompositionFieldName(renamed, "form-1", 101)).toBe("amount");
+    expect(resolveCompositionFieldName(renamed, "Renamed expenses", 101))
+      .toBeUndefined();
+    // Unknown forms and fields stay unresolved so the table falls back
+    // to the current row key order; the lookup never mutates its input.
+    expect(resolveCompositionFieldName(renamed, "missing-form", 101))
+      .toBeUndefined();
+    expect(resolveCompositionFieldName(renamed, "form-1", 999)).toBeUndefined();
+    expect(renamed).toEqual(
+      forms().map((form) =>
+        form.id === "form-1" ? { ...form, name: "Renamed expenses" } : form
+      ),
     );
   });
 });
