@@ -52,6 +52,7 @@ Deno.test("v0.3 preflight rows resolve real authorities and static artifacts", a
       "docs/mitase/requirements/journey.yaml",
       "docs/mitase/requirements/frontend.yaml",
       "docs/mitase/features/api.yaml",
+      "docs/mitase/features/entries.yaml",
       "docs/mitase/features/journey.yaml",
     ]
   ) {

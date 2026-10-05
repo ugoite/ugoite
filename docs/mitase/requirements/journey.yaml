@@ -75,7 +75,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-JOURNEY-001#criterion.entry-create
                 covers:
-                  - FEAT-JOURNEY-001#binding.frontend/target.entry-api
+                  - FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
                 runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-KNOWLEDGE-001: Entry create appends exactly one revision' } }
           - id: entry-edit-case
             adapter: typescript
@@ -85,7 +85,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-JOURNEY-001#criterion.entry-edit
                 covers:
-                  - FEAT-JOURNEY-001#binding.frontend/target.entry-api
+                  - FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
                 runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-KNOWLEDGE-001: Entry edit enforces optimistic concurrency' } }
           - id: search-case
             adapter: typescript
@@ -105,7 +105,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-JOURNEY-001#criterion.entry-history
                 covers:
-                  - FEAT-JOURNEY-001#binding.frontend/target.entry-api
+                  - FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
                 runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-KNOWLEDGE-001: History stays append-only across create and edit' } }
           - id: restore-case
             adapter: typescript
@@ -115,7 +115,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-JOURNEY-001#criterion.entry-restore
                 covers:
-                  - FEAT-JOURNEY-001#binding.frontend/target.entry-api
+                  - FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api
                 runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-KNOWLEDGE-001: Restore appends a new revision without shortening history' } }
           - id: reopen-case
             adapter: typescript
@@ -126,7 +126,6 @@ requirements:
                 criterion: REQ-JOURNEY-001#criterion.reopen
                 covers:
                   - FEAT-JOURNEY-001#binding.frontend/target.space-api
-                  - FEAT-JOURNEY-001#binding.frontend/target.entry-api
                   - FEAT-JOURNEY-001#binding.frontend/target.entry-query
                 runner: { runner: e2e-playwright, arguments: { file: e2e/knowledge-journey.test.ts, test: 'JOURNEY-KNOWLEDGE-001: Reopen reads identical durable state' } }
       - id: journey-cli-core-verification
@@ -452,7 +451,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-JOURNEY-002#criterion.stale-revision
-                covers: [FEAT-JOURNEY-001#binding.frontend/target.entry-api]
+                covers: [FEAT-ENTRY-001#binding.frontend-implementation/target.entry-api]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: 'PUT with stale revision_id should return 409 conflict' } }
 
   - id: REQ-JOURNEY-003

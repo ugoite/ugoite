@@ -121,6 +121,16 @@ features:
                 criterion: REQ-ENTRY-004#criterion.tombstone
               - kind: satisfies
                 criterion: REQ-ENTRY-005#criterion.history
+              - kind: satisfies
+                criterion: REQ-JOURNEY-001#criterion.entry-create
+              - kind: satisfies
+                criterion: REQ-JOURNEY-001#criterion.entry-edit
+              - kind: satisfies
+                criterion: REQ-JOURNEY-001#criterion.entry-history
+              - kind: satisfies
+                criterion: REQ-JOURNEY-001#criterion.entry-restore
+              - kind: satisfies
+                criterion: REQ-JOURNEY-002#criterion.stale-revision
       - id: mcp
         role: implementation
         facet: mcp
