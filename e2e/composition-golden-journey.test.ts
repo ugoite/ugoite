@@ -459,12 +459,14 @@ test.describe("Composition Golden Journey", () => {
       );
       await expect(reopenedPage.getByText("No results", { exact: true }))
         .toBeVisible();
+      // ResultPagination intentionally renders no navigation on a single
+      // (here empty) page, so accept absent-or-disabled pagination.
       await expect(
         reopenedPage.getByRole("button", { name: "Next", exact: true }),
-      ).toBeDisabled();
+      ).toHaveCount(0);
       await expect(
         reopenedPage.getByRole("button", { name: "Previous", exact: true }),
-      ).toBeDisabled();
+      ).toHaveCount(0);
     } finally {
       await reopenedContext.close();
     }

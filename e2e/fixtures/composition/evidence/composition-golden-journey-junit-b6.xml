@@ -1,0 +1,6 @@
+<testsuites id="" name="" tests="1" failures="0" skipped="0" errors="0" time="81.63445399999999">
+<testsuite name="composition-golden-journey.test.ts" timestamp="2026-10-05T14:34:39.154Z" hostname="" tests="1" failures="0" skipped="0" time="11.128" errors="0">
+<testcase name="Composition Golden Journey › Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled" classname="composition-golden-journey.test.ts" time="11.128">
+</testcase>
+</testsuite>
+</testsuites>

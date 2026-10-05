@@ -66,6 +66,45 @@
       "artifact": "e2e/fixtures/composition/evidence/composition-save-receipt-junit.xml",
       "artifact_digest": "ffbdfec512176e80c838b163f9c3a5736ab28440c64ee82d1de36f54073f527b",
       "gap": "This record covers only the API-level save receipt reconciliation evidence on the stated source commit. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "8c560ae8361fc6b6b33523e595658cba98aad753",
+      "candidate_sha": "8c560ae8361fc6b6b33523e595658cba98aad753",
+      "command": "release backend binary + frontend dev stack, then PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test --reporter=junit composition-golden-journey.test.ts",
+      "selector": "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "e2e/fixtures/composition/space-seed/manifest.json",
+      "environment": "linux arm64 host; direct-process release backend binary + frontend dev; Deno 2.8.3; Playwright Chromium 1.60.0",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-golden-journey-junit-b6.xml",
+      "artifact_digest": "14211528782232a51b566941448f5645683c77a7f8829275b4ede0d34129fc5e",
+      "gap": "This record covers only the Browser Golden Journey on the stated source commit, revalidated against the post-result-surface tree where ResultPagination renders no navigation on a single page. CLI parity, recovery/ACL, representative performance evidence, and exact release-candidate byte promotion remain unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "8c560ae8361fc6b6b33523e595658cba98aad753",
+      "candidate_sha": "8c560ae8361fc6b6b33523e595658cba98aad753",
+      "command": "release backend binary + frontend dev stack, then PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test --reporter=junit composition-metric-journey.test.ts",
+      "selector": "e2e/composition-metric-journey.test.ts#test:Browser reopens a metric tool at its exact revision and surfaces the stable multiple-rows diagnostic without aggregation",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API (no fixture file): Form, entry, user-query Saved SQL, composition.save with Idempotency-Key",
+      "environment": "linux arm64 host; direct-process release backend binary + frontend dev; Deno 2.8.3; Playwright Chromium 1.60.0",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-metric-journey-junit-b6.xml",
+      "artifact_digest": "1a17cd901a964eb62889c9f340325f00727263f1d061bf3741cb57f2398d1cc4",
+      "gap": "This record covers only the metric reopen Browser evidence on the stated source commit. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "8c560ae8361fc6b6b33523e595658cba98aad753",
+      "candidate_sha": "8c560ae8361fc6b6b33523e595658cba98aad753",
+      "command": "release backend binary + frontend dev stack, then PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test --reporter=junit composition-stale-response.test.ts",
+      "selector": "e2e/composition-stale-response.test.ts#test:Late parameter-A responses change neither rows, metric, error, loading, finalization, nor pagination",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API (no fixture file): Form, two entries, parameterized user-query Saved SQL, composition.save with Idempotency-Key",
+      "environment": "linux arm64 host; direct-process release backend binary + frontend dev; Deno 2.8.3; Playwright Chromium 1.60.0",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-stale-response-junit-b6.xml",
+      "artifact_digest": "1adb33425555cf4b95621d5329a53c3a928c6b842f8c3a1ec20d4115854428a3",
+      "gap": "This record covers only the stale-response suppression Browser evidence on the stated source commit. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
     }
   ]
 }

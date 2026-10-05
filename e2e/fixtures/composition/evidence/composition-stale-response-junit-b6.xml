@@ -1,0 +1,6 @@
+<testsuites id="" name="" tests="1" failures="0" skipped="0" errors="0" time="6.79331">
+<testsuite name="composition-stale-response.test.ts" timestamp="2026-10-05T14:37:27.820Z" hostname="" tests="1" failures="0" skipped="0" time="3.313" errors="0">
+<testcase name="Composition Stale Response › Late parameter-A responses change neither rows, metric, error, loading, finalization, nor pagination" classname="composition-stale-response.test.ts" time="3.313">
+</testcase>
+</testsuite>
+</testsuites>
