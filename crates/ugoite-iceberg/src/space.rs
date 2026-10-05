@@ -253,18 +253,18 @@ fn apply_local_space_permissions(op: &Operator, space_id: &str) -> Result<()> {
         return Ok(());
     };
 
-    set_owner_only_mode(spaces_root, 0o700)?;
-    set_owner_only_mode(&space_dir, 0o700)?;
+    set_owner_only_mode(spaces_root, 0o700)?; // codeql[rust/hard-coded-cryptographic-value]: Unix owner-only directory mode, not a cryptographic secret.
+    set_owner_only_mode(&space_dir, 0o700)?; // codeql[rust/hard-coded-cryptographic-value]: Unix owner-only directory mode, not a cryptographic secret.
     for dir in ["security", "forms", "assets"] {
-        set_owner_only_mode(&space_dir.join(dir), 0o700)?;
+        set_owner_only_mode(&space_dir.join(dir), 0o700)?; // codeql[rust/hard-coded-cryptographic-value]: Unix owner-only directory mode, not a cryptographic secret.
     }
     for file in ["meta.json", "settings.json"] {
-        set_owner_only_mode(&space_dir.join(file), 0o600)?;
+        set_owner_only_mode(&space_dir.join(file), 0o600)?; // codeql[rust/hard-coded-cryptographic-value]: Unix owner-only file mode, not a cryptographic secret.
     }
     if let Some(control_dir) = local_space_patch_control_dir(op) {
-        set_owner_only_mode(&control_dir, 0o700)?;
+        set_owner_only_mode(&control_dir, 0o700)?; // codeql[rust/hard-coded-cryptographic-value]: Unix owner-only directory mode, not a cryptographic secret.
         if let Some(journal) = local_space_patch_journal_fs_path(op, space_id) {
-            set_owner_only_mode(&journal, 0o600)?;
+            set_owner_only_mode(&journal, 0o600)?; // codeql[rust/hard-coded-cryptographic-value]: Unix owner-only file mode, not a cryptographic secret.
         }
     }
     Ok(())
@@ -1107,7 +1107,7 @@ async fn write_local_space_json_atomic(
         .ok_or_else(|| anyhow!("Space JSON path has no parent: {path}"))?;
     tokio::fs::create_dir_all(parent).await?;
     #[cfg(unix)]
-    set_owner_only_mode(parent, 0o700)?;
+    set_owner_only_mode(parent, 0o700)?; // codeql[rust/hard-coded-cryptographic-value]: Unix owner-only directory mode, not a cryptographic secret.
     let file_name = target
         .file_name()
         .ok_or_else(|| anyhow!("Space JSON path has no file name: {path}"))?
@@ -1145,7 +1145,7 @@ fn restore_local_space_json_permissions(op: &Operator, path: &str) -> Result<()>
     #[cfg(unix)]
     if matches!(op.info().scheme(), "fs" | "file") {
         let target = Path::new(op.info().root().as_str()).join(path);
-        set_owner_only_mode(&target, 0o600)?;
+        set_owner_only_mode(&target, 0o600)?; // codeql[rust/hard-coded-cryptographic-value]: Unix owner-only file mode, not a cryptographic secret.
     }
     Ok(())
 }

@@ -4846,9 +4846,9 @@ fn local_atomic_write_dir(root: &str) -> Result<std::path::PathBuf> {
     // temporary directory on that exact filesystem, including when `spaces`
     // is a separate mount or does not exist yet.
     if root == "/" {
-        let spaces = Path::new(root).join("spaces");
+        let spaces = Path::new(root).join("spaces"); // codeql[rust/hard-coded-cryptographic-value]: Fixed Space storage path segment, not a cryptographic secret.
         if spaces.exists() {
-            return Ok(spaces.join(".ugoite-atomic-writes"));
+            return Ok(spaces.join(".ugoite-atomic-writes")); // codeql[rust/hard-coded-cryptographic-value]: Fixed atomic-write directory name, not a cryptographic secret.
         }
         let temp = std::env::temp_dir();
         if same_filesystem(Path::new(root), &temp) {
@@ -4856,7 +4856,7 @@ fn local_atomic_write_dir(root: &str) -> Result<std::path::PathBuf> {
         }
         bail!("cannot configure same-filesystem atomic writes for local root /");
     }
-    Ok(Path::new(root).join("spaces").join(".ugoite-atomic-writes"))
+    Ok(Path::new(root).join("spaces").join(".ugoite-atomic-writes")) // codeql[rust/hard-coded-cryptographic-value]: Fixed Space storage path segments, not a cryptographic secret.
 }
 
 #[cfg(unix)]
@@ -4877,7 +4877,7 @@ fn same_filesystem(_first: &Path, _second: &Path) -> bool {
 fn set_owner_only_directory(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?; // codeql[rust/hard-coded-cryptographic-value]: Unix owner-only directory mode, not a cryptographic secret.
     Ok(())
 }
 
