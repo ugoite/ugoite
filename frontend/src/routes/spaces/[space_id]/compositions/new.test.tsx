@@ -153,7 +153,7 @@ describe("Composition studio shell", () => {
     const headings = screen.getAllByRole("heading", { level: 2 }).map(
       (heading) => heading.textContent,
     );
-    expect(headings).toEqual(["Data", "Tags", "Preview"]);
+    expect(headings).toEqual(["Data", "Display", "Tags", "Preview"]);
 
     // The tool-name input owns the name: typing updates the heading owner.
     const nameInput = screen.getByLabelText("Name");
@@ -165,10 +165,11 @@ describe("Composition studio shell", () => {
       );
     });
 
-    // Empty state carries a single next-action line, nothing else.
+    // Empty states carry one next-action line each, nothing else.
     const paragraphs = container.querySelectorAll("p");
-    expect(paragraphs).toHaveLength(1);
+    expect(paragraphs).toHaveLength(2);
     expect(paragraphs[0]).toHaveTextContent("Add data to begin.");
+    expect(paragraphs[1]).toHaveTextContent("Add a display to begin.");
   });
 
   it("adds data sources with full-row selection and keyboard-operable reorder", async () => {
@@ -225,6 +226,55 @@ describe("Composition studio shell", () => {
     expect(
       screen.queryByRole("button", { name: "Tasks" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("adds displays between data and tags with headers in order", async () => {
+    const { container } = render(() => <CompositionNewRoute />);
+
+    const headings = () =>
+      screen.getAllByRole("heading", { level: 2 }).map((heading) =>
+        heading.textContent
+      );
+    expect(headings()).toEqual(["Data", "Display", "Tags", "Preview"]);
+
+    // Displays need a source first.
+    expect(screen.getByRole("button", { name: "Add display" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Tasks" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Add display" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add display" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Table" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Tasks" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add display" }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    // The display row owns its default source name; headers stay ordered.
+    expect(headings()).toEqual(["Data", "Display", "Tags", "Preview"]);
+    expect(screen.getByText("Table")).toBeInTheDocument();
+    expect(
+      within(container).getAllByRole("button", { name: "Tasks" }),
+    ).toHaveLength(2);
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Remove Tasks" })[1],
+    );
+    expect(
+      within(container).getAllByRole("button", { name: "Tasks" }),
+    ).toHaveLength(1);
   });
 
   it("saves the canonical draft with a stable idempotency key", async () => {

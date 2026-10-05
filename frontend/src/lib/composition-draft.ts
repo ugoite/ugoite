@@ -371,6 +371,29 @@ export const moveDisplay = (
   };
 };
 
+/** Rename a display label. A blank label clears back to the default name. */
+export const setDisplayLabel = (
+  draft: CompositionDraft,
+  displayDraftId: string,
+  label: string,
+): DraftResult => {
+  const index = draft.displays.findIndex((display) =>
+    display.draftId === displayDraftId
+  );
+  if (index < 0) return { ok: false, error: "unknown-display" };
+  const trimmed = label.trim();
+  const current = draft.displays[index];
+  const next = { ...current };
+  if (trimmed) {
+    next.label = trimmed;
+  } else {
+    delete next.label;
+  }
+  const displays = [...draft.displays];
+  displays[index] = next;
+  return { ok: true, draft: { ...draft, displays } };
+};
+
 export const upsertParameter = (
   draft: CompositionDraft,
   parameter: DraftParameter,

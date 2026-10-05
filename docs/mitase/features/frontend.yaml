@@ -939,6 +939,24 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
+          - id: composition-display-list
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayList.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+          - id: composition-display-picker
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
           - id: composition-studio-shell
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.tsx
