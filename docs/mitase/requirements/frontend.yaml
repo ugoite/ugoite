@@ -2443,6 +2443,46 @@ requirements:
                 criterion: REQ-FE-068#criterion.keyboard-row-navigation
                 covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "moves keyboard focus between row actions" } }
+          - id: history-change-table-rendering
+            adapter: typescript
+            path: frontend/src/components/HistoryChangeTable.test.tsx
+            selector: { kind: test, name: "renders the current Change page as a native table" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.native-page-rows
+                covers: [FEAT-JOURNEY-001#binding.history-result-surface/target.history-change-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/HistoryChangeTable.test.tsx", test: "renders the current Change page as a native table" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-JOURNEY-001#binding.history-result-surface/target.history-change-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/HistoryChangeTable.test.tsx", test: "renders the current Change page as a native table" } }
+          - id: history-change-table-selection
+            adapter: typescript
+            path: frontend/src/components/HistoryChangeTable.test.tsx
+            selector: { kind: test, name: "selects on row click and opens only from the trailing control" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+                covers: [FEAT-JOURNEY-001#binding.history-result-surface/target.history-change-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/HistoryChangeTable.test.tsx", test: "selects on row click and opens only from the trailing control" } }
+          - id: history-change-table-trailing
+            adapter: typescript
+            path: frontend/src/components/HistoryChangeTable.test.tsx
+            selector: { kind: test, name: "keeps the open action in a sticky trailing cell" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+                covers: [FEAT-JOURNEY-001#binding.history-result-surface/target.history-change-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/HistoryChangeTable.test.tsx", test: "keeps the open action in a sticky trailing cell" } }
+          - id: history-change-table-keyboard
+            adapter: typescript
+            path: frontend/src/components/HistoryChangeTable.test.tsx
+            selector: { kind: test, name: "moves keyboard focus between row actions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.keyboard-row-navigation
+                covers: [FEAT-JOURNEY-001#binding.history-result-surface/target.history-change-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/HistoryChangeTable.test.tsx", test: "moves keyboard focus between row actions" } }
           - id: sql-result-table
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx

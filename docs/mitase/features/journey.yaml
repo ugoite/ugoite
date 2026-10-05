@@ -68,6 +68,26 @@ features:
                 criterion: REQ-JOURNEY-004#criterion.space-change-history
               - kind: satisfies
                 criterion: REQ-JOURNEY-004#criterion.change-revert-append
+      - id: history-result-surface
+        role: implementation
+        facet: frontend
+        responsibility: Render Space Change pages through the Change-owned table with the shared result vocabulary. Change selection and open semantics stay in HistoryChangeTable; paging, filters, sort, recovery, and async states stay with the history route.
+        targets:
+          - id: history-change-table
+            adapter: typescript
+            path: frontend/src/components/HistoryChangeTable.tsx
+            selector: { kind: symbol, name: HistoryChangeTable }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.native-page-rows
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.keyboard-row-navigation
       - id: server
         role: operation
         facet: backend
