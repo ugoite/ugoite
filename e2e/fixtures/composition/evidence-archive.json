@@ -1,0 +1,71 @@
+{
+  "schema": "ugoite/composition-evidence-archive/v1",
+  "note": "Append-only archive of historical scoped runtime evidence. Records describe past runs only; they do not assert current plan status and are not release verification.",
+  "runtime_evidence": [
+    {
+      "source_sha": "392204f28cedbbb9531f44864fa78992361a4813",
+      "candidate_sha": "392204f28cedbbb9531f44864fa78992361a4813",
+      "command": "E2E_BUILD_IMAGES=true bash e2e/scripts/run-e2e-parity.sh composition-golden",
+      "selector": "e2e/composition-golden-journey.test.ts#test:Browser saves a tool once, reopens its exact revision from Home, and pages parameterized results with model connection disabled",
+      "surface": "Browser + Server (Docker Compose E2E)",
+      "fixture": "e2e/fixtures/composition/space-seed/manifest.json",
+      "environment": "macOS arm64 host; Docker Compose linux/arm64; Deno 2.8.3; Playwright Chromium",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-golden-journey-junit.xml",
+      "artifact_digest": "a7da68bb91789b3701f89624c93a28eac633cded59a0316d853d20e5eb9dd108",
+      "gap": "This record covers only the Browser Golden Journey on the stated source commit. CLI parity, recovery/ACL, stale query response suppression, representative performance evidence, and exact release-candidate byte promotion remain unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "a46508986e34a22339c7f7dbe175a8371a74977e",
+      "candidate_sha": "a46508986e34a22339c7f7dbe175a8371a74977e",
+      "command": "backend binary + frontend dev + PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> deno run --node-modules-dir=none -A npm:@playwright/test test --reporter=junit composition-metric-journey.test.ts",
+      "selector": "e2e/composition-metric-journey.test.ts#test:Browser reopens a metric tool at its exact revision and surfaces the stable multiple-rows diagnostic without aggregation",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API (no fixture file): Form, entry, user-query Saved SQL, composition.save with Idempotency-Key",
+      "environment": "linux arm64 host; direct-process backend + frontend dev; Deno 2.8.3; Playwright Chromium",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-metric-journey-junit.xml",
+      "artifact_digest": "52bea6d9a78741090c0827a116207317d57cb686fd22996851bd1bfc7c9f53d1",
+      "gap": "This record covers only the metric reopen Browser evidence on the stated source commit. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "a46508986e34a22339c7f7dbe175a8371a74977e",
+      "candidate_sha": "a46508986e34a22339c7f7dbe175a8371a74977e",
+      "command": "backend binary + frontend dev + PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> deno run --node-modules-dir=none -A npm:@playwright/test test --reporter=junit composition-stale-response.test.ts",
+      "selector": "e2e/composition-stale-response.test.ts#test:Late parameter-A responses change neither rows, metric, error, loading, finalization, nor pagination",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API (no fixture file): Form, two entries, parameterized user-query Saved SQL, composition.save with Idempotency-Key",
+      "environment": "linux arm64 host; direct-process backend + frontend dev; Deno 2.8.3; Playwright Chromium",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-stale-response-junit.xml",
+      "artifact_digest": "cf7df28ce6357d614a4296ff96a94248c1eb60fbac08280aa17a6897e97f33cf",
+      "gap": "This record covers only the stale-response suppression Browser evidence on the stated source commit. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "5565b5170d02f354f551be93705ac4713285fa6a",
+      "candidate_sha": "5565b5170d02f354f551be93705ac4713285fa6a",
+      "command": "backend binary + frontend dev + PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> deno run --node-modules-dir=none -A npm:@playwright/test test --reporter=junit composition-recovery-authorization.test.ts",
+      "selector": "e2e/composition-recovery-authorization.test.ts#test:Composition raw recovery and ACL denial preserve caller-visible contracts",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API (no fixture file): broken-reference Composition saved with Idempotency-Key",
+      "environment": "linux arm64 host; direct-process backend + frontend dev; Deno 2.8.3; Playwright Chromium",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-recovery-authorization-junit.xml",
+      "artifact_digest": "501ec65e4b6d6fecff77503c8b115e931ed643bdcd75c5589eca31281896f202",
+      "gap": "This record covers only the raw recovery and caller-visible contract evidence on the stated source commit. Authenticated-denied reads are covered by Rust storage/ACL tests, not by a second principal here. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
+    },
+    {
+      "source_sha": "5565b5170d02f354f551be93705ac4713285fa6a",
+      "candidate_sha": "5565b5170d02f354f551be93705ac4713285fa6a",
+      "command": "backend binary + frontend dev + PLAYWRIGHT_JUNIT_OUTPUT_FILE=<out> deno run --node-modules-dir=none -A npm:@playwright/test test --reporter=junit composition-save-receipt.test.ts",
+      "selector": "e2e/composition-save-receipt.test.ts#test:Composition save reconciles a lost response without duplicate publication",
+      "surface": "Browser + Server (direct-process dev E2E)",
+      "fixture": "self-seeded via API (no fixture file): Form, entry, user-query Saved SQL; composition.save with Idempotency-Key",
+      "environment": "linux arm64 host; direct-process backend + frontend dev; Deno 2.8.3; Playwright Chromium",
+      "result": "passed (1 passed, 0 skipped)",
+      "artifact": "e2e/fixtures/composition/evidence/composition-save-receipt-junit.xml",
+      "artifact_digest": "ffbdfec512176e80c838b163f9c3a5736ab28440c64ee82d1de36f54073f527b",
+      "gap": "This record covers only the API-level save receipt reconciliation evidence on the stated source commit. Release-candidate byte promotion remains unverified. No release candidate was built or promoted."
+    }
+  ]
+}

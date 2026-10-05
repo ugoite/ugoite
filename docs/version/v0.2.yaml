@@ -2,14 +2,12 @@ version: "0.2"
 status: in_progress
 title: "Product UX Release"
 summary: >
-  Sole active v0.2 authority: Product UX; v0.2.0 is published. The release ships
-  Form-first Browser navigation, structured Entries, canonical EntryQuery,
-  Saved SQL, stateless SQL, and CLI Context / Receipt workflows. The tracker is
-  in progress because Product UX acceptance criteria without direct evidence
-  remain unverified follow-up work; publication does not imply every criterion
-  was completed. Knowledge-to-tools remains a North Star, not a shipped
-  acceptance claim. The former View and AI milestone authorities are obsolete
-  and are no longer active v0.2 scope.
+  Active v0.2 development tracker for the Product UX milestone on the frozen
+  v0.1 Foundation: completion, discoverability, cross-surface consistency,
+  validation clarity, recovery, and documentation correctness. Shipped
+  capabilities are described by the versioned release notes under
+  docs/version/releases/; criteria without direct evidence remain unverified
+  follow-up work tracked in the milestone source below.
 milestones:
   - id: product-ux
     status: in_progress

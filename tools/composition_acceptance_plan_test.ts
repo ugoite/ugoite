@@ -7,31 +7,24 @@ type ReservedSelector = {
 
 type Milestone = {
   id: string;
-  status: string;
   outcome: string;
   reserved_selectors: ReservedSelector[];
 };
 
 type AcceptancePlan = {
   schema: string;
-  status: string;
   implementation_contract_frozen: boolean;
-  runtime_evidence_recorded: boolean;
   fixture_layout: {
     root: string;
     shared_document_fixtures: Array<{
       path: string;
       owner: string;
-      status: string;
     }>;
     recovery_fixture_candidates: Array<{
       path: string;
       scenario: string;
-      status: string;
     }>;
     integration_payloads: {
-      status: string;
-      created: boolean;
       created_files: string[];
     };
   };
@@ -42,26 +35,9 @@ type AcceptancePlan = {
     steps: string[];
   };
   evidence_record_fields: string[];
-  runtime_evidence: Array<{
-    source_sha: string;
-    candidate_sha: string;
-    command: string;
-    selector: string;
-    surface: string;
-    fixture: string;
-    environment: string;
-    result: string;
-    artifact: string;
-    artifact_digest: string;
-    gap: string;
-  }>;
   recovery_and_authorization: {
-    status: string;
-    selector_binding_status: string;
     save_enablement: {
       scope: string;
-      enabled: boolean;
-      status: string;
       prerequisites: string[];
     };
     cases: Array<{
@@ -74,7 +50,14 @@ type AcceptancePlan = {
   milestones: Milestone[];
 };
 
+type EvidenceArchive = {
+  schema: string;
+  note: string;
+  runtime_evidence: Array<Record<string, string>>;
+};
+
 const PLAN_PATH = "e2e/fixtures/composition/acceptance-plan.json";
+const ARCHIVE_PATH = "e2e/fixtures/composition/evidence-archive.json";
 
 const EXPECTED_BROWSER_STEPS = [
   "Open a parameterized Saved SQL result and save it as a tool through the Browser dialog.",
@@ -221,16 +204,29 @@ function selectorDetails({ path, selector }: ReservedSelector): string {
 }
 
 Deno.test(
-  "Composition acceptance plan records scoped runtime evidence without claiming release verification",
+  "Composition acceptance plan records selectors and evidence shape without claiming release status",
   async () => {
-    const plan = JSON.parse(
+    const raw = JSON.parse(
       await Deno.readTextFile(PLAN_PATH),
-    ) as AcceptancePlan;
+    ) as Record<string, unknown>;
+    const plan = raw as AcceptancePlan;
 
     assertEquals(plan.schema, "ugoite/composition-acceptance-plan/v1");
-    assertEquals(plan.status, "planned");
+    // The gate file carries no plan status: status-like fields would infer
+    // current state from history. Implementation status stays in Mitase.
+    for (
+      const key of [
+        "status",
+        "runtime_evidence_recorded",
+        "runtime_evidence",
+      ] as const
+    ) {
+      assert(
+        !(key in raw),
+        `the acceptance plan must not carry ${key}`,
+      );
+    }
     assertEquals(plan.implementation_contract_frozen, true);
-    assertEquals(plan.runtime_evidence_recorded, true);
     assertEquals(plan.fixture_layout.root, "e2e/fixtures/composition");
     const sharedFixtures = plan.fixture_layout.shared_document_fixtures;
     assertEquals(sharedFixtures, [
@@ -238,7 +234,6 @@ Deno.test(
         path:
           "crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml",
         owner: "ugoite-domain",
-        status: "shared_reference",
       },
     ]);
     assert(
@@ -249,12 +244,10 @@ Deno.test(
       {
         path: "e2e/fixtures/composition/unknown-format-version.ugcomp.yaml",
         scenario: "unsupported_format_version",
-        status: "raw_fixture_only",
       },
       {
         path: "e2e/fixtures/composition/broken-source-reference.ugcomp.yaml",
         scenario: "missing_form",
-        status: "raw_fixture_only",
       },
     ]);
     for (const fixture of plan.fixture_layout.recovery_fixture_candidates) {
@@ -263,8 +256,6 @@ Deno.test(
         `the raw recovery fixture candidate must exist: ${fixture.path}`,
       );
     }
-    assertEquals(plan.fixture_layout.integration_payloads.status, "created");
-    assertEquals(plan.fixture_layout.integration_payloads.created, true);
     assertEquals(plan.fixture_layout.integration_payloads.created_files, [
       "e2e/fixtures/composition/space-seed/manifest.json",
     ]);
@@ -330,135 +321,29 @@ Deno.test(
       "artifact_digest",
       "gap",
     ]);
-    assertEquals(plan.runtime_evidence.length, 5);
-    const [
-      journeyEvidence,
-      metricEvidence,
-      staleEvidence,
-      recoveryEvidence,
-      receiptEvidence,
-    ] = plan.runtime_evidence;
-    assert(journeyEvidence);
-    assert(metricEvidence);
-    assert(staleEvidence);
-    assert(recoveryEvidence);
-    assert(receiptEvidence);
-    assertEquals(
-      journeyEvidence.source_sha,
-      "392204f28cedbbb9531f44864fa78992361a4813",
-    );
-    assertEquals(journeyEvidence.candidate_sha, journeyEvidence.source_sha);
-    assertEquals(
-      journeyEvidence.command,
-      "E2E_BUILD_IMAGES=true bash e2e/scripts/run-e2e-parity.sh composition-golden",
-    );
-    assertEquals(journeyEvidence.selector, EXPECTED_RESERVED_SELECTORS.B5[2]);
-    assertEquals(
-      journeyEvidence.surface,
-      "Browser + Server (Docker Compose E2E)",
-    );
-    assertEquals(
-      journeyEvidence.fixture,
-      "e2e/fixtures/composition/space-seed/manifest.json",
-    );
-    assertEquals(journeyEvidence.result, "passed (1 passed, 0 skipped)");
-    assert(
-      journeyEvidence.gap.includes("exact release-candidate byte promotion"),
-      "the scoped run must retain the release verification gap",
-    );
-    assert(
-      (await Deno.stat(journeyEvidence.artifact)).isFile,
-      "the runtime evidence artifact must be present",
-    );
-    const artifactBytes = await Deno.readFile(journeyEvidence.artifact);
-    const artifactDigest = await crypto.subtle.digest("SHA-256", artifactBytes);
-    const artifactDigestHex = Array.from(
-      new Uint8Array(artifactDigest),
-      (byte) => byte.toString(16).padStart(2, "0"),
-    ).join("");
-    assertEquals(artifactDigestHex, journeyEvidence.artifact_digest);
-    for (
-      const [evidence, sourceSha, selector, artifactDigest] of [
-        [
-          metricEvidence,
-          "a46508986e34a22339c7f7dbe175a8371a74977e",
-          "e2e/composition-metric-journey.test.ts#test:Browser reopens a metric tool at its exact revision and surfaces the stable multiple-rows diagnostic without aggregation",
-          "52bea6d9a78741090c0827a116207317d57cb686fd22996851bd1bfc7c9f53d1",
-        ],
-        [
-          staleEvidence,
-          "a46508986e34a22339c7f7dbe175a8371a74977e",
-          "e2e/composition-stale-response.test.ts#test:Late parameter-A responses change neither rows, metric, error, loading, finalization, nor pagination",
-          "cf7df28ce6357d614a4296ff96a94248c1eb60fbac08280aa17a6897e97f33cf",
-        ],
-        [
-          recoveryEvidence,
-          "5565b5170d02f354f551be93705ac4713285fa6a",
-          "e2e/composition-recovery-authorization.test.ts#test:Composition raw recovery and ACL denial preserve caller-visible contracts",
-          "501ec65e4b6d6fecff77503c8b115e931ed643bdcd75c5589eca31281896f202",
-        ],
-        [
-          receiptEvidence,
-          "5565b5170d02f354f551be93705ac4713285fa6a",
-          "e2e/composition-save-receipt.test.ts#test:Composition save reconciles a lost response without duplicate publication",
-          "ffbdfec512176e80c838b163f9c3a5736ab28440c64ee82d1de36f54073f527b",
-        ],
-      ] as const
-    ) {
-      assertEquals(evidence.source_sha, sourceSha);
-      assertEquals(evidence.candidate_sha, evidence.source_sha);
-      assertEquals(evidence.selector, selector);
-      assertEquals(
-        evidence.surface,
-        "Browser + Server (direct-process dev E2E)",
-      );
-      assertEquals(evidence.result, "passed (1 passed, 0 skipped)");
-      assert(
-        evidence.gap.includes(
-          "Release-candidate byte promotion remains unverified",
-        ),
-        "each scoped run must retain the release verification gap",
-      );
-      assert(
-        (await Deno.stat(evidence.artifact)).isFile,
-        "the runtime evidence artifact must be present",
-      );
-      const evidenceBytes = await Deno.readFile(evidence.artifact);
-      const evidenceDigest = await crypto.subtle.digest(
-        "SHA-256",
-        evidenceBytes,
-      );
-      const evidenceDigestHex = Array.from(
-        new Uint8Array(evidenceDigest),
-        (byte) => byte.toString(16).padStart(2, "0"),
-      ).join("");
-      assertEquals(evidenceDigestHex, evidence.artifact_digest);
-      assertEquals(evidence.artifact_digest, artifactDigest);
-    }
-    assertEquals(plan.recovery_and_authorization, {
-      status: "planned",
-      selector_binding_status: "bound_storage_resolver_and_b6_e2e_selectors",
-      save_enablement: {
-        scope: "cross_surface_recovery_and_receipt_acceptance",
-        enabled: true,
-        status:
-          "evidenced_across_storage_api_cli_browser_pending_release_promotion",
-        prerequisites: [
-          "Generic Entry create, update, bulk, import, and restore paths cannot bypass Composition validation.",
-          "Generic restore of the reserved Composition Form is denied while Composition-scoped restore validates.",
-          "A successful save is confirmed by the canonical receipt identifying the published revision.",
-          "A lost save response remains outcome-unknown until receipt reconciliation confirms the exact revision; retry does not publish a duplicate.",
-        ],
-      },
-      cases: EXPECTED_RECOVERY_CASES,
+    assertEquals(plan.recovery_and_authorization.save_enablement, {
+      scope: "cross_surface_recovery_and_receipt_acceptance",
+      prerequisites: [
+        "Generic Entry create, update, bulk, import, and restore paths cannot bypass Composition validation.",
+        "Generic restore of the reserved Composition Form is denied while Composition-scoped restore validates.",
+        "A successful save is confirmed by the canonical receipt identifying the published revision.",
+        "A lost save response remains outcome-unknown until receipt reconciliation confirms the exact revision; retry does not publish a duplicate.",
+      ],
     });
+    assertEquals(
+      plan.recovery_and_authorization.cases,
+      EXPECTED_RECOVERY_CASES,
+    );
     assertEquals(
       plan.milestones.map(({ id }) => id),
       ["B0", "B1", "B2", "B3", "B4", "B5", "B6"],
     );
 
     for (const milestone of plan.milestones) {
-      assertEquals(milestone.status, "planned", milestone.id);
+      assert(
+        !("status" in (milestone as Record<string, unknown>)),
+        `${milestone.id} must not carry a static status`,
+      );
       assert(milestone.outcome.trim().length > 0, milestone.id);
       assertEquals(
         milestone.reserved_selectors.map(selectorDetails),
@@ -469,6 +354,46 @@ Deno.test(
 
     for (const path of plan.fixture_layout.integration_payloads.created_files) {
       assert(path.startsWith("e2e/fixtures/composition/"), path);
+    }
+  },
+);
+
+Deno.test(
+  "Composition evidence archive preserves historical runtime evidence shape",
+  async () => {
+    const archive = JSON.parse(
+      await Deno.readTextFile(ARCHIVE_PATH),
+    ) as EvidenceArchive;
+    const plan = JSON.parse(
+      await Deno.readTextFile(PLAN_PATH),
+    ) as AcceptancePlan;
+
+    assertEquals(archive.schema, "ugoite/composition-evidence-archive/v1");
+    assert(archive.note.trim().length > 0);
+    assert(archive.runtime_evidence.length > 0);
+
+    for (const record of archive.runtime_evidence) {
+      for (const field of plan.evidence_record_fields) {
+        const value = record[field];
+        assert(
+          typeof value === "string" && value.trim().length > 0,
+          `archived evidence record is missing evidence field ${field}`,
+        );
+      }
+      assert(
+        (await Deno.stat(record.artifact)).isFile,
+        "the archived runtime evidence artifact must be present",
+      );
+      const artifactBytes = await Deno.readFile(record.artifact);
+      const artifactDigest = await crypto.subtle.digest(
+        "SHA-256",
+        artifactBytes,
+      );
+      const artifactDigestHex = Array.from(
+        new Uint8Array(artifactDigest),
+        (byte) => byte.toString(16).padStart(2, "0"),
+      ).join("");
+      assertEquals(artifactDigestHex, record.artifact_digest);
     }
   },
 );

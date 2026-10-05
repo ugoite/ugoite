@@ -1405,6 +1405,8 @@ fn check_space_contract_doc(contract: &str) -> Result<()> {
 struct TrackerDoc {
     status: String,
     #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
     summary: Option<String>,
     #[serde(default)]
     milestones: Vec<TrackerMilestone>,
@@ -1431,6 +1433,8 @@ struct TrackerPhase {
 #[derive(Debug, Deserialize)]
 struct MilestoneDoc {
     #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
     status: Option<String>,
     #[serde(default)]
     goal: Option<String>,
@@ -1449,6 +1453,8 @@ struct RoadmapDoc {
 struct RoadmapPhase {
     id: String,
     #[serde(default)]
+    status: String,
+    #[serde(default)]
     tasks: Vec<RoadmapTask>,
 }
 
@@ -1458,43 +1464,54 @@ struct RoadmapTask {
     description: String,
 }
 
+/// Release authority check: mechanical tracker integrity only.
+///
+/// Source-of-truth rules enforced here:
+/// - the prepared version is authoritative in `version.txt` alone;
+/// - the prepared version must have a versioned release note under
+///   `docs/version/releases/` (the release description authority);
+/// - version trackers must parse, use allowed status values, carry unique
+///   IDs, reference existing source files, and track the prepared stream.
+///
+/// This gate asserts no prose. Published identity (release tag and manifest)
+/// and implementation status (the Mitase Requirement/Feature graph) live
+/// outside hand-authored docs; prose literals about published versions,
+/// authorities, or direction are intentionally not checked here.
 fn release_authority_check() -> Result<()> {
     let mut violations = Vec::new();
-    let v02_text = fs::read_to_string("docs/version/v0.2.yaml").context("read v0.2 tracker")?;
-    let v02: TrackerDoc = serde_yaml::from_str(&v02_text).context("parse v0.2 tracker")?;
-    check_v02_tracker_doc(&v02, &mut violations);
-    for milestone in &v02.milestones {
-        for source in &milestone.source {
-            if !Path::new(source).is_file() {
-                violations.push(format!(
-                    "v0.2 milestone {} references missing source {source}",
-                    milestone.id
-                ));
-            }
+    let prepared = match read_prepared_version() {
+        Ok(version) => Some(version),
+        Err(error) => {
+            violations.push(format!("{error:#}"));
+            None
         }
+    };
+    if let Some(prepared) = prepared.as_deref() {
+        check_prepared_release_note(prepared, &mut violations);
     }
-    if let Some(product_ux) = v02
-        .milestones
-        .iter()
-        .find(|milestone| milestone.id == "product-ux")
-    {
-        match fs::read_to_string("docs/version/v0.2/product-ux.yaml") {
-            Ok(text) => match serde_yaml::from_str::<MilestoneDoc>(&text) {
-                Ok(canonical) => {
-                    if let Some(canonical_status) = canonical.status.as_deref() {
-                        if product_ux.status != canonical_status {
-                            violations.push(format!(
-                                "v0.2 milestone product-ux status {} disagrees with docs/version/v0.2/product-ux.yaml",
-                                product_ux.status
-                            ));
-                        }
-                    }
-                    check_product_ux_doc_text(&text, &mut violations);
+    match fs::read_to_string("docs/version/v0.2.yaml") {
+        Ok(text) => match serde_yaml::from_str::<TrackerDoc>(&text) {
+            Ok(v02) => {
+                if let Some(prepared) = prepared.as_deref() {
+                    check_version_projection(
+                        "docs/version/v0.2.yaml",
+                        v02.version.as_deref(),
+                        prepared,
+                        &mut violations,
+                    );
                 }
-                Err(error) => violations.push(format!("parse product-ux milestone: {error:#}")),
-            },
-            Err(error) => violations.push(format!("read product-ux milestone: {error:#}")),
-        }
+                check_tracker_milestones(
+                    "docs/version/v0.2.yaml",
+                    &v02.milestones,
+                    &mut violations,
+                );
+                check_v02_product_ux_link(&v02, &mut violations);
+                check_tracker_sources("docs/version/v0.2.yaml", &v02.milestones, &mut violations);
+                check_product_ux_milestone_file(prepared.as_deref(), &v02, &mut violations);
+            }
+            Err(error) => violations.push(format!("parse v0.2 tracker: {error:#}")),
+        },
+        Err(error) => violations.push(format!("read v0.2 tracker: {error:#}")),
     }
     check_obsolete_absent(
         Path::new("docs/version/v0.2/user-controlled-view.yaml").exists(),
@@ -1508,7 +1525,15 @@ fn release_authority_check() -> Result<()> {
     );
     match fs::read_to_string("docs/version/v0.1.yaml") {
         Ok(text) => match serde_yaml::from_str::<TrackerDoc>(&text) {
-            Ok(v01) => check_v01_tracker_doc(&v01, &mut violations),
+            Ok(v01) => {
+                check_tracker_milestones(
+                    "docs/version/v0.1.yaml",
+                    &v01.milestones,
+                    &mut violations,
+                );
+                check_tracker_sources("docs/version/v0.1.yaml", &v01.milestones, &mut violations);
+                check_v01_tracker_doc(&v01, &mut violations);
+            }
             Err(error) => violations.push(format!("parse v0.1 tracker: {error:#}")),
         },
         Err(error) => violations.push(format!("read v0.1 tracker: {error:#}")),
@@ -1520,91 +1545,253 @@ fn release_authority_check() -> Result<()> {
         },
         Err(error) => violations.push(format!("read roadmap: {error:#}")),
     }
-    match fs::read_to_string("docs/architecture/release/v0.2.md") {
-        Ok(page) => {
-            if !page.contains("sole active v0.2 release authority") {
-                violations.push(
-                    "docs/architecture/release/v0.2.md must name Product UX as the sole active v0.2 release authority"
-                        .to_string(),
-                );
-            }
-            if !page.contains("North Star, not a shipped") {
-                violations.push(
-                    "docs/architecture/release/v0.2.md must keep Knowledge-to-tools as a North Star, not shipped acceptance"
-                        .to_string(),
-                );
-            }
-        }
-        Err(error) => violations.push(format!("read v0.2 release page: {error:#}")),
-    }
-    match fs::read_to_string("docs/architecture/release/versioning.md") {
-        Ok(page) => {
-            if !page.contains("Product UX sole authority") {
-                violations.push(
-                    "docs/architecture/release/versioning.md must describe the v0.2 Product UX sole authority"
-                        .to_string(),
-                );
-            }
-        }
-        Err(error) => violations.push(format!("read versioning page: {error:#}")),
-    }
     if !violations.is_empty() {
         bail!("{}", violations.join("\n"));
     }
-    println!("release authority: Product UX is the sole active v0.2 authority; v0.1 foundation trackers and roadmap claims agree");
+    match prepared {
+        Some(prepared) => println!(
+            "release authority: prepared version {prepared} has a versioned release note; v0.1/v0.2 trackers and roadmap claims are structurally sound"
+        ),
+        None => println!(
+            "release authority: v0.1/v0.2 trackers and roadmap claims are structurally sound"
+        ),
+    }
     Ok(())
 }
 
-fn check_v02_tracker_doc(v02: &TrackerDoc, violations: &mut Vec<String>) {
-    let ids: Vec<&str> = v02
-        .milestones
-        .iter()
-        .map(|milestone| milestone.id.as_str())
-        .collect();
-    if ids != ["product-ux"] {
+/// The prepared version is authoritative in `version.txt` alone. It must be
+/// stable SemVer (`major.minor.patch`, no prerelease).
+fn read_prepared_version() -> Result<String> {
+    let version = fs::read_to_string("version.txt")
+        .context("read prepared version")?
+        .trim()
+        .to_string();
+    if parse_stable_semver(&version).is_none() {
+        bail!("version.txt must contain stable SemVer, got {version:?}");
+    }
+    Ok(version)
+}
+
+fn parse_stable_semver(value: &str) -> Option<(u64, u64, u64)> {
+    let parts: Vec<&str> = value.split('.').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let mut numbers = Vec::new();
+    for part in parts {
+        if part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        if part.len() > 1 && part.starts_with('0') {
+            return None;
+        }
+        numbers.push(part.parse::<u64>().ok()?);
+    }
+    Some((numbers[0], numbers[1], numbers[2]))
+}
+
+/// The release description for the prepared version must exist as a versioned
+/// release note. Published identity itself (tag and manifest) is verified by
+/// the release workflows, not by prose.
+fn check_prepared_release_note(prepared: &str, violations: &mut Vec<String>) {
+    let note = format!("docs/version/releases/v{prepared}.md");
+    if !Path::new(&note).is_file() {
         violations.push(format!(
-            "docs/version/v0.2.yaml must list product-ux as the sole active milestone, found {ids:?}"
+            "{note} must exist as the versioned release description for prepared version {prepared}"
         ));
     }
-    let summary = v02.summary.as_deref().unwrap_or("");
-    if !summary.contains("Sole active v0.2 authority: Product UX") {
-        violations.push(
-            "docs/version/v0.2.yaml summary must declare Product UX as the sole active v0.2 authority"
-                .to_string(),
-        );
+}
+
+/// A tracker that belongs to the prepared stream must declare the stream's
+/// `major.minor` version so projections cannot drift from `version.txt`.
+fn check_version_projection(
+    origin: &str,
+    declared: Option<&str>,
+    prepared: &str,
+    violations: &mut Vec<String>,
+) {
+    let Some((major, minor, _)) = parse_stable_semver(prepared) else {
+        violations.push(format!(
+            "prepared version {prepared:?} is not stable SemVer; cannot check {origin} projection"
+        ));
+        return;
+    };
+    let expected = format!("{major}.{minor}");
+    match declared {
+        Some(declared) if declared == expected => {}
+        Some(declared) => violations.push(format!(
+            "{origin} declares version {declared:?}, which does not track the prepared {prepared} stream (expected {expected:?})"
+        )),
+        None => violations.push(format!(
+            "{origin} must declare version {expected:?} to track the prepared {prepared} stream"
+        )),
     }
-    if !summary.contains("Knowledge-to-tools remains a North Star") {
-        violations.push(
-            "docs/version/v0.2.yaml summary must keep Knowledge-to-tools as a North Star, not shipped acceptance"
-                .to_string(),
-        );
+}
+
+fn tracker_status_allowed(status: &str) -> bool {
+    matches!(status, "planned" | "in_progress" | "completed")
+}
+
+/// Structural milestone integrity: unique non-empty IDs, allowed statuses,
+/// and at least one source file per milestone. Source existence is checked
+/// separately by [`check_tracker_sources`].
+fn check_tracker_milestones(
+    origin: &str,
+    milestones: &[TrackerMilestone],
+    violations: &mut Vec<String>,
+) {
+    if milestones.is_empty() {
+        violations.push(format!("{origin} must declare at least one milestone"));
     }
-    let combined = format!(
-        "{summary} {} {}",
-        ids.join(" "),
-        v02.milestones
-            .iter()
-            .flat_map(|milestone| milestone.source.iter().map(String::as_str))
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
+    let mut seen_milestones = std::collections::BTreeSet::new();
+    for milestone in milestones {
+        if milestone.id.trim().is_empty() {
+            violations.push(format!("{origin} milestone id must not be empty"));
+            continue;
+        }
+        if !seen_milestones.insert(milestone.id.as_str()) {
+            violations.push(format!(
+                "{origin} carries duplicate milestone id {}",
+                milestone.id
+            ));
+        }
+        if !tracker_status_allowed(&milestone.status) {
+            violations.push(format!(
+                "{origin} milestone {} has unknown status {:?}",
+                milestone.id, milestone.status
+            ));
+        }
+        if milestone.source.is_empty() {
+            violations.push(format!(
+                "{origin} milestone {} must list at least one source file",
+                milestone.id
+            ));
+        }
+        let mut seen_phases = std::collections::BTreeSet::new();
+        for phase in &milestone.phases {
+            if phase.id.trim().is_empty() {
+                violations.push(format!(
+                    "{origin} milestone {} carries an empty phase id",
+                    milestone.id
+                ));
+                continue;
+            }
+            if !seen_phases.insert(phase.id.as_str()) {
+                violations.push(format!(
+                    "{origin} milestone {} carries duplicate phase id {}",
+                    milestone.id, phase.id
+                ));
+            }
+            if !tracker_status_allowed(&phase.status) {
+                violations.push(format!(
+                    "{origin} milestone {} phase {} has unknown status {:?}",
+                    milestone.id, phase.id, phase.status
+                ));
+            }
+        }
+    }
+}
+
+/// Every milestone source reference must resolve to an existing file.
+fn check_tracker_sources(
+    origin: &str,
+    milestones: &[TrackerMilestone],
+    violations: &mut Vec<String>,
+) {
+    for milestone in milestones {
+        for source in &milestone.source {
+            if !Path::new(source).is_file() {
+                violations.push(format!(
+                    "{origin} milestone {} references missing source {source}",
+                    milestone.id
+                ));
+            }
+        }
+    }
+}
+
+/// The v0.2 tracker must carry the product-ux milestone sourced from its
+/// milestone file, and must not carry obsolete milestone authorities.
+/// Milestone presence and file linkage are structural facts; no prose about
+/// authorities is asserted here.
+fn check_v02_product_ux_link(v02: &TrackerDoc, violations: &mut Vec<String>) {
+    const ORIGIN: &str = "docs/version/v0.2.yaml";
     for stale in ["user-controlled-view", "ai-enabled-and-ai-used"] {
+        let combined = format!(
+            "{} {}",
+            v02.milestones
+                .iter()
+                .map(|milestone| milestone.id.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+            v02.milestones
+                .iter()
+                .flat_map(|milestone| milestone.source.iter().map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
         if combined.contains(stale) {
             violations.push(format!(
-                "docs/version/v0.2.yaml must not carry the obsolete {stale} authority"
+                "{ORIGIN} must not carry the obsolete {stale} authority"
             ));
         }
     }
-    if !v02.milestones.iter().any(|milestone| {
-        milestone
-            .source
-            .iter()
-            .any(|source| source == "docs/version/v0.2/product-ux.yaml")
-    }) {
-        violations.push(
-            "docs/version/v0.2.yaml must source the active milestone from docs/version/v0.2/product-ux.yaml"
-                .to_string(),
-        );
+    match v02
+        .milestones
+        .iter()
+        .find(|milestone| milestone.id == "product-ux")
+    {
+        Some(milestone) => {
+            if !milestone
+                .source
+                .iter()
+                .any(|source| source == "docs/version/v0.2/product-ux.yaml")
+            {
+                violations.push(format!(
+                    "{ORIGIN} must source the product-ux milestone from docs/version/v0.2/product-ux.yaml"
+                ));
+            }
+        }
+        None => violations.push(format!("{ORIGIN} must list the product-ux milestone")),
+    }
+}
+
+fn check_product_ux_milestone_file(
+    prepared: Option<&str>,
+    v02: &TrackerDoc,
+    violations: &mut Vec<String>,
+) {
+    let Some(product_ux) = v02
+        .milestones
+        .iter()
+        .find(|milestone| milestone.id == "product-ux")
+    else {
+        return;
+    };
+    match fs::read_to_string("docs/version/v0.2/product-ux.yaml") {
+        Ok(text) => match serde_yaml::from_str::<MilestoneDoc>(&text) {
+            Ok(canonical) => {
+                if let Some(prepared) = prepared {
+                    check_version_projection(
+                        "docs/version/v0.2/product-ux.yaml",
+                        canonical.version.as_deref(),
+                        prepared,
+                        violations,
+                    );
+                }
+                if let Some(canonical_status) = canonical.status.as_deref() {
+                    if product_ux.status != canonical_status {
+                        violations.push(format!(
+                            "v0.2 milestone product-ux status {} disagrees with docs/version/v0.2/product-ux.yaml",
+                            product_ux.status
+                        ));
+                    }
+                }
+                check_product_ux_doc_text(&text, violations);
+            }
+            Err(error) => violations.push(format!("parse product-ux milestone: {error:#}")),
+        },
+        Err(error) => violations.push(format!("read product-ux milestone: {error:#}")),
     }
 }
 
@@ -1629,12 +1816,6 @@ fn check_product_ux_doc_text(text: &str, violations: &mut Vec<String>) {
                 "docs/version/v0.2/product-ux.yaml goal must describe {dimension}"
             ));
         }
-    }
-    if !goal.contains("North Star") {
-        violations.push(
-            "docs/version/v0.2/product-ux.yaml goal must keep Knowledge-to-tools as a North Star"
-                .to_string(),
-        );
     }
     if doc.phases.is_empty() {
         violations.push("docs/version/v0.2/product-ux.yaml must declare phases".to_string());
@@ -1681,31 +1862,50 @@ fn check_v01_tracker_doc(v01: &TrackerDoc, violations: &mut Vec<String>) {
     }
 }
 
+/// Structural roadmap integrity: unique non-empty phase IDs, allowed phase
+/// statuses, non-empty task descriptions, and no obsolete milestone
+/// authorities. No prose about authorities or direction is asserted here.
 fn check_roadmap_doc(roadmap: &RoadmapDoc, violations: &mut Vec<String>) {
-    let descriptions: Vec<&str> = roadmap
+    const ORIGIN: &str = "docs/version/unknown/roadmap.yaml";
+    if roadmap.phases.is_empty() {
+        violations.push(format!("{ORIGIN} must declare at least one phase"));
+    }
+    let mut seen_phases = std::collections::BTreeSet::new();
+    for phase in &roadmap.phases {
+        if phase.id.trim().is_empty() {
+            violations.push(format!("{ORIGIN} phase id must not be empty"));
+            continue;
+        }
+        if !seen_phases.insert(phase.id.as_str()) {
+            violations.push(format!("{ORIGIN} carries duplicate phase id {}", phase.id));
+        }
+        if !tracker_status_allowed(&phase.status) {
+            violations.push(format!(
+                "{ORIGIN} phase {} has unknown status {:?}",
+                phase.id, phase.status
+            ));
+        }
+        for task in &phase.tasks {
+            if task.description.trim().is_empty() {
+                violations.push(format!(
+                    "{ORIGIN} phase {} carries a task without a description",
+                    phase.id
+                ));
+            }
+        }
+    }
+    let combined = roadmap
         .phases
         .iter()
         .flat_map(|phase| phase.tasks.iter().map(|task| task.description.as_str()))
-        .collect();
-    let combined = descriptions.join("\n");
-    if !(combined.contains("Product UX") && combined.contains("sole active authority")) {
-        violations.push(
-            "docs/version/unknown/roadmap.yaml must name Product UX as the v0.2 sole active authority"
-                .to_string(),
-        );
-    }
+        .collect::<Vec<_>>()
+        .join("\n");
     for stale in ["User Controlled View", "AI-Enabled & AI-Used"] {
         if combined.contains(stale) {
             violations.push(format!(
-                "docs/version/unknown/roadmap.yaml must not carry the obsolete {stale} v0.2 authority"
+                "{ORIGIN} must not carry the obsolete {stale} v0.2 authority"
             ));
         }
-    }
-    if !combined.contains("not v0.2 acceptance") {
-        violations.push(
-            "docs/version/unknown/roadmap.yaml must mark the Knowledge-to-tools North Star as future, not v0.2 acceptance"
-                .to_string(),
-        );
     }
 }
 
@@ -1971,13 +2171,11 @@ pub fn read_subsystem_schema_version(metadata: &serde_json::Value) -> Option<u64
 
     const GOOD_V02_TRACKER: &str = r#"
 version: "0.2"
-status: planned
-summary: >
-  Sole active v0.2 authority: Product UX. Knowledge-to-tools remains a North Star,
-  not a shipped v0.2 acceptance claim.
+status: in_progress
+summary: "Active v0.2 development tracker for the Product UX milestone."
 milestones:
   - id: product-ux
-    status: planned
+    status: in_progress
     source:
       - docs/version/v0.2/product-ux.yaml
     phases:
@@ -1992,7 +2190,7 @@ status: planned
 title: "Product UX"
 goal: >
   completion, discoverability, cross-surface consistency, validation clarity,
-  recovery, and documentation correctness. Knowledge-to-tools remains a North Star.
+  recovery, and documentation correctness.
 phases:
   - id: design
     status: planned
@@ -2033,9 +2231,9 @@ phases:
   - id: implementation
     status: in_progress
     tasks:
-      - description: "Milestone 5 Product UX - the v0.2 sole active authority"
+      - description: "Milestone 5 Product UX - make the frozen v0.1 Foundation completable, discoverable, and consistent"
         done: false
-      - description: "Milestone 6 Knowledge-to-tools North Star (future, not v0.2 acceptance)"
+      - description: "Milestone 6 Knowledge-to-tools - portable Views and bounded AI workflows (future direction)"
         done: false
 "#;
 
@@ -2177,9 +2375,12 @@ phases:
     }
 
     #[test]
-    fn v02_tracker_with_sole_product_ux_passes() {
+    fn v02_tracker_with_product_ux_milestone_passes() {
         let doc: TrackerDoc = serde_yaml::from_str(GOOD_V02_TRACKER).expect("tracker parses");
-        let violations = violations_of(|violations| check_v02_tracker_doc(&doc, violations));
+        let violations = violations_of(|violations| {
+            check_tracker_milestones("docs/version/v0.2.yaml", &doc.milestones, violations);
+            check_v02_product_ux_link(&doc, violations);
+        });
         assert!(
             violations.is_empty(),
             "unexpected violations: {violations:?}"
@@ -2190,24 +2391,122 @@ phases:
     fn v02_tracker_with_returned_view_authority_fails() {
         let text = GOOD_V02_TRACKER.replace("  - id: product-ux", "  - id: user-controlled-view");
         let doc: TrackerDoc = serde_yaml::from_str(&text).expect("tracker parses");
-        let violations = violations_of(|violations| check_v02_tracker_doc(&doc, violations));
+        let violations = violations_of(|violations| {
+            check_tracker_milestones("docs/version/v0.2.yaml", &doc.milestones, violations);
+            check_v02_product_ux_link(&doc, violations);
+        });
         assert!(!violations.is_empty());
         assert!(violations
             .iter()
-            .any(|violation| violation.contains("sole active milestone")));
+            .any(|violation| violation.contains("product-ux")));
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("user-controlled-view")));
     }
 
     #[test]
-    fn v02_tracker_without_authority_declaration_fails() {
+    fn v02_tracker_with_duplicate_milestone_ids_fails() {
         let text = GOOD_V02_TRACKER.replace(
-            "Sole active v0.2 authority: Product UX.",
-            "An earlier draft authority statement sat here.",
+            "    phases:\n      - id: design\n        status: planned",
+            "    phases:\n      - id: design\n        status: planned\n  - id: product-ux\n    status: planned\n    source:\n      - docs/version/v0.2/product-ux.yaml\n    phases: []",
         );
         let doc: TrackerDoc = serde_yaml::from_str(&text).expect("tracker parses");
-        let violations = violations_of(|violations| check_v02_tracker_doc(&doc, violations));
+        let violations = violations_of(|violations| {
+            check_tracker_milestones("docs/version/v0.2.yaml", &doc.milestones, violations);
+        });
         assert!(violations
             .iter()
-            .any(|violation| violation.contains("sole active v0.2 authority")));
+            .any(|violation| violation.contains("duplicate milestone id")));
+    }
+
+    #[test]
+    fn v02_tracker_with_unknown_status_fails() {
+        let text = GOOD_V02_TRACKER.replace(
+            "  - id: product-ux\n    status: in_progress",
+            "  - id: product-ux\n    status: shipped",
+        );
+        let doc: TrackerDoc = serde_yaml::from_str(&text).expect("tracker parses");
+        let violations = violations_of(|violations| {
+            check_tracker_milestones("docs/version/v0.2.yaml", &doc.milestones, violations);
+        });
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("unknown status")));
+    }
+
+    #[test]
+    fn tracker_source_must_resolve_to_a_file() {
+        // Unit tests run with the xtask crate directory as the working
+        // directory, so only the missing-file rejection is asserted here.
+        // The live gate run covers the positive case from the workspace root.
+        let missing = TrackerMilestone {
+            id: "product-ux".to_string(),
+            status: "planned".to_string(),
+            source: vec!["docs/version/v0.2/does-not-exist.yaml".to_string()],
+            phases: Vec::new(),
+        };
+        let violations = violations_of(|violations| {
+            check_tracker_sources(
+                "docs/version/v0.2.yaml",
+                std::slice::from_ref(&missing),
+                violations,
+            );
+        });
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("missing source")));
+    }
+
+    #[test]
+    fn prepared_version_must_be_stable_semver() {
+        assert_eq!(parse_stable_semver("0.2.1"), Some((0, 2, 1)));
+        for invalid in [
+            "",
+            "0.2",
+            "0.2.1.0",
+            "v0.2.1",
+            "0.2.1-next",
+            "01.2.1",
+            "0.2.x",
+        ] {
+            assert!(
+                parse_stable_semver(invalid).is_none(),
+                "{invalid:?} must not classify as stable SemVer"
+            );
+        }
+    }
+
+    #[test]
+    fn prepared_release_note_must_exist() {
+        let violations = violations_of(|violations| {
+            check_prepared_release_note("9.9.9", violations);
+        });
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("v9.9.9.md")));
+    }
+
+    #[test]
+    fn version_projection_must_track_prepared_stream() {
+        let violations = violations_of(|violations| {
+            check_version_projection("docs/version/v0.2.yaml", Some("0.2"), "0.2.1", violations);
+        });
+        assert!(
+            violations.is_empty(),
+            "unexpected violations: {violations:?}"
+        );
+        let violations = violations_of(|violations| {
+            check_version_projection("docs/version/v0.2.yaml", Some("0.1"), "0.2.1", violations);
+        });
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("does not track")));
+        let violations = violations_of(|violations| {
+            check_version_projection("docs/version/v0.2.yaml", None, "0.2.1", violations);
+        });
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("must declare version")));
     }
 
     #[test]
@@ -2273,7 +2572,7 @@ phases:
             "unexpected violations: {violations:?}"
         );
         let text = GOOD_ROADMAP.replace(
-            "Milestone 5 Product UX - the v0.2 sole active authority",
+            "Milestone 5 Product UX - make the frozen v0.1 Foundation completable, discoverable, and consistent",
             "Milestone 5 User Controlled View - portable query-driven Experiences (v0.2)",
         );
         let doc: RoadmapDoc = serde_yaml::from_str(&text).expect("roadmap parses");
@@ -2281,5 +2580,18 @@ phases:
         assert!(violations
             .iter()
             .any(|violation| violation.contains("User Controlled View")));
+    }
+
+    #[test]
+    fn roadmap_task_without_description_fails() {
+        let text = GOOD_ROADMAP.replace(
+            "      - description: \"Milestone 6 Knowledge-to-tools - portable Views and bounded AI workflows (future direction)\"",
+            "      - description: \"\"",
+        );
+        let doc: RoadmapDoc = serde_yaml::from_str(&text).expect("roadmap parses");
+        let violations = violations_of(|violations| check_roadmap_doc(&doc, violations));
+        assert!(violations
+            .iter()
+            .any(|violation| violation.contains("without a description")));
     }
 }

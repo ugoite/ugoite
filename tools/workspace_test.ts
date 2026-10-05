@@ -585,7 +585,7 @@ Deno.test("CI image and E2E tasks preserve the build-once contract", async () =>
   );
 });
 
-Deno.test("Pages promotion consumes trusted artifacts without rebuilding", async () => {
+Deno.test("Pages deploys stable docs from published releases only", async () => {
   const ciWorkflow = await Deno.readTextFile(
     ".github/workflows/ci.yml",
   );
@@ -603,41 +603,43 @@ Deno.test("Pages promotion consumes trusted artifacts without rebuilding", async
   ) {
     assertEquals(ciWorkflow.includes(required), true, required);
   }
+  assertEquals(
+    ciWorkflow.includes("name: ugoite-docsite-pages"),
+    false,
+    "main CI must not stage a Pages deployment artifact",
+  );
 
   for (
     const forbidden of [
-      "actions/checkout@",
+      "workflow_run:",
       "pull_request_target:",
-      "mise run",
-      "deno task",
-      "docsite:build",
+      "ci_run_id",
+      "download-artifact",
     ]
   ) {
     assertEquals(workflow.includes(forbidden), false, forbidden);
   }
   for (
     const required of [
-      "workflow_run:",
+      "release:",
+      "published",
       "workflow_dispatch:",
       "permissions: {}",
-      "actions: read",
+      "contents: read",
       "pages: write",
       "id-token: write",
       "environment:",
       "name: github-pages",
       "GITHUB_TOKEN: ${{ github.token }}",
-      'fail("workflow_dispatch requires GITHUB_TOKEN")',
+      'gh release view "${tag}"',
+      "does not match release tag",
+      "docs/version/releases/v${version}.md",
+      "mise run build:docsite",
       "pages_configured: ${{ steps.pages.outcome == 'success' }}",
-      "GitHub Pages is not configured; skipping docsite promotion.",
+      "GitHub Pages is not configured; skipping stable docsite deployment.",
       "if: steps.pages.outcome == 'success'",
-      "if: needs.prepare.outputs.pages_configured == 'true'",
-      "skip: ${{ steps.resolve-run.outputs.skip }}",
-      "if: steps.resolve-run.outputs.skip != 'true'",
-      "if: steps.resolve-run.outputs.skip == 'true'",
-      'output.write("skip=true\\n")',
-      "skipping Pages promotion without failing",
-      "Upstream CI run was not successful; skipping docsite promotion.",
-      'fail(f"upstream run conclusion must be success, got {conclusion!r}")',
+      "if: needs.build.outputs.pages_configured == 'true'",
+      "forbidden origin text",
     ]
   ) {
     assertEquals(workflow.includes(required), true, required);

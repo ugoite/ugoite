@@ -154,9 +154,11 @@ sccache owns compiler artifact reuse in all Rust-compiling lanes: it is
 read-only for pull requests and merge queues and writes only on successful
 `main` pushes. Playwright browser and BuildKit caches remain separately keyed
 and are refreshed only after successful pushes to `main`. Successful `main` runs
-upload the verified artifact set using the logical names `ugoite-docsite-pages`,
+upload the verified artifact set using the logical names
 `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and
-`ugoite-artifact-manifest`.
+`ugoite-artifact-manifest`. The docsite is built and verified on `main` but is
+not uploaded for promotion; Pages deploys stable docs only from published
+release tags (see below).
 
 Every browser lane pins `ubuntu-24.04` and the Playwright browser/runtime
 versions in `e2e/deno.json` plus `deno.lock`, and times its OS-dependency
@@ -348,11 +350,11 @@ Compose assets, publishes `@ugoite/ugoite` to GitHub Packages, publishes
 `ghcr.io/ugoite/ugoite:<version>`, and pushes the Helm chart to
 `oci://ghcr.io/ugoite/charts`.
 
-`.github/workflows/docsite-pages.yml` promotes the verified
-`ugoite-docsite-pages` artifact from a successful push-to-`main` CI run. It
-validates the upstream run identity, manifest, checksums, and current Pages
-origin/base metadata, then deploys the downloaded static files without checking
-out or rebuilding source.
+`.github/workflows/docsite-pages.yml` renders and deploys stable docs only from
+a published release tag. It checks out the exact tag bytes, verifies that
+`version.txt` and the versioned release note at that tag match the tag, builds
+the docsite with the current Pages origin/base metadata, validates the static
+output, then deploys. Main-branch CI never deploys to the site root.
 
 Build reuse and test-result caching are different concepts. `sources`/`outputs`
 may skip deterministic `build:*` work when inputs are unchanged, but they are

@@ -11,8 +11,8 @@ Not-promised work is named so it cannot be mistaken for a roadmap commitment.
 
 ## Current
 
-The v0.2.0 release builds on the v0.1 authority boundary for operator-owned
-Spaces:
+This documentation build describes the v0.2 product line on the v0.1 authority
+boundary for operator-owned Spaces:
 
 - CLI core mode directly opens a local workspace and is the minimal local-first
   path.
@@ -41,21 +41,17 @@ TOTP is recovery-only and is not a normal login method.
 
 ## Next
 
-The v0.2.0 release left Product UX acceptance criteria unverified. Their
-completion, discoverability, cross-surface consistency, validation clarity,
-recovery, testing, and documentation follow-ups remain independently tracked in
-the [v0.2 Product UX tracker](https://github.com/ugoite/ugoite/blob/main/docs/version/v0.2/product-ux.yaml);
-publication did not complete those criteria.
+Product UX acceptance criteria remain unverified where the repository does not
+provide direct evidence. Completion, discoverability, cross-surface
+consistency, validation clarity, recovery, testing, and documentation
+follow-ups remain independently tracked in the
+[v0.2 Product UX tracker](https://github.com/ugoite/ugoite/blob/main/docs/version/v0.2/product-ux.yaml).
 
 The v0.3 direction is **Authority → Experience → Work**: map what existing
 Space-owned Knowledge can do and where each behavior is specified, implemented,
 and verified before designing owned Experiences. The [v0.3 preflight](../architecture/release/v0.3-preflight.md)
 records that evidence and its gaps. It does not move Application Definitions,
 renderers, or execution behavior into Current.
-
-Knowledge-to-tools remains a North Star, not a shipped acceptance claim.
-Former View and AI milestone authorities are obsolete and are no longer active
-release scope.
 
 ## North Star
 

@@ -5,8 +5,7 @@ sidebar:
   order: 1
 ---
 
-**Updated:** 2026-09-27\
-**Implementation status:** Rust/Deno v0.2.0 published; v0.2.1 unprepared
+**Updated:** 2026-09-27
 
 Ugoite is a private, portable Knowledge Space for humans and AI. Its foundation
 is expressed as three boundaries: **Knowledge persists**, **Work may
