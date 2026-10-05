@@ -119,6 +119,26 @@ describe("sql helpers", () => {
     expect(schema.tables).toEqual({});
   });
 
+  it("stores __proto__ as an ordinary schema table", () => {
+    const schema = buildSqlSchema([
+      {
+        id: "00000000-0000-0000-0000-000000000002",
+        name: "__proto__",
+        version: 1,
+        template: "",
+        fields: {},
+      },
+    ]);
+    expect(Object.keys(schema.tables ?? {})).toContain("__proto__");
+    expect(Object.prototype.hasOwnProperty.call(schema.tables, "__proto__"))
+      .toBe(true);
+    expect((schema.tables as Record<string, string[]>)["__proto__"]).toEqual([
+      "_ugoite_id",
+      "_ugoite_created_at",
+      "_ugoite_updated_at",
+    ]);
+  });
+
   it("should include form fields in schema", () => {
     const forms: Form[] = [
       {

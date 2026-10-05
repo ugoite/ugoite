@@ -15,7 +15,10 @@ const SQL_SYSTEM_COLUMNS = [
   "_ugoite_updated_at",
 ];
 export function buildSqlSchema(forms: Form[]): SqlSchema {
-  const tables: Record<string, string[]> = {};
+  // Null-prototype storage: valid Form names include `__proto__`, which a
+  // plain object literal would swallow as a prototype assignment instead of
+  // an ordinary table entry.
+  const tables: Record<string, string[]> = Object.create(null);
   for (const item of forms) {
     const name = item.name.trim();
     if (!name) continue;
