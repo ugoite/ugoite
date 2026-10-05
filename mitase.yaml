@@ -142,8 +142,8 @@ inventory:
         - e2e/navigation.test.ts
         - frontend/src/routes/spaces/[space_id]/dashboard.tsx
         - frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
-        - "frontend/src/routes/spaces/[space_id]/compositions/index.tsx"
-        - "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx"
+        - frontend/src/routes/spaces/[space_id]/compositions/index.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx
         - frontend/src/routes/spaces/[space_id]/entries.tsx
         - frontend/src/routes/spaces/[space_id]/assets.tsx
         - frontend/src/routes/spaces/[space_id]/forms.tsx
@@ -197,6 +197,15 @@ inventory:
         - tools/release_verify.ts
         - tools/release_verify_test.ts
         - tools/workspace_test.ts
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx
+        - crates/ugoite-wasm/tests/composition_parity.ts
+        - frontend/src/lib/composition-api.ts
+        - frontend/src/lib/composition-api.test.ts
+        - frontend/src/lib/composition-query-handle.ts
+        - frontend/src/lib/composition-query-handle.test.ts
+        - frontend/src/lib/entry-query-composition.test.ts
+        - frontend/src/components/CompositionRenderer.tsx
+        - frontend/src/components/CompositionRenderer.test.tsx
     openapi:
       roots:
         - crates/ugoite-server/src/openapi.json
@@ -360,6 +369,10 @@ inventory:
         - frontend/app.config.ts
         - crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
         - fixtures/spaces/0.1/spaces/019c1234-5678-7abc-8def-0123456789ab/meta.json
+        - docs/architecture/contracts/composition.md
+        - crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml
+        - crates/ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml
+        - crates/ugoite-domain/tests/fixtures/composition/metric-value-fields.ugcomp.yaml
 validation:
   preset: strict
   readiness:

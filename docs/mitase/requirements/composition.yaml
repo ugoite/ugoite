@@ -7,7 +7,7 @@ requirements:
     title: Composition is Space-owned Knowledge
     description: A Composition is stored as one Entry revision in its user-owned Space and uses the existing revision, restore, receipt, and conflict contract; it does not acquire a separate database or hidden catalog as authority.
     priority: high
-    status: planned
+    status: implemented
     criteria:
       - id: space-authority
         kind: behavior
@@ -21,7 +21,167 @@ requirements:
     title: Restricted portable Composition format
     description: The v0.2.2 Composition exchange format is restricted `.ugcomp.yaml` v1, with a typed envelope and spec, dashboard as its only executable kind, and Rust semantics shared by native and WASM surfaces.
     priority: high
-    status: planned
+    status: implemented
+    bindings:
+      - id: display-label-verification
+        role: verification
+        facet: verification
+        responsibility: Verify optional display labels round-trip through canonical YAML and the fingerprint natively and in WASM, and typed metric references canonicalize with unknown value-field shapes rejected identically.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: symbol, name: tests::composition_canonicalization_matches_the_native_domain_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.optional-display-labels
+                covers:
+                  - FEAT-COMP-001#binding.display-label-domain/target.parameter-display-label
+                  - FEAT-COMP-001#binding.display-label-domain/target.component-display-label
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.typed-metric-value-field
+                covers:
+                  - FEAT-COMP-001#binding.metric-value-field-domain/target.metric-value-field-type
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
+      - id: envelope-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the fixed envelope marker, version, name, tags, dashboard kind, and empty spec through the shared domain unit test.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::document_uses_the_portable_envelope_field_names }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.typed-dashboard-model
+                covers:
+                  - FEAT-COMP-001#binding.portable-envelope-domain/target.composition-document-type
+                  - FEAT-COMP-001#binding.portable-envelope-domain/target.composition-format-marker-type
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::document_uses_the_portable_envelope_field_names } }
+      - id: tag-verification
+        role: verification
+        facet: verification
+        responsibility: Verify document tags round-trip as the same ordered Entry metadata tags on a saved Composition revision.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition.rs
+            selector: { kind: test, name: composition_save_persists_canonical_carrier_and_receipt }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.composition-tags
+                covers:
+                  - FEAT-COMP-001#binding.portable-envelope-domain/target.composition-document-type
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition, test: composition_save_persists_canonical_carrier_and_receipt } }
+      - id: result-descriptor-verification
+        role: verification
+        facet: verification
+        responsibility: Verify ordered Saved SQL result descriptors are tracked deterministically in the resolved result fingerprint.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_schema_fingerprint_tracks_ordered_result_descriptors }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.saved-sql-result-descriptor
+                covers:
+                  - FEAT-COMP-001#binding.portable-envelope-domain/target.saved-sql-result-column-type
+                  - FEAT-COMP-001#binding.portable-envelope-domain/target.saved-sql-result-field-types
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_schema_fingerprint_tracks_ordered_result_descriptors } }
+      - id: layout-verification
+        role: verification
+        facet: verification
+        responsibility: Verify unreferenced components are rejected during layout validation, which canonicalization invokes.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::unreferenced_components_are_invalid }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+                  - FEAT-COMP-001#binding.component-layout-domain/target.canonical-layout-validation
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unreferenced_components_are_invalid } }
+      - id: metric-value-verification
+        role: verification
+        facet: verification
+        responsibility: Verify accepted normalized metric dates and timestamps and stable rejection of malformed forms through the shared domain evaluator.
+        targets:
+          - id: accepted-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition_metric.rs
+            selector: { kind: symbol, name: tests::accepts_normalized_composition_metric_dates_and_timestamps }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers:
+                  - FEAT-COMP-001#binding.metric-runtime-value-domain/target.metric-runtime-value-validator
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition_metric::tests::accepts_normalized_composition_metric_dates_and_timestamps } }
+          - id: rejected-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition_metric.rs
+            selector: { kind: symbol, name: tests::rejects_malformed_or_non_normalized_composition_metric_dates_and_timestamps }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers:
+                  - FEAT-COMP-001#binding.metric-runtime-value-domain/target.metric-runtime-value-validator
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition_metric::tests::rejects_malformed_or_non_normalized_composition_metric_dates_and_timestamps } }
+      - id: metric-page-verification
+        role: verification
+        facet: verification
+        responsibility: Verify exact one-row complete-page validation for EntryQuery and Saved SQL metric results through the Core adapters.
+        targets:
+          - id: entry-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::entry_metric_page_adapter_checks_one_complete_scalar_row }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers:
+                  - FEAT-COMP-001#binding.metric-page-validation/target.entry-metric-page-adapter
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::entry_metric_page_adapter_checks_one_complete_scalar_row } }
+          - id: saved-sql-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_metric_page_adapter_checks_exact_alias_and_scalar_shape }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers:
+                  - FEAT-COMP-001#binding.metric-page-validation/target.saved-sql-metric-page-adapter
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_metric_page_adapter_checks_exact_alias_and_scalar_shape } }
+      - id: browser-metric-verification
+        role: verification
+        facet: verification
+        responsibility: Verify metric protocol envelopes adapt to scalar and diagnostic results and the Browser renders the shared metric result with continuation guards.
+        targets:
+          - id: protocol-case
+            adapter: typescript
+            path: frontend/src/lib/ugoite-client/protocol.test.ts
+            selector: { kind: test, name: adapts metric protocol envelopes to scalar and diagnostic results }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-shared-metric-evaluator
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: adapts metric protocol envelopes to scalar and diagnostic results } }
+          - id: renderer-case
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: renders section order and displays the shared WASM metric result }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-renderer
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: renders section order and displays the shared WASM metric result } }
     criteria:
       - id: typed-dashboard-model
         kind: behavior
@@ -89,7 +249,7 @@ requirements:
     title: Canonical Composition representation
     description: Canonical YAML and the document-level semantic Composition fingerprint derive from the complete normalized typed Composition value rather than source formatting; this identity is distinct from each entry_query source-schema fingerprint.
     priority: high
-    status: planned
+    status: implemented
     criteria:
       - id: canonical-yaml
         kind: behavior
@@ -107,7 +267,104 @@ requirements:
     title: Existing query and authorization semantics
     description: Composition sources compile into existing query contracts and retain their limits, exact-revision selection, current authorization checks, and source-schema identity boundaries.
     priority: high
-    status: planned
+    status: implemented
+    bindings:
+      - id: entry-query-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Core and Remote CLI inspect, parameterized entry_query, and raw export results against one filesystem-backed Space, exercising the existing EntryQuery contract end to end.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: test, name: test_cli_composition_inspect_query_export_match_core_remote }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+                covers:
+                  - FEAT-COMP-001#binding.entry-query-resolver/target.compile-entry-query-source
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_cli_composition_inspect_query_export_match_core_remote } }
+      - id: used-field-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the entry_query source-schema fingerprint ignores unreferenced schema fields.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::entry_query_fingerprint_ignores_unreferenced_schema_fields }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+                covers:
+                  - FEAT-COMP-001#binding.entry-query-resolver/target.compile-entry-query-source
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::entry_query_fingerprint_ignores_unreferenced_schema_fields } }
+      - id: saved-sql-revision-verification
+        role: verification
+        facet: verification
+        responsibility: Verify a Saved SQL source requires the exact current revision descriptor and never falls back silently.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_source_requires_the_exact_current_revision_descriptor }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+                covers:
+                  - FEAT-COMP-001#binding.saved-sql-resolver/target.compile-exact-saved-sql-source
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_source_requires_the_exact_current_revision_descriptor } }
+      - id: saved-sql-fingerprint-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the resolved Saved SQL result fingerprint tracks the selected metric result column.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_result_fingerprint_tracks_selected_metric_column }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+                covers:
+                  - FEAT-COMP-001#binding.saved-sql-resolver/target.fingerprint-resolved-saved-sql-source
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_result_fingerprint_tracks_selected_metric_column } }
+      - id: browser-exact-revision-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Browser pins reads and resolution to the caller-selected exact Composition revision across the API adapter, list, detail route, and Home.
+        targets:
+          - id: bounded-list-case
+            adapter: typescript
+            path: frontend/src/lib/composition-api.test.ts
+            selector: { kind: test, name: uses bounded portable list and exact-revision get operations }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-api
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-list-route
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: uses bounded portable list and exact-revision get operations } }
+          - id: route-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx"
+            selector: { kind: test, name: loads and resolves only the exact revision and binds typed parameter changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-exact-revision-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx", test: loads and resolves only the exact revision and binds typed parameter changes } }
+          - id: home-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/dashboard.test.tsx"
+            selector: { kind: test, name: rediscovers saved tools from Home and opens the listed exact revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-home-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: rediscovers saved tools from Home and opens the listed exact revision } }
     criteria:
       - id: entry-query-translation
         kind: behavior
@@ -156,7 +413,7 @@ requirements:
     title: Recoverable invalid or unsupported Compositions
     description: Unsupported versions and broken references may prevent execution but do not remove raw inspection, export, or history access.
     priority: high
-    status: planned
+    status: implemented
     criteria:
       - id: raw-inspection
         kind: behavior
@@ -170,7 +427,23 @@ requirements:
     title: Transient Composition runtime state
     description: Browser navigation and query-result state is Work and is not persisted as part of Composition Knowledge.
     priority: medium
-    status: planned
+    status: implemented
+    bindings:
+      - id: transient-work-verification
+        role: verification
+        facet: verification
+        responsibility: Verify get and resolve stay pinned to the selected revision while a stale parameter response is ignored and discarded.
+        targets:
+          - id: case
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: pins get and resolve to the selected revision and ignores a stale parameter response }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-query-handle
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: pins get and resolve to the selected revision and ignores a stale parameter response } }
     criteria:
       - id: work-state-is-transient
         kind: behavior
