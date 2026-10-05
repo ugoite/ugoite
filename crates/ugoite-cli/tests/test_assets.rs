@@ -459,8 +459,7 @@ fn test_asset_read_side_shares_core_semantics() {
 /// Backend mode projects the same read-side surface through shared operations.
 #[test]
 fn test_asset_read_side_backend_uses_shared_operations() {
-    use std::io::{Read, Write};
-    use std::time::{Duration, Instant};
+    use std::io::Write;
 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -481,13 +480,11 @@ fn test_asset_read_side_backend_uses_shared_operations() {
                     Err(error) => panic!("accept: {error}"),
                 }
             };
-            stream
-                .set_read_timeout(Some(Duration::from_secs(5)))
-                .unwrap();
+            stream.set_read_timeout(Some(STUB_READ_TIMEOUT)).unwrap();
             let mut request = Vec::new();
             loop {
                 let mut buffer = [0_u8; 4096];
-                let read = stream.read(&mut buffer).expect("read request");
+                let read = stub_read(&mut stream, &mut buffer, deadline, "read request");
                 if read == 0 {
                     break;
                 }
@@ -575,13 +572,12 @@ fn test_asset_read_side_backend_uses_shared_operations() {
     let lonely_endpoint = format!("http://{}", lonely.local_addr().unwrap());
     let lonely_handle = std::thread::spawn(move || {
         let (mut stream, _) = lonely.accept().expect("list request");
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        stream.set_read_timeout(Some(STUB_READ_TIMEOUT)).unwrap();
+        let lonely_deadline = Instant::now() + STUB_READ_DEADLINE;
         let mut request = Vec::new();
         loop {
             let mut buffer = [0_u8; 4096];
-            let read = stream.read(&mut buffer).expect("read request");
+            let read = stub_read(&mut stream, &mut buffer, lonely_deadline, "read request");
             if read == 0 {
                 break;
             }
@@ -1013,17 +1009,49 @@ struct StubBackend {
     seen: Mutex<Vec<(String, String)>>,
 }
 
+/// Bounded stub read (issue #3421): under full-suite load a single socket
+/// read can stall past one short timeout while the peer is merely slow, so
+/// timed-out reads retry until an overall deadline instead of failing on
+/// the first WouldBlock. An expired deadline or a real I/O error still
+/// fails loudly. Both timeout kinds are tolerated because read timeouts
+/// surface as WouldBlock on Unix and TimedOut elsewhere.
+const STUB_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const STUB_READ_DEADLINE: Duration = Duration::from_secs(30);
+
+fn stub_read(
+    stream: &mut std::net::TcpStream,
+    buffer: &mut [u8],
+    deadline: Instant,
+    what: &str,
+) -> usize {
+    loop {
+        match std::io::Read::read(stream, buffer) {
+            Ok(read) => return read,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    || error.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                assert!(
+                    Instant::now() < deadline,
+                    "{what} timed out waiting for bytes"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("{what}: {error}"),
+        }
+    }
+}
+
 fn read_stub_request(stream: &mut std::net::TcpStream) -> (String, String) {
-    use std::io::{Read, Write};
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
+    use std::io::Write;
+    stream.set_read_timeout(Some(STUB_READ_TIMEOUT)).unwrap();
+    let deadline = Instant::now() + STUB_READ_DEADLINE;
     let mut raw = Vec::new();
     let mut header_end = None;
     let mut content_length = 0_usize;
     loop {
         let mut buffer = [0_u8; 4096];
-        let read = stream.read(&mut buffer).expect("read stub request");
+        let read = stub_read(&mut *stream, &mut buffer, deadline, "read stub request");
         if read == 0 {
             break;
         }
