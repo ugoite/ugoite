@@ -2381,6 +2381,64 @@ requirements:
                 criterion: REQ-FE-068#criterion.shared-result-visual-language
                 covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "navigates only from the shared trailing chevron action" } }
+          - id: entry-browser-paging
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "advances pages through the shared controls while the controller owns the query" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "advances pages through the shared controls while the controller owns the query" } }
+          - id: entry-browser-single-page
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "hides pagination for a single page" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "hides pagination for a single page" } }
+          - id: entry-result-table-rendering
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.test.tsx
+            selector: { kind: test, name: "renders the current page as a native table with Entry identity" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.native-page-rows
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "renders the current page as a native table with Entry identity" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "renders the current page as a native table with Entry identity" } }
+          - id: entry-result-table-selection
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.test.tsx
+            selector: { kind: test, name: "selects on row click and opens only from the trailing control" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "selects on row click and opens only from the trailing control" } }
+          - id: entry-result-table-trailing
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.test.tsx
+            selector: { kind: test, name: "keeps the open action in a sticky trailing cell" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "keeps the open action in a sticky trailing cell" } }
+          - id: entry-result-table-keyboard
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.test.tsx
+            selector: { kind: test, name: "moves keyboard focus between row actions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.keyboard-row-navigation
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "moves keyboard focus between row actions" } }
           - id: sql-result-table
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx

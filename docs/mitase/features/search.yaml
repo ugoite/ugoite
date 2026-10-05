@@ -128,6 +128,23 @@ features:
                 criterion: REQ-FE-068#criterion.semantic-row-ownership
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.shared-result-visual-language
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+          - id: entry-result-table
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.tsx
+            selector: { kind: symbol, name: EntryResultTable }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.native-page-rows
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.keyboard-row-navigation
           - id: paged-result-table
             adapter: typescript
             path: frontend/src/components/PagedResultTable.tsx

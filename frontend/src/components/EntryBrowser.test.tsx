@@ -252,6 +252,151 @@ describe("EntryBrowser", () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
+  it("advances pages through the shared controls while the controller owns the query", async () => {
+    const page = (id: string, preview: string) => ({
+      id,
+      form_id: "form-1",
+      revision_id: `revision-${id}`,
+      created_at_micros: CREATED_MICROS,
+      updated_at_micros: UPDATED_MICROS,
+      preview,
+    });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [page("entry-1", "First page row")],
+        has_more: true,
+        next: "cursor-2",
+      })
+      .mockResolvedValueOnce({
+        rows: [page("entry-2", "Second page row")],
+        has_more: false,
+      });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    render(() => (
+      <EntryBrowser
+        controller={controller}
+        capabilities={systemEntryCapabilities({
+          kind: "form",
+          form_id: "form-1",
+        })}
+      />
+    ));
+
+    expect(screen.getByText("First page row")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Second page row")).toBeInTheDocument();
+    expect(queryMock).toHaveBeenCalledTimes(2);
+    expect(
+      screen.getByRole("button", { name: "Previous" }),
+    ).not.toBeDisabled();
+  });
+
+  it("hides pagination for a single page", async () => {
+    queryMock.mockResolvedValue({
+      rows: [{
+        id: "entry-1",
+        form_id: "form-1",
+        revision_id: "revision-1",
+        created_at_micros: CREATED_MICROS,
+        updated_at_micros: UPDATED_MICROS,
+        preview: "Only row",
+      }],
+      has_more: false,
+    });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    render(() => (
+      <EntryBrowser
+        controller={controller}
+        capabilities={systemEntryCapabilities({
+          kind: "form",
+          form_id: "form-1",
+        })}
+      />
+    ));
+
+    expect(screen.getByText("Only row")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+  });
+
+  it("shows an error with retry and no table", async () => {
+    queryMock
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "entry-1",
+          form_id: "form-1",
+          revision_id: "revision-1",
+          created_at_micros: CREATED_MICROS,
+          updated_at_micros: UPDATED_MICROS,
+          preview: "Recovered row",
+        }],
+        has_more: false,
+      });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    render(() => (
+      <EntryBrowser
+        controller={controller}
+        capabilities={systemEntryCapabilities({
+          kind: "form",
+          form_id: "form-1",
+        })}
+      />
+    ));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("boom");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Recovered row")).toBeInTheDocument();
+    expect(queryMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the empty state without a table", async () => {
+    queryMock.mockResolvedValue({ rows: [], has_more: false });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      undefined,
+      undefined,
+      50,
+      queryMock,
+    );
+    await controller.load();
+    render(() => (
+      <EntryBrowser
+        controller={controller}
+        capabilities={systemEntryCapabilities({
+          kind: "form",
+          form_id: "form-1",
+        })}
+      />
+    ));
+
+    expect(screen.getByText("No entries match this query."))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
   it("updates Form labels when metadata arrives without reloading the page", async () => {
     queryMock.mockResolvedValue({
       rows: [{

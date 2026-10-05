@@ -18,8 +18,9 @@ import {
   EntryBrowserDisplayDialog,
   type EntryBrowserDisplayMode,
 } from "./EntryBrowserDisplayDialog";
-import { RowListChevron } from "./RowList";
-import { PagedResultTable, type ResultColumn } from "./PagedResultTable";
+import { EntryResultTable, type EntryResultColumn } from "./EntryResultTable";
+import { LocalBusyIndicator } from "./LocalBusyIndicator";
+import { ResultPagination } from "./ResultPagination";
 import { UiIcon } from "./UiIcon";
 
 export type EntryBrowserMode = "browse" | "select_one";
@@ -225,7 +226,7 @@ export function EntryBrowser(props: EntryBrowserProps) {
     return previewColumns();
   };
 
-  const tableColumns = createMemo((): ResultColumn<EntryQueryResult>[] =>
+  const tableColumns = createMemo((): EntryResultColumn[] =>
     visibleColumns().map((column) => ({
       key: column.key,
       label: column.label,
@@ -422,68 +423,50 @@ export function EntryBrowser(props: EntryBrowserProps) {
         )}
       </Show>
 
-      <PagedResultTable
-        columns={tableColumns()}
-        rows={rowsState()}
-        rowKey={(row) => row.id}
-        pageIdentity={JSON.stringify({
-          cursor: props.controller.currentStart(),
-          projection: projectionState(),
-        })}
-        loading={loadingState()}
-        loadingLabel={t("entryBrowser.loading")}
-        error={errorState() ? String(errorState()) : null}
-        emptyLabel={t("entryBrowser.empty")}
-        retryLabel={t("common.retry")}
-        onRetry={() => void props.controller.retry()}
+      <Show when={loadingState()}>
+        <LocalBusyIndicator label={t("entryBrowser.loading")} />
+      </Show>
+      <Show when={errorState()}>
+        <p class="ui-text-danger" role="alert">{String(errorState())}</p>
+        <button
+          type="button"
+          class="ui-button ui-button-secondary"
+          disabled={loadingState()}
+          onClick={() => void props.controller.retry()}
+        >
+          {t("common.retry")}
+        </button>
+      </Show>
+      <Show when={!loadingState() && !errorState() && rowsState().length === 0}>
+        <p class="ui-muted">{t("entryBrowser.empty")}</p>
+      </Show>
+      <Show when={!errorState() && rowsState().length > 0}>
+        <EntryResultTable
+          columns={tableColumns()}
+          rows={rowsState()}
+          pageIdentity={JSON.stringify({
+            cursor: props.controller.currentStart(),
+            projection: projectionState(),
+          })}
+          tableLabel={t("entryBrowser.pagination")}
+          selectedEntryId={selectedEntryId()}
+          onSelectEntry={(row) => setSelectedEntryId(row.id)}
+          actionVariant={mode() === "select_one" ? "confirm" : "open"}
+          openLabel={t("entryBrowser.openEntry")}
+          confirmLabel={t("entryBrowser.confirm")}
+          busy={loadingState()}
+          onOpenEntry={(row) => props.onSelect?.(row)}
+        />
+      </Show>
+      <ResultPagination
         canPrevious={canGoPreviousState()}
         canNext={hasMoreState()}
+        busy={loadingState() || !!errorState()}
         previousLabel={t("common.previous")}
         nextLabel={t("common.next")}
+        ariaLabel={t("entryBrowser.pagination")}
         onPrevious={() => void props.controller.previous()}
         onNext={() => void props.controller.next()}
-        selectedRowKey={selectedEntryId()}
-        onRowSelect={(row) => setSelectedEntryId(row.id)}
-        renderTrailingAction={mode() === "select_one"
-          ? (row) => (
-            <button
-              type="button"
-              class="ui-button ui-button-secondary"
-              disabled={loadingState()}
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onSelect?.(row);
-              }}
-            >
-              {t("entryBrowser.confirm")}
-            </button>
-          )
-          : (row) => (
-            <button
-              type="button"
-              class="entry-browser-open"
-              aria-label={t("entryBrowser.openEntry")}
-              title={t("entryBrowser.openEntry")}
-              disabled={loadingState()}
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onSelect?.(row);
-              }}
-            >
-              <RowListChevron />
-            </button>
-          )}
-        trailingActionLabel={mode() === "select_one"
-          ? t("entryBrowser.confirm")
-          : t("entryBrowser.openEntry")}
-        entryDataId={(row) => row.id}
-        trailingActionClassName="entry-browser-trailing-cell"
-        trailingHeaderClassName="entry-browser-trailing-header"
-        paginationLabel={t("entryBrowser.pagination")}
-        classNames={{
-          table: "entry-browser-table",
-          scroll: "entry-browser-table-scroll",
-        }}
       />
     </section>
   );

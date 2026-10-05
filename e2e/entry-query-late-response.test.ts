@@ -468,7 +468,7 @@ test(
       expect(await readVisibleHistory(page, "same-space-success"))
         .not.toContain(entryIds.successOld);
 
-      await page.locator(".paged-result-pagination button").nth(1).click();
+      await page.locator(".result-pagination button").nth(1).click();
       await expectUi(page, {
         visibleEntryIds: expectedPageTwo.rows.map((row) => row.id),
         loading: false,
@@ -476,7 +476,7 @@ test(
         previousDisabled: false,
         nextDisabled: true,
       });
-      await page.locator(".paged-result-pagination button").nth(0).click();
+      await page.locator(".result-pagination button").nth(0).click();
       await expectUi(page, {
         visibleEntryIds: expectedPageOne.rows.map((row) => row.id),
         loading: false,
@@ -499,8 +499,8 @@ test(
         visibleEntryIds: [entryIds.rejectionCurrent],
         loading: false,
         errors: [],
-        previousDisabled: true,
-        nextDisabled: true,
+        previousDisabled: null,
+        nextDisabled: null,
       });
       await recordUiEvent(page, "new_visible", "same-space-rejection");
       expect(await readProbeRequest(page, "same-space-rejection"))
@@ -516,8 +516,8 @@ test(
         visibleEntryIds: [entryIds.priorSpace],
         loading: false,
         errors: [],
-        previousDisabled: true,
-        nextDisabled: true,
+        previousDisabled: null,
+        nextDisabled: null,
       });
       await submitSearch(page, crossSpaceOldText);
       await waitForHeldRequest(page, "space-switch", "deliver");
@@ -545,8 +545,8 @@ test(
         visibleEntryIds: [entryIds.secondSpaceCurrent],
         loading: false,
         errors: [],
-        previousDisabled: true,
-        nextDisabled: true,
+        previousDisabled: null,
+        nextDisabled: null,
       });
       await recordUiEvent(page, "new_visible", "space-switch");
       await page.evaluate(() => {
@@ -560,8 +560,8 @@ test(
         visibleEntryIds: [entryIds.secondSpaceCurrent],
         loading: false,
         errors: [],
-        previousDisabled: true,
-        nextDisabled: true,
+        previousDisabled: null,
+        nextDisabled: null,
       });
       const postSwitchHistory = await readVisibleHistory(page, "space-switch");
       expect(postSwitchHistory.length).toBeGreaterThan(0);
@@ -690,7 +690,7 @@ async function submitSearch(page: Page, text: string): Promise<void> {
 async function readUi(page: Page): Promise<UiSnapshot> {
   return await page.evaluate(() => {
     const pagination = document.querySelector(
-      ".paged-result-pagination",
+      ".result-pagination",
     );
     const buttons = Array.from(pagination?.querySelectorAll("button") ?? []);
     return {
@@ -698,7 +698,7 @@ async function readUi(page: Page): Promise<UiSnapshot> {
         "tbody tr[data-entry-id]",
       )).flatMap((row) => row.getAttribute("data-entry-id") ?? []),
       loading: document.querySelector(
-        ".paged-result-table[aria-busy='true']",
+        ".entry-browser[aria-busy='true']",
       ) !== null,
       errors: Array.from(document.querySelectorAll("[role='alert']")).map(
         (element) => element.textContent?.trim() ?? "",
