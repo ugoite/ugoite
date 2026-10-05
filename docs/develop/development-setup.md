@@ -66,11 +66,15 @@ record the same 6,000 + 4,000 Entry fixture on macOS arm64. The first process
 backfilled 10,000 audit targets in 103.8 s. Two subsequent process-cold starts
 verified the persisted Node-local checkpoints and became ready in 3.92 s and
 3.94 s. Their audit-chain verification phases totaled about 235–237 ms,
-compared with 472–473 ms in the pre-checkpoint profile. Both later starts were
-below the 15 s checkpoint-start reference target in the first run. A rerun on
-the final test commit measured 7.23 s and 8.07 s for those later starts. That
-variation exceeded the 5 s warm reference target in the rerun; the OS page cache
-was not controlled, so these are not disk-cold timings. Initial backfill
+compared with 472–473 ms in the pre-checkpoint profile. A rerun on
+the final test commit measured 7.23 s and 8.07 s for those later starts, with
+audit-chain verification steady around 0.25–0.36 s. The runner does not control
+the OS page cache, and audit recovery plus marker reconciliation account for
+most of the variance, so these are not disk-cold timings and the measured
+3.9–8.1 s range is evidence only. There is no absolute startup-time gate: do not
+present any warm-start figure as a product contract. A future startup target,
+if any, requires a documented controlled-load protocol with same-fixture
+comparison data first. Initial backfill
 remains dominated by marker reconciliation and commit; do not describe it as a
 checkpoint-backed startup.
 

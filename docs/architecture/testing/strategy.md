@@ -32,6 +32,17 @@ Tests are organized around the shared Rust core and thin adapters.
   check.
 - `xtask` checks OpenAPI drift, architectural dependency rules, and stale
   current-stack documentation.
+- Required acceptance lanes prove boundedness properties (paged reads with
+  continuation, cancellation/retry, bounded memory, no implicit counts, ACL
+  enforcement, conflict/unknown-version/broken-reference handling, portable
+  reopen, and downgrade compatibility) with small structural fixtures. Large
+  fixed-count volumes are profiling-only; they are never merge gates and never
+  release contracts.
+- Seed profiling is instrumentation-only over the shared sample-data path.
+  There are no profiling-only seed variants and therefore no separate
+  profiled/unprofiled semantics oracle. Seed-phase timings are diagnostic, and
+  seed micro-optimization stays out of the roadmap without
+  product-bottleneck evidence from a user-facing path.
 
 Requirement IDs embedded in test names/source provide traceability. A
 requirement without a current test reference is labeled `untraced`; deleted
