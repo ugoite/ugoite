@@ -3631,6 +3631,48 @@ a.tool {
   margin-top: 16px;
 }
 
+/* Shared result-table visual vocabulary (REQ-FE-068). Semantic tables
+ * (Entry, SQL, History Change, Composition sources) reuse these classes for
+ * typography, spacing, dividers, scroll containment, and pagination rhythm.
+ * Row semantics, selection, and paging ownership stay in each surface. */
+.result-table-viewport {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.result-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.result-table th,
+.result-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.result-table th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.result-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.result-pagination-button {
+  min-height: 44px;
+}
+
 .entry-browser-table {
   width: 100%;
   min-width: 36rem;
