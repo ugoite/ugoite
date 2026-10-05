@@ -25,12 +25,9 @@ import {
   setDraftName,
   setDraftTags,
 } from "~/lib/composition-draft";
-import {
-  compositionApi,
-  type CompositionPreviewPlan,
-  type CompositionResolveDiagnostic,
-  type CompositionResolvedSource,
-} from "~/lib/composition-api";
+import { compositionApi } from "~/lib/composition-api";
+import { createCompositionPreviewHandle } from "~/lib/composition-preview-handle";
+import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 import { compositionSaveErrorMessage } from "~/lib/composition-save-error";
 import {
   clearPendingCompositionSaveAttempt,
@@ -38,7 +35,6 @@ import {
   type PendingCompositionSaveAttempt,
   stagePendingCompositionSaveAttempt,
 } from "~/lib/composition-save-attempt";
-import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 import { t } from "~/lib/i18n";
 import {
   spaceCompositionRevisionPath,
@@ -48,22 +44,7 @@ import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "home" });
 
-type StudioPreview =
-  | { status: "idle" }
-  | { status: "previewing" }
-  | {
-    status: "ready";
-    plan: Pick<CompositionPreviewPlan, "sources" | "component_bindings">;
-    sources: Record<string, CompositionSourcePageState>;
-  }
-  | { status: "diagnostics"; diagnostics: CompositionResolveDiagnostic[] }
-  | { status: "error" };
-
 const PREVIEW_DEBOUNCE_MS = 400;
-
-const isAbort = (error: unknown): boolean =>
-  !!error && typeof error === "object" &&
-  (error as { name?: unknown }).name === "AbortError";
 
 const parseTags = (value: string): string[] => {
   const seen = new Set<string>();
@@ -91,17 +72,14 @@ export default function CompositionNewRoute() {
   const [draft, setDraft] = createSignal<CompositionDraft>(createEmptyDraft());
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
-  const [preview, setPreview] = createSignal<StudioPreview>({ status: "idle" });
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(false);
 
-  let previewGeneration = 0;
-  let previewController: AbortController | undefined;
+  const previewHandle = createCompositionPreviewHandle();
+  onCleanup(previewHandle.dispose);
+
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
-  const resolvedSources = new Map<string, CompositionResolvedSource>();
-  const sourceGenerations = new Map<string, number>();
-  const sourceControllers = new Map<string, AbortController>();
 
   let pendingSave: PendingCompositionSaveAttempt | undefined;
 
@@ -116,159 +94,42 @@ export default function CompositionNewRoute() {
     !saving();
 
   onCleanup(() => {
-    previewGeneration += 1;
-    previewController?.abort();
     if (previewTimer !== undefined) clearTimeout(previewTimer);
-    for (const controller of sourceControllers.values()) controller.abort();
-    sourceControllers.clear();
   });
 
-  const loadSourcePage = (
-    requestGeneration: number,
-    source: CompositionResolvedSource,
-    cursor: string | undefined,
-    cursorStack: (string | undefined)[],
-  ) => {
-    const sourceId = source.source_id;
-    sourceControllers.get(sourceId)?.abort();
-    const sourceGeneration = (sourceGenerations.get(sourceId) ?? 0) + 1;
-    sourceGenerations.set(sourceId, sourceGeneration);
-    resolvedSources.set(sourceId, source);
-    const controller = new AbortController();
-    sourceControllers.set(sourceId, controller);
-    setPreview((current) => {
-      if (current.status !== "ready") return current;
-      return {
-        ...current,
-        sources: {
-          ...current.sources,
-          [sourceId]: { status: "loading", cursorStack },
-        },
-      };
-    });
-    void compositionApi.querySource(
-      spaceId(),
-      source,
-      cursor,
-      controller.signal,
-    ).then(
-      (page) => {
-        if (
-          requestGeneration !== previewGeneration ||
-          controller.signal.aborted ||
-          sourceGenerations.get(sourceId) !== sourceGeneration
-        ) return;
-        setPreview((current) => {
-          if (current.status !== "ready") return current;
-          return {
-            ...current,
-            sources: {
-              ...current.sources,
-              [sourceId]: { status: "ready", cursorStack, cursor, page },
-            },
-          };
-        });
-      },
-      (error: unknown) => {
-        if (
-          requestGeneration !== previewGeneration ||
-          controller.signal.aborted || isAbort(error) ||
-          sourceGenerations.get(sourceId) !== sourceGeneration
-        ) return;
-        setPreview((current) => {
-          if (current.status !== "ready") return current;
-          return {
-            ...current,
-            sources: {
-              ...current.sources,
-              [sourceId]: { status: "error", cursorStack, cursor, error },
-            },
-          };
-        });
-      },
-    ).finally(() => {
-      if (sourceControllers.get(sourceId) === controller) {
-        sourceControllers.delete(sourceId);
-      }
-    });
-  };
-
-  const runPreview = async (snapshot: CompositionDraft) => {
-    const requestGeneration = ++previewGeneration;
-    previewController?.abort();
-    const controller = new AbortController();
-    previewController = controller;
-    resolvedSources.clear();
-    sourceGenerations.clear();
-    setPreview({ status: "previewing" });
-    try {
-      const canonical = await canonicalizeDraft(snapshot);
-      if (
-        requestGeneration !== previewGeneration || controller.signal.aborted
-      ) return;
-      const response = await compositionApi.preview(
-        spaceId(),
-        canonical.canonical_yaml,
-        {},
-        controller.signal,
-      );
-      if (
-        requestGeneration !== previewGeneration || controller.signal.aborted
-      ) return;
-      if (!response.ok) {
-        setPreview({
-          status: "diagnostics",
-          diagnostics: response.diagnostics,
-        });
-        return;
-      }
-      const plan: Pick<
-        CompositionPreviewPlan,
-        "sources" | "component_bindings"
-      > = {
-        sources: response.plan.sources,
-        component_bindings: response.plan.component_bindings ?? [],
-      };
-      setPreview({ status: "ready", plan, sources: {} });
-      for (const source of plan.sources) {
-        loadSourcePage(requestGeneration, source, undefined, [undefined]);
-      }
-    } catch (error) {
-      if (
-        requestGeneration !== previewGeneration || controller.signal.aborted ||
-        isAbort(error)
-      ) return;
-      setPreview({ status: "error" });
-    }
+  const schedulePreview = (snapshot: CompositionDraft) => {
+    if (previewTimer !== undefined) clearTimeout(previewTimer);
+    previewTimer = undefined;
+    previewTimer = setTimeout(() => {
+      previewTimer = undefined;
+      void (async () => {
+        try {
+          const canonical = await canonicalizeDraft(snapshot);
+          await previewHandle.preview(spaceId(), canonical.canonical_yaml, {});
+        } catch {
+          // canonicalizeDraft rejects only on WASM transport failure;
+          // contract diagnostics arrive through the preview response.
+        }
+      })();
+    }, PREVIEW_DEBOUNCE_MS);
   };
 
   const retryPreview = () => {
-    if (previewTimer !== undefined) clearTimeout(previewTimer);
-    void runPreview(draft());
-  };
-
-  createEffect(() => {
-    const snapshot = draft();
+    const current = previewHandle.state();
+    if (!current.yaml || !current.spaceId) return;
     if (previewTimer !== undefined) clearTimeout(previewTimer);
     previewTimer = undefined;
-    if (
-      snapshot.name.trim().length === 0 || snapshot.sources.length === 0
-    ) {
-      previewGeneration += 1;
-      previewController?.abort();
-      previewController = undefined;
-      setPreview({ status: "idle" });
-      return;
-    }
-    setPreview((current) =>
-      current.status === "ready" || current.status === "previewing"
-        ? current
-        : { status: "previewing" }
-    );
-    previewTimer = setTimeout(() => {
-      previewTimer = undefined;
-      void runPreview(snapshot);
-    }, PREVIEW_DEBOUNCE_MS);
+    void previewHandle.preview(current.spaceId, current.yaml, {
+      ...previewHandle.parameters(),
+    });
+  };
+
+  // Live preview follows the draft with a bounded debounce. Preview needs
+  // sources only; the tool name gates saving, never previewing.
+  createEffect(() => {
+    const snapshot = draft();
+    if (snapshot.sources.length === 0) return;
+    schedulePreview(snapshot);
   });
 
   const addSeed = (seed: CompositionSourceSeed) => {
@@ -384,15 +245,33 @@ export default function CompositionNewRoute() {
     }
   };
 
-  const readyPreview = () => {
-    const current = preview();
-    return current.status === "ready" ? current : undefined;
+  const previewState = () => previewHandle.state();
+  // Preview selectors stay empty while the draft has no sources, so a
+  // removed last source never leaves a stale preview on screen.
+  const hasSources = () => draft().sources.length > 0;
+  const readySources = (): Record<string, CompositionSourcePageState> => {
+    const current = previewState();
+    return current.preview?.ok && hasSources() ? current.sources : {};
   };
-
-  const diagnosticsPreview = () => {
-    const current = preview();
-    return current.status === "diagnostics" ? current.diagnostics : undefined;
+  const readyPlan = () => {
+    const current = previewState();
+    if (!current.preview?.ok || !hasSources()) return undefined;
+    return {
+      sources: current.preview.plan?.sources ?? [],
+      component_bindings: current.preview.plan?.component_bindings ?? [],
+    };
   };
+  const previewDiagnostics = () => {
+    const current = previewState();
+    return !current.preview?.ok && hasSources()
+      ? current.preview?.diagnostics
+      : undefined;
+  };
+  const isPreviewing = () => hasSources() && previewState().previewing;
+  const previewFailed = () =>
+    hasSources() &&
+    previewState().previewError !== undefined &&
+    previewState().preview === undefined;
 
   const dataHeadingId = "studio-data-heading";
   const tagsHeadingId = "studio-tags-heading";
@@ -549,10 +428,10 @@ export default function CompositionNewRoute() {
 
       <section class="section" aria-labelledby={previewHeadingId}>
         <h2 id={previewHeadingId}>{t("composition.studioPreview")}</h2>
-        <Show when={preview().status === "previewing"}>
+        <Show when={isPreviewing()}>
           <LocalBusyIndicator label={t("composition.queryLoading")} />
         </Show>
-        <Show when={preview().status === "error"}>
+        <Show when={previewFailed()}>
           <p class="ui-text-danger" role="alert">
             {t("composition.queryFailed")}
           </p>
@@ -564,7 +443,7 @@ export default function CompositionNewRoute() {
             {t("composition.retry")}
           </button>
         </Show>
-        <Show when={diagnosticsPreview()}>
+        <Show when={previewDiagnostics()}>
           {(diagnostics) => (
             <>
               <CompositionDiagnostics diagnostics={diagnostics()} />
@@ -578,52 +457,18 @@ export default function CompositionNewRoute() {
             </>
           )}
         </Show>
-        <Show when={readyPreview()}>
-          {(ready) => (
+        <Show when={readyPlan()}>
+          {(plan) => (
             <Show
-              when={ready().plan.component_bindings.length > 0}
+              when={plan().component_bindings.length > 0}
               fallback={<p class="ui-muted">{t("composition.queryEmpty")}</p>}
             >
               <CompositionRenderer
-                plan={ready().plan}
-                sources={ready().sources}
-                onNext={(sourceId) => {
-                  const source = resolvedSources.get(sourceId);
-                  const state = ready().sources[sourceId];
-                  const cursor = state?.page?.page.next;
-                  if (!source || !cursor || state?.status === "loading") return;
-                  void loadSourcePage(
-                    previewGeneration,
-                    source,
-                    cursor,
-                    [...state.cursorStack, cursor],
-                  );
-                }}
-                onPrevious={(sourceId) => {
-                  const source = resolvedSources.get(sourceId);
-                  const state = ready().sources[sourceId];
-                  if (
-                    !source || !state || state.cursorStack.length <= 1
-                  ) return;
-                  const cursorStack = state.cursorStack.slice(0, -1);
-                  void loadSourcePage(
-                    previewGeneration,
-                    source,
-                    cursorStack.at(-1),
-                    cursorStack,
-                  );
-                }}
-                onRetry={(sourceId) => {
-                  const source = resolvedSources.get(sourceId);
-                  const state = ready().sources[sourceId];
-                  if (!source || !state || state.status === "loading") return;
-                  void loadSourcePage(
-                    previewGeneration,
-                    source,
-                    state.cursor,
-                    state.cursorStack,
-                  );
-                }}
+                plan={plan()}
+                sources={readySources()}
+                onNext={(sourceId) => previewHandle.next(sourceId)}
+                onPrevious={(sourceId) => previewHandle.previous(sourceId)}
+                onRetry={(sourceId) => previewHandle.retry(sourceId)}
               />
             </Show>
           )}
