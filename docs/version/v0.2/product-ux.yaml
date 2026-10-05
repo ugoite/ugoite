@@ -93,6 +93,88 @@ verification_evidence:
       - It does not establish screen-reader or large-result performance acceptance.
     broader_product_ux_tasks_completed: false
     cp1_acceptance_tasks_completed: false
+  - id: result-surface-component-tests
+    scope: >-
+      Post-refactor focused component regressions for the semantic result
+      surfaces: Entry selection versus navigation, SQL exact order and narrow
+      fit, Change selection versus recovery, Composition source-native
+      delegation without client aggregation, shared pagination hiding on
+      single pages, and row-action keyboard movement.
+    classification: mocked-component-tests
+    source_sha: 1746c77cfbd1e1569dc3ba6e2780dbb8fb5ee259
+    command: >-
+      deno task --cwd frontend test src/components/EntryBrowser.test.tsx
+      src/components/EntryResultTable.test.tsx
+      src/components/SqlResultTable.test.tsx
+      src/components/HistoryChangeTable.test.tsx
+      src/components/CompositionRenderer.test.tsx
+      src/components/CompositionEntryQueryTable.test.tsx
+      src/components/ResultPagination.test.tsx
+      src/lib/row-action-focus.test.tsx src/components/RowList.test.tsx
+    prerequisite: mise run build:wasm
+    selectors:
+      - file: frontend/src/components/EntryBrowser.test.tsx
+        test: "advances pages through the shared controls while the controller owns the query"
+      - file: frontend/src/components/EntryBrowser.test.tsx
+        test: "hides pagination for a single page"
+      - file: frontend/src/components/EntryResultTable.test.tsx
+        test: "selects on row click and opens only from the trailing control"
+      - file: frontend/src/components/SqlResultTable.test.tsx
+        test: "fits narrow results without a fixed giant width"
+      - file: frontend/src/components/HistoryChangeTable.test.tsx
+        test: "marks the selected Change without recovery controls"
+      - file: frontend/src/components/CompositionRenderer.test.tsx
+        test: "composition_renderer_delegates_to_source_native_presenters_without_client_aggregation"
+      - file: frontend/src/components/ResultPagination.test.tsx
+        test: "renders no navigation for a single page"
+      - file: frontend/src/components/RowList.test.tsx
+        test: "REQ-UX-LIST-001: activates the full row without a boxed chevron or Open column"
+    fixture: Vitest component fixtures with mocked route, EntryQuery controller, and API dependencies.
+    environment: Deno 2.8.3, Vitest 4.1.8, Linux ARM64.
+    result: "9 files passed; 66 tests passed."
+    artifact: none; the local test runner output is the execution record.
+    limitations:
+      - This mocked component run does not establish server-backed browser behavior.
+      - It does not establish screen-reader or large-result performance acceptance.
+    broader_product_ux_tasks_completed: false
+    cp1_acceptance_tasks_completed: false
+  - id: result-surface-mobile-regression
+    scope: >-
+      Post-refactor narrow-viewport regression: the Entry table keeps rows
+      selectable without navigation, the trailing open action usable while
+      the table scrolls at 320px and 390px widths, the History table
+      reachable on mobile, and delayed EntryQuery responses suppressed on
+      the new presentation.
+    classification: implemented-product-evidence
+    source_sha: 24c1d98d4ccf5aa93faeda7359c1dd05447854c2
+    command: >-
+      E2E_BUILD_IMAGES=false deno task e2e:smoke-and-asset-owned and
+      E2E_BUILD_IMAGES=false deno task e2e:mobile-ui (ci-e2e-smoke-mobile
+      lane on the post-refactor tree)
+    prerequisite: Merged post-refactor tree with the ugoite:e2e image available to CI.
+    selectors:
+      - file: e2e/entry-browser-ux.test.ts
+        test: "REQ-E2E-003: selects rows and keeps the trailing action usable on mobile"
+      - file: e2e/entry-browser-ux.test.ts
+        test: "REQ-E2E-003: changing Forms does not retain the previous Entry rows"
+      - file: e2e/entry-query-late-response.test.ts
+        test: "@smoke EntryQuery ignores delayed superseded responses in Chromium"
+    fixture: >-
+      Temporary Space storage with seeded Forms and Entries, created through
+      the composed server; storage is removed when the runner exits.
+    environment: >-
+      GitHub Actions ubuntu-24.04, Playwright Chromium, Docker Compose E2E.
+    result: "ci-e2e-smoke-mobile: pass on the post-refactor tree."
+    artifact:
+      name: ugoite-browser-e2e-evidence-37283391954
+      url: https://github.com/ugoite/ugoite/actions/runs/37283391954
+    limitations:
+      - This lane evidence covers Entry narrow viewports and smoke stale
+        suppression; Composition golden/metric/stale journeys are re-run
+        separately for the B6 evidence refresh.
+      - It does not establish screen-reader acceptance.
+    broader_product_ux_tasks_completed: false
+    cp1_acceptance_tasks_completed: false
   - id: form-entry-browser-spec-registry
     scope: >-
       The canonical Form Entries page references its EntryBrowser component
