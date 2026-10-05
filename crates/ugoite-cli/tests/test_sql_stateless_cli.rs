@@ -73,6 +73,7 @@ struct CliSqlSpace {
     config_path: std::path::PathBuf,
     relation: String,
     status_column: String,
+    priority_column: String,
 }
 
 fn setup_cli_sql_space() -> CliSqlSpace {
@@ -134,11 +135,16 @@ fn setup_cli_sql_space() -> CliSqlSpace {
         .pointer("/fields/Status/id")
         .and_then(|id| id.as_i64())
         .expect("Status field id");
+    let priority_id = form
+        .pointer("/fields/Priority/id")
+        .and_then(|id| id.as_i64())
+        .expect("Priority field id");
     CliSqlSpace {
         _dir: dir,
         config_path,
         relation: format!("form_{form_id}"),
         status_column: format!("field_{status_id}"),
+        priority_column: format!("field_{priority_id}"),
     }
 }
 
@@ -649,6 +655,88 @@ fn cli_sql_typed_null_and_invalid_scalar() {
     assert!(!mismatched.status.success(), "mismatched scalar must fail");
 }
 
+/// Declared `long`/`double` values, inferred numbers, and typed nulls for
+/// `long`/`double` bind as typed values through the CLI parameter spelling.
+#[test]
+fn cli_sql_declared_long_double_and_typed_nulls() {
+    let space = setup_cli_sql_space();
+    let priority_sql = format!(
+        "SELECT _ugoite_id FROM \"{}\" WHERE \"{}\" = $priority ORDER BY _ugoite_id",
+        space.relation, space.priority_column
+    );
+
+    // Declared `long` binds as typed `int64`.
+    let declared_long = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "sql",
+                "query",
+                &priority_sql,
+                "--param",
+                "priority=2",
+                "--param-type",
+                "priority=long",
+            ],
+        ),
+        "declared long SQL page",
+    );
+    assert_eq!(declared_long["rows"].as_array().map(Vec::len), Some(1));
+    assert_eq!(declared_long["rows"][0]["_ugoite_id"], "cli-sql-01");
+
+    // Inferred `long` binds the same JSON number without a declared type.
+    let inferred_long = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &["sql", "query", &priority_sql, "--param", "priority=2"],
+        ),
+        "inferred long SQL page",
+    );
+    assert_eq!(inferred_long["rows"], declared_long["rows"]);
+
+    // Declared and inferred `double` numbers bind as typed `float64`.
+    let ratio_sql = format!(
+        "SELECT _ugoite_id FROM \"{}\" WHERE $ratio > 1.5 ORDER BY _ugoite_id",
+        space.relation
+    );
+    for (name, extra) in [
+        ("declared", vec!["--param-type", "ratio=double"]),
+        ("inferred", Vec::new()),
+    ] {
+        let mut args = vec!["sql", "query", ratio_sql.as_str(), "--param", "ratio=2.5"];
+        args.extend(extra);
+        let page = stdout_json(
+            &run_cli(&space.config_path, &args),
+            &format!("{name} double SQL page"),
+        );
+        assert_eq!(page["rows"].as_array().map(Vec::len), Some(3));
+    }
+
+    // Typed nulls bind for `long` and `double` without substitution.
+    let null_sql = format!(
+        "SELECT _ugoite_id FROM \"{}\" WHERE $probe IS NULL ORDER BY _ugoite_id",
+        space.relation
+    );
+    for kind in ["long", "double"] {
+        let typed = stdout_json(
+            &run_cli(
+                &space.config_path,
+                &[
+                    "sql",
+                    "query",
+                    &null_sql,
+                    "--param",
+                    "probe=null",
+                    "--param-type",
+                    &format!("probe={kind}"),
+                ],
+            ),
+            &format!("typed null {kind} SQL page"),
+        );
+        assert_eq!(typed["rows"].as_array().map(Vec::len), Some(3));
+    }
+}
+
 /// The CLI continuation is opaque (versioned, no embedded SQL) and bound to
 /// its query context: reuse after a change, or tampering, fails closed.
 #[test]
@@ -708,6 +796,59 @@ fn cli_sql_continuation_is_opaque_and_context_bound() {
     assert!(
         !tampered_out.status.success(),
         "tampered continuation must fail"
+    );
+
+    // Same SQL text and values with only the declared parameter type changed
+    // resets the continuation instead of reading the old coordinate.
+    let null_sql = format!(
+        "SELECT _ugoite_id FROM \"{}\" WHERE $probe IS NULL ORDER BY _ugoite_id",
+        space.relation
+    );
+    let null_first = stdout_json(
+        &run_cli(
+            &space.config_path,
+            &[
+                "sql",
+                "query",
+                &null_sql,
+                "--param",
+                "probe=null",
+                "--param-type",
+                "probe=string",
+                "--limit",
+                "1",
+            ],
+        ),
+        "first typed-null SQL page",
+    );
+    let null_token = null_first["next"]
+        .as_str()
+        .expect("typed-null continuation")
+        .to_string();
+    let changed_types = run_cli(
+        &space.config_path,
+        &[
+            "sql",
+            "query",
+            &null_sql,
+            "--param",
+            "probe=null",
+            "--param-type",
+            "probe=long",
+            "--limit",
+            "1",
+            "--continuation",
+            &null_token,
+        ],
+    );
+    assert!(
+        !changed_types.status.success(),
+        "changed parameter types must reset the continuation"
+    );
+    assert!(
+        String::from_utf8_lossy(&changed_types.stderr).contains("fingerprint"),
+        "changed parameter types must fail on the fingerprint: {}",
+        String::from_utf8_lossy(&changed_types.stderr)
     );
 
     // Explicit count stays separate from paging and matches the rows.

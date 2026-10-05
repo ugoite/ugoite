@@ -365,6 +365,22 @@ impl std::error::Error for ExportProgressError {
     }
 }
 
+/// Report whether the failure chain carries a broken stdout pipe,
+/// regardless of which layer wrapped the OS error. Streaming serialization
+/// may surface it as a `serde_json` I/O error instead of a raw I/O error,
+/// so both shapes are classified by `ErrorKind`, never by OS wording.
+fn broken_stdout_pipe(error: &Error) -> bool {
+    error.chain().any(|cause| {
+        if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+            return io.kind() == std::io::ErrorKind::BrokenPipe;
+        }
+        if let Some(json) = cause.downcast_ref::<serde_json::Error>() {
+            return json.io_error_kind() == Some(std::io::ErrorKind::BrokenPipe);
+        }
+        false
+    })
+}
+
 /// Project any CLI failure into the shared error shape.
 pub fn project_error(error: &Error) -> CliError {
     if let Some(composition_diagnostic) = error
@@ -412,6 +428,12 @@ pub fn project_error(error: &Error) -> CliError {
             detail = serde_json::json!({"cause_detail": detail});
         }
         if let Some(object) = detail.as_object_mut() {
+            // A closed stdout pipe is an output classification, not an OS
+            // sentence: record the stable `ErrorKind` name so diagnostics
+            // stay identical across platforms.
+            if broken_stdout_pipe(error) {
+                object.insert("io_kind".to_string(), Value::from("BrokenPipe"));
+            }
             object.insert(
                 "rows_exported".to_string(),
                 Value::from(progress.rows_exported),
@@ -945,6 +967,64 @@ mod tests {
             serde_json::Value::String("reload_and_retry".to_string())
         );
         assert!(projected.human().contains("reload"));
+    }
+
+    #[test]
+    fn export_progress_error_classifies_broken_pipe_without_os_wording() {
+        let broken = anyhow::Error::from(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+        let broken = anyhow::Error::from(ExportProgressError {
+            rows_exported: 7,
+            source: broken,
+        });
+        let projected = project_error(&broken);
+        let detail = projected.detail.as_ref().expect("progress detail");
+        assert_eq!(detail["rows_exported"], 7);
+        assert_eq!(detail["io_kind"], "BrokenPipe");
+
+        // A serde_json I/O wrapper around the same OS failure classifies too.
+        let wrapped = {
+            let mut sink = FailingSink;
+            let result: Result<(), serde_json::Error> = (|| {
+                serde_json::to_writer(&mut sink, &serde_json::json!({"id": "row"}))?;
+                Ok(())
+            })();
+            result.expect_err("wrapped sink must fail")
+        };
+        assert_eq!(
+            wrapped.io_error_kind(),
+            Some(std::io::ErrorKind::BrokenPipe)
+        );
+        let wrapped = anyhow::Error::from(ExportProgressError {
+            rows_exported: 1,
+            source: anyhow::Error::from(wrapped),
+        });
+        let projected = project_error(&wrapped);
+        assert_eq!(
+            projected.detail.as_ref().expect("progress detail")["io_kind"],
+            "BrokenPipe"
+        );
+
+        // Any other output failure keeps progress without the classification.
+        let other = anyhow::Error::from(ExportProgressError {
+            rows_exported: 2,
+            source: anyhow::anyhow!("simulated output write failure"),
+        });
+        let projected = project_error(&other);
+        let detail = projected.detail.as_ref().expect("progress detail");
+        assert_eq!(detail["rows_exported"], 2);
+        assert!(detail.get("io_kind").is_none());
+    }
+
+    struct FailingSink;
+
+    impl std::io::Write for FailingSink {
+        fn write(&mut self, _bytes: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
 
     #[test]

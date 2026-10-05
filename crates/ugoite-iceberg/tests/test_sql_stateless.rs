@@ -8,10 +8,12 @@
 //!
 //! - first page + continuation cover the full ordered result;
 //! - explicit `count_sql` matches the full result size;
-//! - declared parameter types filter, inferred `long`/`double` numbers bind,
-//!   and typed nulls bind without substitution;
-//! - reusing a continuation after the SQL text, parameters, or types change
-//!   resets (fails closed) instead of reading the old coordinate;
+//! - declared parameter types filter, declared `long`/`double` values and
+//!   inferred `long`/`double` numbers bind, and typed nulls bind for
+//!   `string`/`long`/`double` without substitution;
+//! - reusing a continuation after the SQL text, parameters, or parameter
+//!   types change resets (fails closed) instead of reading the old
+//!   coordinate;
 //! - write statements stay read-only and the continuation stays opaque.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -1033,6 +1035,169 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
         format!("{:#}", mismatched.expect_err("mismatched scalar must fail"))
             .contains("does not match"),
         "invalid scalars must be rejected"
+    );
+    Ok(())
+}
+
+/// Declared `long`/`double` values, inferred `double` numbers, and typed
+/// nulls for `long`/`double` bind as typed values alongside the declared
+/// `string` and inferred `long` cases covered above.
+#[tokio::test]
+async fn stateless_parameters_bind_declared_long_double_and_typed_nulls() -> Result<()> {
+    let space =
+        setup_sql_space("memory://sql-stateless-numeric-params", "sqlnumericparams").await?;
+
+    // Declared `long` value binds as typed `int64`.
+    let by_priority = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                sql: format!(
+                    "SELECT \"_ugoite_id\" FROM \"{}\" WHERE \"{}\" = $priority ORDER BY \"_ugoite_id\"",
+                    space.relation, space.priority_column
+                ),
+                parameters: Map::from_iter([("priority".to_string(), json!(3))]),
+                parameter_types: BTreeMap::from([("priority".to_string(), "long".to_string())]),
+                limit: 1_000,
+                continuation: None,
+                saved_sql: None,
+            },
+        )
+        .await?;
+    assert_eq!(by_priority.rows.len(), 1);
+    assert_eq!(
+        by_priority.rows[0].get("_ugoite_id"),
+        Some(&json!("sql-02"))
+    );
+
+    // Declared and inferred `double` numbers bind as typed `float64`.
+    for (name, parameter_types) in [
+        (
+            "declared",
+            BTreeMap::from([("ratio".to_string(), "double".to_string())]),
+        ),
+        ("inferred", BTreeMap::new()),
+    ] {
+        let page = space
+            .service
+            .query_sql(
+                &space.space_id,
+                SqlQueryRequest {
+                    sql: format!(
+                        "SELECT \"_ugoite_id\" FROM \"{}\" WHERE $ratio > 2.0 ORDER BY \"_ugoite_id\"",
+                        space.relation
+                    ),
+                    parameters: Map::from_iter([("ratio".to_string(), json!(2.5))]),
+                    parameter_types,
+                    limit: 1_000,
+                    continuation: None,
+                    saved_sql: None,
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{name} double parameter failed: {error:#}"));
+        assert_eq!(page.rows.len(), 5, "{name} double must bind");
+    }
+
+    // Typed nulls bind for `long` and `double` without substitution.
+    for kind in ["long", "double"] {
+        let typed_null = space
+            .service
+            .query_sql(
+                &space.space_id,
+                SqlQueryRequest {
+                    sql: format!(
+                        "SELECT \"_ugoite_id\" FROM \"{}\" WHERE $probe IS NULL ORDER BY \"_ugoite_id\"",
+                        space.relation
+                    ),
+                    parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
+                    parameter_types: BTreeMap::from([("probe".to_string(), kind.to_string())]),
+                    limit: 1_000,
+                    continuation: None,
+                    saved_sql: None,
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("typed null {kind} failed: {error:#}"));
+        assert_eq!(typed_null.rows.len(), 5, "typed null {kind} must bind");
+    }
+    Ok(())
+}
+
+/// Reusing a continuation after only the parameter types change fails
+/// closed: the parameter fingerprint covers the effective types, so the
+/// continuation resets instead of reading the old coordinate.
+#[tokio::test]
+async fn stateless_continuation_resets_on_parameter_type_change() -> Result<()> {
+    let space = setup_sql_space("memory://sql-stateless-type-reset", "sqltypereset").await?;
+    let null_sql = format!(
+        "SELECT \"_ugoite_id\" FROM \"{}\" WHERE $probe IS NULL ORDER BY \"_ugoite_id\"",
+        space.relation
+    );
+    let first = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                sql: null_sql.clone(),
+                parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
+                parameter_types: BTreeMap::from([("probe".to_string(), "string".to_string())]),
+                limit: 2,
+                continuation: None,
+                saved_sql: None,
+            },
+        )
+        .await?;
+    assert!(first.has_more);
+    let continuation = first
+        .next
+        .clone()
+        .context("first page must carry a continuation")?;
+
+    // Same SQL text and same values under the identical types still continue.
+    let second = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                sql: null_sql.clone(),
+                parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
+                parameter_types: BTreeMap::from([("probe".to_string(), "string".to_string())]),
+                limit: 2,
+                continuation: Some(continuation.clone()),
+                saved_sql: None,
+            },
+        )
+        .await?;
+    assert_eq!(
+        second
+            .rows
+            .iter()
+            .filter_map(|row| row.get("_ugoite_id").and_then(Value::as_str))
+            .collect::<Vec<_>>(),
+        vec!["sql-02", "sql-03"]
+    );
+
+    // Same SQL text and same values with only the declared type changed.
+    let changed_types = space
+        .service
+        .query_sql(
+            &space.space_id,
+            SqlQueryRequest {
+                sql: null_sql,
+                parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
+                parameter_types: BTreeMap::from([("probe".to_string(), "long".to_string())]),
+                limit: 2,
+                continuation: Some(continuation),
+                saved_sql: None,
+            },
+        )
+        .await;
+    assert!(
+        format!("{:#}", changed_types.expect_err("changed types must fail"))
+            .contains("fingerprint"),
+        "changed parameter types with an old continuation must fail on the fingerprint"
     );
     Ok(())
 }

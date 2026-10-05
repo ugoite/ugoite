@@ -87,7 +87,6 @@ const notesForm: Form = {
 
 const storedEntry = (overrides: Record<string, unknown> = {}) => ({
   id: "entry-1",
-  title: "Team notes",
   form: "Notes",
   fields: { Notes: "hello" },
   revision_id: "rev-1",

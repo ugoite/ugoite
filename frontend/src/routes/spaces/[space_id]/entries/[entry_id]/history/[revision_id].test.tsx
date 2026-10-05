@@ -46,7 +46,6 @@ describe("entry revision review route", () => {
     setLocale("en");
     vi.mocked(entryApi.get).mockResolvedValue({
       id: "entry-1",
-      title: "Current title",
       form: "Task",
       fields: { Body: "Current" },
       revision_id: "rev-current",
@@ -56,7 +55,6 @@ describe("entry revision review route", () => {
     vi.mocked(entryApi.getRevision).mockResolvedValue({
       revision_id: "rev-old",
       timestamp: "2026-01-01T00:00:00Z",
-      title: "Historical title",
       form: "Task",
       operation: "upsert",
       entry_version: 1,
@@ -66,10 +64,8 @@ describe("entry revision review route", () => {
       fields: { Body: "Original" },
     });
     vi.mocked(entryApi.restore).mockResolvedValue({
-      id: "entry-1",
       revision_id: "rev-new",
-      created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-03T00:00:00Z",
+      restored_from: "rev-old",
     });
   });
 

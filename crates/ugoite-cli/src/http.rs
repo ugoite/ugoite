@@ -345,17 +345,13 @@ pub(crate) async fn named_session_for_target(
     // Refresh expired tokens using the named credential policy, then
     // persist the rotation back to the named profile.
     if session.expires_at <= chrono::Utc::now().timestamp() + 30 {
-        if let Some(refreshed) = crate::commands::auth::refresh_session(&session, base_url).await? {
-            session = refreshed;
-            let mut store = crate::cli_config::credentials::load_credentials()?;
-            let mut profile =
-                serde_json::to_value(&session).context("serialize refreshed credential")?;
-            profile["connection"] = serde_json::Value::String(connection_name.to_string());
-            store.credentials.insert(name.to_string(), profile);
-            crate::cli_config::credentials::write_credentials(&store)?;
-        } else {
-            return Ok(Some(session));
-        }
+        session = crate::commands::auth::refresh_session(&session, base_url).await?;
+        let mut store = crate::cli_config::credentials::load_credentials()?;
+        let mut profile =
+            serde_json::to_value(&session).context("serialize refreshed credential")?;
+        profile["connection"] = serde_json::Value::String(connection_name.to_string());
+        store.credentials.insert(name.to_string(), profile);
+        crate::cli_config::credentials::write_credentials(&store)?;
     }
     Ok(Some(session))
 }

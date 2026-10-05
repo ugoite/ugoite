@@ -749,6 +749,13 @@ fn test_sql_export_broken_stdout_pipe_is_nonzero_and_reports_progress() {
         !stderr.contains("next"),
         "continuation values must not leak: {stderr}"
     );
+    // The output failure is classified by `ErrorKind`, never by OS wording.
+    let envelope: serde_json::Value =
+        serde_json::from_slice(&output.stderr).expect("machine error output is JSON");
+    assert_eq!(
+        envelope["error"]["detail"]["io_kind"], "BrokenPipe",
+        "broken stdout pipe must classify distinctly: {stderr}"
+    );
 }
 
 #[test]

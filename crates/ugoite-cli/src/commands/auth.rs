@@ -626,15 +626,10 @@ fn api_base_root(base_url: &str) -> Option<String> {
 
 /// Refresh an in-memory named-credential session.
 ///
-/// Sessions refresh with a 30s expiry skew and persist through the
-/// user-global credential store. Always returns `Ok(Some(..))` on success:
-/// the input session unchanged when it is still fresh, else the rotated
-/// session (failures are errors, never a silent `None`). The caller persists
-/// any rotated session back to its named profile.
-pub async fn refresh_session(session: &AuthSession, base_url: &str) -> Result<Option<AuthSession>> {
-    if session.expires_at > Utc::now().timestamp() + 30 {
-        return Ok(Some(session.clone()));
-    }
+/// The caller decides when a refresh is due (30s expiry skew) and persists
+/// the rotated session back to its named profile. Refreshing always rotates:
+/// success returns the new session, and failures are errors.
+pub async fn refresh_session(session: &AuthSession, base_url: &str) -> Result<AuthSession> {
     let mut refreshed = session.clone();
     let key = load_signing_key(&refreshed)?;
     let token_url = format!("{}/oauth/token", base_url.trim_end_matches('/'));
@@ -666,7 +661,7 @@ pub async fn refresh_session(session: &AuthSession, base_url: &str) -> Result<Op
         .ok_or_else(|| anyhow!("refresh response omitted refresh_token"))?
         .to_string();
     refreshed.expires_at = Utc::now().timestamp() + payload["expires_in"].as_i64().unwrap_or(300);
-    Ok(Some(refreshed))
+    Ok(refreshed)
 }
 
 fn oauth_payload(mut payload: Value, resource: Option<&str>) -> Value {
@@ -1028,8 +1023,7 @@ mod tests {
         let session = tokio::runtime::Runtime::new()
             .expect("create test runtime")
             .block_on(refresh_session(&expired, &base_url))
-            .expect("refresh MCP session")
-            .expect("refreshed MCP session");
+            .expect("refresh MCP session");
         server.join().expect("join test server");
         let request = requests.into_iter().next().expect("refresh request");
         let body = request.split_once("\r\n\r\n").expect("request body").1;
