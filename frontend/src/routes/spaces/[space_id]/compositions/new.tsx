@@ -444,6 +444,7 @@ export default function CompositionNewRoute() {
           <button
             class="ui-button ui-button-secondary"
             type="button"
+            aria-label={t("composition.studioRetryPreview")}
             onClick={retryPreview}
           >
             {t("composition.retry")}
@@ -456,6 +457,7 @@ export default function CompositionNewRoute() {
               <button
                 class="ui-button ui-button-secondary"
                 type="button"
+                aria-label={t("composition.studioRetryPreview")}
                 onClick={retryPreview}
               >
                 {t("composition.retry")}
