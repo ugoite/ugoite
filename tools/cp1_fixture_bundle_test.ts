@@ -644,6 +644,173 @@ Deno.test("CP1 tar reader rejects traversal and links and resolves safe PAX path
   }
 });
 
+async function rawTarEntryNames(
+  archivePath: string,
+): Promise<Array<{ type: string; name: string }>> {
+  const file = await Deno.open(archivePath, { read: true });
+  const stream = file.readable.pipeThrough(new DecompressionStream("gzip"));
+  const reader = stream.getReader();
+  let pending = new Uint8Array(0);
+  let done = false;
+  const readExact = async (size: number): Promise<Uint8Array | null> => {
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (total < size) {
+      if (pending.length === 0) {
+        if (done) return total === 0 ? null : null;
+        const next = await reader.read();
+        if (next.done) {
+          done = true;
+          continue;
+        }
+        pending = next.value;
+      }
+      const take = Math.min(size - total, pending.length);
+      chunks.push(pending.subarray(0, take));
+      total += take;
+      pending = pending.subarray(take);
+    }
+    const out = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return out;
+  };
+  const decoder = new TextDecoder();
+  const entries: Array<{ type: string; name: string }> = [];
+  try {
+    while (true) {
+      const header = await readExact(512);
+      if (header === null || header.every((byte) => byte === 0)) break;
+      const cstring = (from: number, to: number) => {
+        const slice = header.subarray(from, to);
+        const end = slice.indexOf(0);
+        return decoder.decode(end === -1 ? slice : slice.subarray(0, end));
+      };
+      const name = cstring(0, 100);
+      const prefix = cstring(345, 500);
+      const size = Number.parseInt(cstring(124, 136).trim() || "0", 8);
+      entries.push({
+        type: String.fromCharCode(header[156] ?? 0),
+        name: prefix ? `${prefix}/${name}` : name,
+      });
+      let skip = Math.ceil(size / 512) * 512;
+      while (skip > 0) {
+        const chunk = await readExact(Math.min(skip, 64 * 1024));
+        if (chunk === null) break;
+        skip -= chunk.length;
+      }
+    }
+  } finally {
+    await reader.cancel();
+    reader.releaseLock();
+  }
+  return entries;
+}
+
+Deno.test({
+  name: "CP1 tar reader accepts genuine GNU tar truncated PAX markers",
+  ignore: Deno.build.os !== "linux",
+  fn: async () => {
+    const version = await new Deno.Command("tar", {
+      args: ["--version"],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assert(
+      new TextDecoder().decode(version.stdout).includes("GNU tar"),
+      "this regression fixture requires GNU tar",
+    );
+    const dir = await Deno.makeTempDir({ prefix: "ugoite-cp1-gnu-tar-" });
+    try {
+      // Mirror the production fixture nesting with a parent prefix long
+      // enough that GNU tar truncates its synthetic PaxHeaders marker to
+      // "PaxHead" in the USTAR name field.
+      const uid = "01a0eb2b-5500-7551-82e3-ba6f7ca42bf7";
+      const form = "form_01a0eb2b55247245856b4d9e7ce341eb";
+      const nest = `${"nest-".repeat(20)}dir`;
+      const parentPrefix = `spaces/${uid}/forms/${form}/data`;
+      const longFile = `${parentPrefix}/${nest}/entry.json`;
+      await Deno.mkdir(`${dir}/source/${parentPrefix}/${nest}`, {
+        recursive: true,
+      });
+      await Deno.writeTextFile(
+        `${dir}/source/${longFile}`,
+        "fixture\n",
+      );
+      const archive = `${dir}/gnu.tar.gz`;
+      const created = await new Deno.Command("tar", {
+        args: [
+          "-czf",
+          archive,
+          "--format=posix",
+          "--no-xattrs",
+          "-C",
+          `${dir}/source`,
+          "spaces",
+        ],
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assert(
+        created.success,
+        new TextDecoder().decode(created.stderr),
+      );
+      const rawEntries = await rawTarEntryNames(archive);
+      const marker = rawEntries.find((entry) =>
+        entry.type === "x" && entry.name.endsWith("/PaxHead")
+      );
+      assert(
+        marker !== undefined,
+        `GNU tar did not emit the truncated PaxHead marker: ${
+          JSON.stringify(rawEntries.map((entry) => entry.name))
+        }`,
+      );
+      const members = await readTarMembers(archive);
+      assert(
+        members.some((member) =>
+          member.kind === "file" && member.path === longFile
+        ),
+        `reader did not resolve the GNU tar PAX path: ${
+          JSON.stringify(members.map((member) => member.path))
+        }`,
+      );
+      assert(
+        members.every((member) => !member.path.includes("PaxHead")),
+        "PAX metadata headers must not surface as archive members",
+      );
+
+      const unsafePayload = `${dir}/gnu-unsafe.tar.gz`;
+      await writePaxTarGzip(
+        unsafePayload,
+        `spaces/${uid}/../../escape`,
+        `${parentPrefix}/PaxHead`,
+      );
+      await assertRejects(
+        () => readTarMembers(unsafePayload),
+        Error,
+        "unsafe",
+      );
+
+      const unrecognizedMarker = `${dir}/gnu-unrecognized.tar.gz`;
+      await writePaxTarGzip(
+        unrecognizedMarker,
+        longFile,
+        `spaces/${uid}/forms/${form}/PaxHeadx`,
+      );
+      await assertRejects(
+        () => readTarMembers(unrecognizedMarker),
+        Error,
+        "unsafe",
+      );
+    } finally {
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+});
+
 Deno.test({
   name: "CP1 tar reader round-trips native POSIX tar metadata headers",
   ignore: Deno.build.os === "windows",
