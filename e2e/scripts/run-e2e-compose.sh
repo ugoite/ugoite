@@ -104,6 +104,35 @@ free_port() {
   deno eval 'const listener = Deno.listen({ hostname: "127.0.0.1", port: 0 }); console.log((listener.addr as Deno.NetAddr).port); listener.close();'
 }
 
+# Post-claim verification reuses the exact verified release CLI when the
+# caller provides one (issue #3302), preserving `cargo run` for standalone
+# local runs. A provided binary must be executable and carry a source SHA
+# sidecar matching this checkout; anything else fails closed.
+run_verified_portable_cli() {
+  local config="$1"
+  shift
+  local binary="${UGOITE_PORTABLE_CLI_BINARY:-}"
+  if [ -n "$binary" ]; then
+    case "$binary" in
+      /*) ;;
+      *) binary="$ROOT_DIR/$binary" ;;
+    esac
+    if [ ! -x "$binary" ]; then
+      echo "portable CLI binary is not executable: $binary" >&2
+      return 1
+    fi
+    local source_sha_file="${binary}.source-sha"
+    if [ ! -f "$source_sha_file" ] || [ "$(cat "$source_sha_file")" != "$CHECKOUT_SOURCE_SHA" ]; then
+      echo "portable CLI binary source SHA does not match checkout: $source_sha_file" >&2
+      return 1
+    fi
+    "$binary" --config "$config" "$@"
+  else
+    cargo run -q --manifest-path "$ROOT_DIR/Cargo.toml" -p ugoite-cli --locked \
+      -- --config "$config" "$@"
+  fi
+}
+
 export E2E_COMPOSE_PORT="${E2E_COMPOSE_PORT:-$(free_port)}"
 export UGOITE_PUBLIC_ORIGIN="http://localhost:${E2E_COMPOSE_PORT}"
 export UGOITE_API_BASE_URL="${UGOITE_PUBLIC_ORIGIN}/api"
@@ -489,8 +518,7 @@ case "$TEST_TYPE" in
     deno run -A "$SCRIPT_DIR/verify-portable-space-hashes.ts" \
       "$E2E_COMPOSE_STORAGE_ROOT" "$E2E_PORTABLE_PROOF_FILE"
     echo "Verifying the claimed copied Space with the local CLI..."
-    cargo run -q --manifest-path "$ROOT_DIR/Cargo.toml" -p ugoite-cli --locked \
-      -- --config "$PORTABLE_CLI_CONFIG" space verify --deep --format json > "$E2E_COMPOSE_STORAGE_ROOT/verify-after-claim.json"
+    run_verified_portable_cli "$PORTABLE_CLI_CONFIG" space verify --deep --format json > "$E2E_COMPOSE_STORAGE_ROOT/verify-after-claim.json"
     deno eval '
       const report = JSON.parse(await Deno.readTextFile(Deno.args[0]));
       if (!["valid", "valid_with_rebuildable_derived_state"].includes(report.status)) throw new Error(`post-claim Space status was ${report.status}`);
