@@ -128,7 +128,13 @@ export default function CompositionNewRoute() {
   // sources only; the tool name gates saving, never previewing.
   createEffect(() => {
     const snapshot = draft();
-    if (snapshot.sources.length === 0) return;
+    if (snapshot.sources.length === 0) {
+      if (previewTimer !== undefined) {
+        clearTimeout(previewTimer);
+        previewTimer = undefined;
+      }
+      return;
+    }
     schedulePreview(snapshot);
   });
 
@@ -279,7 +285,7 @@ export default function CompositionNewRoute() {
   const nameInputId = "studio-name";
 
   return (
-    <div class="studioNew">
+    <div>
       <h1 class="ui-sr-only">
         {draft().name.trim() || t("composition.name")}
       </h1>
