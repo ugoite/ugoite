@@ -589,12 +589,50 @@ pub async fn verify_integrity(op: &Operator, space_id: &str) -> Result<usize> {
     Ok(events.len())
 }
 
+// Task-local audit-chain write failure flag: the next chain write in scope
+// fails after pending markers are durable. Task-local so parallel tests
+// cannot steal or observe each other's injection.
+#[cfg(debug_assertions)]
+tokio::task_local! {
+    static INJECT_AUDIT_CHAIN_WRITE_FAILURE: std::cell::Cell<bool>;
+}
+
+/// Debug-only audit-chain failure fixture: arm one injected chain-write
+/// failure for a single batch within `operation`. Pending markers stay
+/// durable while the chain write reports an error, so recovery must resume
+/// them without ever exposing a committed marker for an event absent from
+/// the persisted chain. Not compiled into release builds; exposes no
+/// production mutation bypass.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub async fn with_injected_audit_chain_write_failure<T>(
+    operation: impl std::future::Future<Output = T>,
+) -> T {
+    INJECT_AUDIT_CHAIN_WRITE_FAILURE
+        .scope(std::cell::Cell::new(true), operation)
+        .await
+}
+
+#[cfg(debug_assertions)]
+fn take_injected_audit_chain_write_failure() -> bool {
+    INJECT_AUDIT_CHAIN_WRITE_FAILURE
+        .try_with(|flag| flag.take())
+        .unwrap_or(false)
+}
+
 async fn write_events(
     op: &Operator,
     space_id: &str,
     events: &[Value],
     expected_version: Option<&str>,
 ) -> Result<()> {
+    // Debug-only fault injection: fail the chain write while pending
+    // markers stay durable, so recovery tests can prove no committed marker
+    // ever refers to an event absent from the persisted chain.
+    #[cfg(debug_assertions)]
+    if take_injected_audit_chain_write_failure() {
+        bail!("injected audit chain write failure");
+    }
     let dir_path = format!("spaces/{space_id}/audit/");
     op.create_dir(&dir_path).await?;
     let path = audit_file_path(space_id);
@@ -2218,6 +2256,98 @@ mod tests {
             list_audit_events(&op, "demo", AuditListOptions::default()).await?["total"],
             json!(payloads.len() + 1)
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn audit_recovery_batch_chain_write_failure_with_duplicate_leaves_no_committed_marker(
+    ) -> Result<()> {
+        let op = operator_from_uri("memory://audit-recovery-chain-write-failure")?;
+        let first_id = uuid::Uuid::now_v7().to_string();
+        let first = json!({
+            "event_id": first_id,
+            "action": "entry.updated",
+            "space_uid": "01900000-0000-7000-8000-000000000001",
+            "subject_principal_id": "01900000-0000-7000-8000-000000000001",
+            "actor_principal_id": "01900000-0000-7000-8000-000000000001",
+            "target_type": "entry",
+            "target_id": "entry-first",
+            "metadata": {"revision_id": "revision-first"}
+        });
+        let second_id = uuid::Uuid::now_v7().to_string();
+        let second = json!({
+            "event_id": second_id,
+            "action": "entry.updated",
+            "space_uid": "01900000-0000-7000-8000-000000000001",
+            "subject_principal_id": "01900000-0000-7000-8000-000000000001",
+            "actor_principal_id": "01900000-0000-7000-8000-000000000001",
+            "target_type": "entry",
+            "target_id": "entry-second",
+            "metadata": {"revision_id": "revision-second"}
+        });
+        // The batch contains a repeated event ID; the duplicate must resolve
+        // to the same in-batch event rather than a second chain entry.
+        let payloads = vec![first.clone(), second.clone(), first.clone()];
+
+        // Inject the chain-write failure after duplicate payload processing.
+        // Pending markers stay durable while the chain write reports an error.
+        let error =
+            with_injected_audit_chain_write_failure(append_audit_events(&op, "demo", &payloads))
+                .await
+                .expect_err("injected chain-write failure must fail the batch");
+        assert!(
+            error
+                .to_string()
+                .contains("injected audit chain write failure"),
+            "unexpected failure: {error:#}"
+        );
+
+        // Marker/chain atomicity: no committed marker may refer to an event
+        // absent from the persisted chain. The failed batch leaves its
+        // markers pending so a later retry can resume them.
+        let persisted = read_events(&op, "demo").await?;
+        assert!(
+            persisted.is_empty(),
+            "failed chain write must persist no events"
+        );
+        let persisted_ids = persisted
+            .iter()
+            .filter_map(|event| event.get("event_id").and_then(Value::as_str))
+            .collect::<std::collections::HashSet<_>>();
+        for event_id in [&first_id, &second_id] {
+            let (marker, _) = read_event_marker(&op, "demo", event_id)
+                .await?
+                .expect("failed batch keeps its pending marker for recovery");
+            assert_eq!(marker["status"], "pending");
+            assert!(
+                !persisted_ids.contains(event_id.as_str()),
+                "pending marker must not reference a persisted event yet"
+            );
+        }
+
+        // Retry the batch: the repeated event commits exactly once with a
+        // valid hash chain, and a further replay stays idempotent.
+        let retried = append_audit_events(&op, "demo", &payloads).await?;
+        assert_eq!(retried.len(), payloads.len());
+        assert_eq!(retried[0], retried[2]);
+        let events = read_events(&op, "demo").await?;
+        verify_chain(&events)?;
+        assert_eq!(events.len(), 2);
+        let committed_ids = events
+            .iter()
+            .filter_map(|event| event.get("event_id").and_then(Value::as_str))
+            .collect::<std::collections::HashSet<_>>();
+        assert!(committed_ids.contains(first_id.as_str()));
+        assert!(committed_ids.contains(second_id.as_str()));
+        for event_id in [&first_id, &second_id] {
+            let (marker, _) = read_event_marker(&op, "demo", event_id)
+                .await?
+                .expect("retried batch commits its markers");
+            assert_eq!(marker["status"], "committed");
+        }
+        let replayed = append_audit_events(&op, "demo", &payloads).await?;
+        assert_eq!(replayed, retried);
+        assert_eq!(read_events(&op, "demo").await?.len(), 2);
         Ok(())
     }
 
