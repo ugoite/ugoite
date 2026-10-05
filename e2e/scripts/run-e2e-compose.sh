@@ -72,6 +72,22 @@ if [ -n "$FIXTURE_ROOT" ]; then
     exit 1
   fi
 fi
+
+# Caller-owned fixture ownership contract (issue #3367): a supplied fixture
+# tree must be owned entirely by the invoking UID/GID before any recursive
+# chown. This check is read-only and runs before the runtime chown so a
+# mixed-owner tree is refused unchanged.
+validate_fixture_ownership() {
+  local root="$1"
+  local expected_uid="$2"
+  local expected_gid="$3"
+  local offender
+  offender="$(find "$root" \( ! -uid "$expected_uid" -o ! -gid "$expected_gid" \) -print -quit 2>/dev/null)"
+  if [ -n "$offender" ]; then
+    echo "Refusing a mixed-owner fixture root: $offender is not owned by ${expected_uid}:${expected_gid}" >&2
+    return 1
+  fi
+}
 CHECKOUT_SOURCE_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 if [ -n "${UGOITE_SOURCE_SHA:-}" ] && [ "$UGOITE_SOURCE_SHA" != "$CHECKOUT_SOURCE_SHA" ]; then
   echo "✗ ERROR: UGOITE_SOURCE_SHA does not match the checkout under test"
@@ -267,6 +283,11 @@ fi
 
 # Preserve owner-only modes while granting the image's existing non-root user
 # access to the bind mount. This changes ownership only; it never chmods Space data.
+# A caller-supplied fixture root must first satisfy the ownership contract;
+# mixed-owner trees fail here before any chown changes contents or ownership.
+if [ "$STORAGE_ROOT_OWNED" = false ]; then
+  validate_fixture_ownership "$E2E_COMPOSE_STORAGE_ROOT" "$(id -u)" "$(id -g)" || exit 1
+fi
 STORAGE_ROOT_OWNERSHIP_ATTEMPTED=true
 docker run --rm \
   --user 0:0 \

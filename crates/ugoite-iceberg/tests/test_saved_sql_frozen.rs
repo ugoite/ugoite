@@ -110,14 +110,47 @@ async fn prebinding_space_saved_sql_reads_executes_and_reopens_without_mutation(
         .join("../../fixtures/historical-spaces/pre-binding-sql");
     let checksums = std::fs::read(fixture_root.join("SHA256SUMS"))?;
     assert_eq!(sha256(&checksums), expected.fixture_digest);
+    let mut listed_entries = Vec::new();
+    let mut listed_paths = BTreeSet::new();
     for line in std::str::from_utf8(&checksums)?.lines() {
         let (expected_hash, relative_path) = line
             .split_once("  ")
             .context("fixture checksum line uses sha256sum format")?;
+        assert!(
+            listed_paths.insert(relative_path.to_owned()),
+            "duplicate manifest path: {relative_path}"
+        );
+        listed_entries.push((expected_hash.to_owned(), relative_path.to_owned()));
+    }
+    // Reject unlisted files before digest verification: every regular file
+    // under the fixture Space directory must be checksummed, otherwise an
+    // extra file could be consumed by the reader test uncovered.
+    let mut actual_paths = BTreeSet::new();
+    let mut pending = vec![fixture_root.join("spaces")];
+    while let Some(directory) = pending.pop() {
+        for item in std::fs::read_dir(&directory)? {
+            let item = item?;
+            let path = item.path();
+            if item.file_type()?.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            actual_paths.insert(
+                path.strip_prefix(&fixture_root)?
+                    .to_string_lossy()
+                    .replace('\\', "/"),
+            );
+        }
+    }
+    assert_eq!(
+        listed_paths, actual_paths,
+        "every fixture Space file is checksummed"
+    );
+    for (expected_hash, relative_path) in &listed_entries {
         let bytes = std::fs::read(fixture_root.join(relative_path))?;
         assert_eq!(
             sha256(&bytes),
-            expected_hash,
+            *expected_hash,
             "fixture file {relative_path}"
         );
     }
