@@ -81,7 +81,9 @@ const harnessCalls = vi.hoisted(() => ({
   parameters: [] as [string, unknown | undefined][],
 }));
 
-function Harness(props: { initial: CompositionDraft }) {
+function Harness(
+  props: { initial: CompositionDraft; highlightedIds?: ReadonlySet<string> },
+) {
   const [draft, setDraft] = createSignal(props.initial);
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
   const [paletteTarget, setPaletteTarget] = createSignal<
@@ -104,6 +106,7 @@ function Harness(props: { initial: CompositionDraft }) {
       parameterValues={{}}
       sources={{}}
       selectedId={selectedId()}
+      highlightedIds={props.highlightedIds}
       onSelect={(id) => {
         harnessCalls.selected.push(id);
         setSelectedId(id);
@@ -125,8 +128,13 @@ function Harness(props: { initial: CompositionDraft }) {
   );
 }
 
-const renderHarness = (initial?: CompositionDraft) =>
-  render(() => <Harness initial={initial ?? seedDraft()} />);
+const renderHarness = (
+  initial?: CompositionDraft,
+  highlightedIds?: ReadonlySet<string>,
+) =>
+  render(() => (
+    <Harness initial={initial ?? seedDraft()} highlightedIds={highlightedIds} />
+  ));
 
 describe("CompositionDesignCanvas", () => {
   beforeEach(() => {
@@ -171,6 +179,21 @@ describe("CompositionDesignCanvas", () => {
       "data-block-id",
       designBlockIdForComponent("disp-1"),
     );
+  });
+
+  it("soft-highlights source blocks without changing the selection", () => {
+    const { container } = renderHarness(
+      undefined,
+      new Set([designBlockIdForComponent("disp-2")]),
+    );
+
+    const table = container.querySelector('[data-block-id="disp-2"]');
+    expect(table).toHaveAttribute("data-highlighted");
+    expect(table).not.toHaveAttribute("data-selected");
+    // Highlight never selects: the canvas keeps exactly one selection owner.
+    expect(
+      container.querySelectorAll(".designBlock[data-selected]"),
+    ).toHaveLength(0);
   });
 
   it("shows one palette entry per component kind with icon and short label", () => {

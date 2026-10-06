@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "@solidjs/router";
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import {
   CompositionDiagnostics,
@@ -26,6 +26,7 @@ import {
 } from "~/components/CompositionSourcePicker";
 import { IconButton } from "~/components/IconButton";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { UiIcon } from "~/components/UiIcon";
 import {
   addEntryQuerySource,
   addMetricDisplay,
@@ -64,6 +65,13 @@ import type {
   EntryQueryCompositionSort,
 } from "~/lib/entry-query-composition";
 import { createCompositionPreviewHandle } from "~/lib/composition-preview-handle";
+import {
+  blockIdsUsingSource,
+  sourceDraftIdForBlock,
+  STUDIO_MODES,
+  type StudioMode,
+  visibleComponentSourceIds,
+} from "~/lib/composition-studio-sync";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 import { compositionSaveErrorMessage } from "~/lib/composition-save-error";
 import {
@@ -112,6 +120,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // Transient canvas Work: selected block identity for the inspector and
   // the pending palette insertion target for metric/table picks.
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
+  // Transient workspace Work: Design | Data | Split arrangement only. Draft,
+  // preview, and selection state stay shared and continuous across modes;
+  // Split pairs the canvas with the Data pane and is never persisted.
+  const [mode, setMode] = createSignal<StudioMode>("design");
   const [paletteTarget, setPaletteTarget] = createSignal<
     DraftInsertTarget | null
   >(null);
@@ -151,10 +163,18 @@ export function CompositionStudio(props: CompositionStudioProps) {
       void (async () => {
         try {
           const canonical = await canonicalizeDraft(snapshot);
+          // Scope resolves against the latest draft at fire time so block,
+          // source, and mode changes during an in-flight preview never
+          // resurrect a stale fetch set; the generation guard drops the
+          // stale response itself.
           await previewHandle.preview(
             spaceId(),
             canonical.canonical_yaml,
             defaultParameterValues(snapshot),
+            {
+              visibleSourceIds: visibleComponentSourceIds(draft()),
+              selectedSourceId: expandedId(),
+            },
           );
         } catch {
           // canonicalizeDraft rejects only on WASM transport failure;
@@ -164,6 +184,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
     }, PREVIEW_DEBOUNCE_MS);
   };
 
+  const previewScope = () => ({
+    visibleSourceIds: visibleComponentSourceIds(draft()),
+    selectedSourceId: expandedId(),
+  });
+
   const retryPreview = () => {
     const current = previewHandle.state();
     if (!current.yaml || !current.spaceId) return;
@@ -171,7 +196,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     previewTimer = undefined;
     void previewHandle.preview(current.spaceId, current.yaml, {
       ...previewHandle.parameters(),
-    });
+    }, previewScope());
   };
 
   // Live preview follows the draft with a bounded debounce. Preview needs
@@ -204,9 +229,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const toggleExpanded = (sourceDraftId: string) => {
-    setExpandedId((current) =>
-      current === sourceDraftId ? null : sourceDraftId
-    );
+    const selecting = expandedId() !== sourceDraftId;
+    setExpandedId(selecting ? sourceDraftId : null);
+    // Selecting a source outside the scoped fetch set pages it on demand
+    // through the existing path; deselecting never refetches.
+    if (selecting) previewHandle.ensureSource(sourceDraftId);
   };
 
   const moveDraftSource = (sourceDraftId: string, direction: "up" | "down") => {
@@ -332,9 +359,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
     if (el) sourceRowEls.set(sourceDraftId, el);
     else sourceRowEls.delete(sourceDraftId);
   };
-  const jumpToSource = (jump: CompositionInspectorDataJump) => {
-    setExpandedId(jump.sourceDraftId);
-    const row = sourceRowEls.get(jump.sourceDraftId);
+  const focusSourceRow = (sourceDraftId: string) => {
+    const row = sourceRowEls.get(sourceDraftId);
     if (!row || !row.isConnected) return;
     if (typeof row.scrollIntoView === "function") {
       try {
@@ -345,6 +371,31 @@ export function CompositionStudio(props: CompositionStudioProps) {
     }
     row.querySelector("button")?.focus();
   };
+  const jumpToSource = (jump: CompositionInspectorDataJump) => {
+    setExpandedId(jump.sourceDraftId);
+    previewHandle.ensureSource(jump.sourceDraftId);
+    focusSourceRow(jump.sourceDraftId);
+  };
+
+  // Design block selection owns the inspector. Metric/table blocks also
+  // auto-select their source in the Data workspace, reusing the RA5 jump
+  // handoff (expand + scroll + focus only where the target row is
+  // rendered; in Split the right pane shows it directly). Text blocks and
+  // parameter controls carry no source, so the Data selection is kept and
+  // never invented. Selection changes never refetch the preview.
+  const handleSelectBlock = (blockId: string | null) => {
+    setSelectedId(blockId);
+    const sourceDraftId = sourceDraftIdForBlock(draft(), blockId);
+    if (!sourceDraftId) return;
+    setExpandedId(sourceDraftId);
+    previewHandle.ensureSource(sourceDraftId);
+    focusSourceRow(sourceDraftId);
+  };
+
+  // Data source selection soft-highlights the Design blocks that use it.
+  // Highlight is visual only; the selection owner stays selectedId.
+  const highlightedBlockIds = () =>
+    new Set(blockIdsUsingSource(draft(), expandedId()));
 
   const addDraftParameter = (parameter: DraftParameter) => {
     const result = addParameter(draft(), parameter);
@@ -520,6 +571,76 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const previewHeadingId = "studio-preview-heading";
   const nameInputId = "studio-name";
 
+  const modeIcon = (entry: StudioMode): "canvas-table" | "sql" | "columns" =>
+    entry === "design" ? "canvas-table" : entry === "data" ? "sql" : "columns";
+  const modeLabel = (entry: StudioMode): string =>
+    entry === "design"
+      ? t("composition.studioDesign")
+      : entry === "data"
+      ? t("composition.studioData")
+      : t("composition.studioSplit");
+
+  // Shared workspace fragments: modes switch the arrangement only, so the
+  // Data workspace and the Design canvas render from the same draft,
+  // preview, and selection state in every mode without refetching.
+  const renderDataWorkspace = () => (
+    <CompositionDataWorkspace
+      spaceId={spaceId()}
+      draft={draft()}
+      headingId={dataHeadingId}
+      selectedSourceId={expandedId()}
+      onSelectSource={toggleExpanded}
+      onMoveSource={moveDraftSource}
+      onRemoveSource={removeDraftSource}
+      onEntryQueryFilters={updateEntryQueryFilters}
+      onEntryQuerySort={updateEntryQuerySort}
+      onEntryQueryProjection={updateEntryQueryProjection}
+      onSavedSqlRevision={updateSavedSqlRevision}
+      savedSqlEditHref={savedSqlEditHref}
+      planSources={readyPlan()?.sources ?? []}
+      sourceStates={readySources()}
+      diagnostics={previewDiagnostics() ?? []}
+      onNext={(sourceId) => previewHandle.next(sourceId)}
+      onPrevious={(sourceId) => previewHandle.previous(sourceId)}
+      onRetry={(sourceId) => previewHandle.retry(sourceId)}
+      registerSourceRow={registerSourceRow}
+    />
+  );
+  const renderDesignWorkspace = () => (
+    <div class="studioDesign">
+      <CompositionDesignCanvas
+        draft={draft()}
+        plan={canvasPlan()}
+        parameterValues={{
+          ...defaultParameterValues(draft()),
+          ...previewHandle.parameters(),
+        }}
+        sources={readySources()}
+        selectedId={selectedId()}
+        highlightedIds={highlightedBlockIds()}
+        onSelect={handleSelectBlock}
+        onDraftChange={setDraft}
+        onRequestDisplayPicker={(target) => {
+          setPendingInsert(target);
+          setDisplayPickerOpen(true);
+        }}
+        onParameterChange={(parameterId, value) =>
+          previewHandle.setParameter(parameterId, value)}
+        onNext={(sourceId) => previewHandle.next(sourceId)}
+        onPrevious={(sourceId) => previewHandle.previous(sourceId)}
+        onRetry={(sourceId) => previewHandle.retry(sourceId)}
+        paletteTarget={paletteTarget()}
+        onPaletteTarget={setPaletteTarget}
+      />
+      <CompositionInspector
+        draft={draft()}
+        selectedId={selectedId()}
+        onDraftChange={setDraft}
+        onDataJump={jumpToSource}
+      />
+    </div>
+  );
+
   return (
     <div>
       <h1 class="ui-sr-only">
@@ -545,6 +666,30 @@ export function CompositionStudio(props: CompositionStudioProps) {
           onClick={() => void handleSave()}
         />
       </header>
+      <div
+        class="studioMode"
+        role="radiogroup"
+        aria-label={t("composition.studioMode")}
+      >
+        <For each={STUDIO_MODES}>
+          {(entry) => (
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode() === entry}
+              class="studioModeOption"
+              classList={{
+                "studioModeOption--active": mode() === entry,
+                studioModeSplit: entry === "split",
+              }}
+              onClick={() => setMode(entry)}
+            >
+              <UiIcon name={modeIcon(entry)} />
+              <span>{modeLabel(entry)}</span>
+            </button>
+          )}
+        </For>
+      </div>
       <Show when={saveError()}>
         <p class="ui-text-danger" role="alert">{saveError()}</p>
       </Show>
@@ -558,74 +703,52 @@ export function CompositionStudio(props: CompositionStudioProps) {
         </button>
       </Show>
 
-      <section class="section" aria-labelledby={dataHeadingId}>
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
-          <button
-            class="ui-button ui-button-secondary"
-            type="button"
-            onClick={() => setPickerOpen(true)}
-          >
-            {t("composition.studioAddData")}
-          </button>
-        </div>
-        <CompositionDataWorkspace
-          spaceId={spaceId()}
-          draft={draft()}
-          headingId={dataHeadingId}
-          selectedSourceId={expandedId()}
-          onSelectSource={toggleExpanded}
-          onMoveSource={moveDraftSource}
-          onRemoveSource={removeDraftSource}
-          onEntryQueryFilters={updateEntryQueryFilters}
-          onEntryQuerySort={updateEntryQuerySort}
-          onEntryQueryProjection={updateEntryQueryProjection}
-          onSavedSqlRevision={updateSavedSqlRevision}
-          savedSqlEditHref={savedSqlEditHref}
-          planSources={readyPlan()?.sources ?? []}
-          sourceStates={readySources()}
-          diagnostics={previewDiagnostics() ?? []}
-          onNext={(sourceId) => previewHandle.next(sourceId)}
-          onPrevious={(sourceId) => previewHandle.previous(sourceId)}
-          onRetry={(sourceId) => previewHandle.retry(sourceId)}
-          registerSourceRow={registerSourceRow}
-        />
-      </section>
+      <Show when={mode() === "data"}>
+        <section class="section" aria-labelledby={dataHeadingId}>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
+            <button
+              class="ui-button ui-button-secondary"
+              type="button"
+              onClick={() => setPickerOpen(true)}
+            >
+              {t("composition.studioAddData")}
+            </button>
+          </div>
+          {renderDataWorkspace()}
+        </section>
+      </Show>
 
-      <section class="section" aria-labelledby={designHeadingId}>
-        <h2 id={designHeadingId}>{t("composition.studioDesign")}</h2>
-        <div class="studioDesign">
-          <CompositionDesignCanvas
-            draft={draft()}
-            plan={canvasPlan()}
-            parameterValues={{
-              ...defaultParameterValues(draft()),
-              ...previewHandle.parameters(),
-            }}
-            sources={readySources()}
-            selectedId={selectedId()}
-            onSelect={setSelectedId}
-            onDraftChange={setDraft}
-            onRequestDisplayPicker={(target) => {
-              setPendingInsert(target);
-              setDisplayPickerOpen(true);
-            }}
-            onParameterChange={(parameterId, value) =>
-              previewHandle.setParameter(parameterId, value)}
-            onNext={(sourceId) => previewHandle.next(sourceId)}
-            onPrevious={(sourceId) => previewHandle.previous(sourceId)}
-            onRetry={(sourceId) => previewHandle.retry(sourceId)}
-            paletteTarget={paletteTarget()}
-            onPaletteTarget={setPaletteTarget}
-          />
-          <CompositionInspector
-            draft={draft()}
-            selectedId={selectedId()}
-            onDraftChange={setDraft}
-            onDataJump={jumpToSource}
-          />
-        </div>
-      </section>
+      <Show when={mode() === "design"}>
+        <section class="section" aria-labelledby={designHeadingId}>
+          <h2 id={designHeadingId}>{t("composition.studioDesign")}</h2>
+          {renderDesignWorkspace()}
+        </section>
+      </Show>
+
+      <Show when={mode() === "split"}>
+        <section class="section" aria-label={t("composition.studioMode")}>
+          <div class="studioSplit">
+            <div aria-labelledby={designHeadingId}>
+              <h2 id={designHeadingId}>{t("composition.studioDesign")}</h2>
+              {renderDesignWorkspace()}
+            </div>
+            <div class="studioSplitPane" aria-labelledby={dataHeadingId}>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
+                <button
+                  class="ui-button ui-button-secondary"
+                  type="button"
+                  onClick={() => setPickerOpen(true)}
+                >
+                  {t("composition.studioAddData")}
+                </button>
+              </div>
+              {renderDataWorkspace()}
+            </div>
+          </div>
+        </section>
+      </Show>
 
       <section class="section" aria-labelledby={displayHeadingId}>
         <div class="flex flex-wrap items-center justify-between gap-2">

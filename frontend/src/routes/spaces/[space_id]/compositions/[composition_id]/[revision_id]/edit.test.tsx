@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
@@ -202,7 +203,8 @@ describe("Composition edit route", () => {
     expect(getMock).toHaveBeenCalledWith("space-1", "tool-1", "revision-1");
     expect(lintMock).toHaveBeenCalledWith(storedYaml);
 
-    // One Back to the opened revision, one Save, data-first structure.
+    // One Back to the opened revision, one Save, Design-first structure
+    // with the single mode control.
     expect(screen.getAllByRole("link")).toHaveLength(1);
     expect(screen.getByRole("link", { name: "Back to revision" }))
       .toHaveAttribute(
@@ -214,9 +216,15 @@ describe("Composition edit route", () => {
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
         heading.textContent
       ),
-    ).toEqual(["Data", "Design", "Display", "Parameters", "Tags", "Preview"]);
+    ).toEqual(["Design", "Display", "Parameters", "Tags", "Preview"]);
 
-    // The source and display rows carry the Saved SQL entry name.
+    // Data mode: the source and display rows carry the Saved SQL entry name.
+    fireEvent.click(
+      within(screen.getByRole("radiogroup", { name: "Studio mode" })).getByRole(
+        "radio",
+        { name: "Data" },
+      ),
+    );
     expect(screen.getAllByRole("button", { name: "Monthly totals" }))
       .toHaveLength(2);
   });

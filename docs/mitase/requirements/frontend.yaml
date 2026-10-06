@@ -2629,6 +2629,42 @@ requirements:
                 criterion: REQ-FE-068#criterion.local-horizontal-overflow
                 covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-data-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: stacks the navigator and editor at narrow widths } }
+          - id: studio-split-narrow-stacking
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: keeps Split desktop-only with stacked panes at narrow widths }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: keeps Split desktop-only with stacked panes at narrow widths } }
+          - id: studio-preview-unscoped-fetch
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: fetches every plan source without a scope }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: fetches every plan source without a scope } }
+          - id: studio-preview-scoped-fetch
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: fetches only visible-component and selected sources when scoped }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: fetches only visible-component and selected sources when scoped } }
+          - id: studio-sync-visible-sources
+            adapter: typescript
+            path: frontend/src/lib/composition-studio-sync.test.ts
+            selector: { kind: test, name: lists visible-component sources without text or unplaced blocks }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-sync]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-studio-sync.test.ts, test: lists visible-component sources without text or unplaced blocks } }
 
   - id: REQ-FE-069
     title: Unauthenticated Login Boundary

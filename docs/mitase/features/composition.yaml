@@ -1166,7 +1166,7 @@ features:
       - id: browser-query-runtime
         role: implementation
         facet: frontend
-        responsibility: "Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, source-native tables, and metric values in the Browser. Composition table presentation delegates to the source-native Entry or SQL presenter and never defines a third generic table grammar; source query semantics remain unchanged. Saved Tools render the first-class flow layout: rows in order with parameter controls, fixed-style text, metrics, and tables as ordered items. The Studio inspector edits only the selected block through draft updaters: metric label, source, and value field; table label and source; text content and fixed style; parameter placement retargets with no label override; and a typed data jump names the block source for the Data section. The Data workspace pairs a source navigator with per-source editors: EntryQuery fields, filter, sort, and result map onto the draft query through the existing vocabulary with bounded shared result pages, and Saved SQL stays read-only with an explicit exact-revision update behind the existing editor route."
+        responsibility: "Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, source-native tables, and metric values in the Browser. Composition table presentation delegates to the source-native Entry or SQL presenter and never defines a third generic table grammar; source query semantics remain unchanged. Saved Tools render the first-class flow layout: rows in order with parameter controls, fixed-style text, metrics, and tables as ordered items. The Studio inspector edits only the selected block through draft updaters: metric label, source, and value field; table label and source; text content and fixed style; parameter placement retargets with no label override; and a typed data jump names the block source for the Data section. The Data workspace pairs a source navigator with per-source editors: EntryQuery fields, filter, sort, and result map onto the draft query through the existing vocabulary with bounded shared result pages, and Saved SQL stays read-only with an explicit exact-revision update behind the existing editor route. The Studio mode switch arranges Design, Data, and desktop-only Split workspaces over shared draft, preview, and selection state with no refetch on mode change; block selection auto-selects the component source while text and parameter blocks keep the Data selection, source selection soft-highlights using blocks without changing the selection, Split pairs the canvas with the Data pane as transient Work, and the preview handle fetches visible-component plus selected sources with generation-guarded stale suppression through the existing query path."
         targets:
           - id: browser-composition-api
             adapter: typescript
@@ -1246,6 +1246,8 @@ features:
                 criterion: REQ-COMP-002#criterion.text-style-enum
               - kind: satisfies
                 criterion: REQ-COMP-004#criterion.used-field-fingerprint
+              - kind: satisfies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
           - id: browser-composition-inspector
             adapter: typescript
             path: frontend/src/components/CompositionInspector.tsx
@@ -1341,10 +1343,37 @@ features:
                 criterion: REQ-COMP-004#criterion.exact-composition-revision
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.exact-composition-revision
+          - id: browser-studio-mode
+            adapter: typescript
+            path: frontend/src/components/CompositionStudio.tsx
+            selector: { kind: symbol, name: CompositionStudio }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+          - id: browser-studio-sync
+            adapter: typescript
+            path: frontend/src/lib/composition-studio-sync.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+          - id: browser-preview-handle
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.ts
+            selector: { kind: symbol, name: createCompositionPreviewHandle }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
       - id: browser-query-runtime-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. Saved revision flow coverage verifies row and item order with interleaved parameter controls, fixed text styles without source fetch, narrow-viewport scroll containment, and the flat fallback when the layout cannot be normalized. Design canvas coverage verifies transient block selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder, declaration removal with parameter unplacement, and query-stable layout edits through the draft channel. Inspector coverage verifies per-kind field binding to the draft, metric source and value mapping to component source and value field, text edits without touching sources, parameter retargeting with no label override, the typed data jump, draft-level source, text, and placement retargeting with existing guards, and no panel without a resolvable selection. Data workspace coverage verifies navigator selection and keyboard-operable reorder, EntryQuery filter, sort, and projection mapping with unknown-operator and unknown-direction rejection at the draft channel, Saved SQL read-only rendering with variables and result schema, explicit exact-revision updates preserving variable bindings, denied-source concealment without identifiers, explicit loading, empty, and error result states through the shared handle, and narrow-width stacking. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
+        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. Saved revision flow coverage verifies row and item order with interleaved parameter controls, fixed text styles without source fetch, narrow-viewport scroll containment, and the flat fallback when the layout cannot be normalized. Design canvas coverage verifies transient block selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder, declaration removal with parameter unplacement, query-stable layout edits through the draft channel, and source soft-highlight without changing the selection. Inspector coverage verifies per-kind field binding to the draft, metric source and value mapping to component source and value field, text edits without touching sources, parameter retargeting with no label override, the typed data jump, draft-level source, text, and placement retargeting with existing guards, and no panel without a resolvable selection. Data workspace coverage verifies navigator selection and keyboard-operable reorder, EntryQuery filter, sort, and projection mapping with unknown-operator and unknown-direction rejection at the draft channel, Saved SQL read-only rendering with variables and result schema, explicit exact-revision updates preserving variable bindings, denied-source concealment without identifiers, explicit loading, empty, and error result states through the shared handle, and narrow-width stacking. Studio sync coverage verifies the single Design Data Split control arrangement, shared draft preview and selection continuity across modes with no refetch, block to source auto-selection with text and parameter no-ops, source to block highlight distinct from selection, desktop-only Split with stacked narrow panes, latest-draft resolution for sync transitions during an in-flight preview, and scoped visible-component plus selected-source fetching with on-demand paging and stale page suppression. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
         targets:
           - id: browser-bounded-list-operations
             adapter: typescript
@@ -1712,6 +1741,111 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-FE-068#criterion.local-horizontal-overflow
+          - id: browser-studio-mode-arrangement
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: switches the workspace arrangement through one Design Data Split control }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-studio-mode-continuity
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "keeps draft, preview, and selection continuous across modes without refetching" }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-studio-block-to-source
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: auto-selects the block source in Data and keeps text and parameter selections }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-studio-source-highlight
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: soft-highlights using blocks distinctly from the selection }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-studio-stale-suppression
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "resolves block, source, and mode changes during an in-flight preview to the latest draft only" }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-studio-split-narrow
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: keeps Split desktop-only with stacked panes at narrow widths }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.local-horizontal-overflow
+          - id: browser-studio-sync-modes
+            adapter: typescript
+            path: frontend/src/lib/composition-studio-sync.test.ts
+            selector: { kind: test, name: "exposes the Design, Data, and Split workspace modes" }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-studio-sync-block-source
+            adapter: typescript
+            path: frontend/src/lib/composition-studio-sync.test.ts
+            selector: { kind: test, name: maps metric and table blocks to their component source }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-studio-sync-block-no-source
+            adapter: typescript
+            path: frontend/src/lib/composition-studio-sync.test.ts
+            selector: { kind: test, name: "keeps the Data selection for text, parameter, and unknown blocks" }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-studio-sync-source-blocks
+            adapter: typescript
+            path: frontend/src/lib/composition-studio-sync.test.ts
+            selector: { kind: test, name: maps a source to the component blocks that use it }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-studio-sync-visible-sources
+            adapter: typescript
+            path: frontend/src/lib/composition-studio-sync.test.ts
+            selector: { kind: test, name: lists visible-component sources without text or unplaced blocks }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.controller-owned-paging
+          - id: browser-design-canvas-highlight
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: soft-highlights source blocks without changing the selection }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-preview-unscoped-fetch
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: fetches every plan source without a scope }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.controller-owned-paging
+          - id: browser-preview-scoped-fetch
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: fetches only visible-component and selected sources when scoped }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.controller-owned-paging
+          - id: browser-preview-stale-page-suppression
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: discards stale source pages from the previous draft }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
           - id: browser-metric-continuation-guard
             adapter: typescript
             path: frontend/src/components/CompositionRenderer.test.tsx

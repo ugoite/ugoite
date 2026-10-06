@@ -180,3 +180,35 @@ components:
       narrow: stacked-below-canvas
       narrow_width: 390px
     surface_tokens: fixed-only-no-raw-color
+  - id: studio-mode
+    type: segmented-control
+    title: Studio mode
+    status: implemented
+    ownership: single-operative-control-for-workspace-arrangement-only
+    options: [design, data, split]
+    labels: icon-with-short-label
+    accessible_names: radiogroup-with-checked-option-and-native-focus
+    arrangement_only: draft-preview-selection-shared-continuous-no-refetch
+    split_availability: desktop-only-below-760px-design-data-only
+    persistence: transient-work-never-stored
+    responsive:
+      narrow: design-data-toggle-split-unavailable
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color
+  - id: studio-sync
+    type: workspace-synchronization
+    title: Design Data synchronization
+    status: implemented
+    ownership: selection-identity-only-no-pixels
+    block_to_source: metric-table-auto-select-component-source-text-parameter-keep-selection
+    source_to_blocks: soft-highlight-using-blocks-selection-unchanged
+    highlight: visual-token-colors-only-distinct-from-selection-outline
+    split: left-design-canvas-right-data-pane-for-selected-block-source
+    split_state: transient-work-never-persisted
+    stale_responses: generation-guarded-latest-draft-only
+    preview_discipline: scoped-visible-component-plus-selected-source-existing-path-only
+    responsive:
+      narrow: split-stacks-to-one-column
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color
+    async_state: explicit-loading-empty-error
