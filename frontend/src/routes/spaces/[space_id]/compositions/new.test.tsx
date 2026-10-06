@@ -131,6 +131,17 @@ const emptyPlan = {
 };
 
 describe("Composition studio shell", () => {
+  // The Data section renders in Data mode; tests touching sources switch
+  // the single mode control first.
+  const showDataMode = () => {
+    fireEvent.click(
+      within(screen.getByRole("radiogroup", { name: "Studio mode" })).getByRole(
+        "radio",
+        { name: "Data" },
+      ),
+    );
+  };
+
   beforeEach(() => {
     setLocale("en");
     vi.clearAllMocks();
@@ -150,7 +161,7 @@ describe("Composition studio shell", () => {
 
   afterEach(() => cleanup());
 
-  it("renders one back control, one save, and data-first studio structure", async () => {
+  it("renders one back control, one save, and mode-switched studio structure", async () => {
     const { container } = render(() => <CompositionNewRoute />);
 
     expect(screen.getAllByRole("link")).toHaveLength(1);
@@ -160,11 +171,12 @@ describe("Composition studio shell", () => {
     );
     expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
 
+    // One segmented mode control: Design first, Data on demand.
+    const modes = screen.getByRole("radiogroup", { name: "Studio mode" });
     const headings = screen.getAllByRole("heading", { level: 2 }).map(
       (heading) => heading.textContent,
     );
     expect(headings).toEqual([
-      "Data",
       "Design",
       "Display",
       "Parameters",
@@ -182,7 +194,16 @@ describe("Composition studio shell", () => {
       );
     });
 
-    // Empty states carry one next-action line each, nothing else.
+    // Design-mode empty states carry one next-action line each, nothing else.
+    expect(container.querySelectorAll("p")).toHaveLength(2);
+
+    // Data mode brings the Data section first with its own empty state.
+    fireEvent.click(within(modes).getByRole("radio", { name: "Data" }));
+    expect(
+      screen.getAllByRole("heading", { level: 2 }).map((heading) =>
+        heading.textContent
+      ),
+    ).toEqual(["Data", "Display", "Parameters", "Tags", "Preview"]);
     const paragraphs = container.querySelectorAll("p");
     expect(paragraphs).toHaveLength(3);
     expect(paragraphs[0]).toHaveTextContent("Add data to begin.");
@@ -192,6 +213,7 @@ describe("Composition studio shell", () => {
 
   it("adds data sources with full-row selection and keyboard-operable reorder", async () => {
     const { container } = render(() => <CompositionNewRoute />);
+    showDataMode();
 
     fireEvent.click(screen.getByRole("button", { name: "Add data" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
@@ -248,6 +270,7 @@ describe("Composition studio shell", () => {
 
   it("adds displays between data and tags with headers in order", async () => {
     const { container } = render(() => <CompositionNewRoute />);
+    showDataMode();
 
     const headings = () =>
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
@@ -255,7 +278,6 @@ describe("Composition studio shell", () => {
       );
     expect(headings()).toEqual([
       "Data",
-      "Design",
       "Display",
       "Parameters",
       "Tags",
@@ -290,7 +312,6 @@ describe("Composition studio shell", () => {
     // The display row owns its default source name; headers stay ordered.
     expect(headings()).toEqual([
       "Data",
-      "Design",
       "Display",
       "Parameters",
       "Tags",
@@ -315,6 +336,7 @@ describe("Composition studio shell", () => {
 
   it("saves the canonical draft with a stable idempotency key", async () => {
     render(() => <CompositionNewRoute />);
+    showDataMode();
 
     const saveButton = screen.getByRole("button", { name: "Save" });
     expect(saveButton).toBeDisabled();
@@ -357,6 +379,7 @@ describe("Composition studio shell", () => {
 
   it("retries an uncertain save with the identical payload and key", async () => {
     render(() => <CompositionNewRoute />);
+    showDataMode();
 
     fireEvent.input(screen.getByLabelText("Name"), {
       target: { value: "Weekly review" },
@@ -416,6 +439,7 @@ describe("Composition studio shell", () => {
     };
     const replaceState = vi.spyOn(window.history, "replaceState");
     render(() => <CompositionNewRoute />);
+    showDataMode();
 
     expect(screen.getByRole("button", { name: "Monthly" }))
       .toBeInTheDocument();
@@ -449,6 +473,7 @@ describe("Composition studio shell", () => {
       },
     };
     render(() => <CompositionNewRoute />);
+    showDataMode();
 
     expect(screen.getByRole("button", { name: "Tasks" })).toBeInTheDocument();
     expect(screen.getByLabelText("Name")).toHaveValue("Tasks");
@@ -461,6 +486,7 @@ describe("Composition studio shell", () => {
       variables: [{ name: "month", type: "date", description: "" }],
     });
     render(() => <CompositionNewRoute />);
+    showDataMode();
 
     fireEvent.click(screen.getByRole("button", { name: "Add data" }));
     fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));

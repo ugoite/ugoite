@@ -254,6 +254,9 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/compositions/new.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
         - frontend/src/components/CompositionStudio.tsx
+        - frontend/src/lib/composition-studio-sync.ts
+        - frontend/src/lib/composition-studio-sync.test.ts
+        - frontend/src/components/CompositionStudioSync.test.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
     openapi:

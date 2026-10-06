@@ -44,6 +44,12 @@ export interface CompositionDesignCanvasProps {
   sources: Record<string, CompositionSourcePageState>;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /**
+   * Soft highlight from Data source selection: block identities using the
+   * selected source. Visual only, on token colors; selection stays the
+   * single owner via selectedId.
+   */
+  highlightedIds?: ReadonlySet<string>;
   /** Single draft mutation channel: every canvas op maps onto the document. */
   onDraftChange: (draft: CompositionDraft) => void;
   /** Metric/table insertion reuses the existing display picker at a target. */
@@ -326,6 +332,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
         ? designBlockIdForParameter(item.parameterId)
         : designBlockIdForComponent(item.draftId);
     const selected = () => props.selectedId === blockId();
+    const highlighted = () => props.highlightedIds?.has(blockId()) ?? false;
     const name = () => blockName(props.draft, definitionById(), item);
     const binding = () =>
       item.kind === "component" ? bindingById().get(item.draftId) : undefined;
@@ -344,6 +351,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
         class="designBlock"
         data-block-id={blockId()}
         data-selected={selected() || undefined}
+        data-highlighted={highlighted() || undefined}
         onClick={() => props.onSelect(blockId())}
       >
         <div class="designBlockBar">

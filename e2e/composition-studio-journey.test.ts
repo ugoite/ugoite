@@ -294,6 +294,8 @@ test.describe("Composition Studio Journey", () => {
       );
       const nameInput = page.getByLabel("Name", { exact: true });
       await expect(nameInput).toHaveValue(seed.savedSqlName);
+      // Studio modes: the seeded source renders in the Data workspace.
+      await page.getByRole("radio", { name: "Data", exact: true }).click();
       await expect(
         page.getByRole("button", { name: seed.savedSqlName, exact: true }),
       ).toBeVisible();
@@ -341,6 +343,9 @@ test.describe("Composition Studio Journey", () => {
       await expect(
         page.getByRole("button", { name: seed.formName, exact: true }),
       ).toHaveCount(2);
+
+      // Back to the Design canvas for the display assertions.
+      await page.getByRole("radio", { name: "Design", exact: true }).click();
 
       // Parameter defaults flow into the side-effect-free preview.
       await page.getByLabel("Default for month_start").fill(seed.monthStart);

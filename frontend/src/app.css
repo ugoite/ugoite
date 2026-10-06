@@ -3786,6 +3786,12 @@ a.tool {
   outline: 2px solid var(--ui-focus);
   outline-offset: 1px;
 }
+/* Source soft highlight from Data selection. Token colors only, and never
+ * the selection outline: selection stays the single owner. */
+.designBlock[data-highlighted]:not([data-selected]) {
+  border-color: var(--ui-border);
+  background: var(--ui-surface-2);
+}
 .designBlockBar {
   display: flex;
   flex-wrap: wrap;
@@ -3900,6 +3906,70 @@ a.tool {
 }
 @media (max-width: 560px) {
   .studioDesign {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Studio mode switch: one segmented operative control with icon and short
+ * labels. Split is desktop-only: the option hides below the desktop width
+ * so narrow viewports offer Design | Data only. */
+.studioMode {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-spacing-xs);
+  border: var(--ui-border-width) solid var(--ui-border);
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-surface-1);
+  padding: var(--ui-spacing-xs);
+  margin-top: var(--ui-spacing-md);
+}
+.studioModeOption {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-spacing-xs);
+  min-height: 44px;
+  padding: var(--ui-spacing-xs) var(--ui-spacing-sm);
+  border: var(--ui-border-width) solid transparent;
+  border-radius: var(--ui-radius-pill);
+  background: transparent;
+  color: var(--ui-foreground);
+}
+.studioModeOption--active {
+  border-color: var(--ui-border);
+  background: var(--ui-surface-2);
+}
+.studioModeOption:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+@media (max-width: 760px) {
+  .studioModeSplit {
+    display: none;
+  }
+}
+
+/* Studio Split: Design canvas left, Data pane for the selected block's
+ * source right. The right pane reuses the Data workspace narrowed to one
+ * column; panes stack below the desktop width. Split state is transient
+ * Work, never persisted. */
+.studioSplit {
+  display: grid;
+  grid-template-columns: minmax(0, 8fr) minmax(0, 5fr);
+  gap: var(--ui-spacing-lg);
+  align-items: start;
+  min-width: 0;
+}
+.studioSplit .studioDesign {
+  grid-template-columns: minmax(0, 1fr);
+}
+.studioSplitPane {
+  min-width: 0;
+}
+.studioSplitPane .dataWorkspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 760px) {
+  .studioSplit {
     grid-template-columns: minmax(0, 1fr);
   }
 }
