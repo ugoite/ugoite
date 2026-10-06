@@ -3648,6 +3648,71 @@ a.tool {
   min-height: 44px;
 }
 
+/* Dashboard flow layout (REQ-COMP-002 ordered-component-layout, REQ-FE-068
+ * local-horizontal-overflow). Rows render top to bottom; items within a row
+ * sit inline on desktop and wrap on narrow viewports. No pixel coordinates
+ * or per-block widths are stored: sizing is flex behavior plus the fixed
+ * --ui-spacing-* scale only. Tables keep scrolling inside their own
+ * .result-table-viewport; the flow itself never scrolls horizontally. */
+.compositionFlow {
+  display: grid;
+  gap: var(--ui-spacing-lg);
+  min-width: 0;
+}
+.compositionFlowRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: var(--ui-spacing-lg);
+  min-width: 0;
+}
+.compositionFlowItem {
+  min-width: 0;
+}
+.compositionFlowItem--text {
+  flex: 1 1 100%;
+}
+.compositionFlowItem--metric {
+  flex: 1 1 0;
+}
+.compositionFlowItem--table {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.compositionFlowItem--parameter {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* Fixed text typography per style. Sizes and weights reuse the existing
+ * surface tokens (.ui-page-title, .sectionHead h2, .ui-page-subtitle);
+ * body inherits the base text. */
+.flowText {
+  margin: 0;
+}
+.flowText--title {
+  font-size: 21px;
+  font-weight: 730;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+}
+.flowText--heading {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.flowText--caption {
+  font-size: 13px;
+  color: var(--muted);
+}
+@media (max-width: 560px) {
+  .compositionFlowItem--metric {
+    flex-basis: 100%;
+  }
+  .compositionFlowItem--parameter {
+    flex-basis: 100%;
+  }
+}
+
 /* Entry result tables: Entry-owned row interaction on the shared vocabulary.
  * Selection/open semantics live in EntryResultTable; paging stays with the
  * EntryBrowser controller. */

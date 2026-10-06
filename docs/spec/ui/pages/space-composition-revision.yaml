@@ -32,14 +32,18 @@ components:
       type: form
       title: Declared parameters
       source: composition.resolve for the selected exact revision
+      placement: layout-placed controls render inside the flow in placement order; unplaced definitions stay in this section
+      state: transient-work-never-stored
     - id: composition-diagnostics
       type: list
       title: Resolve diagnostics
       source: current composition.resolve response
     - id: composition-components
       type: query-results
-      title: Ordered tables and metrics
+      title: Flow rows with parameter controls, text, metrics, and tables
       source: existing entry.query and exact-revision sql.query operations
+      layout: saved-tool rows in row-array then item order
+      text_presentation: fixed title-heading-body-caption styles without source fetch
       table_presentation:
         entry_query: EntryResultTable
         saved_sql: SqlResultTable

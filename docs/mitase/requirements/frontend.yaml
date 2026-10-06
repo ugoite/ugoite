@@ -2566,6 +2566,24 @@ requirements:
                 criterion: REQ-FE-068#criterion.source-native-composition-rendering
                 covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-renderer]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "composition_renderer_delegates_to_source_native_presenters_without_client_aggregation" } }
+          - id: composition-flow-row-rendering
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: delegates flow metrics and tables to source-native presenters }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-dashboard-flow-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "delegates flow metrics and tables to source-native presenters" } }
+          - id: composition-flow-viewport
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: keeps flow rows inline with tables scrolling in their own viewport }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-dashboard-flow-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "keeps flow rows inline with tables scrolling in their own viewport" } }
           - id: composition-entry-columns-preview
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.test.tsx

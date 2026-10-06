@@ -275,6 +275,57 @@ describe("CompositionRenderer", () => {
     expect(screen.getAllByRole("status")).toHaveLength(1);
   });
 
+  it("renders text bindings from joined declarations without source requests", async () => {
+    const evaluate = vi.spyOn(compositionApi, "evaluateMetricPage")
+      .mockResolvedValue({ ok: true, value: 42 });
+    const textPlan: CompositionResolvePlan = {
+      composition_revision: { entry_id: "tool-1", revision_id: "revision-1" },
+      sources: [],
+      component_bindings: [{
+        component_id: "note",
+        kind: "text",
+        label: "Note",
+      }],
+    };
+    render(() => (
+      <CompositionRenderer
+        plan={textPlan}
+        sources={{}}
+        texts={{ note: { text: "Settled monthly.", style: "body" } }}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    expect(screen.getByText("Settled monthly.")).toHaveClass("flowText--body");
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
+  it("skips text bindings when the caller has no component declarations", () => {
+    const textPlan: CompositionResolvePlan = {
+      composition_revision: { entry_id: "tool-1", revision_id: "revision-1" },
+      sources: [],
+      component_bindings: [{
+        component_id: "note",
+        kind: "text",
+        label: "Note",
+      }],
+    };
+    const { container } = render(() => (
+      <CompositionRenderer
+        plan={textPlan}
+        sources={{}}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    expect(container.querySelector(".compositionRenderer")?.textContent)
+      .toBe("");
+  });
+
   it("composition_renderer_delegates_to_source_native_presenters_without_client_aggregation", async () => {
     const delegatedPlan: CompositionResolvePlan = {
       composition_revision: { entry_id: "tool-1", revision_id: "revision-1" },

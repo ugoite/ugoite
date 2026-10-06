@@ -103,22 +103,23 @@ export interface CompositionLintDocument {
         projection: EntryQueryCompositionProjection;
       };
     }>;
-    components: Array<{
-      kind: string;
-      id: string;
-      label?: string;
-      source: string;
-      value_field?: { kind: string; field_id?: number; name?: string };
-    }>;
-    layout: {
-      kind: string;
-      rows: Array<{
+    components: Array<
+      | {
+        kind: string;
         id: string;
-        items: Array<
-          { kind: string; component?: string; parameter?: string }
-        >;
-      }>;
-    };
+        label?: string;
+        source: string;
+        value_field?: { kind: string; field_id?: number; name?: string };
+      }
+      | {
+        kind: string;
+        id: string;
+        label?: string;
+        text: string;
+        style: CompositionTextStyle;
+      }
+    >;
+    layout: CompositionFlowLayout;
   };
 }
 
@@ -138,6 +139,24 @@ export interface CompositionRestoreResponse {
   restored_from_revision_id: string;
   canonical_yaml: string;
   receipt: CompositionPublicationReceipt;
+}
+
+export type CompositionTextStyle = "title" | "heading" | "body" | "caption";
+
+export interface CompositionFlowLayoutItem {
+  kind: string;
+  component?: string;
+  parameter?: string;
+}
+
+export interface CompositionFlowLayoutRow {
+  id: string;
+  items: CompositionFlowLayoutItem[];
+}
+
+export interface CompositionFlowLayout {
+  kind: string;
+  rows: CompositionFlowLayoutRow[];
 }
 
 export interface CompositionSaveOptions {
@@ -249,17 +268,32 @@ export type CompositionResolvedSource =
 interface CompositionResolvedComponentBase {
   component_id: string;
   label?: string;
-  source_id: string;
+  source_id?: string;
 }
 
 export type CompositionResolvedComponentBinding =
   | (CompositionResolvedComponentBase & {
     kind: "metric";
+    /** Metric and table bindings always carry their source request identity. */
+    source_id: string;
     metric_field_id?: number;
     result_property_key?: string;
     expected_result_type: CompositionResultType;
   })
-  | (CompositionResolvedComponentBase & { kind: "table" });
+  | (CompositionResolvedComponentBase & {
+    kind: "table";
+    /** Metric and table bindings always carry their source request identity. */
+    source_id: string;
+  })
+  | (CompositionResolvedComponentBase & {
+    kind: "text";
+    /**
+     * Text bindings carry no source binding and trigger no source request.
+     * The renderer joins them with their component declaration by
+     * `component_id` for content and style.
+     */
+    source_id?: undefined;
+  });
 
 export interface CompositionResolveResponse {
   ok: boolean;

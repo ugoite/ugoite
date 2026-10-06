@@ -240,6 +240,51 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::parameter_items_resolve_through_semantic_parameter_values } }
+      - id: flow-renderer-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Browser flow renderer composes layout rows and items in order with interleaved parameter controls, fixed text styles without source fetch, and text bindings joined by component id.
+        targets:
+          - id: flow-row-order-case
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: renders rows in order with parameter controls interleaved }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-dashboard-flow-renderer
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "renders rows in order with parameter controls interleaved" } }
+          - id: flow-parameter-control-case
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: binds parameter changes to transient work state }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-parameter-control
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "binds parameter changes to transient work state" } }
+          - id: flow-text-style-case
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: renders each text style without fetching sources }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-flow-text
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "renders each text style without fetching sources" } }
+          - id: renderer-text-binding-case
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: renders text bindings from joined declarations without source requests }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-renderer
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "renders text bindings from joined declarations without source requests" } }
       - id: metric-value-verification
         role: verification
         facet: verification
