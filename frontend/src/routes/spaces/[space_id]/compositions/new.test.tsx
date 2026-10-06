@@ -296,7 +296,11 @@ describe("Composition studio shell", () => {
       "Tags",
       "Preview",
     ]);
-    expect(screen.getByText("Table")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Display" })).getByText(
+        "Table",
+      ),
+    ).toBeInTheDocument();
     expect(
       within(container).getAllByRole("button", { name: "Tasks" }),
     ).toHaveLength(2);
