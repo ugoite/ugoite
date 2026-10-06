@@ -270,6 +270,22 @@ describe("CompositionDataWorkspace", () => {
       },
     });
 
+    // Parameter bindings round-trip through the display text instead of
+    // flattening to a plain string on edit.
+    fireEvent.change(value, { target: { value: "{{month}}" } });
+    expect(harness.current().sources[1]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        filters: [{
+          field_id: 100,
+          operator: "gte",
+          value: { parameter: "month" },
+        }],
+      },
+    });
+    expect((within(editor).getByLabelText("Value") as HTMLInputElement).value)
+      .toBe("{{month}}");
+
     fireEvent.click(within(editor).getByRole("button", { name: "Remove" }));
     expect(harness.current().sources[1]).toMatchObject({
       kind: "entry_query",
@@ -339,7 +355,7 @@ describe("CompositionDataWorkspace", () => {
 
     const editor = harness.editor();
     const update = await within(editor).findByRole("button", {
-      name: "Use the latest revision",
+      name: "Use the edited revision",
     });
     fireEvent.click(update);
 

@@ -91,7 +91,7 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
     return !!current && current.revision_id !== props.source.revisionId;
   };
 
-  const updateToLatest = () => {
+  const updateToEdited = () => {
     const current = entry();
     if (!current || updating()) return;
     setUpdating(true);
@@ -234,7 +234,7 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
                   class="ui-button ui-button-secondary"
                   type="button"
                   disabled={updating()}
-                  onClick={updateToLatest}
+                  onClick={updateToEdited}
                 >
                   {t("composition.studioUseSavedSqlRevision")}
                 </button>

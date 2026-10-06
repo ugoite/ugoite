@@ -47,6 +47,7 @@ components:
     saved_sql_viewer:
       sql: read-only-with-edit-saved-sql-action-to-existing-editor-route
       sections: [sql, variables, result-schema, result]
+      reads: user-gated-sqlApi-get-plus-bounded-limit-1-probe-denied-concealed
       revision_update: explicit-exact-revision-only-no-latest-fallback
       composition_save: separate-explicit-action-never-conflated
     concealment: denied-or-missing-renders-source-unavailable-no-identifiers

@@ -35,6 +35,18 @@ const filterValueText = (value: unknown): string => {
   return String(value);
 };
 
+/** Round-trip `{{name}}` display text back to a parameter binding so editing
+ * a parameter-bound filter never silently flattens it to a plain string.
+ * Anything else stays a verbatim string; the draft updater fails closed on
+ * shapes outside the shared contract. */
+const parseFilterValueText = (text: string): unknown => {
+  const binding = /^\{\{([^}]+)\}\}$/.exec(text);
+  if (binding && binding[1].length > 0) {
+    return { parameter: binding[1] };
+  }
+  return text;
+};
+
 interface EntryQuerySourceEditorProps {
   source: EntryQuerySource;
   /** Narrow draft updaters; each returns false when the edit is rejected. */
@@ -201,7 +213,9 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
                         const next = [...props.source.query.filters];
                         next[index()] = {
                           ...filter,
-                          value: event.currentTarget.value,
+                          value: parseFilterValueText(
+                            event.currentTarget.value,
+                          ),
                         };
                         props.onFilters(next);
                       }}
