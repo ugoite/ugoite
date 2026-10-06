@@ -223,10 +223,14 @@ inventory:
         - frontend/src/components/CompositionEntryQueryTable.test.tsx
         - frontend/src/components/CompositionSourcePicker.tsx
         - frontend/src/components/CompositionSourcePicker.test.tsx
+        - frontend/src/components/CompositionSourcePicker.tsx
+        - frontend/src/components/CompositionSourcePicker.test.tsx
         - frontend/src/components/CompositionDisplayList.tsx
         - frontend/src/components/CompositionDisplayList.test.tsx
         - frontend/src/components/CompositionDisplayPicker.tsx
         - frontend/src/components/CompositionDisplayPicker.test.tsx
+        - frontend/src/components/CompositionParameterList.tsx
+        - frontend/src/components/CompositionParameterList.test.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/new.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
     openapi:

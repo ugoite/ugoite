@@ -10,6 +10,7 @@ import {
   CompositionDisplayPicker,
   type CompositionDisplaySeed,
 } from "~/components/CompositionDisplayPicker";
+import { CompositionParameterList } from "~/components/CompositionParameterList";
 import {
   CompositionSourcePicker,
   type CompositionSourceSeed,
@@ -21,19 +22,25 @@ import { UiIcon } from "~/components/UiIcon";
 import {
   addEntryQuerySource,
   addMetricDisplay,
+  addParameter,
   addSavedSqlSource,
   addTableDisplay,
   canonicalizeDraft,
   type CompositionDraft,
   createEmptyDraft,
+  defaultParameterValues,
+  type DraftParameter,
   type DraftSource,
+  ensureParametersForVariables,
   moveDisplay,
   moveSource,
   removeDisplay,
+  removeParameter,
   removeSource,
   setDisplayLabel,
   setDraftName,
   setDraftTags,
+  upsertParameter,
 } from "~/lib/composition-draft";
 import { compositionApi } from "~/lib/composition-api";
 import { createCompositionPreviewHandle } from "~/lib/composition-preview-handle";
@@ -116,7 +123,11 @@ export default function CompositionNewRoute() {
       void (async () => {
         try {
           const canonical = await canonicalizeDraft(snapshot);
-          await previewHandle.preview(spaceId(), canonical.canonical_yaml, {});
+          await previewHandle.preview(
+            spaceId(),
+            canonical.canonical_yaml,
+            defaultParameterValues(snapshot),
+          );
         } catch {
           // canonicalizeDraft rejects only on WASM transport failure;
           // contract diagnostics arrive through the preview response.
@@ -153,7 +164,13 @@ export default function CompositionNewRoute() {
     const added = seed.kind === "saved_sql"
       ? addSavedSqlSource(draft(), seed.seed)
       : addEntryQuerySource(draft(), seed.seed);
-    setDraft(added.draft);
+    // Saved SQL variables bind same-named parameters; provision the
+    // missing ones from the server-declared types so the draft previews
+    // without dangling references.
+    const provisioned = seed.kind === "saved_sql" && seed.seed.variableTypes
+      ? ensureParametersForVariables(added.draft, seed.seed.variableTypes)
+      : added.draft;
+    setDraft(provisioned);
     setExpandedId(added.draftId);
     setPickerOpen(false);
   };
@@ -210,6 +227,28 @@ export default function CompositionNewRoute() {
 
   const expandedSource = (): DraftSource | undefined =>
     draft().sources.find((source) => source.draftId === expandedId());
+
+  const addDraftParameter = (parameter: DraftParameter) => {
+    const result = addParameter(draft(), parameter);
+    if (result.ok) setDraft(result.draft);
+  };
+
+  const updateDraftParameter = (parameter: DraftParameter) => {
+    const result = upsertParameter(draft(), parameter);
+    if (result.ok) setDraft(result.draft);
+  };
+
+  const removeDraftParameter = (parameterId: string): string | undefined => {
+    const result = removeParameter(draft(), parameterId);
+    if (result.ok) {
+      setDraft(result.draft);
+      return undefined;
+    }
+    if (result.error === "parameter-referenced") {
+      return t("composition.studioParameterReferenced");
+    }
+    return t("composition.studioCannotRemoveParameter");
+  };
 
   const saveRequest = async (
     attempt: PendingCompositionSaveAttempt,
@@ -323,6 +362,7 @@ export default function CompositionNewRoute() {
 
   const dataHeadingId = "studio-data-heading";
   const displayHeadingId = "studio-display-heading";
+  const parametersHeadingId = "studio-parameters-heading";
   const tagsHeadingId = "studio-tags-heading";
   const previewHeadingId = "studio-preview-heading";
   const nameInputId = "studio-name";
@@ -481,6 +521,17 @@ export default function CompositionNewRoute() {
           onRemove={removeDraftDisplay}
           onMove={moveDraftDisplay}
           onChangeLabel={changeDisplayLabel}
+        />
+      </section>
+
+      <section class="section" aria-labelledby={parametersHeadingId}>
+        <h2 id={parametersHeadingId}>{t("composition.studioParameters")}</h2>
+        <CompositionParameterList
+          parameters={draft().parameters}
+          headingId={parametersHeadingId}
+          onAdd={addDraftParameter}
+          onUpdate={updateDraftParameter}
+          onRemove={removeDraftParameter}
         />
       </section>
 

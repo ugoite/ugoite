@@ -153,7 +153,13 @@ describe("Composition studio shell", () => {
     const headings = screen.getAllByRole("heading", { level: 2 }).map(
       (heading) => heading.textContent,
     );
-    expect(headings).toEqual(["Data", "Display", "Tags", "Preview"]);
+    expect(headings).toEqual([
+      "Data",
+      "Display",
+      "Parameters",
+      "Tags",
+      "Preview",
+    ]);
 
     // The tool-name input owns the name: typing updates the heading owner.
     const nameInput = screen.getByLabelText("Name");
@@ -167,9 +173,10 @@ describe("Composition studio shell", () => {
 
     // Empty states carry one next-action line each, nothing else.
     const paragraphs = container.querySelectorAll("p");
-    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs).toHaveLength(3);
     expect(paragraphs[0]).toHaveTextContent("Add data to begin.");
     expect(paragraphs[1]).toHaveTextContent("Add a display to begin.");
+    expect(paragraphs[2]).toHaveTextContent("Add a parameter to begin.");
   });
 
   it("adds data sources with full-row selection and keyboard-operable reorder", async () => {
@@ -235,7 +242,7 @@ describe("Composition studio shell", () => {
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
         heading.textContent
       );
-    expect(headings()).toEqual(["Data", "Display", "Tags", "Preview"]);
+    expect(headings()).toEqual(["Data", "Display", "Parameters", "Tags", "Preview"]);
 
     // Displays need a source first.
     expect(screen.getByRole("button", { name: "Add display" })).toBeDisabled();
@@ -263,7 +270,7 @@ describe("Composition studio shell", () => {
     });
 
     // The display row owns its default source name; headers stay ordered.
-    expect(headings()).toEqual(["Data", "Display", "Tags", "Preview"]);
+    expect(headings()).toEqual(["Data", "Display", "Parameters", "Tags", "Preview"]);
     expect(screen.getByText("Table")).toBeInTheDocument();
     expect(
       within(container).getAllByRole("button", { name: "Tasks" }),
@@ -362,5 +369,29 @@ describe("Composition studio shell", () => {
     expect(navigateMock).toHaveBeenCalledWith(
       "/spaces/space-1/compositions/tool-1/revision-2",
     );
+  });
+
+  it("provisions typed parameters from saved sql variables and guards removal", async () => {
+    sqlGetMock.mockResolvedValue({
+      ...monthlyEntry,
+      variables: [{ name: "month", type: "date", description: "" }],
+    });
+    render(() => <CompositionNewRoute />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    // The month parameter is provisioned from the server-declared type.
+    expect(await screen.findByText("month")).toBeInTheDocument();
+
+    // A referenced parameter cannot be removed silently.
+    fireEvent.click(screen.getByRole("button", { name: "Remove month" }));
+    expect(
+      await screen.findByText("This parameter is used by a data source."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("month")).toBeInTheDocument();
   });
 });

@@ -74,6 +74,19 @@ components:
       source: table or metric choice, then draft source rows, then a scalar value select with an optional label
       selection: full-row-activate
       rendering: human-name-only rows; metric sources without scalar candidates show a disabled row with an unavailable reason
+    - id: studio-parameters
+      type: list
+      title: Parameters
+      source: draft parameters provisioned from Saved SQL variable types
+      selection: identity-rows-with-inline-editors
+      remove: guarded remove with a short referenced reason
+      binding: existing-composition-parameter-grammar-by-reference
+      type_compatibility: rust-owned-diagnostics
+    - id: studio-add-parameter
+      type: button
+      title: Add parameter
+      single_control: true
+      source: parameter name and type inputs over the draft
     - id: studio-tags
       type: form
       title: Tags
