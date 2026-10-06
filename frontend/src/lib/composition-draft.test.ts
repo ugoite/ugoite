@@ -10,8 +10,8 @@ import {
   createEmptyDraft,
   defaultParameterValues,
   displaysUsingSource,
-  ensureParametersForVariables,
   draftFromDocument,
+  ensureParametersForVariables,
   moveDisplay,
   moveSource,
   removeDisplay,
@@ -19,6 +19,7 @@ import {
   removeSource,
   setDraftName,
   setDraftTags,
+  studioSeedState,
   toStudioDocument,
   upsertParameter,
 } from "./composition-draft";
@@ -311,5 +312,13 @@ describe("composition draft model", () => {
       },
     } as unknown as CompositionStudioDocument;
     expect(() => draftFromDocument(document, {})).toThrow();
+  });
+
+  it("ignores malformed studio seeds instead of approximating", () => {
+    expect(studioSeedState(undefined)).toBeUndefined();
+    expect(studioSeedState(null)).toBeUndefined();
+    expect(studioSeedState({})).toBeUndefined();
+    expect(studioSeedState({ seed: { kind: "chart" } })).toBeUndefined();
+    expect(studioSeedState({ seed: { kind: "saved_sql" } })).toBeUndefined();
   });
 });
