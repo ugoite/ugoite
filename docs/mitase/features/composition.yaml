@@ -1166,7 +1166,7 @@ features:
       - id: browser-query-runtime
         role: implementation
         facet: frontend
-        responsibility: "Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, source-native tables, and metric values in the Browser. Composition table presentation delegates to the source-native Entry or SQL presenter and never defines a third generic table grammar; source query semantics remain unchanged. Saved Tools render the first-class flow layout: rows in order with parameter controls, fixed-style text, metrics, and tables as ordered items. The Studio inspector edits only the selected block through draft updaters: metric label, source, and value field; table label and source; text content and fixed style; parameter placement retargets with no label override; and a typed data jump names the block source for the Data section."
+        responsibility: "Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, source-native tables, and metric values in the Browser. Composition table presentation delegates to the source-native Entry or SQL presenter and never defines a third generic table grammar; source query semantics remain unchanged. Saved Tools render the first-class flow layout: rows in order with parameter controls, fixed-style text, metrics, and tables as ordered items. The Studio inspector edits only the selected block through draft updaters: metric label, source, and value field; table label and source; text content and fixed style; parameter placement retargets with no label override; and a typed data jump names the block source for the Data section. The Data workspace pairs a source navigator with per-source editors: EntryQuery fields, filter, sort, and result map onto the draft query through the existing vocabulary with bounded shared result pages, and Saved SQL stays read-only with an explicit exact-revision update behind the existing editor route."
         targets:
           - id: browser-composition-api
             adapter: typescript
@@ -1259,6 +1259,56 @@ features:
                 anchor: REQ-COMP-002#criterion.optional-display-labels
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.typed-metric-value-field
+          - id: browser-data-workspace
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.tsx
+            selector: { kind: symbol, name: CompositionDataWorkspace }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.controller-owned-paging
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.local-horizontal-overflow
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.source-native-composition-rendering
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.semantic-row-ownership
+          - id: browser-source-navigator
+            adapter: typescript
+            path: frontend/src/components/SourceNavigator.tsx
+            selector: { kind: symbol, name: SourceNavigator }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.semantic-row-ownership
+          - id: browser-entry-query-editor
+            adapter: typescript
+            path: frontend/src/components/EntryQuerySourceEditor.tsx
+            selector: { kind: symbol, name: EntryQuerySourceEditor }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.source-native-composition-rendering
+          - id: browser-saved-sql-viewer
+            adapter: typescript
+            path: frontend/src/components/SavedSqlSourceViewer.tsx
+            selector: { kind: symbol, name: SavedSqlSourceViewer }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.concealed-unavailable-references
           - id: browser-entry-query-table
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.tsx
@@ -1294,7 +1344,7 @@ features:
       - id: browser-query-runtime-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. Saved revision flow coverage verifies row and item order with interleaved parameter controls, fixed text styles without source fetch, narrow-viewport scroll containment, and the flat fallback when the layout cannot be normalized. Design canvas coverage verifies transient block selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder, declaration removal with parameter unplacement, and query-stable layout edits through the draft channel. Inspector coverage verifies per-kind field binding to the draft, metric source and value mapping to component source and value field, text edits without touching sources, parameter retargeting with no label override, the typed data jump, draft-level source, text, and placement retargeting with existing guards, and no panel without a resolvable selection. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
+        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. Saved revision flow coverage verifies row and item order with interleaved parameter controls, fixed text styles without source fetch, narrow-viewport scroll containment, and the flat fallback when the layout cannot be normalized. Design canvas coverage verifies transient block selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder, declaration removal with parameter unplacement, and query-stable layout edits through the draft channel. Inspector coverage verifies per-kind field binding to the draft, metric source and value mapping to component source and value field, text edits without touching sources, parameter retargeting with no label override, the typed data jump, draft-level source, text, and placement retargeting with existing guards, and no panel without a resolvable selection. Data workspace coverage verifies navigator selection and keyboard-operable reorder, EntryQuery filter, sort, and projection mapping with unknown-operator and unknown-direction rejection at the draft channel, Saved SQL read-only rendering with variables and result schema, explicit exact-revision updates preserving variable bindings, denied-source concealment without identifiers, explicit loading, empty, and error result states through the shared handle, and narrow-width stacking. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
         targets:
           - id: browser-bounded-list-operations
             adapter: typescript
@@ -1560,6 +1610,108 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: browser-data-navigator-selection
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: selects navigator sources with full-row activation }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.semantic-row-ownership
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-data-navigator-reorder
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: reorders sources with keyboard-operable move buttons }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-data-entry-query-edits
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: maps entry-query filter edits onto the draft query }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+          - id: browser-data-entry-query-sort-projection
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: maps entry-query sort and projection edits onto the draft query }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+          - id: browser-data-entry-query-operators
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: maps entry-query filter edits onto the draft with existing operators }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+          - id: browser-data-entry-query-invalid-operator
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: rejects entry-query filter edits with unknown operators }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+          - id: browser-data-entry-query-invalid-sort
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: rejects entry-query sort edits with unknown directions }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+          - id: browser-data-entry-query-projection
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: replaces entry-query projections between preview and fields }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+          - id: browser-data-saved-sql-readonly
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: renders saved sql read-only with variables and result schema }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+          - id: browser-data-saved-sql-exact-revision
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: updates the composition source to the exact new revision }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+          - id: browser-data-saved-sql-revision-merge
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: points saved sql sources at an exact revision preserving bindings }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+          - id: browser-data-source-concealment
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: conceals denied saved sql sources without identifiers }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+          - id: browser-data-result-states
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "renders explicit loading, empty, and error result states" }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.controller-owned-paging
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.source-native-composition-rendering
+          - id: browser-data-narrow-stacking
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: stacks the navigator and editor at narrow widths }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.local-horizontal-overflow
           - id: browser-metric-continuation-guard
             adapter: typescript
             path: frontend/src/components/CompositionRenderer.test.tsx
@@ -1647,3 +1799,23 @@ features:
             role: client
         guarantees:
           - REQ-COMP-004#criterion.used-field-fingerprint
+      - id: entry-query-translation
+        kind: custom
+        source: FEAT-COMP-001#binding.contract/target.composition-contract
+        participants:
+          - target: FEAT-COMP-001#binding.entry-query-resolver/target.compile-entry-query-source
+            role: implementation
+          - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-editor
+            role: client
+        guarantees:
+          - REQ-COMP-004#criterion.entry-query-translation
+      - id: exact-saved-sql-revision
+        kind: custom
+        source: FEAT-COMP-001#binding.contract/target.composition-contract
+        participants:
+          - target: FEAT-COMP-001#binding.saved-sql-resolver/target.compile-exact-saved-sql-source
+            role: implementation
+          - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-saved-sql-viewer
+            role: client
+        guarantees:
+          - REQ-COMP-004#criterion.exact-saved-sql-revision

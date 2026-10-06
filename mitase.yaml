@@ -227,6 +227,11 @@ inventory:
         - frontend/src/components/CompositionDesignCanvas.test.tsx
         - frontend/src/components/CompositionInspector.tsx
         - frontend/src/components/CompositionInspector.test.tsx
+        - frontend/src/components/CompositionDataWorkspace.tsx
+        - frontend/src/components/CompositionDataWorkspace.test.tsx
+        - frontend/src/components/SourceNavigator.tsx
+        - frontend/src/components/EntryQuerySourceEditor.tsx
+        - frontend/src/components/SavedSqlSourceViewer.tsx
         - frontend/src/components/composition/InspectorFields.tsx
         - frontend/src/components/composition/MetricInspector.tsx
         - frontend/src/components/composition/TableInspector.tsx

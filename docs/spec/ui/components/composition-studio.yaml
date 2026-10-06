@@ -26,6 +26,8 @@ components:
   - id: studio-data
     type: list
     title: Data
+    status: implemented
+    ownership: source-navigator-with-per-source-editor-for-selection-only
     label_kind: compact-section-label
     rows:
       selection: full-row-activate
@@ -34,6 +36,27 @@ components:
       source_kinds: [saved-sql-exact-revision, entry-query]
       identity_display: human-name-only
       revision_identity: advanced-disclosure-only
+    entry_query_editor:
+      sections: [fields, filter, sort, result]
+      semantics: existing-entry-query-vocabulary-only
+      filter_operators: [equals, contains, lt, lte, gt, gte]
+      sort_directions: [asc, desc]
+      projection: [fields, preview]
+      edits: draft-source-query-through-narrow-updaters
+      unknown_operators: rejected-fail-closed
+    saved_sql_viewer:
+      sql: read-only-with-edit-saved-sql-action-to-existing-editor-route
+      sections: [sql, variables, result-schema, result]
+      revision_update: explicit-exact-revision-only-no-latest-fallback
+      composition_save: separate-explicit-action-never-conflated
+    concealment: denied-or-missing-renders-source-unavailable-no-identifiers
+    preview_discipline: existing-debounced-handle-only-no-second-path
+    result_pages: bounded-shared-page-with-controller-owned-paging
+    responsive:
+      narrow: navigator-and-editor-stack
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color
+    async_state: explicit-loading-empty-error
   - id: studio-display
     type: list
     title: Display

@@ -3904,6 +3904,27 @@ a.tool {
   }
 }
 
+/* Data workspace: source navigator beside the per-source editor. The
+ * navigator and editor stack to one column at narrow viewports. */
+.dataWorkspace {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: var(--ui-spacing-lg);
+  align-items: start;
+  min-width: 0;
+}
+.dataWorkspaceEditor {
+  display: grid;
+  gap: var(--ui-spacing-lg);
+  align-content: start;
+  min-width: 0;
+}
+@media (max-width: 560px) {
+  .dataWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Entry result tables: Entry-owned row interaction on the shared vocabulary.
  * Selection/open semantics live in EntryResultTable; paging stays with the
  * EntryBrowser controller. */

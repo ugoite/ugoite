@@ -699,6 +699,51 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-home-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: rediscovers saved tools from Home and opens the listed exact revision } }
+      - id: data-workspace-query-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Data workspace maps EntryQuery filter, sort, and projection edits onto the draft through the existing vocabulary with unknown operators and directions rejected, and points Saved SQL sources at exact revisions preserving variable bindings.
+        targets:
+          - id: data-entry-query-filter-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: maps entry-query filter edits onto the draft query }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-editor
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: maps entry-query filter edits onto the draft query } }
+          - id: data-entry-query-invalid-operator-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: rejects entry-query filter edits with unknown operators }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-editor
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: rejects entry-query filter edits with unknown operators } }
+          - id: data-saved-sql-exact-revision-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: updates the composition source to the exact new revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-saved-sql-viewer
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: updates the composition source to the exact new revision } }
+          - id: data-saved-sql-revision-merge-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: points saved sql sources at an exact revision preserving bindings }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-saved-sql-viewer
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: points saved sql sources at an exact revision preserving bindings } }
       - id: draft-preview-verification
         role: verification
         facet: verification
@@ -864,6 +909,33 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-query-handle
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: pins get and resolve to the selected revision and ignores a stale parameter response } }
+      - id: data-workspace-transient-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Data workspace source selection and reorder stay transient Work through the navigator without entering the Composition document.
+        targets:
+          - id: data-navigator-selection-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: selects navigator sources with full-row activation }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-data-workspace
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-source-navigator
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: selects navigator sources with full-row activation } }
+          - id: data-navigator-reorder-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: reorders sources with keyboard-operable move buttons }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-data-workspace
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-source-navigator
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: reorders sources with keyboard-operable move buttons } }
     criteria:
       - id: work-state-is-transient
         kind: behavior

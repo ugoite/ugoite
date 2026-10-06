@@ -24,8 +24,12 @@ import {
   retargetParameterControl,
   setDraftName,
   setDraftTags,
+  setEntryQueryFilters,
+  setEntryQueryProjection,
+  setEntryQuerySort,
   setMetricSource,
   setMetricValueField,
+  setSavedSqlRevision,
   setTableSource,
   setTextContent,
   setTextStyle,
@@ -738,5 +742,143 @@ describe("composition draft model", () => {
       ok: false,
       error: "unknown-block",
     });
+  });
+
+  it("maps entry-query filter edits onto the draft with existing operators", () => {
+    let draft = createEmptyDraft();
+    draft = addEntryQuerySource(draft, entrySeed()).draft;
+    const applied = setEntryQueryFilters(draft, "src-1", [
+      { field_id: 1, operator: "gte", value: "2026-10-01" },
+    ]);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) throw new Error("expected filter update");
+    expect(toStudioDocument(applied.draft).spec.sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        filters: [{ field_id: 1, operator: "gte", value: "2026-10-01" }],
+      },
+    });
+  });
+
+  it("rejects entry-query filter edits with unknown operators", () => {
+    let draft = createEmptyDraft();
+    draft = addEntryQuerySource(draft, entrySeed()).draft;
+    expect(
+      setEntryQueryFilters(draft, "src-1", [
+        {
+          field_id: 1,
+          operator: "starts_with" as "equals",
+          value: "october",
+        },
+      ]),
+    ).toEqual({ ok: false, error: "invalid-query" });
+    expect(
+      setEntryQueryFilters(draft, "src-1", [
+        { field_id: 1.5, operator: "equals", value: "october" },
+      ]),
+    ).toEqual({ ok: false, error: "invalid-query" });
+    expect(
+      setEntryQueryFilters(draft, "src-1", [
+        { field_id: 1, operator: "equals", value: { nested: true } },
+      ]),
+    ).toEqual({ ok: false, error: "invalid-query" });
+    expect(setEntryQueryFilters(draft, "nope", [])).toEqual({
+      ok: false,
+      error: "unknown-source",
+    });
+    // Parameter-bound values keep their shape through the same channel.
+    const bound = setEntryQueryFilters(draft, "src-1", [
+      { field_id: 1, operator: "gte", value: { parameter: "month" } },
+    ]);
+    expect(bound.ok).toBe(true);
+  });
+
+  it("rejects entry-query sort edits with unknown directions", () => {
+    let draft = createEmptyDraft();
+    draft = addEntryQuerySource(draft, entrySeed()).draft;
+    const applied = setEntryQuerySort(draft, "src-1", [
+      { field_id: 1, direction: "desc" },
+    ]);
+    expect(applied.ok).toBe(true);
+    expect(
+      setEntryQuerySort(draft, "src-1", [
+        { field_id: 1, direction: "newest" as "asc" },
+      ]),
+    ).toEqual({ ok: false, error: "invalid-query" });
+    expect(setEntryQuerySort(draft, "nope", [])).toEqual({
+      ok: false,
+      error: "unknown-source",
+    });
+  });
+
+  it("replaces entry-query projections between preview and fields", () => {
+    let draft = createEmptyDraft();
+    draft = addEntryQuerySource(draft, entrySeed()).draft;
+    const fields = setEntryQueryProjection(draft, "src-1", {
+      kind: "fields",
+      fields: [1],
+    });
+    expect(fields.ok).toBe(true);
+    if (!fields.ok) throw new Error("expected projection update");
+    expect(toStudioDocument(fields.draft).spec.sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: { projection: { kind: "fields", fields: [1] } },
+    });
+    expect(
+      setEntryQueryProjection(draft, "src-1", {
+        kind: "fields",
+        fields: [1.5],
+      }),
+    ).toEqual({ ok: false, error: "invalid-query" });
+    expect(
+      setEntryQueryProjection(draft, "src-1", {
+        kind: "everything" as "preview",
+      }),
+    ).toEqual({ ok: false, error: "invalid-query" });
+  });
+
+  it("points saved sql sources at an exact revision preserving bindings", () => {
+    let draft = createEmptyDraft();
+    draft = addSavedSqlSource(draft, {
+      ...sqlSeed(),
+      variables: {
+        month: { parameter: "period" },
+        gone: { parameter: "gone" },
+      },
+    }).draft;
+    const updated = setSavedSqlRevision(draft, "src-1", {
+      revisionId: "rev-2",
+      expectedResult: [{ name: "total", type: "float" }],
+      variableNames: ["month", "region"],
+    });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) throw new Error("expected revision update");
+    const source = updated.draft.sources[0];
+    if (source.kind !== "saved_sql") throw new Error("expected saved sql");
+    expect(source.revisionId).toBe("rev-2");
+    // Existing bindings keep their parameter; new variables bind
+    // same-named parameters; removed variables drop their bindings.
+    expect(source.variables).toEqual({
+      month: { parameter: "period" },
+      region: { parameter: "region" },
+    });
+    expect(updated.draft.sources[0]).toMatchObject({
+      kind: "saved_sql",
+      revisionId: "rev-2",
+    });
+    expect(
+      setSavedSqlRevision(draft, "src-1", {
+        revisionId: "  ",
+        expectedResult: [],
+        variableNames: [],
+      }),
+    ).toEqual({ ok: false, error: "invalid-query" });
+    expect(
+      setSavedSqlRevision(draft, "nope", {
+        revisionId: "rev-2",
+        expectedResult: [],
+        variableNames: [],
+      }),
+    ).toEqual({ ok: false, error: "unknown-source" });
   });
 });

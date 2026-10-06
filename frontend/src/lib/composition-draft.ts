@@ -179,6 +179,7 @@ export type DraftErrorCode =
   | "unknown-row"
   | "unknown-block"
   | "invalid-style"
+  | "invalid-query"
   | "duplicate-parameter"
   | "parameter-referenced"
   | "parameter-already-placed"
@@ -477,6 +478,203 @@ export const moveSource = (
       ): source is DraftSource => source !== undefined),
     },
   };
+};
+
+/**
+ * Existing EntryQuery vocabulary for draft edits. Operators and directions
+ * mirror `EntryFilterOperator` / `EntrySortDirection`; the Browser never
+ * invents query grammar and the shared contract validates on preview/save.
+ */
+export const entryQueryFilterOperators: ReadonlySet<string> = new Set([
+  "equals",
+  "contains",
+  "lt",
+  "lte",
+  "gt",
+  "gte",
+]);
+
+export const entryQuerySortDirections: ReadonlySet<string> = new Set([
+  "asc",
+  "desc",
+]);
+
+const isIntegerFieldId = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value);
+
+/**
+ * Scalar filter values plus same-shape parameter bindings. Anything else
+ * (nested objects, arrays, non-finite numbers) fails closed so the draft
+ * can never smuggle query semantics past the shared contract.
+ */
+const isEntryQueryFilterValue = (value: unknown): boolean => {
+  if (value === null) return true;
+  if (
+    typeof value === "string" || typeof value === "boolean"
+  ) return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.keys(record).length === 1 &&
+      typeof record.parameter === "string" && record.parameter.length > 0;
+  }
+  return false;
+};
+
+const findEntryQuerySource = (
+  draft: CompositionDraft,
+  sourceDraftId: string,
+): number => {
+  const index = draft.sources.findIndex((source) =>
+    source.draftId === sourceDraftId
+  );
+  if (index < 0) return -1;
+  return draft.sources[index].kind === "entry_query" ? index : -1;
+};
+
+/** Replace an EntryQuery source's filters; unknown operators fail closed. */
+export const setEntryQueryFilters = (
+  draft: CompositionDraft,
+  sourceDraftId: string,
+  filters: EntryQueryCompositionFilter[],
+): DraftResult => {
+  const index = findEntryQuerySource(draft, sourceDraftId);
+  if (index < 0) return { ok: false, error: "unknown-source" };
+  for (const filter of filters) {
+    if (!isIntegerFieldId(filter.field_id)) {
+      return { ok: false, error: "invalid-query" };
+    }
+    if (!entryQueryFilterOperators.has(filter.operator)) {
+      return { ok: false, error: "invalid-query" };
+    }
+    if (!isEntryQueryFilterValue(filter.value)) {
+      return { ok: false, error: "invalid-query" };
+    }
+  }
+  const current = draft.sources[index];
+  if (current.kind !== "entry_query") {
+    return { ok: false, error: "unknown-source" };
+  }
+  const sources = [...draft.sources];
+  sources[index] = {
+    ...current,
+    query: {
+      ...current.query,
+      filters: filters.map((filter) => ({ ...filter })),
+    },
+  };
+  return { ok: true, draft: { ...draft, sources } };
+};
+
+/** Replace an EntryQuery source's sort; unknown directions fail closed. */
+export const setEntryQuerySort = (
+  draft: CompositionDraft,
+  sourceDraftId: string,
+  sort: EntryQueryCompositionSort[],
+): DraftResult => {
+  const index = findEntryQuerySource(draft, sourceDraftId);
+  if (index < 0) return { ok: false, error: "unknown-source" };
+  for (const clause of sort) {
+    if (!isIntegerFieldId(clause.field_id)) {
+      return { ok: false, error: "invalid-query" };
+    }
+    if (!entryQuerySortDirections.has(clause.direction)) {
+      return { ok: false, error: "invalid-query" };
+    }
+  }
+  const current = draft.sources[index];
+  if (current.kind !== "entry_query") {
+    return { ok: false, error: "unknown-source" };
+  }
+  const sources = [...draft.sources];
+  sources[index] = {
+    ...current,
+    query: { ...current.query, sort: sort.map((clause) => ({ ...clause })) },
+  };
+  return { ok: true, draft: { ...draft, sources } };
+};
+
+/** Replace an EntryQuery source's projection (fields or preview). */
+export const setEntryQueryProjection = (
+  draft: CompositionDraft,
+  sourceDraftId: string,
+  projection: EntryQueryCompositionProjection,
+): DraftResult => {
+  const index = findEntryQuerySource(draft, sourceDraftId);
+  if (index < 0) return { ok: false, error: "unknown-source" };
+  if (projection.kind === "fields") {
+    if (
+      !Array.isArray(projection.fields) ||
+      !projection.fields.every(isIntegerFieldId)
+    ) {
+      return { ok: false, error: "invalid-query" };
+    }
+  } else if (projection.kind !== "preview") {
+    return { ok: false, error: "invalid-query" };
+  }
+  const current = draft.sources[index];
+  if (current.kind !== "entry_query") {
+    return { ok: false, error: "unknown-source" };
+  }
+  const sources = [...draft.sources];
+  sources[index] = {
+    ...current,
+    query: {
+      ...current.query,
+      projection: projection.kind === "preview"
+        ? { kind: "preview" }
+        : { kind: "fields", fields: [...projection.fields] },
+    },
+  };
+  return { ok: true, draft: { ...draft, sources } };
+};
+
+export interface SavedSqlRevisionUpdate {
+  revisionId: string;
+  expectedResult: Array<{ name: string; type: CompositionResultType }>;
+  /** Declared variable names of the new revision, in server order. */
+  variableNames: string[];
+}
+
+/**
+ * Point a Saved SQL source at an exact new revision. Variable bindings keep
+ * their existing parameter for same-named variables and bind same-named
+ * parameters for new ones; removed variables drop their bindings. Never
+ * falls back to latest: the caller passes the exact revision identity.
+ */
+export const setSavedSqlRevision = (
+  draft: CompositionDraft,
+  sourceDraftId: string,
+  revision: SavedSqlRevisionUpdate,
+): DraftResult => {
+  const index = draft.sources.findIndex((source) =>
+    source.draftId === sourceDraftId
+  );
+  if (index < 0) return { ok: false, error: "unknown-source" };
+  const current = draft.sources[index];
+  if (current.kind !== "saved_sql") {
+    return { ok: false, error: "unknown-source" };
+  }
+  if (!revision.revisionId.trim()) return { ok: false, error: "invalid-query" };
+  for (const column of revision.expectedResult) {
+    if (!column.name.trim() || !column.type) {
+      return { ok: false, error: "invalid-query" };
+    }
+  }
+  const variables: Record<string, { parameter: string }> = {};
+  for (const name of revision.variableNames) {
+    if (!name.trim()) return { ok: false, error: "invalid-query" };
+    const existing = current.variables[name];
+    variables[name] = existing ? { ...existing } : { parameter: name };
+  }
+  const sources = [...draft.sources];
+  sources[index] = {
+    ...current,
+    revisionId: revision.revisionId,
+    expectedResult: revision.expectedResult.map((column) => ({ ...column })),
+    variables,
+  };
+  return { ok: true, draft: { ...draft, sources } };
 };
 
 export const addTableDisplay = (

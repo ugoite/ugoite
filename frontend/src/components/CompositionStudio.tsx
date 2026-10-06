@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "@solidjs/router";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import {
   CompositionDiagnostics,
@@ -9,6 +9,7 @@ import {
   CompositionDesignCanvas,
   designBlockIdForComponent,
 } from "~/components/CompositionDesignCanvas";
+import { CompositionDataWorkspace } from "~/components/CompositionDataWorkspace";
 import {
   CompositionInspector,
   type CompositionInspectorDataJump,
@@ -25,8 +26,6 @@ import {
 } from "~/components/CompositionSourcePicker";
 import { IconButton } from "~/components/IconButton";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
-import { RowList, RowListButton, RowListItem } from "~/components/RowList";
-import { UiIcon } from "~/components/UiIcon";
 import {
   addEntryQuerySource,
   addMetricDisplay,
@@ -39,19 +38,31 @@ import {
   defaultParameterValues,
   type DraftInsertTarget,
   type DraftParameter,
-  type DraftSource,
   ensureParametersForVariables,
   moveDisplay,
   moveSource,
   removeDisplay,
   removeParameter,
   removeSource,
+  type SavedSqlRevisionUpdate,
   setDisplayLabel,
   setDraftName,
   setDraftTags,
+  setEntryQueryFilters,
+  setEntryQueryProjection,
+  setEntryQuerySort,
+  setSavedSqlRevision,
   upsertParameter,
 } from "~/lib/composition-draft";
-import { compositionApi } from "~/lib/composition-api";
+import {
+  compositionApi,
+  type CompositionParameterType,
+} from "~/lib/composition-api";
+import type {
+  EntryQueryCompositionFilter,
+  EntryQueryCompositionProjection,
+  EntryQueryCompositionSort,
+} from "~/lib/entry-query-composition";
 import { createCompositionPreviewHandle } from "~/lib/composition-preview-handle";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 import { compositionSaveErrorMessage } from "~/lib/composition-save-error";
@@ -86,14 +97,6 @@ const parseTags = (value: string): string[] => {
   }
   return [...seen];
 };
-
-const sourceKindIcon = (source: DraftSource): "sql" | "forms" =>
-  source.kind === "saved_sql" ? "sql" : "forms";
-
-const sourceKindLabel = (source: DraftSource): string =>
-  source.kind === "saved_sql"
-    ? t("spaceShell.title.savedSql")
-    : t("common.form");
 
 export function CompositionStudio(props: CompositionStudioProps) {
   const location = useLocation();
@@ -267,14 +270,68 @@ export function CompositionStudio(props: CompositionStudioProps) {
     if (result.ok) setDraft(result.draft);
   };
 
-  const expandedSource = (): DraftSource | undefined =>
-    draft().sources.find((source) => source.draftId === expandedId());
+  // Data workspace edits flow through narrow draft updaters into the shared
+  // debounced preview. Each returns whether the edit was accepted so the
+  // editor can surface a rejection without inventing query grammar.
+  const updateEntryQueryFilters = (
+    sourceDraftId: string,
+    filters: EntryQueryCompositionFilter[],
+  ): boolean => {
+    const result = setEntryQueryFilters(draft(), sourceDraftId, filters);
+    if (result.ok) setDraft(result.draft);
+    return result.ok;
+  };
 
-  // Inspector data jump: expand the block's source row, scroll it into
-  // view, and focus its activation control. The row element stays the jump
-  // target until the RA6 Data workspace editors arrive; RA7 split sync
-  // reuses the same typed jump payload.
+  const updateEntryQuerySort = (
+    sourceDraftId: string,
+    sort: EntryQueryCompositionSort[],
+  ): boolean => {
+    const result = setEntryQuerySort(draft(), sourceDraftId, sort);
+    if (result.ok) setDraft(result.draft);
+    return result.ok;
+  };
+
+  const updateEntryQueryProjection = (
+    sourceDraftId: string,
+    projection: EntryQueryCompositionProjection,
+  ): boolean => {
+    const result = setEntryQueryProjection(draft(), sourceDraftId, projection);
+    if (result.ok) setDraft(result.draft);
+    return result.ok;
+  };
+
+  // Exact-revision update after the Saved SQL editor publishes a new
+  // revision. Missing parameters are provisioned from the server-declared
+  // variable types, mirroring the add-source seed path; the composition
+  // save itself stays a separate explicit action.
+  const updateSavedSqlRevision = (
+    sourceDraftId: string,
+    revision: SavedSqlRevisionUpdate,
+    variableTypes: Record<string, CompositionParameterType>,
+  ): boolean => {
+    const result = setSavedSqlRevision(draft(), sourceDraftId, revision);
+    if (!result.ok) return false;
+    setDraft(ensureParametersForVariables(result.draft, variableTypes));
+    return true;
+  };
+
+  const savedSqlEditHref = (entryId: string) =>
+    `/spaces/${encodeURIComponent(spaceId())}/sql/${
+      encodeURIComponent(entryId)
+    }`;
+
+  // Inspector data jump: select the block's source in the Data workspace
+  // navigator, scroll it into view, and focus its activation control. The
+  // navigator row stays the jump target behind the workspace editors; RA7
+  // split sync reuses the same typed jump payload.
   const sourceRowEls = new Map<string, HTMLDivElement>();
+  const registerSourceRow = (
+    sourceDraftId: string,
+    el: HTMLDivElement | null,
+  ) => {
+    if (el) sourceRowEls.set(sourceDraftId, el);
+    else sourceRowEls.delete(sourceDraftId);
+  };
   const jumpToSource = (jump: CompositionInspectorDataJump) => {
     setExpandedId(jump.sourceDraftId);
     const row = sourceRowEls.get(jump.sourceDraftId);
@@ -512,97 +569,27 @@ export function CompositionStudio(props: CompositionStudioProps) {
             {t("composition.studioAddData")}
           </button>
         </div>
-        <Show
-          when={draft().sources.length > 0}
-          fallback={<p class="ui-muted">{t("composition.studioEmptyData")}</p>}
-        >
-          <RowList
-            label={t("composition.studioData")}
-            labelledBy={dataHeadingId}
-          >
-            <For each={draft().sources}>
-              {(source, index) => (
-                <div
-                  ref={(row) => {
-                    sourceRowEls.set(source.draftId, row);
-                  }}
-                >
-                  <RowListItem
-                    main={
-                      <RowListButton
-                        ariaLabel={source.name}
-                        primary={
-                          <span class="rowListName">
-                            <UiIcon name={sourceKindIcon(source)} />
-                            <span>{source.name}</span>
-                          </span>
-                        }
-                        secondary={sourceKindLabel(source)}
-                        onActivate={() => toggleExpanded(source.draftId)}
-                      />
-                    }
-                    actions={
-                      <>
-                        <button
-                          type="button"
-                          class="pill iconpill icononly"
-                          disabled={index() === 0}
-                          aria-label={t("composition.studioMoveUp", {
-                            name: source.name,
-                          })}
-                          onClick={() => moveDraftSource(source.draftId, "up")}
-                        >
-                          <span aria-hidden="true">↑</span>
-                        </button>
-                        <button
-                          type="button"
-                          class="pill iconpill icononly"
-                          disabled={index() === draft().sources.length - 1}
-                          aria-label={t("composition.studioMoveDown", {
-                            name: source.name,
-                          })}
-                          onClick={() =>
-                            moveDraftSource(source.draftId, "down")}
-                        >
-                          <span aria-hidden="true">↓</span>
-                        </button>
-                        <IconButton
-                          icon="trash"
-                          label={t("composition.studioRemoveSource", {
-                            name: source.name,
-                          })}
-                          onClick={() => removeDraftSource(source.draftId)}
-                        />
-                      </>
-                    }
-                  />
-                </div>
-              )}
-            </For>
-          </RowList>
-        </Show>
-        <Show when={expandedSource()}>
-          {(source) => (
-            <details class="ui-stack-sm" open>
-              <summary>{source().name}</summary>
-              <div class="ui-muted">
-                {source().kind === "saved_sql"
-                  ? t("composition.studioRevisionDetail", {
-                    revision: (source() as Extract<
-                      DraftSource,
-                      { kind: "saved_sql" }
-                    >).revisionId,
-                  })
-                  : t("composition.studioFormDetail", {
-                    form: (source() as Extract<
-                      DraftSource,
-                      { kind: "entry_query" }
-                    >).formId,
-                  })}
-              </div>
-            </details>
-          )}
-        </Show>
+        <CompositionDataWorkspace
+          spaceId={spaceId()}
+          draft={draft()}
+          headingId={dataHeadingId}
+          selectedSourceId={expandedId()}
+          onSelectSource={toggleExpanded}
+          onMoveSource={moveDraftSource}
+          onRemoveSource={removeDraftSource}
+          onEntryQueryFilters={updateEntryQueryFilters}
+          onEntryQuerySort={updateEntryQuerySort}
+          onEntryQueryProjection={updateEntryQueryProjection}
+          onSavedSqlRevision={updateSavedSqlRevision}
+          savedSqlEditHref={savedSqlEditHref}
+          planSources={readyPlan()?.sources ?? []}
+          sourceStates={readySources()}
+          diagnostics={previewDiagnostics() ?? []}
+          onNext={(sourceId) => previewHandle.next(sourceId)}
+          onPrevious={(sourceId) => previewHandle.previous(sourceId)}
+          onRetry={(sourceId) => previewHandle.retry(sourceId)}
+          registerSourceRow={registerSourceRow}
+        />
       </section>
 
       <section class="section" aria-labelledby={designHeadingId}>
