@@ -499,6 +499,9 @@ case "$TEST_TYPE" in
   composition-golden)
     run_e2e_task composition-golden "$base_report_file" true
     ;;
+  composition-studio)
+    run_e2e_task composition-studio "$base_report_file" true
+    ;;
   asset-owned)
     run_e2e_task asset-owned "$base_report_file" true
     ;;
@@ -544,7 +547,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./run-e2e-compose.sh [smoke|composition-golden|asset-owned|smoke-and-asset-owned|owner-recovery|portable-space|mobile-ui|query-measurement|entries|screenshot|full] [--fixture-root PATH]"
+    echo "Usage: ./run-e2e-compose.sh [smoke|composition-golden|composition-studio|asset-owned|smoke-and-asset-owned|owner-recovery|portable-space|mobile-ui|query-measurement|entries|screenshot|full] [--fixture-root PATH]"
     exit 1
     ;;
 esac
