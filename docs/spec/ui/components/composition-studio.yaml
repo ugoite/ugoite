@@ -100,3 +100,33 @@ components:
       narrow_width: 390px
     surface_tokens: fixed-only-no-raw-color
     async_state: explicit-loading-empty-error
+  - id: design-canvas
+    type: flow-layout
+    title: Design canvas
+    status: implemented
+    ownership: shared-flow-item-presenter-with-edit-only-affordances
+    source: draft-components-and-layout-rows-with-debounced-shared-preview
+    rows:
+      order: layout-row-array-then-item-order
+      reorder: keyboard-operable-move-up-down-buttons
+      cross_row_item_moves: unsupported-insertion-targets-instead
+      items: [parameter-control, text, metric, table]
+    selection:
+      scope: transient-work-component-parameter-identity-only
+      affordance: outline-with-pressed-toggle-and-visible-focus
+      inspector_handoff: selected-block-identity-only
+    insertion:
+      control: single-add-control-per-gap
+      palette_entries: [text, metric, table, unplaced-parameters-only]
+      metric_table: existing-display-picker-at-target
+      parameter: place-existing-only-no-creation
+    removal:
+      component: remove-declaration-and-unplace
+      parameter_control: unplace-only-semantics-kept
+      guards: blocked-while-referenced-preserved
+    preview_discipline: existing-debounced-handle-only-no-second-path
+    responsive:
+      narrow: wrap-stack
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color
+    async_state: explicit-loading-empty-error

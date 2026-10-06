@@ -1233,6 +1233,19 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-002#criterion.parameter-placement
+          - id: browser-design-canvas
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.tsx
+            selector: { kind: symbol, name: CompositionDesignCanvas }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
           - id: browser-entry-query-table
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.tsx
@@ -1268,7 +1281,7 @@ features:
       - id: browser-query-runtime-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. Saved revision flow coverage verifies row and item order with interleaved parameter controls, fixed text styles without source fetch, narrow-viewport scroll containment, and the flat fallback when the layout cannot be normalized. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
+        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. Saved revision flow coverage verifies row and item order with interleaved parameter controls, fixed text styles without source fetch, narrow-viewport scroll containment, and the flat fallback when the layout cannot be normalized. Design canvas coverage verifies transient block selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder, declaration removal with parameter unplacement, and query-stable layout edits through the draft channel. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
         targets:
           - id: browser-bounded-list-operations
             adapter: typescript
@@ -1397,6 +1410,66 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.exact-composition-revision
+          - id: browser-design-canvas-selection
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: selects canvas blocks without touching the draft }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: browser-design-canvas-text-insertion
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: inserts text blocks declared and placed exactly once }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.text-style-enum
+          - id: browser-design-canvas-parameter-placement
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: places existing parameter controls without creating parameters }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: browser-design-canvas-reorder
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: reorders rows and items with keyboard-operable buttons }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: browser-design-canvas-remove
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: removes component declarations and unplaces parameter controls }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: browser-design-canvas-no-refetch
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: routes block operations through the draft channel without extra queries }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.used-field-fingerprint
+          - id: browser-design-canvas-draft-moves
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: reorders rows and items within rows only }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: browser-design-canvas-draft-query-stable
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: keeps layout-only edits query-stable without refetching sources }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.used-field-fingerprint
           - id: browser-metric-continuation-guard
             adapter: typescript
             path: frontend/src/components/CompositionRenderer.test.tsx
@@ -1438,6 +1511,8 @@ features:
             role: implementation
           - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-dashboard-flow-renderer
             role: client
+          - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+            role: client
         guarantees:
           - REQ-COMP-002#criterion.ordered-component-layout
       - id: parameter-placement
@@ -1449,6 +1524,8 @@ features:
           - target: FEAT-COMP-001#binding.component-layout-domain/target.ordered-parameters
             role: implementation
           - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-parameter-control
+            role: client
+          - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
             role: client
         guarantees:
           - REQ-COMP-002#criterion.parameter-placement
@@ -1462,5 +1539,21 @@ features:
             role: client
           - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-renderer
             role: client
+          - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+            role: client
         guarantees:
           - REQ-COMP-002#criterion.text-style-enum
+      - id: used-field-fingerprint
+        kind: custom
+        source: FEAT-COMP-001#binding.contract/target.composition-contract
+        participants:
+          - target: FEAT-COMP-001#binding.entry-query-resolver/target.compile-entry-query-source
+            role: implementation
+          - target: FEAT-COMP-001#binding.layout-order-resolver/target.shared-plan-core
+            role: implementation
+          - target: FEAT-COMP-001#binding.layout-order-resolver/target.layout-component-bindings
+            role: implementation
+          - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+            role: client
+        guarantees:
+          - REQ-COMP-004#criterion.used-field-fingerprint

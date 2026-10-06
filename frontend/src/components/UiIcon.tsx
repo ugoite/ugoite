@@ -27,7 +27,11 @@ export type UiIconName =
   | "close"
   | "columns"
   | "filter"
-  | "sort";
+  | "sort"
+  | "canvas-text"
+  | "canvas-metric"
+  | "canvas-table"
+  | "canvas-input";
 
 const paths: Record<UiIconName, () => JSX.Element> = {
   home: () => (
@@ -196,6 +200,28 @@ const paths: Record<UiIconName, () => JSX.Element> = {
   sort: () => (
     <>
       <path d="M8 5v14M8 5l-3 3M8 5l3 3M16 19V5m0 14-3-3m3 3 3-3" />
+    </>
+  ),
+  "canvas-text": () => (
+    <>
+      <path d="M5 6V4h14v2M12 4v16M9 20h6" />
+    </>
+  ),
+  "canvas-metric": () => (
+    <>
+      <path d="M4 20V10M10 20V4M16 20v-8M21 20H3" />
+    </>
+  ),
+  "canvas-table": () => (
+    <>
+      <rect x="3.5" y="4" width="17" height="16" rx="2" />
+      <path d="M3.5 9.5h17M9 9.5V20M15 9.5V20" />
+    </>
+  ),
+  "canvas-input": () => (
+    <>
+      <rect x="3" y="7" width="18" height="10" rx="2" />
+      <path d="M7 12h10M12 9.5v5" />
     </>
   ),
 };

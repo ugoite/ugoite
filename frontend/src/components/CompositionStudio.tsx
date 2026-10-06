@@ -5,6 +5,10 @@ import {
   CompositionDiagnostics,
   CompositionRenderer,
 } from "~/components/CompositionRenderer";
+import {
+  CompositionDesignCanvas,
+  designBlockIdForComponent,
+} from "~/components/CompositionDesignCanvas";
 import { CompositionDisplayList } from "~/components/CompositionDisplayList";
 import {
   CompositionDisplayPicker,
@@ -29,6 +33,7 @@ import {
   type CompositionDraft,
   createEmptyDraft,
   defaultParameterValues,
+  type DraftInsertTarget,
   type DraftParameter,
   type DraftSource,
   ensureParametersForVariables,
@@ -97,6 +102,15 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [displayPickerOpen, setDisplayPickerOpen] = createSignal(false);
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
+  // Transient canvas Work: selected block identity for the inspector and
+  // the pending palette insertion target for metric/table picks.
+  const [selectedId, setSelectedId] = createSignal<string | null>(null);
+  const [paletteTarget, setPaletteTarget] = createSignal<
+    DraftInsertTarget | null
+  >(null);
+  const [pendingInsert, setPendingInsert] = createSignal<
+    DraftInsertTarget | null
+  >(null);
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(false);
@@ -202,15 +216,25 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const addDisplaySeed = (seed: CompositionDisplaySeed) => {
+    // Palette metric/table picks land at the recorded canvas target; the
+    // legacy Add display button appends to the last row instead.
+    const target = pendingInsert() ?? undefined;
     const added = seed.kind === "table"
-      ? addTableDisplay(draft(), seed.sourceDraftId, seed.label)
+      ? addTableDisplay(draft(), seed.sourceDraftId, seed.label, target)
       : addMetricDisplay(
         draft(),
         seed.sourceDraftId,
         seed.valueField,
         seed.label,
+        target,
       );
-    if (added.ok) setDraft(added.draft);
+    if (added.ok) {
+      setDraft(added.draft);
+      if (added.draftId) {
+        setSelectedId(designBlockIdForComponent(added.draftId));
+      }
+    }
+    setPendingInsert(null);
     setDisplayPickerOpen(false);
   };
 
@@ -373,6 +397,28 @@ export function CompositionStudio(props: CompositionStudioProps) {
       ? current.preview?.diagnostics
       : undefined;
   };
+  // Text blocks render from draft declarations with no source binding, so
+  // the canvas fills preview-pending text bindings locally instead of
+  // waiting for (or triggering) a second preview path.
+  const canvasPlan = () => {
+    const plan = readyPlan();
+    const bindings = plan?.component_bindings ?? [];
+    const known = new Set(
+      bindings.map((binding) => binding.component_id),
+    );
+    const pendingTexts = draft().displays
+      .filter((display) =>
+        display.kind === "text" && !known.has(display.draftId)
+      )
+      .map((display) => ({
+        component_id: display.draftId,
+        kind: "text" as const,
+      }));
+    return {
+      sources: plan?.sources ?? [],
+      component_bindings: [...bindings, ...pendingTexts],
+    };
+  };
   const isPreviewing = () => hasSources() && previewState().previewing;
   const previewFailed = () =>
     hasSources() &&
@@ -380,6 +426,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     previewState().preview === undefined;
 
   const dataHeadingId = "studio-data-heading";
+  const designHeadingId = "studio-design-heading";
   const displayHeadingId = "studio-display-heading";
   const parametersHeadingId = "studio-parameters-heading";
   const tagsHeadingId = "studio-tags-heading";
@@ -521,6 +568,33 @@ export function CompositionStudio(props: CompositionStudioProps) {
         </Show>
       </section>
 
+      <section class="section" aria-labelledby={designHeadingId}>
+        <h2 id={designHeadingId}>{t("composition.studioDesign")}</h2>
+        <CompositionDesignCanvas
+          draft={draft()}
+          plan={canvasPlan()}
+          parameterValues={{
+            ...defaultParameterValues(draft()),
+            ...previewHandle.parameters(),
+          }}
+          sources={readySources()}
+          selectedId={selectedId()}
+          onSelect={setSelectedId}
+          onDraftChange={setDraft}
+          onRequestDisplayPicker={(target) => {
+            setPendingInsert(target);
+            setDisplayPickerOpen(true);
+          }}
+          onParameterChange={(parameterId, value) =>
+            previewHandle.setParameter(parameterId, value)}
+          onNext={(sourceId) => previewHandle.next(sourceId)}
+          onPrevious={(sourceId) => previewHandle.previous(sourceId)}
+          onRetry={(sourceId) => previewHandle.retry(sourceId)}
+          paletteTarget={paletteTarget()}
+          onPaletteTarget={setPaletteTarget}
+        />
+      </section>
+
       <section class="section" aria-labelledby={displayHeadingId}>
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h2 id={displayHeadingId}>{t("composition.studioDisplay")}</h2>
@@ -528,7 +602,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
             class="ui-button ui-button-secondary"
             type="button"
             disabled={draft().sources.length === 0}
-            onClick={() => setDisplayPickerOpen(true)}
+            onClick={() => {
+              setPendingInsert(null);
+              setDisplayPickerOpen(true);
+            }}
           >
             {t("composition.studioAddDisplay")}
           </button>
@@ -630,7 +707,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
         <CompositionDisplayPicker
           sources={draft().sources}
           onAdd={addDisplaySeed}
-          onClose={() => setDisplayPickerOpen(false)}
+          onClose={() => {
+            setPendingInsert(null);
+            setDisplayPickerOpen(false);
+          }}
         />
       </Show>
     </div>

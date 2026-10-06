@@ -3713,6 +3713,160 @@ a.tool {
   }
 }
 
+/* Design canvas edit affordances (REQ-COMP-002 ordered-component-layout).
+ * Blocks reuse the saved-Tool flow classes above, so narrow viewports keep
+ * the same wrap-and-stack behavior with tables scrolling in their own
+ * viewport. Edit-only chrome (gaps, block bars, palette) uses the fixed
+ * --ui-* tokens only; steady state carries no explanatory prose. */
+.designCanvas {
+  gap: var(--ui-spacing-md);
+}
+.designRow {
+  display: grid;
+  gap: var(--ui-spacing-sm);
+  min-width: 0;
+}
+.designRowBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-spacing-xs);
+}
+.designGap {
+  position: relative;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.designGap::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--ui-border);
+}
+.designGap--inline {
+  align-self: stretch;
+  min-height: 44px;
+  min-width: 44px;
+}
+.designGap--inline::before {
+  left: 50%;
+  right: auto;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  height: auto;
+}
+.designAdd {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--ui-radius-pill);
+  border: var(--ui-border-width) solid var(--ui-border);
+  background: var(--ui-surface-2);
+  color: var(--ui-foreground);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.designAdd:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+.designBlock {
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-md);
+  min-width: 0;
+}
+.designBlock[data-selected] {
+  border-color: var(--ui-focus);
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
+}
+.designBlockBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-spacing-xs);
+  min-height: 44px;
+}
+.designBlockActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-spacing-xs);
+  margin-left: auto;
+}
+.designPalette {
+  position: relative;
+  border: var(--ui-border-width) solid var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-2);
+  box-shadow: var(--ui-shadow-lg);
+  padding: var(--ui-spacing-md);
+  display: grid;
+  gap: var(--ui-spacing-sm);
+  width: max-content;
+  max-width: min(320px, 100%);
+  z-index: 1;
+}
+.designGap .designPalette {
+  position: absolute;
+  top: calc(100% + var(--ui-spacing-xs));
+  left: 50%;
+  transform: translateX(-50%);
+}
+.designGap--inline .designPalette {
+  left: 0;
+  transform: none;
+}
+.designPaletteEntries {
+  display: grid;
+  gap: var(--ui-spacing-xs);
+}
+.designPaletteItem {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-spacing-sm);
+  min-height: 44px;
+  padding: var(--ui-spacing-xs) var(--ui-spacing-sm);
+  border: var(--ui-border-width) solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-2);
+  color: var(--ui-foreground);
+  text-align: left;
+  width: 100%;
+}
+.designPaletteItem:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+.designPaletteParams {
+  display: grid;
+  gap: var(--ui-spacing-xs);
+}
+@media (max-width: 560px) {
+  .designGap--inline {
+    flex-basis: 100%;
+    min-height: 44px;
+  }
+  .designGap--inline::before {
+    left: 0;
+    right: 0;
+    top: 50%;
+    bottom: auto;
+    width: auto;
+    height: 1px;
+  }
+  .designGap .designPalette {
+    position: static;
+    transform: none;
+  }
+}
+
 /* Entry result tables: Entry-owned row interaction on the shared vocabulary.
  * Selection/open semantics live in EntryResultTable; paging stays with the
  * EntryBrowser controller. */
