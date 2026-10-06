@@ -360,6 +360,7 @@ pub struct CompositionResolvePlan {
 pub enum CompositionResolvedComponentKind {
     Metric,
     Table,
+    Text,
 }
 
 /// Portable logical result type selected by the resolver for a metric.
@@ -382,7 +383,11 @@ pub struct CompositionResolvedComponentBinding {
     pub kind: CompositionResolvedComponentKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    pub source_id: String,
+    /// The bound source for metric and table components. Text components
+    /// carry no source binding; the renderer joins them with their component
+    /// declaration by `component_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metric_field_id: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

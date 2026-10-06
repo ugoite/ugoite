@@ -1035,7 +1035,8 @@ fn evaluate_entry_metrics(
     let mut metrics = Vec::new();
     let mut diagnostics = Vec::new();
     for binding in plan.component_bindings.iter().filter(|binding| {
-        binding.source_id == source_id && binding.kind == ResolvedComponentKind::Metric
+        binding.source_id.as_deref() == Some(source_id)
+            && binding.kind == ResolvedComponentKind::Metric
     }) {
         match evaluate_entry_metric_page(binding, page) {
             Ok(value) => metrics.push(CompositionQueryMetricOutput {
@@ -1064,7 +1065,8 @@ fn evaluate_saved_sql_metrics(
     let mut metrics = Vec::new();
     let mut diagnostics = Vec::new();
     for binding in plan.component_bindings.iter().filter(|binding| {
-        binding.source_id == source_id && binding.kind == ResolvedComponentKind::Metric
+        binding.source_id.as_deref() == Some(source_id)
+            && binding.kind == ResolvedComponentKind::Metric
     }) {
         match evaluate_saved_sql_metric_page(binding, page) {
             Ok(value) => metrics.push(CompositionQueryMetricOutput {

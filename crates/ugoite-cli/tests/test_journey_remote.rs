@@ -2077,7 +2077,7 @@ async fn test_cli_composition_unsupported_version_recovery_matches_core_remote()
     // Exact raw carrier bytes for a future document version. The typed
     // parser must reject this revision while raw recovery preserves it
     // byte for byte.
-    let future_yaml = "format: ugoite.composition\nformat_version: 99\nname: CLI future tool\nkind: dashboard\ntags: []\nspec:\n  parameters: []\n  sources:\n    - id: future_rows\n      kind: entry_query\n      form_id: \"00000000-0000-7000-8000-000000000099\"\n      field_schema: []\n      query:\n        filters: []\n        sort: []\n        projection:\n          kind: preview\n  components:\n    - id: future_table\n      kind: table\n      source: future_rows\n  sections:\n    - id: detail\n      components: [future_table]\n";
+    let future_yaml = "format: ugoite.composition\nformat_version: 99\nname: CLI future tool\nkind: dashboard\ntags: []\nspec:\n  parameters: []\n  sources:\n    - id: future_rows\n      kind: entry_query\n      form_id: \"00000000-0000-7000-8000-000000000099\"\n      field_schema: []\n      query:\n        filters: []\n        sort: []\n        projection:\n          kind: preview\n  components:\n    - id: future_table\n      kind: table\n      source: future_rows\n  layout:\n    kind: flow\n    rows:\n      - id: detail\n        items:\n          - kind: component\n            component: future_table\n";
     let seeded = seed_raw_composition_revision(
         service.operator(),
         &service.workspace_path(&fixture.space_id),

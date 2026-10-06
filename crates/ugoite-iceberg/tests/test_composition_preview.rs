@@ -12,8 +12,9 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use ugoite_domain::composition::{
     canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormat,
-    CompositionKind, CompositionSource, CompositionSpec, DashboardFlowLayout,
-    EntryQueryProjectionTemplate, EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow,
+    CompositionKind, CompositionParameter, CompositionParameterType, CompositionSource,
+    CompositionSpec, DashboardFlowLayout, EntryQueryProjectionTemplate, EntryQueryTemplate,
+    FlowItem, FlowLayoutKind, FlowRow,
 };
 use ugoite_domain::form::FieldType;
 use ugoite_domain::id::FieldId;
@@ -161,5 +162,64 @@ async fn invalid_draft_preview_reports_diagnostics_without_identity() -> Result<
         .list_compositions_local_page(&space_id, 100, 0)
         .await?;
     assert!(listed.items.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn preview_exposes_placed_parameters_in_layout_order() -> Result<()> {
+    let (service, space_id, mut document) = setup_preview_space().await?;
+    // Declaration order is region-first; placement order is month-first.
+    document.spec.parameters = vec![
+        CompositionParameter {
+            id: "region".to_string(),
+            label: None,
+            parameter_type: CompositionParameterType::String,
+            required: false,
+            default: None,
+            format: None,
+        },
+        CompositionParameter {
+            id: "month".to_string(),
+            label: None,
+            parameter_type: CompositionParameterType::String,
+            required: true,
+            default: None,
+            format: None,
+        },
+    ];
+    document.spec.layout.rows.insert(
+        0,
+        FlowRow {
+            id: "controls".to_string(),
+            items: vec![
+                FlowItem::Parameter {
+                    parameter: "month".to_string(),
+                },
+                FlowItem::Parameter {
+                    parameter: "region".to_string(),
+                },
+            ],
+        },
+    );
+    let canonical =
+        canonicalize_composition(&document).map_err(|code| anyhow::anyhow!(code.as_str()))?;
+
+    let preview = service
+        .preview_composition_local(
+            &space_id,
+            &canonical.yaml,
+            &BTreeMap::from([("month".to_string(), json!("2026-10"))]),
+        )
+        .await
+        .context("placed parameters should preview")?;
+    assert!(preview.diagnostics.is_empty());
+    let definitions = preview
+        .parameter_definitions
+        .context("preview exposes semantic parameter definitions")?;
+    let placed_ids: Vec<_> = definitions
+        .iter()
+        .map(|parameter| parameter.id.as_str())
+        .collect();
+    assert_eq!(placed_ids, ["month", "region"]);
     Ok(())
 }

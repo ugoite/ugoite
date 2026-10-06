@@ -791,9 +791,15 @@ pub enum ResolvedComponentKind {
     Metric,
     #[serde(rename = "table")]
     Tabular,
+    Text,
 }
 
-/// One component's stable source binding in deterministic render order.
+/// One component's stable binding in deterministic layout render order.
+///
+/// Metric and table bindings carry their source request identity; text
+/// bindings carry no source binding and trigger no source request. The
+/// renderer joins a text binding with its component declaration by
+/// `component_id` for content and style.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedComponentBinding {
@@ -801,7 +807,8 @@ pub struct ResolvedComponentBinding {
     pub kind: ResolvedComponentKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    pub source_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metric_field_id: Option<FieldId>,
     /// Current EntryResult property key or exact Saved SQL output alias.
@@ -1068,11 +1075,22 @@ fn resolve_component_bindings(
 ) -> Result<Vec<ResolvedComponentBinding>, Vec<CompositionDiagnostic>> {
     let mut resolved = Vec::with_capacity(components.len());
     for component in components {
+        let component_id = component.id();
         let Some(source_id) = component.source_id() else {
-            // Text carries no source binding and emits no source request.
+            // Text carries no source binding and triggers no source request.
+            // The binding preserves the component's layout position so the
+            // renderer can render in layout order.
+            resolved.push(ResolvedComponentBinding {
+                component_id: component_id.to_owned(),
+                kind: ResolvedComponentKind::Text,
+                label: component.label().map(str::to_owned),
+                source_id: None,
+                metric_field_id: None,
+                result_property_key: None,
+                expected_result_type: None,
+            });
             continue;
         };
-        let component_id = component.id();
         let source_definition = sources_by_id.get(source_id).copied().ok_or_else(|| {
             vec![CompositionDiagnostic::without_parameter(
                 CompositionDiagnosticCode::InvalidComposition,
@@ -1154,7 +1172,7 @@ fn resolve_component_bindings(
             component_id: component_id.to_owned(),
             kind,
             label: component.label().map(str::to_owned),
-            source_id: source_id.to_owned(),
+            source_id: Some(source_id.to_owned()),
             metric_field_id,
             result_property_key,
             expected_result_type,
@@ -1623,7 +1641,7 @@ mod tests {
             component_id: "metric".to_owned(),
             kind: ResolvedComponentKind::Metric,
             label: None,
-            source_id: "source".to_owned(),
+            source_id: Some("source".to_owned()),
             metric_field_id,
             result_property_key: Some(property_key.to_owned()),
             expected_result_type: Some(expected_result_type),
@@ -3160,13 +3178,43 @@ mod tests {
             expected_result: expected_result(),
             variables: BTreeMap::new(),
         };
-        let spec = spec_with_note(composition_spec(
-            Vec::new(),
+        let mut spec = composition_spec(
+            vec![parameter(
+                "month",
+                CompositionParameterType::String,
+                true,
+                None,
+                None,
+            )],
             vec![
                 saved_sql,
                 entry_query_source("entries", &current_form, empty_entry_query_template()),
             ],
-        ));
+        );
+        // Declaration order never determines render order; the layout mixes
+        // a parameter control, a text component, and a table across rows.
+        spec.components = vec![
+            tabular_component("rows", None, "entries"),
+            CompositionComponent::Text {
+                id: "note".to_owned(),
+                label: None,
+                text: "Note".to_owned(),
+                style: TextStyle::Body,
+            },
+        ];
+        spec.layout = flow_layout(vec![
+            layout_row(
+                "controls",
+                vec![
+                    FlowItem::Parameter {
+                        parameter: "month".to_owned(),
+                    },
+                    component_item("note"),
+                ],
+            ),
+            layout_row("details", vec![component_item("rows")]),
+        ]);
+        let supplied = BTreeMap::from([("month".to_owned(), json!("2026-10"))]);
         let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
         let current_sources = [
             CurrentSourceDescriptor::EntryQuery {
@@ -3186,13 +3234,13 @@ mod tests {
                 revision_id: composition_revision_id,
             },
             spec: &spec,
-            parameters: &BTreeMap::new(),
+            parameters: &supplied,
             current_sources: &current_sources,
         })
         .expect("saved revision compiles");
         let preview = resolve_composition_preview(
             &spec,
-            &BTreeMap::new(),
+            &supplied,
             &current_sources,
             "draft-fingerprint".to_owned(),
         )
@@ -3202,6 +3250,18 @@ mod tests {
         assert_eq!(preview.sources, saved.sources);
         assert_eq!(preview.component_bindings, saved.component_bindings);
         assert_eq!(preview.draft_fingerprint, "draft-fingerprint");
+        // Layout order holds on both paths: text keeps its row position with
+        // no source binding, and the parameter control emits no binding.
+        for plan in [&saved.component_bindings, &preview.component_bindings] {
+            assert_eq!(
+                plan.iter()
+                    .map(|binding| binding.component_id.as_str())
+                    .collect::<Vec<_>>(),
+                ["note", "rows"]
+            );
+            assert_eq!(plan[0].kind, super::ResolvedComponentKind::Text);
+            assert_eq!(plan[0].source_id, None);
+        }
     }
 
     #[test]
@@ -3283,7 +3343,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["sql-total", "entry-total", "rows"]
         );
-        assert_eq!(plan.component_bindings[0].source_id, "report");
+        assert_eq!(
+            plan.component_bindings[0].source_id.as_deref(),
+            Some("report")
+        );
         assert_eq!(
             plan.component_bindings[0].label.as_deref(),
             Some("SQL total")
@@ -3297,7 +3360,10 @@ mod tests {
             plan.component_bindings[0].result_property_key.as_deref(),
             Some("total")
         );
-        assert_eq!(plan.component_bindings[1].source_id, "entries");
+        assert_eq!(
+            plan.component_bindings[1].source_id.as_deref(),
+            Some("entries")
+        );
         let ResolvedSourceRequest::EntryQuery { request, .. } = &plan.sources[0] else {
             panic!("the first source is the declared EntryQuery source");
         };
@@ -3369,7 +3435,7 @@ mod tests {
     }
 
     #[test]
-    fn text_components_emit_no_source_request_or_binding() {
+    fn text_components_emit_layout_ordered_bindings_without_source_requests() {
         let current_form = form(&[(100, FieldType::String)]);
         let mut spec = composition_spec(
             Vec::new(),
@@ -3408,13 +3474,263 @@ mod tests {
         })
         .expect("text alongside a table resolves");
 
+        // Text triggers no source request but keeps its layout position.
         assert_eq!(plan.sources.len(), 1);
         assert_eq!(
             plan.component_bindings
                 .iter()
                 .map(|binding| binding.component_id.as_str())
                 .collect::<Vec<_>>(),
-            ["rows"]
+            ["note", "rows"]
+        );
+        let text = &plan.component_bindings[0];
+        assert_eq!(text.kind, super::ResolvedComponentKind::Text);
+        assert_eq!(text.source_id, None);
+        assert_eq!(text.metric_field_id, None);
+        assert_eq!(text.result_property_key, None);
+        assert_eq!(text.expected_result_type, None);
+        let plan_json = serde_json::to_value(&plan).unwrap();
+        assert_eq!(plan_json["component_bindings"][0]["kind"], json!("text"));
+        assert!(plan_json["component_bindings"][0]
+            .get("source_id")
+            .is_none());
+    }
+
+    #[test]
+    fn layout_order_interleaves_text_and_parameter_items_across_rows() {
+        let mut current_form = form(&[(100, FieldType::String), (101, FieldType::Integer)]);
+        current_form.fields[1].name = "total_amount".to_owned();
+        let mut spec = composition_spec(
+            vec![
+                parameter("month", CompositionParameterType::String, true, None, None),
+                parameter(
+                    "region",
+                    CompositionParameterType::String,
+                    false,
+                    None,
+                    None,
+                ),
+            ],
+            vec![entry_query_source(
+                "entries",
+                &current_form,
+                EntryQueryTemplate {
+                    projection: EntryQueryProjectionTemplate::Fields {
+                        fields: vec![FieldId::new(100).unwrap(), FieldId::new(101).unwrap()],
+                    },
+                    ..empty_entry_query_template()
+                },
+            )],
+        );
+        // Declaration order is scrambled relative to the layout on purpose.
+        spec.components = vec![
+            tabular_component("rows", None, "entries"),
+            CompositionComponent::Text {
+                id: "note".to_owned(),
+                label: None,
+                text: "Note".to_owned(),
+                style: TextStyle::Body,
+            },
+            CompositionComponent::Metric {
+                id: "entry-total".to_owned(),
+                label: None,
+                source: "entries".to_owned(),
+                value_field: CompositionMetricValueField::EntryField {
+                    field_id: FieldId::new(101).unwrap(),
+                },
+            },
+        ];
+        spec.layout = flow_layout(vec![
+            layout_row(
+                "top",
+                vec![
+                    FlowItem::Parameter {
+                        parameter: "month".to_owned(),
+                    },
+                    component_item("note"),
+                    component_item("entry-total"),
+                ],
+            ),
+            layout_row(
+                "bottom",
+                vec![
+                    component_item("rows"),
+                    FlowItem::Parameter {
+                        parameter: "region".to_owned(),
+                    },
+                ],
+            ),
+        ]);
+        let current_sources = [CurrentSourceDescriptor::EntryQuery {
+            source_id: "entries",
+            current_form: Some(&current_form),
+        }];
+        let supplied = BTreeMap::from([("month".to_owned(), json!("2026-10"))]);
+
+        let plan = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: id_pair().0,
+                revision_id: id_pair().1,
+            },
+            spec: &spec,
+            parameters: &supplied,
+            current_sources: &current_sources,
+        })
+        .expect("interleaved text and parameter items resolve");
+
+        // Parameter controls emit no component bindings and no source
+        // requests; text keeps its in-row position without a source.
+        assert_eq!(plan.sources.len(), 1);
+        assert_eq!(
+            plan.component_bindings
+                .iter()
+                .map(|binding| binding.component_id.as_str())
+                .collect::<Vec<_>>(),
+            ["note", "entry-total", "rows"]
+        );
+        assert_eq!(
+            plan.component_bindings
+                .iter()
+                .map(|binding| binding.kind)
+                .collect::<Vec<_>>(),
+            [
+                super::ResolvedComponentKind::Text,
+                super::ResolvedComponentKind::Metric,
+                super::ResolvedComponentKind::Tabular,
+            ]
+        );
+        assert!(plan.component_bindings.iter().all(|binding| {
+            binding.component_id != "month" && binding.component_id != "region"
+        }));
+    }
+
+    #[test]
+    fn layout_only_additions_leave_source_requests_unchanged() {
+        let current_form = form(&[(100, FieldType::String)]);
+        let mut spec = composition_spec(
+            vec![parameter(
+                "region",
+                CompositionParameterType::String,
+                false,
+                None,
+                None,
+            )],
+            vec![entry_query_source(
+                "entries",
+                &current_form,
+                empty_entry_query_template(),
+            )],
+        );
+        spec.components = vec![tabular_component("rows", None, "entries")];
+        spec.layout = single_row_layout("main", &["rows"]);
+        let current_sources = [CurrentSourceDescriptor::EntryQuery {
+            source_id: "entries",
+            current_form: Some(&current_form),
+        }];
+        let resolve = |spec: &CompositionSpec| {
+            resolve_composition(ResolveInput {
+                composition_revision: CompositionRevisionRef {
+                    entry_id: id_pair().0,
+                    revision_id: id_pair().1,
+                },
+                spec,
+                parameters: &BTreeMap::new(),
+                current_sources: &current_sources,
+            })
+            .expect("layout-only edits resolve")
+            .sources
+        };
+
+        let base_sources = resolve(&spec);
+
+        // Adding a text component appends a binding but recompiles no source.
+        spec.components.push(CompositionComponent::Text {
+            id: "note".to_owned(),
+            label: None,
+            text: "Note".to_owned(),
+            style: TextStyle::Body,
+        });
+        spec.layout
+            .rows
+            .push(layout_row("note-row", vec![component_item("note")]));
+        assert_eq!(resolve(&spec), base_sources);
+
+        // Placing an optional parameter control is also query-free.
+        spec.layout.rows[0].items.push(FlowItem::Parameter {
+            parameter: "region".to_owned(),
+        });
+        assert_eq!(resolve(&spec), base_sources);
+    }
+
+    #[test]
+    fn parameter_items_resolve_through_semantic_parameter_values() {
+        let current_form = form(&[(100, FieldType::String)]);
+        let mut spec = composition_spec(
+            vec![parameter(
+                "month",
+                CompositionParameterType::String,
+                true,
+                None,
+                None,
+            )],
+            vec![entry_query_source(
+                "entries",
+                &current_form,
+                EntryQueryTemplate {
+                    filters: vec![EntryQueryFilterTemplate {
+                        field_id: FieldId::new(100).unwrap(),
+                        operator: CompositionQueryOperator::Equals,
+                        value: parameter_ref("month"),
+                    }],
+                    projection: EntryQueryProjectionTemplate::Fields {
+                        fields: vec![FieldId::new(100).unwrap()],
+                    },
+                    ..empty_entry_query_template()
+                },
+            )],
+        );
+        spec.components = vec![tabular_component("rows", None, "entries")];
+        spec.layout = flow_layout(vec![layout_row(
+            "main",
+            vec![
+                FlowItem::Parameter {
+                    parameter: "month".to_owned(),
+                },
+                component_item("rows"),
+            ],
+        )]);
+        let current_sources = [CurrentSourceDescriptor::EntryQuery {
+            source_id: "entries",
+            current_form: Some(&current_form),
+        }];
+        let supplied = BTreeMap::from([("month".to_owned(), json!("2026-10"))]);
+
+        let plan = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: id_pair().0,
+                revision_id: id_pair().1,
+            },
+            spec: &spec,
+            parameters: &supplied,
+            current_sources: &current_sources,
+        })
+        .expect("a placed parameter resolves through its semantic value");
+
+        // The control itself emits no binding; its value flows through the
+        // declared semantic parameter into the compiled source request.
+        assert_eq!(plan.component_bindings.len(), 1);
+        assert_eq!(plan.component_bindings[0].component_id, "rows");
+        let ResolvedSourceRequest::EntryQuery { request, .. } = &plan.sources[0] else {
+            panic!("the source is the declared EntryQuery source");
+        };
+        assert_eq!(
+            request
+                .query
+                .filters
+                .iter()
+                .map(|filter| filter.value.clone())
+                .collect::<Vec<_>>(),
+            vec![json!("2026-10")]
         );
     }
 

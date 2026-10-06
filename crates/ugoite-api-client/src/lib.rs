@@ -3044,6 +3044,19 @@ mod tests {
             serde_json::to_value(&resolve_success_dto).expect("serialize resolve success DTO"),
             resolve_success
         );
+        // Text bindings carry layout position with no source request.
+        let text_binding = json!({
+            "component_id": "note",
+            "kind": "text",
+            "label": "Note"
+        });
+        let text_dto: CompositionResolvedComponentBinding =
+            serde_json::from_value(text_binding.clone()).expect("text binding DTO");
+        assert_eq!(text_dto.source_id, None);
+        assert_eq!(
+            serde_json::to_value(&text_dto).expect("serialize text binding DTO"),
+            text_binding
+        );
         let source_unavailable = json!({
             "ok": false,
             "parameter_definitions": [{

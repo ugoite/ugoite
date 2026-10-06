@@ -97,8 +97,8 @@ result shape; it does not claim that a SQL backend can statically infer the
 shape. Backend SQL type names are not part of the portable contract.
 Dashboard components are
 `text`, `metric`, or `table`. A `text` component carries inline `text` and one
-fixed `style` (`title`, `heading`, `body`, or `caption`); it has no source
-binding and emits no source request. `metric` and `table` components refer to
+fixed `style` (`title`, `heading`, `body`, or `caption`); it emits no source
+request and its resolve binding carries layout position with no source. `metric` and `table` components refer to
 named sources. The flow layout defines component render order by row-array
 order and item order. Every row ID and component ID is unique; every component
 is placed by exactly one layout item and every placed parameter references a

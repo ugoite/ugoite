@@ -14981,10 +14981,10 @@
       },
       "CompositionResolvedComponentBinding": {
         "type": "object",
-        "required": ["component_id", "kind", "source_id"],
+        "required": ["component_id", "kind"],
         "properties": {
           "component_id": { "type": "string" },
-          "kind": { "type": "string", "enum": ["metric", "table"] },
+          "kind": { "type": "string", "enum": ["metric", "table", "text"] },
           "label": { "type": "string" },
           "source_id": { "type": "string" },
           "metric_field_id": { "type": "integer", "format": "int32", "minimum": 1 },

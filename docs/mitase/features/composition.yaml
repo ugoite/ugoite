@@ -402,6 +402,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-002#criterion.text-style-enum
+          - id: ordered-parameters
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: parameters_in_placement_order }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.parameter-placement
       - id: component-layout-domain-tests
         role: evidence
         facet: domain-tests
@@ -481,6 +488,20 @@ features:
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
             selector: { kind: symbol, name: required_parameter_without_default_needs_a_layout_control }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: placed-parameter-order
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: placed_parameters_come_first_in_layout_order }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: invalid-parameter-placement-order
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: unknown_and_duplicate_parameter_placements_have_no_order }
             claims:
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.parameter-placement
@@ -681,6 +702,81 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+      - id: layout-order-resolver
+        role: implementation
+        facet: core
+        responsibility: Emit layout-ordered component bindings including sourceless text bindings through the shared saved-revision and draft-preview plan core without adding source requests.
+        targets:
+          - id: shared-plan-core
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: resolve_composition_parts }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.draft-preview
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+          - id: layout-component-bindings
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: resolve_component_bindings }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.draft-preview
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+      - id: layout-order-resolver-evidence
+        role: evidence
+        facet: core-tests
+        responsibility: Verify layout render order with interleaved text and parameter items, sourceless text bindings, query-stable layout edits, semantic parameter values for placed controls, and saved-revision and draft-preview parity.
+        targets:
+          - id: text-bindings-without-source-requests
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: text_components_emit_layout_ordered_bindings_without_source_requests }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.text-style-enum
+          - id: interleaved-layout-order
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: layout_order_interleaves_text_and_parameter_items_across_rows }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: layout-edits-preserve-source-requests
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: layout_only_additions_leave_source_requests_unchanged }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.used-field-fingerprint
+          - id: parameter-controls-use-semantic-values
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: parameter_items_resolve_through_semantic_parameter_values }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: layout-order-preview-parity
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: preview_resolves_through_the_same_semantics_without_revision_identity }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.draft-preview
+      - id: layout-order-service-evidence
+        role: evidence
+        facet: iceberg-tests
+        responsibility: Verify draft preview exposes semantic parameter definitions with layout-placed controls first in layout row and item order.
+        targets:
+          - id: preview-placed-parameter-order
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: preview_exposes_placed_parameters_in_layout_order }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.draft-preview
       - id: preview-resolver
         role: implementation
         facet: core

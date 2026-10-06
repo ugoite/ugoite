@@ -11654,6 +11654,7 @@ fn api_composition_sources_and_bindings(
             kind: match binding.kind {
                 ResolvedComponentKind::Metric => CompositionResolvedComponentKind::Metric,
                 ResolvedComponentKind::Tabular => CompositionResolvedComponentKind::Table,
+                ResolvedComponentKind::Text => CompositionResolvedComponentKind::Text,
             },
             label: binding.label,
             source_id: binding.source_id,
