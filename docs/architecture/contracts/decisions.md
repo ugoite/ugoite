@@ -288,3 +288,56 @@ exact-scalar semantics, generic write guard, idempotency semantics, raw
 recovery, downgrade compatibility, and the `string` spec carrier are
 unchanged. The operation inventory and freeze tests are updated in the same
 change that introduces `composition.preview`.
+
+## ADR-019 — Composition layout v1 ruling (sections to layout AST)
+
+**Accepted ruling for the v0.2.2 Composition Studio redesign.** The semantic
+vocabulary `parameters` / `sources` / `components` is shared with the future
+v0.3 Dashboard / Application / Presentation / Master grammar and is kept.
+The pre-release `sections` array is removed and replaced by a first-class
+`layout` AST for `kind: dashboard`:
+
+```yaml
+layout:
+  kind: flow
+  rows:
+    - id: controls
+      items:
+        - kind: parameter
+          parameter: month
+    - id: summary
+      items:
+        - kind: component
+          component: total
+```
+
+Rules recorded here, implemented starting with the domain reset that follows
+this ruling:
+
+1. `format_version` stays `1`; no migration reader is built for the
+   pre-release `sections` grammar.
+2. Components are `text` / `metric` / `table` only. `text` carries a fixed
+   `style` enum (`title`, `heading`, `body`, `caption`); no Markdown, HTML,
+   CSS, or handlers. Parameters are never duplicated as components; a layout
+   item of `kind: parameter` places the semantic parameter as a control.
+3. Every component is referenced exactly once from the layout; empty layouts,
+   empty rows, duplicate row IDs, unknown references, duplicate placements,
+   unreferenced components, and dangling parameter controls are
+   `invalid_composition`.
+4. Pixel coordinates, CSS classes, DOM paths, and canvas state are never
+   Knowledge; row/item order is the only placement contract. Desktop renders
+   row items inline, mobile wraps/stacks them.
+5. Studio save requires at least one layout item; a source-only document
+   cannot be saved from the Browser Studio.
+6. Studio IA is `Design` (finished-Tool look, edit affordances only) /
+   `Data` (per-source EntryQuery / exact Saved SQL viewers) / `Inspector`
+   (selected block only), plus desktop-only `Split`. Studio and Use surfaces
+   share one renderer.
+
+This ruling authorizes the `composition.md` v1 re-freeze once the domain,
+resolver, DTO, renderer, Studio, seed/save-readiness, mobile, history, and
+story-E2E work lands. Until then the frozen v1 pin above still describes the
+shipped grammar. Stop conditions: canvas coordinates in Knowledge, split
+Design/Use semantics, parameter duplication into a UI-only type, Saved SQL
+latest-fallback, Browser aggregation or type inference, `text` runtime
+extension, or a permanent `sections` compatibility layer.

@@ -8,7 +8,7 @@ component_group:
     - /spaces/{space_id}/compositions/new
     - /spaces/{space_id}/compositions/{composition_id}/{revision_id}/edit
     - /spaces/{space_id}/compositions/{composition_id}/history
-  notes: Authoring contract for the Composition Studio uplift. The New, Edit, and History routes each carry their page spec. Steady-state surfaces carry no explanatory paragraphs.
+  notes: Authoring contract for the Composition Studio uplift. The New, Edit, and History routes each carry their page spec. Steady-state surfaces carry no explanatory paragraphs. Redesign direction is recorded in ADR-019 (Design/Data/Inspector modes over a first-class layout AST); the component contracts below describe the shipped Studio until the layout-v1 implementation lands.
 components:
   - id: studio-header
     type: page-header
