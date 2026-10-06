@@ -179,8 +179,6 @@ export default function SpaceSearchRoute() {
             </A>
             <EntryQuerySaveAsTool
               spaceId={spaceId}
-              routePath={() =>
-                `/spaces/${encodeURIComponent(spaceId())}/search`}
               defaultName={() => t("searchPage.title")}
               query={controller.query}
               projection={controller.projection}

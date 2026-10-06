@@ -81,6 +81,19 @@ describe("Composition list route", () => {
     );
   });
 
+  it("links a single new tool action to the studio", async () => {
+    vi.mocked(compositionApi.list).mockResolvedValueOnce(emptyPage);
+    render(() => <CompositionListRoute />);
+    await screen.findByText("No saved tools");
+
+    const actions = screen.getAllByRole("link", { name: "New tool" });
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toHaveAttribute(
+      "href",
+      "/spaces/space-1/compositions/new",
+    );
+  });
+
   it("offers a retry after the bounded list fails", async () => {
     vi.mocked(compositionApi.list)
       .mockRejectedValueOnce(new Error("unavailable"))

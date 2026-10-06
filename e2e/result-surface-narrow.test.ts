@@ -415,10 +415,14 @@ test.describe("Result surface narrow viewports", () => {
       )).toBeVisible();
 
       await saveAsTool.click();
-      const dialog = page.getByRole("dialog", { name: "Save as tool" });
-      await expect(dialog).toBeVisible();
-      await page.keyboard.press("Escape");
-      await expect(dialog).toHaveCount(0);
+      // Save-as-tool seeds the Studio instead of a dialog: the Studio
+      // opens prefilled with the Saved SQL source and stays save-ready.
+      await expect(page).toHaveURL(
+        new RegExp(`/spaces/${seed.spaceId}/compositions/new$`),
+      );
+      await expect(
+        page.getByRole("button", { name: "Save", exact: true }),
+      ).toBeEnabled();
       await expectNoPageHorizontalOverflow(page);
     }
   });
