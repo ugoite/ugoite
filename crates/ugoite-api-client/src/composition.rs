@@ -282,7 +282,7 @@ pub struct CompositionPreviewResponse {
 pub struct CompositionPreviewPlan {
     pub draft_fingerprint: String,
     pub sources: Vec<CompositionResolvedSource>,
-    /// Stable display bindings in the resolver's section order.
+    /// Stable display bindings in the resolver's layout row and item order.
     #[serde(default)]
     pub component_bindings: Vec<CompositionResolvedComponentBinding>,
 }
@@ -350,7 +350,7 @@ pub enum CompositionParameterFormat {
 pub struct CompositionResolvePlan {
     pub composition_revision: CompositionRevisionReference,
     pub sources: Vec<CompositionResolvedSource>,
-    /// Stable display bindings in the resolver's section order.
+    /// Stable display bindings in the resolver's layout row and item order.
     #[serde(default)]
     pub component_bindings: Vec<CompositionResolvedComponentBinding>,
 }

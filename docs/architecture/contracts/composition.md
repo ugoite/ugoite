@@ -12,6 +12,10 @@ implementation and test evidence. The full end-to-end runtime journey and
 release acceptance remain incomplete; see the
 [acceptance plan](../testing/composition-acceptance.md). Post-freeze semantic
 changes require a v1 compatibility ruling recorded against this contract.
+Governance decision ADR-019 re-freezes this contract on the dashboard flow
+layout: the pre-release `sections` grammar is replaced by first-class
+`layout`, with `text` components and parameter placement added.
+`format_version` stays 1 with no migration reader.
 
 Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
 `ugoite-domain` and `composition_v1_freeze_pins_operation_inventory` in
@@ -24,7 +28,7 @@ Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
 | Tags | document tags are the sole semantic value and equal stored Entry tags |
 | Source grammar | `entry_query` (Form scope, six filter operators, two sort directions, fields/preview projection) and exact `saved_sql` (EntryId + RevisionId, ordered unique `expected_result`, seven logical types) |
 | Metric identity | stable FieldId (`entry_field`) versus exact column name (`sql_column`); exact-scalar consumer, no aggregation |
-| Components | `table` / `metric` only; sections order, unique IDs, exactly-once references |
+| Components | `text` / `metric` / `table`; `flow` layout rows/items, unique row and component IDs, exactly-once component placement, parameter controls for required parameters without defaults, empty layouts and empty rows invalid; text styles `title` / `heading` / `body` / `caption` |
 | Fingerprints | document SHA-256 over normalized value; per-source schema fingerprints over FormId + used-field snapshot |
 | Diagnostics | 17 caller-visible codes; missing/denied sources conceal as `source_unavailable` |
 | Operations | `lint`, `list`, `get`, `history`, `resolve`, `save`, `restore` (export stays a CLI file operation) |
@@ -45,9 +49,11 @@ The exchange format is a restricted `.ugcomp.yaml` document at format version
 `kind` is `dashboard` for v0.2.2. `tags` are the Composition Entry's tags and
 are saved and read as the same ordered list as `EntryMetadata.tags`; a save
 request has no second tag value. The `spec` contains typed parameters, sources,
-components, and sections. A source identifies either an Entry query template
-or an exact Saved SQL revision. Components refer to named sources and sections
-group named components. An `entry_query` source carries a sorted `field_schema`
+components, and a first-class dashboard flow `layout`. A source identifies either an Entry query template
+or an exact Saved SQL revision. Components refer to named sources, and layout
+rows carry ordered component and parameter-control items that reference them.
+Parameters keep their semantic definition under `spec.parameters`; the layout
+only places controls bound to parameter IDs. An `entry_query` source carries a sorted `field_schema`
 snapshot for the property fields used by its query. A preview projection uses
 all current property fields; an explicit projection, filter, or sort uses the
 fields it names. An EntryQuery metric may reference only a field already in
@@ -71,7 +77,7 @@ field variants.
 The typed v1 model supports `string`, `boolean`, `integer`, `float`, `date`, and
 `timestamp` parameters. A parameter may carry a typed default and a display
 format hint; `year-month` is a hint and does not evaluate an expression or
-change the parameter value. Parameters and `metric`/`table` components may
+change the parameter value. Parameters and `text`/`metric`/`table` components may
 also carry optional display `label` text. A label is emitted in canonical YAML
 and included in the document fingerprint when present, and omitted when
 absent. Labels do not replace stable parameter, component, source, or field IDs
@@ -90,12 +96,18 @@ one portable logical type: `string`, `boolean`, `integer`, `float`, `date`,
 result shape; it does not claim that a SQL backend can statically infer the
 shape. Backend SQL type names are not part of the portable contract.
 Dashboard components are
-`metric` or `table` and refer to named sources. Sections define component
-render order by section-array order and component-reference order. Every
-component ID is unique and is referenced by exactly one section entry;
-unknown, duplicate, or unreferenced component references make the document
-invalid. An empty component and section layout is valid, and component
-declaration order does not supply a fallback render order.
+`text`, `metric`, or `table`. A `text` component carries inline `text` and one
+fixed `style` (`title`, `heading`, `body`, or `caption`); it has no source
+binding and emits no source request. `metric` and `table` components refer to
+named sources. The flow layout defines component render order by row-array
+order and item order. Every row ID and component ID is unique; every component
+is placed by exactly one layout item and every placed parameter references a
+declared parameter exactly once. Unknown, duplicate, or unreferenced component
+references, unknown or duplicate parameter references, empty layouts, empty
+rows, and duplicate row IDs make the document invalid, as does a required
+parameter without a default and without a layout control. Component
+declaration order does not supply a fallback render order. Pixel coordinates,
+CSS, and canvas state are never layout content.
 
 A metric `value_field` is a tagged value so an EntryQuery property cannot be
 confused with a Saved SQL result column. EntryQuery metrics use

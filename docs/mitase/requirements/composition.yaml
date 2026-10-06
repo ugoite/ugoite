@@ -107,6 +107,94 @@ requirements:
                   - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
                   - FEAT-COMP-001#binding.component-layout-domain/target.canonical-layout-validation
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unreferenced_components_are_invalid } }
+      - id: flow-layout-verification
+        role: verification
+        facet: verification
+        responsibility: Verify empty layouts and rows, duplicate row IDs, parameter control placement, and the text style enum through the shared domain unit tests.
+        targets:
+          - id: empty-layout-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::empty_layout_is_rejected }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-layout
+                  - FEAT-COMP-001#binding.component-layout-domain/target.canonical-layout-validation
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::empty_layout_is_rejected } }
+          - id: empty-row-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::empty_rows_are_rejected }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-row
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::empty_rows_are_rejected } }
+          - id: duplicate-row-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::duplicate_row_ids_are_rejected }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-row
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-layout
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::duplicate_row_ids_are_rejected } }
+          - id: required-parameter-control-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::required_parameter_without_default_needs_a_layout_control }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-item
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::required_parameter_without_default_needs_a_layout_control } }
+          - id: unknown-parameter-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::unknown_parameter_references_are_invalid }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-item
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_parameter_references_are_invalid } }
+          - id: duplicate-parameter-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::duplicate_parameter_placements_are_invalid }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.flow-item
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::duplicate_parameter_placements_are_invalid } }
+          - id: text-style-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::text_style_enum_values_round_trip }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.text-style
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::text_style_enum_values_round_trip } }
+          - id: unknown-style-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::unknown_text_styles_and_layout_kinds_are_rejected }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.text-style
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_text_styles_and_layout_kinds_are_rejected } }
       - id: metric-value-verification
         role: verification
         facet: verification
@@ -185,7 +273,7 @@ requirements:
     criteria:
       - id: typed-dashboard-model
         kind: behavior
-        statement: The Composition v1 model represents its fixed envelope marker, version, name, Entry tags, dashboard kind, parameters, sources, components, and sections as typed Rust domain values.
+        statement: The Composition v1 model represents its fixed envelope marker, version, name, Entry tags, dashboard kind, parameters, sources, components, and flow layout as typed Rust domain values.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: composition-tags
         kind: behavior
@@ -220,7 +308,19 @@ requirements:
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: ordered-component-layout
         kind: behavior
-        statement: Sections define component order by section-array order and component-reference order; component IDs are unique and each component is referenced exactly once. Duplicate IDs, unknown references, duplicate references, or unreferenced components produce invalid_composition, and the empty component/section layout is valid.
+        statement: The flow layout defines component order by layout row-array order and item order; row IDs and component IDs are unique, each component is placed exactly once, duplicate row IDs, unknown references, duplicate references, unreferenced components, and empty rows produce invalid_composition, and the empty layout is invalid.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: text-style-enum
+        kind: behavior
+        statement: A text component carries inline text and one fixed style of title, heading, body, or caption; unknown styles are rejected, and text has no source binding.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: parameter-placement
+        kind: behavior
+        statement: The layout places parameter controls bound to declared parameter IDs; unknown or duplicate parameter references produce invalid_composition, and a required parameter without a default and without a layout control produces invalid_composition.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: empty-layout-rejected
+        kind: behavior
+        statement: A Composition layout with no rows, or with any row carrying no items, is rejected with invalid_composition during canonicalization.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: restricted-yaml
         kind: behavior

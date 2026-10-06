@@ -12,8 +12,8 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use ugoite_domain::composition::{
     canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormat,
-    CompositionKind, CompositionSection, CompositionSource, CompositionSpec,
-    EntryQueryProjectionTemplate, EntryQueryTemplate,
+    CompositionKind, CompositionSource, CompositionSpec, DashboardFlowLayout,
+    EntryQueryProjectionTemplate, EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow,
 };
 use ugoite_domain::form::FieldType;
 use ugoite_domain::id::FieldId;
@@ -89,10 +89,15 @@ async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocu
                 label: None,
                 source: "source".to_string(),
             }],
-            sections: vec![CompositionSection {
-                id: "main".to_string(),
-                components: vec!["table".to_string()],
-            }],
+            layout: DashboardFlowLayout {
+                kind: FlowLayoutKind::Flow,
+                rows: vec![FlowRow {
+                    id: "main".to_string(),
+                    items: vec![FlowItem::Component {
+                        component: "table".to_string(),
+                    }],
+                }],
+            },
         },
     };
     Ok((service, space_id, document))

@@ -115,7 +115,13 @@ const lintDocument = {
       variables: {},
     }],
     components: [{ kind: "table", id: "disp-1", source: "src-1" }],
-    sections: [{ id: "main", components: ["disp-1"] }],
+    layout: {
+      kind: "flow",
+      rows: [{
+        id: "main",
+        items: [{ kind: "component", component: "disp-1" }],
+      }],
+    },
   },
 };
 

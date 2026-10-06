@@ -367,7 +367,16 @@ export interface EntryQueryCompositionDocument {
       }
     >;
     components: Array<{ id: string; kind: "table"; source: string }>;
-    sections: Array<{ id: string; components: string[] }>;
+    layout: {
+      kind: "flow";
+      rows: Array<{
+        id: string;
+        items: Array<
+          | { kind: "component"; component: string }
+          | { kind: "parameter"; parameter: string }
+        >;
+      }>;
+    };
   };
 }
 
@@ -388,7 +397,13 @@ export const buildEntryQueryCompositionDocument = (
       parameters: [],
       sources: [{ ...source, field_schema: fieldSchema }],
       components: [{ id: componentId, kind: "table", source: source.id }],
-      sections: [{ id: "main", components: [componentId] }],
+      layout: {
+        kind: "flow",
+        rows: [{
+          id: "main",
+          items: [{ kind: "component", component: componentId }],
+        }],
+      },
     },
   };
 };

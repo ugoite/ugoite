@@ -199,7 +199,16 @@ export interface CompositionStudioDocument {
           | { kind: "sql_column"; name: string };
       }
     >;
-    sections: Array<{ id: string; components: string[] }>;
+    layout: {
+      kind: "flow";
+      rows: Array<{
+        id: string;
+        items: Array<
+          | { kind: "component"; component: string }
+          | { kind: "parameter"; parameter: string }
+        >;
+      }>;
+    };
   };
 }
 
@@ -539,7 +548,9 @@ export const removeParameter = (
 
 /**
  * Assemble the typed document for canonicalization. The Studio keeps one
- * `main` section in display order; named grouping stays out of the MVP.
+ * `main` layout row in display order; named grouping stays out of the MVP.
+ * An empty draft yields an empty row, which the shared contract rejects
+ * fail-closed at canonicalization.
  */
 export const toStudioDocument = (
   draft: CompositionDraft,
@@ -617,10 +628,16 @@ export const toStudioDocument = (
           : { kind: "sql_column" as const, name: display.valueField.column },
       };
     }),
-    sections: [{
-      id: "main",
-      components: draft.displays.map((display) => display.draftId),
-    }],
+    layout: {
+      kind: "flow",
+      rows: [{
+        id: "main",
+        items: draft.displays.map((display) => ({
+          kind: "component" as const,
+          component: display.draftId,
+        })),
+      }],
+    },
   },
 });
 

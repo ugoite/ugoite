@@ -1,8 +1,4 @@
-import {
-  type APIRequestContext,
-  expect,
-  test,
-} from "@playwright/test";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client.ts";
 
 type SeedState = {
@@ -66,9 +62,15 @@ function buildYaml(
     "    - id: rows",
     "      kind: table",
     "      source: receipt_rows",
-    "  sections:",
-    "    - id: main",
-    "      components: [total, rows]",
+    "  layout:",
+    "    kind: flow",
+    "    rows:",
+    "      - id: main",
+    "        items:",
+    "          - kind: component",
+    "            component: total",
+    "          - kind: component",
+    "            component: rows",
     "",
   ].join("\n");
 }

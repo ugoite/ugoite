@@ -481,7 +481,13 @@ describe("buildEntryQueryCompositionDocument", () => {
           kind: "table",
           source: "entry_rows",
         }],
-        sections: [{ id: "main", components: ["results_table"] }],
+        layout: {
+          kind: "flow",
+          rows: [{
+            id: "main",
+            items: [{ kind: "component", component: "results_table" }],
+          }],
+        },
       },
     });
     expect(JSON.stringify(document)).not.toContain("after");

@@ -84,10 +84,16 @@ describe("composition draft model", () => {
       "disp-1",
       "disp-2",
     ]);
-    expect(document.spec.sections).toEqual([{
-      id: "main",
-      components: ["disp-1", "disp-2"],
-    }]);
+    expect(document.spec.layout).toEqual({
+      kind: "flow",
+      rows: [{
+        id: "main",
+        items: [
+          { kind: "component", component: "disp-1" },
+          { kind: "component", component: "disp-2" },
+        ],
+      }],
+    });
     expect(document.spec.components[1]).toMatchObject({
       kind: "metric",
       value_field: { kind: "sql_column", name: "total" },
@@ -148,10 +154,10 @@ describe("composition draft model", () => {
           "disp-2",
           "disp-1",
         ]);
-      expect(toStudioDocument(displayMoved.draft).spec.sections[0].components)
+      expect(toStudioDocument(displayMoved.draft).spec.layout.rows[0].items)
         .toEqual([
-          "disp-2",
-          "disp-1",
+          { kind: "component", component: "disp-2" },
+          { kind: "component", component: "disp-1" },
         ]);
     }
   });
@@ -278,7 +284,16 @@ describe("composition draft model", () => {
             value_field: { kind: "entry_field", field_id: 1 },
           },
         ],
-        sections: [{ id: "main", components: ["disp-1", "disp-2"] }],
+        layout: {
+          kind: "flow",
+          rows: [{
+            id: "main",
+            items: [
+              { kind: "component", component: "disp-1" },
+              { kind: "component", component: "disp-2" },
+            ],
+          }],
+        },
       },
     };
     const draft = draftFromDocument(document, {
@@ -308,7 +323,7 @@ describe("composition draft model", () => {
         parameters: [],
         sources: [{ kind: "future_source", id: "src-1" }],
         components: [],
-        sections: [{ id: "main", components: [] }],
+        layout: { kind: "flow", rows: [{ id: "main", items: [] }] },
       },
     } as unknown as CompositionStudioDocument;
     expect(() => draftFromDocument(document, {})).toThrow();

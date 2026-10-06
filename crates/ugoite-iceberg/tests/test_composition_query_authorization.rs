@@ -7,8 +7,9 @@ use std::collections::BTreeMap;
 use ugoite_core::entry_query::EntryPageRequest;
 use ugoite_domain::composition::{
     CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry, CompositionFormat,
-    CompositionKind, CompositionSection, CompositionSortDirection, CompositionSource,
-    CompositionSpec, EntryQueryProjectionTemplate, EntryQuerySortTemplate, EntryQueryTemplate,
+    CompositionKind, CompositionSortDirection, CompositionSource, CompositionSpec,
+    DashboardFlowLayout, EntryQueryProjectionTemplate, EntryQuerySortTemplate, EntryQueryTemplate,
+    FlowItem, FlowLayoutKind, FlowRow,
 };
 use ugoite_domain::form::FieldType;
 use ugoite_domain::identity::{
@@ -128,10 +129,15 @@ async fn source_resolution_and_continuation_recheck_current_authorization() -> R
                 label: None,
                 source: "source".to_string(),
             }],
-            sections: vec![CompositionSection {
-                id: "main".to_string(),
-                components: vec!["table".to_string()],
-            }],
+            layout: DashboardFlowLayout {
+                kind: FlowLayoutKind::Flow,
+                rows: vec![FlowRow {
+                    id: "main".to_string(),
+                    items: vec![FlowItem::Component {
+                        component: "table".to_string(),
+                    }],
+                }],
+            },
         },
     };
     let saved = service

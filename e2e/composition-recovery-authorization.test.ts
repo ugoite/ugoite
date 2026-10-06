@@ -1,8 +1,4 @@
-import {
-  type APIRequestContext,
-  expect,
-  test,
-} from "@playwright/test";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 
 const SOURCE_UNAVAILABLE_DIAGNOSTIC = "A data source is unavailable.";
@@ -72,9 +68,13 @@ async function seedBrokenComposition(
     "    - id: removed_form_table",
     "      kind: table",
     "      source: removed_form_rows",
-    "  sections:",
-    "    - id: main",
-    "      components: [removed_form_table]",
+    "  layout:",
+    "    kind: flow",
+    "    rows:",
+    "      - id: main",
+    "        items:",
+    "          - kind: component",
+    "            component: removed_form_table",
     "",
   ].join("\n");
   const saveResponse = await request.post(
@@ -115,7 +115,9 @@ test.describe("Composition Recovery Authorization", () => {
     // Typed inspect (latest), the exact raw revision, and history preserve
     // the stored spec byte-identically.
     const latestResponse = await request.get(
-      getBackendUrl(`/spaces/${seed.spaceId}/compositions/${seed.compositionId}`),
+      getBackendUrl(
+        `/spaces/${seed.spaceId}/compositions/${seed.compositionId}`,
+      ),
     );
     expect(latestResponse.ok()).toBe(true);
     const latest = await latestResponse.json() as CompositionRawRevision;
@@ -171,7 +173,9 @@ test.describe("Composition Recovery Authorization", () => {
     // (denied_metric_source_is_concealed_as_source_unavailable and
     // field_level_diagnostics_require_an_authorized_source_form_read).
     const missingResponse = await request.get(
-      getBackendUrl(`/spaces/${seed.spaceId}/compositions/${crypto.randomUUID()}`),
+      getBackendUrl(
+        `/spaces/${seed.spaceId}/compositions/${crypto.randomUUID()}`,
+      ),
     );
     expect(missingResponse.status()).toBe(404);
     const missing = await missingResponse.json() as {

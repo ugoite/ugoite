@@ -190,7 +190,12 @@ describe("compositionApi", () => {
       kind: "dashboard" as const,
       name: "Tool",
       tags: [],
-      spec: { parameters: [], sources: [], components: [], sections: [] },
+      spec: {
+        parameters: [],
+        sources: [],
+        components: [],
+        layout: { kind: "flow", rows: [] },
+      },
     };
     vi.mocked(canonicalizeCompositionDocument).mockResolvedValue({
       document,

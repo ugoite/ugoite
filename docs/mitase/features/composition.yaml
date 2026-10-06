@@ -350,7 +350,7 @@ features:
       - id: component-layout-domain
         role: implementation
         facet: domain
-        responsibility: Expose section-ordered component references and reject incomplete or ambiguous component layouts during canonicalization.
+        responsibility: Expose flow-layout row and item placement with text components and parameter controls, and reject incomplete or ambiguous component layouts during canonicalization.
         targets:
           - id: ordered-components
             adapter: rust
@@ -359,6 +359,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.parameter-placement
           - id: canonical-layout-validation
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
@@ -366,22 +368,70 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+          - id: flow-layout
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: DashboardFlowLayout }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+          - id: flow-row
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: FlowRow }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+          - id: flow-item
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: FlowItem }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+          - id: text-style
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: TextStyle }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.text-style-enum
       - id: component-layout-domain-tests
         role: evidence
         facet: domain-tests
-        responsibility: Exercise section ordering, complete and unique references, the valid empty layout, canonical rejection of invalid component layouts, and native/WASM diagnostic parity.
+        responsibility: Exercise layout row and item ordering, complete and unique component and parameter references, required-parameter control placement, the text style enum, rejection of empty layouts and rows, canonical rejection of invalid layouts, and native/WASM diagnostic parity.
         targets:
-          - id: section-reference-order
+          - id: layout-reference-order
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
-            selector: { kind: symbol, name: components_follow_section_and_reference_order }
+            selector: { kind: symbol, name: components_follow_layout_row_and_item_order }
             claims:
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.ordered-component-layout
           - id: empty-layout
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs
-            selector: { kind: symbol, name: empty_component_layout_is_valid }
+            selector: { kind: symbol, name: empty_layout_is_rejected }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.empty-layout-rejected
+          - id: empty-row
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: empty_rows_are_rejected }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.empty-layout-rejected
+          - id: duplicate-row-id
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: duplicate_row_ids_are_rejected }
             claims:
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.ordered-component-layout
@@ -413,6 +463,41 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: unknown-parameter-reference
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: unknown_parameter_references_are_invalid }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: duplicate-parameter-placement
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: duplicate_parameter_placements_are_invalid }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: required-parameter-control
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: required_parameter_without_default_needs_a_layout_control }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: text-style-enum
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: text_style_enum_values_round_trip }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.text-style-enum
+          - id: unknown-text-style-and-layout-kind
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: unknown_text_styles_and_layout_kinds_are_rejected }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.text-style-enum
           - id: canonical-invalid-layout
             adapter: rust
             path: crates/ugoite-domain/src/composition.rs

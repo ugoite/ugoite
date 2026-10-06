@@ -126,7 +126,7 @@ fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
         || spec.parameters.len() > max_items
         || spec.sources.len() > max_items
         || spec.components.len() > max_items
-        || spec.sections.len() > max_items
+        || spec.layout.rows.len() > max_items
     {
         return false;
     }
@@ -175,9 +175,10 @@ fn composition_collection_limits_hold(document: &CompositionDocument) -> bool {
         }
     }
 
-    spec.sections
+    spec.layout
+        .rows
         .iter()
-        .all(|section| section.components.len() <= max_items)
+        .all(|row| row.items.len() <= max_items)
 }
 
 fn field_schema_entry_is_valid(field: &CompositionFieldSchemaEntry) -> bool {
@@ -253,7 +254,8 @@ mod tests {
             .components
             .iter()
             .all(|component| match component {
-                super::super::CompositionComponent::Metric { label, .. }
+                super::super::CompositionComponent::Text { label, .. }
+                | super::super::CompositionComponent::Metric { label, .. }
                 | super::super::CompositionComponent::Table { label, .. } => label.is_none(),
             }));
     }
@@ -396,12 +398,43 @@ mod tests {
         let mut document = canonicalize_composition_yaml(MONTHLY_EXPENSE)
             .unwrap()
             .document;
-        document.spec.sections[1].components.clear();
+        document.spec.layout.rows[0].items.pop();
 
         assert_eq!(
             canonicalize_composition(&document),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
+    }
+
+    #[test]
+    fn canonicalization_rejects_empty_layouts() {
+        let mut document = canonicalize_composition_yaml(MONTHLY_EXPENSE)
+            .unwrap()
+            .document;
+        document.spec.layout.rows.clear();
+
+        assert_eq!(
+            canonicalize_composition(&document),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn layout_and_text_changes_update_the_document_fingerprint() {
+        let baseline = canonicalize_composition_yaml(MONTHLY_EXPENSE_LABELED).unwrap();
+        let reordered_items = MONTHLY_EXPENSE_LABELED.replace(
+            "            component: summary_title\n          - kind: component\n            component: total",
+            "            component: total\n          - kind: component\n            component: summary_title",
+        );
+        assert_ne!(reordered_items, MONTHLY_EXPENSE_LABELED);
+        let reordered = canonicalize_composition_yaml(&reordered_items).unwrap();
+        assert_ne!(baseline.fingerprint, reordered.fingerprint);
+
+        let changed_text =
+            MONTHLY_EXPENSE_LABELED.replace("text: Monthly summary", "text: Summary");
+        assert_ne!(changed_text, MONTHLY_EXPENSE_LABELED);
+        let changed = canonicalize_composition_yaml(&changed_text).unwrap();
+        assert_ne!(baseline.fingerprint, changed.fingerprint);
     }
 
     #[test]

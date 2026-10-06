@@ -191,9 +191,15 @@ async function seedStaleComposition(
     "    - id: rows",
     "      kind: table",
     "      source: window_rows",
-    "  sections:",
-    "    - id: main",
-    "      components: [total, rows]",
+    "  layout:",
+    "    kind: flow",
+    "    rows:",
+    "      - id: main",
+    "        items:",
+    "          - kind: component",
+    "            component: total",
+    "          - kind: component",
+    "            component: rows",
     "",
   ].join("\n");
   const saveResponse = await request.post(
