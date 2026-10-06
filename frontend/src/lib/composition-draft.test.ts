@@ -21,8 +21,14 @@ import {
   removeDisplay,
   removeParameter,
   removeSource,
+  retargetParameterControl,
   setDraftName,
   setDraftTags,
+  setMetricSource,
+  setMetricValueField,
+  setTableSource,
+  setTextContent,
+  setTextStyle,
   studioSeedState,
   toStudioDocument,
   unplacedParameters,
@@ -547,5 +553,190 @@ describe("composition draft model", () => {
     expect(JSON.stringify(toStudioDocument(removed.draft).spec.sources)).toBe(
       sources,
     );
+  });
+
+  it("retargets metric source and value field together", () => {
+    let draft = createEmptyDraft();
+    draft = addSavedSqlSource(draft, sqlSeed()).draft;
+    draft = addEntryQuerySource(draft, entrySeed()).draft;
+    const metric = addMetricDisplay(
+      draft,
+      "src-1",
+      { column: "total" },
+      "Total",
+    );
+    if (!metric.ok) throw new Error("expected metric");
+    draft = metric.draft;
+
+    const moved = setMetricSource(draft, "disp-1", "src-2", { fieldId: 1 });
+    expect(moved.ok).toBe(true);
+    if (!moved.ok) throw new Error("expected source change");
+    expect(
+      toStudioDocument(moved.draft).spec.components[0],
+    ).toMatchObject({
+      kind: "metric",
+      source: "src-2",
+      value_field: { kind: "entry_field", field_id: 1 },
+    });
+
+    const rebound = setMetricValueField(moved.draft, "disp-1", {
+      column: "total",
+    });
+    expect(rebound.ok).toBe(true);
+    if (!rebound.ok) throw new Error("expected value change");
+    expect(
+      toStudioDocument(rebound.draft).spec.components[0],
+    ).toMatchObject({
+      value_field: { kind: "sql_column", name: "total" },
+    });
+
+    // Existing guards stay: wrong kinds and unknown identities fail closed.
+    expect(setMetricSource(draft, "disp-1", "src-9", { column: "total" }))
+      .toEqual({ ok: false, error: "unknown-source" });
+    expect(setMetricSource(draft, "nope", "src-1", { column: "total" }))
+      .toEqual({ ok: false, error: "unknown-display" });
+    expect(setMetricValueField(draft, "nope", { column: "total" })).toEqual({
+      ok: false,
+      error: "unknown-display",
+    });
+  });
+
+  it("retargets table source with existing guards", () => {
+    let draft = createEmptyDraft();
+    draft = addSavedSqlSource(draft, sqlSeed()).draft;
+    draft = addEntryQuerySource(draft, entrySeed()).draft;
+    const table = addTableDisplay(draft, "src-2", "Details");
+    if (!table.ok) throw new Error("expected table");
+    draft = table.draft;
+
+    const moved = setTableSource(draft, "disp-1", "src-1");
+    expect(moved.ok).toBe(true);
+    if (!moved.ok) throw new Error("expected source change");
+    expect(toStudioDocument(moved.draft).spec.components[0]).toMatchObject({
+      kind: "table",
+      source: "src-1",
+      label: "Details",
+    });
+
+    expect(setTableSource(draft, "disp-1", "src-9")).toEqual({
+      ok: false,
+      error: "unknown-source",
+    });
+    expect(setTableSource(draft, "nope", "src-1")).toEqual({
+      ok: false,
+      error: "unknown-display",
+    });
+  });
+
+  it("edits text content and style with a fixed enum", () => {
+    let draft = createEmptyDraft();
+    draft = addSavedSqlSource(draft, sqlSeed()).draft;
+    const text = addTextDisplay(draft, { text: "Summary", style: "heading" });
+    if (!text.ok) throw new Error("expected text");
+    draft = text.draft;
+    const sources = JSON.stringify(toStudioDocument(draft).spec.sources);
+
+    const edited = setTextContent(draft, "disp-1", "New heading");
+    expect(edited.ok).toBe(true);
+    if (!edited.ok) throw new Error("expected content change");
+    const styled = setTextStyle(edited.draft, "disp-1", "title");
+    expect(styled.ok).toBe(true);
+    if (!styled.ok) throw new Error("expected style change");
+    expect(toStudioDocument(styled.draft).spec.components[0]).toMatchObject({
+      kind: "text",
+      text: "New heading",
+      style: "title",
+    });
+    // Text edits never reshape sources, so they never refetch.
+    expect(JSON.stringify(toStudioDocument(styled.draft).spec.sources)).toBe(
+      sources,
+    );
+
+    expect(setTextStyle(styled.draft, "disp-1", "banner" as never)).toEqual({
+      ok: false,
+      error: "invalid-style",
+    });
+    expect(setTextContent(draft, "nope", "x")).toEqual({
+      ok: false,
+      error: "unknown-display",
+    });
+  });
+
+  it("retargets parameter controls in place without touching declarations", () => {
+    let draft = createEmptyDraft();
+    const month = addParameter(draft, {
+      id: "month",
+      label: "Month",
+      type: "date",
+      required: true,
+    });
+    if (!month.ok) throw new Error("expected month");
+    draft = month.draft;
+    const region = addParameter(draft, {
+      id: "region",
+      label: "Region",
+      type: "string",
+      required: false,
+    });
+    if (!region.ok) throw new Error("expected region");
+    draft = region.draft;
+    const quarter = addParameter(draft, {
+      id: "quarter",
+      label: "Quarter",
+      type: "string",
+      required: false,
+    });
+    if (!quarter.ok) throw new Error("expected quarter");
+    draft = quarter.draft;
+    const heading = addTextDisplay(draft, { text: "Summary" });
+    if (!heading.ok) throw new Error("expected text");
+    draft = heading.draft;
+    const placed = placeParameterControl(draft, "month");
+    if (!placed.ok) throw new Error("expected placement");
+    draft = placed.draft;
+    const before = draft.layoutRows.map((row) => ({
+      ...row,
+      items: [...row.items],
+    }));
+
+    const retargeted = retargetParameterControl(draft, "month", "region");
+    expect(retargeted.ok).toBe(true);
+    if (!retargeted.ok) throw new Error("expected retarget");
+    const items = toStudioDocument(retargeted.draft).spec.layout.rows.flatMap(
+      (row) => row.items,
+    );
+    expect(items).toContainEqual({ kind: "parameter", parameter: "region" });
+    expect(items).not.toContainEqual({
+      kind: "parameter",
+      parameter: "month",
+    });
+    // Same row, same position; declarations untouched with no label override.
+    expect(retargeted.draft.layoutRows.map((row) => row.id)).toEqual(
+      before.map((row) => row.id),
+    );
+    expect(
+      retargeted.draft.parameters.map((parameter) => parameter.id),
+    ).toEqual(["month", "region", "quarter"]);
+
+    expect(retargetParameterControl(draft, "month", "month")).toEqual({
+      ok: true,
+      draft,
+    });
+    expect(retargetParameterControl(draft, "month", "nope")).toEqual({
+      ok: false,
+      error: "unknown-parameter",
+    });
+    expect(retargetParameterControl(draft, "nope", "region")).toEqual({
+      ok: false,
+      error: "unknown-parameter",
+    });
+    expect(retargetParameterControl(draft, "region", "month")).toEqual({
+      ok: false,
+      error: "parameter-already-placed",
+    });
+    expect(retargetParameterControl(draft, "region", "quarter")).toEqual({
+      ok: false,
+      error: "unknown-block",
+    });
   });
 });

@@ -9,6 +9,10 @@ import {
   CompositionDesignCanvas,
   designBlockIdForComponent,
 } from "~/components/CompositionDesignCanvas";
+import {
+  CompositionInspector,
+  type CompositionInspectorDataJump,
+} from "~/components/CompositionInspector";
 import { CompositionDisplayList } from "~/components/CompositionDisplayList";
 import {
   CompositionDisplayPicker,
@@ -248,7 +252,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   const removeDraftDisplay = (displayDraftId: string) => {
     const result = removeDisplay(draft(), displayDraftId);
-    if (result.ok) setDraft(result.draft);
+    if (result.ok) {
+      setDraft(result.draft);
+      // Clearing keeps the inspector from pointing at a removed block;
+      // with no resolvable selection it renders nothing.
+      if (selectedId() === designBlockIdForComponent(displayDraftId)) {
+        setSelectedId(null);
+      }
+    }
   };
 
   const changeDisplayLabel = (displayDraftId: string, label: string) => {
@@ -258,6 +269,25 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   const expandedSource = (): DraftSource | undefined =>
     draft().sources.find((source) => source.draftId === expandedId());
+
+  // Inspector data jump: expand the block's source row, scroll it into
+  // view, and focus its activation control. The row element stays the jump
+  // target until the RA6 Data workspace editors arrive; RA7 split sync
+  // reuses the same typed jump payload.
+  const sourceRowEls = new Map<string, HTMLDivElement>();
+  const jumpToSource = (jump: CompositionInspectorDataJump) => {
+    setExpandedId(jump.sourceDraftId);
+    const row = sourceRowEls.get(jump.sourceDraftId);
+    if (!row || !row.isConnected) return;
+    if (typeof row.scrollIntoView === "function") {
+      try {
+        row.scrollIntoView({ block: "nearest" });
+      } catch {
+        // Keep the expanded selection when scrolling is unavailable.
+      }
+    }
+    row.querySelector("button")?.focus();
+  };
 
   const addDraftParameter = (parameter: DraftParameter) => {
     const result = addParameter(draft(), parameter);
@@ -492,54 +522,61 @@ export function CompositionStudio(props: CompositionStudioProps) {
           >
             <For each={draft().sources}>
               {(source, index) => (
-                <RowListItem
-                  main={
-                    <RowListButton
-                      ariaLabel={source.name}
-                      primary={
-                        <span class="rowListName">
-                          <UiIcon name={sourceKindIcon(source)} />
-                          <span>{source.name}</span>
-                        </span>
-                      }
-                      secondary={sourceKindLabel(source)}
-                      onActivate={() => toggleExpanded(source.draftId)}
-                    />
-                  }
-                  actions={
-                    <>
-                      <button
-                        type="button"
-                        class="pill iconpill icononly"
-                        disabled={index() === 0}
-                        aria-label={t("composition.studioMoveUp", {
-                          name: source.name,
-                        })}
-                        onClick={() => moveDraftSource(source.draftId, "up")}
-                      >
-                        <span aria-hidden="true">↑</span>
-                      </button>
-                      <button
-                        type="button"
-                        class="pill iconpill icononly"
-                        disabled={index() === draft().sources.length - 1}
-                        aria-label={t("composition.studioMoveDown", {
-                          name: source.name,
-                        })}
-                        onClick={() => moveDraftSource(source.draftId, "down")}
-                      >
-                        <span aria-hidden="true">↓</span>
-                      </button>
-                      <IconButton
-                        icon="trash"
-                        label={t("composition.studioRemoveSource", {
-                          name: source.name,
-                        })}
-                        onClick={() => removeDraftSource(source.draftId)}
+                <div
+                  ref={(row) => {
+                    sourceRowEls.set(source.draftId, row);
+                  }}
+                >
+                  <RowListItem
+                    main={
+                      <RowListButton
+                        ariaLabel={source.name}
+                        primary={
+                          <span class="rowListName">
+                            <UiIcon name={sourceKindIcon(source)} />
+                            <span>{source.name}</span>
+                          </span>
+                        }
+                        secondary={sourceKindLabel(source)}
+                        onActivate={() => toggleExpanded(source.draftId)}
                       />
-                    </>
-                  }
-                />
+                    }
+                    actions={
+                      <>
+                        <button
+                          type="button"
+                          class="pill iconpill icononly"
+                          disabled={index() === 0}
+                          aria-label={t("composition.studioMoveUp", {
+                            name: source.name,
+                          })}
+                          onClick={() => moveDraftSource(source.draftId, "up")}
+                        >
+                          <span aria-hidden="true">↑</span>
+                        </button>
+                        <button
+                          type="button"
+                          class="pill iconpill icononly"
+                          disabled={index() === draft().sources.length - 1}
+                          aria-label={t("composition.studioMoveDown", {
+                            name: source.name,
+                          })}
+                          onClick={() =>
+                            moveDraftSource(source.draftId, "down")}
+                        >
+                          <span aria-hidden="true">↓</span>
+                        </button>
+                        <IconButton
+                          icon="trash"
+                          label={t("composition.studioRemoveSource", {
+                            name: source.name,
+                          })}
+                          onClick={() => removeDraftSource(source.draftId)}
+                        />
+                      </>
+                    }
+                  />
+                </div>
               )}
             </For>
           </RowList>
@@ -570,29 +607,37 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
       <section class="section" aria-labelledby={designHeadingId}>
         <h2 id={designHeadingId}>{t("composition.studioDesign")}</h2>
-        <CompositionDesignCanvas
-          draft={draft()}
-          plan={canvasPlan()}
-          parameterValues={{
-            ...defaultParameterValues(draft()),
-            ...previewHandle.parameters(),
-          }}
-          sources={readySources()}
-          selectedId={selectedId()}
-          onSelect={setSelectedId}
-          onDraftChange={setDraft}
-          onRequestDisplayPicker={(target) => {
-            setPendingInsert(target);
-            setDisplayPickerOpen(true);
-          }}
-          onParameterChange={(parameterId, value) =>
-            previewHandle.setParameter(parameterId, value)}
-          onNext={(sourceId) => previewHandle.next(sourceId)}
-          onPrevious={(sourceId) => previewHandle.previous(sourceId)}
-          onRetry={(sourceId) => previewHandle.retry(sourceId)}
-          paletteTarget={paletteTarget()}
-          onPaletteTarget={setPaletteTarget}
-        />
+        <div class="studioDesign">
+          <CompositionDesignCanvas
+            draft={draft()}
+            plan={canvasPlan()}
+            parameterValues={{
+              ...defaultParameterValues(draft()),
+              ...previewHandle.parameters(),
+            }}
+            sources={readySources()}
+            selectedId={selectedId()}
+            onSelect={setSelectedId}
+            onDraftChange={setDraft}
+            onRequestDisplayPicker={(target) => {
+              setPendingInsert(target);
+              setDisplayPickerOpen(true);
+            }}
+            onParameterChange={(parameterId, value) =>
+              previewHandle.setParameter(parameterId, value)}
+            onNext={(sourceId) => previewHandle.next(sourceId)}
+            onPrevious={(sourceId) => previewHandle.previous(sourceId)}
+            onRetry={(sourceId) => previewHandle.retry(sourceId)}
+            paletteTarget={paletteTarget()}
+            onPaletteTarget={setPaletteTarget}
+          />
+          <CompositionInspector
+            draft={draft()}
+            selectedId={selectedId()}
+            onDraftChange={setDraft}
+            onDataJump={jumpToSource}
+          />
+        </div>
       </section>
 
       <section class="section" aria-labelledby={displayHeadingId}>

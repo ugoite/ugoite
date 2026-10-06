@@ -178,6 +178,7 @@ export type DraftErrorCode =
   | "unknown-parameter"
   | "unknown-row"
   | "unknown-block"
+  | "invalid-style"
   | "duplicate-parameter"
   | "parameter-referenced"
   | "parameter-already-placed"
@@ -761,6 +762,158 @@ export const setDisplayLabel = (
   const displays = [...draft.displays];
   displays[index] = next;
   return { ok: true, draft: { ...draft, displays } };
+};
+
+/**
+ * Retarget a metric to another existing source with an explicit value
+ * field. The caller keeps the current value field when it stays valid for
+ * the new source and otherwise passes the new source's first scalar
+ * candidate; the draft never infers column types.
+ */
+export const setMetricSource = (
+  draft: CompositionDraft,
+  displayDraftId: string,
+  sourceDraftId: string,
+  valueField: DraftMetricValueField,
+): DraftResult => {
+  const index = draft.displays.findIndex((display) =>
+    display.draftId === displayDraftId
+  );
+  if (index < 0) return { ok: false, error: "unknown-display" };
+  const current = draft.displays[index];
+  if (current.kind !== "metric") return { ok: false, error: "unknown-display" };
+  if (!draft.sources.some((source) => source.draftId === sourceDraftId)) {
+    return { ok: false, error: "unknown-source" };
+  }
+  const displays = [...draft.displays];
+  displays[index] = { ...current, sourceDraftId, valueField };
+  return { ok: true, draft: { ...draft, displays } };
+};
+
+/** Retarget a table to another existing source; the label is untouched. */
+export const setTableSource = (
+  draft: CompositionDraft,
+  displayDraftId: string,
+  sourceDraftId: string,
+): DraftResult => {
+  const index = draft.displays.findIndex((display) =>
+    display.draftId === displayDraftId
+  );
+  if (index < 0) return { ok: false, error: "unknown-display" };
+  const current = draft.displays[index];
+  if (current.kind !== "table") return { ok: false, error: "unknown-display" };
+  if (!draft.sources.some((source) => source.draftId === sourceDraftId)) {
+    return { ok: false, error: "unknown-source" };
+  }
+  const displays = [...draft.displays];
+  displays[index] = { ...current, sourceDraftId };
+  return { ok: true, draft: { ...draft, displays } };
+};
+
+/** Rebind a metric value field; source and label stay as declared. */
+export const setMetricValueField = (
+  draft: CompositionDraft,
+  displayDraftId: string,
+  valueField: DraftMetricValueField,
+): DraftResult => {
+  const index = draft.displays.findIndex((display) =>
+    display.draftId === displayDraftId
+  );
+  if (index < 0) return { ok: false, error: "unknown-display" };
+  const current = draft.displays[index];
+  if (current.kind !== "metric") return { ok: false, error: "unknown-display" };
+  const displays = [...draft.displays];
+  displays[index] = { ...current, valueField };
+  return { ok: true, draft: { ...draft, displays } };
+};
+
+/** Edit text content; style, sources, and layout stay untouched. */
+export const setTextContent = (
+  draft: CompositionDraft,
+  displayDraftId: string,
+  text: string,
+): DraftResult => {
+  const index = draft.displays.findIndex((display) =>
+    display.draftId === displayDraftId
+  );
+  if (index < 0) return { ok: false, error: "unknown-display" };
+  const current = draft.displays[index];
+  if (current.kind !== "text") return { ok: false, error: "unknown-display" };
+  const displays = [...draft.displays];
+  displays[index] = { ...current, text };
+  return { ok: true, draft: { ...draft, displays } };
+};
+
+const textStyles: ReadonlySet<CompositionTextStyle> = new Set([
+  "title",
+  "heading",
+  "body",
+  "caption",
+]);
+
+/** Edit a text style; only the fixed enum is accepted. */
+export const setTextStyle = (
+  draft: CompositionDraft,
+  displayDraftId: string,
+  style: CompositionTextStyle,
+): DraftResult => {
+  const index = draft.displays.findIndex((display) =>
+    display.draftId === displayDraftId
+  );
+  if (index < 0) return { ok: false, error: "unknown-display" };
+  const current = draft.displays[index];
+  if (current.kind !== "text") return { ok: false, error: "unknown-display" };
+  if (!textStyles.has(style)) return { ok: false, error: "invalid-style" };
+  const displays = [...draft.displays];
+  displays[index] = { ...current, style };
+  return { ok: true, draft: { ...draft, displays } };
+};
+
+/**
+ * Move a placed parameter control to another semantic parameter in place.
+ * The control keeps its row and position; both declarations stay owned by
+ * the Parameters section, and no label override is created.
+ */
+export const retargetParameterControl = (
+  draft: CompositionDraft,
+  fromParameterId: string,
+  toParameterId: string,
+): DraftResult => {
+  if (
+    !draft.parameters.some((parameter) => parameter.id === fromParameterId)
+  ) {
+    return { ok: false, error: "unknown-parameter" };
+  }
+  if (!draft.parameters.some((parameter) => parameter.id === toParameterId)) {
+    return { ok: false, error: "unknown-parameter" };
+  }
+  if (fromParameterId === toParameterId) return { ok: true, draft };
+  let placed = false;
+  for (const row of draft.layoutRows) {
+    for (const item of row.items) {
+      if (item.kind === "parameter" && item.parameterId === fromParameterId) {
+        placed = true;
+      }
+      if (item.kind === "parameter" && item.parameterId === toParameterId) {
+        return { ok: false, error: "parameter-already-placed" };
+      }
+    }
+  }
+  if (!placed) return { ok: false, error: "unknown-block" };
+  return {
+    ok: true,
+    draft: {
+      ...draft,
+      layoutRows: draft.layoutRows.map((row) => ({
+        ...row,
+        items: row.items.map((item) =>
+          item.kind === "parameter" && item.parameterId === fromParameterId
+            ? { kind: "parameter" as const, parameterId: toParameterId }
+            : item
+        ),
+      })),
+    },
+  };
 };
 
 export const upsertParameter = (

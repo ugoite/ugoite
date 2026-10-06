@@ -130,3 +130,29 @@ components:
       narrow_width: 390px
     surface_tokens: fixed-only-no-raw-color
     async_state: explicit-loading-empty-error
+  - id: studio-inspector
+    type: inspector
+    title: Inspector
+    status: implemented
+    ownership: selected-block-only-no-creation
+    source: canvas-selection-identity-only
+    empty_state: no-panel-no-prose
+    metric_fields:
+      label: optional-display-label
+      data: existing-source-picker-only
+      value: entry-field-or-sql-column-no-inference
+    table_fields:
+      label: optional-display-label
+      data: existing-source-picker-only
+    text_fields:
+      text: inline-content
+      style: fixed-enum-only
+    parameter_control:
+      ref: owned-label-read-only-no-override
+      placement: retarget-existing-parameter-in-place
+    data_jump: expand-and-focus-existing-source-row
+    preview_discipline: existing-debounced-handle-only-no-second-path
+    responsive:
+      narrow: stacked-below-canvas
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color

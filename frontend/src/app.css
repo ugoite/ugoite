@@ -3867,6 +3867,43 @@ a.tool {
   }
 }
 
+/* Studio Design workspace with the RA5 inspector. Canvas and inspector sit
+ * side by side on desktop; the inspector stacks below the canvas on narrow
+ * viewports so the 390px single column never scrolls sideways. The inspector
+ * carries fields only (no card chrome, no explanatory prose). */
+.studioDesign {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: var(--ui-spacing-lg);
+  align-items: start;
+  min-width: 0;
+}
+.studioInspector {
+  display: grid;
+  gap: var(--ui-spacing-sm);
+  align-content: start;
+  min-width: 0;
+}
+.studioInspectorTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-spacing-xs);
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.studioInspectorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-spacing-xs);
+}
+@media (max-width: 560px) {
+  .studioDesign {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Entry result tables: Entry-owned row interaction on the shared vocabulary.
  * Selection/open semantics live in EntryResultTable; paging stays with the
  * EntryBrowser controller. */
