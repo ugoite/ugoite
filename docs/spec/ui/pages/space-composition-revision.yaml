@@ -21,8 +21,8 @@ components:
         - id: composition-edit
           type: icon-button
           title: Edit
-          status: planned
-          contract: docs/spec/ui/components/composition-studio.yaml
+          status: implemented
+          target: /spaces/{space_id}/compositions/{composition_id}/{revision_id}/edit
         - id: composition-history
           type: icon-button
           title: History

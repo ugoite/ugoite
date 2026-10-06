@@ -3,9 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { compositionApi } from "~/lib/composition-api";
 import { setLocale } from "~/lib/i18n";
-import CompositionRevisionRoute, {
-  resolveCompositionFieldName,
-} from "./index";
+import CompositionRevisionRoute, { resolveCompositionFieldName } from "./index";
 import type { Form } from "~/lib/types";
 
 vi.mock("@solidjs/router", () => ({
@@ -86,6 +84,19 @@ describe("Composition exact-revision route", () => {
         { month_start: "2026-02-01" },
         expect.any(AbortSignal),
       )
+    );
+  });
+
+  it("owns the tool name once and links a single edit action", async () => {
+    render(() => <CompositionRevisionRoute />);
+
+    expect(await screen.findByRole("heading", { name: "Monthly expenses" }))
+      .toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    const edit = screen.getByRole("link", { name: "Edit" });
+    expect(edit).toHaveAttribute(
+      "href",
+      "/spaces/space-1/compositions/tool-1/revision-2/edit",
     );
   });
 

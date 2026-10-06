@@ -21,6 +21,7 @@ const allNames: UiIconName[] = [
   "appearance",
   "history",
   "refresh",
+  "edit",
   "info",
   "trash",
   "preview",
