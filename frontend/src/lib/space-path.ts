@@ -82,9 +82,16 @@ export const spaceCompositionRevisionPath = (
   `${spaceCompositionsPath(spaceId)}/${encodeURIComponent(compositionId)}/${
     encodeURIComponent(revisionId)
   }`;
-
 export const spaceCompositionEditPath = (
   spaceId: string,
   compositionId: string,
   revisionId: string,
 ) => `${spaceCompositionRevisionPath(spaceId, compositionId, revisionId)}/edit`;
+
+export const spaceCompositionHistoryPath = (
+  spaceId: string,
+  compositionId: string,
+) =>
+  `${spaceCompositionsPath(spaceId)}/${
+    encodeURIComponent(compositionId)
+  }/history`;

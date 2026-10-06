@@ -32,6 +32,7 @@ const MUTATION_OPERATIONS = new Set([
   "sql.update",
   "sql.delete",
   "composition.save",
+  "composition.restore",
   "agent.create",
   "agent.revoke",
   "approval.issue",

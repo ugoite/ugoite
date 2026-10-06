@@ -3,8 +3,11 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { compositionApi } from "~/lib/composition-api";
 import { setLocale } from "~/lib/i18n";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import CompositionRevisionRoute, { resolveCompositionFieldName } from "./index";
 import type { Form } from "~/lib/types";
+
+const navigateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@solidjs/router", () => ({
   useParams: () => ({
@@ -12,6 +15,23 @@ vi.mock("@solidjs/router", () => ({
     composition_id: "tool-1",
     revision_id: "revision-2",
   }),
+  useNavigate: () => navigateMock,
+  A: (props: {
+    href: string;
+    class?: string;
+    children: unknown;
+    ["aria-label"]?: string;
+    title?: string;
+  }) => (
+    <a
+      href={props.href}
+      class={props.class}
+      aria-label={props["aria-label"]}
+      title={props.title}
+    >
+      {props.children as never}
+    </a>
+  ),
 }));
 
 const rawRevision = {
@@ -33,6 +53,7 @@ const plan = {
 describe("Composition exact-revision route", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    navigateMock.mockClear();
     setLocale("en");
     vi.spyOn(compositionApi, "get").mockResolvedValue(rawRevision);
     vi.spyOn(compositionApi, "resolve").mockResolvedValue({
@@ -50,6 +71,33 @@ describe("Composition exact-revision route", () => {
     vi.spyOn(compositionApi, "querySource").mockResolvedValue({
       kind: "entry_query",
       page: { rows: [], has_more: false },
+    });
+    vi.spyOn(compositionApi, "list").mockResolvedValue({
+      items: [{
+        composition_id: "tool-1",
+        revision_id: "revision-2",
+        updated_at: 1767312000,
+        name: "Monthly expenses",
+        kind: "dashboard",
+        tags: [],
+      }],
+      offset: 0,
+      limit: 100,
+      has_more: false,
+    });
+    vi.spyOn(compositionApi, "restore").mockResolvedValue({
+      composition_id: "tool-1",
+      revision_id: "revision-3",
+      restored_from_revision_id: "revision-2",
+      canonical_yaml: "canonical yaml",
+      receipt: {
+        command_id: "command-1",
+        catalog_generation: 4,
+        snapshot_id: 42,
+        committed_revision_ids: ["revision-3"],
+        committed_at_micros: 1,
+        data_file_count: 1,
+      },
     });
   });
 
@@ -175,6 +223,140 @@ describe("Composition exact-revision route", () => {
       "revision-2",
       expect.any(AbortSignal),
     );
+  });
+
+  it("links to the composition history route", async () => {
+    render(() => <CompositionRevisionRoute />);
+
+    expect(await screen.findByRole("heading", { name: "Monthly expenses" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "History" })).toHaveAttribute(
+      "href",
+      "/spaces/space-1/compositions/tool-1/history",
+    );
+  });
+
+  it("restores a historical revision with source base and a stable retry key", async () => {
+    vi.mocked(compositionApi.list).mockResolvedValue({
+      items: [{
+        composition_id: "tool-1",
+        revision_id: "revision-3",
+        updated_at: 1767398400,
+        name: "Monthly expenses",
+        tags: [],
+      }],
+      offset: 0,
+      limit: 100,
+      has_more: false,
+    });
+    vi.mocked(compositionApi.restore)
+      .mockRejectedValueOnce(new Error("transport closed"))
+      .mockResolvedValue({
+        composition_id: "tool-1",
+        revision_id: "revision-4",
+        restored_from_revision_id: "revision-2",
+        canonical_yaml: "canonical yaml",
+        receipt: {
+          command_id: "command-1",
+          catalog_generation: 4,
+          snapshot_id: 42,
+          committed_revision_ids: ["revision-4"],
+          committed_at_micros: 1,
+          data_file_count: 1,
+        },
+      });
+    render(() => <CompositionRevisionRoute />);
+
+    // The opened revision is not the latest, so the single Restore action
+    // shows next to the History link.
+    const restore = await screen.findByRole("button", {
+      name: "Restore this revision",
+    });
+    expect(screen.getByRole("link", { name: "History" })).toBeInTheDocument();
+
+    fireEvent.click(restore);
+    await waitFor(() => {
+      expect(compositionApi.restore).toHaveBeenCalledTimes(1);
+    });
+    expect(compositionApi.restore).toHaveBeenCalledWith(
+      "space-1",
+      "tool-1",
+      "revision-2",
+      "revision-3",
+      expect.any(String),
+    );
+    expect(await screen.findByRole("button", { name: "Retry" }))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(compositionApi.restore).toHaveBeenCalledTimes(2);
+    });
+    // The uncertain retry reuses the identical source, base, and key.
+    expect(vi.mocked(compositionApi.restore).mock.calls[1]).toEqual(
+      vi.mocked(compositionApi.restore).mock.calls[0],
+    );
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/spaces/space-1/compositions/tool-1/revision-4",
+    );
+  });
+
+  it("hides restore on the latest revision", async () => {
+    render(() => <CompositionRevisionRoute />);
+
+    expect(await screen.findByRole("heading", { name: "Monthly expenses" }))
+      .toBeInTheDocument();
+    await waitFor(() =>
+      expect(compositionApi.list).toHaveBeenCalledWith("space-1", 100, 0)
+    );
+    expect(
+      screen.queryByRole("button", { name: "Restore this revision" }),
+    ).not.toBeInTheDocument();
+    expect(compositionApi.restore).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a stale base conflict with a recovery link to history", async () => {
+    vi.mocked(compositionApi.list).mockResolvedValue({
+      items: [{
+        composition_id: "tool-1",
+        revision_id: "revision-3",
+        updated_at: 1767398400,
+        name: "Monthly expenses",
+        tags: [],
+      }],
+      offset: 0,
+      limit: 100,
+      has_more: false,
+    });
+    vi.mocked(compositionApi.restore).mockRejectedValueOnce(
+      new UgoiteApiError({
+        kind: "conflict",
+        operation: "composition.restore",
+        status: 409,
+        message: "base revision is stale",
+      }),
+    );
+    render(() => <CompositionRevisionRoute />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Restore this revision" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Someone else saved first.",
+    );
+    const historyLinks = screen.getAllByRole("link", { name: "History" });
+    expect(historyLinks.length).toBeGreaterThanOrEqual(1);
+    for (const link of historyLinks) {
+      expect(link).toHaveAttribute(
+        "href",
+        "/spaces/space-1/compositions/tool-1/history",
+      );
+    }
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });
 
