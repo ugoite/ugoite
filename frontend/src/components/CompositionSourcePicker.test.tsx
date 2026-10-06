@@ -140,6 +140,7 @@ describe("CompositionSourcePicker", () => {
         name: "Monthly",
         expectedResult: [{ name: "total", type: "float" }],
         variables: {},
+        variableTypes: {},
       },
     });
   });
