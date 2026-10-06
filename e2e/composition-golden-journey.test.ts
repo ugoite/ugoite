@@ -35,6 +35,7 @@ type SeedState = {
   spaceId: string;
   savedSqlId: string;
   savedSqlRevisionId: string;
+  savedSqlName: string;
   rows: SeedRow[];
 };
 
@@ -207,11 +208,12 @@ async function seedSavedSql(
     .replaceAll("{date_column}", sqlIdentifier(dateColumn!))
     .replaceAll("{merchant_column}", sqlIdentifier(merchantColumn!))
     .replaceAll("{amount_column}", sqlIdentifier(amountColumn!));
+  const savedSqlName = `${manifest.saved_sql.name} ${suffix}`;
   const sqlResponse = await request.post(
     getBackendUrl(`/spaces/${spaceId}/sql`),
     {
       data: {
-        name: `${manifest.saved_sql.name} ${suffix}`,
+        name: savedSqlName,
         kind: "user-query",
         sql,
         variables: manifest.saved_sql.variables,
@@ -230,6 +232,7 @@ async function seedSavedSql(
     spaceId,
     savedSqlId: savedSql.id!,
     savedSqlRevisionId: savedSql.revision_id!,
+    savedSqlName,
     rows,
   };
 }
@@ -359,12 +362,27 @@ test.describe("Composition Golden Journey", () => {
       });
 
       await initialPage.getByRole("button", { name: "Save as tool" }).click();
-      const dialog = initialPage.getByRole("dialog", { name: "Save as tool" });
-      await expect(dialog).toBeVisible();
-      await dialog.getByLabel("Name").fill(manifest.composition_name);
-      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(initialPage).toHaveURL(
+        new RegExp(
+          `/spaces/${seed.spaceId}/compositions/new$`,
+        ),
+      );
+      // The Studio seed prefills the tool name from the Saved SQL entry and
+      // carries its exact revision as the first source, so no picker
+      // interaction is needed before saving.
+      const nameInput = initialPage.getByLabel("Name", { exact: true });
+      await expect(nameInput).toHaveValue(seed.savedSqlName);
       await expect(
-        dialog.getByRole("button", { name: "Retry", exact: true }),
+        initialPage.getByRole("button", {
+          name: seed.savedSqlName,
+          exact: true,
+        }),
+      ).toBeVisible();
+      await nameInput.fill(manifest.composition_name);
+      await initialPage.getByRole("button", { name: "Save", exact: true })
+        .click();
+      await expect(
+        initialPage.getByText("Could not save this tool.", { exact: true }),
       ).toBeVisible();
 
       const replayResponsePromise = initialPage.waitForResponse((response) => {
@@ -373,7 +391,8 @@ test.describe("Composition Golden Journey", () => {
           url.pathname === saveUrl && response.status() >= 200 &&
           response.status() < 300;
       });
-      await dialog.getByRole("button", { name: "Retry", exact: true }).click();
+      await initialPage.getByRole("button", { name: "Retry", exact: true })
+        .click();
       const replayResponse = await replayResponsePromise;
       replayedSave = await replayResponse.json() as CompositionSaveResponse;
 
@@ -392,6 +411,12 @@ test.describe("Composition Golden Journey", () => {
       revisionId = replayedSave!.revision_id;
       expect(replayedSave!.receipt.committed_revision_ids).toContain(
         revisionId,
+      );
+      // The Studio save navigates to the exact revision on success.
+      await expect(initialPage).toHaveURL(
+        new RegExp(
+          `/spaces/${seed.spaceId}/compositions/${compositionId}/${revisionId}$`,
+        ),
       );
 
       const historyResponse = await request.get(
