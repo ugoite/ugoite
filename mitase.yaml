@@ -223,6 +223,8 @@ inventory:
         - frontend/src/components/CompositionRenderer.test.tsx
         - frontend/src/components/DashboardFlowRenderer.tsx
         - frontend/src/components/DashboardFlowRenderer.test.tsx
+        - frontend/src/components/CompositionDesignCanvas.tsx
+        - frontend/src/components/CompositionDesignCanvas.test.tsx
         - frontend/src/components/composition/TextComponent.tsx
         - frontend/src/components/composition/ParameterControl.tsx
         - frontend/src/components/CompositionEntryQueryTable.tsx

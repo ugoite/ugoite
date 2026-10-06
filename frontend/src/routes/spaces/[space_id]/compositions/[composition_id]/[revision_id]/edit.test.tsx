@@ -214,7 +214,7 @@ describe("Composition edit route", () => {
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
         heading.textContent
       ),
-    ).toEqual(["Data", "Display", "Parameters", "Tags", "Preview"]);
+    ).toEqual(["Data", "Design", "Display", "Parameters", "Tags", "Preview"]);
 
     // The source and display rows carry the Saved SQL entry name.
     expect(screen.getAllByRole("button", { name: "Monthly totals" }))

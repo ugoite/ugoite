@@ -10,6 +10,7 @@ import { TextComponent } from "~/components/composition/TextComponent";
 import { t } from "~/lib/i18n";
 import type {
   CompositionFlowLayout,
+  CompositionFlowLayoutItem,
   CompositionParameterDefinition,
   CompositionResolvedComponentBinding,
   CompositionResolvePlan,
@@ -21,6 +22,95 @@ export type DashboardFlowTexts = Record<
   string,
   { text: string; style: CompositionTextStyle }
 >;
+
+/**
+ * First layout-ordered owner wins each source status: blocks sharing one
+ * source show a single loading or error state. Shared with the Design
+ * canvas so edit mode and saved Tools agree on status ownership.
+ */
+export const flowSourceStatusOwner = (
+  rows: ReadonlyArray<{ items: ReadonlyArray<CompositionFlowLayoutItem> }>,
+  bindings: ReadonlyMap<string, CompositionResolvedComponentBinding>,
+  sources: ReadonlyMap<string, CompositionResolvePlan["sources"][number]>,
+): Map<string, string> => {
+  const owners = new Map<string, string>();
+  for (const row of rows) {
+    for (const item of row.items) {
+      if (item.kind !== "component" || !item.component) continue;
+      const binding = bindings.get(item.component);
+      if (!binding || binding.kind === "text") continue;
+      if (sources.has(binding.source_id) && !owners.has(binding.source_id)) {
+        owners.set(binding.source_id, binding.component_id);
+      }
+    }
+  }
+  return owners;
+};
+
+export interface DashboardFlowItemProps {
+  item: CompositionFlowLayoutItem;
+  /** Resolved binding for component items; absent while preview is pending. */
+  binding?: CompositionResolvedComponentBinding;
+  texts: Readonly<DashboardFlowTexts>;
+  /** Semantic definition for parameter items; absent when undeclared. */
+  definition?: CompositionParameterDefinition;
+  parameterValues: Readonly<Record<string, unknown>>;
+  onParameterChange: (parameterId: string, value: unknown | undefined) => void;
+  parameterInvalid?: (parameterId: string) => boolean;
+  sources: Record<string, CompositionSourcePageState>;
+  sourceById: ReadonlyMap<
+    string,
+    CompositionResolvePlan["sources"][number]
+  >;
+  ownsSourceStatus: boolean;
+  fieldNames?: CompositionFieldNames;
+  onNext: (sourceId: string) => void;
+  onPrevious: (sourceId: string) => void;
+  onRetry: (sourceId: string) => void;
+}
+
+/**
+ * One flow layout item shared by the saved-Tool renderer and the Design
+ * canvas. Parameter controls bind transient Work state, text joins its
+ * declaration by component id with no source fetch, and metrics and
+ * tables delegate to the source-native presenters.
+ */
+export function DashboardFlowItem(props: DashboardFlowItemProps) {
+  if (props.item.kind === "parameter" && props.item.parameter) {
+    return (
+      <Show when={props.definition}>
+        {(entry) => (
+          <div class="compositionFlowItem compositionFlowItem--parameter">
+            <ParameterControl
+              definition={entry()}
+              value={props.parameterValues[entry().id]}
+              onChange={(value) => props.onParameterChange(entry().id, value)}
+              invalid={props.parameterInvalid?.(entry().id)}
+            />
+          </div>
+        )}
+      </Show>
+    );
+  }
+  if (props.item.kind !== "component" || !props.item.component) return null;
+  return (
+    <Show when={props.binding}>
+      {(entry) => (
+        <DashboardFlowComponent
+          binding={entry()}
+          texts={props.texts}
+          sources={props.sources}
+          sourceById={props.sourceById}
+          ownsSourceStatus={props.ownsSourceStatus}
+          fieldNames={props.fieldNames}
+          onNext={props.onNext}
+          onPrevious={props.onPrevious}
+          onRetry={props.onRetry}
+        />
+      )}
+    </Show>
+  );
+}
 
 type DashboardFlowRendererProps = {
   /**
@@ -70,23 +160,8 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
     );
   // One block owns each source status: the first binding in row and item
   // order, so shared sources show a single loading or error state.
-  const sourceStatusOwner = () => {
-    const owners = new Map<string, string>();
-    for (const row of props.layout.rows) {
-      for (const item of row.items) {
-        if (item.kind !== "component" || !item.component) continue;
-        const binding = bindingById().get(item.component);
-        if (!binding || binding.kind === "text") continue;
-        if (
-          sourceById().has(binding.source_id) &&
-          !owners.has(binding.source_id)
-        ) {
-          owners.set(binding.source_id, binding.component_id);
-        }
-      }
-    }
-    return owners;
-  };
+  const sourceStatusOwner = () =>
+    flowSourceStatusOwner(props.layout.rows, bindingById(), sourceById());
 
   return (
     <div class="compositionFlow">
@@ -99,47 +174,38 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
             <div class="compositionFlowRow">
               <For each={row.items}>
                 {(item) => {
-                  if (item.kind === "parameter" && item.parameter) {
-                    const definition = () =>
-                      definitionById().get(item.parameter as string);
-                    return (
-                      <Show when={definition()}>
-                        {(entry) => (
-                          <div class="compositionFlowItem compositionFlowItem--parameter">
-                            <ParameterControl
-                              definition={entry()}
-                              value={props.parameterValues[entry().id]}
-                              onChange={(value) =>
-                                props.onParameterChange(entry().id, value)}
-                              invalid={props.parameterInvalid?.(entry().id)}
-                            />
-                          </div>
-                        )}
-                      </Show>
-                    );
-                  }
-                  if (item.kind !== "component" || !item.component) return null;
                   const binding = () =>
-                    bindingById().get(item.component as string);
+                    item.kind === "component" && item.component
+                      ? bindingById().get(item.component)
+                      : undefined;
+                  const definition = () =>
+                    item.kind === "parameter" && item.parameter
+                      ? definitionById().get(item.parameter)
+                      : undefined;
+                  const ownsSourceStatus = () => {
+                    const current = binding();
+                    return current !== undefined && current.kind !== "text" &&
+                      sourceStatusOwner().get(
+                          (current as { source_id: string }).source_id,
+                        ) === current.component_id;
+                  };
                   return (
-                    <Show when={binding()}>
-                      {(entry) => (
-                        <DashboardFlowComponent
-                          binding={entry()}
-                          texts={props.texts}
-                          sources={props.sources}
-                          sourceById={sourceById()}
-                          ownsSourceStatus={entry().kind !== "text" &&
-                            sourceStatusOwner().get(
-                                (entry() as { source_id: string }).source_id,
-                              ) === entry().component_id}
-                          fieldNames={props.fieldNames}
-                          onNext={props.onNext}
-                          onPrevious={props.onPrevious}
-                          onRetry={props.onRetry}
-                        />
-                      )}
-                    </Show>
+                    <DashboardFlowItem
+                      item={item}
+                      binding={binding()}
+                      texts={props.texts}
+                      definition={definition()}
+                      parameterValues={props.parameterValues}
+                      onParameterChange={props.onParameterChange}
+                      parameterInvalid={props.parameterInvalid}
+                      sources={props.sources}
+                      sourceById={sourceById()}
+                      ownsSourceStatus={ownsSourceStatus()}
+                      fieldNames={props.fieldNames}
+                      onNext={props.onNext}
+                      onPrevious={props.onPrevious}
+                      onRetry={props.onRetry}
+                    />
                   );
                 }}
               </For>

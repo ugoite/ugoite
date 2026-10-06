@@ -285,6 +285,101 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-renderer
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "renders text bindings from joined declarations without source requests" } }
+      - id: design-canvas-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Design canvas maps every block operation onto the draft document through the single draft channel — transient selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder without cross-row moves, declaration removal with parameter unplacement, and query-stable layout edits without extra queries.
+        targets:
+          - id: design-canvas-selection-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: selects canvas blocks without touching the draft }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "selects canvas blocks without touching the draft" } }
+          - id: design-canvas-text-insertion-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: inserts text blocks declared and placed exactly once }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "inserts text blocks declared and placed exactly once" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "inserts text blocks declared and placed exactly once" } }
+          - id: design-canvas-parameter-placement-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: places existing parameter controls without creating parameters }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "places existing parameter controls without creating parameters" } }
+          - id: design-canvas-reorder-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: reorders rows and items with keyboard-operable buttons }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "reorders rows and items with keyboard-operable buttons" } }
+          - id: design-canvas-remove-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: removes component declarations and unplaces parameter controls }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "removes component declarations and unplaces parameter controls" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "removes component declarations and unplaces parameter controls" } }
+          - id: design-canvas-no-refetch-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: routes block operations through the draft channel without extra queries }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "routes block operations through the draft channel without extra queries" } }
+          - id: design-canvas-draft-moves-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: reorders rows and items within rows only }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "reorders rows and items within rows only" } }
+          - id: design-canvas-draft-query-stable-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: keeps layout-only edits query-stable without refetching sources }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "keeps layout-only edits query-stable without refetching sources" } }
       - id: metric-value-verification
         role: verification
         facet: verification

@@ -13,12 +13,14 @@ interface CompositionDisplayListProps {
   onChangeLabel: (displayDraftId: string, label: string) => void;
 }
 
-export const displayValueName = (display: DraftDisplay): string =>
-  display.kind === "table"
+export const displayValueName = (display: DraftDisplay): string => {
+  if (display.kind === "text") return "";
+  return display.kind === "table"
     ? ""
     : "column" in display.valueField
     ? display.valueField.column
     : `#${display.valueField.fieldId}`;
+};
 
 const sourceName = (
   sources: readonly DraftSource[],
@@ -32,6 +34,7 @@ export const displayDefaultName = (
   sources: readonly DraftSource[],
 ): string => {
   if (display.label) return display.label;
+  if (display.kind === "text") return display.text || display.draftId;
   const name = sourceName(sources, display.sourceDraftId);
   if (display.kind === "table") return name;
   const value = displayValueName(display);
@@ -41,7 +44,9 @@ export const displayDefaultName = (
 const displayKindLabel = (display: DraftDisplay): string =>
   display.kind === "table"
     ? t("composition.studioTable")
-    : t("composition.studioMetric");
+    : display.kind === "metric"
+    ? t("composition.studioMetric")
+    : t("composition.studioText");
 
 /**
  * Display section content for the Composition Studio. Rows carry the single

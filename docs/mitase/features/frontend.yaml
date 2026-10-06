@@ -960,6 +960,15 @@ features:
                 criterion: REQ-FE-070#criterion.display-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
+          - id: composition-design-canvas
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
           - id: composition-parameter-list
             adapter: typescript
             path: frontend/src/components/CompositionParameterList.tsx

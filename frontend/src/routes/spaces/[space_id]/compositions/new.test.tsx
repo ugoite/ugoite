@@ -165,6 +165,7 @@ describe("Composition studio shell", () => {
     );
     expect(headings).toEqual([
       "Data",
+      "Design",
       "Display",
       "Parameters",
       "Tags",
@@ -254,6 +255,7 @@ describe("Composition studio shell", () => {
       );
     expect(headings()).toEqual([
       "Data",
+      "Design",
       "Display",
       "Parameters",
       "Tags",
@@ -288,6 +290,7 @@ describe("Composition studio shell", () => {
     // The display row owns its default source name; headers stay ordered.
     expect(headings()).toEqual([
       "Data",
+      "Design",
       "Display",
       "Parameters",
       "Tags",

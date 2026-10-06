@@ -5,6 +5,7 @@ import {
   addParameter,
   addSavedSqlSource,
   addTableDisplay,
+  addTextDisplay,
   canonicalizeDraft,
   type CompositionStudioDocument,
   createEmptyDraft,
@@ -13,7 +14,10 @@ import {
   draftFromDocument,
   ensureParametersForVariables,
   moveDisplay,
+  moveLayoutItem,
+  moveLayoutRow,
   moveSource,
+  placeParameterControl,
   removeDisplay,
   removeParameter,
   removeSource,
@@ -21,6 +25,8 @@ import {
   setDraftTags,
   studioSeedState,
   toStudioDocument,
+  unplacedParameters,
+  unplaceParameterControl,
   upsertParameter,
 } from "./composition-draft";
 import { compositionApi } from "./composition-api";
@@ -335,5 +341,211 @@ describe("composition draft model", () => {
     expect(studioSeedState({})).toBeUndefined();
     expect(studioSeedState({ seed: { kind: "chart" } })).toBeUndefined();
     expect(studioSeedState({ seed: { kind: "saved_sql" } })).toBeUndefined();
+  });
+
+  it("places text and parameter controls into new and existing rows", () => {
+    let draft = createEmptyDraft();
+    draft = addSavedSqlSource(draft, sqlSeed()).draft;
+    const month = addParameter(draft, {
+      id: "month",
+      type: "date",
+      required: true,
+    });
+    if (!month.ok) throw new Error("expected parameter");
+    draft = month.draft;
+
+    const heading = addTextDisplay(
+      draft,
+      { text: "Summary", style: "heading" },
+      { rowId: null, rowIndex: 0, itemIndex: 0 },
+    );
+    expect(heading.draftId).toBe("disp-1");
+    if (!heading.ok) throw new Error("expected text block");
+    draft = heading.draft;
+
+    const table = addTableDisplay(draft, "src-1", "Details", {
+      rowId: null,
+      rowIndex: 1,
+      itemIndex: 0,
+    });
+    if (!table.ok) throw new Error("expected table block");
+    draft = table.draft;
+
+    const headingRow = draft.layoutRows.find((row) =>
+      row.items.some((item) =>
+        item.kind === "component" && item.draftId === "disp-1"
+      )
+    );
+    if (!headingRow) throw new Error("expected heading row");
+    const placed = placeParameterControl(draft, "month", {
+      rowId: headingRow.id,
+      rowIndex: 0,
+      itemIndex: 0,
+    });
+    expect(placed.ok).toBe(true);
+    if (!placed.ok) throw new Error("expected parameter placement");
+    draft = placed.draft;
+
+    const document = toStudioDocument(draft);
+    expect(document.spec.components).toContainEqual({
+      kind: "text",
+      id: "disp-1",
+      text: "Summary",
+      style: "heading",
+    });
+    // Every component lands exactly once; the control references semantics.
+    const items = document.spec.layout.rows.flatMap((row) => row.items);
+    expect(items).toContainEqual({ kind: "component", component: "disp-1" });
+    expect(items).toContainEqual({ kind: "component", component: "disp-2" });
+    expect(items).toContainEqual({ kind: "parameter", parameter: "month" });
+    expect(unplacedParameters(draft)).toHaveLength(0);
+
+    // Placing twice or placing unknown parameters stays rejected.
+    expect(placeParameterControl(draft, "month")).toEqual({
+      ok: false,
+      error: "parameter-already-placed",
+    });
+    expect(placeParameterControl(draft, "nope")).toEqual({
+      ok: false,
+      error: "unknown-parameter",
+    });
+
+    // Unplacing keeps the semantic parameter for the Data section.
+    const unplaced = unplaceParameterControl(draft, "month");
+    expect(unplaced.ok).toBe(true);
+    if (!unplaced.ok) throw new Error("expected unplacement");
+    expect(unplaced.draft.parameters.map((parameter) => parameter.id)).toEqual([
+      "month",
+    ]);
+    expect(
+      toStudioDocument(unplaced.draft).spec.layout.rows.flatMap((row) =>
+        row.items
+      ),
+    ).not.toContainEqual({ kind: "parameter", parameter: "month" });
+  });
+
+  it("reorders rows and items within rows only", () => {
+    let draft = createEmptyDraft();
+    draft = addSavedSqlSource(draft, sqlSeed()).draft;
+    const first = addTableDisplay(draft, "src-1", "One", {
+      rowId: null,
+      rowIndex: 0,
+      itemIndex: 0,
+    });
+    if (!first.ok) throw new Error("expected block");
+    const second = addTableDisplay(first.draft, "src-1", "Two", {
+      rowId: null,
+      rowIndex: 1,
+      itemIndex: 0,
+    });
+    if (!second.ok) throw new Error("expected block");
+    draft = second.draft;
+    const rowIds = draft.layoutRows
+      .filter((row) => row.items.length > 0)
+      .map((row) => row.id);
+
+    const movedRow = moveLayoutRow(draft, rowIds[1], "up");
+    expect(movedRow.ok).toBe(true);
+    if (!movedRow.ok) throw new Error("expected row move");
+    expect(
+      toStudioDocument(movedRow.draft).spec.layout.rows.map((row) => row.id),
+    ).toEqual([rowIds[1], rowIds[0], "main"]);
+    expect(moveLayoutRow(movedRow.draft, rowIds[1], "up")).toEqual({
+      ok: false,
+      error: "unknown-row",
+    });
+
+    // Within-row reorder swaps item order; row edges stay rejected and
+    // cross-row moves go through insertion targets instead.
+    const text = addTextDisplay(movedRow.draft, { text: "Note" }, {
+      rowId: rowIds[1],
+      rowIndex: 0,
+      itemIndex: 1,
+    });
+    if (!text.ok) throw new Error("expected text block");
+    const movedItem = moveLayoutItem(text.draft, rowIds[1], 1, "up");
+    expect(movedItem.ok).toBe(true);
+    if (!movedItem.ok) throw new Error("expected item move");
+    const targetRow = toStudioDocument(movedItem.draft).spec.layout.rows.find((
+      row,
+    ) => row.id === rowIds[1]);
+    expect(
+      targetRow?.items.map((item) =>
+        item.kind === "component" ? item.component : item.parameter
+      ),
+    ).toEqual(["disp-3", "disp-2"]);
+    expect(moveLayoutItem(movedItem.draft, rowIds[1], 0, "up")).toEqual({
+      ok: false,
+      error: "unknown-block",
+    });
+    expect(moveLayoutItem(movedItem.draft, "nope", 0, "up")).toEqual({
+      ok: false,
+      error: "unknown-row",
+    });
+  });
+
+  it("blocks parameter removal while a control is placed", () => {
+    let draft = createEmptyDraft();
+    const month = addParameter(draft, {
+      id: "month",
+      type: "date",
+      required: true,
+    });
+    if (!month.ok) throw new Error("expected parameter");
+    draft = month.draft;
+    const placed = placeParameterControl(draft, "month");
+    expect(placed.ok).toBe(true);
+    if (!placed.ok) throw new Error("expected placement");
+    expect(removeParameter(placed.draft, "month")).toEqual({
+      ok: false,
+      error: "parameter-referenced",
+    });
+    const unplaced = unplaceParameterControl(placed.draft, "month");
+    if (!unplaced.ok) throw new Error("expected unplacement");
+    expect(removeParameter(unplaced.draft, "month").ok).toBe(true);
+  });
+
+  it("keeps layout-only edits query-stable without refetching sources", () => {
+    let draft = createEmptyDraft();
+    draft = addSavedSqlSource(draft, sqlSeed()).draft;
+    const table = addTableDisplay(draft, "src-1", "Details", {
+      rowId: null,
+      rowIndex: 0,
+      itemIndex: 0,
+    });
+    if (!table.ok) throw new Error("expected block");
+    draft = table.draft;
+    const sources = JSON.stringify(toStudioDocument(draft).spec.sources);
+
+    // Text insertion, row moves, and item moves never reshape sources.
+    const text = addTextDisplay(draft, { text: "Note" }, {
+      rowId: null,
+      rowIndex: 0,
+      itemIndex: 0,
+    });
+    if (!text.ok) throw new Error("expected text block");
+    draft = text.draft;
+    const rows = draft.layoutRows.filter((row) => row.items.length > 0);
+    const movedRow = moveLayoutRow(draft, rows[0].id, "down");
+    if (!movedRow.ok) throw new Error("expected row move");
+    draft = movedRow.draft;
+    const movedItem = moveLayoutItem(
+      draft,
+      draft.layoutRows.find((row) => row.items.length > 1)?.id ?? "main",
+      0,
+      "down",
+    );
+    const settled = movedItem.ok ? movedItem.draft : draft;
+    expect(JSON.stringify(toStudioDocument(settled).spec.sources)).toBe(
+      sources,
+    );
+
+    // Removing a text declaration leaves sources untouched as well.
+    const removed = removeDisplay(settled, "disp-2");
+    expect(removed.ok).toBe(true);
+    if (!removed.ok) throw new Error("expected removal");
+    expect(JSON.stringify(toStudioDocument(removed.draft).spec.sources)).toBe(
+      sources,
+    );
   });
 });
