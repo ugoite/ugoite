@@ -5,7 +5,7 @@ import { compositionApi } from "~/lib/composition-api";
 import { setLocale } from "~/lib/i18n";
 import CompositionRevisionRoute, {
   resolveCompositionFieldName,
-} from "./[revision_id]";
+} from "./index";
 import type { Form } from "~/lib/types";
 
 vi.mock("@solidjs/router", () => ({

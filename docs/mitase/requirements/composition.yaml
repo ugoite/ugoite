@@ -351,14 +351,14 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: uses bounded portable list and exact-revision get operations } }
           - id: route-case
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx"
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
             selector: { kind: test, name: loads and resolves only the exact revision and binds typed parameter changes }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-composition-revision
                 covers:
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-exact-revision-route
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx", test: loads and resolves only the exact revision and binds typed parameter changes } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: loads and resolves only the exact revision and binds typed parameter changes } }
           - id: home-case
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/dashboard.test.tsx"

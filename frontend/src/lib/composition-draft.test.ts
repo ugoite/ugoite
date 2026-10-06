@@ -6,10 +6,12 @@ import {
   addSavedSqlSource,
   addTableDisplay,
   canonicalizeDraft,
+  type CompositionStudioDocument,
   createEmptyDraft,
   defaultParameterValues,
   displaysUsingSource,
   ensureParametersForVariables,
+  draftFromDocument,
   moveDisplay,
   moveSource,
   removeDisplay,
@@ -227,5 +229,87 @@ describe("composition draft model", () => {
     });
     if (!withDefault.ok) throw new Error("expected update");
     expect(defaultParameterValues(withDefault.draft)).toEqual({ region: "eu" });
+  });
+
+  it("restores a draft from a lint-normalized document", () => {
+    const document: CompositionStudioDocument = {
+      format: "ugoite.composition",
+      format_version: 1,
+      kind: "dashboard",
+      name: "Monthly review",
+      tags: ["finance"],
+      spec: {
+        parameters: [{
+          id: "month",
+          label: "Month",
+          type: "date",
+          required: true,
+          default: "2026-01-01",
+          format: "year-month",
+        }],
+        sources: [
+          {
+            kind: "saved_sql",
+            id: "src-1",
+            entry_id: "sql-1",
+            revision_id: "sql-rev-1",
+            expected_result: [{ name: "total", type: "float" }],
+            variables: { month: { parameter: "month" } },
+          },
+          {
+            kind: "entry_query",
+            id: "src-2",
+            form_id: "11111111-1111-4111-8111-111111111111",
+            field_schema: [{ field_id: 1, field_type: "string" }],
+            query: {
+              filters: [],
+              sort: [],
+              projection: { kind: "fields", fields: [1] },
+            },
+          },
+        ],
+        components: [
+          { kind: "table", id: "disp-1", label: "Totals", source: "src-1" },
+          {
+            kind: "metric",
+            id: "disp-2",
+            source: "src-2",
+            value_field: { kind: "entry_field", field_id: 1 },
+          },
+        ],
+        sections: [{ id: "main", components: ["disp-1", "disp-2"] }],
+      },
+    };
+    const draft = draftFromDocument(document, {
+      "src-1": "Monthly totals",
+      "src-2": "Expenses",
+    });
+
+    expect(draft.name).toBe("Monthly review");
+    expect(draft.sources.map((source) => source.name)).toEqual([
+      "Monthly totals",
+      "Expenses",
+    ]);
+    expect(draft.nextSourceSeq).toBe(3);
+    expect(draft.nextDisplaySeq).toBe(3);
+    // Human names never persist: the round trip keeps the normalized doc.
+    expect(toStudioDocument(draft)).toEqual(document);
+  });
+
+  it("refuses unknown document kinds instead of approximating", () => {
+    const document = {
+      format: "ugoite.composition",
+      format_version: 1,
+      kind: "dashboard",
+      name: "Tools",
+      tags: [],
+      spec: {
+        parameters: [],
+        sources: [{ kind: "future_source", id: "src-1" }],
+        components: [],
+        sections: [{ id: "main", components: [] }],
+      },
+    } as unknown as CompositionStudioDocument;
+    expect(() => draftFromDocument(document, {})).toThrow();
   });
 });
