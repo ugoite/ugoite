@@ -1166,7 +1166,7 @@ features:
       - id: browser-query-runtime
         role: implementation
         facet: frontend
-        responsibility: "Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, source-native tables, and metric values in the Browser. Composition table presentation delegates to the source-native Entry or SQL presenter and never defines a third generic table grammar; source query semantics remain unchanged. Saved Tools render the first-class flow layout: rows in order with parameter controls, fixed-style text, metrics, and tables as ordered items."
+        responsibility: "Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, source-native tables, and metric values in the Browser. Composition table presentation delegates to the source-native Entry or SQL presenter and never defines a third generic table grammar; source query semantics remain unchanged. Saved Tools render the first-class flow layout: rows in order with parameter controls, fixed-style text, metrics, and tables as ordered items. The Studio inspector edits only the selected block through draft updaters: metric label, source, and value field; table label and source; text content and fixed style; parameter placement retargets with no label override; and a typed data jump names the block source for the Data section."
         targets:
           - id: browser-composition-api
             adapter: typescript
@@ -1246,6 +1246,19 @@ features:
                 criterion: REQ-COMP-002#criterion.text-style-enum
               - kind: satisfies
                 criterion: REQ-COMP-004#criterion.used-field-fingerprint
+          - id: browser-composition-inspector
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.tsx
+            selector: { kind: symbol, name: CompositionInspector }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.optional-display-labels
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.typed-metric-value-field
           - id: browser-entry-query-table
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.tsx
@@ -1281,7 +1294,7 @@ features:
       - id: browser-query-runtime-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. Saved revision flow coverage verifies row and item order with interleaved parameter controls, fixed text styles without source fetch, narrow-viewport scroll containment, and the flat fallback when the layout cannot be normalized. Design canvas coverage verifies transient block selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder, declaration removal with parameter unplacement, and query-stable layout edits through the draft channel. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
+        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. Saved revision flow coverage verifies row and item order with interleaved parameter controls, fixed text styles without source fetch, narrow-viewport scroll containment, and the flat fallback when the layout cannot be normalized. Design canvas coverage verifies transient block selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder, declaration removal with parameter unplacement, and query-stable layout edits through the draft channel. Inspector coverage verifies per-kind field binding to the draft, metric source and value mapping to component source and value field, text edits without touching sources, parameter retargeting with no label override, the typed data jump, draft-level source, text, and placement retargeting with existing guards, and no panel without a resolvable selection. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
         targets:
           - id: browser-bounded-list-operations
             adapter: typescript
@@ -1470,6 +1483,83 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.used-field-fingerprint
+          - id: browser-inspector-metric-label
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: binds metric label edits to the draft display }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.optional-display-labels
+          - id: browser-inspector-metric-source
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: maps metric source changes to component source and value field }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.typed-metric-value-field
+          - id: browser-inspector-metric-value
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: maps metric value changes to the typed value field }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.typed-metric-value-field
+          - id: browser-inspector-table-edits
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: binds table label and source edits to the draft display }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.optional-display-labels
+          - id: browser-inspector-text-edits
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: binds text content and style edits without touching sources }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.text-style-enum
+          - id: browser-inspector-parameter-retarget
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: changes parameter placement targets without a label override }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: browser-inspector-data-jump
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: exposes a data jump for the selected block source }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: browser-inspector-empty-selection
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: renders nothing without a resolvable selection }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-inspector-draft-metric-source
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: retargets metric source and value field together }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.typed-metric-value-field
+          - id: browser-inspector-draft-text-edits
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: edits text content and style with a fixed enum }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.text-style-enum
+          - id: browser-inspector-draft-parameter-retarget
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: retargets parameter controls in place without touching declarations }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
           - id: browser-metric-continuation-guard
             adapter: typescript
             path: frontend/src/components/CompositionRenderer.test.tsx

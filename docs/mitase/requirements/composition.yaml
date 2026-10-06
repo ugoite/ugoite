@@ -380,6 +380,51 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "keeps layout-only edits query-stable without refetching sources" } }
+      - id: inspector-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio inspector binds only the selected block through draft updaters — text content and fixed style edits without touching sources, and parameter placement retargets with no label override.
+        targets:
+          - id: inspector-text-edits-case
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: binds text content and style edits without touching sources }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "binds text content and style edits without touching sources" } }
+          - id: inspector-parameter-retarget-case
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: changes parameter placement targets without a label override }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "changes parameter placement targets without a label override" } }
+          - id: inspector-draft-text-edits-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: edits text content and style with a fixed enum }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "edits text content and style with a fixed enum" } }
+          - id: inspector-draft-parameter-retarget-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: retargets parameter controls in place without touching declarations }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "retargets parameter controls in place without touching declarations" } }
       - id: metric-value-verification
         role: verification
         facet: verification
