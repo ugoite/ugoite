@@ -55,6 +55,25 @@ components:
       source: Forms through form.list and Saved SQL through sql.list
       selection: full-row-activate
       rendering: human-name-only rows with loading, empty, and error states
+    - id: studio-display
+      type: list
+      title: Display
+      source: draft displays with human names only
+      selection: full-row-activate
+      reorder: keyboard-operable-move-up-down
+      remove: display remove with an accessible name
+      label_editing: inline label input in the expanded row detail
+    - id: studio-add-display
+      type: button
+      title: Add display
+      single_control: true
+      source: CompositionDisplayPicker dialog over draft sources
+    - id: studio-add-display-dialog
+      type: dialog
+      title: Add display
+      source: table or metric choice, then draft source rows, then a scalar value select with an optional label
+      selection: full-row-activate
+      rendering: human-name-only rows; metric sources without scalar candidates show a disabled row with an unavailable reason
     - id: studio-tags
       type: form
       title: Tags

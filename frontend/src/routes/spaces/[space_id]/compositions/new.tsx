@@ -5,6 +5,11 @@ import {
   CompositionDiagnostics,
   CompositionRenderer,
 } from "~/components/CompositionRenderer";
+import { CompositionDisplayList } from "~/components/CompositionDisplayList";
+import {
+  CompositionDisplayPicker,
+  type CompositionDisplaySeed,
+} from "~/components/CompositionDisplayPicker";
 import {
   CompositionSourcePicker,
   type CompositionSourceSeed,
@@ -15,13 +20,18 @@ import { RowList, RowListButton, RowListItem } from "~/components/RowList";
 import { UiIcon } from "~/components/UiIcon";
 import {
   addEntryQuerySource,
+  addMetricDisplay,
   addSavedSqlSource,
+  addTableDisplay,
   canonicalizeDraft,
   type CompositionDraft,
   createEmptyDraft,
   type DraftSource,
+  moveDisplay,
   moveSource,
+  removeDisplay,
   removeSource,
+  setDisplayLabel,
   setDraftName,
   setDraftTags,
 } from "~/lib/composition-draft";
@@ -71,6 +81,7 @@ export default function CompositionNewRoute() {
 
   const [draft, setDraft] = createSignal<CompositionDraft>(createEmptyDraft());
   const [pickerOpen, setPickerOpen] = createSignal(false);
+  const [displayPickerOpen, setDisplayPickerOpen] = createSignal(false);
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
@@ -164,6 +175,37 @@ export default function CompositionNewRoute() {
       setDraft(result.draft);
       setExpandedId((current) => current === sourceDraftId ? null : current);
     }
+  };
+
+  const addDisplaySeed = (seed: CompositionDisplaySeed) => {
+    const added = seed.kind === "table"
+      ? addTableDisplay(draft(), seed.sourceDraftId, seed.label)
+      : addMetricDisplay(
+        draft(),
+        seed.sourceDraftId,
+        seed.valueField,
+        seed.label,
+      );
+    if (added.ok) setDraft(added.draft);
+    setDisplayPickerOpen(false);
+  };
+
+  const moveDraftDisplay = (
+    displayDraftId: string,
+    direction: "up" | "down",
+  ) => {
+    const result = moveDisplay(draft(), displayDraftId, direction);
+    if (result.ok) setDraft(result.draft);
+  };
+
+  const removeDraftDisplay = (displayDraftId: string) => {
+    const result = removeDisplay(draft(), displayDraftId);
+    if (result.ok) setDraft(result.draft);
+  };
+
+  const changeDisplayLabel = (displayDraftId: string, label: string) => {
+    const result = setDisplayLabel(draft(), displayDraftId, label);
+    if (result.ok) setDraft(result.draft);
   };
 
   const expandedSource = (): DraftSource | undefined =>
@@ -280,6 +322,7 @@ export default function CompositionNewRoute() {
     previewState().preview === undefined;
 
   const dataHeadingId = "studio-data-heading";
+  const displayHeadingId = "studio-display-heading";
   const tagsHeadingId = "studio-tags-heading";
   const previewHeadingId = "studio-preview-heading";
   const nameInputId = "studio-name";
@@ -419,6 +462,28 @@ export default function CompositionNewRoute() {
         </Show>
       </section>
 
+      <section class="section" aria-labelledby={displayHeadingId}>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 id={displayHeadingId}>{t("composition.studioDisplay")}</h2>
+          <button
+            class="ui-button ui-button-secondary"
+            type="button"
+            disabled={draft().sources.length === 0}
+            onClick={() => setDisplayPickerOpen(true)}
+          >
+            {t("composition.studioAddDisplay")}
+          </button>
+        </div>
+        <CompositionDisplayList
+          sources={draft().sources}
+          displays={draft().displays}
+          headingId={displayHeadingId}
+          onRemove={removeDraftDisplay}
+          onMove={moveDraftDisplay}
+          onChangeLabel={changeDisplayLabel}
+        />
+      </section>
+
       <section class="section" aria-labelledby={tagsHeadingId}>
         <h2 id={tagsHeadingId}>{t("composition.studioTags")}</h2>
         <input
@@ -488,6 +553,14 @@ export default function CompositionNewRoute() {
           spaceId={spaceId()}
           onSelect={addSeed}
           onClose={() => setPickerOpen(false)}
+        />
+      </Show>
+
+      <Show when={displayPickerOpen()}>
+        <CompositionDisplayPicker
+          sources={draft().sources}
+          onAdd={addDisplaySeed}
+          onClose={() => setDisplayPickerOpen(false)}
         />
       </Show>
     </div>

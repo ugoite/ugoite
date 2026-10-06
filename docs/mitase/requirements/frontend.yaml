@@ -2828,6 +2828,76 @@ requirements:
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
                 covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: surfaces preview errors without stale overwrite } }
+      - id: studio-display-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio display authoring (table or exact-scalar metric choice, scalar-only value candidates with disabled unavailable sources, inline label editing, keyboard-operable reorder, remove) through exact frontend unit tests.
+        targets:
+          - id: studio-display-list-rows
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayList.test.tsx
+            selector: { kind: test, name: "renders display rows with default names and kind labels" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayList.test.tsx, test: "renders display rows with default names and kind labels" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayList.test.tsx, test: "renders display rows with default names and kind labels" } }
+          - id: studio-display-list-edit
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayList.test.tsx
+            selector: { kind: test, name: "edits labels inline and reorders or removes displays" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayList.test.tsx, test: "edits labels inline and reorders or removes displays" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayList.test.tsx, test: "edits labels inline and reorders or removes displays" } }
+          - id: studio-display-picker-table
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "adds a table display from a draft source" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a table display from a draft source" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a table display from a draft source" } }
+          - id: studio-display-picker-metric
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "adds a metric display with scalar-only candidates" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a metric display with scalar-only candidates" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a metric display with scalar-only candidates" } }
+          - id: studio-display-picker-unavailable
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "disables sources without scalar candidates" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "disables sources without scalar candidates" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "disables sources without scalar candidates" } }
       - id: studio-shell-verification
         role: verification
         facet: verification
