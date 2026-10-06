@@ -149,7 +149,7 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/dashboard.tsx
         - frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/index.tsx
-        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
         - frontend/src/routes/spaces/[space_id]/entries.tsx
         - frontend/src/routes/spaces/[space_id]/assets.tsx
         - frontend/src/routes/spaces/[space_id]/forms.tsx
@@ -206,7 +206,7 @@ inventory:
         - tools/release_verify.ts
         - tools/release_verify_test.ts
         - tools/workspace_test.ts
-        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
         - crates/ugoite-wasm/tests/composition_parity.ts
         - frontend/src/lib/composition-api.ts
         - frontend/src/lib/composition-api.test.ts

@@ -748,7 +748,7 @@ features:
                 criterion: REQ-FE-040#criterion.route-coverage
           - id: route-composition-revision
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx"
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx"
             selector: { kind: file }
             claims:
               - kind: satisfies

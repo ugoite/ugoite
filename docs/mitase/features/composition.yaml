@@ -1050,7 +1050,7 @@ features:
                 criterion: REQ-COMP-004#criterion.exact-composition-revision
           - id: browser-exact-revision-route
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx"
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx"
             selector: { kind: symbol, name: CompositionRevisionRoute }
             claims:
               - kind: satisfies
@@ -1119,21 +1119,21 @@ features:
                 anchor: REQ-COMP-002#criterion.metric-runtime-values
           - id: browser-exact-parameter-resolution
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx"
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
             selector: { kind: test, name: loads and resolves only the exact revision and binds typed parameter changes }
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.exact-composition-revision
           - id: browser-required-parameter-diagnostic
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx"
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
             selector: { kind: test, name: renders deterministic diagnostics and retains the parameter control }
             claims:
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.typed-dashboard-model
           - id: browser-detail-read-retry
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].test.tsx"
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
             selector: { kind: test, name: retries an exact-revision open after a read failure }
             claims:
               - kind: evidences
