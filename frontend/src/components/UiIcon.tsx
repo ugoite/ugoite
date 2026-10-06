@@ -21,6 +21,7 @@ export type UiIconName =
   | "save"
   | "info"
   | "trash"
+  | "edit"
   | "preview"
   | "download"
   | "close"
@@ -128,6 +129,12 @@ const paths: Record<UiIconName, () => JSX.Element> = {
       <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
       <path d="M3 3v5h5" />
       <path d="M12 7v5l3 2" />
+    </>
+  ),
+  edit: () => (
+    <>
+      <path d="M4 20l1-4.5L16.5 4a2.1 2.1 0 0 1 3 3L8 18.5 4 20z" />
+      <path d="m14 6.5 3 3" />
     </>
   ),
   refresh: () => (

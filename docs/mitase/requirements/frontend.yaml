@@ -3075,3 +3075,21 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "pins the exact saved sql revision with server-owned column types" } }
+      - id: studio-use-surface-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the saved-tool read surface owns the tool name once and links a single edit action with an accessible name through exact frontend unit tests.
+        targets:
+          - id: use-surface-header
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: owns the tool name once and links a single edit action }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-use-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: owns the tool name once and links a single edit action } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.accessible-icon-actions
+                covers: [FEAT-FE-014#binding.frontend/target.composition-use-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: owns the tool name once and links a single edit action } }

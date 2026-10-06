@@ -5,6 +5,7 @@ import {
   CompositionRenderer,
 } from "~/components/CompositionRenderer";
 import { FieldStack, FieldStackRow } from "~/components/FieldStack";
+import { IconLink } from "~/components/IconLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { t } from "~/lib/i18n";
 import {
@@ -13,6 +14,7 @@ import {
 } from "~/lib/composition-api";
 import { createCompositionQueryHandle } from "~/lib/composition-query-handle";
 import { formApi } from "~/lib/ugoite-client";
+import { spaceCompositionEditPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 import type { Form } from "~/lib/types";
 
@@ -104,7 +106,18 @@ export default function CompositionRevisionRoute() {
 
   return (
     <>
-      <h1>{name()}</h1>
+      <div class="flex items-center gap-2">
+        <h1>{name()}</h1>
+        <IconLink
+          icon="edit"
+          label={t("composition.studioEdit")}
+          href={spaceCompositionEditPath(
+            params.space_id,
+            params.composition_id,
+            params.revision_id,
+          )}
+        />
+      </div>
       <Show when={current().opening}>
         <LocalBusyIndicator label={t("composition.detailLoading")} />
       </Show>
