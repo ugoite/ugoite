@@ -469,13 +469,18 @@ describe("Composition studio shell", () => {
     });
 
     // The month parameter is provisioned from the server-declared type.
-    expect(await screen.findByText("month")).toBeInTheDocument();
+    // Scoped to the Parameters section: the Data workspace viewer also
+    // surfaces the Saved SQL variable name in its own Variables section.
+    const parameters = screen
+      .getByRole("heading", { name: "Parameters" })
+      .closest("section")!;
+    expect(await within(parameters).findByText("month")).toBeInTheDocument();
 
     // A referenced parameter cannot be removed silently.
     fireEvent.click(screen.getByRole("button", { name: "Remove month" }));
     expect(
       await screen.findByText("This parameter is used by a data source."),
     ).toBeInTheDocument();
-    expect(screen.getByText("month")).toBeInTheDocument();
+    expect(within(parameters).getByText("month")).toBeInTheDocument();
   });
 });
