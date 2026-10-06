@@ -575,6 +575,135 @@ export const toStudioDocument = (
   },
 });
 
+/**
+ * Rebuild an editable draft from a server-normalized Composition document.
+ * Structural mapping only: lint already normalized, so no validation logic
+ * lives here. Unknown source, component, or value-field kinds throw
+ * fail-closed instead of approximating. Human names come from `sourceNames`
+ * (keyed by document source id) and fall back to the source id.
+ */
+export const draftFromDocument = (
+  document: CompositionStudioDocument,
+  sourceNames: Record<string, string>,
+): CompositionDraft => {
+  const fail = (what: string): never => {
+    throw new Error(`Unsupported Composition document ${what}`);
+  };
+  const sources: DraftSource[] = document.spec.sources.map((source, index) => {
+    const draftId = `src-${index + 1}`;
+    const name = sourceNames[source.id] ?? source.id;
+    if (source.kind === "saved_sql") {
+      return {
+        kind: "saved_sql",
+        draftId,
+        entryId: source.entry_id,
+        revisionId: source.revision_id,
+        name,
+        expectedResult: source.expected_result.map((column) => ({ ...column })),
+        variables: Object.fromEntries(
+          Object.entries(source.variables).map(([key, binding]) => [
+            key,
+            { ...binding },
+          ]),
+        ),
+      };
+    }
+    if (source.kind === "entry_query") {
+      return {
+        kind: "entry_query",
+        draftId,
+        formId: source.form_id,
+        name,
+        fieldSchema: source.field_schema.map((entry) => ({ ...entry })),
+        query: {
+          ...(source.query.text === undefined
+            ? {}
+            : { text: source.query.text }),
+          filters: source.query.filters.map((filter) => ({ ...filter })),
+          sort: source.query.sort.map((clause) => ({ ...clause })),
+          ...(source.query.page_limit === undefined
+            ? {}
+            : { pageLimit: source.query.page_limit }),
+          projection: source.query.projection,
+        },
+      };
+    }
+    return fail(`source kind: ${String((source as { kind: unknown }).kind)}`);
+  });
+  const sourceDraftIds = new Map(
+    document.spec.sources.map((
+      source,
+      index,
+    ) => [source.id, `src-${index + 1}`]),
+  );
+  const displays: DraftDisplay[] = document.spec.components.map(
+    (component, index) => {
+      const draftId = `disp-${index + 1}`;
+      const sourceDraftId = sourceDraftIds.get(component.source);
+      if (sourceDraftId === undefined) {
+        return fail(`component source: ${component.source}`);
+      }
+      if (component.kind === "table") {
+        return {
+          kind: "table",
+          draftId,
+          sourceDraftId,
+          ...(component.label ? { label: component.label } : {}),
+        };
+      }
+      if (component.kind === "metric") {
+        const valueField = component.value_field;
+        if (valueField?.kind === "entry_field") {
+          return {
+            kind: "metric",
+            draftId,
+            sourceDraftId,
+            ...(component.label ? { label: component.label } : {}),
+            valueField: { fieldId: valueField.field_id },
+          };
+        }
+        if (valueField?.kind === "sql_column") {
+          return {
+            kind: "metric",
+            draftId,
+            sourceDraftId,
+            ...(component.label ? { label: component.label } : {}),
+            valueField: { column: valueField.name },
+          };
+        }
+        return fail(
+          `metric value field kind: ${
+            String(
+              (valueField as { kind: unknown } | undefined)?.kind,
+            )
+          }`,
+        );
+      }
+      return fail(
+        `component kind: ${String((component as { kind: unknown }).kind)}`,
+      );
+    },
+  );
+  return {
+    name: document.name,
+    tags: [...document.tags],
+    sources,
+    displays,
+    parameters: document.spec.parameters.map((parameter) => ({
+      id: parameter.id,
+      ...(parameter.label ? { label: parameter.label } : {}),
+      type: parameter.type,
+      required: parameter.required,
+      ...(parameter.default === undefined
+        ? {}
+        : { default: parameter.default }),
+      ...(parameter.format ? { format: parameter.format } : {}),
+    })),
+    nextSourceSeq: sources.length + 1,
+    nextDisplaySeq: displays.length + 1,
+  };
+};
+
 /** Canonicalize the draft through the shared Rust/WASM contract. */
 export const canonicalizeDraft = async (
   draft: CompositionDraft,

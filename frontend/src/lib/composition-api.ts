@@ -1,6 +1,11 @@
 import type { EntryPage, EntryPageRequest } from "./entry-query";
 import type { CompositionStudioDocument } from "./composition-draft";
-import type { EntryQueryCompositionDocument } from "./entry-query-composition";
+import type {
+  EntryQueryCompositionDocument,
+  EntryQueryCompositionFilter,
+  EntryQueryCompositionProjection,
+  EntryQueryCompositionSort,
+} from "./entry-query-composition";
 import type { SqlQueryPage, SqlQueryRequest, SqlResultColumn } from "./types";
 import {
   canonicalizeCompositionDocument,
@@ -39,6 +44,69 @@ export interface CompositionRawRevision {
   };
   fields: Record<string, unknown>;
   unmapped_field_values: Record<string, unknown>;
+}
+
+export interface CompositionLintDocument {
+  format: "ugoite.composition";
+  format_version: number;
+  kind: string;
+  name: string;
+  tags: string[];
+  spec: {
+    parameters: Array<{
+      id: string;
+      label?: string;
+      type: CompositionParameterType;
+      required: boolean;
+      default?: unknown;
+      format?: "year-month";
+    }>;
+    sources: Array<{
+      kind: string;
+      id: string;
+      entry_id?: string;
+      revision_id?: string;
+      form_id?: string;
+      field_schema?: Array<{
+        field_id: number;
+        field_type: string;
+        reference_form?: string;
+        items?: { type: string; target_form?: string };
+      }>;
+      expected_result?: Array<{ name: string; type: CompositionResultType }>;
+      variables?: Record<string, { parameter: string }>;
+      query?: {
+        text?: unknown;
+        filters: EntryQueryCompositionFilter[];
+        sort: EntryQueryCompositionSort[];
+        page_limit?: number;
+        projection: EntryQueryCompositionProjection;
+      };
+    }>;
+    components: Array<{
+      kind: string;
+      id: string;
+      label?: string;
+      source: string;
+      value_field?: { kind: string; field_id?: number; name?: string };
+    }>;
+    sections: Array<{ id: string; components: string[] }>;
+  };
+}
+
+export interface CompositionLintResponse {
+  ok: boolean;
+  value?: {
+    document: CompositionLintDocument;
+    canonical_yaml: string;
+    fingerprint: string;
+  };
+  error?: { kind: string; code: string };
+}
+
+export interface CompositionSaveOptions {
+  compositionId?: string;
+  baseRevisionId?: string;
 }
 
 export interface CompositionSaveResponse {
@@ -267,11 +335,33 @@ export const compositionApi = {
     spaceId: string,
     yaml: string,
     idempotencyKey: string,
+    opts?: CompositionSaveOptions,
     signal?: AbortSignal,
   ): Promise<CompositionSaveResponse> {
     return await protocolFetch<CompositionSaveResponse>(
       "composition.save",
       { space_id: spaceId, idempotency_key: idempotencyKey },
+      {
+        yaml,
+        ...(opts?.compositionId === undefined
+          ? {}
+          : { composition_id: opts.compositionId }),
+        ...(opts?.baseRevisionId === undefined
+          ? {}
+          : { base_revision_id: opts.baseRevisionId }),
+      },
+      { signal },
+    );
+  },
+
+  /** Side-effect-free normalization of one stored spec through the server. */
+  async lint(
+    yaml: string,
+    signal?: AbortSignal,
+  ): Promise<CompositionLintResponse> {
+    return await protocolFetch<CompositionLintResponse>(
+      "composition.lint",
+      {},
       { yaml },
       { signal },
     );

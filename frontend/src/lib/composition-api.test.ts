@@ -115,6 +115,7 @@ describe("compositionApi", () => {
       "space-1",
       "canonical yaml",
       "attempt-1",
+      undefined,
       signal,
     );
 
@@ -125,6 +126,59 @@ describe("compositionApi", () => {
       "composition.save",
       { space_id: "space-1", idempotency_key: "attempt-1" },
       { yaml: "canonical yaml" },
+      { signal },
+    );
+  });
+
+  it("lints stored YAML through the portable operation", async () => {
+    vi.mocked(protocolFetch).mockResolvedValue({
+      ok: true,
+      value: {
+        document: {},
+        canonical_yaml: "canonical yaml",
+        fingerprint: "fingerprint",
+      },
+    });
+
+    const linted = await compositionApi.lint("raw yaml", signal);
+
+    expect(linted.ok).toBe(true);
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.lint",
+      {},
+      { yaml: "raw yaml" },
+      { signal },
+    );
+  });
+
+  it("saves an update with the exact composition and base revision identity", async () => {
+    vi.mocked(protocolFetch).mockResolvedValue({
+      composition_id: "tool-1",
+      revision_id: "revision-2",
+      canonical_yaml: "canonical yaml",
+      receipt: {
+        command_id: "command-1",
+        catalog_generation: 4,
+        snapshot_id: 42,
+        committed_revision_ids: ["revision-2"],
+        committed_at_micros: 1,
+        data_file_count: 1,
+      },
+    });
+
+    await compositionApi.save("space-1", "canonical yaml", "attempt-1", {
+      compositionId: "tool-1",
+      baseRevisionId: "revision-1",
+    }, signal);
+
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.save",
+      { space_id: "space-1", idempotency_key: "attempt-1" },
+      {
+        yaml: "canonical yaml",
+        composition_id: "tool-1",
+        base_revision_id: "revision-1",
+      },
       { signal },
     );
   });
