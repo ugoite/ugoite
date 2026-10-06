@@ -11,16 +11,14 @@ import {
   CompositionDiagnostics,
   CompositionRenderer,
 } from "~/components/CompositionRenderer";
+import { DashboardFlowRenderer } from "~/components/DashboardFlowRenderer";
+import { ParameterControl } from "~/components/composition/ParameterControl";
 import { FieldStack, FieldStackRow } from "~/components/FieldStack";
 import { IconButton } from "~/components/IconButton";
 import { IconLink } from "~/components/IconLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { t } from "~/lib/i18n";
-import {
-  compositionApi,
-  compositionDisplayName,
-  type CompositionParameterDefinition,
-} from "~/lib/composition-api";
+import { compositionApi, compositionDisplayName } from "~/lib/composition-api";
 import { createCompositionQueryHandle } from "~/lib/composition-query-handle";
 import { formApi } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
@@ -50,32 +48,6 @@ export const resolveCompositionFieldName = (
   Object.entries(
     (forms ?? []).find((form) => form.id === formId)?.fields ?? {},
   ).find(([, field]) => field.id === fieldId)?.[0];
-
-const parameterValue = (
-  definition: CompositionParameterDefinition,
-  value: unknown,
-): string => {
-  const current = value === undefined ? definition.default : value;
-  if (current === null || current === undefined) return "";
-  if (typeof current === "string") return current;
-  if (typeof current === "number" || typeof current === "boolean") {
-    return String(current);
-  }
-  return "";
-};
-
-const serializeParameter = (
-  definition: CompositionParameterDefinition,
-  value: string,
-): unknown | undefined => {
-  if (value === "") return undefined;
-  if (definition.type === "boolean") return value === "true";
-  if (definition.type === "integer" || definition.type === "float") {
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : value;
-  }
-  return value;
-};
 
 export default function CompositionRevisionRoute() {
   const params = useParams<{
@@ -203,6 +175,77 @@ export default function CompositionRevisionRoute() {
         diagnostic.code === "parameter_missing")
     );
 
+  // First-class flow layout for saved Tools. The stored spec YAML is
+  // normalized side-effect-free (same as the edit route); rows, text
+  // content, and parameter placement come from that document while values
+  // and pages stay with the resolve plan and transient Work state. When
+  // the layout is unavailable the route falls back to the flat renderer
+  // with every declared parameter editable.
+  const specYaml = () => {
+    const spec = current().composition?.fields?.["spec"];
+    return typeof spec === "string" ? spec : undefined;
+  };
+  const [linted] = createResource(
+    specYaml,
+    (yaml) => compositionApi.lint(yaml).catch(() => undefined),
+  );
+  const layoutDocument = () => {
+    const response = linted();
+    if (!response || !response.ok || !response.value) return undefined;
+    const document = response.value.document;
+    if (
+      document.format !== "ugoite.composition" ||
+      document.kind !== "dashboard" || !Array.isArray(document.spec.components)
+    ) return undefined;
+    return document;
+  };
+  const flowRows = () => {
+    const rows = layoutDocument()?.spec.layout?.rows;
+    return Array.isArray(rows) ? rows : undefined;
+  };
+  const flowTexts = () => {
+    const texts: Record<
+      string,
+      { text: string; style: "title" | "heading" | "body" | "caption" }
+    > = {};
+    for (const component of layoutDocument()?.spec.components ?? []) {
+      if (
+        component.kind === "text" && "text" in component &&
+        typeof component.text === "string" &&
+        "style" in component &&
+        (component.style === "title" || component.style === "heading" ||
+          component.style === "body" || component.style === "caption")
+      ) {
+        texts[component.id] = { text: component.text, style: component.style };
+      }
+    }
+    return texts;
+  };
+  const placedParameterIds = () => {
+    const placed = new Set<string>();
+    for (const row of flowRows() ?? []) {
+      for (const item of row.items ?? []) {
+        if (item.kind === "parameter" && item.parameter) {
+          placed.add(item.parameter);
+        }
+      }
+    }
+    return placed;
+  };
+  const resolvedPlan = () =>
+    current().resolved?.ok ? current().resolved?.plan : undefined;
+  // Placed controls render inside the flow; the section below keeps only
+  // unplaced (optional with defaults) definitions editable. Without a
+  // resolved plan every declared parameter stays editable here so resolve
+  // diagnostics keep their control.
+  const sectionDefinitions = () => {
+    if (flowRows() === undefined || resolvedPlan() === undefined) {
+      return definitions();
+    }
+    const placed = placedParameterIds();
+    return definitions().filter((definition) => !placed.has(definition.id));
+  };
+
   return (
     <>
       <div class="flex items-center gap-2">
@@ -266,85 +309,22 @@ export default function CompositionRevisionRoute() {
           </button>
         </section>
       </Show>
-      <Show when={definitions().length > 0}>
+      <Show when={sectionDefinitions().length > 0}>
         <section class="section">
           <h2>{t("composition.parameters")}</h2>
           <FieldStack label={t("composition.parameters")}>
-            <For each={definitions()}>
-              {(definition) => {
-                const label = () => definition.label || definition.id;
-                const value = () =>
-                  parameterValue(
-                    definition,
-                    handle.parameters()[definition.id],
-                  );
-                return (
-                  <FieldStackRow>
-                    <div class="ui-field">
-                      <label>
-                        <span>{label()}</span>
-                        <Show
-                          when={definition.type === "boolean"}
-                          fallback={
-                            <input
-                              class="ui-input"
-                              type={definition.type === "date"
-                                ? "date"
-                                : definition.type === "timestamp"
-                                ? "datetime-local"
-                                : definition.type === "integer" ||
-                                    definition.type === "float"
-                                ? "number"
-                                : "text"}
-                              step={definition.type === "integer"
-                                ? "1"
-                                : definition.type === "float"
-                                ? "any"
-                                : undefined}
-                              required={definition.required || undefined}
-                              value={value()}
-                              aria-invalid={parameterMismatch(definition.id) ||
-                                undefined}
-                              onChange={(event) =>
-                                handle.setParameter(
-                                  definition.id,
-                                  serializeParameter(
-                                    definition,
-                                    event.currentTarget.value,
-                                  ),
-                                )}
-                            />
-                          }
-                        >
-                          <select
-                            class="ui-input"
-                            required={definition.required || undefined}
-                            value={value()}
-                            aria-invalid={parameterMismatch(definition.id) ||
-                              undefined}
-                            onChange={(event) =>
-                              handle.setParameter(
-                                definition.id,
-                                serializeParameter(
-                                  definition,
-                                  event.currentTarget.value,
-                                ),
-                              )}
-                          >
-                            <option value="">—</option>
-                            <option value="true">
-                              {t("composition.booleanTrue")}
-                            </option>
-                            <option value="false">
-                              {t("composition.booleanFalse")}
-                            </option>
-                          </select>
-                        </Show>
-                      </label>
-                    </div>
-                  </FieldStackRow>
-                );
-              }}
+            <For each={sectionDefinitions()}>
+              {(definition) => (
+                <FieldStackRow>
+                  <ParameterControl
+                    definition={definition}
+                    value={handle.parameters()[definition.id]}
+                    onChange={(value) =>
+                      handle.setParameter(definition.id, value)}
+                    invalid={parameterMismatch(definition.id)}
+                  />
+                </FieldStackRow>
+              )}
             </For>
           </FieldStack>
         </section>
@@ -360,14 +340,38 @@ export default function CompositionRevisionRoute() {
       </Show>
       <Show when={current().resolved?.ok && current().resolved?.plan}>
         {(plan) => (
-          <CompositionRenderer
-            plan={plan()}
-            sources={current().sources}
-            fieldNames={fieldNames}
-            onNext={handle.next}
-            onPrevious={handle.previous}
-            onRetry={handle.retry}
-          />
+          <Show
+            when={flowRows()}
+            fallback={
+              <CompositionRenderer
+                plan={plan()}
+                sources={current().sources}
+                texts={flowTexts()}
+                fieldNames={fieldNames}
+                onNext={handle.next}
+                onPrevious={handle.previous}
+                onRetry={handle.retry}
+              />
+            }
+          >
+            {(rows) => (
+              <DashboardFlowRenderer
+                layout={{ rows: rows() }}
+                plan={plan()}
+                texts={flowTexts()}
+                parameterDefinitions={definitions()}
+                parameterValues={handle.parameters()}
+                onParameterChange={(parameterId, value) =>
+                  handle.setParameter(parameterId, value)}
+                parameterInvalid={parameterMismatch}
+                sources={current().sources}
+                fieldNames={fieldNames}
+                onNext={handle.next}
+                onPrevious={handle.previous}
+                onRetry={handle.retry}
+              />
+            )}
+          </Show>
         )}
       </Show>
     </>

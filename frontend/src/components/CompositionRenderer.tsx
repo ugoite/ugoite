@@ -6,11 +6,13 @@ import { SqlResultTable } from "~/components/SqlResultTable";
 import { t, type TranslationKey } from "~/lib/i18n";
 import {
   compositionApi,
+  type CompositionResolvePlan,
   type CompositionResolvedComponentBinding,
   type CompositionResolveDiagnostic,
   type CompositionResolvedSource,
-  type CompositionResolvePlan,
+  type CompositionTextStyle,
 } from "~/lib/composition-api";
+import { TextComponent } from "~/components/composition/TextComponent";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 
 export type CompositionFieldNames = (
@@ -26,6 +28,11 @@ type RendererProps = {
    */
   plan: Pick<CompositionResolvePlan, "sources" | "component_bindings">;
   sources: Record<string, CompositionSourcePageState>;
+  /**
+   * Text content joined by component id. Surfaces without the component
+   * declarations (draft previews) omit this and skip text bindings.
+   */
+  texts?: Readonly<Record<string, { text: string; style: CompositionTextStyle }>>;
   fieldNames?: CompositionFieldNames;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
@@ -112,7 +119,7 @@ const objectValue = (value: unknown): Record<string, unknown> | undefined =>
     ? value as Record<string, unknown>
     : undefined;
 
-function CompositionSavedSqlTable(props: {
+export function CompositionSavedSqlTable(props: {
   binding: Extract<CompositionResolvedComponentBinding, { kind: "table" }>;
   source: Extract<CompositionResolvedSource, { kind: "saved_sql" }>;
   sourceState?: CompositionSourcePageState;
@@ -239,7 +246,7 @@ const metricRequest = (
   };
 };
 
-function CompositionMetric(props: {
+export function CompositionMetric(props: {
   binding: Extract<CompositionResolvedComponentBinding, { kind: "metric" }>;
   source: CompositionResolvedSource;
   sourceState?: CompositionSourcePageState;
@@ -352,6 +359,8 @@ export function CompositionRenderer(props: RendererProps) {
   );
   const sourceStatusOwner = new Map<string, string>();
   for (const binding of props.plan.component_bindings) {
+    // Text bindings carry no source binding and trigger no source request.
+    if (binding.kind === "text") continue;
     if (
       sourceById.has(binding.source_id) &&
       !sourceStatusOwner.has(binding.source_id)
@@ -363,6 +372,13 @@ export function CompositionRenderer(props: RendererProps) {
     <div class="compositionRenderer">
       <For each={props.plan.component_bindings}>
         {(binding) => {
+          // Text carries no source binding: join content and style by
+          // component id, and skip when the caller has no declarations.
+          if (binding.kind === "text") {
+            const text = props.texts?.[binding.component_id];
+            if (!text) return null;
+            return <TextComponent text={text.text} style={text.style} />;
+          }
           const source = sourceById.get(binding.source_id);
           const sourceState = () => props.sources[binding.source_id];
           if (!source) return null;

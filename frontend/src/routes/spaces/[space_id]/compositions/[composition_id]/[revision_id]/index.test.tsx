@@ -2,6 +2,11 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { compositionApi } from "~/lib/composition-api";
+import type {
+  CompositionLintDocument,
+  CompositionResolvePlan,
+  CompositionSourcePage,
+} from "~/lib/composition-api";
 import { setLocale } from "~/lib/i18n";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import CompositionRevisionRoute, { resolveCompositionFieldName } from "./index";
@@ -357,6 +362,204 @@ describe("Composition exact-revision route", () => {
       screen.queryByRole("button", { name: "Retry" }),
     ).not.toBeInTheDocument();
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("Composition revision flow layout", () => {
+  const lintDocument: CompositionLintDocument = {
+    format: "ugoite.composition",
+    format_version: 1,
+    kind: "dashboard",
+    name: "Monthly expenses",
+    tags: [],
+    spec: {
+      parameters: [
+        {
+          id: "month",
+          label: "Month",
+          type: "date",
+          required: true,
+          default: "2026-10-01",
+          format: "year-month",
+        },
+        { id: "region", label: "Region", type: "string", required: false },
+      ],
+      sources: [{ kind: "entry_query", id: "entries", form_id: "form-1" }],
+      components: [
+        {
+          kind: "text",
+          id: "summary_title",
+          text: "Monthly summary",
+          style: "heading",
+        },
+        { kind: "table", id: "rows", label: "Details", source: "entries" },
+      ],
+      layout: {
+        kind: "flow",
+        rows: [
+          {
+            id: "controls",
+            items: [{ kind: "parameter", parameter: "month" }],
+          },
+          {
+            id: "heading",
+            items: [{ kind: "component", component: "summary_title" }],
+          },
+          { id: "detail", items: [{ kind: "component", component: "rows" }] },
+        ],
+      },
+    },
+  };
+
+  const flowPlan: CompositionResolvePlan = {
+    composition_revision: { entry_id: "tool-1", revision_id: "revision-2" },
+    sources: [{
+      kind: "entry_query",
+      source_id: "entries",
+      source_schema_fingerprint: "fingerprint",
+      request: {
+        query: {
+          scope: { kind: "form", form_id: "form-1" },
+          filters: [],
+          sort: [],
+        },
+        projection: {
+          kind: "fields",
+          fields: [{ kind: "property", field_id: 7 }],
+        },
+        limit: 100,
+      },
+    }],
+    component_bindings: [
+      { component_id: "summary_title", kind: "text" },
+      {
+        component_id: "rows",
+        kind: "table",
+        label: "Details",
+        source_id: "entries",
+      },
+    ],
+  };
+
+  const entryPage: CompositionSourcePage = {
+    kind: "entry_query",
+    page: {
+      rows: [{
+        id: "entry-1",
+        form_id: "form-1",
+        revision_id: "revision-1",
+        created_at_micros: 1_772_960_000_000_000,
+        updated_at_micros: 1_772_963_000_000_000,
+        properties: { purpose: "Travel" },
+        preview: "Travel entry",
+      }],
+      has_more: false,
+    },
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    navigateMock.mockClear();
+    setLocale("en");
+    vi.spyOn(compositionApi, "get").mockResolvedValue({
+      ...rawRevision,
+      fields: { name: "Monthly expenses", spec: "format: ugoite.composition" },
+    });
+    vi.spyOn(compositionApi, "lint").mockResolvedValue({
+      ok: true,
+      value: {
+        document: lintDocument,
+        canonical_yaml: "canonical",
+        fingerprint: "fingerprint",
+      },
+    });
+    vi.spyOn(compositionApi, "resolve").mockResolvedValue({
+      ok: true,
+      parameter_definitions: [
+        {
+          id: "month",
+          label: "Month",
+          type: "date",
+          required: true,
+          default: "2026-10-01",
+          format: "year-month",
+        },
+        { id: "region", label: "Region", type: "string", required: false },
+      ],
+      plan: flowPlan,
+    });
+    vi.spyOn(compositionApi, "querySource").mockResolvedValue(entryPage);
+    vi.spyOn(compositionApi, "list").mockResolvedValue({
+      items: [{
+        composition_id: "tool-1",
+        revision_id: "revision-2",
+        updated_at: 1767312000,
+        name: "Monthly expenses",
+        kind: "dashboard",
+        tags: [],
+      }],
+      offset: 0,
+      limit: 100,
+      has_more: false,
+    });
+  });
+
+  it("renders placed controls in flow order with text and the source-native table", async () => {
+    const { container } = render(() => <CompositionRevisionRoute />);
+
+    expect(await screen.findByRole("heading", { name: "Monthly expenses" }))
+      .toBeInTheDocument();
+    // The placed control lives in the flow with its human label and value.
+    const month = await screen.findByLabelText("Month");
+    expect(month).toHaveValue("2026-10-01");
+    // Rows render top to bottom: controls, heading text, then the table.
+    const rows = await screen.findAllByText(/Month|Monthly summary|Details/);
+    expect(rows.length).toBeGreaterThan(0);
+    const flowRows = container.querySelectorAll(".compositionFlowRow");
+    expect(flowRows).toHaveLength(3);
+    expect(flowRows[0].textContent).toContain("Month");
+    expect(flowRows[1].textContent).toContain("Monthly summary");
+    expect(flowRows[2].textContent).toContain("Details");
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Travel" })).toBeInTheDocument();
+  });
+
+  it("keeps unplaced parameters editable outside the flow without duplication", async () => {
+    render(() => <CompositionRevisionRoute />);
+
+    expect(await screen.findByLabelText("Region")).toBeInTheDocument();
+    // The placed control renders once, inside the flow only.
+    expect(screen.getAllByLabelText("Month")).toHaveLength(1);
+    expect(screen.getAllByLabelText("Region")).toHaveLength(1);
+  });
+
+  it("drives resolve through the in-flow control", async () => {
+    render(() => <CompositionRevisionRoute />);
+
+    const month = await screen.findByLabelText("Month");
+    fireEvent.change(month, { target: { value: "2026-02-01" } });
+
+    await waitFor(() =>
+      expect(compositionApi.resolve).toHaveBeenLastCalledWith(
+        "space-1",
+        "tool-1",
+        "revision-2",
+        { month: "2026-02-01" },
+        expect.any(AbortSignal),
+      )
+    );
+  });
+
+  it("falls back to the flat renderer when the layout cannot be normalized", async () => {
+    vi.mocked(compositionApi.lint).mockRejectedValueOnce(
+      new Error("temporary lint failure"),
+    );
+    render(() => <CompositionRevisionRoute />);
+
+    expect(await screen.findByLabelText("Month")).toBeInTheDocument();
+    expect(screen.getByLabelText("Region")).toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(document.querySelector(".compositionFlow")).toBeNull();
   });
 });
 

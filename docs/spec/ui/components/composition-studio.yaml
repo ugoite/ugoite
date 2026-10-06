@@ -73,3 +73,30 @@ components:
     narrow: one-column-stacked
     narrow_width: 390px
     surface_tokens: fixed-only-no-raw-color
+  - id: use-flow-renderer
+    type: flow-layout
+    title: Saved tool flow
+    status: implemented
+    ownership: renderer-only-no-authoring-affordances
+    source: saved-tool-layout-rows-and-component-declarations
+    rows:
+      order: layout-row-array-then-item-order
+      items: [parameter-control, text, metric, table]
+    text:
+      styles: [title, heading, body, caption]
+      semantics: fixed-typography-no-markdown-no-source-fetch
+    parameter_controls:
+      order: layout-placement-first
+      labels: declared-human-label
+      state: transient-work-never-stored
+    metric_semantics: exact-scalar-no-aggregation
+    table_presentation:
+      entry_query: EntryResultTable
+      saved_sql: SqlResultTable
+      overflow: own-viewport-only-no-document-scroll
+    responsive:
+      desktop: row-items-inline
+      narrow: wrap-stack
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color
+    async_state: explicit-loading-empty-error

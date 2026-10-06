@@ -1166,7 +1166,7 @@ features:
       - id: browser-query-runtime
         role: implementation
         facet: frontend
-        responsibility: Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, source-native tables, and metric values in the Browser. Composition table presentation delegates to the source-native Entry or SQL presenter and never defines a third generic table grammar; source query semantics remain unchanged.
+        responsibility: "Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, source-native tables, and metric values in the Browser. Composition table presentation delegates to the source-native Entry or SQL presenter and never defines a third generic table grammar; source query semantics remain unchanged. Saved Tools render the first-class flow layout: rows in order with parameter controls, fixed-style text, metrics, and tables as ordered items."
         targets:
           - id: browser-composition-api
             adapter: typescript
@@ -1205,7 +1205,34 @@ features:
               - kind: satisfies
                 criterion: REQ-COMP-002#criterion.metric-runtime-values
               - kind: satisfies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+              - kind: satisfies
                 criterion: REQ-FE-068#criterion.source-native-composition-rendering
+          - id: browser-dashboard-flow-renderer
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.tsx
+            selector: { kind: symbol, name: DashboardFlowRenderer }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+          - id: browser-flow-text
+            adapter: typescript
+            path: frontend/src/components/composition/TextComponent.tsx
+            selector: { kind: symbol, name: TextComponent }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+          - id: browser-parameter-control
+            adapter: typescript
+            path: frontend/src/components/composition/ParameterControl.tsx
+            selector: { kind: symbol, name: ParameterControl }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.parameter-placement
           - id: browser-entry-query-table
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.tsx
@@ -1241,7 +1268,7 @@ features:
       - id: browser-query-runtime-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
+        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. Saved revision flow coverage verifies row and item order with interleaved parameter controls, fixed text styles without source fetch, narrow-viewport scroll containment, and the flat fallback when the layout cannot be normalized. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
         targets:
           - id: browser-bounded-list-operations
             adapter: typescript
@@ -1326,6 +1353,50 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-002#criterion.metric-runtime-values
+          - id: browser-renderer-text-binding
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: renders text bindings from joined declarations without source requests }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.text-style-enum
+          - id: browser-flow-row-order
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: renders rows in order with parameter controls interleaved }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: browser-flow-text-styles
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: renders each text style without fetching sources }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.text-style-enum
+          - id: browser-flow-viewport
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: keeps flow rows inline with tables scrolling in their own viewport }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-068#criterion.local-horizontal-overflow
+          - id: browser-flow-revision-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
+            selector: { kind: test, name: renders placed controls in flow order with text and the source-native table }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-composition-revision
+          - id: browser-flow-legacy-fallback
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
+            selector: { kind: test, name: falls back to the flat renderer when the layout cannot be normalized }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-composition-revision
           - id: browser-metric-continuation-guard
             adapter: typescript
             path: frontend/src/components/CompositionRenderer.test.tsx
@@ -1357,3 +1428,39 @@ features:
             role: client
         guarantees:
           - REQ-COMP-002#criterion.metric-runtime-values
+      - id: ordered-component-layout
+        kind: custom
+        source: FEAT-COMP-001#binding.contract/target.composition-contract
+        participants:
+          - target: FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+            role: implementation
+          - target: FEAT-COMP-001#binding.component-layout-domain/target.flow-layout
+            role: implementation
+          - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-dashboard-flow-renderer
+            role: client
+        guarantees:
+          - REQ-COMP-002#criterion.ordered-component-layout
+      - id: parameter-placement
+        kind: custom
+        source: FEAT-COMP-001#binding.contract/target.composition-contract
+        participants:
+          - target: FEAT-COMP-001#binding.component-layout-domain/target.flow-item
+            role: implementation
+          - target: FEAT-COMP-001#binding.component-layout-domain/target.ordered-parameters
+            role: implementation
+          - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-parameter-control
+            role: client
+        guarantees:
+          - REQ-COMP-002#criterion.parameter-placement
+      - id: text-style-enum
+        kind: custom
+        source: FEAT-COMP-001#binding.contract/target.composition-contract
+        participants:
+          - target: FEAT-COMP-001#binding.component-layout-domain/target.text-style
+            role: implementation
+          - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-flow-text
+            role: client
+          - target: FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-renderer
+            role: client
+        guarantees:
+          - REQ-COMP-002#criterion.text-style-enum
