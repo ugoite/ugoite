@@ -3097,6 +3097,78 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "pins the exact saved sql revision with server-owned column types" } }
+      - id: studio-entry-point-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio entry points (one New tool action per saved-tools surface, Saved SQL run and EntryQuery seed navigation, once-only seed consumption with a prefilled save-ready draft) through exact frontend unit tests. Seeds reuse the existing builders and descriptors; inexpressible queries stay fail-closed.
+        targets:
+          - id: entry-point-list-new
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/index.test.tsx
+            selector: { kind: test, name: "links a single new tool action to the studio" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+                covers: [FEAT-FE-014#binding.frontend/target.composition-list-new]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/index.test.tsx", test: "links a single new tool action to the studio" } }
+          - id: entry-point-dashboard-new
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
+            selector: { kind: test, name: "links saved tools to the new tool studio action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+                covers: [FEAT-FE-014#binding.frontend/target.dashboard-saved-tools-new]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "links saved tools to the new tool studio action" } }
+          - id: entry-point-saved-sql-seed
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
+            selector: { kind: test, name: "navigates to the studio with the saved sql seed" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.saved-sql-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "navigates to the studio with the saved sql seed" } }
+          - id: entry-point-saved-sql-duplicates
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
+            selector: { kind: test, name: "keeps duplicate columns out of the studio without navigating" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.saved-sql-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "keeps duplicate columns out of the studio without navigating" } }
+          - id: entry-point-entry-query-seed
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx
+            selector: { kind: test, name: "navigates to the studio with the entry query seed" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.entry-query-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "navigates to the studio with the entry query seed" } }
+          - id: entry-point-studio-seed-saved-sql
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "seeds the studio from a saved sql seed with a prefilled name" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a prefilled name" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a prefilled name" } }
+          - id: entry-point-studio-seed-entry-query
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "seeds the studio from an entry query seed with a prefilled name" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from an entry query seed with a prefilled name" } }
       - id: studio-use-surface-verification
         role: verification
         facet: verification

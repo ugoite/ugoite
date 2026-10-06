@@ -154,10 +154,6 @@ export default function SpaceFormEntriesPane() {
             toolbarNavigation={
               <EntryQuerySaveAsTool
                 spaceId={spaceId}
-                routePath={() =>
-                  `/spaces/${encodeURIComponent(spaceId())}/forms/${
-                    encodeURIComponent(formRef())
-                  }/entries`}
                 defaultName={formRef}
                 query={controller.query}
                 projection={controller.projection}

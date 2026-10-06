@@ -7,35 +7,24 @@ import {
   Show,
 } from "solid-js";
 import { BackLink } from "~/components/BackLink";
-import { SaveAsToolDialog } from "~/components/SaveAsToolDialog";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
 import { SqlResultTable } from "~/components/SqlResultTable";
 import { sqlApi } from "~/lib/ugoite-client";
 import {
-  buildSavedSqlCompositionDocument,
   canCreateSavedSqlComposition,
-  compositionApi,
+  type CompositionParameterType,
+  type CompositionResultType,
 } from "~/lib/composition-api";
-import { compositionSaveErrorMessage } from "~/lib/composition-save-error";
-import type { SqlResultColumn } from "~/lib/types";
-import {
-  beginCompositionSaveRouteVisit,
-  clearPendingCompositionSaveAttempt,
-  getPendingCompositionSaveAttempt,
-  isCurrentCompositionSaveRouteVisit,
-  markPendingCompositionSaveAttemptUncertain,
-  type PendingCompositionSaveAttempt,
-  stagePendingCompositionSaveAttempt,
-  subscribeToPendingCompositionSaveAttempt,
-} from "~/lib/composition-save-attempt";
-import { createResource } from "~/lib/recoverable-resource";
+import type { CompositionStudioSeed } from "~/lib/composition-draft";
+import { spaceCompositionNewPath } from "~/lib/space-path";
 import { t } from "~/lib/i18n";
 import { normalizeSqlVariables } from "~/lib/sql";
 import { displaySqlName } from "~/lib/sql-metadata";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
-import type { SqlEntry, SqlQueryPage } from "~/lib/types";
+import { createResource } from "~/lib/recoverable-resource";
+import type { SqlQueryPage } from "~/lib/types";
 
 export const route = spaceRoute({
   navigation: "search",
@@ -85,30 +74,7 @@ export default function SpaceSqlRunRoute() {
   const [pageError, setPageError] = createSignal<unknown>(null);
   const [pageRetry, setPageRetry] = createSignal(0);
   const [countResultIdentity, setCountResultIdentity] = createSignal("");
-  const [saveDialogOpen, setSaveDialogOpen] = createSignal(false);
-  const [saveBusy, setSaveBusy] = createSignal(false);
-  const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [rejectedSaveName, setRejectedSaveName] = createSignal<string | null>(
-    null,
-  );
-  let saveSeed: {
-    spaceId: string;
-    sqlId: string;
-    routePath: string;
-    entry: SqlEntry;
-    columns: string[];
-    resultSchema?: SqlResultColumn[];
-    parameters: Record<string, unknown>;
-  } | undefined;
-  let pendingSave: PendingCompositionSaveAttempt | undefined;
-  let rejectedSaveRoute:
-    | Pick<
-      PendingCompositionSaveAttempt,
-      "spaceId" | "sqlId" | "routePath"
-    >
-    | undefined;
-  let saveRouteVisitId: number | undefined;
   const state = createMemo(() => runState(location.state));
 
   const [entry] = createResource(
@@ -316,212 +282,57 @@ export default function SpaceSqlRunRoute() {
       new Set(result.columns).size === result.columns.length;
   };
 
-  const openSaveDialog = () => {
+  const openInStudio = () => {
     if (!canSaveAsTool()) return;
     const current = entry();
     const result = visiblePage();
     if (!current || !result) return;
-    saveSeed = {
-      spaceId: spaceId(),
-      sqlId: sqlId(),
-      routePath: location.pathname,
-      entry: current,
-      columns: [...result.columns],
-      resultSchema: result.result_schema
-        ? [...result.result_schema]
-        : undefined,
-      parameters: { ...(state().parameters ?? {}) },
-    };
-    pendingSave = undefined;
-    setSaveRetryAvailable(false);
-    setSaveDialogOpen(true);
-  };
-
-  const isCurrentSaveRoute = (attempt: {
-    spaceId: string;
-    sqlId: string;
-    routePath: string;
-  }) =>
-    spaceId() === attempt.spaceId && sqlId() === attempt.sqlId &&
-    location.pathname === attempt.routePath;
-
-  const isCurrentSaveVisit = (
-    attempt: PendingCompositionSaveAttempt,
-    visitId: number | undefined,
-  ) =>
-    isCurrentSaveRoute(attempt) &&
-    isCurrentCompositionSaveRouteVisit(attempt, visitId);
-
-  const currentSaveRoute = () => ({
-    spaceId: spaceId(),
-    sqlId: sqlId(),
-    routePath: location.pathname,
-  });
-
-  const clearSaveForStaleRoute = () => {
-    setSaveDialogOpen(false);
-    setSaveBusy(false);
-    setSaveRetryAvailable(false);
-    setSaveError(null);
-    setRejectedSaveName(null);
-    rejectedSaveRoute = undefined;
-    saveSeed = undefined;
-    pendingSave = undefined;
-  };
-
-  createEffect(() => {
-    const route = currentSaveRoute();
-    const routeVisitId = beginCompositionSaveRouteVisit(route);
-    saveRouteVisitId = routeVisitId;
-    if (
-      (rejectedSaveRoute && !isCurrentSaveRoute(rejectedSaveRoute)) ||
-      (saveSeed && !isCurrentSaveRoute(saveSeed)) ||
-      (pendingSave && !isCurrentSaveRoute(pendingSave))
-    ) {
-      clearSaveForStaleRoute();
-    }
-    const restoreAttempt = (
-      stored: NonNullable<ReturnType<typeof getPendingCompositionSaveAttempt>>,
-    ) => {
-      pendingSave = stored.attempt;
-      setSaveDialogOpen(true);
-      setSaveBusy(false);
-      setSaveRetryAvailable(true);
-      setSaveError(
-        stored.state === "uncertain" ? t("composition.saveFailed") : null,
-      );
-    };
-    const savedAttempt = getPendingCompositionSaveAttempt(route);
-    if (savedAttempt) restoreAttempt(savedAttempt);
-    const unsubscribe = subscribeToPendingCompositionSaveAttempt(
-      route,
-      (event) => {
-        if (event.type === "pending") {
-          if (event.stored.routeVisitId !== routeVisitId) return;
-          restoreAttempt(event.stored);
-          return;
-        }
-        if (event.routeVisitId !== routeVisitId) return;
-        if (pendingSave?.idempotencyKey !== event.idempotencyKey) return;
-        pendingSave = undefined;
-        setSaveBusy(false);
-        setSaveRetryAvailable(false);
-        rejectedSaveRoute = event.outcome === "rejected" ? route : undefined;
-        setRejectedSaveName(
-          event.outcome === "rejected" ? event.attemptName : null,
-        );
-        setSaveError(
-          event.outcome === "rejected" ? t("composition.saveFailed") : null,
-        );
-        if (!saveSeed) setSaveDialogOpen(false);
-      },
-    );
-    onCleanup(unsubscribe);
-  });
-
-  const saveRequest = async (
-    attempt: PendingCompositionSaveAttempt,
-    visitId: number | undefined,
-    isRetry = false,
-  ) => {
-    stagePendingCompositionSaveAttempt(attempt, visitId);
     try {
-      const response = await compositionApi.save(
-        attempt.spaceId,
-        attempt.yaml,
-        attempt.idempotencyKey,
-      );
-      if (!isCurrentSaveVisit(attempt, visitId)) {
-        markPendingCompositionSaveAttemptUncertain(attempt, visitId);
+      // The seed reuses the save-as-tool computation: the exact Saved SQL
+      // revision with server-owned column types from this result page
+      // (json fallback, unique columns required) and same-named variables.
+      const columns = [...result.columns];
+      if (
+        columns.length === 0 || new Set(columns).size !== columns.length
+      ) {
+        setSaveError(t("composition.saveFailed"));
         return;
       }
-      clearPendingCompositionSaveAttempt(attempt, "completed", visitId);
-      pendingSave = undefined;
-      navigate(
-        `/spaces/${encodeURIComponent(spaceId())}/compositions/${
-          encodeURIComponent(response.composition_id)
-        }/${encodeURIComponent(response.revision_id)}`,
+      const schemaByName = new Map(
+        (result.result_schema ?? []).map((column) => [
+          column.name,
+          column.type,
+        ]),
       );
-    } catch (error) {
-      const outcome = error && typeof error === "object" &&
-          "mutationOutcome" in error
-        ? (error as { mutationOutcome?: unknown }).mutationOutcome
-        : "unknown";
-      const status = error && typeof error === "object" && "status" in error
-        ? (error as { status?: unknown }).status
-        : undefined;
-      const retryWasDenied = isRetry && (status === 401 || status === 403);
-      if (outcome === "rejected" && !retryWasDenied) {
-        clearPendingCompositionSaveAttempt(attempt, "rejected", visitId);
-        if (isCurrentSaveVisit(attempt, visitId)) {
-          setSaveError(compositionSaveErrorMessage(error));
-        }
-      } else {
-        markPendingCompositionSaveAttemptUncertain(attempt, visitId);
-      }
-    }
-  };
-
-  const handleSaveAsTool = async (name: string) => {
-    if (saveBusy() || saveRetryAvailable()) return;
-    const seed = saveSeed;
-    if (!seed || !saveDialogOpen()) return;
-    const visitId = saveRouteVisitId;
-    pendingSave = undefined;
-    rejectedSaveRoute = undefined;
-    setSaveError(null);
-    setRejectedSaveName(null);
-    setSaveBusy(true);
-    try {
-      const document = buildSavedSqlCompositionDocument(
-        seed.entry,
-        name,
-        seed.columns,
-        seed.parameters,
-        seed.resultSchema,
-      );
-      const canonical = await compositionApi.canonicalizeDocument(document);
-      if (
-        saveRouteVisitId !== visitId || !isCurrentSaveRoute(seed)
-      ) return;
-      const attempt: PendingCompositionSaveAttempt = {
-        spaceId: seed.spaceId,
-        sqlId: seed.sqlId,
-        routePath: seed.routePath,
-        name,
-        yaml: canonical.canonical_yaml,
-        idempotencyKey: crypto.randomUUID(),
+      const seed: CompositionStudioSeed = {
+        kind: "saved_sql",
+        seed: {
+          entryId: current.id,
+          revisionId: current.revision_id,
+          name: displaySqlName(current),
+          expectedResult: columns.map((column) => ({
+            name: column,
+            type: (schemaByName.get(column) ?? "json") as CompositionResultType,
+          })),
+          variables: Object.fromEntries(
+            current.variables.map((variable) => [
+              variable.name,
+              { parameter: variable.name },
+            ]),
+          ),
+          variableTypes: Object.fromEntries(
+            current.variables.map((variable) => [
+              variable.name,
+              variable.type as CompositionParameterType,
+            ]),
+          ),
+        },
       };
-      pendingSave = attempt;
-      await saveRequest(attempt, visitId);
+      setSaveError(null);
+      navigate(spaceCompositionNewPath(spaceId()), { state: { seed } });
     } catch {
-      if (saveRouteVisitId === visitId) {
-        setSaveError(t("composition.saveFailed"));
-      }
-    } finally {
-      if (saveRouteVisitId === visitId) setSaveBusy(false);
+      setSaveError(t("composition.saveFailed"));
     }
-  };
-
-  const handleRetrySave = async () => {
-    if (saveBusy() || !saveRetryAvailable() || !pendingSave) return;
-    const attempt = pendingSave;
-    const visitId = saveRouteVisitId;
-    setSaveError(null);
-    setSaveBusy(true);
-    try {
-      await saveRequest(attempt, visitId, true);
-    } finally {
-      if (saveRouteVisitId === visitId) setSaveBusy(false);
-    }
-  };
-
-  const closeSaveDialog = () => {
-    if (saveBusy() || saveRetryAvailable()) return;
-    setSaveDialogOpen(false);
-    saveSeed = undefined;
-    pendingSave = undefined;
-    if (!rejectedSaveName()) setSaveError(null);
   };
 
   return (
@@ -561,7 +372,7 @@ export default function SpaceSqlRunRoute() {
                     <button
                       type="button"
                       class="ui-button ui-button-secondary"
-                      onClick={openSaveDialog}
+                      onClick={openInStudio}
                     >
                       {t("composition.saveAsTool")}
                     </button>
@@ -652,7 +463,7 @@ export default function SpaceSqlRunRoute() {
           onPrevious={handlePrevious}
           onNext={handleNext}
         />
-        <Show when={saveError() && !saveDialogOpen()}>
+        <Show when={saveError()}>
           <p class="ui-alert ui-alert-error mt-4" role="alert">
             {saveError()}
           </p>
@@ -668,19 +479,6 @@ export default function SpaceSqlRunRoute() {
           </button>
         </Show>
       </section>
-      <Show when={saveDialogOpen()}>
-        <SaveAsToolDialog
-          initialName={pendingSave?.name ?? rejectedSaveName() ??
-            saveSeed?.entry.name ??
-            (saveSeed ? displaySqlName(saveSeed.entry) : "")}
-          busy={saveBusy()}
-          retryAvailable={saveRetryAvailable()}
-          error={saveError()}
-          onSave={(name) => void handleSaveAsTool(name)}
-          onRetry={() => void handleRetrySave()}
-          onClose={closeSaveDialog}
-        />
-      </Show>
     </>
   );
 }

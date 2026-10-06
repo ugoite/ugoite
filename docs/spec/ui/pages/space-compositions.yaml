@@ -19,7 +19,7 @@ components:
       type: icon-button
       title: New tool
       single_control: true
-      status: planned
+      status: implemented
       contract: docs/spec/ui/components/composition-studio.yaml
     - id: saved-tools-list
       type: list

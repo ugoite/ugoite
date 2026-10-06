@@ -2,6 +2,7 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
 import { CompositionRows } from "~/components/CompositionRows";
+import { IconLink } from "~/components/IconLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import { createEntryStore } from "~/lib/entry-store";
@@ -14,6 +15,7 @@ import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
 import {
+  spaceCompositionNewPath,
   spaceCompositionsPath,
   spaceEntriesPath,
   spaceEntryPath,
@@ -221,9 +223,16 @@ export default function SpaceDashboardRoute() {
       <section class="section">
         <div class="sectionHead">
           <h2 id="saved-tools-heading">{t("composition.homeHeading")}</h2>
-          <A class="ui-link" href={spaceCompositionsPath(spaceId())}>
-            {t("composition.homeMore")}
-          </A>
+          <div class="flex items-center gap-2">
+            <IconLink
+              icon="plus"
+              label={t("composition.new")}
+              href={spaceCompositionNewPath(spaceId())}
+            />
+            <A class="ui-link" href={spaceCompositionsPath(spaceId())}>
+              {t("composition.homeMore")}
+            </A>
+          </div>
         </div>
         <Show when={compositionPage.loading}>
           <LocalBusyIndicator label={t("composition.listLoading")} />

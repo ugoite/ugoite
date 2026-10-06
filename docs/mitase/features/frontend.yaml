@@ -1025,3 +1025,44 @@ features:
                 criterion: REQ-FE-070#criterion.accessible-icon-actions
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.exact-revision-edit
+          - id: composition-list-new
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+          - id: dashboard-saved-tools-new
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/dashboard.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+          - id: saved-sql-studio-seed
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.source-authoring
+          - id: entry-query-studio-seed
+            adapter: typescript
+            path: frontend/src/components/EntryQuerySaveAsTool.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.source-authoring
+          - id: composition-studio-seed
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.ts
+            selector: { kind: symbol, name: applyStudioSeed }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.source-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding

@@ -106,6 +106,16 @@ describe("v5 space Home", () => {
     );
     expect(document.querySelector(".rowList .card")).toBeNull();
   });
+  it("links saved tools to the new tool studio action", async () => {
+    vi.mocked(formApi.list).mockResolvedValue([]);
+    render(() => <SpaceDashboardRoute />);
+
+    await screen.findByRole("heading", { name: "Saved tools" });
+    expect(screen.getByRole("link", { name: "New tool" })).toHaveAttribute(
+      "href",
+      "/spaces/default/compositions/new",
+    );
+  });
 
   it("starts the dedicated New Entry route when a creatable Form exists", async () => {
     vi.mocked(formApi.list).mockResolvedValue([{

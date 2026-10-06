@@ -28,6 +28,12 @@ components:
       type: link
       title: All
       target_page: space-compositions
+    - id: saved-tools-new
+      type: icon-button
+      title: New tool
+      single_control: true
+      status: implemented
+      target_page: space-composition-new
     - id: quick-actions
       type: grid-list
       item_type: action

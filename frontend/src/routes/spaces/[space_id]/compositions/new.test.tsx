@@ -33,9 +33,18 @@ const {
   navigateMock: vi.fn(),
 }));
 
+const locationControls = vi.hoisted(() => ({
+  state: undefined as unknown,
+}));
+
 vi.mock("@solidjs/router", () => ({
   useParams: () => ({ space_id: "space-1" }),
-  useLocation: () => ({ pathname: "/spaces/space-1/compositions/new" }),
+  useLocation: () => ({
+    pathname: "/spaces/space-1/compositions/new",
+    get state() {
+      return locationControls.state;
+    },
+  }),
   useNavigate: () => navigateMock,
   A: (props: {
     href: string;
@@ -125,6 +134,7 @@ describe("Composition studio shell", () => {
   beforeEach(() => {
     setLocale("en");
     vi.clearAllMocks();
+    locationControls.state = undefined;
     canonicalizeMock.mockResolvedValue(canonicalResult);
     previewMock.mockResolvedValue(emptyPlan);
     formListMock.mockResolvedValue([taskForm]);
@@ -242,7 +252,13 @@ describe("Composition studio shell", () => {
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
         heading.textContent
       );
-    expect(headings()).toEqual(["Data", "Display", "Parameters", "Tags", "Preview"]);
+    expect(headings()).toEqual([
+      "Data",
+      "Display",
+      "Parameters",
+      "Tags",
+      "Preview",
+    ]);
 
     // Displays need a source first.
     expect(screen.getByRole("button", { name: "Add display" })).toBeDisabled();
@@ -270,7 +286,13 @@ describe("Composition studio shell", () => {
     });
 
     // The display row owns its default source name; headers stay ordered.
-    expect(headings()).toEqual(["Data", "Display", "Parameters", "Tags", "Preview"]);
+    expect(headings()).toEqual([
+      "Data",
+      "Display",
+      "Parameters",
+      "Tags",
+      "Preview",
+    ]);
     expect(screen.getByText("Table")).toBeInTheDocument();
     expect(
       within(container).getAllByRole("button", { name: "Tasks" }),
@@ -369,6 +391,61 @@ describe("Composition studio shell", () => {
     expect(navigateMock).toHaveBeenCalledWith(
       "/spaces/space-1/compositions/tool-1/revision-2",
     );
+  });
+
+  it("seeds the studio from a saved sql seed with a prefilled name", () => {
+    locationControls.state = {
+      seed: {
+        kind: "saved_sql",
+        seed: {
+          entryId: "sql-1",
+          revisionId: "sql-rev-1",
+          name: "Monthly",
+          expectedResult: [{ name: "total", type: "float" }],
+          variables: { month: { parameter: "month" } },
+          variableTypes: { month: "date" },
+        },
+      },
+    };
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    render(() => <CompositionNewRoute />);
+
+    expect(screen.getByRole("button", { name: "Monthly" }))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toHaveValue("Monthly");
+    expect(screen.getByText("month")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    // The seed is consumed once: the location state is cleared on mount so
+    // back/forward never double-adds the source.
+    expect(replaceState).toHaveBeenCalledWith(
+      null,
+      "",
+      "/spaces/space-1/compositions/new",
+    );
+    replaceState.mockRestore();
+  });
+
+  it("seeds the studio from an entry query seed with a prefilled name", () => {
+    locationControls.state = {
+      seed: {
+        kind: "entry_query",
+        seed: {
+          formId: FORM_ID,
+          name: "Tasks",
+          fieldSchema: [],
+          query: {
+            filters: [],
+            sort: [],
+            projection: { kind: "preview" },
+          },
+        },
+      },
+    };
+    render(() => <CompositionNewRoute />);
+
+    expect(screen.getByRole("button", { name: "Tasks" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toHaveValue("Tasks");
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 
   it("provisions typed parameters from saved sql variables and guards removal", async () => {

@@ -1,12 +1,14 @@
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { useParams } from "@solidjs/router";
 import { CompositionRows } from "~/components/CompositionRows";
+import { IconLink } from "~/components/IconLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { t } from "~/lib/i18n";
 import {
   compositionApi,
   type CompositionListPage,
 } from "~/lib/composition-api";
+import { spaceCompositionNewPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "home" });
@@ -72,7 +74,14 @@ export default function CompositionListRoute() {
 
   return (
     <section class="section">
-      <h1>{t("composition.listHeading")}</h1>
+      <div class="flex items-center gap-2">
+        <h1>{t("composition.listHeading")}</h1>
+        <IconLink
+          icon="plus"
+          label={t("composition.new")}
+          href={spaceCompositionNewPath(spaceId())}
+        />
+      </div>
       <Show when={loadState().status === "loading"}>
         <LocalBusyIndicator label={t("composition.listLoading")} />
       </Show>

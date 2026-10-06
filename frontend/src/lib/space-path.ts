@@ -74,6 +74,8 @@ export const spaceSettingsPath = (spaceId: string, query = "") =>
 export const spaceSqlPath = (spaceId: string) => spacePath(spaceId, "sql");
 export const spaceCompositionsPath = (spaceId: string) =>
   spacePath(spaceId, "compositions");
+export const spaceCompositionNewPath = (spaceId: string) =>
+  `${spaceCompositionsPath(spaceId)}/new`;
 export const spaceCompositionRevisionPath = (
   spaceId: string,
   compositionId: string,

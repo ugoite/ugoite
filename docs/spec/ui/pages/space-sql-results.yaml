@@ -37,19 +37,8 @@ components:
       type: button
       title: Save as tool
       source: current successful user-query result and its exact Saved SQL revision
-      target_dialog: sql-results-save-as-tool-dialog
-    - id: sql-results-save-as-tool-dialog
-      type: dialog
-      title: Save as tool
-      fields: [Name]
-      source: typed Composition document canonicalized by Rust/WASM
-      operation: composition.save with one Idempotency-Key reused for retry
-      deterministic_rejection: >-
-        Show a localized summary when composition.save returns an allowlisted
-        composition_diagnostic; use the generic save failure when the
-        diagnostic is absent or unknown. Clear the uncertain attempt, keep its
-        name and feedback available on the same route, and clear both when the
-        Space or Saved SQL route changes.
+      target_page: space-composition-new
+      description: Navigates to the Studio with a saved-sql seed carrying server-owned column types; unique columns stay required and failures keep the concise error without navigating.
     - id: saved-query-detail-action
       type: link
       title: Back to Saved SQL

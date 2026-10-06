@@ -49,6 +49,55 @@ export type DraftSource =
   | (DraftSavedSqlSeed & { kind: "saved_sql"; draftId: string })
   | (DraftEntryQuerySeed & { kind: "entry_query"; draftId: string });
 
+/**
+ * Studio seed carried through router location state from an entry point
+ * (Saved SQL run, EntryQuery browser) to the Studio new route. Reuses the
+ * draft seed shapes only; no new source semantics.
+ */
+export type CompositionStudioSeed =
+  | { kind: "saved_sql"; seed: DraftSavedSqlSeed }
+  | { kind: "entry_query"; seed: DraftEntryQuerySeed };
+
+export interface StudioSeedState {
+  seed: CompositionStudioSeed;
+}
+
+/** Fail-closed seed read: anything without a kind-tagged draft seed is ignored. */
+export const studioSeedState = (
+  value: unknown,
+): StudioSeedState | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const seed = (value as { seed?: unknown }).seed;
+  if (!seed || typeof seed !== "object") return undefined;
+  const tagged = seed as { kind?: unknown; seed?: unknown };
+  if (tagged.kind !== "saved_sql" && tagged.kind !== "entry_query") {
+    return undefined;
+  }
+  if (!tagged.seed || typeof tagged.seed !== "object") return undefined;
+  return { seed: seed as CompositionStudioSeed };
+};
+
+/**
+ * Apply one Studio seed to a draft: add the source, provision Saved SQL
+ * parameters from the server-declared variable types, and prefill the tool
+ * name from the seed source name so the Studio is save-ready immediately.
+ */
+export const applyStudioSeed = (
+  draft: CompositionDraft,
+  seed: CompositionStudioSeed,
+): { draft: CompositionDraft; draftId: string } => {
+  const added = seed.kind === "saved_sql"
+    ? addSavedSqlSource(draft, seed.seed)
+    : addEntryQuerySource(draft, seed.seed);
+  const provisioned = seed.kind === "saved_sql" && seed.seed.variableTypes
+    ? ensureParametersForVariables(added.draft, seed.seed.variableTypes)
+    : added.draft;
+  const named = provisioned.name.trim() || !seed.seed.name
+    ? provisioned
+    : setDraftName(provisioned, seed.seed.name);
+  return { draft: named, draftId: added.draftId };
+};
+
 export type DraftMetricValueField =
   | { fieldId: number }
   | { column: string };
