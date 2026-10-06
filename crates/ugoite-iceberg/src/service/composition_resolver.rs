@@ -17,7 +17,7 @@ use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::sql_query::SavedSqlRevisionRef;
 use ugoite_domain::composition::{
     canonicalize_composition, parse_composition_yaml, CompositionDiagnosticCode,
-    CompositionDocument, CompositionParameter, CompositionSource,
+    CompositionDocument, CompositionParameter, CompositionSource, CompositionSpec,
 };
 use ugoite_domain::id::{validate_revision_id, validate_sql_id, FormId};
 use uuid::Uuid;
@@ -220,7 +220,7 @@ impl UgoiteService {
             Ok(document) => document,
             Err(code) => return Ok(diagnostic_result(code, None)),
         };
-        let parameter_definitions = Some(document.spec.parameters.clone());
+        let parameter_definitions = Some(ordered_parameter_definitions(&document.spec));
 
         let parameter_bindings = bind_parameters(&document.spec.parameters, parameters);
         if !parameter_bindings.diagnostics.is_empty() {
@@ -329,7 +329,7 @@ impl UgoiteService {
                 });
             }
         };
-        let parameter_definitions = Some(document.spec.parameters.clone());
+        let parameter_definitions = Some(ordered_parameter_definitions(&document.spec));
         let owned_sources = self
             .read_current_sources(space_id, &document.spec.sources, principal_ids)
             .await?;
@@ -445,6 +445,15 @@ fn preview_diagnostic(
     parameter_id: Option<String>,
 ) -> CompositionDiagnostic {
     CompositionDiagnostic { code, parameter_id }
+}
+
+/// Expose declared parameters with layout-placed controls first in layout
+/// row and item order. An invalid placement falls back to declaration order
+/// so diagnostics responses still describe the same semantic parameters.
+fn ordered_parameter_definitions(spec: &CompositionSpec) -> Vec<CompositionParameter> {
+    spec.parameters_in_placement_order()
+        .map(|ordered| ordered.into_iter().cloned().collect())
+        .unwrap_or_else(|_| spec.parameters.clone())
 }
 
 fn diagnostic_result(

@@ -186,6 +186,47 @@ impl CompositionSpec {
 
         Ok(ordered)
     }
+
+    /// Return declared parameters with layout-placed controls first in layout
+    /// row and item order, then unplaced parameters in declaration order.
+    ///
+    /// Unknown or duplicate parameter references make the placement invalid.
+    /// Row structure and component placement stay owned by
+    /// [`components_in_render_order`](Self::components_in_render_order); this
+    /// helper only orders the existing semantic definitions for callers that
+    /// expose placed parameters first.
+    pub fn parameters_in_placement_order(
+        &self,
+    ) -> Result<Vec<&CompositionParameter>, CompositionDiagnosticCode> {
+        let mut declared = HashMap::with_capacity(self.parameters.len());
+        for parameter in &self.parameters {
+            if declared.insert(parameter.id.as_str(), parameter).is_some() {
+                return Err(CompositionDiagnosticCode::InvalidComposition);
+            }
+        }
+
+        let mut seen = HashSet::with_capacity(self.parameters.len());
+        let mut ordered = Vec::with_capacity(self.parameters.len());
+        for row in &self.layout.rows {
+            for item in &row.items {
+                if let FlowItem::Parameter { parameter } = item {
+                    let Some(definition) = declared.get(parameter.as_str()).copied() else {
+                        return Err(CompositionDiagnosticCode::InvalidComposition);
+                    };
+                    if !seen.insert(parameter.as_str()) {
+                        return Err(CompositionDiagnosticCode::InvalidComposition);
+                    }
+                    ordered.push(definition);
+                }
+            }
+        }
+        for parameter in &self.parameters {
+            if !seen.contains(parameter.id.as_str()) {
+                ordered.push(parameter);
+            }
+        }
+        Ok(ordered)
+    }
 }
 
 /// A value that can be supplied to a Composition source.
@@ -694,6 +735,56 @@ mod tests {
             .collect();
 
         assert_eq!(component_ids, ["transactions", "total", "last"]);
+    }
+
+    #[test]
+    fn placed_parameters_come_first_in_layout_order() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        // Declare an unplaced optional parameter after the placed ones.
+        spec.parameters[1].required = false;
+        spec.parameters.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "region",
+                "type": "string",
+                "required": false,
+            }))
+            .unwrap(),
+        );
+        // Placement order is the reverse of declaration order.
+        spec.layout.rows[0].items = vec![
+            parameter_item("month_end"),
+            parameter_item("month_start"),
+            spec.layout.rows[0].items[2].clone(),
+            spec.layout.rows[0].items[3].clone(),
+        ];
+
+        let ordered_ids: Vec<_> = spec
+            .parameters_in_placement_order()
+            .expect("placed parameters order")
+            .into_iter()
+            .map(|parameter| parameter.id.as_str())
+            .collect();
+
+        assert_eq!(ordered_ids, ["month_end", "month_start", "region"]);
+    }
+
+    #[test]
+    fn unknown_and_duplicate_parameter_placements_have_no_order() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.layout.rows[0].items.push(parameter_item("unknown"));
+        assert_eq!(
+            spec.parameters_in_placement_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.layout
+            .rows
+            .push(layout_row("repeated", vec![parameter_item("month_start")]));
+        assert_eq!(
+            spec.parameters_in_placement_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
     }
 
     #[test]

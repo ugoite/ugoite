@@ -195,6 +195,51 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.component-layout-domain/target.text-style
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_text_styles_and_layout_kinds_are_rejected } }
+          - id: placement-order-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::placed_parameters_come_first_in_layout_order }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-parameters
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::placed_parameters_come_first_in_layout_order } }
+          - id: invalid-placement-order-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::unknown_and_duplicate_parameter_placements_have_no_order }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-parameters
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::unknown_and_duplicate_parameter_placements_have_no_order } }
+      - id: layout-binding-verification
+        role: verification
+        facet: verification
+        responsibility: Verify layout-ordered component bindings with interleaved text and parameter items and semantic parameter values for placed controls through the Core resolver exercising the shared Domain ordering.
+        targets:
+          - id: interleaved-order-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::layout_order_interleaves_text_and_parameter_items_across_rows }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::layout_order_interleaves_text_and_parameter_items_across_rows } }
+          - id: parameter-values-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::parameter_items_resolve_through_semantic_parameter_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::parameter_items_resolve_through_semantic_parameter_values } }
       - id: metric-value-verification
         role: verification
         facet: verification
@@ -483,6 +528,8 @@ requirements:
                 criterion: REQ-COMP-004#criterion.draft-preview
                 covers:
                   - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                  - FEAT-COMP-001#binding.layout-order-resolver/target.shared-plan-core
+                  - FEAT-COMP-001#binding.layout-order-resolver/target.layout-component-bindings
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::preview_resolves_through_the_same_semantics_without_revision_identity } }
           - id: preview-without-publication-case
             adapter: rust
@@ -514,6 +561,41 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_documents_composition_preview_without_publication } }
+      - id: layout-resolver-verification
+        role: verification
+        facet: verification
+        responsibility: Verify layout-ordered bindings stay identical across saved-revision and draft-preview resolution, layout-only additions preserve compiled source requests, sourceless text bindings add no query work, and draft preview exposes placed parameters in layout order.
+        targets:
+          - id: layout-additions-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::layout_only_additions_leave_source_requests_unchanged }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+                covers:
+                  - FEAT-COMP-001#binding.layout-order-resolver/target.shared-plan-core
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::layout_only_additions_leave_source_requests_unchanged } }
+          - id: sourceless-text-query-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::text_components_emit_layout_ordered_bindings_without_source_requests }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+                covers:
+                  - FEAT-COMP-001#binding.layout-order-resolver/target.layout-component-bindings
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::text_components_emit_layout_ordered_bindings_without_source_requests } }
+          - id: preview-placement-order-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: preview_exposes_placed_parameters_in_layout_order }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.draft-preview
+                covers:
+                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: preview_exposes_placed_parameters_in_layout_order } }
     criteria:
       - id: entry-query-translation
         kind: behavior
