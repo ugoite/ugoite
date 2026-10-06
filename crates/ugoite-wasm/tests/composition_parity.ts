@@ -83,6 +83,13 @@ function compositionParametersYaml(count: number): string {
       "      required: true",
     );
   }
+  lines.push("  layout:", "    kind: flow", "    rows:", "      - id: main", "        items:");
+  for (let index = 0; index < count; index += 1) {
+    lines.push(
+      "          - kind: parameter",
+      `            parameter: parameter_${index}`,
+    );
+  }
   return `${lines.join("\n")}\n`;
 }
 
@@ -231,8 +238,8 @@ async function main(): Promise<void> {
     expected_response: Record<string, unknown>;
   }[];
   const unreferencedComponentYaml = yaml.replace(
-    "      components: [transactions]",
-    "      components: []",
+    "          - kind: component\n            component: transactions\n",
+    "",
   );
   if (unreferencedComponentYaml === yaml) {
     throw new Error("Could not build the unreferenced-component fixture");

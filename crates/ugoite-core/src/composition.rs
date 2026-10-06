@@ -819,7 +819,7 @@ pub struct ResolvedCompositionPlan {
     pub composition_revision: CompositionRevisionRef,
     /// The source order is the document order, regardless of descriptor order.
     pub sources: Vec<ResolvedSourceRequest>,
-    /// The component order is the section order, regardless of declaration order.
+    /// The component order is the layout row and item order, regardless of declaration order.
     #[serde(default)]
     pub component_bindings: Vec<ResolvedComponentBinding>,
 }
@@ -834,7 +834,7 @@ pub struct PreviewCompositionPlan {
     pub draft_fingerprint: String,
     /// The source order is the document order, regardless of descriptor order.
     pub sources: Vec<ResolvedSourceRequest>,
-    /// The component order is the section order, regardless of declaration order.
+    /// The component order is the layout row and item order, regardless of declaration order.
     #[serde(default)]
     pub component_bindings: Vec<ResolvedComponentBinding>,
 }
@@ -912,7 +912,10 @@ fn resolve_composition_parts(
     let mut metric_sql_columns_by_source: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
     let mut metric_diagnostics = Vec::new();
     for component in &render_components {
-        let source_id = component.source_id();
+        let Some(source_id) = component.source_id() else {
+            // Text carries no source binding and emits no source request.
+            continue;
+        };
         let value_field = component.value_field();
         if !source_ids.contains(source_id) {
             return Err(vec![CompositionDiagnostic::without_parameter(
@@ -1065,8 +1068,11 @@ fn resolve_component_bindings(
 ) -> Result<Vec<ResolvedComponentBinding>, Vec<CompositionDiagnostic>> {
     let mut resolved = Vec::with_capacity(components.len());
     for component in components {
+        let Some(source_id) = component.source_id() else {
+            // Text carries no source binding and emits no source request.
+            continue;
+        };
         let component_id = component.id();
-        let source_id = component.source_id();
         let source_definition = sources_by_id.get(source_id).copied().ok_or_else(|| {
             vec![CompositionDiagnostic::without_parameter(
                 CompositionDiagnosticCode::InvalidComposition,
@@ -1393,9 +1399,9 @@ mod tests {
         CompositionLiteral, CompositionMetricValueField, CompositionParameter,
         CompositionParameterFormat, CompositionParameterReference, CompositionParameterType,
         CompositionQueryOperator, CompositionResultColumn, CompositionResultFieldType,
-        CompositionSection, CompositionSortDirection, CompositionSource, CompositionSpec,
-        CompositionValue, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
-        EntryQuerySortTemplate, EntryQueryTemplate,
+        CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
+        DashboardFlowLayout, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
+        EntryQuerySortTemplate, EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
     };
     use ugoite_domain::form::{
         FieldType, FormDefinition, FormField, FormVersion, ListItemDefinition,
@@ -1554,8 +1560,51 @@ mod tests {
             parameters,
             sources,
             components: Vec::new(),
-            sections: Vec::new(),
+            layout: DashboardFlowLayout {
+                kind: FlowLayoutKind::Flow,
+                rows: Vec::new(),
+            },
         }
+    }
+
+    fn layout_row(id: &str, items: Vec<FlowItem>) -> FlowRow {
+        FlowRow {
+            id: id.to_owned(),
+            items,
+        }
+    }
+
+    fn component_item(id: &str) -> FlowItem {
+        FlowItem::Component {
+            component: id.to_owned(),
+        }
+    }
+
+    fn flow_layout(rows: Vec<FlowRow>) -> DashboardFlowLayout {
+        DashboardFlowLayout {
+            kind: FlowLayoutKind::Flow,
+            rows,
+        }
+    }
+
+    fn single_row_layout(row_id: &str, components: &[&str]) -> DashboardFlowLayout {
+        flow_layout(vec![layout_row(
+            row_id,
+            components.iter().map(|id| component_item(id)).collect(),
+        )])
+    }
+
+    /// Attach a sourceless text component so a source-focused resolve test
+    /// carries a valid non-empty layout without adding source bindings.
+    fn spec_with_note(mut spec: CompositionSpec) -> CompositionSpec {
+        spec.components = vec![CompositionComponent::Text {
+            id: "note".to_owned(),
+            label: None,
+            text: "Note".to_owned(),
+            style: TextStyle::Body,
+        }];
+        spec.layout = single_row_layout("main", &["note"]);
+        spec
     }
 
     fn id_pair() -> (EntryId, RevisionId) {
@@ -1639,10 +1688,7 @@ mod tests {
                 name: selector.to_owned(),
             },
         }];
-        spec.sections = vec![CompositionSection {
-            id: "summary".to_owned(),
-            components: vec!["total".to_owned()],
-        }];
+        spec.layout = single_row_layout("summary", &["total"]);
         let metadata = saved_sql_metadata(entry_id, revision_id, BTreeMap::new());
         let current_sources = [CurrentSourceDescriptor::SavedSql {
             source_id: "report",
@@ -3041,13 +3087,13 @@ mod tests {
             expected_result: expected_result(),
             variables: BTreeMap::new(),
         };
-        let spec = composition_spec(
+        let spec = spec_with_note(composition_spec(
             Vec::new(),
             vec![
                 saved_sql,
                 entry_query_source("entries", &current_form, empty_entry_query_template()),
             ],
-        );
+        ));
         let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
         // Metadata lookup order is independent of Composition source order.
         let current_sources = [
@@ -3114,13 +3160,13 @@ mod tests {
             expected_result: expected_result(),
             variables: BTreeMap::new(),
         };
-        let spec = composition_spec(
+        let spec = spec_with_note(composition_spec(
             Vec::new(),
             vec![
                 saved_sql,
                 entry_query_source("entries", &current_form, empty_entry_query_template()),
             ],
-        );
+        ));
         let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
         let current_sources = [
             CurrentSourceDescriptor::EntryQuery {
@@ -3200,16 +3246,13 @@ mod tests {
                 },
             },
         ];
-        spec.sections = vec![
-            CompositionSection {
-                id: "summary".to_owned(),
-                components: vec!["sql-total".to_owned(), "entry-total".to_owned()],
-            },
-            CompositionSection {
-                id: "details".to_owned(),
-                components: vec!["rows".to_owned()],
-            },
-        ];
+        spec.layout = flow_layout(vec![
+            layout_row(
+                "summary",
+                vec![component_item("sql-total"), component_item("entry-total")],
+            ),
+            layout_row("details", vec![component_item("rows")]),
+        ]);
         let sql_metadata = saved_sql_metadata(sql_entry_id, sql_revision_id, BTreeMap::new());
         let current_sources = [
             CurrentSourceDescriptor::SavedSql {
@@ -3326,6 +3369,121 @@ mod tests {
     }
 
     #[test]
+    fn text_components_emit_no_source_request_or_binding() {
+        let current_form = form(&[(100, FieldType::String)]);
+        let mut spec = composition_spec(
+            Vec::new(),
+            vec![entry_query_source(
+                "entries",
+                &current_form,
+                empty_entry_query_template(),
+            )],
+        );
+        spec.components = vec![
+            CompositionComponent::Text {
+                id: "note".to_owned(),
+                label: None,
+                text: "Note".to_owned(),
+                style: TextStyle::Body,
+            },
+            tabular_component("rows", None, "entries"),
+        ];
+        spec.layout = flow_layout(vec![layout_row(
+            "main",
+            vec![component_item("note"), component_item("rows")],
+        )]);
+        let current_sources = [CurrentSourceDescriptor::EntryQuery {
+            source_id: "entries",
+            current_form: Some(&current_form),
+        }];
+
+        let plan = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: id_pair().0,
+                revision_id: id_pair().1,
+            },
+            spec: &spec,
+            parameters: &BTreeMap::new(),
+            current_sources: &current_sources,
+        })
+        .expect("text alongside a table resolves");
+
+        assert_eq!(plan.sources.len(), 1);
+        assert_eq!(
+            plan.component_bindings
+                .iter()
+                .map(|binding| binding.component_id.as_str())
+                .collect::<Vec<_>>(),
+            ["rows"]
+        );
+    }
+
+    #[test]
+    fn required_parameter_layout_control_gates_resolution() {
+        let current_form = form(&[(100, FieldType::String)]);
+        let mut spec = composition_spec(
+            vec![parameter(
+                "month",
+                CompositionParameterType::String,
+                true,
+                None,
+                None,
+            )],
+            vec![entry_query_source(
+                "entries",
+                &current_form,
+                empty_entry_query_template(),
+            )],
+        );
+        spec.components = vec![tabular_component("rows", None, "entries")];
+        spec.layout = flow_layout(vec![layout_row(
+            "main",
+            vec![
+                FlowItem::Parameter {
+                    parameter: "month".to_owned(),
+                },
+                component_item("rows"),
+            ],
+        )]);
+        let current_sources = [CurrentSourceDescriptor::EntryQuery {
+            source_id: "entries",
+            current_form: Some(&current_form),
+        }];
+        let supplied = BTreeMap::from([("month".to_owned(), json!("2026-10"))]);
+
+        let plan = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: id_pair().0,
+                revision_id: id_pair().1,
+            },
+            spec: &spec,
+            parameters: &supplied,
+            current_sources: &current_sources,
+        })
+        .expect("a placed required parameter resolves");
+        assert_eq!(plan.component_bindings.len(), 1);
+
+        spec.layout = single_row_layout("main", &["rows"]);
+        let diagnostics = resolve_composition(ResolveInput {
+            composition_revision: CompositionRevisionRef {
+                entry_id: id_pair().0,
+                revision_id: id_pair().1,
+            },
+            spec: &spec,
+            parameters: &supplied,
+            current_sources: &current_sources,
+        })
+        .expect_err("a required parameter without a layout control is invalid");
+        assert_eq!(
+            diagnostics
+                .into_iter()
+                .map(|diagnostic| diagnostic.code)
+                .collect::<Vec<_>>(),
+            vec![CompositionDiagnosticCode::InvalidComposition]
+        );
+    }
+
+    #[test]
     fn saved_sql_metric_selector_requires_one_declared_scalar_column_before_revision_lookup() {
         assert_eq!(
             sql_metric_diagnostics(expected_result(), "not_declared", false,),
@@ -3387,10 +3545,7 @@ mod tests {
                 field_id: FieldId::new(101).unwrap(),
             },
         }];
-        spec.sections = vec![CompositionSection {
-            id: "summary".to_owned(),
-            components: vec!["total".to_owned()],
-        }];
+        spec.layout = single_row_layout("summary", &["total"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
             source_id: "entries",
             current_form: Some(&current_form),
@@ -3566,10 +3721,7 @@ mod tests {
     fn missing_component_source_is_an_invalid_composition() {
         let mut spec = composition_spec(Vec::new(), Vec::new());
         spec.components = vec![tabular_component("rows", None, "missing")];
-        spec.sections = vec![CompositionSection {
-            id: "main".to_owned(),
-            components: vec!["rows".to_owned()],
-        }];
+        spec.layout = single_row_layout("main", &["rows"]);
 
         let diagnostics = resolve_composition(ResolveInput {
             composition_revision: CompositionRevisionRef {
@@ -3628,10 +3780,7 @@ mod tests {
                 source: source_id.to_owned(),
                 value_field,
             }];
-            spec.sections = vec![CompositionSection {
-                id: "main".to_owned(),
-                components: vec!["total".to_owned()],
-            }];
+            spec.layout = single_row_layout("main", &["total"]);
             let current_sources = [
                 CurrentSourceDescriptor::EntryQuery {
                     source_id: "entries",
@@ -3677,10 +3826,7 @@ mod tests {
                 field_id: FieldId::new(100).unwrap(),
             },
         }];
-        spec.sections = vec![CompositionSection {
-            id: "private-section".to_owned(),
-            components: vec!["private-component".to_owned()],
-        }];
+        spec.layout = single_row_layout("private-section", &["private-component"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
             source_id: "private-source-name",
             current_form: None,
@@ -3733,10 +3879,7 @@ mod tests {
             source: source_id.to_owned(),
             value_field: CompositionMetricValueField::EntryField { field_id },
         }];
-        spec.sections = vec![CompositionSection {
-            id: "private-section".to_owned(),
-            components: vec!["private-component".to_owned()],
-        }];
+        spec.layout = single_row_layout("private-section", &["private-component"]);
 
         let denied_sources = [CurrentSourceDescriptor::EntryQuery {
             source_id,
@@ -3824,10 +3967,7 @@ mod tests {
                 field_id: FieldId::new(101).unwrap(),
             },
         }];
-        spec.sections = vec![CompositionSection {
-            id: "main".to_owned(),
-            components: vec!["total".to_owned()],
-        }];
+        spec.layout = single_row_layout("main", &["total"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
             source_id: "entries",
             current_form: Some(&current_form),
@@ -3878,10 +4018,7 @@ mod tests {
                 field_id: FieldId::new(101).unwrap(),
             },
         }];
-        spec.sections = vec![CompositionSection {
-            id: "main".to_owned(),
-            components: vec!["total".to_owned()],
-        }];
+        spec.layout = single_row_layout("main", &["total"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
             source_id: "entries",
             current_form: Some(&current_form),
@@ -3932,10 +4069,7 @@ mod tests {
                 field_id: FieldId::new(101).unwrap(),
             },
         }];
-        spec.sections = vec![CompositionSection {
-            id: "main".to_owned(),
-            components: vec!["total".to_owned()],
-        }];
+        spec.layout = single_row_layout("main", &["total"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
             source_id: "entries",
             current_form: Some(&current_form),
@@ -3966,7 +4100,7 @@ mod tests {
         let expected_form = form(&[(100, FieldType::String)]);
         let current_form = form(&[(100, FieldType::Integer)]);
         let (sql_entry_id, sql_revision_id) = id_pair();
-        let spec = composition_spec(
+        let spec = spec_with_note(composition_spec(
             Vec::new(),
             vec![
                 entry_query_source("entries", &expected_form, empty_entry_query_template()),
@@ -3978,7 +4112,7 @@ mod tests {
                     variables: BTreeMap::new(),
                 },
             ],
-        );
+        ));
         let unavailable_sql = SavedSqlRevisionMetadata {
             id: "concealed-or-missing".to_owned(),
             revision_id: sql_revision_id.to_string(),
@@ -4160,10 +4294,7 @@ mod tests {
                     name: column.to_owned(),
                 },
             }];
-            spec.sections = vec![CompositionSection {
-                id: "main".to_owned(),
-                components: vec!["summary".to_owned()],
-            }];
+            spec.layout = single_row_layout("main", &["summary"]);
 
             let plan = resolve_composition(ResolveInput {
                 composition_revision: CompositionRevisionRef {

@@ -49,7 +49,13 @@ const typedCompositionDocument = {
       variables: { month_start: { parameter: "month_start" } },
     }],
     components: [{ id: "results_table", kind: "table", source: "sql_results" }],
-    sections: [{ id: "main", components: ["results_table"] }],
+    layout: {
+      kind: "flow",
+      rows: [{
+        id: "main",
+        items: [{ kind: "component", component: "results_table" }],
+      }],
+    },
   },
 };
 

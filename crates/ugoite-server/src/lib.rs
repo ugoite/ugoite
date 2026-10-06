@@ -14317,7 +14317,8 @@ mod authentication_regression_tests {
     #[tokio::test]
     async fn composition_list_returns_bounded_acl_authorized_summary_pages() -> anyhow::Result<()> {
         use ugoite_domain::composition::{
-            CompositionDocument, CompositionFormat, CompositionKind, CompositionSpec,
+            CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
+            CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
         };
 
         let state = AppState::new_for_tests(format!(
@@ -14339,8 +14340,21 @@ mod authentication_regression_tests {
             spec: CompositionSpec {
                 parameters: Vec::new(),
                 sources: Vec::new(),
-                components: Vec::new(),
-                sections: Vec::new(),
+                components: vec![CompositionComponent::Text {
+                    id: "note".to_string(),
+                    label: None,
+                    text: "Note".to_string(),
+                    style: TextStyle::Body,
+                }],
+                layout: DashboardFlowLayout {
+                    kind: FlowLayoutKind::Flow,
+                    rows: vec![FlowRow {
+                        id: "main".to_string(),
+                        items: vec![FlowItem::Component {
+                            component: "note".to_string(),
+                        }],
+                    }],
+                },
             },
         };
         for (name, tag) in [("Alpha", "alpha"), ("Beta", "beta")] {
@@ -15266,7 +15280,8 @@ mod authentication_regression_tests {
     #[tokio::test]
     async fn composition_get_conceals_existing_entry_from_denied_viewer() -> anyhow::Result<()> {
         use ugoite_domain::composition::{
-            CompositionDocument, CompositionFormat, CompositionKind, CompositionSpec,
+            CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
+            CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
         };
 
         let state = AppState::new_for_tests(format!(
@@ -15289,8 +15304,21 @@ mod authentication_regression_tests {
             spec: CompositionSpec {
                 parameters: Vec::new(),
                 sources: Vec::new(),
-                components: Vec::new(),
-                sections: Vec::new(),
+                components: vec![CompositionComponent::Text {
+                    id: "note".to_string(),
+                    label: None,
+                    text: "Note".to_string(),
+                    style: TextStyle::Body,
+                }],
+                layout: DashboardFlowLayout {
+                    kind: FlowLayoutKind::Flow,
+                    rows: vec![FlowRow {
+                        id: "main".to_string(),
+                        items: vec![FlowItem::Component {
+                            component: "note".to_string(),
+                        }],
+                    }],
+                },
             },
         };
         let saved = state
@@ -15400,8 +15428,9 @@ mod authentication_regression_tests {
         use ugoite_domain::{
             composition::{
                 CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry,
-                CompositionKind, CompositionSection, CompositionSource, CompositionSpec,
-                EntryQueryProjectionTemplate, EntryQueryTemplate,
+                CompositionKind, CompositionSource, CompositionSpec, DashboardFlowLayout,
+                EntryQueryProjectionTemplate, EntryQueryTemplate, FlowItem, FlowLayoutKind,
+                FlowRow, TextStyle,
             },
             form::FieldType,
             id::{FieldId, FormId},
@@ -15490,8 +15519,21 @@ mod authentication_regression_tests {
                         },
                     },
                 }],
-                components: Vec::<CompositionComponent>::new(),
-                sections: Vec::<CompositionSection>::new(),
+                components: vec![CompositionComponent::Text {
+                    id: "note".to_string(),
+                    label: None,
+                    text: "Note".to_string(),
+                    style: TextStyle::Body,
+                }],
+                layout: DashboardFlowLayout {
+                    kind: FlowLayoutKind::Flow,
+                    rows: vec![FlowRow {
+                        id: "main".to_string(),
+                        items: vec![FlowItem::Component {
+                            component: "note".to_string(),
+                        }],
+                    }],
+                },
             },
         };
         let missing = state
@@ -15590,7 +15632,8 @@ mod authentication_regression_tests {
     async fn composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial(
     ) -> anyhow::Result<()> {
         use ugoite_domain::composition::{
-            CompositionDocument, CompositionKind, CompositionSource, CompositionSpec,
+            CompositionComponent, CompositionDocument, CompositionKind, CompositionSource,
+            CompositionSpec, DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
         };
 
         let state = AppState::new_for_tests(format!(
@@ -15667,8 +15710,21 @@ mod authentication_regression_tests {
                         ],
                         variables: BTreeMap::new(),
                     }],
-                    components: Vec::new(),
-                    sections: Vec::new(),
+                    components: vec![CompositionComponent::Text {
+                        id: "note".to_string(),
+                        label: None,
+                        text: "Note".to_string(),
+                        style: TextStyle::Body,
+                    }],
+                    layout: DashboardFlowLayout {
+                        kind: FlowLayoutKind::Flow,
+                        rows: vec![FlowRow {
+                            id: "main".to_string(),
+                            items: vec![FlowItem::Component {
+                                component: "note".to_string(),
+                            }],
+                        }],
+                    },
                 },
             };
         let missing = state
@@ -15797,8 +15853,9 @@ mod authentication_regression_tests {
             CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry,
             CompositionKind, CompositionMetricValueField, CompositionParameter,
             CompositionParameterReference, CompositionParameterType, CompositionQueryOperator,
-            CompositionSection, CompositionSource, CompositionSpec, CompositionValue,
-            EntryQueryFilterTemplate, EntryQueryProjectionTemplate, EntryQueryTemplate,
+            CompositionSource, CompositionSpec, CompositionValue, DashboardFlowLayout,
+            EntryQueryFilterTemplate, EntryQueryProjectionTemplate, EntryQueryTemplate, FlowItem,
+            FlowLayoutKind, FlowRow, TextStyle,
         };
         use ugoite_domain::{form::FieldType, id::FieldId};
 
@@ -15862,8 +15919,21 @@ mod authentication_regression_tests {
                     spec: CompositionSpec {
                         parameters,
                         sources,
-                        components: Vec::new(),
-                        sections: Vec::new(),
+                        components: vec![CompositionComponent::Text {
+                            id: "note".to_string(),
+                            label: None,
+                            text: "Note".to_string(),
+                            style: TextStyle::Body,
+                        }],
+                        layout: DashboardFlowLayout {
+                            kind: FlowLayoutKind::Flow,
+                            rows: vec![FlowRow {
+                                id: "main".to_string(),
+                                items: vec![FlowItem::Component {
+                                    component: "note".to_string(),
+                                }],
+                            }],
+                        },
                     },
                 }
             };
@@ -15937,10 +16007,23 @@ mod authentication_regression_tests {
                 source: "older_entries".to_string(),
             },
         ];
-        older_document.spec.sections = vec![CompositionSection {
-            id: "summary".to_string(),
-            components: vec!["rows".to_string(), "monthly_total".to_string()],
-        }];
+        older_document.spec.layout = DashboardFlowLayout {
+            kind: FlowLayoutKind::Flow,
+            rows: vec![FlowRow {
+                id: "summary".to_string(),
+                items: vec![
+                    FlowItem::Parameter {
+                        parameter: "month".to_string(),
+                    },
+                    FlowItem::Component {
+                        component: "rows".to_string(),
+                    },
+                    FlowItem::Component {
+                        component: "monthly_total".to_string(),
+                    },
+                ],
+            }],
+        };
         let older = state
             .service
             .save_composition_authorized_for_principals(

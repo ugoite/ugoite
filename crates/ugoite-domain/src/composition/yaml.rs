@@ -135,7 +135,7 @@ mod tests {
         assert_eq!(document.spec.parameters.len(), 2);
         assert_eq!(document.spec.sources.len(), 2);
         assert_eq!(document.spec.components.len(), 2);
-        assert_eq!(document.spec.sections.len(), 2);
+        assert_eq!(document.spec.layout.rows.len(), 1);
         let CompositionSource::EntryQuery { query, .. } = &document.spec.sources[0] else {
             panic!("first sample source should be an EntryQuery")
         };
@@ -249,7 +249,7 @@ future_alias: *shared
             "format: ugoite.composition\nformat_version: 1\nname: Example\nname: Duplicate\nkind: dashboard\ntags: []\nspec: {}\n",
             "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec: {}\n---\nformat: ugoite.composition\nformat_version: 1\n",
             "format: ugoite.composition\nformat_version: 1\nname: &name Example\nkind: dashboard\ntags: []\nspec: {}\n",
-            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec: {<<: {parameters: [], sources: [], components: [], sections: []}}\n",
+            "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec: {<<: {parameters: [], sources: [], components: [], layout: {kind: flow, rows: []}}}\n",
             "format: ugoite.composition\nformat_version: 1\nname: !custom Example\nkind: dashboard\ntags: []\nspec: {}\n",
             "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec: {}\nextra: true\n",
             "format: ugoite.composition\nformat_version: 1\nname: 2026\nkind: dashboard\ntags: []\nspec: {}\n",
@@ -281,6 +281,13 @@ spec:
       type: date
       required: false
       default: 2026-10-02
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: parameter
+            parameter: date_default
 "#;
         let document = parse_composition_yaml(input).unwrap();
 
@@ -418,6 +425,12 @@ spec:
         for index in 0..count {
             input.push_str(&format!(
                 "    - id: parameter_{index}\n      type: string\n      required: true\n"
+            ));
+        }
+        input.push_str("  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n");
+        for index in 0..count {
+            input.push_str(&format!(
+                "          - kind: parameter\n            parameter: parameter_{index}\n"
             ));
         }
         input

@@ -66,10 +66,16 @@ spec:
     - kind: table
       id: transactions
       source: expense_rows
-  sections:
-    - id: overview
-      components:
-        - total
-    - id: detail
-      components:
-        - transactions
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: parameter
+            parameter: month_start
+          - kind: parameter
+            parameter: month_end
+          - kind: component
+            component: total
+          - kind: component
+            component: transactions

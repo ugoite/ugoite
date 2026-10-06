@@ -78,9 +78,13 @@ function buildEntryQueryYaml(
     "    - id: narrow_table",
     "      kind: table",
     "      source: narrow_rows",
-    "  sections:",
-    "    - id: main",
-    "      components: [narrow_table]",
+    "  layout:",
+    "    kind: flow",
+    "    rows:",
+    "      - id: main",
+    "        items:",
+    "          - kind: component",
+    "            component: narrow_table",
     "",
   ];
   return lines.join("\n");

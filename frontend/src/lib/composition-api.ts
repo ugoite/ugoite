@@ -110,7 +110,15 @@ export interface CompositionLintDocument {
       source: string;
       value_field?: { kind: string; field_id?: number; name?: string };
     }>;
-    sections: Array<{ id: string; components: string[] }>;
+    layout: {
+      kind: string;
+      rows: Array<{
+        id: string;
+        items: Array<
+          { kind: string; component?: string; parameter?: string }
+        >;
+      }>;
+    };
   };
 }
 
@@ -170,7 +178,16 @@ export interface SavedSqlCompositionDocument {
       kind: "table";
       source: string;
     }>;
-    sections: Array<{ id: string; components: string[] }>;
+    layout: {
+      kind: "flow";
+      rows: Array<{
+        id: string;
+        items: Array<
+          | { kind: "component"; component: string }
+          | { kind: "parameter"; parameter: string }
+        >;
+      }>;
+    };
   };
 }
 
@@ -339,7 +356,13 @@ export const buildSavedSqlCompositionDocument = (
         ),
       }],
       components: [{ id: componentId, kind: "table", source: sourceId }],
-      sections: [{ id: "main", components: [componentId] }],
+      layout: {
+        kind: "flow",
+        rows: [{
+          id: "main",
+          items: [{ kind: "component", component: componentId }],
+        }],
+      },
     },
   };
 };

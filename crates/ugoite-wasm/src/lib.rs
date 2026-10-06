@@ -841,8 +841,10 @@ mod tests {
             native_unknown_v1_error.as_str()
         );
 
-        let unreferenced_component = MONTHLY_EXPENSE_COMPOSITION
-            .replace("      components: [transactions]", "      components: []");
+        let unreferenced_component = MONTHLY_EXPENSE_COMPOSITION.replace(
+            "          - kind: component\n            component: transactions\n",
+            "",
+        );
         assert_ne!(unreferenced_component, MONTHLY_EXPENSE_COMPOSITION);
         let invalid_metric_value_field =
             MONTHLY_EXPENSE_COMPOSITION.replace("kind: sql_column", "kind: unknown_column");

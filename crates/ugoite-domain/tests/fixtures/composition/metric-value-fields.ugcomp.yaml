@@ -35,6 +35,12 @@ spec:
       value_field:
         kind: sql_column
         name: total
-  sections:
-    - id: overview
-      components: [expense_amount, total]
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: expense_amount
+          - kind: component
+            component: total

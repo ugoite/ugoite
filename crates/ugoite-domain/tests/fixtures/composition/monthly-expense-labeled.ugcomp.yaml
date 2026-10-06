@@ -55,6 +55,10 @@ spec:
         month_end:
           parameter: month_end
   components:
+    - id: summary_title
+      kind: text
+      text: Monthly summary
+      style: heading
     - id: total
       label: Monthly total
       kind: metric
@@ -66,8 +70,18 @@ spec:
       label: Expense transactions
       kind: table
       source: expense_rows
-  sections:
-    - id: overview
-      components: [total]
-    - id: detail
-      components: [transactions]
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: parameter
+            parameter: month_start
+          - kind: parameter
+            parameter: month_end
+          - kind: component
+            component: summary_title
+          - kind: component
+            component: total
+          - kind: component
+            component: transactions

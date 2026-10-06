@@ -99,16 +99,19 @@ pub struct CompositionSpec {
     pub sources: Vec<CompositionSource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub components: Vec<CompositionComponent>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sections: Vec<CompositionSection>,
+    pub layout: DashboardFlowLayout,
 }
 
 impl CompositionSpec {
-    /// Return components in section order and each section's reference order.
+    /// Return components in layout row order and each row's item order.
     ///
-    /// A component must have a unique ID and be referenced exactly once by the
-    /// sections. Unknown, duplicate, or missing references make the layout
-    /// invalid; the top-level component declaration order is never a fallback.
+    /// A component must have a unique ID and be placed exactly once by the
+    /// layout; a parameter control must reference a declared parameter
+    /// exactly once. Unknown, duplicate, or missing component references,
+    /// unknown or duplicate parameter references, empty layouts, empty rows,
+    /// duplicate row IDs, and required parameters without a default and
+    /// without a layout control make the layout invalid. The top-level
+    /// component declaration order is never a fallback.
     pub fn components_in_render_order(
         &self,
     ) -> Result<Vec<&CompositionComponent>, CompositionDiagnosticCode> {
@@ -119,23 +122,66 @@ impl CompositionSpec {
             }
         }
 
+        let mut parameters_by_id = HashMap::with_capacity(self.parameters.len());
+        for parameter in &self.parameters {
+            if parameters_by_id
+                .insert(parameter.id.as_str(), parameter)
+                .is_some()
+            {
+                return Err(CompositionDiagnosticCode::InvalidComposition);
+            }
+        }
+
+        if self.layout.rows.is_empty() {
+            return Err(CompositionDiagnosticCode::InvalidComposition);
+        }
+
+        let mut row_ids = HashSet::with_capacity(self.layout.rows.len());
         let mut rendered_ids = HashSet::with_capacity(self.components.len());
+        let mut placed_parameters = HashSet::with_capacity(self.parameters.len());
         let mut ordered = Vec::with_capacity(self.components.len());
-        for section in &self.sections {
-            for component_id in &section.components {
-                if !rendered_ids.insert(component_id.as_str()) {
-                    return Err(CompositionDiagnosticCode::InvalidComposition);
+        for row in &self.layout.rows {
+            if !row_ids.insert(row.id.as_str()) {
+                return Err(CompositionDiagnosticCode::InvalidComposition);
+            }
+            if row.items.is_empty() {
+                return Err(CompositionDiagnosticCode::InvalidComposition);
+            }
+            for item in &row.items {
+                match item {
+                    FlowItem::Component { component } => {
+                        if !rendered_ids.insert(component.as_str()) {
+                            return Err(CompositionDiagnosticCode::InvalidComposition);
+                        }
+                        let component = components_by_id
+                            .get(component.as_str())
+                            .copied()
+                            .ok_or(CompositionDiagnosticCode::InvalidComposition)?;
+                        ordered.push(component);
+                    }
+                    FlowItem::Parameter { parameter } => {
+                        if !parameters_by_id.contains_key(parameter.as_str()) {
+                            return Err(CompositionDiagnosticCode::InvalidComposition);
+                        }
+                        if !placed_parameters.insert(parameter.as_str()) {
+                            return Err(CompositionDiagnosticCode::InvalidComposition);
+                        }
+                    }
                 }
-                let component = components_by_id
-                    .get(component_id.as_str())
-                    .copied()
-                    .ok_or(CompositionDiagnosticCode::InvalidComposition)?;
-                ordered.push(component);
             }
         }
 
         if rendered_ids.len() != components_by_id.len() {
             return Err(CompositionDiagnosticCode::InvalidComposition);
+        }
+
+        for parameter in &self.parameters {
+            if parameter.required
+                && parameter.default.is_none()
+                && !placed_parameters.contains(parameter.id.as_str())
+            {
+                return Err(CompositionDiagnosticCode::InvalidComposition);
+            }
         }
 
         Ok(ordered)
@@ -423,6 +469,14 @@ pub enum CompositionMetricValueField {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CompositionComponent {
+    Text {
+        id: String,
+        /// Optional display text; component identity continues to use IDs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        text: String,
+        style: TextStyle,
+    },
     Metric {
         id: String,
         /// Optional display text; component and source bindings continue to use IDs.
@@ -443,37 +497,80 @@ pub enum CompositionComponent {
 impl CompositionComponent {
     pub fn id(&self) -> &str {
         match self {
-            Self::Metric { id, .. } | Self::Table { id, .. } => id,
+            Self::Text { id, .. } | Self::Metric { id, .. } | Self::Table { id, .. } => id,
         }
     }
 
-    pub fn source_id(&self) -> &str {
+    /// The referenced source, if the component reads from one. Text carries
+    /// no source binding; the core resolver skips it when compiling requests.
+    pub fn source_id(&self) -> Option<&str> {
         match self {
-            Self::Metric { source, .. } | Self::Table { source, .. } => source,
+            Self::Text { .. } => None,
+            Self::Metric { source, .. } | Self::Table { source, .. } => Some(source),
         }
     }
 
     pub fn label(&self) -> Option<&str> {
         match self {
-            Self::Metric { label, .. } | Self::Table { label, .. } => label.as_deref(),
+            Self::Text { label, .. } | Self::Metric { label, .. } | Self::Table { label, .. } => {
+                label.as_deref()
+            }
         }
     }
 
     pub fn value_field(&self) -> Option<&CompositionMetricValueField> {
         match self {
             Self::Metric { value_field, .. } => Some(value_field),
-            Self::Table { .. } => None,
+            Self::Text { .. } | Self::Table { .. } => None,
         }
     }
 }
 
-/// A named group of dashboard components.
+/// Fixed typography roles for text components. Markdown, HTML, CSS, and
+/// arbitrary fonts, sizes, colors, or event handlers are not part of v1.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextStyle {
+    Title,
+    Heading,
+    Body,
+    Caption,
+}
+
+/// The first-class dashboard flow layout. Rows render top to bottom; items
+/// within a row render left to right on desktop and wrap on narrow screens.
+/// Pixel coordinates, CSS, and canvas state are never layout content.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DashboardFlowLayout {
+    pub kind: FlowLayoutKind,
+    pub rows: Vec<FlowRow>,
+}
+
+/// The dashboard layout vocabulary supported by format version 1.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FlowLayoutKind {
+    Flow,
+}
+
+/// One stable layout row carrying ordered component and parameter items.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CompositionSection {
+pub struct FlowRow {
     pub id: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub components: Vec<String>,
+    pub items: Vec<FlowItem>,
+}
+
+/// One layout placement: a component reference or a parameter control.
+///
+/// Parameters keep their semantic definition under `spec.parameters`; the
+/// layout only places a control bound to the parameter ID.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum FlowItem {
+    Parameter { parameter: String },
+    Component { component: String },
 }
 
 /// Stable semantic diagnostic identifiers shared by Rust surfaces.
@@ -535,17 +632,43 @@ mod tests {
     use super::{
         parse_composition_yaml, CompositionComponent, CompositionDiagnosticCode,
         CompositionDocument, CompositionFormat, CompositionKind, CompositionMetricValueField,
-        CompositionQueryOperator, CompositionResultFieldType, CompositionSection,
-        CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
-        EntryQueryProjectionTemplate, EntryQueryTemplate, COMPOSITION_FORMAT,
-        COMPOSITION_FORMAT_VERSION, DEFAULT_COMPOSITION_PAGE_LIMIT,
+        CompositionQueryOperator, CompositionResultFieldType, CompositionSortDirection,
+        CompositionSource, CompositionSpec, CompositionValue, DashboardFlowLayout,
+        EntryQueryProjectionTemplate, EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow,
+        TextStyle, COMPOSITION_FORMAT, COMPOSITION_FORMAT_VERSION, DEFAULT_COMPOSITION_PAGE_LIMIT,
     };
 
     const MONTHLY_EXPENSE: &str =
         include_str!("../tests/fixtures/composition/monthly-expense.ugcomp.yaml");
 
+    fn layout_row(id: &str, items: Vec<FlowItem>) -> FlowRow {
+        FlowRow {
+            id: id.to_owned(),
+            items,
+        }
+    }
+
+    fn component_item(id: &str) -> FlowItem {
+        FlowItem::Component {
+            component: id.to_owned(),
+        }
+    }
+
+    fn parameter_item(id: &str) -> FlowItem {
+        FlowItem::Parameter {
+            parameter: id.to_owned(),
+        }
+    }
+
+    fn flow_layout(rows: Vec<FlowRow>) -> DashboardFlowLayout {
+        DashboardFlowLayout {
+            kind: FlowLayoutKind::Flow,
+            rows,
+        }
+    }
+
     #[test]
-    fn components_follow_section_and_reference_order() {
+    fn components_follow_layout_row_and_item_order() {
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
         spec.components.push(CompositionComponent::Table {
             id: "last".to_string(),
@@ -553,13 +676,15 @@ mod tests {
             source: "expense_rows".to_string(),
         });
         spec.components.reverse();
-        spec.sections.reverse();
-        spec.sections[0].components.push("total".to_string());
-        spec.sections[1].components.clear();
-        spec.sections.push(CompositionSection {
-            id: "later".to_string(),
-            components: vec!["last".to_string()],
-        });
+        spec.layout = flow_layout(vec![
+            layout_row(
+                "controls",
+                vec![parameter_item("month_start"), parameter_item("month_end")],
+            ),
+            layout_row("detail", vec![component_item("transactions")]),
+            layout_row("summary", vec![component_item("total")]),
+            layout_row("later", vec![component_item("last")]),
+        ]);
 
         let component_ids: Vec<_> = spec
             .components_in_render_order()
@@ -572,15 +697,37 @@ mod tests {
     }
 
     #[test]
-    fn empty_component_layout_is_valid() {
-        let spec = CompositionSpec {
-            parameters: vec![],
-            sources: vec![],
-            components: vec![],
-            sections: vec![],
-        };
+    fn empty_layout_is_rejected() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.layout.rows.clear();
 
-        assert!(spec.components_in_render_order().unwrap().is_empty());
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn empty_rows_are_rejected() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.layout.rows.push(layout_row("empty", vec![]));
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn duplicate_row_ids_are_rejected() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        let duplicated = spec.layout.rows[0].clone();
+        spec.layout.rows.push(duplicated);
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
     }
 
     #[test]
@@ -597,7 +744,7 @@ mod tests {
     #[test]
     fn duplicate_component_references_are_invalid() {
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.sections[0].components.push("total".to_string());
+        spec.layout.rows[0].items.push(component_item("total"));
 
         assert_eq!(
             spec.components_in_render_order(),
@@ -605,7 +752,9 @@ mod tests {
         );
 
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.sections[1].components.push("total".to_string());
+        spec.layout
+            .rows
+            .push(layout_row("duplicate", vec![component_item("total")]));
 
         assert_eq!(
             spec.components_in_render_order(),
@@ -616,7 +765,7 @@ mod tests {
     #[test]
     fn unknown_component_references_are_invalid() {
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.sections[0].components[0] = "unknown".to_string();
+        spec.layout.rows[0].items[2] = component_item("unknown");
 
         assert_eq!(
             spec.components_in_render_order(),
@@ -627,7 +776,7 @@ mod tests {
     #[test]
     fn unreferenced_components_are_invalid() {
         let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
-        spec.sections[1].components.clear();
+        spec.layout.rows[0].items.pop();
 
         assert_eq!(
             spec.components_in_render_order(),
@@ -636,9 +785,128 @@ mod tests {
     }
 
     #[test]
+    fn unknown_parameter_references_are_invalid() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.layout.rows[0].items.push(parameter_item("unknown"));
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn duplicate_parameter_placements_are_invalid() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.layout
+            .rows
+            .push(layout_row("repeated", vec![parameter_item("month_start")]));
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn duplicate_parameter_ids_are_invalid() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.parameters.push(spec.parameters[0].clone());
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn required_parameter_without_default_needs_a_layout_control() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.layout.rows[0]
+            .items
+            .retain(|item| *item != parameter_item("month_end"));
+
+        assert_eq!(
+            spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn optional_and_defaulted_parameters_do_not_need_a_layout_control() {
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.parameters[0].required = false;
+        spec.layout.rows[0]
+            .items
+            .retain(|item| *item != parameter_item("month_start"));
+
+        assert!(spec.components_in_render_order().is_ok());
+
+        let mut spec = parse_composition_yaml(MONTHLY_EXPENSE).unwrap().spec;
+        spec.parameters[1].default =
+            Some(serde_json::from_value(serde_json::json!("2026-11-01")).unwrap());
+        spec.layout.rows[0]
+            .items
+            .retain(|item| *item != parameter_item("month_end"));
+
+        assert!(spec.components_in_render_order().is_ok());
+    }
+
+    #[test]
+    fn text_style_enum_values_round_trip() {
+        for (style, spelling) in [
+            (TextStyle::Title, "\"title\""),
+            (TextStyle::Heading, "\"heading\""),
+            (TextStyle::Body, "\"body\""),
+            (TextStyle::Caption, "\"caption\""),
+        ] {
+            assert_eq!(serde_json::to_string(&style).unwrap(), spelling);
+            assert_eq!(serde_json::from_str::<TextStyle>(spelling).unwrap(), style);
+        }
+
+        let component = CompositionComponent::Text {
+            id: "heading".to_string(),
+            label: None,
+            text: "Summary".to_string(),
+            style: TextStyle::Heading,
+        };
+        assert_eq!(component.id(), "heading");
+        assert_eq!(component.source_id(), None);
+        assert_eq!(
+            serde_json::to_value(&component).unwrap(),
+            serde_json::json!({
+                "kind": "text",
+                "id": "heading",
+                "text": "Summary",
+                "style": "heading",
+            })
+        );
+    }
+
+    #[test]
+    fn unknown_text_styles_and_layout_kinds_are_rejected() {
+        assert!(serde_json::from_str::<TextStyle>("\"banner\"").is_err());
+        let unknown_style = MONTHLY_EXPENSE.replacen(
+            "  components:",
+            "  components:\n    - id: note\n      kind: text\n      text: Note\n      style: banner",
+            1,
+        );
+        assert_eq!(
+            parse_composition_yaml(&unknown_style),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let unknown_layout_kind = MONTHLY_EXPENSE.replace("  kind: flow", "  kind: grid");
+        assert_eq!(
+            parse_composition_yaml(&unknown_layout_kind),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
     fn document_uses_the_portable_envelope_field_names() {
         let document: CompositionDocument = serde_json::from_str(
-            r#"{"format":"ugoite.composition","format_version":1,"kind":"dashboard","name":"Example","tags":["demo"],"spec":{"parameters":[],"sources":[],"components":[],"sections":[]}}"#,
+            r#"{"format":"ugoite.composition","format_version":1,"kind":"dashboard","name":"Example","tags":["demo"],"spec":{"parameters":[],"sources":[],"components":[],"layout":{"kind":"flow","rows":[]}}}"#,
         )
         .unwrap();
 
@@ -653,7 +921,10 @@ mod tests {
                 parameters: vec![],
                 sources: vec![],
                 components: vec![],
-                sections: vec![],
+                layout: DashboardFlowLayout {
+                    kind: FlowLayoutKind::Flow,
+                    rows: vec![],
+                },
             }
         );
         assert_eq!(serde_json::to_value(document).unwrap()["kind"], "dashboard");
@@ -662,7 +933,7 @@ mod tests {
     #[test]
     fn unknown_model_fields_are_rejected() {
         let result = serde_json::from_str::<CompositionDocument>(
-            r#"{"format":"ugoite.composition","format_version":1,"kind":"dashboard","name":"Example","tags":[],"spec":{"parameters":[],"sources":[],"components":[],"sections":[]},"extra":true}"#,
+            r#"{"format":"ugoite.composition","format_version":1,"kind":"dashboard","name":"Example","tags":[],"spec":{"parameters":[],"sources":[],"components":[],"layout":{"kind":"flow","rows":[]}},"extra":true}"#,
         );
         assert!(result.is_err());
     }
@@ -714,7 +985,12 @@ mod tests {
                     {"kind": "metric", "id": "total", "source": "monthly_total", "value_field": {"kind": "sql_column", "name": "total"}},
                     {"kind": "table", "id": "transactions", "source": "expense_rows"}
                 ],
-                "sections": [{"id": "overview", "components": ["total", "transactions"]}]
+                "layout": {
+                    "kind": "flow",
+                    "rows": [
+                        {"id": "main", "items": [{"kind": "component", "component": "total"}, {"kind": "component", "component": "transactions"}]}
+                    ]
+                }
             }
         }))
         .unwrap();
@@ -918,6 +1194,47 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&sql_column).unwrap()["kind"],
             serde_json::json!("sql_column")
+        );
+
+        // Dashboard flow layout (ADR-019 re-freeze): flow is the only layout
+        // kind; rows carry stable IDs with ordered component and parameter
+        // items. Components are text, metric, or table; text styles are the
+        // fixed title, heading, body, and caption roles.
+        assert_eq!(
+            serde_json::to_value(FlowLayoutKind::Flow).unwrap(),
+            serde_json::json!("flow")
+        );
+        assert_eq!(
+            serde_json::to_value(FlowItem::Component {
+                component: "total".to_string(),
+            })
+            .unwrap(),
+            serde_json::json!({"kind": "component", "component": "total"})
+        );
+        assert_eq!(
+            serde_json::to_value(FlowItem::Parameter {
+                parameter: "month".to_string(),
+            })
+            .unwrap(),
+            serde_json::json!({"kind": "parameter", "parameter": "month"})
+        );
+        for (style, spelling) in [
+            (TextStyle::Title, "\"title\""),
+            (TextStyle::Heading, "\"heading\""),
+            (TextStyle::Body, "\"body\""),
+            (TextStyle::Caption, "\"caption\""),
+        ] {
+            assert_eq!(serde_json::to_string(&style).unwrap(), spelling);
+        }
+        let text_component = CompositionComponent::Text {
+            id: "heading".to_string(),
+            label: None,
+            text: "Summary".to_string(),
+            style: TextStyle::Heading,
+        };
+        assert_eq!(
+            serde_json::to_value(&text_component).unwrap()["kind"],
+            serde_json::json!("text")
         );
     }
 }

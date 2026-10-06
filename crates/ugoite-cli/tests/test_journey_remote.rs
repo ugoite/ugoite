@@ -1605,9 +1605,17 @@ spec:
     - id: transactions
       kind: table
       source: expense_rows
-  sections:
-    - id: details
-      components: [transactions]
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: parameter
+            parameter: month_start
+          - kind: parameter
+            parameter: month_end
+          - kind: component
+            component: transactions
 "#
     );
     let document = parse_composition_yaml(&yaml).expect("parse seeded Composition");
@@ -1868,9 +1876,13 @@ spec:
     - id: missing_table
       kind: table
       source: missing_rows
-  sections:
-    - id: detail
-      components: [missing_table]
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: missing_table
 "#
     );
     let document = parse_composition_yaml(&yaml).expect("parse broken Composition");

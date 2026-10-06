@@ -505,7 +505,7 @@ mod tests {
             )
             .await?;
         let yaml = format!(
-            "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Local query\ntags: []\nspec:\n  sources:\n    - id: rows\n      kind: entry_query\n      form_id: \"{}\"\n      field_schema:\n        - field_id: 100\n          field_type: string\n      query:\n        projection:\n          kind: fields\n          fields: [100]\n  components:\n    - id: table\n      kind: table\n      source: rows\n  sections:\n    - id: main\n      components: [table]\n",
+            "format: ugoite.composition\nformat_version: 1\nkind: dashboard\nname: Local query\ntags: []\nspec:\n  sources:\n    - id: rows\n      kind: entry_query\n      form_id: \"{}\"\n      field_schema:\n        - field_id: 100\n          field_type: string\n      query:\n        projection:\n          kind: fields\n          fields: [100]\n  components:\n    - id: table\n      kind: table\n      source: rows\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: table\n",
             form.form_id
         );
         let document = parse_composition_yaml(&yaml).expect("Composition fixture parses");
