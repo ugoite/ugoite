@@ -150,6 +150,8 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/index.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx
         - frontend/src/routes/spaces/[space_id]/entries.tsx
         - frontend/src/routes/spaces/[space_id]/assets.tsx
         - frontend/src/routes/spaces/[space_id]/forms.tsx
@@ -270,6 +272,7 @@ inventory:
         - docs/spec/ui/components/entry-browser.yaml
         - docs/spec/ui/pages/space-compositions.yaml
         - docs/spec/ui/pages/space-composition-revision.yaml
+        - docs/spec/ui/pages/space-composition-history.yaml
         - docs/mitase/requirements/e2e.yaml
         - docs/mitase/features/e2e.yaml
         - docs/mitase/requirements/journey.yaml

@@ -1,0 +1,33 @@
+version: "0.1"
+updated: "2026-10-06"
+page:
+  id: space-composition-history
+  title: Saved tool history
+  route: /spaces/{space_id}/compositions/{composition_id}/history
+  implementation: implemented
+components:
+  shared:
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
+  body:
+    - id: composition-history-heading
+      type: heading
+      title: Saved tool name
+      ownership: object-identity
+    - id: composition-history-back
+      type: link
+      title: Back to saved tools
+      single_control: true
+    - id: composition-history-list
+      type: list
+      title: Tool history
+      source: composition.history with a bounded page limit of 50
+      selection: full-row-activate
+      current_marker: composition.list latest revision identity
+      identity_display: human-timestamp-only
+      revision_identity: advanced-disclosure-only
+    - id: composition-history-pagination
+      type: button
+      title: Previous and Next
+      source: composition.history offset pagination

@@ -325,6 +325,88 @@ describe("compositionApi", () => {
     })).toBe(false);
   });
 
+  it("reads bounded composition history through the portable operation", async () => {
+    vi.mocked(protocolFetch).mockResolvedValue({
+      entry_id: "composition-1",
+      revisions: [],
+      total: 0,
+      offset: 20,
+      limit: 50,
+      has_more: false,
+    });
+
+    await compositionApi.history("space-1", "composition-1", 50, 20, signal);
+
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.history",
+      {
+        space_id: "space-1",
+        composition_id: "composition-1",
+        limit: 50,
+        offset: 20,
+      },
+      undefined,
+      { signal },
+    );
+  });
+
+  it("reads composition history without paging arguments by default", async () => {
+    vi.mocked(protocolFetch).mockResolvedValue({
+      entry_id: "composition-1",
+      revisions: [],
+      total: 0,
+      offset: 0,
+      limit: 100,
+      has_more: false,
+    });
+
+    await compositionApi.history("space-1", "composition-1");
+
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.history",
+      { space_id: "space-1", composition_id: "composition-1" },
+      undefined,
+      {},
+    );
+  });
+
+  it("restores an exact revision with source base and retry key", async () => {
+    vi.mocked(protocolFetch).mockResolvedValue({
+      composition_id: "tool-1",
+      revision_id: "revision-3",
+      restored_from_revision_id: "revision-1",
+      canonical_yaml: "canonical yaml",
+      receipt: {
+        command_id: "command-1",
+        catalog_generation: 4,
+        snapshot_id: 42,
+        committed_revision_ids: ["revision-3"],
+        committed_at_micros: 1,
+        data_file_count: 1,
+      },
+    });
+
+    const restored = await compositionApi.restore(
+      "space-1",
+      "tool-1",
+      "revision-1",
+      "revision-2",
+      "restore-attempt-1",
+      signal,
+    );
+
+    expect(restored.restored_from_revision_id).toBe("revision-1");
+    expect(protocolFetch).toHaveBeenCalledWith(
+      "composition.restore",
+      {
+        space_id: "space-1",
+        composition_id: "tool-1",
+        idempotency_key: "restore-attempt-1",
+      },
+      { source_revision_id: "revision-1", base_revision_id: "revision-2" },
+      { signal },
+    );
+  });
   it("forwards EntryQuery and Saved SQL pages through their existing query adapters", async () => {
     vi.mocked(entryApi.query).mockResolvedValue({ rows: [], has_more: false });
     vi.mocked(sqlApi.query).mockResolvedValue({

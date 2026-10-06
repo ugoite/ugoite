@@ -26,7 +26,7 @@ components:
         - id: composition-history
           type: icon-button
           title: History
-          status: planned
+          status: implemented
           contract: docs/spec/ui/components/composition-studio.yaml
     - id: composition-parameters
       type: form

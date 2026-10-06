@@ -2877,6 +2877,28 @@ requirements:
                 criterion: REQ-FE-070#criterion.exact-revision-edit
                 covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "refuses an invalid lint without opening the studio" } }
+      - id: studio-history-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Composition history route and its historical restore flow (bounded history rows with human labels and full-row exact-revision activation, current-revision marking, the header history action, and append-only restore with source and base identity plus a stable idempotency key) through exact frontend unit tests.
+        targets:
+          - id: composition-history-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx
+            selector: { kind: test, name: lists revisions with human labels and opens the exact revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: lists revisions with human labels and opens the exact revision } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.accessible-icon-actions
+                covers: [FEAT-FE-014#binding.frontend/target.composition-history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: lists revisions with human labels and opens the exact revision } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: lists revisions with human labels and opens the exact revision } }
       - id: studio-display-verification
         role: verification
         facet: verification

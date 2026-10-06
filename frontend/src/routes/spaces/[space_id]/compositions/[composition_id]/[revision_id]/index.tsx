@@ -1,20 +1,35 @@
-import { createEffect, createResource, For, onCleanup, Show } from "solid-js";
-import { useParams } from "@solidjs/router";
+import {
+  createEffect,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
+import { A, useNavigate, useParams } from "@solidjs/router";
 import {
   CompositionDiagnostics,
   CompositionRenderer,
 } from "~/components/CompositionRenderer";
 import { FieldStack, FieldStackRow } from "~/components/FieldStack";
+import { IconButton } from "~/components/IconButton";
 import { IconLink } from "~/components/IconLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { t } from "~/lib/i18n";
 import {
+  compositionApi,
   compositionDisplayName,
   type CompositionParameterDefinition,
 } from "~/lib/composition-api";
 import { createCompositionQueryHandle } from "~/lib/composition-query-handle";
 import { formApi } from "~/lib/ugoite-client";
-import { spaceCompositionEditPath } from "~/lib/space-path";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
+import { formatUserFacingError } from "~/lib/user-facing-error";
+import {
+  spaceCompositionEditPath,
+  spaceCompositionHistoryPath,
+  spaceCompositionRevisionPath,
+} from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 import type { Form } from "~/lib/types";
 
@@ -68,7 +83,91 @@ export default function CompositionRevisionRoute() {
     composition_id: string;
     revision_id: string;
   }>();
+  const navigate = useNavigate();
   const handle = createCompositionQueryHandle();
+  const historyHref = () =>
+    spaceCompositionHistoryPath(params.space_id, params.composition_id);
+
+  // The latest revision comes from the bounded list projection. An opened
+  // revision that is not the latest is historical and offers a single
+  // append-only Restore action; the latest revision offers none.
+  const [listing] = createResource(
+    () => params.space_id,
+    (spaceId) => compositionApi.list(spaceId, 100, 0).catch(() => undefined),
+  );
+  const latestRevisionId = () =>
+    listing()?.items.find(
+      (item) => item.composition_id === params.composition_id,
+    )?.revision_id;
+  const isHistorical = () => {
+    const latest = latestRevisionId();
+    return latest !== undefined && latest !== params.revision_id;
+  };
+
+  const [restoring, setRestoring] = createSignal(false);
+  const [restoreError, setRestoreError] = createSignal<string | null>(null);
+  const [restoreConflict, setRestoreConflict] = createSignal(false);
+  const [restoreRetryable, setRestoreRetryable] = createSignal(false);
+  // Stable per source and base: uncertain retries reuse the identical key.
+  let restoreKey = "";
+  let restoreKeyScope = "";
+  const restoreIdempotencyKey = (baseRevisionId: string): string => {
+    const scope =
+      `${params.composition_id}/${params.revision_id}/${baseRevisionId}`;
+    if (restoreKeyScope !== scope || !restoreKey) {
+      restoreKeyScope = scope;
+      restoreKey = crypto.randomUUID();
+    }
+    return restoreKey;
+  };
+
+  const handleRestore = async () => {
+    const base = latestRevisionId();
+    if (!base || restoring()) return;
+    setRestoring(true);
+    setRestoreError(null);
+    setRestoreConflict(false);
+    setRestoreRetryable(false);
+    try {
+      // Restore appends a new revision; existing history is never rewritten.
+      const response = await compositionApi.restore(
+        params.space_id,
+        params.composition_id,
+        params.revision_id,
+        base,
+        restoreIdempotencyKey(base),
+      );
+      navigate(
+        spaceCompositionRevisionPath(
+          params.space_id,
+          response.composition_id,
+          response.revision_id,
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof UgoiteApiError &&
+        (error.status === 409 || error.code === "REVISION_CONFLICT")
+      ) {
+        setRestoreConflict(true);
+        setRestoreError(t("composition.restoreConflict"));
+      } else {
+        setRestoreError(
+          formatUserFacingError(
+            error,
+            "composition.restoreFailed",
+            "composition.restore",
+          ),
+        );
+        const outcome = error instanceof UgoiteApiError
+          ? error.mutationOutcome
+          : undefined;
+        if (outcome !== "rejected") setRestoreRetryable(true);
+      }
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   createEffect(() => {
     void handle.open({
@@ -117,7 +216,38 @@ export default function CompositionRevisionRoute() {
             params.revision_id,
           )}
         />
+        <IconLink
+          icon="history"
+          label={t("composition.history")}
+          href={historyHref()}
+        />
+        <Show when={isHistorical()}>
+          <IconButton
+            icon="refresh"
+            label={t("composition.restore")}
+            disabled={restoring()}
+            onClick={() => void handleRestore()}
+          />
+        </Show>
       </div>
+      <Show when={restoring()}>
+        <LocalBusyIndicator label={t("composition.restore")} />
+      </Show>
+      <Show when={restoreError()}>
+        <p class="ui-text-danger" role="alert">{restoreError()}</p>
+      </Show>
+      <Show when={restoreConflict()}>
+        <A href={historyHref()}>{t("composition.history")}</A>
+      </Show>
+      <Show when={restoreRetryable() && !restoring()}>
+        <button
+          class="ui-button ui-button-secondary"
+          type="button"
+          onClick={() => void handleRestore()}
+        >
+          {t("composition.retry")}
+        </button>
+      </Show>
       <Show when={current().opening}>
         <LocalBusyIndicator label={t("composition.detailLoading")} />
       </Show>

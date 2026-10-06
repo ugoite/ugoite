@@ -41,9 +41,29 @@ export interface CompositionRawRevision {
     entry_id: string;
     revision_id: string;
     committed_at_micros: number;
+    /** `upsert`, `delete`, or `restore`. Absent on older cached shapes. */
+    operation?: string;
   };
   fields: Record<string, unknown>;
   unmapped_field_values: Record<string, unknown>;
+}
+
+export interface CompositionHistoryPage {
+  entry_id: string;
+  revisions: CompositionRawRevision[];
+  total: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
+}
+
+export interface CompositionPublicationReceipt {
+  command_id: string;
+  catalog_generation: number;
+  snapshot_id: number;
+  committed_revision_ids: string[];
+  committed_at_micros: number;
+  data_file_count: number;
 }
 
 export interface CompositionLintDocument {
@@ -104,6 +124,14 @@ export interface CompositionLintResponse {
   error?: { kind: string; code: string };
 }
 
+export interface CompositionRestoreResponse {
+  composition_id: string;
+  revision_id: string;
+  restored_from_revision_id: string;
+  canonical_yaml: string;
+  receipt: CompositionPublicationReceipt;
+}
+
 export interface CompositionSaveOptions {
   compositionId?: string;
   baseRevisionId?: string;
@@ -113,14 +141,7 @@ export interface CompositionSaveResponse {
   composition_id: string;
   revision_id: string;
   canonical_yaml: string;
-  receipt: {
-    command_id: string;
-    catalog_generation: number;
-    snapshot_id: number;
-    committed_revision_ids: string[];
-    committed_at_micros: number;
-    data_file_count: number;
-  };
+  receipt: CompositionPublicationReceipt;
 }
 
 export interface SavedSqlCompositionDocument {
@@ -377,6 +398,56 @@ export const compositionApi = {
       "composition.list",
       { space_id: spaceId, limit, offset },
       undefined,
+      { signal },
+    );
+  },
+
+  /** Bounded revision history for one Composition, oldest first. */
+  async history(
+    spaceId: string,
+    compositionId: string,
+    limit?: number,
+    offset?: number,
+    signal?: AbortSignal,
+  ): Promise<CompositionHistoryPage> {
+    return await protocolFetch<CompositionHistoryPage>(
+      "composition.history",
+      {
+        space_id: spaceId,
+        composition_id: compositionId,
+        ...(limit === undefined ? {} : { limit }),
+        ...(offset === undefined ? {} : { offset }),
+      },
+      undefined,
+      { signal },
+    );
+  },
+
+  /**
+   * Restore one exact historical revision as a new append-only revision.
+   * `baseRevisionId` must still be the current revision when the server
+   * publishes; the idempotency key stays stable across uncertain retries
+   * of the same source and base.
+   */
+  async restore(
+    spaceId: string,
+    compositionId: string,
+    sourceRevisionId: string,
+    baseRevisionId: string,
+    idempotencyKey: string,
+    signal?: AbortSignal,
+  ): Promise<CompositionRestoreResponse> {
+    return await protocolFetch<CompositionRestoreResponse>(
+      "composition.restore",
+      {
+        space_id: spaceId,
+        composition_id: compositionId,
+        idempotency_key: idempotencyKey,
+      },
+      {
+        source_revision_id: sourceRevisionId,
+        base_revision_id: baseRevisionId,
+      },
       { signal },
     );
   },
