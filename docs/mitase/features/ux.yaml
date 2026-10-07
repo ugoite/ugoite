@@ -364,6 +364,40 @@ features:
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+      - id: browser-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the rendered BackLink, page title, header actions, and keyboard focus across nested surfaces at compact viewport widths with exact Playwright evidence.
+        targets:
+          - id: compact-header-viewport-evidence
+            adapter: typescript
+            path: e2e/compact-controls-evidence.test.ts
+            selector: { kind: test, name: "REQ-UX-NAV-001: keeps nested compact headers visible and keyboard reachable" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/compact-controls-evidence.test.ts, test: "REQ-UX-NAV-001: keeps nested compact headers visible and keyboard reachable" } }
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-presentation
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/compact-controls-evidence.test.ts, test: "REQ-UX-NAV-001: keeps nested compact headers visible and keyboard reachable" } }
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers:
+                  - FEAT-UX-007#binding.back-control-implementation/target.entry-history-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.entry-revision-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.entry-info-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.entry-detail-pane
+                  - FEAT-UX-007#binding.back-control-implementation/target.sql-detail-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.sql-new-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.sql-variables-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.sql-run-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-studio
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-history-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-edit-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.storage-test-route
+                runner: { runner: e2e-playwright, arguments: { file: e2e/compact-controls-evidence.test.ts, test: "REQ-UX-NAV-001: keeps nested compact headers visible and keyboard reachable" } }
   - id: FEAT-UX-008
     title: Shared row-list primitive with Spaces and Forms migration
     summary: Provide the shared RowList rendered by the Spaces and Forms lists so rows activate across the full row without an Open column, boxed chevron, or in-row cards, and apply the Entry list first slice (positional back link, list-adjacent create action, chipless rows with compact right-meta dates).
