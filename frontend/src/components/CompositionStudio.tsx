@@ -1,5 +1,12 @@
 import { useLocation, useNavigate } from "@solidjs/router";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import { BackLink } from "~/components/BackLink";
 import {
   CompositionDiagnostics,
@@ -14,6 +21,7 @@ import {
   CompositionInspector,
   type CompositionInspectorDataJump,
 } from "~/components/CompositionInspector";
+import { CompositionInspectorSheet } from "~/components/CompositionInspectorSheet";
 import {
   CompositionDisplayPicker,
   type CompositionDisplaySeed,
@@ -67,6 +75,8 @@ import {
   blockIdsUsingSource,
   sourceDraftIdForBlock,
   STUDIO_MODES,
+  STUDIO_SHEET_GATE_MEDIA,
+  STUDIO_SPLIT_GATE_MEDIA,
   type StudioMode,
   visibleComponentSourceIds,
 } from "~/lib/composition-studio-sync";
@@ -125,6 +135,95 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // preview, and selection state stay shared and continuous across modes;
   // Split pairs the canvas with the Data pane and is never persisted.
   const [mode, setMode] = createSignal<StudioMode>("design");
+  // Transient viewport Work: narrow flags mirror the Studio CSS gates so no
+  // JS path can leave a narrow viewport stuck in Split or rendering the
+  // wrong inspector container. `sheetOpen` tracks the bottom-sheet dismissal
+  // only; the selection owner stays `selectedId`.
+  const [belowSplitGate, setBelowSplitGate] = createSignal(false);
+  const [sheetViewport, setSheetViewport] = createSignal(false);
+  const [sheetOpen, setSheetOpen] = createSignal(false);
+
+  // RA9 mobile: the Split option hides below the Split gate in CSS, and the
+  // same gate is enforced here so resizing into a narrow viewport while in
+  // Split returns to Design instead of keeping a stacked Split. The sheet
+  // gate mirrors the inspector stacking breakpoint: below it the Design
+  // inspector renders as a bottom sheet. Both flags stay viewport-derived
+  // transient Work and never persist.
+  onMount(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return;
+    }
+    const splitQuery = window.matchMedia(STUDIO_SPLIT_GATE_MEDIA);
+    const sheetQuery = window.matchMedia(STUDIO_SHEET_GATE_MEDIA);
+    const update = () => {
+      setBelowSplitGate(splitQuery.matches);
+      setSheetViewport(sheetQuery.matches);
+    };
+    update();
+    if (typeof splitQuery.addEventListener === "function") {
+      splitQuery.addEventListener("change", update);
+      sheetQuery.addEventListener("change", update);
+      onCleanup(() => {
+        splitQuery.removeEventListener("change", update);
+        sheetQuery.removeEventListener("change", update);
+      });
+    } else {
+      splitQuery.addListener(update);
+      sheetQuery.addListener(update);
+      onCleanup(() => {
+        splitQuery.removeListener(update);
+        sheetQuery.removeListener(update);
+      });
+    }
+  });
+
+  createEffect(() => {
+    if (belowSplitGate() && mode() === "split") setMode("design");
+  });
+
+  // A dismissed or viewport-orphaned sheet returns focus to the invoking
+  // block's select control. Block identities are compared literally so
+  // parameter identities containing a colon need no selector escaping.
+  const focusBlockSelect = (blockId: string | null): boolean => {
+    if (!blockId || typeof document === "undefined") return false;
+    const blocks = document.querySelectorAll("[data-block-id]");
+    for (const block of blocks) {
+      if (block.getAttribute("data-block-id") !== blockId) continue;
+      const control = block.querySelector("button");
+      if (control instanceof HTMLElement) {
+        control.focus();
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const closeSheetKeepSelection = () => {
+    if (!sheetOpen()) return;
+    const invoking = selectedId();
+    setSheetOpen(false);
+    focusBlockSelect(invoking);
+  };
+
+  // User dismissal (Escape, backdrop, Close) clears the transient selection
+  // too, so reopening the inspector for the same block stays a single tap.
+  // The Data selection is kept: only the canvas selection clears.
+  const dismissSheet = () => {
+    if (!sheetOpen()) return;
+    const invoking = selectedId();
+    setSheetOpen(false);
+    setSelectedId(null);
+    focusBlockSelect(invoking);
+  };
+
+  // Leaving the sheet viewport unmounts the sheet; an orphaned open sheet
+  // returns focus to its invoking block, which stays selected inline.
+  createEffect(() => {
+    if (!sheetViewport() && sheetOpen()) closeSheetKeepSelection();
+  });
   const [paletteTarget, setPaletteTarget] = createSignal<
     DraftInsertTarget | null
   >(null);
@@ -295,6 +394,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setDraft(added.draft);
       if (added.draftId) {
         setSelectedId(designBlockIdForComponent(added.draftId));
+        // The fresh block owns the inspector, matching canvas insertion:
+        // on narrow viewports that means opening the bottom sheet.
+        if (sheetViewport()) setSheetOpen(true);
       }
     }
     setPendingInsert(null);
@@ -378,6 +480,16 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const jumpToSource = (jump: CompositionInspectorDataJump) => {
     setExpandedId(jump.sourceDraftId);
     previewHandle.ensureSource(jump.sourceDraftId);
+    // From the narrow bottom sheet the jump target is not rendered behind
+    // the sheet: dismiss the sheet and show the Data workspace, then focus
+    // the jumped row once it mounts.
+    if (sheetViewport() && sheetOpen()) {
+      setSheetOpen(false);
+      setSelectedId(null);
+      setMode("data");
+      queueMicrotask(() => focusSourceRow(jump.sourceDraftId));
+      return;
+    }
     focusSourceRow(jump.sourceDraftId);
   };
 
@@ -386,9 +498,16 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // handoff (expand + scroll + focus only where the target row is
   // rendered; in Split the right pane shows it directly). Text blocks and
   // parameter controls carry no source, so the Data selection is kept and
-  // never invented. Selection changes never refetch the preview.
+  // never invented. Selection changes never refetch the preview. On narrow
+  // viewports selecting a block opens the inspector bottom sheet; clearing
+  // the selection dismisses it.
   const handleSelectBlock = (blockId: string | null) => {
     setSelectedId(blockId);
+    if (!blockId) {
+      setSheetOpen(false);
+    } else if (sheetViewport()) {
+      setSheetOpen(true);
+    }
     const sourceDraftId = sourceDraftIdForBlock(draft(), blockId);
     if (!sourceDraftId) return;
     setExpandedId(sourceDraftId);
@@ -598,6 +717,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // Shared workspace fragments: modes switch the arrangement only, so the
   // Data workspace and the Design canvas render from the same draft,
   // preview, and selection state in every mode without refetching.
+  // The bottom sheet owns the selected block identity on narrow viewports;
+  // clearing the selection (or leaving the sheet viewport) dismisses it.
+  const sheetSelection = (): string | null =>
+    sheetViewport() && sheetOpen() ? selectedId() : null;
   const renderDataWorkspace = () => (
     <CompositionDataWorkspace
       spaceId={spaceId()}
@@ -622,38 +745,57 @@ export function CompositionStudio(props: CompositionStudioProps) {
     />
   );
   const renderDesignWorkspace = () => (
-    <div class="studioDesign">
-      <CompositionDesignCanvas
-        draft={draft()}
-        plan={canvasPlan()}
-        parameterValues={{
-          ...defaultParameterValues(draft()),
-          ...previewHandle.parameters(),
-        }}
-        sources={readySources()}
-        selectedId={selectedId()}
-        highlightedIds={highlightedBlockIds()}
-        onSelect={handleSelectBlock}
-        onDraftChange={setDraft}
-        onRequestDisplayPicker={(target) => {
-          setPendingInsert(target);
-          setDisplayPickerOpen(true);
-        }}
-        onParameterChange={(parameterId, value) =>
-          previewHandle.setParameter(parameterId, value)}
-        onNext={(sourceId) => previewHandle.next(sourceId)}
-        onPrevious={(sourceId) => previewHandle.previous(sourceId)}
-        onRetry={(sourceId) => previewHandle.retry(sourceId)}
-        paletteTarget={paletteTarget()}
-        onPaletteTarget={setPaletteTarget}
-      />
-      <CompositionInspector
-        draft={draft()}
-        selectedId={selectedId()}
-        onDraftChange={setDraft}
-        onDataJump={jumpToSource}
-      />
-    </div>
+    <>
+      <div class="studioDesign">
+        <CompositionDesignCanvas
+          draft={draft()}
+          plan={canvasPlan()}
+          parameterValues={{
+            ...defaultParameterValues(draft()),
+            ...previewHandle.parameters(),
+          }}
+          sources={readySources()}
+          selectedId={selectedId()}
+          highlightedIds={highlightedBlockIds()}
+          onSelect={handleSelectBlock}
+          onDraftChange={setDraft}
+          onRequestDisplayPicker={(target) => {
+            setPendingInsert(target);
+            setDisplayPickerOpen(true);
+          }}
+          onParameterChange={(parameterId, value) =>
+            previewHandle.setParameter(parameterId, value)}
+          onNext={(sourceId) => previewHandle.next(sourceId)}
+          onPrevious={(sourceId) => previewHandle.previous(sourceId)}
+          onRetry={(sourceId) => previewHandle.retry(sourceId)}
+          paletteTarget={paletteTarget()}
+          onPaletteTarget={setPaletteTarget}
+        />
+        {
+          /* The inspector renders exactly once: inline beside the canvas on
+          wide viewports, or as a bottom sheet on narrow ones. */
+        }
+        <Show when={!sheetViewport()}>
+          <CompositionInspector
+            draft={draft()}
+            selectedId={selectedId()}
+            onDraftChange={setDraft}
+            onDataJump={jumpToSource}
+          />
+        </Show>
+      </div>
+      <Show when={sheetSelection()}>
+        {(activeId) => (
+          <CompositionInspectorSheet
+            draft={draft()}
+            selectedId={activeId()}
+            onDraftChange={setDraft}
+            onDataJump={jumpToSource}
+            onClose={dismissSheet}
+          />
+        )}
+      </Show>
+    </>
   );
 
   return (

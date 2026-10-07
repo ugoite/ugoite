@@ -1066,3 +1066,10 @@ features:
                 criterion: REQ-FE-070#criterion.source-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
+          - id: composition-studio-mobile
+            adapter: typescript
+            path: frontend/src/components/CompositionInspectorSheet.tsx
+            selector: { kind: symbol, name: CompositionInspectorSheet }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.mobile-one-column

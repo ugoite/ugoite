@@ -14,6 +14,16 @@ export const STUDIO_MODES: readonly StudioMode[] = [
   "split",
 ];
 
+/**
+ * Viewport gates for the Studio arrangement. Split is a desktop-only
+ * comprehension aid: below the Split gate the switch offers Design | Data
+ * only and a narrow viewport never stays in Split. Below the narrower sheet
+ * gate the Design inspector renders as a bottom sheet instead of stacking
+ * below the canvas. Both gates mirror the Studio CSS breakpoints.
+ */
+export const STUDIO_SPLIT_GATE_MEDIA = "(max-width: 760px)";
+export const STUDIO_SHEET_GATE_MEDIA = "(max-width: 560px)";
+
 const PARAMETER_BLOCK_PREFIX = "param:";
 
 /**
