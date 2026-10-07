@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceQueryCreateRoute from "./new";
+import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
 const { navigateMock, formApiListMock, sqlCreateMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
@@ -226,6 +227,7 @@ describe("/spaces/:space_id/sql/new", () => {
     expect(back).toHaveAttribute("href", "/spaces/default/sql");
     expect(screen.getAllByRole("link", { name: "Back to Saved SQL" }))
       .toHaveLength(1);
+    expectBackLinkAtHeaderStart(back);
 
     const editor = await screen.findByRole("textbox", { name: "SQL" });
     fireEvent.input(editor, {

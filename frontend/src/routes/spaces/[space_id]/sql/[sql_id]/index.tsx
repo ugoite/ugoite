@@ -145,19 +145,25 @@ export default function SpaceSqlDetailRoute() {
   return (
     <>
       <div class="screenHead">
-        <div class="ui-stack-sm">
-          <Show
-            when={entry()}
-            fallback={<h1>{t("sqlPage.detail")}</h1>}
-          >
-            {(data) => (
-              <h1>
-                {data().kind === "search-history"
-                  ? displaySqlName(data())
-                  : queryName().trim() || t("sqlPage.untitledQuery")}
-              </h1>
-            )}
-          </Show>
+        <div class="screenHeadStart">
+          <BackLink
+            href={`/spaces/${encodeURIComponent(spaceId())}/sql`}
+            label={t("sqlPage.backToSavedSql")}
+          />
+          <div class="ui-stack-sm">
+            <Show
+              when={entry()}
+              fallback={<h1>{t("sqlPage.detail")}</h1>}
+            >
+              {(data) => (
+                <h1>
+                  {data().kind === "search-history"
+                    ? displaySqlName(data())
+                    : queryName().trim() || t("sqlPage.untitledQuery")}
+                </h1>
+              )}
+            </Show>
+          </div>
         </div>
       </div>
       <section
@@ -360,10 +366,6 @@ export default function SpaceSqlDetailRoute() {
               {t("sqlPage.openVariables")}
             </A>
           </Show>
-          <BackLink
-            href={`/spaces/${encodeURIComponent(spaceId())}/sql`}
-            label={t("sqlPage.backToSavedSql")}
-          />
         </div>
         <Show when={isDirty()}>
           <p class="text-sm ui-muted">{t("sqlPage.unsavedChanges")}</p>

@@ -565,6 +565,9 @@ describe("CompositionStudioSync", () => {
     // One icon-only parent link, one name input, one Save text button.
     expect(scope.getByRole("link", { name: "Back to compositions" }))
       .toHaveClass("pill", "iconpill", "icononly", "back-link");
+    expect(header?.firstElementChild).toBe(
+      scope.getByRole("link", { name: "Back to compositions" }),
+    );
     const name = scope.getByLabelText("Name");
     expect(name).toHaveClass("ui-input");
     expect(scope.getByRole("button", { name: "Save" })).toHaveTextContent(

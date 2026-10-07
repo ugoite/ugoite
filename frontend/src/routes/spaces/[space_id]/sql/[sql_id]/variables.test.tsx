@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceQueryVariablesRoute from "./variables";
+import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
 const { navigateMock, sqlGetMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
@@ -116,6 +117,7 @@ describe("/spaces/:space_id/sql/:sql_id/variables", () => {
     );
     expect(screen.getAllByRole("link", { name: "Back to Saved SQL" }))
       .toHaveLength(1);
+    expectBackLinkAtHeaderStart(back);
     // Typed variables stay on the normal path without raw JSON.
     expect(await screen.findByLabelText(/title/)).toBeInTheDocument();
     expect(screen.queryByText("{")).not.toBeInTheDocument();

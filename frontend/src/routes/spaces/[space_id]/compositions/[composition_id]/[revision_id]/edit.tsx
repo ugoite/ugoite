@@ -128,11 +128,15 @@ export default function CompositionEditRoute() {
   return (
     <div>
       <Show when={loadError()}>
+        <div class="screenHead">
+          <div class="screenHeadStart">
+            <BackLink
+              href={backHref()}
+              label={t("composition.studioBackToRevision")}
+            />
+          </div>
+        </div>
         <p class="ui-text-danger" role="alert">{loadError()}</p>
-        <BackLink
-          href={backHref()}
-          label={t("composition.studioBackToRevision")}
-        />
       </Show>
       <Show when={!loadError() && !draft()}>
         <LocalBusyIndicator label={t("composition.detailLoading")} />

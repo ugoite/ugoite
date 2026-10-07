@@ -9,6 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import SpaceSqlRunRoute from "./run";
+import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
 const {
   navigateMock,
@@ -165,6 +166,11 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
 
     setLocale("en");
     await renderResults();
+    const back = screen.getByRole("link", { name: "Back to Saved SQL" });
+    expect(back).toHaveAttribute("href", "/spaces/default/sql/saved-query");
+    expect(screen.getAllByRole("link", { name: "Back to Saved SQL" }))
+      .toHaveLength(1);
+    expectBackLinkAtHeaderStart(back);
     cleanup();
 
     setLocale("ja");

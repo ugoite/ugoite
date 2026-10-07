@@ -11,9 +11,19 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-    - id: query-create-heading
-      type: heading
-      title: New
+    - id: query-create-header
+      type: page-header
+      items:
+        - id: saved-sql-parent-action
+          type: link
+          position: leading
+          presentation: icon-only
+          accessible_name: Back to Saved SQL
+          visible_content: chevron-left
+          target_page: space-sql
+        - id: query-create-heading
+          type: heading
+          title: New
     - id: query-title-input
       type: text-input
       label: "Query name"
@@ -38,10 +48,4 @@ components:
       type: button
       variant: primary
       label: "Save"
-      target_page: space-sql
-    - id: saved-sql-parent-action
-      type: link
-      presentation: icon-only
-      accessible_name: Back to Saved SQL
-      visible_content: chevron-left
       target_page: space-sql

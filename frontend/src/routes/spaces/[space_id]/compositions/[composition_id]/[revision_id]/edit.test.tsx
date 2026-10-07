@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
+import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 import CompositionEditRoute from "./edit";
 
 const {
@@ -197,6 +198,20 @@ describe("Composition edit route", () => {
 
   afterEach(() => cleanup());
 
+  it("keeps the single back link at the header start when loading fails", async () => {
+    getMock.mockRejectedValueOnce(new Error("Unavailable"));
+    render(() => <CompositionEditRoute />);
+
+    const back = await screen.findByRole("link", { name: "Back to revision" });
+    expect(back).toHaveAttribute(
+      "href",
+      "/spaces/space-1/compositions/tool-1/revision-1",
+    );
+    expect(screen.getAllByRole("link", { name: "Back to revision" }))
+      .toHaveLength(1);
+    expectBackLinkAtHeaderStart(back);
+  });
+
   it("loads the exact revision through get and lint with a prefilled studio", async () => {
     render(() => <CompositionEditRoute />);
 
@@ -208,11 +223,12 @@ describe("Composition edit route", () => {
     // structure with the single mode control: the finished shape only, no
     // Parameters, Tags, Data workspace, or Preview section.
     expect(screen.getAllByRole("link")).toHaveLength(1);
-    expect(screen.getByRole("link", { name: "Back to revision" }))
-      .toHaveAttribute(
-        "href",
-        "/spaces/space-1/compositions/tool-1/revision-1",
-      );
+    const back = screen.getByRole("link", { name: "Back to revision" });
+    expect(back).toHaveAttribute(
+      "href",
+      "/spaces/space-1/compositions/tool-1/revision-1",
+    );
+    expect(back.parentElement?.firstElementChild).toBe(back);
     expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>

@@ -27,6 +27,7 @@ components:
       description: One icon-only Back control to the opened revision, one tool-name text input owning the name, one visible-text Save action.
     - id: studio-back
       type: link
+      position: leading
       presentation: icon-only
       accessible_name: Back to revision
       visible_content: chevron-left

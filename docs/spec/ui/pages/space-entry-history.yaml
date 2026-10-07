@@ -11,12 +11,20 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
+    - id: entry-history-header
+      type: page-header
+      items:
+        - id: entry-history-parent-action
+          type: link
+          position: leading
+          presentation: icon-only
+          accessible_name: Back to Entry
+          visible_content: chevron-left
+          target_page: space-entry-detail
+        - id: entry-history-title
+          type: heading
+          title: Entry history
     - id: revision-list
       type: list
       title: Entry history
       accessible_name_source: entry-history-title
-      navigation:
-        type: link
-        presentation: icon-only
-        accessible_name: Back to Entry
-        visible_content: chevron-left

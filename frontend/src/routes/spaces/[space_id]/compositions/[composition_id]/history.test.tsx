@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import CompositionHistoryRoute from "./history";
+import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
 const { historyMock, listMock } = vi.hoisted(() => ({
   historyMock: vi.fn(),
@@ -119,9 +120,11 @@ describe("Composition history route", () => {
     expect(screen.getByText("Technical details")).toBeInTheDocument();
     expect(screen.getByText("revision-1")).toBeInTheDocument();
     // One Back to the saved-tools list.
-    expect(
-      screen.getByRole("link", { name: "Back to saved tools" }),
-    ).toHaveAttribute("href", "/spaces/space-1/compositions");
+    const back = screen.getByRole("link", { name: "Back to saved tools" });
+    expect(back).toHaveAttribute("href", "/spaces/space-1/compositions");
+    expect(screen.getAllByRole("link", { name: "Back to saved tools" }))
+      .toHaveLength(1);
+    expectBackLinkAtHeaderStart(back);
   });
 
   it("marks the current revision and pages through history", async () => {

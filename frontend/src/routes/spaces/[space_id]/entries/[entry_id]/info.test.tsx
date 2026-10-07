@@ -5,6 +5,7 @@ import { setLocale } from "~/lib/i18n";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { entryApi } from "~/lib/ugoite-client";
 import SpaceEntryInfoRoute from "./info";
+import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
 vi.mock("@solidjs/router", () => ({
   A: (props: {
@@ -65,6 +66,7 @@ describe("entry info route", () => {
     expect(backLink).toHaveAttribute("title", "Back to Entry");
     expect(screen.getAllByRole("link", { name: "Back to Entry" }))
       .toHaveLength(1);
+    expectBackLinkAtHeaderStart(backLink);
     const advancedDetails = screen.getByText("Advanced details").closest(
       "details",
     )!;

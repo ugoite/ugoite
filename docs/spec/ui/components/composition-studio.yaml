@@ -16,6 +16,7 @@ components:
     actions:
       - id: studio-back
         type: link
+        position: leading
         presentation: icon-only
         visible_content: chevron-left
         accessible_name: destination-specific localized parent name

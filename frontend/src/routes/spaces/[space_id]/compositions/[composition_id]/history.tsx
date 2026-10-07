@@ -129,11 +129,17 @@ export default function CompositionHistoryRoute() {
 
   return (
     <section class="section">
-      <h1>{name()}</h1>
-      <BackLink
-        href={spaceCompositionsPath(spaceId())}
-        label={t("composition.historyBack")}
-      />
+      <div class="screenHead">
+        <div class="screenHeadStart">
+          <BackLink
+            href={spaceCompositionsPath(spaceId())}
+            label={t("composition.historyBack")}
+          />
+          <div class="screenTitle">
+            <h1>{name()}</h1>
+          </div>
+        </div>
+      </div>
       <Show when={loadState().status === "loading"}>
         <LocalBusyIndicator label={t("composition.historyLoading")} />
       </Show>

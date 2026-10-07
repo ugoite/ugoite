@@ -239,7 +239,7 @@ features:
                 criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
   - id: FEAT-UX-007
     title: Shared positional back control
-    summary: Provide the shared BackLink as a 44px circular chevron-left link to the hierarchical parent, with no repeated visible Back copy and a localized destination name for assistive technology and hover discovery.
+    summary: Provide the shared BackLink as a 44px circular chevron-left link to the hierarchical parent, first at each nested surface's leading header edge, with no repeated visible Back copy and a localized destination name for assistive technology and hover discovery.
     status: planned
     bindings:
       - id: back-control-implementation
@@ -263,6 +263,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: entry-revision-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx"
@@ -270,6 +272,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: entry-info-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.tsx"
@@ -277,6 +281,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: entry-detail-pane
             adapter: typescript
             path: frontend/src/components/EntryDetailPane.tsx
@@ -284,6 +290,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: sql-detail-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/index.tsx"
@@ -291,6 +299,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: sql-new-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/sql/new.tsx"
@@ -298,6 +308,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: sql-variables-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.tsx"
@@ -305,6 +317,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: sql-run-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx"
@@ -312,6 +326,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: composition-studio
             adapter: typescript
             path: frontend/src/components/CompositionStudio.tsx
@@ -319,6 +335,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: composition-history-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx"
@@ -326,6 +344,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: composition-edit-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.tsx"
@@ -333,6 +353,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
           - id: storage-test-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/test-connection.tsx"
@@ -340,6 +362,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
   - id: FEAT-UX-008
     title: Shared row-list primitive with Spaces and Forms migration
     summary: Provide the shared RowList rendered by the Spaces and Forms lists so rows activate across the full row without an Open column, boxed chevron, or in-row cards, and apply the Entry list first slice (positional back link, list-adjacent create action, chipless rows with compact right-meta dates).

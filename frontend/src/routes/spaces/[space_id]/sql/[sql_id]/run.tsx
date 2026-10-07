@@ -346,19 +346,21 @@ export default function SpaceSqlRunRoute() {
   return (
     <>
       <div class="screenHead">
-        <div class="screenTitle">
-          <h1>
-            {!entry.loading && entry()
-              ? displaySqlName(entry()!)
-              : t("sqlPage.results")}
-          </h1>
+        <div class="screenHeadStart">
+          <BackLink
+            href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
+              encodeURIComponent(sqlId())
+            }`}
+            label={t("sqlPage.backToSavedSql")}
+          />
+          <div class="screenTitle">
+            <h1>
+              {!entry.loading && entry()
+                ? displaySqlName(entry()!)
+                : t("sqlPage.results")}
+            </h1>
+          </div>
         </div>
-        <BackLink
-          href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
-            encodeURIComponent(sqlId())
-          }`}
-          label={t("sqlPage.backToSavedSql")}
-        />
       </div>
 
       <section

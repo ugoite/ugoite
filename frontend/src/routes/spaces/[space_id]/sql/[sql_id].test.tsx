@@ -17,6 +17,7 @@ import {
 } from "~/test/mocks/handlers";
 import type { Space } from "~/lib/types";
 import { sqlApi } from "~/lib/ugoite-client";
+import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
 const navigateMock = vi.fn();
 const entryRelation = "form_00000000000000000000000000000001";
@@ -95,6 +96,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     expect(backLink).toHaveAttribute("href", "/spaces/default/sql");
     expect(screen.getAllByRole("link", { name: "Back to Saved SQL" }))
       .toHaveLength(1);
+    expectBackLinkAtHeaderStart(backLink);
     // Shell destinations stay in the shell: no route-level shortcuts.
     expect(screen.queryByRole("link", { name: "Back to Dashboard" }))
       .not.toBeInTheDocument();

@@ -11,10 +11,20 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-    - id: sql-detail-heading
-      type: heading
-      title: Saved query name
-      ownership: object-identity
+    - id: sql-detail-header
+      type: page-header
+      items:
+        - id: saved-sql-index-action
+          type: link
+          position: leading
+          presentation: icon-only
+          accessible_name: Back to Saved SQL
+          visible_content: chevron-left
+          target_page: space-sql
+        - id: sql-detail-heading
+          type: heading
+          title: Saved query name
+          ownership: object-identity
     - id: sql-detail-metadata
       type: list
       title: Query metadata
@@ -28,9 +38,3 @@ components:
     - id: sql-detail-primary-action
       type: button
       title: Run Query or Open Variables
-    - id: saved-sql-index-action
-      type: link
-      presentation: icon-only
-      accessible_name: Back to Saved SQL
-      visible_content: chevron-left
-      target_page: space-sql
