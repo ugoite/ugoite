@@ -65,6 +65,34 @@ describe("/spaces/:space_id/assets/:asset_id", () => {
     vi.mocked(assetApi.delete).mockReset();
   });
 
+  it("REQ-UX-ACTION-001: collapses only Download in the asset detail toolbar", async () => {
+    vi.mocked(assetApi.list).mockResolvedValue([item()]);
+
+    const { container } = render(() => <SpaceAssetDetailRoute />);
+
+    expect(await screen.findByRole("heading", { name: "report.pdf" }))
+      .toBeInTheDocument();
+    const download = screen.getByRole("button", { name: "Download" });
+    expect(download).toHaveAttribute("title", "Download");
+    expect(download).toHaveClass("tool--icon-only");
+    expect(download.querySelector(".toolLabel")).toHaveTextContent("Download");
+    expect(download.querySelector(".toolLabel")).toHaveClass("ui-sr-only");
+
+    const blockedDelete = screen.getByRole("button", {
+      name:
+        "Delete is blocked: this asset is still referenced by Reports · Attachments (entry-1).",
+    });
+    expect(blockedDelete).toBeDisabled();
+    expect(blockedDelete).toHaveClass("tool-danger");
+    expect(blockedDelete.querySelector(".toolLabel")).toHaveTextContent(
+      "Delete Asset",
+    );
+    expect(blockedDelete.querySelector(".toolLabel")).not.toHaveClass(
+      "ui-sr-only",
+    );
+    expect(container.querySelectorAll(".actionbar")).toHaveLength(1);
+  });
+
   it("PR6: shows type/size meta with download/delete actions and entry references", async () => {
     vi.mocked(assetApi.list).mockResolvedValue([
       item(),

@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-09-24"
+updated: "2026-10-08"
 page:
   id: space-asset-detail
   title: Asset Detail
@@ -16,7 +16,17 @@ components:
       description: Names the selected asset with type/size meta while the persistent shell owns the Assets workspace context.
     - id: asset-download-delete-actions
       type: toolbar
-      description: Offers Download and Delete Asset as one-row actions with busy states; delete returns to the inventory after the server confirms.
+      component: ActionIconBar
+      reference: ../components/action-icon-bar.yaml
+      description: Download is a named icon-only utility action. Delete keeps its visible label, danger styling, blocked-reference reason, and confirmation; successful deletion returns to the inventory.
+      actions:
+        - id: download
+          presentation: icon-only
+        - id: delete
+          presentation: icon-label
+          danger: true
+          blocked_while_referenced: true
+          confirmation_when_available: required
       source: asset.read
     - id: asset-entry-references
       type: list
