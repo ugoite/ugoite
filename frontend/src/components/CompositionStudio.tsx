@@ -205,7 +205,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
     if (!sheetOpen()) return;
     const invoking = selectedId();
     setSheetOpen(false);
-    focusBlockSelect(invoking);
+    // Focus after disposal: the sheet lifts `inert` in its own cleanup, so
+    // returning focus in a microtask never races the inert removal.
+    queueMicrotask(() => focusBlockSelect(invoking));
   };
 
   // User dismissal (Escape, backdrop, Close) clears the transient selection
@@ -216,7 +218,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const invoking = selectedId();
     setSheetOpen(false);
     setSelectedId(null);
-    focusBlockSelect(invoking);
+    queueMicrotask(() => focusBlockSelect(invoking));
   };
 
   // Leaving the sheet viewport unmounts the sheet; an orphaned open sheet

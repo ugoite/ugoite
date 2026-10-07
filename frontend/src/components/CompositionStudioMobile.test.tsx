@@ -266,11 +266,15 @@ describe("CompositionStudioMobile", () => {
 
     // Escape dismisses and returns focus to the invoking block; dismissal
     // clears the transient selection so reopening stays a single tap.
+    // Focus return waits a microtask so it never races the sheet lifting
+    // `inert` in its own disposal.
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Select Total" }),
-    ).toHaveFocus();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Select Total" }),
+      ).toHaveFocus();
+    });
     expect(
       container.querySelector(".designBlock[data-selected]"),
     ).toBeNull();
@@ -280,9 +284,11 @@ describe("CompositionStudioMobile", () => {
     const reopened = await screen.findByRole("dialog", { name: "Metric" });
     fireEvent.click(reopened.parentElement!);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Select Total" }),
-    ).toHaveFocus();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Select Total" }),
+      ).toHaveFocus();
+    });
   });
 
   it("keeps the inspector inline with no dialog on wide viewports", () => {
