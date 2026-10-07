@@ -3024,6 +3024,41 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "disables sources without scalar candidates" } }
+          - id: studio-canvas-palette-modal
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: opens the palette as a modal dialog with focus trap and focus return }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: opens the palette as a modal dialog with focus trap and focus return } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.accessible-icon-actions
+                covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: opens the palette as a modal dialog with focus trap and focus return } }
+          - id: studio-canvas-palette-gating
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: "hides metric, table, and parameter entries without sources or parameters" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides metric, table, and parameter entries without sources or parameters" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides metric, table, and parameter entries without sources or parameters" } }
+          - id: studio-canvas-text-spacing
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: separates text content from the block action bar with token spacing }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: separates text content from the block action bar with token spacing } }
       - id: studio-parameter-verification
         role: verification
         facet: verification
@@ -3060,6 +3095,28 @@ requirements:
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
                 covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: surfaces guarded removal without deleting } }
+          - id: parameter-add-reason
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: names the disabled reason on the add control without prose }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: names the disabled reason on the add control without prose } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.accessible-icon-actions
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: names the disabled reason on the add control without prose } }
+          - id: parameter-add-taken-reason
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: names the colliding id when the parameter already exists }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: names the colliding id when the parameter already exists } }
           - id: parameter-route-provisioning
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx

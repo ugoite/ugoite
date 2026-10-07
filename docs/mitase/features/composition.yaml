@@ -1904,6 +1904,43 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-006#criterion.work-state-is-transient
+          - id: browser-design-canvas-palette-modal
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: opens the palette as a modal dialog with focus trap and focus return }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: browser-design-canvas-palette-gating
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: "hides metric, table, and parameter entries without sources or parameters" }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: browser-design-canvas-text-spacing
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: separates text content from the block action bar with token spacing }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.text-style-enum
+          - id: browser-parameter-add-reason
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: names the disabled reason on the add control without prose }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: browser-parameter-add-taken-reason
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: names the colliding id when the parameter already exists }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
           - id: browser-preview-unscoped-fetch
             adapter: typescript
             path: frontend/src/lib/composition-preview-handle.test.ts

@@ -145,7 +145,12 @@ components:
       inspector_handoff_narrow: block-tap-opens-bottom-sheet-below-560px
     insertion:
       control: single-add-control-per-gap
-      palette_entries: [text, metric, table, unplaced-parameters-only]
+      palette: modal-dialog-with-backdrop-escape-focus-trap-and-focus-return
+      palette_entries: [
+        text-always,
+        metric-table-only-with-sources,
+        parameters-only-with-parameters,
+      ]
       metric_table: existing-display-picker-at-target
       parameter: place-existing-only-no-creation
     removal:

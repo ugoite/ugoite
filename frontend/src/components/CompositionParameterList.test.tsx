@@ -27,6 +27,48 @@ describe("composition parameter list", () => {
     expect(screen.getByText("Add a parameter to begin.")).toBeInTheDocument();
   });
 
+  it("names the disabled reason on the add control without prose", () => {
+    render(() => (
+      <CompositionParameterList
+        parameters={[]}
+        headingId="params"
+        referencedIds={new Set()}
+        onAdd={() => {}}
+        onUpdate={() => {}}
+        onRemove={() => undefined}
+      />
+    ));
+
+    // An empty id needs a parameter name; the reason reuses the existing
+    // parameter-name vocabulary in the accessible name and title.
+    const empty = screen.getByRole("button", {
+      name: "Add parameter: Parameter name",
+    });
+    expect(empty).toBeDisabled();
+    expect(empty).toHaveAttribute("title", "Add parameter: Parameter name");
+  });
+
+  it("names the colliding id when the parameter already exists", () => {
+    render(() => (
+      <CompositionParameterList
+        parameters={[month]}
+        headingId="params"
+        referencedIds={new Set(["month"])}
+        onAdd={() => {}}
+        onUpdate={() => {}}
+        onRemove={() => undefined}
+      />
+    ));
+
+    const idInput = screen.getByLabelText("Parameter name");
+    fireEvent.input(idInput, { target: { value: "month" } });
+    const taken = screen.getByRole("button", {
+      name: "Add parameter: month",
+    });
+    expect(taken).toBeDisabled();
+    expect(taken).toHaveAttribute("title", "Add parameter: month");
+  });
+
   it("adds typed parameters and edits defaults inline", () => {
     const onAdd = vi.fn();
     const onUpdate = vi.fn();
