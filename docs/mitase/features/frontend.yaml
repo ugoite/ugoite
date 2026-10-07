@@ -172,6 +172,13 @@ features:
                 criterion: REQ-FE-071#criterion.temporal-controls
               - kind: satisfies
                 criterion: REQ-FE-071#criterion.uuid-generation
+          - id: field-value-view
+            adapter: typescript
+            path: frontend/src/components/fields/FieldValue.tsx
+            selector: { kind: symbol, name: FieldValueView }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-071#criterion.string-autogrow
           - id: markdown-utils
             adapter: typescript
             path: frontend/src/lib/markdown.ts

@@ -762,6 +762,10 @@ code {
   overflow-y: hidden;
   resize: none;
 }
+.ui-field-value-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .ui-alert {
   border: 1px solid var(--line);
   border-radius: 11px;

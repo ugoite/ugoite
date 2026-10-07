@@ -51,6 +51,7 @@ components:
         markdown: multiline-input
         row_reference: searchable-entry-picker
         string: single-row-autogrowing-textarea
+        string_view: preserve-line-breaks
         time: native-time-input
         timestamp: native-datetime-local-input
         timestamp_tz: browser-local-datetime-input-with-offset-preservation

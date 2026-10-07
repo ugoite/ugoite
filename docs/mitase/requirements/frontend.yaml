@@ -3424,7 +3424,7 @@ requirements:
     criteria:
       - id: string-autogrow
         kind: behavior
-        statement: String fields start as a single row and grow to show entered line breaks; Markdown fields keep their distinct initially multiline editor.
+        statement: String fields start as a single row and grow to show entered line breaks; read-only string values retain those line breaks, while Markdown fields keep their distinct initially multiline editor.
         governed_by: [POL-UI-002#rule.governance]
       - id: temporal-controls
         kind: behavior
@@ -3438,7 +3438,7 @@ requirements:
       - id: field-input-verification
         role: verification
         facet: verification
-        responsibility: Verify one-row string expansion, native temporal controls, offset preservation, fractional seconds, and UUID generation through exact frontend tests.
+        responsibility: Verify one-row string expansion, read-only line-break display, native temporal controls, offset preservation, fractional seconds, and UUID generation through exact frontend tests.
         targets:
           - id: string-auto-grow-case
             adapter: typescript
@@ -3458,6 +3458,15 @@ requirements:
                 criterion: REQ-FE-071#criterion.temporal-controls
                 covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "renders time and timestamp fields with native temporal controls" } }
+          - id: read-only-string-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "preserves line breaks in read-only string values" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-071#criterion.string-autogrow
+                covers: [FEAT-FE-003#binding.frontend/target.field-value-view]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "preserves line breaks in read-only string values" } }
           - id: uuid-generation-case
             adapter: typescript
             path: frontend/src/components/fields/fields.test.tsx

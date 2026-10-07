@@ -123,6 +123,7 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx
         - frontend/src/components/EntryDetailPane.tsx
         - frontend/src/components/fields/FieldInput.tsx
+        - frontend/src/components/fields/FieldValue.tsx
         - frontend/src/components/fields/fields.test.tsx
         - frontend/src/components/EntryDetailPane.safety.test.tsx
         - frontend/src/components/SqlQueryEditor.tsx

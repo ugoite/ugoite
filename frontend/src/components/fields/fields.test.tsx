@@ -555,4 +555,19 @@ describe("read-only FieldValues", () => {
     expect(screen.getByText("alpha")).toBeInTheDocument();
     expect(container.querySelector("input, textarea, select")).toBeNull();
   });
+
+  it("preserves line breaks in read-only string values", () => {
+    const { container } = render(() => (
+      <FieldValues
+        fields={[{ name: "Summary" }]}
+        getValue={() => "first line\nsecond line"}
+      />
+    ));
+    const display = container.querySelector<HTMLElement>(
+      '[data-field-value="Summary"]',
+    );
+
+    expect(display?.textContent).toBe("first line\nsecond line");
+    expect(display).toHaveClass("ui-field-value-text");
+  });
 });
