@@ -1320,6 +1320,10 @@ requirements:
         kind: security
         statement: Selecting a row_reference Entry does not mutate the parent draft until the dialog is confirmed; cancel leaves the draft unchanged.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: confirm-action
+        kind: behavior
+        statement: In row_reference selection mode, each result row uses the shared compact chevron action with a localized accessible confirmation name and 44px target; activating it preserves the existing confirm-only selection flow.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
     bindings:
       - id: row-reference-verification
         role: verification
@@ -1339,6 +1343,15 @@ requirements:
                 criterion: REQ-FE-065#criterion.submission-guard
                 covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "routes Row Reference selection through the target Form EntryQuery" } }
+          - id: row-reference-confirm-action
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.test.tsx
+            selector: { kind: test, name: "REQ-FE-065: confirms with a compact, accessibly named chevron in select mode" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.confirm-action
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/EntryResultTable.test.tsx", test: "REQ-FE-065: confirms with a compact, accessibly named chevron in select mode" } }
 
   - id: REQ-FE-061
     title: Saved SQL List Route Guidance

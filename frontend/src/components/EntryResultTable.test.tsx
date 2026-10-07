@@ -89,13 +89,22 @@ describe("EntryResultTable", () => {
       .toHaveClass("entry-browser-trailing-header");
   });
 
-  it("confirms from the trailing control in select mode", () => {
-    const { onOpenEntry } = renderTable({
+  it("REQ-FE-065: confirms with a compact, accessibly named chevron in select mode", () => {
+    const { onSelectEntry, onOpenEntry } = renderTable({
       trailingAction: "confirm",
       count: 1,
     });
-    fireEvent.click(screen.getByRole("button", { name: "Use this entry" }));
+    const action = screen.getByRole("button", { name: "Use this entry" });
+    expect(action).toHaveClass("entry-browser-open");
+    expect(action).toHaveAttribute("title", "Use this entry");
+    expect(action).not.toHaveTextContent("Use this entry");
+    expect(action.querySelector(".rowListChevron")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    fireEvent.click(action);
     expect(onOpenEntry).toHaveBeenCalledTimes(1);
+    expect(onSelectEntry).not.toHaveBeenCalled();
   });
 
   it("moves keyboard focus between row actions", async () => {

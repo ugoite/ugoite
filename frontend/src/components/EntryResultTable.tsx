@@ -96,36 +96,27 @@ export function EntryResultTable(props: EntryResultTableProps) {
                   </For>
                   <Show when={showTrailingAction()}>
                     <td class="entry-browser-trailing-cell">
-                      <Show
-                        when={props.trailingAction === "confirm"}
-                        fallback={
-                          <button
-                            type="button"
-                            class="entry-browser-open"
-                            aria-label={props.openLabel}
-                            title={props.openLabel}
-                            disabled={props.busy ?? false}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              props.onOpenEntry?.(row);
-                            }}
-                          >
-                            <RowListChevron />
-                          </button>
+                      <button
+                        type="button"
+                        class="entry-browser-open"
+                        aria-label={
+                          props.trailingAction === "confirm"
+                            ? props.confirmLabel
+                            : props.openLabel
                         }
+                        title={
+                          props.trailingAction === "confirm"
+                            ? props.confirmLabel
+                            : props.openLabel
+                        }
+                        disabled={props.busy ?? false}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          props.onOpenEntry?.(row);
+                        }}
                       >
-                        <button
-                          type="button"
-                          class="ui-button ui-button-secondary"
-                          disabled={props.busy ?? false}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            props.onOpenEntry?.(row);
-                          }}
-                        >
-                          {props.confirmLabel}
-                        </button>
-                      </Show>
+                        <RowListChevron />
+                      </button>
                     </td>
                   </Show>
                 </tr>

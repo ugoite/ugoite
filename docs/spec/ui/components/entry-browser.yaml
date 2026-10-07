@@ -1,5 +1,5 @@
 version: "0.2"
-updated: "2026-09-27"
+updated: "2026-10-07"
 component_group:
   id: entry-browser
   title: Shared Entry Browser
@@ -63,6 +63,15 @@ components:
         control: native-button
         accessible_name: localized-open-entry-name
         icon_component: RowListChevron
+        keyboard: enter-activates
+      confirm_action:
+        position: trailing-sticky-column
+        control: native-button
+        visible_label: false
+        accessible_name: localized-confirm-entry-name
+        title: localized-confirm-entry-name
+        icon_component: RowListChevron
+        target_size: 44px
         keyboard: enter-activates
     responsive:
       page_horizontal_overflow: false

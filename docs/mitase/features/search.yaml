@@ -145,6 +145,8 @@ features:
                 criterion: REQ-FE-068#criterion.controller-owned-paging
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.keyboard-row-navigation
+              - kind: satisfies
+                criterion: REQ-FE-065#criterion.confirm-action
           - id: result-pagination
             adapter: typescript
             path: frontend/src/components/ResultPagination.tsx
