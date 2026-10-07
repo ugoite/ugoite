@@ -2,7 +2,10 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FieldInput } from "~/components/fields/FieldInput";
+import {
+  FieldInput,
+  timestampValueForInput,
+} from "~/components/fields/FieldInput";
 import { FieldValues } from "~/components/fields/FieldValue";
 import { RowReferenceSelect } from "~/components/fields/RowReferenceSelect";
 import { hasRowReferencePicker } from "~/components/fields/row-reference";
@@ -33,7 +36,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("shared FieldInput family", () => {
-  it("edits strings and numbers with the same semantics in both call sites", () => {
+  it("grows string fields from one row and preserves number-oriented input", () => {
     const onSummary = vi.fn();
     const onAmount = vi.fn();
     render(() => (
@@ -44,6 +47,14 @@ describe("shared FieldInput family", () => {
           value="hello"
           onChange={onSummary}
           fieldId="create-summary"
+        />
+        <label for="markdown-body">Markdown</label>
+        <FieldInput
+          field={{ type: "markdown" }}
+          value="# Heading"
+          onChange={vi.fn()}
+          fieldId="markdown-body"
+          multiline
         />
         <label for="edit-amount">Amount</label>
         <FieldInput
@@ -56,10 +67,20 @@ describe("shared FieldInput family", () => {
     ));
 
     const summary = screen.getByLabelText("Summary");
-    expect(summary).toHaveAttribute("type", "text");
+    expect(summary.tagName).toBe("TEXTAREA");
+    expect(summary).toHaveAttribute("rows", "1");
     expect(summary).toHaveValue("hello");
-    fireEvent.input(summary, { target: { value: "world" } });
-    expect(onSummary).toHaveBeenCalledWith("world");
+    expect(screen.getByLabelText("Markdown")).toHaveClass("ui-textarea");
+    expect(screen.getByLabelText("Markdown")).not.toHaveClass(
+      "ui-textarea-auto",
+    );
+    Object.defineProperty(summary, "scrollHeight", {
+      configurable: true,
+      get: () => summary.value.includes("\n") ? 76 : 38,
+    });
+    fireEvent.input(summary, { target: { value: "first\nsecond" } });
+    expect(onSummary).toHaveBeenCalledWith("first\nsecond");
+    expect(summary).toHaveStyle({ height: "76px" });
 
     // Number-oriented text preserves partial input for Rust to judge.
     const amount = screen.getByLabelText("Amount");
@@ -132,6 +153,92 @@ describe("shared FieldInput family", () => {
     const due = screen.getByLabelText("Due");
     expect(due).toHaveAttribute("type", "date");
     expect(due).toHaveValue("2026-02-14");
+  });
+
+  it("renders time and timestamp fields with native temporal controls", () => {
+    render(() => (
+      <>
+        <label for="due-time">Time</label>
+        <FieldInput
+          field={{ type: "time" }}
+          value="09:30"
+          onChange={vi.fn()}
+          fieldId="due-time"
+        />
+        <label for="started-at">Started</label>
+        <FieldInput
+          field={{ type: "timestamp" }}
+          value="2026-02-14T09:30"
+          onChange={vi.fn()}
+          fieldId="started-at"
+        />
+        <label for="empty-time">Empty timestamp</label>
+        <FieldInput
+          field={{ type: "timestamp" }}
+          value=""
+          onChange={vi.fn()}
+          fieldId="empty-time"
+        />
+        <label for="invalid-time">Invalid legacy timestamp</label>
+        <FieldInput
+          field={{ type: "timestamp" }}
+          value="keep this value visible"
+          onChange={vi.fn()}
+          fieldId="invalid-time"
+        />
+        <label for="zoned-at">Zoned</label>
+        <FieldInput
+          field={{ type: "timestamp_tz_ns" }}
+          value="2026-02-14T09:30:12.123+09:00"
+          onChange={vi.fn()}
+          fieldId="zoned-at"
+        />
+      </>
+    ));
+
+    expect(screen.getByLabelText("Time")).toHaveAttribute("type", "time");
+    expect(screen.getByLabelText("Time")).toHaveAttribute("step", "any");
+    expect(screen.getByLabelText("Started")).toHaveAttribute(
+      "type",
+      "datetime-local",
+    );
+    expect(screen.getByLabelText("Empty timestamp")).toHaveAttribute(
+      "type",
+      "datetime-local",
+    );
+    expect(screen.getByLabelText("Invalid legacy timestamp")).toHaveValue(
+      "keep this value visible",
+    );
+    const zoned = screen.getByLabelText("Zoned");
+    expect(zoned).toHaveAttribute("type", "datetime-local");
+    expect(zoned).toHaveValue(timestampValueForInput(
+      "timestamp_tz_ns",
+      "2026-02-14T09:30:12.123+09:00",
+    ));
+    expect(timestampValueForInput(
+      "timestamp_tz_ns",
+      "2026-02-14T09:30:12.123456789+09:00",
+    )).toMatch(/\.123456789$/);
+  });
+
+  it("generates UUID values from the compact field action", () => {
+    const onChange = vi.fn();
+    const uuid = "d14b6f68-f8d7-4aa6-a2bf-8a7305d0cc54";
+    vi.spyOn(crypto, "randomUUID").mockReturnValue(uuid);
+    render(() => (
+      <>
+        <label for="record-id">Record ID</label>
+        <FieldInput
+          field={{ type: "uuid" }}
+          value=""
+          onChange={onChange}
+          fieldId="record-id"
+        />
+      </>
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate UUID" }));
+    expect(onChange).toHaveBeenCalledWith(uuid);
   });
 
   it("shares the same object_list row UI for create and edit values", () => {

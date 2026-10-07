@@ -1,6 +1,7 @@
-import { Show } from "solid-js";
+import { createEffect, onMount, Show } from "solid-js";
 import { ListEditor } from "~/components/ListEditor";
 import { ObjectListEditor } from "~/components/ObjectListEditor";
+import { UiIcon } from "~/components/UiIcon";
 import { RowReferenceSelect } from "~/components/fields/RowReferenceSelect";
 import {
   hasRowReferencePicker,
@@ -91,6 +92,7 @@ function ScalarTextInput(props: {
   fieldId: string;
   type: string;
   inputMode?: "decimal";
+  step?: string;
   value: string;
   invalid?: boolean;
   describedBy?: string;
@@ -107,6 +109,7 @@ function ScalarTextInput(props: {
           class="ui-input"
           type={props.type}
           inputmode={props.inputMode}
+          step={props.step}
           value={props.value}
           aria-invalid={props.invalid ? "true" : undefined}
           aria-describedby={props.invalid ? props.describedBy : undefined}
@@ -127,6 +130,120 @@ function ScalarTextInput(props: {
     </Show>
   );
 }
+
+function AutoGrowStringInput(props: {
+  fieldId: string;
+  value: string;
+  invalid?: boolean;
+  describedBy?: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  let textarea: HTMLTextAreaElement | undefined;
+  const resize = () => {
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.max(textarea.scrollHeight, 38)}px`;
+  };
+
+  onMount(resize);
+  createEffect(() => {
+    props.value;
+    resize();
+  });
+
+  return (
+    <textarea
+      ref={textarea}
+      id={props.fieldId}
+      class="ui-input ui-textarea ui-textarea-auto"
+      rows={1}
+      value={props.value}
+      aria-invalid={props.invalid ? "true" : undefined}
+      aria-describedby={props.invalid ? props.describedBy : undefined}
+      placeholder={props.placeholder ?? t("entryDetail.fieldPlaceholder")}
+      onInput={(event) => {
+        props.onChange(event.currentTarget.value);
+        resize();
+      }}
+    />
+  );
+}
+
+function UuidInput(props: {
+  fieldId: string;
+  value: string;
+  invalid?: boolean;
+  describedBy?: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div class="flex items-center gap-2">
+      <input
+        id={props.fieldId}
+        class="ui-input min-w-0"
+        type="text"
+        value={props.value}
+        aria-invalid={props.invalid ? "true" : undefined}
+        aria-describedby={props.invalid ? props.describedBy : undefined}
+        placeholder={props.placeholder ?? t("entryDetail.fieldPlaceholder")}
+        onInput={(event) => props.onChange(event.currentTarget.value)}
+      />
+      <button
+        type="button"
+        class="ui-button ui-button-secondary ui-icon-button shrink-0"
+        aria-label={t("entryDetail.generateUuid")}
+        title={t("entryDetail.generateUuid")}
+        onClick={() => props.onChange(crypto.randomUUID())}
+      >
+        <UiIcon name="refresh" />
+      </button>
+    </div>
+  );
+}
+
+const isZonedTimestampType = (type: string) =>
+  type === "timestamp_tz" || type === "timestamp_tz_ns";
+
+/** Format zoned values as the browser-local wall time shown by datetime-local. */
+export const timestampValueForInput = (
+  type: string,
+  value: string,
+): string => {
+  if (!isZonedTimestampType(type) || !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) {
+    return value;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const fraction = value.match(/\.\d+(?=(?:Z|[+-]\d{2}:\d{2})$)/i)?.[0] ?? "";
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(
+    parsed.getDate(),
+  )}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}:${pad(
+    parsed.getSeconds(),
+  )}${fraction}`;
+};
+
+const supportsDatetimeLocalValue = (value: string): boolean => {
+  if (value === "") return true;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(
+    value,
+  );
+  if (!match) return false;
+  const parsed = new Date(
+    `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${
+      match[6] ?? "00"
+    }`,
+  );
+  return !Number.isNaN(parsed.getTime()) &&
+    parsed.getFullYear() === Number(match[1]) &&
+    parsed.getMonth() + 1 === Number(match[2]) &&
+    parsed.getDate() === Number(match[3]) &&
+    parsed.getHours() === Number(match[4]) &&
+    parsed.getMinutes() === Number(match[5]) &&
+    parsed.getSeconds() === Number(match[6] ?? "00");
+};
 
 function StringListRows(props: FieldInputProps & { fieldName: string }) {
   const readItems = () => normalizeStringListValue(props.value as never);
@@ -328,11 +445,11 @@ function RowReferenceListRows(
  * One component family for structured field editing, shared by the create
  * dialog and the Entry detail editor.
  *
- * Frontend owns display/interaction only: numbers stay number-oriented
- * text (`inputmode="decimal"` preserves partial input like "12."),
- * booleans use a typed checkbox, row references resolve through the shared
- * selector, and lists repeat the same row UI in both call sites. Validity
- * authority stays in Rust; nothing here converts strings via custom rules.
+ * Frontend owns display/interaction only: strings grow from one row,
+ * Markdown stays multiline, temporal fields use native controls, numbers
+ * preserve partial text input, UUIDs can be generated, booleans use a typed
+ * checkbox, and row references resolve through the shared selector. Validity
+ * authority stays in Rust; nothing here validates values locally.
  * Asset kinds are a call-site override (the Entry pane injects AssetField);
  * this family falls back to the legacy text/textarea surface for them.
  */
@@ -460,6 +577,75 @@ export function FieldInput(props: FieldInputProps) {
         describedBy={props.describedBy}
         placeholder={props.placeholder}
         multiline={false}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.field.type === "time") {
+    const value = fieldValueToText(props.value);
+    const nativeValue = value === "" ||
+      /^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$/.test(value);
+    return (
+      <ScalarTextInput
+        fieldId={props.fieldId}
+        type={nativeValue ? "time" : "text"}
+        step={nativeValue ? "any" : undefined}
+        value={value}
+        invalid={props.invalid}
+        describedBy={props.describedBy}
+        placeholder={props.placeholder}
+        multiline={false}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (
+    props.field.type === "timestamp" ||
+    props.field.type === "timestamp_tz" ||
+    props.field.type === "timestamp_ns" ||
+    props.field.type === "timestamp_tz_ns"
+  ) {
+    const value = fieldValueToText(props.value);
+    const inputValue = timestampValueForInput(props.field.type, value);
+    const nativeValue = supportsDatetimeLocalValue(inputValue);
+    return (
+      <ScalarTextInput
+        fieldId={props.fieldId}
+        type={nativeValue ? "datetime-local" : "text"}
+        step={nativeValue ? "any" : undefined}
+        value={inputValue}
+        invalid={props.invalid}
+        describedBy={props.describedBy}
+        placeholder={props.placeholder}
+        multiline={false}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.field.type === "uuid") {
+    return (
+      <UuidInput
+        fieldId={props.fieldId}
+        value={fieldValueToText(props.value)}
+        invalid={props.invalid}
+        describedBy={props.describedBy}
+        placeholder={props.placeholder}
+        onChange={props.onChange}
+      />
+    );
+  }
+
+  if (props.field.type === "string") {
+    return (
+      <AutoGrowStringInput
+        fieldId={props.fieldId}
+        value={fieldValueToText(props.value)}
+        invalid={props.invalid}
+        describedBy={props.describedBy}
+        placeholder={props.placeholder}
         onChange={props.onChange}
       />
     );
