@@ -1,3 +1,7 @@
+---
+title: "Compact control browser evidence"
+---
+
 # Compact control browser evidence
 
 The merge-gated `mobile-ui` Playwright task runs
