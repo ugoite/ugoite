@@ -583,6 +583,12 @@ test.describe("Composition Studio Journey", () => {
         name: "Restore this revision",
         exact: true,
       }).click();
+      // Restore appends a revision and navigates to it; the URL shape is
+      // unchanged, so wait for the URL itself to move before reading it.
+      const preRestoreUrl = page.url();
+      await expect
+        .poll(async () => page.url(), { timeout: 30_000 })
+        .not.toBe(preRestoreUrl);
       await expect(page).toHaveURL(
         new RegExp(
           `/spaces/${seed.spaceId}/compositions/${compositionId}/[^/]+$`,
