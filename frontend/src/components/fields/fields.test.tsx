@@ -106,7 +106,6 @@ describe("shared FieldInput family", () => {
     fireEvent.input(editor, {
       target: { value: '# Current draft\n\n**bold**\n\n<img src=x onerror="alert(1)">' },
     });
-    previewButton.focus();
     fireEvent.click(previewButton);
 
     const dialog = screen.getByRole("dialog", { name: "Preview" });

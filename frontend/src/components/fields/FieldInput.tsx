@@ -96,6 +96,7 @@ function MarkdownFieldPreview(props: { value: string }) {
   const titleId = `markdown-field-preview-title-${createUniqueId()}`;
   let dialog: HTMLDivElement | undefined;
   let closeButton: HTMLButtonElement | undefined;
+  let previewButton: HTMLButtonElement | undefined;
 
   const close = () => setOpen(false);
   const handleKeyDown = (event: KeyboardEvent) =>
@@ -104,6 +105,7 @@ function MarkdownFieldPreview(props: { value: string }) {
   useDialogFocus(() => open(), {
     dialog: () => dialog,
     initialFocus: () => closeButton,
+    returnFocus: () => previewButton,
     onClose: close,
   });
 
@@ -111,6 +113,7 @@ function MarkdownFieldPreview(props: { value: string }) {
     <>
       <div class="flex justify-end">
         <button
+          ref={previewButton}
           type="button"
           class="ui-button ui-button-secondary ui-icon-button"
           aria-label={t("entryDetail.markdownPreview")}
