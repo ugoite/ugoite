@@ -203,8 +203,9 @@ describe("Composition edit route", () => {
     expect(getMock).toHaveBeenCalledWith("space-1", "tool-1", "revision-1");
     expect(lintMock).toHaveBeenCalledWith(storedYaml);
 
-    // One Back to the opened revision, one Save, Design-first structure
-    // with the single mode control.
+    // One Back to the opened revision, one Save, Design-first true-mode
+    // structure with the single mode control: the finished shape only, no
+    // Parameters, Tags, Data workspace, or Preview section.
     expect(screen.getAllByRole("link")).toHaveLength(1);
     expect(screen.getByRole("link", { name: "Back to revision" }))
       .toHaveAttribute(
@@ -216,7 +217,7 @@ describe("Composition edit route", () => {
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
         heading.textContent
       ),
-    ).toEqual(["Design", "Parameters", "Tags", "Preview"]);
+    ).toEqual(["Design"]);
     expect(
       screen.queryByRole("heading", { name: "Display" }),
     ).not.toBeInTheDocument();
