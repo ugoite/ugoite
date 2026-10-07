@@ -5,6 +5,114 @@ import { setLocale } from "~/lib/i18n";
 import { ActionIconBar } from "./ActionIconBar";
 
 describe("ActionIconBar", () => {
+  it("REQ-UX-ACTION-001: keeps icon labels visible by default", () => {
+    const { container } = render(() => (
+      <ActionIconBar
+        actions={[
+          {
+            id: "refresh",
+            icon: "refresh",
+            label: "Refresh",
+            accessibleName: "Refresh entry",
+          },
+        ]}
+      />
+    ));
+
+    const action = screen.getByRole("button", { name: "Refresh entry" });
+    expect(action).toHaveAttribute("title", "Refresh entry");
+    expect(action).not.toHaveClass("tool--icon-only");
+    expect(action.querySelector(".toolLabel")).toHaveTextContent("Refresh");
+    expect(action.querySelector(".toolLabel")).not.toHaveClass("ui-sr-only");
+    expect(container.querySelector(".actionbar--icon-only")).toBeNull();
+  });
+
+  it("REQ-UX-ACTION-001: supports a named icon-only toolbar presentation", () => {
+    const { container } = render(() => (
+      <ActionIconBar
+        label="Entry actions"
+        presentation="icon-only"
+        actions={[
+          {
+            id: "history",
+            icon: "history",
+            label: "History",
+            accessibleName: "History and recovery",
+            href: "/history",
+          },
+          {
+            id: "refresh",
+            icon: "refresh",
+            label: "Refresh",
+            accessibleName: "Refresh entry",
+            disabled: true,
+          },
+        ]}
+      />
+    ));
+
+    expect(container.querySelector(".actionbar--icon-only")).toBeInTheDocument();
+    const history = screen.getByRole("link", { name: "History and recovery" });
+    expect(history).toHaveAttribute("title", "History and recovery");
+    expect(history.querySelector(".toolLabel")).toHaveTextContent("History");
+    expect(history.querySelector(".toolLabel")).toHaveClass("ui-sr-only");
+    expect(history).toHaveClass("tool--icon-only");
+
+    const refresh = screen.getByRole("button", { name: "Refresh entry" });
+    expect(refresh).toBeDisabled();
+    expect(refresh).toHaveAttribute("title", "Refresh entry");
+    expect(refresh.querySelector(".toolLabel")).toHaveClass("ui-sr-only");
+  });
+
+  it("REQ-UX-ACTION-001: collapses selected utilities without hiding primary or destructive labels", () => {
+    const { container } = render(() => (
+      <ActionIconBar
+        label="Entry actions"
+        presentation="icon-label"
+        actions={[
+          { id: "save", icon: "save", label: "Save" },
+          {
+            id: "history",
+            icon: "history",
+            label: "History",
+            accessibleName: "History and recovery",
+            presentation: "icon-only",
+            href: "/history",
+          },
+          {
+            id: "info",
+            icon: "info",
+            label: "Info",
+            accessibleName: "Entry info",
+            presentation: "icon-only",
+            href: "/info",
+          },
+          {
+            id: "delete",
+            icon: "trash",
+            label: "Delete",
+            danger: true,
+          },
+        ]}
+      />
+    ));
+
+    expect(container.querySelector(".actionbar--icon-only")).toBeNull();
+    for (const name of ["History and recovery", "Entry info"]) {
+      const control = screen.getByRole("link", { name });
+      expect(control).toHaveAttribute("title", name);
+      expect(control).toHaveClass("tool--icon-only");
+      expect(control.querySelector(".toolLabel")).toHaveClass("ui-sr-only");
+    }
+    for (const name of ["Save", "Delete"]) {
+      const control = screen.getByRole("button", { name });
+      expect(control.querySelector(".toolLabel")).not.toHaveClass("ui-sr-only");
+    }
+    expect(screen.getByRole("button", { name: "Delete" })).toHaveClass(
+      "tool-danger",
+    );
+  });
+
   it("renders short-labelled actions with 44px tool targets", () => {
     setLocale("en");
     const onRefresh = vi.fn();

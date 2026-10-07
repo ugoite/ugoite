@@ -1,5 +1,5 @@
 version: "0.4"
-updated: "2026-09-18"
+updated: "2026-10-08"
 page:
   id: space-entry-detail
   title: Entry Detail
@@ -25,23 +25,35 @@ components:
           type: heading
           text: Entry
           description: Entry is the task identity; the selected Form name may appear once as secondary context when useful. A Form-defined Title or Name remains a normal field. Stable Entry IDs belong in advanced Info details.
-        - id: save-status
-          type: status
-          values:
-            - saved
-            - unsaved
-            - saving
-        - id: save-entry
-          type: primary-button
     - id: entry-action-bar
       type: toolbar
+      component: ActionIconBar
+      reference: ../components/action-icon-bar.yaml
+      description: Save and Delete keep visible labels. History and Info use named icon-only utility controls. Delete retains danger styling and confirmation.
       actions:
-        - refresh
-        - history
+        - id: save
+          type: button
+          presentation: icon-label
+          intent: primary-mutation
+        - id: history
+          type: link
+          presentation: icon-only
+          accessible_name: localized-history-and-recovery
         - id: info
           type: link
+          presentation: icon-only
+          accessible_name: localized-entry-info
           target_page: space-entry-info
-        - delete
+        - id: delete
+          type: button
+          presentation: icon-label
+          danger: true
+          confirmation: required
+    - id: entry-save-status
+      type: status
+      location: after-action-bar
+      values: [saving, transient-success]
+      persistent-saved-indicator: false
     - id: entry-fields-editor
       type: form
       visibility: form-defined-entry

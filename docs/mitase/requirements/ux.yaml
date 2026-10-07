@@ -989,3 +989,105 @@ requirements:
                 criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior
                 covers: [FEAT-UX-011#binding.frontend/target.history-detail-pagination]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-PAGINATION-001: uses the shared pager for related history pages" } }
+  - id: REQ-UX-ACTION-001
+    title: Selective Icon-Only Utility Actions
+    description: Secondary utility controls may collapse redundant visible labels when their page context and icon make the operation clear, while primary, domain, recovery, and unreviewed destructive actions retain visible labels.
+    priority: medium
+    status: planned
+    criteria:
+      - id: explicit-presentation
+        kind: behavior
+        statement: ActionIconBar defaults to icon-label presentation and supports an explicit icon-only toolbar mode plus per-action overrides for mixed bars.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: icon-only-accessibility
+        kind: behavior
+        statement: Icon-only actions keep the localized label screen-reader-only, expose the matching accessible name and title on the interactive control, preserve a visible keyboard focus indicator, and retain a 44px target.
+        governed_by: [POL-UI-007#rule.governance]
+      - id: eligible-action-boundaries
+        kind: behavior
+        statement: Only selected secondary utilities with established page context collapse visible labels; primary and domain actions remain labeled, and destructive actions remain labeled unless their specific surface is individually accepted with danger styling and confirmation.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: action-state
+        kind: behavior
+        statement: Changing action presentation does not change its button or link behavior, busy or disabled state, accessible name, or focus ownership.
+        governed_by: [POL-UI-007#rule.governance]
+    bindings:
+      - id: action-presentation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the default and opt-in presentations, control-owned accessible names and targets, mixed-toolbar action boundaries, and selected route usage through exact frontend cases.
+        targets:
+          - id: action-bar-default-mode
+            adapter: typescript
+            path: frontend/src/components/ActionIconBar.test.tsx
+            selector: { kind: test, name: "REQ-UX-ACTION-001: keeps icon labels visible by default" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.explicit-presentation
+                covers: [FEAT-UX-012#binding.frontend/target.shared-action-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ActionIconBar.test.tsx, test: "REQ-UX-ACTION-001: keeps icon labels visible by default" } }
+          - id: action-bar-icon-only-mode
+            adapter: typescript
+            path: frontend/src/components/ActionIconBar.test.tsx
+            selector: { kind: test, name: "REQ-UX-ACTION-001: supports a named icon-only toolbar presentation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.explicit-presentation
+                covers: [FEAT-UX-012#binding.frontend/target.shared-action-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ActionIconBar.test.tsx, test: "REQ-UX-ACTION-001: supports a named icon-only toolbar presentation" } }
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.icon-only-accessibility
+                covers: [FEAT-UX-012#binding.frontend/target.shared-action-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ActionIconBar.test.tsx, test: "REQ-UX-ACTION-001: supports a named icon-only toolbar presentation" } }
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.action-state
+                covers: [FEAT-UX-012#binding.frontend/target.shared-action-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ActionIconBar.test.tsx, test: "REQ-UX-ACTION-001: supports a named icon-only toolbar presentation" } }
+          - id: action-bar-mixed-presentation
+            adapter: typescript
+            path: frontend/src/components/ActionIconBar.test.tsx
+            selector: { kind: test, name: "REQ-UX-ACTION-001: collapses selected utilities without hiding primary or destructive labels" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.explicit-presentation
+                covers: [FEAT-UX-012#binding.frontend/target.shared-action-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ActionIconBar.test.tsx, test: "REQ-UX-ACTION-001: collapses selected utilities without hiding primary or destructive labels" } }
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.eligible-action-boundaries
+                covers: [FEAT-UX-012#binding.frontend/target.shared-action-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ActionIconBar.test.tsx, test: "REQ-UX-ACTION-001: collapses selected utilities without hiding primary or destructive labels" } }
+          - id: action-bar-target-and-focus
+            adapter: typescript
+            path: frontend/src/components/a11y-contract.test.tsx
+            selector: { kind: test, name: "REQ-UX-ACTION-001: keeps icon-only utilities at 44px with visible focus" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.icon-only-accessibility
+                covers: [FEAT-UX-012#binding.frontend/target.action-bar-layout]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/a11y-contract.test.tsx, test: "REQ-UX-ACTION-001: keeps icon-only utilities at 44px with visible focus" } }
+          - id: entry-utility-actions
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.safety.test.tsx
+            selector: { kind: test, name: "REQ-UX-ACTION-001: keeps Save and Delete visible while collapsing History and Info" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.eligible-action-boundaries
+                covers: [FEAT-UX-012#binding.frontend/target.entry-action-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "REQ-UX-ACTION-001: keeps Save and Delete visible while collapsing History and Info" } }
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.action-state
+                covers: [FEAT-UX-012#binding.frontend/target.entry-action-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "REQ-UX-ACTION-001: keeps Save and Delete visible while collapsing History and Info" } }
+          - id: asset-download-action
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/assets/[asset_id].test.tsx"
+            selector: { kind: test, name: "REQ-UX-ACTION-001: collapses only Download in the asset detail toolbar" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.eligible-action-boundaries
+                covers: [FEAT-UX-012#binding.frontend/target.asset-action-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/assets/[asset_id].test.tsx", test: "REQ-UX-ACTION-001: collapses only Download in the asset detail toolbar" } }
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.action-state
+                covers: [FEAT-UX-012#binding.frontend/target.asset-action-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/assets/[asset_id].test.tsx", test: "REQ-UX-ACTION-001: collapses only Download in the asset detail toolbar" } }

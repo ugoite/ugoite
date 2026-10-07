@@ -58,6 +58,22 @@ describe("#2842 automated accessibility contract", () => {
     }
   });
 
+  it("REQ-UX-ACTION-001: keeps icon-only utilities at 44px with visible focus", () => {
+    const css = stylesheet();
+    const tool = css.match(/\.tool\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(tool).toMatch(/min-width:\s*44px/);
+    expect(tool).toMatch(/min-height:\s*44px/);
+    expect(css).toMatch(
+      /\.tool--icon-only\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;[^}]*padding:\s*0;/,
+    );
+    expect(css).toMatch(
+      /\.tool:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--focus,\s*var\(--brand\)\);[^}]*outline-offset:\s*-3px;/,
+    );
+    expect(css).toMatch(
+      /\.actionbar\.compact-actions\.actionbar--icon-only\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*44px\);/,
+    );
+  });
+
   it("never renders a disabled anchor: unavailable nav targets are omitted", () => {
     const { container } = render(() => (
       <ActionIconBar

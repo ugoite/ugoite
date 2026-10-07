@@ -1107,6 +1107,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
               }
               <ActionIconBar
                 label={t("entryDetail.actionBarLabel")}
+                presentation="icon-label"
                 class="ui-entry-action-bar"
                 items={[
                   {
@@ -1128,6 +1129,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                     label: t("entryDetail.action.historyShort"),
                     accessibleName: t("entryDetail.history"),
                     icon: "history",
+                    presentation: "icon-only",
                     class: "ui-entry-tool",
                     href: `/spaces/${
                       encodeURIComponent(props.spaceId())
@@ -1140,6 +1142,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                     label: t("entryDetail.action.infoShort"),
                     accessibleName: t("entryDetail.info"),
                     icon: "info",
+                    presentation: "icon-only",
                     class: "ui-entry-tool",
                     href: `/spaces/${
                       encodeURIComponent(props.spaceId())

@@ -2996,6 +2996,9 @@ a.pill.iconpill {
   margin-bottom: 18px;
   overflow-x: hidden;
 }
+.actionbar.compact-actions.actionbar--icon-only {
+  grid-template-columns: repeat(auto-fit, 44px);
+}
 .tool {
   min-width: 44px;
   min-height: 44px;
@@ -3025,6 +3028,17 @@ a.tool {
   border-color: var(--line);
   background: var(--soft2);
 }
+.tool:focus-visible {
+  outline: 2px solid var(--focus, var(--brand));
+  outline-offset: -3px;
+}
+.tool--icon-only {
+  width: 44px;
+  height: 44px;
+  justify-self: center;
+  gap: 0;
+  padding: 0;
+}
 .tool:disabled,
 .tool[aria-disabled="true"] {
   opacity: 0.45;
@@ -3046,8 +3060,8 @@ a.tool {
 }
 
 @media (max-width: 560px) {
-  /* PR4: the entry action bar stays a single row at 390px. Four flexible
-   * columns with ellipsis labels fit without wrapping or scrolling. */
+  /* The entry action bar stays a single row at 390px. Four flexible columns
+   * with ellipsis labels fit without wrapping or scrolling. */
   .actionbar.compact-actions {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 4px;

@@ -8,10 +8,12 @@ export interface ActionItem {
   id?: string;
   key?: string;
   icon?: UiIconName;
-  /** Short visible label. */
+  /** Short localized label; icon-only presentation keeps it screen-reader-only. */
   label: string;
   /** Long accessible name (existing i18n string). Falls back to `label`. */
   accessibleName?: string;
+  /** Per-action presentation override for mixed action bars. */
+  presentation?: ActionPresentation;
   href?: string;
   disabled?: boolean;
   /**
@@ -34,9 +36,13 @@ export interface ActionItem {
 /** PR3 alias kept for callers written against the stash version. */
 export type ActionBarItem = ActionItem;
 
+export type ActionPresentation = "icon-label" | "icon-only";
+
 export interface ActionIconBarProps {
   /** Accessible name for the toolbar (existing i18n string). */
   label?: string;
+  /** Presentation default for every action; omitted means `icon-label`. */
+  presentation?: ActionPresentation;
   /** PR2 prop name. */
   actions?: ActionItem[];
   /** PR3 prop name (alias for `actions`). */
@@ -47,8 +53,10 @@ export interface ActionIconBarProps {
 
 /**
  * Shared compact action strip. Primary actions stay in the page header;
- * secondary actions live here with short visible labels, 44px targets, and
- * long accessible names. The bar never wraps; only table wrappers scroll.
+ * secondary actions live here with 44px targets and long accessible names.
+ * The bar defaults to visible short labels; a bar or an individual utility
+ * action can opt into icon-only presentation. The bar never wraps; only table
+ * wrappers scroll.
  * A nav target that is unavailable is omitted (never a disabled `<a>`);
  * a disabled action renders a true disabled `<button>`.
  *
@@ -59,8 +67,19 @@ export interface ActionIconBarProps {
  */
 export function ActionIconBar(props: ActionIconBarProps) {
   const list = () => props.items ?? props.actions ?? [];
-  const barClass = () =>
-    `actionbar compact-actions${props.class ? ` ${props.class}` : ""}`;
+  const barPresentation = () => props.presentation ?? "icon-label";
+  const allIconOnly = () => {
+    const actions = list();
+    return actions.length > 0 && actions.every((action) =>
+      (action.presentation ?? barPresentation()) === "icon-only"
+    );
+  };
+  const barClass = () => [
+    "actionbar",
+    "compact-actions",
+    allIconOnly() ? "actionbar--icon-only" : "",
+    props.class ?? "",
+  ].filter(Boolean).join(" ");
   return (
     <div
       class={barClass()}
@@ -68,18 +87,27 @@ export function ActionIconBar(props: ActionIconBarProps) {
       aria-label={props.label}
     >
       <Index each={list()}>
-        {(action) => <ActionTile action={action} />}
+        {(action) => (
+          <ActionTile action={action} defaultPresentation={barPresentation} />
+        )}
       </Index>
     </div>
   );
 }
 
-function ActionTile(props: { action: Accessor<ActionItem> }) {
+function ActionTile(props: {
+  action: Accessor<ActionItem>;
+  defaultPresentation: () => ActionPresentation;
+}) {
   const item = () => props.action();
   const accessibleName = () =>
     item().accessibleName ?? item().label;
+  const iconOnly = () =>
+    (item().presentation ?? props.defaultPresentation()) === "icon-only";
   const cls = () =>
-    ["tool", item().class ?? ""].filter(Boolean).join(" ");
+    ["tool", iconOnly() ? "tool--icon-only" : "", item().class ?? ""]
+      .filter(Boolean)
+      .join(" ");
   const busy = () => item().busy ?? false;
   const content = () => (
     <>
@@ -91,7 +119,9 @@ function ActionTile(props: { action: Accessor<ActionItem> }) {
       >
         <ButtonSpinner />
       </Show>
-      <span class="toolLabel">{item().label}</span>
+      <span class="toolLabel" classList={{ "ui-sr-only": iconOnly() }}>
+        {item().label}
+      </span>
     </>
   );
   // Row kind (link vs button) is fixed when the row is created: Index keeps

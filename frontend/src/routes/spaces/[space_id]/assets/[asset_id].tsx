@@ -188,11 +188,13 @@ export default function SpaceAssetDetailRoute() {
             </p>
             <ActionIconBar
               label={t("assetDetail.heading")}
+              presentation="icon-label"
               actions={[
                 {
                   id: "download",
                   icon: "download",
                   label: t("assetDetail.download"),
+                  presentation: "icon-only",
                   busy: busy() === "download",
                   disabled: busy() !== null,
                   onClick: () => void download(),

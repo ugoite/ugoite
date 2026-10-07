@@ -102,6 +102,40 @@ describe("EntryDetailPane safety/recovery", () => {
     setLocale("en");
   });
 
+  it("REQ-UX-ACTION-001: keeps Save and Delete visible while collapsing History and Info", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue(
+      storedEntry(),
+    );
+
+    const { container } = render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        forms={() => [notesForm]}
+      />
+    ));
+
+    await screen.findByLabelText("Notes");
+    const history = screen.getByRole("link", { name: "History & recovery" });
+    const info = screen.getByRole("link", { name: "Info" });
+    for (const control of [history, info]) {
+      expect(control).toHaveClass("tool--icon-only");
+      expect(control.querySelector(".toolLabel")).toHaveClass("ui-sr-only");
+    }
+    expect(history).toHaveAttribute("title", "History & recovery");
+    expect(info).toHaveAttribute("title", "Info");
+
+    const save = screen.getByRole("button", { name: "Save" });
+    const remove = screen.getByRole("button", { name: "Delete entry" });
+    for (const control of [save, remove]) {
+      expect(control.querySelector(".toolLabel")).not.toHaveClass(
+        "ui-sr-only",
+      );
+    }
+    expect(remove).toHaveClass("tool-danger");
+    expect(container.querySelectorAll(".actionbar")).toHaveLength(1);
+  });
+
   it("cancelling the delete dialog sends nothing and keeps the draft", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue(
       storedEntry(),
