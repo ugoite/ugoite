@@ -15,8 +15,10 @@ components:
     ownership: tool-name-only
     actions:
       - id: studio-back
-        type: icon-button
-        title: Back
+        type: link
+        presentation: icon-only
+        visible_content: chevron-left
+        accessible_name: destination-specific localized parent name
         single_control: true
       - id: studio-save
         type: button

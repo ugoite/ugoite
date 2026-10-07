@@ -28,7 +28,7 @@ describe("BackLink", () => {
     setLocale("en");
   });
 
-  it("REQ-UX-NAV-001: renders a positional back label with the destination as accessible name and tooltip", () => {
+  it("REQ-UX-NAV-001: renders the destination-named icon-only positional control", () => {
     render(() => (
       <BackLink
         href="/spaces/default/entries/entry-1"
@@ -42,11 +42,15 @@ describe("BackLink", () => {
       "/spaces/default/entries/entry-1",
     );
     expect(back).toHaveAttribute("title", "Back to Entry");
-    expect(back).toHaveTextContent("Back");
-    expect(back.textContent).not.toMatch(/Back to Entry/);
+    expect(back).toHaveClass("pill", "iconpill", "icononly", "back-link");
+    expect(back.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(back.querySelector(".ui-sr-only")).toHaveTextContent(
+      "Back to Entry",
+    );
+    expect(back.childNodes).toHaveLength(2);
   });
 
-  it("REQ-UX-NAV-001: uses the Japanese short label", () => {
+  it("REQ-UX-NAV-001: keeps a localized accessible name for the icon-only control", () => {
     setLocale("ja");
     render(() => (
       <BackLink href="/spaces/default/sql" label="保存済み SQL に戻る" />
@@ -55,10 +59,13 @@ describe("BackLink", () => {
     const back = screen.getByRole("link", {
       name: "保存済み SQL に戻る",
     });
-    expect(back).toHaveTextContent("戻る");
+    expect(back.querySelector(".ui-sr-only")).toHaveTextContent(
+      "保存済み SQL に戻る",
+    );
+    expect(back.querySelector("svg")).toBeInTheDocument();
   });
 
-  it("#2861: keeps a keyboard-focusable control on the focus-visible button chrome", () => {
+  it("REQ-UX-NAV-001: keeps a visible keyboard focus ring on the icon-only link", () => {
     render(() => (
       <BackLink
         href="/spaces/default/entries/entry-1"
@@ -66,14 +73,8 @@ describe("BackLink", () => {
       />
     ));
 
-    // The shared `.btn:focus-visible` rule carries the visible focus ring
-    // (POL-UI-007): the back control must keep that class and must not opt
-    // out of the tab order.
     const back = screen.getByRole("link", { name: "Back to Entry" });
-    expect(back).toHaveClass("btn");
+    expect(back).toHaveClass("back-link");
     expect(back).not.toHaveAttribute("tabindex", "-1");
-    // Generic Back label: no Entry-namespaced string leaks onto shared
-    // surfaces beyond the Back meaning.
-    expect(back).toHaveTextContent("Back");
   });
 });

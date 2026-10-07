@@ -30,5 +30,7 @@ components:
       title: Run Query or Open Variables
     - id: saved-sql-index-action
       type: link
-      title: Back to Saved SQL
+      presentation: icon-only
+      accessible_name: Back to Saved SQL
+      visible_content: chevron-left
       target_page: space-sql

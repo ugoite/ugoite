@@ -42,5 +42,7 @@ components:
       description: Navigates to the Studio with a saved-sql seed carrying server-owned column types; unique columns stay required and failures keep the concise error without navigating.
     - id: saved-query-detail-action
       type: link
-      title: Back to Saved SQL
+      presentation: icon-only
+      accessible_name: Back to Saved SQL
+      visible_content: chevron-left
       target_page: space-sql-detail

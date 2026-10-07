@@ -1972,7 +1972,7 @@ features:
           - id: browser-studio-header-narrow
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: "fits Back, name, and Save in one header row at 390px widths" }
+            selector: { kind: test, name: "fits the destination-named back link, name, and Save in one 390px header row" }
             claims:
               - kind: evidences
                 anchor: REQ-FE-068#criterion.local-horizontal-overflow

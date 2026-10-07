@@ -659,8 +659,7 @@ code {
   border-color: #ADB9C8;
   background: #FBFCFE;
 }
-/* Visible keyboard focus for all button chrome, including the shared
- * positional BackLink (POL-UI-007, follow-up #2861). */
+/* Visible keyboard focus for button chrome (POL-UI-007). */
 .btn:focus-visible, .ui-button:focus-visible {
   outline: 2px solid var(--focus, var(--brand));
   outline-offset: 2px;
@@ -2943,6 +2942,14 @@ button.assistantPill[aria-expanded="true"] {
   justify-content: center;
   gap: 0;
   padding: 0 12px;
+}
+.pill.iconpill:focus-visible {
+  outline: 2px solid var(--focus, var(--brand));
+  outline-offset: 2px;
+}
+.back-link:hover {
+  border-color: var(--line2);
+  background: var(--soft);
 }
 button.pill.iconpill:hover,
 button.pill.iconpill[aria-expanded="true"] {

@@ -1,5 +1,5 @@
 import { A } from "@solidjs/router";
-import { t } from "~/lib/i18n";
+import { UiIcon } from "~/components/UiIcon";
 
 interface BackLinkProps {
   /**
@@ -10,9 +10,8 @@ interface BackLinkProps {
   href: string;
   /**
    * Full destination for assistive technology and the hover tooltip
-   * (e.g. `t("entryHistory.backToEntry")`). The visible label stays the
-   * positional short form so the hierarchy — already shown by the shell and
-   * the page title — is not repeated as prose.
+   * (e.g. `t("entryHistory.backToEntry")`). The destination stays available
+   * to the user while the shared control keeps only its positional icon visible.
    */
   label: string;
   class?: string;
@@ -20,21 +19,25 @@ interface BackLinkProps {
 
 /**
  * Shared positional back control (POL-UI-001, POL-UI-007). Each nested
- * surface renders exactly one `BackLink` to its hierarchical parent with a
- * short visible label; the destination sentence lives only in the accessible
- * name and tooltip. The visible label uses the generic `common.back` key:
- * Entry-namespaced strings stay on Entry surfaces.
+ * surface renders exactly one `BackLink` to its hierarchical parent. Its
+ * destination-specific label stays on the link for assistive technology and
+ * hover discovery while the visible control uses the shared left chevron.
  */
 export function BackLink(props: BackLinkProps) {
+  const className = () =>
+    ["pill", "iconpill", "icononly", "back-link", props.class ?? ""]
+      .filter(Boolean)
+      .join(" ");
+
   return (
     <A
       href={props.href}
-      class={props.class ?? "btn"}
+      class={className()}
       aria-label={props.label}
       title={props.label}
     >
-      <span aria-hidden="true">{"← "}</span>
-      {t("common.back")}
+      <UiIcon name="chevron-left" />
+      <span class="ui-sr-only">{props.label}</span>
     </A>
   );
 }

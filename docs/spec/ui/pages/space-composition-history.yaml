@@ -17,7 +17,9 @@ components:
       ownership: object-identity
     - id: composition-history-back
       type: link
-      title: Back to saved tools
+      presentation: icon-only
+      accessible_name: Back to saved tools
+      visible_content: chevron-left
       single_control: true
     - id: composition-history-list
       type: list

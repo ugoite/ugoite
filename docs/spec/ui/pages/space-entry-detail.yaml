@@ -16,6 +16,9 @@ components:
       items:
         - id: back-to-form
           type: link
+          presentation: icon-only
+          accessible_name: Back to Form
+          visible_content: chevron-left
           target_page: space-form-grid
         - id: entry-label
           type: heading

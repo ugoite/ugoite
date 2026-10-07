@@ -16,6 +16,9 @@ components:
       items:
         - id: back-to-entry
           type: link
+          presentation: icon-only
+          accessible_name: Back to Entry
+          visible_content: chevron-left
           target_page: space-entry-detail
         - id: entry-info-title
           type: heading

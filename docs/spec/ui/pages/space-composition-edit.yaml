@@ -24,10 +24,12 @@ components:
       type: page-header
       title: Tool name
       ownership: tool-name-only
-      description: One Back control to the opened revision, one tool-name text input owning the name, one Save icon-button.
+      description: One icon-only Back control to the opened revision, one tool-name text input owning the name, one visible-text Save action.
     - id: studio-back
       type: link
-      title: Back to revision
+      presentation: icon-only
+      accessible_name: Back to revision
+      visible_content: chevron-left
       single_control: true
     - id: studio-name
       type: text-input
@@ -35,8 +37,9 @@ components:
       ownership: object-identity
       source: draft name written through setDraftName, prefilled from the lint-normalized document
     - id: studio-save
-      type: icon-button
+      type: button
       title: Save
+      label: Save
       single_control: true
       source: canonical draft YAML through composition.save with composition_id and base_revision_id plus one Idempotency-Key reused for retry
       deterministic_rejection: >-

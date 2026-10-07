@@ -13,6 +13,10 @@ requirements:
         kind: behavior
         statement: Each surface exposes exactly one operative back control in its back chain; the same back intent is not duplicated across links or buttons on the same surface.
         governed_by: [POL-UI-001#rule.governance]
+      - id: back-control-presentation
+        kind: behavior
+        statement: When the page context already establishes its hierarchical destination, the shared back control presents a 44px circular chevron-left link without visible Back copy and keeps the destination-specific localized name available to assistive technology and on hover.
+        governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: no-duplicate-context
         kind: behavior
         statement: Each piece of information on a surface has one visible owner. Context established by shell navigation, a heading, a selected object, or a field label is not restated by another heading, eyebrow, explanation, placeholder, action label, or shortcut; a second presentation is appropriate only when it communicates a distinct operation, state, or subject.
@@ -25,26 +29,39 @@ requirements:
       - id: back-control-verification
         role: verification
         facet: verification
-        responsibility: Verify each nested Entry, SQL, and Form surface exposes exactly one positional back control through exact Vitest cases, including the Info and saved-SQL detail routes.
+        responsibility: Verify the shared icon-only back presentation preserves the localized destination name, tooltip, focus ring, and 44px target, and nested surfaces expose exactly one back control through exact Vitest cases.
         targets:
           - id: back-link-label
             adapter: typescript
             path: frontend/src/components/BackLink.test.tsx
-            selector: { kind: test, name: "REQ-UX-NAV-001: renders a positional back label with the destination as accessible name and tooltip" }
+            selector: { kind: test, name: "REQ-UX-NAV-001: renders the destination-named icon-only positional control" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
                 covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/BackLink.test.tsx, test: "REQ-UX-NAV-001: renders a positional back label with the destination as accessible name and tooltip" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/BackLink.test.tsx, test: "REQ-UX-NAV-001: renders the destination-named icon-only positional control" } }
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-presentation
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/BackLink.test.tsx, test: "REQ-UX-NAV-001: renders the destination-named icon-only positional control" } }
           - id: back-link-ja-label
             adapter: typescript
             path: frontend/src/components/BackLink.test.tsx
-            selector: { kind: test, name: "REQ-UX-NAV-001: uses the Japanese short label" }
+            selector: { kind: test, name: "REQ-UX-NAV-001: keeps a localized accessible name for the icon-only control" }
             claims:
               - kind: verifies
-                criterion: REQ-UX-NAV-001#criterion.single-back-control
+                criterion: REQ-UX-NAV-001#criterion.back-control-presentation
                 covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/BackLink.test.tsx, test: "REQ-UX-NAV-001: uses the Japanese short label" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/BackLink.test.tsx, test: "REQ-UX-NAV-001: keeps a localized accessible name for the icon-only control" } }
+          - id: back-link-focus-and-target
+            adapter: typescript
+            path: frontend/src/components/a11y-contract.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: declares 44px targets and a visible focus ring for icon-only links" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-presentation
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/a11y-contract.test.tsx, test: "REQ-UX-NAV-001: declares 44px targets and a visible focus ring for icon-only links" } }
           - id: history-single-back
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx

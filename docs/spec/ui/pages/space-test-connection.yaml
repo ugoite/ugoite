@@ -25,7 +25,8 @@ components:
       accessible_name: Test Connection
     - id: storage-settings-parent
       type: link
-      label: Back
+      presentation: icon-only
       accessible_name: Back to Storage settings
+      visible_content: chevron-left
       target_page: space-settings
       section: storage
