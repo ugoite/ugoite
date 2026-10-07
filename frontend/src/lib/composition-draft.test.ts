@@ -579,6 +579,48 @@ describe("composition draft model", () => {
     });
   });
 
+  it("loads entry_query sources whose canonical query omits empty filters and sort", () => {
+    // Canonical YAML drops empty collections, so saved documents arrive
+    // without filters/sort keys; the loader defaults them like the domain.
+    const document: CompositionStudioDocument = {
+      format: "ugoite.composition",
+      format_version: 1,
+      kind: "dashboard",
+      name: "Monthly expenses",
+      tags: [],
+      spec: {
+        parameters: [],
+        sources: [
+          {
+            kind: "entry_query",
+            id: "rows",
+            form_id: "form-1",
+            field_schema: [{ field_id: 100, field_type: "double" }],
+            query: {
+              projection: { kind: "preview" },
+            },
+          },
+        ],
+        components: [{ kind: "table", id: "rows", source: "rows" }],
+        layout: {
+          kind: "flow",
+          rows: [
+            {
+              id: "main",
+              items: [{ kind: "component", component: "rows" }],
+            },
+          ],
+        },
+      },
+    };
+    const draft = draftFromDocument(document, {});
+    expect(draft.sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: { filters: [], sort: [] },
+    });
+    expect(draftSaveReadiness(draft)).toEqual({ ready: true });
+  });
+
   it("refuses unknown future component, layout, and value-field kinds instead of approximating", () => {
     const base = (): CompositionStudioDocument => ({
       format: "ugoite.composition",

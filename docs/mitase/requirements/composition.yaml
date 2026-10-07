@@ -564,8 +564,18 @@ requirements:
       - id: edit-round-trip-verification
         role: verification
         facet: verification
-        responsibility: Verify restoring a lint-normalized document into the draft keeps multi-row layout order with text content and style plus parameter placement against the labeled shape, and unknown future component, layout, and value-field kinds with invalid text shapes fail closed.
+        responsibility: Verify restoring a lint-normalized document into the draft keeps multi-row layout order with text content and style plus parameter placement against the labeled shape, entry_query sources with omitted empty filters/sort default like the domain, and unknown future component, layout, and value-field kinds with invalid text shapes fail closed.
         targets:
+          - id: edit-round-trip-omitted-query-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: "loads entry_query sources whose canonical query omits empty filters and sort" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "loads entry_query sources whose canonical query omits empty filters and sort" } }
           - id: edit-round-trip-multi-row-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts

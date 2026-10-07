@@ -276,7 +276,9 @@ test.describe("Composition Golden Journey", () => {
   let manifest: SeedManifest;
 
   test.beforeAll(async ({ request }) => {
-    test.setTimeout(120_000);
+    // The 102-row pagination fixture seeds entry-by-entry; slow hosts need
+    // room beyond the default per-hook budget.
+    test.setTimeout(300_000);
     await waitForServers(request);
     manifest = await readSeedManifest();
     expect(manifest.model_connection).toBe("disabled");

@@ -97,8 +97,10 @@ export interface CompositionLintDocument {
       variables?: Record<string, { parameter: string }>;
       query?: {
         text?: unknown;
-        filters: EntryQueryCompositionFilter[];
-        sort: EntryQueryCompositionSort[];
+        // Canonical documents omit empty filters/sort; readers default
+        // them like the domain does.
+        filters?: EntryQueryCompositionFilter[];
+        sort?: EntryQueryCompositionSort[];
         page_limit?: number;
         projection: EntryQueryCompositionProjection;
       };
