@@ -5,6 +5,8 @@ interface IconButtonProps {
   icon: UiIconName;
   /** Accessible name. Required so icon-only controls stay labelled. */
   label: string;
+  /** Optional hover/AT description, e.g. a blocked-action reason. */
+  title?: string;
   disabled?: boolean;
   active?: boolean;
   class?: string;
@@ -34,6 +36,7 @@ export function IconButton(props: IconButtonProps) {
       type={props.type ?? "button"}
       aria-label={props.label}
       aria-pressed={props.active}
+      title={props.title}
       disabled={props.disabled}
       onClick={props.onClick}
     >

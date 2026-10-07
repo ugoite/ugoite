@@ -80,8 +80,12 @@ export const studioSeedState = (
 
 /**
  * Apply one Studio seed to a draft: add the source, provision Saved SQL
- * parameters from the server-declared variable types, and prefill the tool
- * name from the seed source name so the Studio is save-ready immediately.
+ * parameters from the server-declared variable types, place one parameter
+ * control per bound variable (only when variables exist), add a default
+ * Table on the new source, and prefill the tool name from the seed source
+ * name so the Studio opens with a visible block and is save-ready
+ * immediately. Every seed path emits at least one layout item: the default
+ * Table placement never leaves a zero-display draft.
  */
 export const applyStudioSeed = (
   draft: CompositionDraft,
@@ -90,12 +94,28 @@ export const applyStudioSeed = (
   const added = seed.kind === "saved_sql"
     ? addSavedSqlSource(draft, seed.seed)
     : addEntryQuerySource(draft, seed.seed);
-  const provisioned = seed.kind === "saved_sql" && seed.seed.variableTypes
+  let next = seed.kind === "saved_sql" && seed.seed.variableTypes
     ? ensureParametersForVariables(added.draft, seed.seed.variableTypes)
     : added.draft;
-  const named = provisioned.name.trim() || !seed.seed.name
-    ? provisioned
-    : setDraftName(provisioned, seed.seed.name);
+  if (seed.kind === "saved_sql") {
+    for (const binding of Object.values(seed.seed.variables)) {
+      if (
+        !next.parameters.some((parameter) => parameter.id === binding.parameter)
+      ) {
+        continue;
+      }
+      const placed = placeParameterControl(next, binding.parameter);
+      if (placed.ok) next = placed.draft;
+    }
+  }
+  // Fail-closed table placement keeps the seed one-shot and total: the
+  // seeded source always exists, so this succeeds and the draft is never
+  // zero-display. A rejection would keep the unplaced source only.
+  const tabled = addTableDisplay(next, added.draftId);
+  if (tabled.ok) next = tabled.draft;
+  const named = next.name.trim() || !seed.seed.name
+    ? next
+    : setDraftName(next, seed.seed.name);
   return { draft: named, draftId: added.draftId };
 };
 
@@ -1492,6 +1512,81 @@ export const draftFromDocument = (
     nextDisplaySeq: displays.length + 1,
     nextRowSeq: layoutRows.length + 1,
   };
+};
+
+/** Save-blocking reason for a draft that is not save-ready. */
+export type DraftSaveBlockedReason = "name" | "sources" | "layout" | "refs";
+
+export interface DraftSaveReadiness {
+  readonly ready: boolean;
+  readonly reason?: DraftSaveBlockedReason;
+}
+
+/**
+ * Browser save-readiness gate for Composition drafts. Mirrors the shared
+ * canonical contract synchronously: a non-empty name, at least one source,
+ * valid refs with every component placed exactly once and no dangling
+ * refs, required parameters without a default placed as controls, and at
+ * least one layout item. A source-only draft reports `layout` and cannot
+ * save. Canonical parsing itself stays async in `canonicalizeDraft`; the
+ * save handler fails closed on its diagnostics.
+ */
+export const draftSaveReadiness = (
+  draft: CompositionDraft,
+): DraftSaveReadiness => {
+  if (draft.name.trim().length === 0) return { ready: false, reason: "name" };
+  if (draft.sources.length === 0) return { ready: false, reason: "sources" };
+  const sourceIds = new Set(draft.sources.map((source) => source.draftId));
+  const displayIds = new Set(draft.displays.map((display) => display.draftId));
+  const parameterIds = new Set(
+    draft.parameters.map((parameter) => parameter.id),
+  );
+  for (const display of draft.displays) {
+    if (display.kind === "text") continue;
+    if (!sourceIds.has(display.sourceDraftId)) {
+      return { ready: false, reason: "refs" };
+    }
+  }
+  const placedComponents = new Map<string, number>();
+  const placedParameters = new Set<string>();
+  for (const row of draft.layoutRows) {
+    for (const item of row.items) {
+      if (item.kind === "component") {
+        if (!displayIds.has(item.draftId)) {
+          return { ready: false, reason: "refs" };
+        }
+        placedComponents.set(
+          item.draftId,
+          (placedComponents.get(item.draftId) ?? 0) + 1,
+        );
+      } else {
+        if (!parameterIds.has(item.parameterId)) {
+          return { ready: false, reason: "refs" };
+        }
+        if (placedParameters.has(item.parameterId)) {
+          return { ready: false, reason: "refs" };
+        }
+        placedParameters.add(item.parameterId);
+      }
+    }
+  }
+  for (const display of draft.displays) {
+    if (placedComponents.get(display.draftId) !== 1) {
+      return { ready: false, reason: "refs" };
+    }
+  }
+  for (const parameter of draft.parameters) {
+    if (
+      parameter.required && parameter.default === undefined &&
+      !placedParameters.has(parameter.id)
+    ) {
+      return { ready: false, reason: "refs" };
+    }
+  }
+  let items = 0;
+  for (const row of draft.layoutRows) items += row.items.length;
+  if (items === 0) return { ready: false, reason: "layout" };
+  return { ready: true };
 };
 
 /** Canonicalize the draft through the shared Rust/WASM contract. */

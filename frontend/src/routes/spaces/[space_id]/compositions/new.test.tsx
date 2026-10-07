@@ -9,6 +9,7 @@ import {
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import CompositionNewRoute from "./new";
 
 const {
@@ -142,6 +143,67 @@ describe("Composition studio shell", () => {
     );
   };
 
+  const showDesignMode = () => {
+    fireEvent.click(
+      within(screen.getByRole("radiogroup", { name: "Studio mode" })).getByRole(
+        "radio",
+        { name: "Design" },
+      ),
+    );
+  };
+
+  const addSourceViaPicker = async (name: string) => {
+    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
+    fireEvent.click(await screen.findByRole("button", { name }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  };
+
+  // Canvas insertion path: a gap "+" opens the block palette, and the
+  // palette metric/table entries delegate to the display picker at the
+  // recorded target. The legacy Display section is gone; this is the only
+  // insertion path.
+  const addTableViaCanvas = async (sourceName: string) => {
+    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
+    const palette = screen.getByRole("dialog", { name: "Add block" });
+    fireEvent.click(within(palette).getByRole("button", { name: "Table" }));
+    const picker = await screen.findByRole("dialog", { name: "Add display" });
+    fireEvent.click(within(picker).getByRole("button", { name: "Table" }));
+    fireEvent.click(within(picker).getByRole("button", { name: sourceName }));
+    fireEvent.click(
+      within(picker).getByRole("button", { name: "Add display" }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  };
+
+  const addMetricViaCanvas = async (
+    sourceName: string,
+    value: string,
+    label: string,
+  ) => {
+    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
+    const palette = screen.getByRole("dialog", { name: "Add block" });
+    fireEvent.click(within(palette).getByRole("button", { name: "Metric" }));
+    const picker = await screen.findByRole("dialog", { name: "Add display" });
+    fireEvent.click(within(picker).getByRole("button", { name: "Metric" }));
+    fireEvent.click(within(picker).getByRole("button", { name: sourceName }));
+    fireEvent.change(within(picker).getByLabelText("Value"), {
+      target: { value },
+    });
+    fireEvent.input(within(picker).getByLabelText("Label"), {
+      target: { value: label },
+    });
+    fireEvent.click(
+      within(picker).getByRole("button", { name: "Add display" }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  };
+
   beforeEach(() => {
     setLocale("en");
     vi.clearAllMocks();
@@ -169,20 +231,32 @@ describe("Composition studio shell", () => {
       "href",
       "/spaces/space-1/compositions",
     );
-    expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
+    // Save starts blocked on the missing name and carries the reason in its
+    // accessible name and title instead of a prose paragraph.
+    const saveButton = screen.getByRole("button", {
+      name: "Save, Enter a name to save.",
+    });
+    expect(saveButton).toBeDisabled();
+    expect(saveButton).toHaveAttribute(
+      "title",
+      "Save, Enter a name to save.",
+    );
 
-    // One segmented mode control: Design first, Data on demand.
+    // One segmented mode control: Design first, Data on demand. The legacy
+    // Display section is gone; the canvas owns display editing.
     const modes = screen.getByRole("radiogroup", { name: "Studio mode" });
     const headings = screen.getAllByRole("heading", { level: 2 }).map(
       (heading) => heading.textContent,
     );
     expect(headings).toEqual([
       "Design",
-      "Display",
       "Parameters",
       "Tags",
       "Preview",
     ]);
+    expect(
+      screen.queryByRole("heading", { name: "Display" }),
+    ).not.toBeInTheDocument();
 
     // The tool-name input owns the name: typing updates the heading owner.
     const nameInput = screen.getByLabelText("Name");
@@ -193,9 +267,13 @@ describe("Composition studio shell", () => {
         "Weekly review",
       );
     });
+    // With a name but no sources the reason follows the draft.
+    expect(
+      screen.getByRole("button", { name: "Save, Add data to save." }),
+    ).toBeDisabled();
 
-    // Design-mode empty states carry one next-action line each, nothing else.
-    expect(container.querySelectorAll("p")).toHaveLength(2);
+    // Design-mode empty states carry one next-action line, nothing else.
+    expect(container.querySelectorAll("p")).toHaveLength(1);
 
     // Data mode brings the Data section first with its own empty state.
     fireEvent.click(within(modes).getByRole("radio", { name: "Data" }));
@@ -203,12 +281,11 @@ describe("Composition studio shell", () => {
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
         heading.textContent
       ),
-    ).toEqual(["Data", "Display", "Parameters", "Tags", "Preview"]);
+    ).toEqual(["Data", "Parameters", "Tags", "Preview"]);
     const paragraphs = container.querySelectorAll("p");
-    expect(paragraphs).toHaveLength(3);
+    expect(paragraphs).toHaveLength(2);
     expect(paragraphs[0]).toHaveTextContent("Add data to begin.");
-    expect(paragraphs[1]).toHaveTextContent("Add a display to begin.");
-    expect(paragraphs[2]).toHaveTextContent("Add a parameter to begin.");
+    expect(paragraphs[1]).toHaveTextContent("Add a parameter to begin.");
   });
 
   it("adds data sources with full-row selection and keyboard-operable reorder", async () => {
@@ -268,87 +345,85 @@ describe("Composition studio shell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("adds displays between data and tags with headers in order", async () => {
+  it("adds canvas blocks with label, reorder, and remove through canvas and inspector", async () => {
     const { container } = render(() => <CompositionNewRoute />);
+    fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "Weekly review" },
+    });
     showDataMode();
-
-    const headings = () =>
-      screen.getAllByRole("heading", { level: 2 }).map((heading) =>
-        heading.textContent
-      );
-    expect(headings()).toEqual([
-      "Data",
-      "Display",
-      "Parameters",
-      "Tags",
-      "Preview",
-    ]);
-
-    // Displays need a source first.
-    expect(screen.getByRole("button", { name: "Add display" })).toBeDisabled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Tasks" }));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-    expect(screen.getByRole("button", { name: "Add display" })).toBeEnabled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Add display" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Table" }),
-    );
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Tasks" }),
-    );
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Add display" }),
-    );
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-
-    // The display row owns its default source name; headers stay ordered.
-    expect(headings()).toEqual([
-      "Data",
-      "Display",
-      "Parameters",
-      "Tags",
-      "Preview",
-    ]);
+    await addSourceViaPicker("Tasks");
+    // A source-only draft cannot save: the disabled Save carries the
+    // layout reason instead of a prose paragraph.
     expect(
-      within(screen.getByRole("region", { name: "Display" })).getByText(
-        "Table",
-      ),
+      screen.getByRole("button", {
+        name: "Save, Add a block to the canvas to save.",
+      }),
+    ).toBeDisabled();
+    showDesignMode();
+
+    await addTableViaCanvas("Tasks");
+    // The new block is selected: the canvas owns the block, the inspector
+    // owns its label.
+    expect(
+      screen.getByRole("button", { name: "Select Tasks" }),
     ).toBeInTheDocument();
+    fireEvent.input(screen.getByLabelText("Label"), {
+      target: { value: "Details" },
+    });
     expect(
-      within(container).getAllByRole("button", { name: "Tasks" }),
-    ).toHaveLength(2);
+      screen.getByRole("button", { name: "Select Details" }),
+    ).toBeInTheDocument();
 
-    fireEvent.click(
-      screen.getAllByRole("button", { name: "Remove Tasks" })[1],
-    );
+    showDataMode();
+    await addSourceViaPicker("Monthly");
+    showDesignMode();
+    await addMetricViaCanvas("Monthly", "total", "Total");
     expect(
-      within(container).getAllByRole("button", { name: "Tasks" }),
-    ).toHaveLength(1);
+      screen.getByRole("button", { name: "Select Total" }),
+    ).toBeInTheDocument();
+
+    // Row reorder through the canvas; each insertion opened its own row.
+    const rowOrder = () =>
+      Array.from(container.querySelectorAll(".designRow")).map((row) =>
+        row.getAttribute("data-row-id")
+      );
+    expect(rowOrder()).toEqual(["row-2", "row-1"]);
+    fireEvent.click(screen.getByRole("button", { name: "Move row 1 down" }));
+    expect(rowOrder()).toEqual(["row-1", "row-2"]);
+
+    // Remove through the canvas clears the block and blocks saving again.
+    // Removing the selected metric clears the selection, so the table
+    // block needs selecting before its own remove renders.
+    fireEvent.click(screen.getByRole("button", { name: "Remove Total" }));
+    expect(
+      screen.queryByRole("button", { name: "Select Total" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Select Details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Details" }));
+    expect(
+      screen.queryByRole("button", { name: "Select Details" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Save, Add a block to the canvas to save.",
+      }),
+    ).toBeDisabled();
+    expect(saveMock).not.toHaveBeenCalled();
   });
 
   it("saves the canonical draft with a stable idempotency key", async () => {
     render(() => <CompositionNewRoute />);
-    showDataMode();
-
-    const saveButton = screen.getByRole("button", { name: "Save" });
-    expect(saveButton).toBeDisabled();
 
     fireEvent.input(screen.getByLabelText("Name"), {
       target: { value: "Weekly review" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Tasks" }));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
+    showDataMode();
+    await addSourceViaPicker("Tasks");
+    showDesignMode();
+    await addTableViaCanvas("Tasks");
+
+    const saveButton = screen.getByRole("button", { name: "Save" });
+    expect(saveButton).toBeEnabled();
 
     saveMock.mockResolvedValueOnce({
       composition_id: "tool-1",
@@ -379,16 +454,14 @@ describe("Composition studio shell", () => {
 
   it("retries an uncertain save with the identical payload and key", async () => {
     render(() => <CompositionNewRoute />);
-    showDataMode();
 
     fireEvent.input(screen.getByLabelText("Name"), {
       target: { value: "Weekly review" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Tasks" }));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
+    showDataMode();
+    await addSourceViaPicker("Tasks");
+    showDesignMode();
+    await addTableViaCanvas("Tasks");
 
     saveMock.mockRejectedValueOnce(new Error("transport closed"));
     saveMock.mockResolvedValueOnce({
@@ -423,7 +496,75 @@ describe("Composition studio shell", () => {
     );
   });
 
-  it("seeds the studio from a saved sql seed with a prefilled name", () => {
+  it("blocks a source-only save with an accessible reason and no save call", async () => {
+    render(() => <CompositionNewRoute />);
+
+    fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "Weekly review" },
+    });
+    showDataMode();
+    await addSourceViaPicker("Tasks");
+
+    // The gate blocks the attempt before canonicalization: the disabled
+    // Save carries the layout reason, and no save call is ever made.
+    const saveButton = screen.getByRole("button", {
+      name: "Save, Add a block to the canvas to save.",
+    });
+    expect(saveButton).toBeDisabled();
+    expect(saveButton).toHaveAttribute(
+      "title",
+      "Save, Add a block to the canvas to save.",
+    );
+    fireEvent.click(saveButton);
+    await waitFor(() => {
+      expect(canonicalizeMock).not.toHaveBeenCalled();
+    });
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the allowlisted diagnostic when canonicalization rejects the draft", async () => {
+    render(() => <CompositionNewRoute />);
+
+    fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "Weekly review" },
+    });
+    showDataMode();
+    await addSourceViaPicker("Tasks");
+    showDesignMode();
+    await addTableViaCanvas("Tasks");
+
+    canonicalizeMock.mockRejectedValueOnce(
+      new UgoiteApiError({
+        kind: "composition_diagnostic",
+        message: "invalid composition",
+        code: "invalid_composition",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("The tool definition is invalid."))
+      .toBeInTheDocument();
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the generic failure when canonicalization transport fails", async () => {
+    render(() => <CompositionNewRoute />);
+
+    fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "Weekly review" },
+    });
+    showDataMode();
+    await addSourceViaPicker("Tasks");
+    showDesignMode();
+    await addTableViaCanvas("Tasks");
+
+    canonicalizeMock.mockRejectedValueOnce(new Error("transport closed"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Could not save this tool."))
+      .toBeInTheDocument();
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it("seeds the studio from a saved sql seed with a table and placed controls", () => {
     locationControls.state = {
       seed: {
         kind: "saved_sql",
@@ -445,6 +586,12 @@ describe("Composition studio shell", () => {
       .toBeInTheDocument();
     expect(screen.getByLabelText("Name")).toHaveValue("Monthly");
     expect(screen.getByText("month")).toBeInTheDocument();
+    // The seed carries a default Table on the new source with the variable
+    // control placed, so the canvas owns a visible block on open.
+    showDesignMode();
+    expect(
+      screen.getByRole("button", { name: "Select Monthly" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     // The seed is consumed once: the location state is cleared on mount so
     // back/forward never double-adds the source.
@@ -456,7 +603,7 @@ describe("Composition studio shell", () => {
     replaceState.mockRestore();
   });
 
-  it("seeds the studio from an entry query seed with a prefilled name", () => {
+  it("seeds the studio from an entry query seed with a default table", () => {
     locationControls.state = {
       seed: {
         kind: "entry_query",
@@ -477,6 +624,12 @@ describe("Composition studio shell", () => {
 
     expect(screen.getByRole("button", { name: "Tasks" })).toBeInTheDocument();
     expect(screen.getByLabelText("Name")).toHaveValue("Tasks");
+    // The seed carries a default Table, so the Studio opens save-ready
+    // with a visible block instead of a zero-display draft.
+    showDesignMode();
+    expect(
+      screen.getByRole("button", { name: "Select Tasks" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 

@@ -30,6 +30,23 @@ components:
       title: Save
       single_control: true
       source: canonical draft YAML through composition.save with one Idempotency-Key reused for retry
+      save_readiness: >-
+        Save stays disabled until the tool name is non-empty, all refs are
+        valid with every component placed exactly once and no dangling refs,
+        and the layout holds at least one item. A source-only draft cannot
+        save. A disabled Save carries its reason in the accessible name and
+        title with no prose paragraph. Canonical parsing gates the save
+        itself: rejections surface the allowlisted diagnostic summary, and
+        anything else uses the generic save failure.
+      seed: >-
+        One-shot router location state consumed on mount with the state
+        cleared so back and forward never double-add the source. A form seed
+        carries the current EntryQuery source plus a default Table plus a
+        single-row layout with the tool name prefilled. A Saved SQL seed
+        carries the exact revision source plus a default Table plus a single
+        row plus mapped variables with parameter controls placed only when
+        variables exist. Every seed emits at least one layout item and opens
+        save-ready with a visible block; never a zero-display draft.
       deterministic_rejection: >-
         Show a localized summary when composition.save returns an allowlisted
         composition_diagnostic; use the generic save failure when the
@@ -58,22 +75,8 @@ components:
     - id: studio-display
       type: list
       title: Display
-      source: draft displays with human names only
-      selection: full-row-activate
-      reorder: keyboard-operable-move-up-down
-      remove: display remove with an accessible name
-      label_editing: inline label input in the expanded row detail
-    - id: studio-add-display
-      type: button
-      title: Add display
-      single_control: true
-      source: CompositionDisplayPicker dialog over draft sources
-    - id: studio-add-display-dialog
-      type: dialog
-      title: Add display
-      source: table or metric choice, then draft source rows, then a scalar value select with an optional label
-      selection: full-row-activate
-      rendering: human-name-only rows; metric sources without scalar candidates show a disabled row with an unavailable reason
+      status: removed
+      source: display add, remove, reorder, and label editing are owned by the Design canvas and inspector; the display picker serves only as the canvas insertion delegate
     - id: studio-parameters
       type: list
       title: Parameters

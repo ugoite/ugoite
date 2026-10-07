@@ -1166,7 +1166,7 @@ features:
       - id: browser-query-runtime
         role: implementation
         facet: frontend
-        responsibility: "Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, source-native tables, and metric values in the Browser. Composition table presentation delegates to the source-native Entry or SQL presenter and never defines a third generic table grammar; source query semantics remain unchanged. Saved Tools render the first-class flow layout: rows in order with parameter controls, fixed-style text, metrics, and tables as ordered items. The Studio inspector edits only the selected block through draft updaters: metric label, source, and value field; table label and source; text content and fixed style; parameter placement retargets with no label override; and a typed data jump names the block source for the Data section. The Data workspace pairs a source navigator with per-source editors: EntryQuery fields, filter, sort, and result map onto the draft query through the existing vocabulary with bounded shared result pages, and Saved SQL stays read-only with an explicit exact-revision update behind the existing editor route. The Studio mode switch arranges Design, Data, and desktop-only Split workspaces over shared draft, preview, and selection state with no refetch on mode change; block selection auto-selects the component source while text and parameter blocks keep the Data selection, source selection soft-highlights using blocks without changing the selection, Split pairs the canvas with the Data pane as transient Work, and the preview handle fetches visible-component plus selected sources with generation-guarded stale suppression through the existing query path."
+        responsibility: "Provide portable adapters for exact Composition reads and existing source queries, with parameter state and query pages kept transient; render bounded lists, exact revisions, source-native tables, and metric values in the Browser. Composition table presentation delegates to the source-native Entry or SQL presenter and never defines a third generic table grammar; source query semantics remain unchanged. Saved Tools render the first-class flow layout: rows in order with parameter controls, fixed-style text, metrics, and tables as ordered items. The Studio inspector edits only the selected block through draft updaters: metric label, source, and value field; table label and source; text content and fixed style; parameter placement retargets with no label override; and a typed data jump names the block source for the Data section. The Data workspace pairs a source navigator with per-source editors: EntryQuery fields, filter, sort, and result map onto the draft query through the existing vocabulary with bounded shared result pages, and Saved SQL stays read-only with an explicit exact-revision update behind the existing editor route. The Studio mode switch arranges Design, Data, and desktop-only Split workspaces over shared draft, preview, and selection state with no refetch on mode change; block selection auto-selects the component source while text and parameter blocks keep the Data selection, source selection soft-highlights using blocks without changing the selection, Split pairs the canvas with the Data pane as transient Work, and the preview handle fetches visible-component plus selected sources with generation-guarded stale suppression through the existing query path. Studio seeds carry a default Table with a single-row layout plus mapped variables with controls placed only when variables exist, so no seed path emits a zero-display draft; the save gate requires a non-empty name, valid refs with exactly-once placement, and at least one layout item with the disabled Save carrying its reason, and the legacy Display section is removed with the canvas and inspector owning display operations."
         targets:
           - id: browser-composition-api
             adapter: typescript
@@ -1361,6 +1361,30 @@ features:
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.controller-owned-paging
+          - id: browser-studio-seed
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.ts
+            selector: { kind: symbol, name: applyStudioSeed }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: satisfies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.entry-query-translation
+          - id: browser-studio-save-readiness
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.ts
+            selector: { kind: symbol, name: draftSaveReadiness }
+            claims:
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: satisfies
+                criterion: REQ-COMP-002#criterion.parameter-placement
           - id: browser-preview-handle
             adapter: typescript
             path: frontend/src/lib/composition-preview-handle.ts
@@ -1373,7 +1397,7 @@ features:
       - id: browser-query-runtime-evidence
         role: evidence
         facet: frontend-tests
-        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. Saved revision flow coverage verifies row and item order with interleaved parameter controls, fixed text styles without source fetch, narrow-viewport scroll containment, and the flat fallback when the layout cannot be normalized. Design canvas coverage verifies transient block selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder, declaration removal with parameter unplacement, query-stable layout edits through the draft channel, and source soft-highlight without changing the selection. Inspector coverage verifies per-kind field binding to the draft, metric source and value mapping to component source and value field, text edits without touching sources, parameter retargeting with no label override, the typed data jump, draft-level source, text, and placement retargeting with existing guards, and no panel without a resolvable selection. Data workspace coverage verifies navigator selection and keyboard-operable reorder, EntryQuery filter, sort, and projection mapping with unknown-operator and unknown-direction rejection at the draft channel, Saved SQL read-only rendering with variables and result schema, explicit exact-revision updates preserving variable bindings, denied-source concealment without identifiers, explicit loading, empty, and error result states through the shared handle, and narrow-width stacking. Studio sync coverage verifies the single Design Data Split control arrangement, shared draft preview and selection continuity across modes with no refetch, block to source auto-selection with text and parameter no-ops, source to block highlight distinct from selection, desktop-only Split with stacked narrow panes, latest-draft resolution for sync transitions during an in-flight preview, and scoped visible-component plus selected-source fetching with on-demand paging and stale page suppression. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
+        responsibility: Verify Home rediscovery, bounded list with exact-revision get operations, exact-revision reopen and retry, parameter diagnostics, metric display through the shared evaluator, and existing source pagination and stale-response suppression. Saved revision flow coverage verifies row and item order with interleaved parameter controls, fixed text styles without source fetch, narrow-viewport scroll containment, and the flat fallback when the layout cannot be normalized. Design canvas coverage verifies transient block selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder, declaration removal with parameter unplacement, query-stable layout edits through the draft channel, and source soft-highlight without changing the selection. Inspector coverage verifies per-kind field binding to the draft, metric source and value mapping to component source and value field, text edits without touching sources, parameter retargeting with no label override, the typed data jump, draft-level source, text, and placement retargeting with existing guards, and no panel without a resolvable selection. Data workspace coverage verifies navigator selection and keyboard-operable reorder, EntryQuery filter, sort, and projection mapping with unknown-operator and unknown-direction rejection at the draft channel, Saved SQL read-only rendering with variables and result schema, explicit exact-revision updates preserving variable bindings, denied-source concealment without identifiers, explicit loading, empty, and error result states through the shared handle, and narrow-width stacking. Studio sync coverage verifies the single Design Data Split control arrangement, shared draft preview and selection continuity across modes with no refetch, block to source auto-selection with text and parameter no-ops, source to block highlight distinct from selection, desktop-only Split with stacked narrow panes, latest-draft resolution for sync transitions during an in-flight preview, and scoped visible-component plus selected-source fetching with on-demand paging and stale page suppression. Studio seed coverage verifies the form and saved SQL seeds with default tables, mapped variables with controls placed only when variables exist, one-shot route consumption, and save-ready drafts with no zero-display path. Save readiness coverage verifies the name, refs, and layout matrix with source-only drafts blocked carrying an accessible reason, and canvas coverage verifies add, remove, reorder, and label operations through the canvas and inspector after the legacy Display section removal. The Composition list route row-opening test is not bound because its file cannot be parsed by the spec inventory.
         targets:
           - id: browser-bounded-list-operations
             adapter: typescript
@@ -1860,6 +1884,70 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-004#criterion.exact-composition-revision
+          - id: browser-studio-form-seed
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: seeds a form entry point with an entry-query source and a default table }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: browser-studio-saved-sql-seed
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: seeds a saved sql entry point with mapped variables and placed controls }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: browser-studio-seed-without-variables
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: seeds saved sql without variables with a table and no parameter controls }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: browser-studio-save-readiness-matrix
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: "blocks saves until the name, refs, and layout are all ready" }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.empty-layout-rejected
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.parameter-placement
+          - id: browser-studio-seed-sql-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
+            selector: { kind: test, name: seeds the studio from a saved sql seed with a table and placed controls }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+          - id: browser-studio-seed-form-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
+            selector: { kind: test, name: seeds the studio from an entry query seed with a default table }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+          - id: browser-studio-canvas-operations
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
+            selector: { kind: test, name: "adds canvas blocks with label, reorder, and remove through canvas and inspector" }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.ordered-component-layout
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.optional-display-labels
+          - id: browser-studio-source-only-blocked
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
+            selector: { kind: test, name: blocks a source-only save with an accessible reason and no save call }
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-002#criterion.empty-layout-rejected
     contracts:
       - id: metric-runtime-values
         kind: custom

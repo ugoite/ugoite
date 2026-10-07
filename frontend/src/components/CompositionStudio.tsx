@@ -14,7 +14,6 @@ import {
   CompositionInspector,
   type CompositionInspectorDataJump,
 } from "~/components/CompositionInspector";
-import { CompositionDisplayList } from "~/components/CompositionDisplayList";
 import {
   CompositionDisplayPicker,
   type CompositionDisplaySeed,
@@ -39,14 +38,13 @@ import {
   defaultParameterValues,
   type DraftInsertTarget,
   type DraftParameter,
+  type DraftSaveBlockedReason,
+  draftSaveReadiness,
   ensureParametersForVariables,
-  moveDisplay,
   moveSource,
-  removeDisplay,
   removeParameter,
   removeSource,
   type SavedSqlRevisionUpdate,
-  setDisplayLabel,
   setDraftName,
   setDraftTags,
   setEntryQueryFilters,
@@ -73,7 +71,10 @@ import {
   visibleComponentSourceIds,
 } from "~/lib/composition-studio-sync";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
-import { compositionSaveErrorMessage } from "~/lib/composition-save-error";
+import {
+  compositionCanonicalizeErrorMessage,
+  compositionSaveErrorMessage,
+} from "~/lib/composition-save-error";
 import {
   clearPendingCompositionSaveAttempt,
   markPendingCompositionSaveAttemptUncertain,
@@ -147,9 +148,37 @@ export function CompositionStudio(props: CompositionStudioProps) {
   });
   const isCurrentSaveRoute = (attempt: PendingCompositionSaveAttempt) =>
     attempt.spaceId === spaceId() && attempt.routePath === location.pathname;
-  const canSave = () =>
-    draft().name.trim().length > 0 && draft().sources.length > 0 &&
-    !saving();
+  // Save readiness mirrors the shared canonical contract: a non-empty name,
+  // valid refs with exactly-once placement and no dangling refs, and at
+  // least one layout item. A source-only draft reports `layout` and cannot
+  // save. Canonical parsing itself stays async in the save handler below.
+  const readiness = () => draftSaveReadiness(draft());
+  const canSave = () => readiness().ready && !saving();
+  const saveBlockedReason = (): DraftSaveBlockedReason | undefined =>
+    readiness().reason;
+  // A disabled Save carries its reason in the accessible name and title,
+  // mirroring the EntryQuery seed-navigation button pattern. No prose
+  // paragraphs explain steady-state blocks.
+  const saveReasonText = (): string | undefined => {
+    switch (saveBlockedReason()) {
+      case "name":
+        return t("composition.studioSaveNeedsName");
+      case "sources":
+        return t("composition.studioSaveNeedsData");
+      case "layout":
+        return t("composition.studioSaveNeedsBlock");
+      case "refs":
+        return t("composition.studioSaveNeedsRefs");
+      default:
+        return undefined;
+    }
+  };
+  const saveLabel = (): string => {
+    const reason = canSave() ? undefined : saveReasonText();
+    return reason
+      ? `${t("composition.save")}, ${reason}`
+      : t("composition.save");
+  };
 
   onCleanup(() => {
     if (previewTimer !== undefined) clearTimeout(previewTimer);
@@ -250,8 +279,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const addDisplaySeed = (seed: CompositionDisplaySeed) => {
-    // Palette metric/table picks land at the recorded canvas target; the
-    // legacy Add display button appends to the last row instead.
+    // The display picker survives only as the canvas insertion delegate:
+    // palette metric/table picks land at the recorded canvas target.
     const target = pendingInsert() ?? undefined;
     const added = seed.kind === "table"
       ? addTableDisplay(draft(), seed.sourceDraftId, seed.label, target)
@@ -270,31 +299,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
     }
     setPendingInsert(null);
     setDisplayPickerOpen(false);
-  };
-
-  const moveDraftDisplay = (
-    displayDraftId: string,
-    direction: "up" | "down",
-  ) => {
-    const result = moveDisplay(draft(), displayDraftId, direction);
-    if (result.ok) setDraft(result.draft);
-  };
-
-  const removeDraftDisplay = (displayDraftId: string) => {
-    const result = removeDisplay(draft(), displayDraftId);
-    if (result.ok) {
-      setDraft(result.draft);
-      // Clearing keeps the inspector from pointing at a removed block;
-      // with no resolvable selection it renders nothing.
-      if (selectedId() === designBlockIdForComponent(displayDraftId)) {
-        setSelectedId(null);
-      }
-    }
-  };
-
-  const changeDisplayLabel = (displayDraftId: string, label: string) => {
-    const result = setDisplayLabel(draft(), displayDraftId, label);
-    if (result.ok) setDraft(result.draft);
   };
 
   // Data workspace edits flow through narrow draft updaters into the shared
@@ -479,7 +483,16 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const handleSave = async () => {
-    if (!canSave()) return;
+    // Fail closed without a save attempt when the readiness gate blocks:
+    // surface the allowlisted invalid-composition summary for structural
+    // blocks (empty layout, dangling refs) instead of a generic crash. The
+    // idempotency-key and retry-same-payload semantics below stay untouched.
+    if (!canSave()) {
+      if (!saving() && !readiness().ready) {
+        setSaveError(t("composition.diagnostic.invalid_composition"));
+      }
+      return;
+    }
     const snapshot = draft();
     pendingSave = undefined;
     setSaveError(null);
@@ -495,8 +508,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
       };
       pendingSave = attempt;
       await saveRequest(attempt, false);
-    } catch {
-      setSaveError(t("composition.saveFailed"));
+    } catch (error) {
+      // Canonicalize failures carry shared-contract diagnostics (e.g. an
+      // empty layout reaching canonicalization); allowlisted codes resolve
+      // to the localized summary, anything else to the generic failure.
+      setSaveError(compositionCanonicalizeErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -565,7 +581,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   const dataHeadingId = "studio-data-heading";
   const designHeadingId = "studio-design-heading";
-  const displayHeadingId = "studio-display-heading";
   const parametersHeadingId = "studio-parameters-heading";
   const tagsHeadingId = "studio-tags-heading";
   const previewHeadingId = "studio-preview-heading";
@@ -661,7 +676,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
         />
         <IconButton
           icon="save"
-          label={t("composition.save")}
+          label={saveLabel()}
+          title={canSave() ? undefined : saveLabel()}
           disabled={!canSave()}
           onClick={() => void handleSave()}
         />
@@ -750,30 +766,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
         </section>
       </Show>
 
-      <section class="section" aria-labelledby={displayHeadingId}>
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <h2 id={displayHeadingId}>{t("composition.studioDisplay")}</h2>
-          <button
-            class="ui-button ui-button-secondary"
-            type="button"
-            disabled={draft().sources.length === 0}
-            onClick={() => {
-              setPendingInsert(null);
-              setDisplayPickerOpen(true);
-            }}
-          >
-            {t("composition.studioAddDisplay")}
-          </button>
-        </div>
-        <CompositionDisplayList
-          sources={draft().sources}
-          displays={draft().displays}
-          headingId={displayHeadingId}
-          onRemove={removeDraftDisplay}
-          onMove={moveDraftDisplay}
-          onChangeLabel={changeDisplayLabel}
-        />
-      </section>
+      {
+        /* The legacy Display list lived here through RA7; the Design canvas
+          plus inspector own display add/remove/reorder/label now, and the
+          display picker survives only as the canvas insertion delegate. */
+      }
 
       <section class="section" aria-labelledby={parametersHeadingId}>
         <h2 id={parametersHeadingId}>{t("composition.studioParameters")}</h2>

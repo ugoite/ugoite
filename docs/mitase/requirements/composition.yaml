@@ -380,6 +380,106 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "keeps layout-only edits query-stable without refetching sources" } }
+      - id: studio-seed-readiness-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Studio seeds carry a default Table with a single-row layout plus mapped variables with controls placed only when variables exist, one-shot route consumption with no zero-display path, and the save gate blocking on name, refs, and layout with source-only drafts unable to save and the disabled Save carrying its reason.
+        targets:
+          - id: studio-form-seed-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: seeds a form entry point with an entry-query source and a default table }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds a form entry point with an entry-query source and a default table" } }
+          - id: studio-saved-sql-seed-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: seeds a saved sql entry point with mapped variables and placed controls }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds a saved sql entry point with mapped variables and placed controls" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds a saved sql entry point with mapped variables and placed controls" } }
+          - id: studio-seed-without-variables-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: seeds saved sql without variables with a table and no parameter controls }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds saved sql without variables with a table and no parameter controls" } }
+          - id: studio-seed-form-route-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
+            selector: { kind: test, name: seeds the studio from an entry query seed with a default table }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from an entry query seed with a default table" } }
+          - id: studio-seed-sql-route-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
+            selector: { kind: test, name: seeds the studio from a saved sql seed with a table and placed controls }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls" } }
+          - id: studio-readiness-matrix-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: "blocks saves until the name, refs, and layout are all ready" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-save-readiness
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "blocks saves until the name, refs, and layout are all ready" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-save-readiness
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "blocks saves until the name, refs, and layout are all ready" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-save-readiness
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "blocks saves until the name, refs, and layout are all ready" } }
+          - id: studio-source-only-route-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
+            selector: { kind: test, name: blocks a source-only save with an accessible reason and no save call }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.empty-layout-rejected
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-save-readiness
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "blocks a source-only save with an accessible reason and no save call" } }
+          - id: studio-canvas-operations-route-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
+            selector: { kind: test, name: "adds canvas blocks with label, reorder, and remove through canvas and inspector" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "adds canvas blocks with label, reorder, and remove through canvas and inspector" } }
       - id: inspector-verification
         role: verification
         facet: verification
