@@ -198,7 +198,13 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
                       <li>
                         <span class="pill">
                           <span>{name}</span>
-                          <span class="ui-muted">{binding.parameter}</span>
+                          {binding.parameter !== name
+                            ? (
+                              <span class="ui-muted">
+                                {binding.parameter}
+                              </span>
+                            )
+                            : null}
                         </span>
                       </li>
                     )}

@@ -4340,6 +4340,10 @@ a.tool {
   white-space: nowrap;
 }
 
+.rowListName > * + * {
+  margin-left: var(--ui-spacing-xs);
+}
+
 .rowListSecondary {
   overflow: hidden;
   color: var(--muted);

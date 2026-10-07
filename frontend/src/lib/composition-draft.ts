@@ -31,6 +31,10 @@ export interface DraftSavedSqlSeed {
   variables: Record<string, { parameter: string }>;
   /** Declared Saved SQL variable types for parameter provisioning. */
   variableTypes?: Record<string, CompositionParameterType>;
+  /** Run-time variable values carried as parameter defaults so the seeded
+   * Studio opens with the same values that were just run. Values are stored
+   * verbatim; type mismatches surface as Rust-owned resolve diagnostics. */
+  variableDefaults?: Record<string, unknown>;
 }
 
 export interface DraftEntryQuerySeed {
@@ -95,7 +99,11 @@ export const applyStudioSeed = (
     ? addSavedSqlSource(draft, seed.seed)
     : addEntryQuerySource(draft, seed.seed);
   let next = seed.kind === "saved_sql" && seed.seed.variableTypes
-    ? ensureParametersForVariables(added.draft, seed.seed.variableTypes)
+    ? ensureParametersForVariables(
+      added.draft,
+      seed.seed.variableTypes,
+      seed.seed.variableDefaults,
+    )
     : added.draft;
   if (seed.kind === "saved_sql") {
     for (const binding of Object.values(seed.seed.variables)) {
@@ -110,8 +118,10 @@ export const applyStudioSeed = (
   }
   // Fail-closed table placement keeps the seed one-shot and total: the
   // seeded source always exists, so this succeeds and the draft is never
-  // zero-display. A rejection would keep the unplaced source only.
-  const tabled = addTableDisplay(next, added.draftId);
+  // zero-display. A rejection would keep the unplaced source only. The
+  // default table carries the source name as its label so the seeded block
+  // reads as a titled block; clearing it falls back to the default name.
+  const tabled = addTableDisplay(next, added.draftId, seed.seed.name);
   if (tabled.ok) next = tabled.draft;
   const named = next.name.trim() || !seed.seed.name
     ? next
@@ -1169,11 +1179,18 @@ export const addParameter = (
 export const ensureParametersForVariables = (
   draft: CompositionDraft,
   variableTypes: Readonly<Record<string, CompositionParameterType>>,
+  variableDefaults?: Readonly<Record<string, unknown>>,
 ): CompositionDraft => {
   let next = draft;
   for (const [id, type] of Object.entries(variableTypes)) {
     if (next.parameters.some((item) => item.id === id)) continue;
-    const added = addParameter(next, { id, type, required: true });
+    const fallback = variableDefaults?.[id];
+    const added = addParameter(next, {
+      id,
+      type,
+      required: true,
+      ...(fallback !== undefined ? { default: fallback } : {}),
+    });
     if (added.ok) next = added.draft;
   }
   return next;
@@ -1530,6 +1547,11 @@ export interface DraftSaveReadiness {
  * least one layout item. A source-only draft reports `layout` and cannot
  * save. Canonical parsing itself stays async in `canonicalizeDraft`; the
  * save handler fails closed on its diagnostics.
+ *
+ * Deliberately unchecked here (and left to canonicalize): duplicate row
+ * IDs and empty rows. Row IDs are system-generated with a taken-set, so no
+ * draft operation can produce them; the direction is lenient, never
+ * blocking a domain-valid draft.
  */
 export const draftSaveReadiness = (
   draft: CompositionDraft,

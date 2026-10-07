@@ -920,6 +920,7 @@ describe("composition draft model", () => {
           month_end: { parameter: "month_end" },
         },
         variableTypes: { month_start: "date", month_end: "date" },
+        variableDefaults: { month_start: "2026-01-01" },
       },
     });
     expect(draftId).toBe("src-1");
@@ -932,6 +933,11 @@ describe("composition draft model", () => {
       "month_start",
       "month_end",
     ]);
+    // Run-time values ride along as defaults so the seeded Studio opens
+    // showing the same result; variables without a run value stay defaultless.
+    expect(
+      draft.parameters.map((parameter) => parameter.default ?? null),
+    ).toEqual(["2026-01-01", null]);
     // Controls land only because variables exist, ahead of the table row
     // item; the table keeps the draft save-ready and never zero-display.
     const items = draft.layoutRows.flatMap((row) => row.items);
@@ -943,6 +949,7 @@ describe("composition draft model", () => {
     expect(draft.displays[0]).toMatchObject({
       kind: "table",
       sourceDraftId: "src-1",
+      label: "Monthly",
     });
     expect(unplacedParameters(draft)).toHaveLength(0);
     expect(draftSaveReadiness(draft)).toEqual({ ready: true });
