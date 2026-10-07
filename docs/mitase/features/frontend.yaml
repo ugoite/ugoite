@@ -132,6 +132,8 @@ features:
                 anchor: REQ-FE-067#criterion.form-switch-results
               - kind: evidences
                 anchor: REQ-FE-067#criterion.mobile-table-overflow-and-action
+              - kind: evidences
+                anchor: REQ-FE-065#criterion.confirm-action
   - id: FEAT-FE-003
     title: Entry detail and Markdown editing
     summary: Connect the Entry detail workspace, Markdown editor, form-aware guidance, conflict handling, and safe preview behavior to exact frontend verification evidence.
@@ -432,6 +434,8 @@ features:
                 criterion: REQ-FE-068#criterion.shared-result-visual-language
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.controller-owned-paging
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.no-redundant-result-explanation
           - id: sql-result-table
             adapter: typescript
             path: frontend/src/components/SqlResultTable.tsx

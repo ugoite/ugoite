@@ -352,7 +352,6 @@ export default function SpaceSqlRunRoute() {
               ? displaySqlName(entry()!)
               : t("sqlPage.results")}
           </h1>
-          <p class="ui-page-subtitle">{t("sqlPage.resultsDescription")}</p>
         </div>
         <BackLink
           href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
