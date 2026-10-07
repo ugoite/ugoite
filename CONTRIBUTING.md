@@ -6,7 +6,7 @@ Ugoite is a Rust-centered, filesystem-first project. Keep behavior in the smalle
 
 The pinned tools are declared in `mise.toml`:
 
-- Rust 1.94.0
+- Rust 1.95.0
 - Deno 2.8.3
 - cargo-nextest 0.9.143
 - `wasm32-unknown-unknown`

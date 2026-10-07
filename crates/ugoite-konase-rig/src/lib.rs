@@ -7,7 +7,7 @@
 
 use rig_agent::agent::{AgentRun, AgentRunStep, ModelTurn, ModelTurnOutcome};
 use rig_agent::completion::{AssistantContent, Message, Usage};
-use rig_agent::core::completion::message::{ToolResultContent, UserContent};
+use rig_agent::core::completion::message::{CallId, ToolName, ToolResultContent, UserContent};
 use rig_agent::core::message::Text;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -25,19 +25,20 @@ enum PendingStep {
     },
     Tool {
         request_id: String,
-        call_id: String,
-        name: String,
+        call_id: CallId,
+        name: ToolName,
     },
     Confirmation {
         request: McpRequest,
-        call_id: String,
+        call_id: CallId,
+        name: ToolName,
     },
 }
 
 #[derive(Debug)]
 struct QueuedToolCall {
-    call_id: String,
-    name: String,
+    call_id: CallId,
+    name: ToolName,
     arguments: BTreeMap<String, Value>,
     effect: Option<ugoite_konase::CapabilityEffect>,
 }
@@ -86,7 +87,7 @@ impl RigAgentRuntime {
             let mut request = McpRequest {
                 request_id,
                 server: "ugoite".into(),
-                operation: call.name.clone(),
+                operation: call.name.to_string(),
                 arguments: call.arguments,
                 effect: call.effect,
             };
@@ -106,6 +107,7 @@ impl RigAgentRuntime {
                     self.pending = Some(PendingStep::Confirmation {
                         request: request.clone(),
                         call_id: call.call_id,
+                        name: call.name,
                     });
                     return Ok(AgentAction::AskConfirmation(
                         ugoite_konase::ConfirmationRequest {
@@ -178,12 +180,12 @@ impl RigAgentRuntime {
                 choice.push(AssistantContent::text(text));
             }
         }
-        choice.extend(
-            result
-                .tool_calls
-                .into_iter()
-                .map(|call| AssistantContent::tool_call(call.id, call.name, call.arguments)),
-        );
+        for call in result.tool_calls {
+            let name = ToolName::new(call.name).map_err(|_| {
+                Self::error("invalid_tool_name", "model tool call must have a name")
+            })?;
+            choice.push(AssistantContent::tool_call(call.id, name, call.arguments));
+        }
         if choice.is_empty() {
             return Err(Self::error(
                 "empty_model_result",
@@ -202,9 +204,10 @@ impl RigAgentRuntime {
             .model_response(ModelTurn::new(
                 None,
                 choice,
-                Usage::new(),
+                Usage::default(),
                 tool_names.clone(),
                 tool_names,
+                Value::Null,
             ))
             .map_err(Self::rig_error)?;
         match outcome {
@@ -266,14 +269,23 @@ impl RigAgentRuntime {
         &mut self,
         result: ugoite_konase::ConfirmationResult,
     ) -> Result<AgentAction, AgentRuntimeError> {
-        let Some(PendingStep::Confirmation { request, call_id }) = self.pending.take() else {
+        let Some(PendingStep::Confirmation {
+            request,
+            call_id,
+            name,
+        }) = self.pending.take()
+        else {
             return Err(Self::error(
                 "unexpected_confirmation",
                 "no write confirmation is pending",
             ));
         };
         if request.request_id != result.request_id {
-            self.pending = Some(PendingStep::Confirmation { request, call_id });
+            self.pending = Some(PendingStep::Confirmation {
+                request,
+                call_id,
+                name,
+            });
             return Err(Self::error(
                 "unexpected_confirmation",
                 "confirmation does not match the pending write",
@@ -286,7 +298,7 @@ impl RigAgentRuntime {
         self.pending = Some(PendingStep::Tool {
             request_id: request.request_id.clone(),
             call_id,
-            name: request.operation.clone(),
+            name,
         });
         Ok(AgentAction::CallMcp(request))
     }
@@ -319,7 +331,7 @@ impl RigAgentRuntime {
             .find(|tool| tool.name == name)
             .and_then(|tool| tool.effect);
         Ok(QueuedToolCall {
-            call_id: call.tool_call.id.as_str().to_owned(),
+            call_id: call.tool_call.id,
             name,
             arguments: arguments.into_iter().collect(),
             effect,
@@ -592,8 +604,8 @@ fn message_to_model(message: Message) -> ModelMessage {
                     AssistantContent::Text(Text { text: value, .. }) => text.push(value),
                     AssistantContent::ToolCall(call) => {
                         tool_calls.push(ugoite_konase::ModelToolCall {
-                            id: call.id.as_str().to_owned(),
-                            name: call.function.name,
+                            id: call.id.wire().into_owned(),
+                            name: call.function.name.to_string(),
                             arguments: call.function.arguments,
                         })
                     }
