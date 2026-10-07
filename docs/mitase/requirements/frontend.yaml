@@ -3155,7 +3155,7 @@ requirements:
       - id: studio-shell-verification
         role: verification
         facet: verification
-        responsibility: Verify the Studio shell route and data-source picker (one Back, one Save, tool-name-owned structure, full-row selection, keyboard-operable reorder, guarded remove, canonical create-save with a stable idempotency key) through exact frontend unit tests.
+        responsibility: Verify the Studio shell route and data-source picker (one Back, one Save, tool-name-owned structure, full-row selection behind Forms and Saved SQL tabs with shared row labels, hidden internal forms, fixed dialog width, and explicit loading, empty, and error states, keyboard-operable reorder, guarded remove, canonical create-save with a stable idempotency key) through exact frontend unit tests.
         targets:
           - id: studio-shell-structure
             adapter: typescript
@@ -3235,6 +3235,115 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "pins the exact saved sql revision with server-owned column types" } }
+          - id: studio-source-picker-tabs
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "switches the source lists behind Forms and Saved SQL tabs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "switches the source lists behind Forms and Saved SQL tabs" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "switches the source lists behind Forms and Saved SQL tabs" } }
+          - id: studio-source-picker-internal-forms
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "hides internal registry forms while keeping user forms" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "hides internal registry forms while keeping user forms" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "hides internal registry forms while keeping user forms" } }
+          - id: studio-source-picker-shared-labels
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "renders the shared list-page row labels in the picker" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "renders the shared list-page row labels in the picker" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "renders the shared list-page row labels in the picker" } }
+          - id: studio-source-picker-width
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "keeps the source picker dialog at a fixed readable width" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "keeps the source picker dialog at a fixed readable width" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "keeps the source picker dialog at a fixed readable width" } }
+          - id: studio-source-picker-async-states
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "preserves loading, empty, and error states across tabs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "preserves loading, empty, and error states across tabs" } }
+          - id: studio-source-picker-retry
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "recovers from a list failure through retry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "recovers from a list failure through retry" } }
+          - id: source-row-label-form
+            adapter: typescript
+            path: frontend/src/components/SourceRowLabels.test.tsx
+            selector: { kind: test, name: "renders a user form with a glyph and no system marker" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "renders a user form with a glyph and no system marker" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "renders a user form with a glyph and no system marker" } }
+          - id: source-row-label-system-marker
+            adapter: typescript
+            path: frontend/src/components/SourceRowLabels.test.tsx
+            selector: { kind: test, name: "marks reserved metadata forms with the system marker" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "marks reserved metadata forms with the system marker" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "marks reserved metadata forms with the system marker" } }
+          - id: source-row-label-saved-sql
+            adapter: typescript
+            path: frontend/src/components/SourceRowLabels.test.tsx
+            selector: { kind: test, name: "renders saved sql names with variables and updated meta" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "renders saved sql names with variables and updated meta" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "renders saved sql names with variables and updated meta" } }
       - id: studio-entry-point-verification
         role: verification
         facet: verification

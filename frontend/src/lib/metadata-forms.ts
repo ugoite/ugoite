@@ -1,4 +1,12 @@
-export const RESERVED_METADATA_CLASSES = ["SQL", "User", "UserGroup"] as const;
+/** Mirrors the Rust domain metadata registry (ugoite-domain metadata.rs):
+ * SQL, User, UserGroup, and the composition registry form are never
+ * user-creatable entry forms. */
+export const RESERVED_METADATA_CLASSES = [
+  "SQL",
+  "User",
+  "UserGroup",
+  "_ugoite_compositions",
+] as const;
 
 const FORM_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 const FORM_NAME_MAX_BYTES = 128;
