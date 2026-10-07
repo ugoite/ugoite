@@ -19,9 +19,10 @@ components:
         title: Back
         single_control: true
       - id: studio-save
-        type: icon-button
+        type: button
         title: Save
         single_control: true
+        rationale: visible-text-label-so-beginners-find-the-primary-mutation-keeps-disabled-reason-and-steady-busy-label
         async_state: explicit-busy-without-layout-shift
         save_readiness: name-non-empty-plus-valid-refs-plus-exactly-once-placement-plus-no-dangling-plus-one-layout-item
         blocked_save: disabled-with-reason-in-accessible-name-and-title-no-prose

@@ -15,7 +15,7 @@ components:
       type: page-header
       title: Tool name
       ownership: tool-name-only
-      description: One Back control to the saved-tools list, one tool-name text input owning the name, one Save icon-button.
+      description: One Back control to the saved-tools list, one tool-name text input owning the name, one Save text button.
     - id: studio-back
       type: link
       title: Back to saved tools
@@ -26,9 +26,10 @@ components:
       ownership: object-identity
       source: draft name written through setDraftName
     - id: studio-save
-      type: icon-button
+      type: button
       title: Save
       single_control: true
+      rationale: visible-text-label-so-beginners-find-the-primary-mutation-keeps-disabled-reason-and-steady-busy-label
       source: canonical draft YAML through composition.save with one Idempotency-Key reused for retry
       save_readiness: >-
         Save stays disabled until the tool name is non-empty, all refs are

@@ -330,6 +330,23 @@ describe("composition draft model", () => {
     expect(toStudioDocument(draft)).toEqual(document);
   });
 
+  it("drops empty layout rows when emitting the document", () => {
+    // Palette insertions leave the initial empty row behind; empty rows
+    // carry no placement meaning and the domain rejects them, so only
+    // placed rows reach the document.
+    const draft = createEmptyDraft("Untitled");
+    const seeded = addTextDisplay(draft, { text: "Hello" });
+    if (!seeded.ok || !seeded.draftId) throw new Error("insert failed");
+    const document = toStudioDocument(seeded.draft);
+    expect(document.spec.layout.rows).toEqual([{
+      id: expect.any(String),
+      items: [{ kind: "component", component: seeded.draftId }],
+    }]);
+    expect(
+      document.spec.layout.rows.every((row) => row.items.length > 0),
+    ).toBe(true);
+  });
+
   it("refuses unknown document kinds instead of approximating", () => {
     const document = {
       format: "ugoite.composition",
@@ -878,9 +895,10 @@ describe("composition draft model", () => {
     const movedRow = moveLayoutRow(draft, rowIds[1], "up");
     expect(movedRow.ok).toBe(true);
     if (!movedRow.ok) throw new Error("expected row move");
+    // Empty rows never reach the document; only placed rows are emitted.
     expect(
       toStudioDocument(movedRow.draft).spec.layout.rows.map((row) => row.id),
-    ).toEqual([rowIds[1], rowIds[0], "main"]);
+    ).toEqual([rowIds[1], rowIds[0]]);
     expect(moveLayoutRow(movedRow.draft, rowIds[1], "up")).toEqual({
       ok: false,
       error: "unknown-row",
