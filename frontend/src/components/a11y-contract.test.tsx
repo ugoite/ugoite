@@ -120,6 +120,33 @@ describe("#2842 automated accessibility contract", () => {
     );
   });
 
+  it("REQ-UX-DISMISS-001: keeps close controls at 44px with a visible focus ring", () => {
+    const { container } = render(() => (
+      <IconButton
+        icon="close"
+        label="Close"
+      />
+    ));
+    const button = screen.getByRole("button", { name: "Close" });
+    expect(button).toHaveClass("pill", "iconpill", "icononly");
+    expect(container.querySelector("svg")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+
+    const css = stylesheet();
+    const start = css.indexOf(".pill.iconpill {");
+    expect(start).toBeGreaterThan(-1);
+    const open = css.indexOf("{", start);
+    const close = css.indexOf("}", open);
+    const declarations = css.slice(open, close);
+    expect(declarations).toMatch(/min-width:\s*44px/);
+    expect(declarations).toMatch(/min-height:\s*44px/);
+    expect(css).toMatch(
+      /\.pill\.iconpill:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--focus,\s*var\(--brand\)\);[^}]*outline-offset:\s*2px;/,
+    );
+  });
+
   it("keeps the one-row action bar at 390px widths", () => {
     const css = stylesheet();
     // The narrow-viewport override keeps four flexible columns with no

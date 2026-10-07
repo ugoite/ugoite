@@ -10,6 +10,7 @@ interface IconButtonProps {
   disabled?: boolean;
   active?: boolean;
   class?: string;
+  ref?: (element: HTMLButtonElement) => void;
   onClick?: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent>;
   type?: "button" | "submit" | "reset";
 }
@@ -34,6 +35,7 @@ export function IconButton(props: IconButtonProps) {
     <button
       class={cls()}
       type={props.type ?? "button"}
+      ref={props.ref}
       aria-label={props.label}
       aria-pressed={props.active}
       title={props.title}

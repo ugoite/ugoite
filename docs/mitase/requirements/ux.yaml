@@ -826,3 +826,89 @@ requirements:
                 criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
                 covers: [FEAT-UX-006#binding.restore-baseline/target.history-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx", test: "PR4: cancelling the restore dialog sends nothing and keeps the review" } }
+  - id: REQ-UX-DISMISS-001
+    title: Compact Dismiss Controls
+    description: Dialog and inline error dismissals use compact named controls while preserving the content and existing dismissal behavior.
+    priority: medium
+    status: planned
+    criteria:
+      - id: close-control-presentation
+        kind: behavior
+        statement: Dismiss controls use the shared 44px icon-only button with a visible keyboard focus ring and a localized accessible name; close actions use the close icon and stay distinct from hierarchical back navigation.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: history-detail-dismissal
+        kind: behavior
+        statement: The Space History detail dialog closes through the shared close control while retaining Escape and backdrop dismissal, focus trapping, and focus return to the opener.
+        governed_by: [POL-UI-007#rule.governance]
+      - id: inline-error-dismissal
+        kind: behavior
+        statement: The dismissible FormTable error alert exposes the error content and clears only that alert when its close control is activated.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+    bindings:
+      - id: dismiss-control-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the compact, named close controls, their dismissal semantics, and history-dialog focus behavior through exact frontend cases.
+        targets:
+          - id: close-control-accessibility
+            adapter: typescript
+            path: frontend/src/components/a11y-contract.test.tsx
+            selector: { kind: test, name: "REQ-UX-DISMISS-001: keeps close controls at 44px with a visible focus ring" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-DISMISS-001#criterion.close-control-presentation
+                covers: [FEAT-UX-010#binding.frontend/target.shared-icon-button]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/a11y-contract.test.tsx, test: "REQ-UX-DISMISS-001: keeps close controls at 44px with a visible focus ring" } }
+          - id: history-detail-dismissal
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "REQ-UX-DISMISS-001: closes and returns focus" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-DISMISS-001#criterion.close-control-presentation
+                covers: [FEAT-UX-010#binding.frontend/target.history-detail-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-DISMISS-001: closes and returns focus" } }
+              - kind: verifies
+                criterion: REQ-UX-DISMISS-001#criterion.history-detail-dismissal
+                covers: [FEAT-UX-010#binding.frontend/target.history-detail-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-DISMISS-001: closes and returns focus" } }
+          - id: history-detail-close-localization
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "REQ-UX-DISMISS-001: localizes the close name" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-DISMISS-001#criterion.close-control-presentation
+                covers: [FEAT-UX-010#binding.frontend/target.history-detail-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-DISMISS-001: localizes the close name" } }
+          - id: history-detail-focus-and-escape
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "REQ-UX-DISMISS-001: traps focus and closes on Escape" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-DISMISS-001#criterion.history-detail-dismissal
+                covers: [FEAT-UX-010#binding.frontend/target.history-detail-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-DISMISS-001: traps focus and closes on Escape" } }
+          - id: history-detail-backdrop-dismissal
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "REQ-UX-DISMISS-001: closes on backdrop and returns focus" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-DISMISS-001#criterion.history-detail-dismissal
+                covers: [FEAT-UX-010#binding.frontend/target.history-detail-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-DISMISS-001: closes on backdrop and returns focus" } }
+          - id: form-table-error-dismissal
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: "REQ-UX-DISMISS-001: dismisses Form errors" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-DISMISS-001#criterion.close-control-presentation
+                covers: [FEAT-UX-010#binding.frontend/target.form-table-error]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-UX-DISMISS-001: dismisses Form errors" } }
+              - kind: verifies
+                criterion: REQ-UX-DISMISS-001#criterion.inline-error-dismissal
+                covers: [FEAT-UX-010#binding.frontend/target.form-table-error]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-UX-DISMISS-001: dismisses Form errors" } }
