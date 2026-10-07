@@ -944,7 +944,28 @@ requirements:
                 criterion: REQ-COMP-004#criterion.entry-query-translation
                 covers:
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-editor
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-studio-capabilities
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: maps entry-query filter edits onto the draft query } }
+          - id: data-entry-query-dialog-mapping-case
+            adapter: typescript
+            path: frontend/src/lib/entry-query-studio-capabilities.test.ts
+            selector: { kind: test, name: maps draft filters through the dialog shape without flattening bindings }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-studio-capabilities
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-query-studio-capabilities.test.ts, test: maps draft filters through the dialog shape without flattening bindings } }
+          - id: data-entry-query-capability-derivation-case
+            adapter: typescript
+            path: frontend/src/lib/entry-query-studio-capabilities.test.ts
+            selector: { kind: test, name: derives names and capabilities from the form definition }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-studio-capabilities
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-query-studio-capabilities.test.ts, test: derives names and capabilities from the form definition } }
           - id: data-entry-query-invalid-operator-case
             adapter: typescript
             path: frontend/src/lib/composition-draft.test.ts

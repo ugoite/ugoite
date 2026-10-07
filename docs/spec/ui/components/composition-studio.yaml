@@ -48,6 +48,11 @@ components:
       projection: [fields, preview]
       edits: draft-source-query-through-narrow-updaters
       unknown_operators: rejected-fail-closed
+      filter_sort_editing: shared-entry-browser-display-dialog-only
+      field_identity: human-names-from-transient-form-definition-with-schema-id-fallback
+      capability_gating: dialog-offers-only-capable-fields-with-disabled-add-and-reason-at-zero
+      projection_placement: inline-unchanged-dialog-columns-contract-not-identical
+      form_definition: transient-formApi-load-cached-per-source-never-stored
     saved_sql_viewer:
       sql: read-only-with-edit-saved-sql-action-to-existing-editor-route
       sections: [sql, variables, result-schema, result]

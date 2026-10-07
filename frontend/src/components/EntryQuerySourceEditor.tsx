@@ -1,5 +1,16 @@
-import { For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { EntryResultTable } from "~/components/EntryResultTable";
+import { EntryBrowserDisplayDialog } from "~/components/EntryBrowserDisplayDialog";
+import type {
+  EntryBrowserDisplayMode,
+} from "~/components/EntryBrowserDisplayDialog";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
 import {
@@ -15,39 +26,54 @@ import type {
   EntryQueryCompositionSort,
 } from "~/lib/entry-query-composition";
 import type { DraftSource } from "~/lib/composition-draft";
+import type {
+  EntryFieldCapability,
+  EntryFilter,
+  EntrySort,
+} from "~/lib/entry-query";
 import {
-  entryQueryFilterOperators,
-  entryQuerySortDirections,
-} from "~/lib/composition-draft";
+  fetchStudioFormDefinition,
+  studioBindingName,
+  studioBindingText,
+  studioCapabilitiesFromForm,
+  studioEntryFilterToComposition,
+  studioEntrySortToComposition,
+  studioFallbackCapabilities,
+  studioFieldNames,
+  studioFilterToEntryFilter,
+  studioSortToEntrySort,
+} from "~/lib/entry-query-studio-capabilities";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
+import type { Form } from "~/lib/types";
 import { t } from "~/lib/i18n";
 
 export type EntryQuerySource = Extract<DraftSource, { kind: "entry_query" }>;
 
 const filterValueText = (value: unknown): string => {
-  if (value !== null && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    if (typeof record.parameter === "string") {
-      return `{{${record.parameter}}}`;
-    }
-  }
+  const binding = studioBindingName(value);
+  if (binding !== undefined) return studioBindingText(binding);
   if (value === null || value === undefined) return "";
   return String(value);
 };
 
-/** Round-trip `{{name}}` display text back to a parameter binding so editing
- * a parameter-bound filter never silently flattens it to a plain string.
- * Anything else stays a verbatim string; the draft updater fails closed on
- * shapes outside the shared contract. */
-const parseFilterValueText = (text: string): unknown => {
-  const binding = /^\{\{([^}]+)\}\}$/.exec(text);
-  if (binding && binding[1].length > 0) {
-    return { parameter: binding[1] };
-  }
-  return text;
-};
+const operatorLabel = (operator: EntryQueryCompositionFilter["operator"]) =>
+  t(
+    `entryBrowser.operator.${operator}` as
+      | "entryBrowser.operator.equals"
+      | "entryBrowser.operator.contains"
+      | "entryBrowser.operator.lt"
+      | "entryBrowser.operator.lte"
+      | "entryBrowser.operator.gt"
+      | "entryBrowser.operator.gte",
+  );
+
+type EditorDefinitionLoad =
+  | { status: "loading" }
+  | { status: "ready"; form: Form | undefined }
+  | { status: "error" };
 
 interface EntryQuerySourceEditorProps {
+  spaceId: string;
   source: EntryQuerySource;
   /** Narrow draft updaters; each returns false when the edit is rejected. */
   onFilters: (filters: EntryQueryCompositionFilter[]) => boolean;
@@ -66,33 +92,128 @@ interface EntryQuerySourceEditorProps {
 }
 
 /**
- * EntryQuery source editor for the Data workspace. Fields, filter, sort,
- * and result map onto the draft's `source.query` through the existing
- * EntryQuery vocabulary (field IDs, six filter operators, two sort
- * directions, fields/preview projection). The result preview reuses the
+ * EntryQuery source editor for the Data workspace. Filter and sort edits
+ * route through the shared EntryBrowserDisplayDialog with capabilities and
+ * human names from the transient Form definition; the draft Knowledge
+ * keeps only field IDs. Projection stays inline: the dialog's column
+ * contract (EntryFieldRef refs with system fields) is not identical to the
+ * Composition numeric-IDs-only projection. The result preview reuses the
  * shared per-source preview page; no new query implementation.
  */
 export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
+  // Transient Work only: the referenced Form definition supplies names and
+  // capabilities, cached per source. Loading and error states are explicit;
+  // any failure degrades to the schema snapshot, never blocks editing, and
+  // is never stored. The fetch follows the manual signal pattern used by the
+  // source viewer: explicit resolve/reject handlers, no unhandled rejection.
+  const [definitionLoad, setDefinitionLoad] = createSignal<
+    EditorDefinitionLoad
+  >(
+    { status: "loading" },
+  );
+  let definitionGeneration = 0;
+  let loadedDefinitionKey: string | undefined;
+  const loadDefinition = (spaceId: string, formId: string) => {
+    const generation = ++definitionGeneration;
+    setDefinitionLoad({ status: "loading" });
+    fetchStudioFormDefinition(spaceId, formId).then(
+      (form) => {
+        if (definitionGeneration === generation) {
+          setDefinitionLoad({ status: "ready", form });
+        }
+      },
+      () => {
+        if (definitionGeneration === generation) {
+          setDefinitionLoad({ status: "error" });
+        }
+      },
+    );
+  };
+  createEffect(() => {
+    // Rerun the transient load only when the referenced source changes.
+    // The source prop is a fresh object on every draft update, so guard on
+    // the stable key instead of reloading (and flashing) on each edit.
+    const spaceId = props.spaceId;
+    const formId = props.source.formId;
+    const key = `${spaceId}/${formId}`;
+    if (key === loadedDefinitionKey) return;
+    loadedDefinitionKey = key;
+    loadDefinition(spaceId, formId);
+  });
+  onCleanup(() => {
+    definitionGeneration += 1;
+  });
+  const definitionForm = (): Form | undefined => {
+    const load = definitionLoad();
+    return load.status === "ready" ? load.form : undefined;
+  };
+  const names = createMemo(() => studioFieldNames(definitionForm()));
+  const capabilities = createMemo((): EntryFieldCapability[] => {
+    const form = definitionForm();
+    return form
+      ? studioCapabilitiesFromForm(form)
+      : studioFallbackCapabilities(props.source.fieldSchema);
+  });
+  const fieldName = (fieldId: number): string | undefined =>
+    names().get(fieldId);
+
+  const [dialogMode, setDialogMode] = createSignal<
+    EntryBrowserDisplayMode | null
+  >(
+    null,
+  );
+  const [dialogTrigger, setDialogTrigger] = createSignal<
+    HTMLElement | undefined
+  >(undefined);
+  const openDialog = (mode: "filter" | "sort", trigger: HTMLElement) => {
+    setDialogTrigger(trigger);
+    setDialogMode(mode);
+  };
+  const closeDialog = () => setDialogMode(null);
+
+  const applyDialogFilters = (filters: EntryFilter[]) => {
+    const next: EntryQueryCompositionFilter[] = [];
+    for (const filter of filters) {
+      const converted = studioEntryFilterToComposition(filter);
+      // No draft grammar for the ref: fail closed and keep the dialog open.
+      if (!converted) return;
+      next.push(converted);
+    }
+    if (props.onFilters(next)) closeDialog();
+  };
+
+  const applyDialogSort = (sort: EntrySort[]) => {
+    const next: EntryQueryCompositionSort[] = [];
+    for (const clause of sort) {
+      const converted = studioEntrySortToComposition(clause);
+      if (!converted) return;
+      next.push(converted);
+    }
+    if (props.onSort(next)) closeDialog();
+  };
+
+  // Genuinely incapable fields never reach the dialog's own dropdowns. With
+  // zero capable fields the Add control disables with the reason in its
+  // accessible name and title, mirroring the Add-parameter gate; the reason
+  // reuses existing vocabulary and renders no visible prose.
+  const filterCapable = () =>
+    capabilities().some((field) =>
+      field.filterable && field.supported_operators.length > 0
+    );
+  const sortCapable = () => capabilities().some((field) => field.sortable);
+  const addFilterLabel = () =>
+    filterCapable()
+      ? t("entryBrowser.addFilter")
+      : `${t("entryBrowser.addFilter")}: ${
+        t("entryBrowser.noFilterCapabilities")
+      }`;
+  const addSortLabel = () =>
+    sortCapable()
+      ? t("entryBrowser.addSort")
+      : `${t("entryBrowser.addSort")}: ${t("entryBrowser.noSortCapabilities")}`;
+
   const schemaFieldIds = () =>
     props.source.fieldSchema.map((entry) => entry.field_id);
-
-  const addFilter = () => {
-    const first = schemaFieldIds()[0];
-    if (first === undefined) return;
-    props.onFilters([
-      ...props.source.query.filters,
-      { field_id: first, operator: "equals", value: "" },
-    ]);
-  };
-
-  const addSort = () => {
-    const first = schemaFieldIds()[0];
-    if (first === undefined) return;
-    props.onSort([
-      ...props.source.query.sort,
-      { field_id: first, direction: "asc" },
-    ]);
-  };
 
   const planSource = () =>
     props.planSources.find((source) =>
@@ -109,6 +230,21 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
     <div class="ui-stack">
       <section aria-label={t("entryBrowser.fields")}>
         <h3 class="ui-label">{t("entryBrowser.fields")}</h3>
+        <Show when={definitionLoad().status === "loading"}>
+          <LocalBusyIndicator label={t("composition.studioSourcesLoading")} />
+        </Show>
+        <Show when={definitionLoad().status === "error"}>
+          <p class="ui-text-danger" role="alert">
+            {t("composition.studioSourcesFailed")}
+          </p>
+          <button
+            class="ui-button ui-button-secondary"
+            type="button"
+            onClick={() => loadDefinition(props.spaceId, props.source.formId)}
+          >
+            {t("composition.retry")}
+          </button>
+        </Show>
         <Show
           when={props.source.fieldSchema.length > 0}
           fallback={<p class="ui-muted">{t("composition.queryEmpty")}</p>}
@@ -118,7 +254,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               {(entry) => (
                 <li>
                   <span class="pill">
-                    <span>{entry.field_id}</span>
+                    <span>{fieldName(entry.field_id) ?? entry.field_id}</span>
                     <span class="ui-muted">{entry.field_type}</span>
                   </span>
                 </li>
@@ -134,8 +270,10 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
           <button
             class="ui-button ui-button-secondary"
             type="button"
-            disabled={schemaFieldIds().length === 0}
-            onClick={addFilter}
+            disabled={!filterCapable()}
+            aria-label={addFilterLabel()}
+            title={addFilterLabel()}
+            onClick={(event) => openDialog("filter", event.currentTarget)}
           >
             {t("entryBrowser.addFilter")}
           </button>
@@ -145,81 +283,20 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
             <For each={props.source.query.filters}>
               {(filter, index) => (
                 <li class="flex flex-wrap items-center gap-2">
-                  <label>
-                    <span class="ui-sr-only">
-                      {t("entryBrowser.filterField")}
-                    </span>
-                    <select
-                      class="ui-input"
-                      value={filter.field_id}
-                      onChange={(event) => {
-                        const next = [...props.source.query.filters];
-                        next[index()] = {
-                          ...filter,
-                          field_id: Number(event.currentTarget.value),
-                        };
-                        props.onFilters(next);
-                      }}
-                    >
-                      <For each={schemaFieldIds()}>
-                        {(fieldId) => <option value={fieldId}>{fieldId}
-                        </option>}
-                      </For>
-                    </select>
-                  </label>
-                  <label>
-                    <span class="ui-sr-only">
-                      {t("entryBrowser.filterOperator")}
-                    </span>
-                    <select
-                      class="ui-input"
-                      value={filter.operator}
-                      onChange={(event) => {
-                        const next = [...props.source.query.filters];
-                        next[index()] = {
-                          ...filter,
-                          operator: event.currentTarget
-                            .value as EntryQueryCompositionFilter["operator"],
-                        };
-                        props.onFilters(next);
-                      }}
-                    >
-                      <For each={[...entryQueryFilterOperators]}>
-                        {(operator) => (
-                          <option value={operator}>
-                            {t(
-                              `entryBrowser.operator.${operator}` as
-                                | "entryBrowser.operator.equals"
-                                | "entryBrowser.operator.contains"
-                                | "entryBrowser.operator.lt"
-                                | "entryBrowser.operator.lte"
-                                | "entryBrowser.operator.gt"
-                                | "entryBrowser.operator.gte",
-                            )}
-                          </option>
-                        )}
-                      </For>
-                    </select>
-                  </label>
-                  <label>
-                    <span class="ui-sr-only">
-                      {t("entryBrowser.filterValue")}
-                    </span>
-                    <input
-                      class="ui-input"
-                      value={filterValueText(filter.value)}
-                      onChange={(event) => {
-                        const next = [...props.source.query.filters];
-                        next[index()] = {
-                          ...filter,
-                          value: parseFilterValueText(
-                            event.currentTarget.value,
-                          ),
-                        };
-                        props.onFilters(next);
-                      }}
-                    />
-                  </label>
+                  <span>
+                    {fieldName(filter.field_id) ?? filter.field_id}{" "}
+                    {operatorLabel(filter.operator)}{" "}
+                    {filterValueText(filter.value)}
+                  </span>
+                  <button
+                    class="ui-button ui-button-secondary"
+                    type="button"
+                    aria-label={t("composition.studioEdit")}
+                    onClick={(event) =>
+                      openDialog("filter", event.currentTarget)}
+                  >
+                    {t("composition.studioEdit")}
+                  </button>
                   <button
                     class="ui-button ui-button-secondary"
                     type="button"
@@ -246,8 +323,10 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
           <button
             class="ui-button ui-button-secondary"
             type="button"
-            disabled={schemaFieldIds().length === 0}
-            onClick={addSort}
+            disabled={!sortCapable()}
+            aria-label={addSortLabel()}
+            title={addSortLabel()}
+            onClick={(event) => openDialog("sort", event.currentTarget)}
           >
             {t("entryBrowser.addSort")}
           </button>
@@ -257,56 +336,21 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
             <For each={props.source.query.sort}>
               {(clause, index) => (
                 <li class="flex flex-wrap items-center gap-2">
-                  <label>
-                    <span class="ui-sr-only">
-                      {t("entryBrowser.sortField")}
-                    </span>
-                    <select
-                      class="ui-input"
-                      value={clause.field_id}
-                      onChange={(event) => {
-                        const next = [...props.source.query.sort];
-                        next[index()] = {
-                          ...clause,
-                          field_id: Number(event.currentTarget.value),
-                        };
-                        props.onSort(next);
-                      }}
-                    >
-                      <For each={schemaFieldIds()}>
-                        {(fieldId) => <option value={fieldId}>{fieldId}
-                        </option>}
-                      </For>
-                    </select>
-                  </label>
-                  <label>
-                    <span class="ui-sr-only">
-                      {t("entryBrowser.sortDirection")}
-                    </span>
-                    <select
-                      class="ui-input"
-                      value={clause.direction}
-                      onChange={(event) => {
-                        const next = [...props.source.query.sort];
-                        next[index()] = {
-                          ...clause,
-                          direction: event.currentTarget
-                            .value as EntryQueryCompositionSort["direction"],
-                        };
-                        props.onSort(next);
-                      }}
-                    >
-                      <For each={[...entryQuerySortDirections]}>
-                        {(direction) => (
-                          <option value={direction}>
-                            {direction === "asc"
-                              ? t("entryBrowser.ascending")
-                              : t("entryBrowser.descending")}
-                          </option>
-                        )}
-                      </For>
-                    </select>
-                  </label>
+                  <span>
+                    {fieldName(clause.field_id) ?? clause.field_id} ·{" "}
+                    {clause.direction ===
+                        "asc"
+                      ? t("entryBrowser.ascending")
+                      : t("entryBrowser.descending")}
+                  </span>
+                  <button
+                    class="ui-button ui-button-secondary"
+                    type="button"
+                    aria-label={t("composition.studioEdit")}
+                    onClick={(event) => openDialog("sort", event.currentTarget)}
+                  >
+                    {t("composition.studioEdit")}
+                  </button>
                   <button
                     class="ui-button ui-button-secondary"
                     type="button"
@@ -387,7 +431,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
                           props.onProjection({ kind: "fields", fields });
                         }}
                       />
-                      <span>{fieldId}</span>
+                      <span>{fieldName(fieldId) ?? fieldId}</span>
                     </label>
                   </li>
                 );
@@ -406,6 +450,28 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
           onRetry={() => props.onRetry(props.source.draftId)}
         />
       </section>
+
+      <Show when={dialogMode()}>
+        {(mode) => (
+          <EntryBrowserDisplayDialog
+            mode={mode()}
+            returnFocus={dialogTrigger()}
+            fields={capabilities()}
+            projection={{ kind: "preview" }}
+            previewSystemFields={[]}
+            filters={props.source.query.filters.map(studioFilterToEntryFilter)}
+            sort={props.source.query.sort.map(studioSortToEntrySort)}
+            onApply={(draft) => {
+              if (mode() === "filter" && draft.filters) {
+                applyDialogFilters(draft.filters);
+              } else if (mode() === "sort" && draft.sort) {
+                applyDialogSort(draft.sort);
+              }
+            }}
+            onClose={closeDialog}
+          />
+        )}
+      </Show>
 
       <details class="ui-stack-sm">
         <summary>{props.source.name}</summary>

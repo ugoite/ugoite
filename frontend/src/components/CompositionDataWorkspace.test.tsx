@@ -28,13 +28,20 @@ import type {
 } from "~/lib/composition-api";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 import { setLocale } from "~/lib/i18n";
+import { clearStudioFormDefinitionCache } from "~/lib/entry-query-studio-capabilities";
+import type { Form } from "~/lib/types";
 
-const { sqlGetMock, sqlQueryMock } = vi.hoisted(() => ({
+const { sqlGetMock, sqlQueryMock, formApiListMock } = vi.hoisted(() => ({
   sqlGetMock: vi.fn(),
   sqlQueryMock: vi.fn(),
+  formApiListMock: vi.fn(),
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
+  formApi: {
+    list: (...args: unknown[]) =>
+      (formApiListMock as (...call: unknown[]) => unknown)(...args),
+  },
   sqlApi: {
     get: (...args: unknown[]) =>
       (sqlGetMock as (...call: unknown[]) => unknown)(...args),
@@ -64,6 +71,83 @@ const entrySeed = () => ({
     filters: [],
     sort: [],
     projection: { kind: "preview" as const },
+  },
+});
+
+/** Transient Form definition: two capable fields with human names plus one
+ * genuinely incapable field the shared dialog must never offer. */
+const expenseForm = (): Form => ({
+  id: "11111111-1111-4111-8111-111111111111",
+  name: "Expenses",
+  version: 1,
+  template: "",
+  fields: {
+    occurred: {
+      id: 100,
+      type: "date",
+      required: false,
+      query_capability: {
+        field: { kind: "property", field_id: 100 },
+        name: "Occurred",
+        field_type: "date",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals", "lt", "lte", "gt", "gte"],
+      },
+    },
+    title: {
+      id: 101,
+      type: "string",
+      required: false,
+      query_capability: {
+        field: { kind: "property", field_id: 101 },
+        name: "Title",
+        field_type: "string",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals", "contains"],
+      },
+    },
+    attachment: {
+      id: 102,
+      type: "binary",
+      required: false,
+      query_capability: {
+        field: { kind: "property", field_id: 102 },
+        name: "Attachment",
+        field_type: "binary",
+        filterable: false,
+        sortable: false,
+        projectable: true,
+        supported_operators: [],
+      },
+    },
+  },
+});
+
+/** Form whose fields carry no filter or sort capability at all. */
+const incapableForm = (): Form => ({
+  id: "11111111-1111-4111-8111-111111111111",
+  name: "Expenses",
+  version: 1,
+  template: "",
+  fields: {
+    attachment: {
+      id: 100,
+      type: "binary",
+      required: false,
+      query_capability: {
+        field: { kind: "property", field_id: 100 },
+        name: "Attachment",
+        field_type: "binary",
+        filterable: false,
+        sortable: false,
+        projectable: true,
+        supported_operators: [],
+      },
+    },
   },
 });
 
@@ -189,6 +273,9 @@ describe("CompositionDataWorkspace", () => {
   beforeEach(() => {
     setLocale("en");
     vi.clearAllMocks();
+    clearStudioFormDefinitionCache();
+    // No definition by default: the editor degrades to the schema snapshot.
+    formApiListMock.mockResolvedValue([]);
     sqlGetMock.mockResolvedValue(savedSqlEntry);
     sqlQueryMock.mockResolvedValue({
       columns: ["total"],
@@ -248,44 +335,62 @@ describe("CompositionDataWorkspace", () => {
   });
 
   it("maps entry-query filter edits onto the draft query", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
     const harness = renderWorkspace(twoSourceDraft());
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     await screen.findByRole("heading", { name: "Expenses" });
-
-    fireEvent.click(await screen.findByRole("button", { name: "Add filter" }));
     const editor = harness.editor();
-    const operator = within(editor).getByLabelText("Operator");
+
+    // Human field names from the transient definition, not raw IDs.
+    expect(await within(editor).findByText("Occurred")).toBeInTheDocument();
+    expect(within(editor).getByText("Title")).toBeInTheDocument();
+
+    // Add routes through the shared dialog: rows are added, operator and
+    // value edit inside, Apply writes back through the narrow updater.
+    fireEvent.click(within(editor).getByRole("button", { name: "Add filter" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add filter" }));
+    const field = within(dialog).getByLabelText("Filter field 1");
+    fireEvent.change(field, {
+      target: { value: JSON.stringify({ kind: "property", field_id: 101 }) },
+    });
+    const operator = within(dialog).getByLabelText("Operator 1");
     expect(
       within(operator).getAllByRole("option").map((option) =>
         (option as HTMLOptionElement).value
       ),
-    ).toEqual(["equals", "contains", "lt", "lte", "gt", "gte"]);
-
-    fireEvent.change(operator, { target: { value: "gte" } });
-    const value = within(editor).getByLabelText("Value");
-    fireEvent.change(value, { target: { value: "2026-10-01" } });
+    ).toEqual(["equals", "contains"]);
+    fireEvent.change(operator, { target: { value: "contains" } });
+    fireEvent.input(within(dialog).getByLabelText("Value"), {
+      target: { value: "lunch" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(harness.current().sources[1]).toMatchObject({
       kind: "entry_query",
       query: {
-        filters: [{ field_id: 100, operator: "gte", value: "2026-10-01" }],
+        filters: [{ field_id: 101, operator: "contains", value: "lunch" }],
       },
     });
 
-    // Parameter bindings round-trip through the display text instead of
-    // flattening to a plain string on edit.
-    fireEvent.change(value, { target: { value: "{{month}}" } });
+    // Cancel preserves the draft: the dialog edit is discarded on close.
+    fireEvent.click(
+      within(editor).getByRole("button", { name: "Edit" }),
+    );
+    const reopened = await screen.findByRole("dialog");
+    fireEvent.input(within(reopened).getByLabelText("Value"), {
+      target: { value: "dinner" },
+    });
+    fireEvent.click(
+      within(reopened).getByRole("button", { name: "Cancel" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(harness.current().sources[1]).toMatchObject({
       kind: "entry_query",
       query: {
-        filters: [{
-          field_id: 100,
-          operator: "gte",
-          value: { parameter: "month" },
-        }],
+        filters: [{ field_id: 101, operator: "contains", value: "lunch" }],
       },
     });
-    expect((within(editor).getByLabelText("Value") as HTMLInputElement).value)
-      .toBe("{{month}}");
 
     fireEvent.click(within(editor).getByRole("button", { name: "Remove" }));
     expect(harness.current().sources[1]).toMatchObject({
@@ -294,25 +399,77 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
+  it("keeps parameter bindings through the shared dialog round trip", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
+    let draft = createEmptyDraft("Tool");
+    draft = addEntryQuerySource(draft, {
+      ...entrySeed(),
+      query: {
+        filters: [{
+          field_id: 101,
+          operator: "equals",
+          value: { parameter: "month" },
+        }],
+        sort: [],
+        projection: { kind: "preview" as const },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+
+    // The binding renders as display text, never flattened in the row.
+    expect(await within(editor).findByText("Title Equals {{month}}"))
+      .toBeInTheDocument();
+
+    // Applying untouched through the dialog preserves the binding shape.
+    fireEvent.click(
+      within(editor).getByRole("button", { name: "Edit" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(harness.current().sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        filters: [{
+          field_id: 101,
+          operator: "equals",
+          value: { parameter: "month" },
+        }],
+      },
+    });
+  });
+
   it("maps entry-query sort and projection edits onto the draft query", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
     const harness = renderWorkspace(twoSourceDraft());
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     await screen.findByRole("heading", { name: "Expenses" });
-
-    fireEvent.click(await screen.findByRole("button", { name: "Add sort" }));
     const editor = harness.editor();
-    const direction = within(editor).getByLabelText("Sort direction");
+    await within(editor).findByText("Occurred");
+
+    // Sort routes through the shared dialog; Apply writes the draft.
+    fireEvent.click(within(editor).getByRole("button", { name: "Add sort" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add sort" }));
+    const direction = within(dialog).getByLabelText("Sort direction 1");
     expect(
       within(direction).getAllByRole("option").map((option) =>
         (option as HTMLOptionElement).value
       ),
     ).toEqual(["asc", "desc"]);
     fireEvent.change(direction, { target: { value: "desc" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(harness.current().sources[1]).toMatchObject({
       kind: "entry_query",
       query: { sort: [{ field_id: 100, direction: "desc" }] },
     });
 
+    // Projection stays inline: the dialog's column contract is not the
+    // Composition numeric-IDs-only projection.
     fireEvent.click(
       within(editor).getByRole("radio", { name: "Selected fields" }),
     );
@@ -320,6 +477,131 @@ describe("CompositionDataWorkspace", () => {
       kind: "entry_query",
       query: { projection: { kind: "fields", fields: [100, 101] } },
     });
+  });
+
+  it("hides incapable fields behind the shared dialog gating", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
+    const harness = renderWorkspace(twoSourceDraft());
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+    await within(editor).findByText("Occurred");
+
+    // Filter dialog offers only capable fields by human name.
+    fireEvent.click(within(editor).getByRole("button", { name: "Add filter" }));
+    const filterDialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(filterDialog).getByRole("button", { name: "Add filter" }),
+    );
+    expect(
+      within(within(filterDialog).getByLabelText("Filter field 1"))
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["Occurred", "Title"]);
+    fireEvent.click(
+      within(filterDialog).getByRole("button", { name: "Cancel" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // Sort dialog gates the same way.
+    fireEvent.click(within(editor).getByRole("button", { name: "Add sort" }));
+    const sortDialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(sortDialog).getByRole("button", { name: "Add sort" }),
+    );
+    expect(
+      within(within(sortDialog).getByLabelText("Sort field 1"))
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["Occurred", "Title"]);
+    fireEvent.click(within(sortDialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(harness.current().sources[1]).toMatchObject({
+      kind: "entry_query",
+      query: { filters: [], sort: [] },
+    });
+  });
+
+  it("falls back to schema fields without a form definition", async () => {
+    formApiListMock.mockRejectedValue(new Error("denied"));
+    const harness = renderWorkspace(twoSourceDraft());
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+
+    // Explicit error with a retry, while editing never blocks.
+    expect(
+      await within(editor).findByText("Could not load data sources."),
+    ).toBeInTheDocument();
+    expect(
+      within(editor).getByRole("button", { name: "Add filter" }),
+    ).toBeEnabled();
+    // Fallback pills keep the current field-ID rendering.
+    expect(within(editor).getByText("100")).toBeInTheDocument();
+
+    // The dialog still edits through the schema snapshot.
+    fireEvent.click(within(editor).getByRole("button", { name: "Add filter" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add filter" }));
+    expect(
+      within(within(dialog).getByLabelText("Filter field 1"))
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["100", "101"]);
+    fireEvent.input(within(dialog).getByLabelText("Value"), {
+      target: { value: "2026-10-01" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(harness.current().sources[1]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        filters: [{ field_id: 100, operator: "equals", value: "2026-10-01" }],
+      },
+    });
+
+    // Retry recovers names once the definition loads.
+    formApiListMock.mockResolvedValue([expenseForm()]);
+    fireEvent.click(within(editor).getByRole("button", { name: "Retry" }));
+    expect(await within(editor).findByText("Occurred")).toBeInTheDocument();
+  });
+
+  it("disables studio add controls with a reason at zero capable fields", async () => {
+    formApiListMock.mockResolvedValue([incapableForm()]);
+    const harness = renderWorkspace(twoSourceDraft());
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+    await within(editor).findByText("Attachment");
+
+    // Genuinely incapable: disabled Adds carry the reason in name and title.
+    const addFilter = within(editor).getByRole("button", {
+      name: "Add filter: No filterable fields are available for this scope.",
+    });
+    expect(addFilter).toBeDisabled();
+    expect(addFilter).toHaveAttribute(
+      "title",
+      "Add filter: No filterable fields are available for this scope.",
+    );
+    const addSort = within(editor).getByRole("button", {
+      name: "Add sort: No sortable fields are available for this scope.",
+    });
+    expect(addSort).toBeDisabled();
+    expect(addSort).toHaveAttribute(
+      "title",
+      "Add sort: No sortable fields are available for this scope.",
+    );
+    // Zero-clause sections stay prose-free: the reason never renders as text.
+    expect(
+      within(editor).queryByText("No filterable fields are available", {
+        exact: false,
+      }),
+    ).toBeNull();
+    expect(
+      within(editor).queryByText("No sortable fields are available", {
+        exact: false,
+      }),
+    ).toBeNull();
   });
 
   it("renders saved sql read-only with variables and result schema", async () => {
@@ -523,12 +805,17 @@ describe("CompositionDataWorkspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Fieldless" }));
     await screen.findByRole("heading", { name: "Fieldless" });
     const editor = harness.editor();
-    // Genuinely empty fields: the Add buttons disable, still with no prose.
+    // Genuinely empty fields: the Add buttons disable with the reason in
+    // name and title, still with no prose.
     expect(
-      within(editor).getByRole("button", { name: "Add filter" }),
+      within(editor).getByRole("button", {
+        name: "Add filter: No filterable fields are available for this scope.",
+      }),
     ).toBeDisabled();
     expect(
-      within(editor).getByRole("button", { name: "Add sort" }),
+      within(editor).getByRole("button", {
+        name: "Add sort: No sortable fields are available for this scope.",
+      }),
     ).toBeDisabled();
     expect(
       within(editor).queryByText("No filterable fields are available", {
