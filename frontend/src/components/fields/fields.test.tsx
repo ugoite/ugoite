@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -87,6 +87,56 @@ describe("shared FieldInput family", () => {
     expect(amount).toHaveAttribute("type", "text");
     expect(amount).toHaveAttribute("inputmode", "decimal");
     expect(amount).toHaveValue("12.");
+  });
+
+  it("opens the current Markdown draft in a dialog and returns focus on close", async () => {
+    const [draft, setDraft] = createSignal("# First draft");
+    render(() => (
+      <FieldInput
+        field={{ type: "markdown" }}
+        value={draft()}
+        onChange={setDraft}
+        fieldId="markdown-preview"
+        multiline
+      />
+    ));
+
+    const previewButton = screen.getByRole("button", { name: "Preview" });
+    const editor = screen.getByRole("textbox");
+    fireEvent.input(editor, {
+      target: { value: '# Current draft\n\n**bold**\n\n<img src=x onerror="alert(1)">' },
+    });
+    fireEvent.click(previewButton);
+
+    const dialog = screen.getByRole("dialog", { name: "Preview" });
+    expect(within(dialog).getByRole("heading", { name: "Current draft" }))
+      .toBeInTheDocument();
+    expect(within(dialog).getByText("bold").tagName).toBe("STRONG");
+    expect(within(dialog).getByText('<img src=x onerror="alert(1)">'))
+      .toBeInTheDocument();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(editor).toHaveValue(
+      '# Current draft\n\n**bold**\n\n<img src=x onerror="alert(1)">',
+    );
+    await waitFor(() => expect(previewButton).toHaveFocus());
+  });
+
+  it("does not add a preview action to non-Markdown multiline fields", () => {
+    render(() => (
+      <FieldInput
+        field={{ type: "string" }}
+        value="Long string"
+        onChange={vi.fn()}
+        fieldId="multiline-string"
+        multiline
+      />
+    ));
+
+    expect(screen.getByRole("textbox")).toHaveClass("ui-textarea");
+    expect(screen.queryByRole("button", { name: "Preview" }))
+      .not.toBeInTheDocument();
   });
 
   it("renders booleans as a typed checkbox and keeps legacy text readable", () => {

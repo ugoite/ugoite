@@ -3476,3 +3476,42 @@ requirements:
                 criterion: REQ-FE-071#criterion.uuid-generation
                 covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "generates UUID values from the compact field action" } }
+
+  - id: REQ-FE-072
+    title: Markdown Form Field Preview
+    description: Structured Markdown fields expose a safe preview of the current draft without changing editor state.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: preview-dialog
+        kind: behavior
+        statement: Markdown fields provide an icon-only action above the multiline editor that opens a dialog rendering the current draft with the shared safe Markdown renderer; closing the dialog preserves the draft and returns focus to the action.
+        governed_by: [POL-UI-002#rule.governance]
+      - id: markdown-only
+        kind: behavior
+        statement: Non-Markdown multiline fields do not expose the Markdown preview action.
+        governed_by: [POL-UI-002#rule.governance]
+    bindings:
+      - id: markdown-field-preview-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Markdown preview dialog, current draft rendering, safe output, draft preservation, focus return, and field-type scope through exact frontend tests.
+        targets:
+          - id: preview-dialog-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "opens the current Markdown draft in a dialog and returns focus on close" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-072#criterion.preview-dialog
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "opens the current Markdown draft in a dialog and returns focus on close" } }
+          - id: markdown-only-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "does not add a preview action to non-Markdown multiline fields" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-072#criterion.markdown-only
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "does not add a preview action to non-Markdown multiline fields" } }

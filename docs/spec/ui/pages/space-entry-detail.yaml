@@ -43,12 +43,12 @@ components:
       visibility: form-defined-entry
       items:
         - typed-form-fields
-      description: Form fields only. A Form-defined Title or Name renders as a normal field with no Entry-level semantics; a Markdown Form field remains an ordinary multiline field.
+      description: Form fields only. A Form-defined Title or Name renders as a normal field with no Entry-level semantics; a Markdown field stays multiline and adds an icon-only preview dialog.
       field_controls:
         boolean: free-form-text-input
         date: native-date-input
         list: multiline-input
-        markdown: multiline-input
+        markdown: multiline-input-with-icon-preview-dialog
         row_reference: searchable-entry-picker
         string: single-row-autogrowing-textarea
         string_view: preserve-line-breaks

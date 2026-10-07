@@ -1,7 +1,9 @@
-import { createEffect, createSignal, Show } from "solid-js";
+import { createEffect, createSignal, createUniqueId, Show } from "solid-js";
+import { Portal } from "solid-js/web";
 import { ListEditor } from "~/components/ListEditor";
 import { ObjectListEditor } from "~/components/ObjectListEditor";
 import { UiIcon } from "~/components/UiIcon";
+import { handleDialogKeyDown, useDialogFocus } from "~/components/dialog-focus";
 import { RowReferenceSelect } from "~/components/fields/RowReferenceSelect";
 import {
   hasRowReferencePicker,
@@ -17,6 +19,7 @@ import {
   parseNumberItemText,
 } from "~/lib/draft-values";
 import { t } from "~/lib/i18n";
+import { renderMarkdownPreview } from "~/lib/markdown";
 import type { Form } from "~/lib/types";
 
 export interface FieldDefinitionLike {
@@ -88,6 +91,82 @@ export const resolveBooleanCheckbox = (value: unknown): boolean | null => {
   return null;
 };
 
+function MarkdownFieldPreview(props: { value: string }) {
+  const [open, setOpen] = createSignal(false);
+  const titleId = `markdown-field-preview-title-${createUniqueId()}`;
+  let dialog: HTMLDivElement | undefined;
+  let closeButton: HTMLButtonElement | undefined;
+  let previewButton: HTMLButtonElement | undefined;
+
+  const close = () => setOpen(false);
+  const handleKeyDown = (event: KeyboardEvent) =>
+    handleDialogKeyDown(event, dialog, close);
+
+  useDialogFocus(() => open(), {
+    dialog: () => dialog,
+    initialFocus: () => closeButton,
+    returnFocus: () => previewButton,
+    onClose: close,
+  });
+
+  return (
+    <>
+      <div class="flex justify-end">
+        <button
+          ref={previewButton}
+          type="button"
+          class="ui-button ui-button-secondary ui-icon-button"
+          aria-label={t("entryDetail.markdownPreview")}
+          title={t("entryDetail.markdownPreview")}
+          onClick={() => setOpen(true)}
+        >
+          <UiIcon name="preview" />
+        </button>
+      </div>
+      <Portal>
+        <Show when={open()}>
+          <div
+            class="ui-backdrop"
+            role="presentation"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) close();
+            }}
+          >
+            <div
+              ref={dialog}
+              class="ui-dialog ui-markdown-field-preview-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={titleId}
+              onKeyDown={handleKeyDown}
+            >
+              <header class="ui-dialog-header">
+                <h2 id={titleId} class="ui-dialog-title">
+                  {t("entryDetail.markdownPreview")}
+                </h2>
+                <button
+                  ref={closeButton}
+                  type="button"
+                  class="ui-button ui-button-secondary ui-icon-button"
+                  aria-label={t("common.close")}
+                  title={t("common.close")}
+                  onClick={close}
+                >
+                  <UiIcon name="close" />
+                </button>
+              </header>
+              <div
+                class="ui-markdown-field-preview"
+                innerHTML={renderMarkdownPreview(props.value)}
+              />
+            </div>
+          </div>
+        </Show>
+      </Portal>
+    </>
+  );
+}
+
 function ScalarTextInput(props: {
   fieldId: string;
   type: string;
@@ -98,6 +177,7 @@ function ScalarTextInput(props: {
   describedBy?: string;
   placeholder?: string;
   multiline: boolean;
+  markdownPreview?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -118,15 +198,20 @@ function ScalarTextInput(props: {
         />
       }
     >
-      <textarea
-        id={props.fieldId}
-        class="ui-input ui-textarea"
-        value={props.value}
-        aria-invalid={props.invalid ? "true" : undefined}
-        aria-describedby={props.invalid ? props.describedBy : undefined}
-        placeholder={props.placeholder ?? t("entryDetail.fieldPlaceholder")}
-        onInput={(event) => props.onChange(event.currentTarget.value)}
-      />
+      <div class="ui-stack-sm">
+        <Show when={props.markdownPreview}>
+          <MarkdownFieldPreview value={props.value} />
+        </Show>
+        <textarea
+          id={props.fieldId}
+          class="ui-input ui-textarea"
+          value={props.value}
+          aria-invalid={props.invalid ? "true" : undefined}
+          aria-describedby={props.invalid ? props.describedBy : undefined}
+          placeholder={props.placeholder ?? t("entryDetail.fieldPlaceholder")}
+          onInput={(event) => props.onChange(event.currentTarget.value)}
+        />
+      </div>
     </Show>
   );
 }
@@ -663,6 +748,7 @@ export function FieldInput(props: FieldInputProps) {
         describedBy={props.describedBy}
         placeholder={props.placeholder}
         multiline
+        markdownPreview={props.field.type === "markdown"}
         onChange={props.onChange}
       />
     );
@@ -677,6 +763,7 @@ export function FieldInput(props: FieldInputProps) {
       describedBy={props.describedBy}
       placeholder={props.placeholder}
       multiline={props.multiline ?? false}
+      markdownPreview={props.field.type === "markdown"}
       onChange={props.onChange}
     />
   );
