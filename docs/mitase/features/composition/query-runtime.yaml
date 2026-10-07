@@ -1,0 +1,431 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Saved, portable Composition documents
+features:
+- id: FEAT-COMP-002
+  title: Composition source and query resolution
+  summary: Resolve Composition sources and query semantics through the existing EntryQuery, Saved SQL,
+    authorization, preview, layout-order, and metric-validation contracts.
+  status: implemented
+  bindings:
+  - id: entry-query-resolver
+    role: implementation
+    facet: core
+    responsibility: Compile entry_query sources against the current Form and fingerprint only the schema
+      fields used by the existing EntryQuery contract.
+    targets:
+    - id: compile-entry-query-source
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: compile_entry_query_source
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.entry-query-translation
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.used-field-fingerprint
+  - id: entry-query-fingerprint-evidence
+    role: evidence
+    facet: core-tests
+    responsibility: Preserve focused evidence for excluding unrelated schema fields and matching the text-search
+      expansion defined by existing EntryQuery semantics.
+    targets:
+    - id: ignores-unreferenced-fields
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: entry_query_fingerprint_ignores_unreferenced_schema_fields
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.used-field-fingerprint
+    - id: text-search-fields
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: text_search_fingerprints_only_fields_searched_by_entry_query
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.used-field-fingerprint
+    - id: added-searchable-field
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: new_text_search_field_changes_source_schema
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.used-field-fingerprint
+  - id: entry-query-current-authorization-evidence
+    role: evidence
+    facet: iceberg-tests
+    responsibility: Show that a Composition-resolved source request does not grant source access, revocation
+      before the first query page returns no rows, and a continuation after access changes fails closed.
+    targets:
+    - id: source-resolution-and-continuation-current-authorization
+      adapter: rust
+      path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
+      selector:
+        kind: symbol
+        name: source_resolution_and_continuation_recheck_current_authorization
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.current-authorization
+  - id: server-authorization-evidence
+    role: evidence
+    facet: server-tests
+    responsibility: Verify current Registry read authorization for Composition list/get, caller-visible
+      concealment of denied existing Compositions, and source_unavailable concealment for denied or missing
+      source references without exposing source identifiers or metadata.
+    targets:
+    - id: list-with-registry-read-denied
+      adapter: rust
+      path: crates/ugoite-server/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_list_returns_bounded_acl_authorized_summary_pages
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.current-authorization
+    - id: denied-existing-composition-read-concealment
+      adapter: rust
+      path: crates/ugoite-server/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_get_conceals_existing_entry_from_denied_viewer
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.current-authorization
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+    - id: denied-form-source-concealment
+      adapter: rust
+      path: crates/ugoite-server/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_resolve_conceals_missing_and_denied_forms
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.current-authorization
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+    - id: denied-saved-sql-source-concealment
+      adapter: rust
+      path: crates/ugoite-server/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_resolve_requires_exact_saved_sql_revision_and_conceals_denial
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.current-authorization
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+  - id: field-level-source-diagnostics-authorization-evidence
+    role: evidence
+    facet: core-tests
+    responsibility: Verify field-level source diagnostics require an authorized Form read, denied reads
+      collapse to source_unavailable without source/component/section names or Form/Field identifiers,
+      and an authorized changed Form returns field_type_changed.
+    targets:
+    - id: field-level-diagnostic-disclosure
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: field_level_diagnostics_require_an_authorized_source_form_read
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+  - id: saved-sql-resolver
+    role: implementation
+    facet: core
+    responsibility: Compile Saved SQL sources through the exact current revision descriptor and fingerprint
+      the ordered output contract, used variables, and selected metric columns.
+    targets:
+    - id: compile-exact-saved-sql-source
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: compile_saved_sql_source
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+    - id: fingerprint-resolved-saved-sql-source
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: compile_saved_sql_source_with_metric_columns
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+  - id: saved-sql-resolver-evidence
+    role: evidence
+    facet: core-tests
+    responsibility: Verify exact stateless SQL request compilation, rejection of a missing or mismatched
+      current revision descriptor, and deterministic fingerprint inputs including metric selection.
+    targets:
+    - id: exact-stateless-sql-request
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: saved_sql_source_compiles_to_the_exact_stateless_sql_request
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+    - id: missing-or-mismatched-exact-revision
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: saved_sql_source_requires_the_exact_current_revision_descriptor
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+    - id: used-variable-schema-fingerprint
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: saved_sql_schema_fingerprint_tracks_variable_types_deterministically
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+    - id: ordered-result-descriptor-fingerprint
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: saved_sql_schema_fingerprint_tracks_ordered_result_descriptors
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+    - id: selected-metric-column-fingerprint
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: saved_sql_result_fingerprint_tracks_selected_metric_column
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+  - id: layout-order-resolver
+    role: implementation
+    facet: core
+    responsibility: Emit layout-ordered component bindings including sourceless text bindings through
+      the shared saved-revision and draft-preview plan core without adding source requests.
+    targets:
+    - id: shared-plan-core
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: resolve_composition_parts
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.draft-preview
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.used-field-fingerprint
+    - id: layout-component-bindings
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: resolve_component_bindings
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.draft-preview
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.used-field-fingerprint
+  - id: layout-order-resolver-evidence
+    role: evidence
+    facet: core-tests
+    responsibility: Verify layout render order with interleaved text and parameter items, sourceless text
+      bindings, query-stable layout edits, semantic parameter values for placed controls, and saved-revision
+      and draft-preview parity.
+    targets:
+    - id: text-bindings-without-source-requests
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: text_components_emit_layout_ordered_bindings_without_source_requests
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
+    - id: interleaved-layout-order
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: layout_order_interleaves_text_and_parameter_items_across_rows
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: layout-edits-preserve-source-requests
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: layout_only_additions_leave_source_requests_unchanged
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.used-field-fingerprint
+    - id: parameter-controls-use-semantic-values
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: parameter_items_resolve_through_semantic_parameter_values
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: layout-order-preview-parity
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: preview_resolves_through_the_same_semantics_without_revision_identity
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.draft-preview
+  - id: layout-order-service-evidence
+    role: evidence
+    facet: iceberg-tests
+    responsibility: Verify draft preview exposes semantic parameter definitions with layout-placed controls
+      first in layout row and item order.
+    targets:
+    - id: preview-placed-parameter-order
+      adapter: rust
+      path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+      selector:
+        kind: test
+        name: preview_exposes_placed_parameters_in_layout_order
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.draft-preview
+  - id: preview-resolver
+    role: implementation
+    facet: core
+    responsibility: Resolve unsaved candidate documents through the same plan-building core as saved revisions,
+      keyed by draft fingerprint instead of a revision reference.
+    targets:
+    - id: resolve-composition-preview
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: resolve_composition_preview
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.draft-preview
+  - id: preview-service
+    role: evidence
+    facet: service
+    responsibility: Preview candidate YAML against current source descriptors through the caller's authorization
+      boundary without creating registry, history, or publication state.
+    targets:
+    - id: preview-composition-outcome
+      adapter: rust
+      path: crates/ugoite-iceberg/src/service.rs
+      selector:
+        kind: symbol
+        name: CompositionPreview
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.draft-preview
+  - id: preview-backend
+    role: evidence
+    facet: backend
+    responsibility: Serve the side-effect-free preview operation over the authorized service preview with
+      the existing space-read permission boundary.
+    targets:
+    - id: preview-composition-handler
+      adapter: rust
+      path: crates/ugoite-server/src/lib.rs
+      selector:
+        kind: symbol
+        name: preview_composition_handler
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.draft-preview
+  - id: metric-page-validation
+    role: implementation
+    facet: core
+    responsibility: Bind metrics to typed source fields or result columns and validate an already-authorized
+      complete query page through the shared Domain evaluator.
+    targets:
+    - id: entry-metric-page-adapter
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: evaluate_entry_metric_page
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.metric-runtime-values
+    - id: saved-sql-metric-page-adapter
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: evaluate_saved_sql_metric_page
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.metric-runtime-values
+  - id: metric-page-validation-evidence
+    role: evidence
+    facet: core-tests
+    responsibility: Verify scalar descriptor checks and exact one-row, complete-page validation for EntryQuery
+      and Saved SQL metric results.
+    targets:
+    - id: sql-metric-column-before-revision-lookup
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: saved_sql_metric_selector_requires_one_declared_scalar_column_before_revision_lookup
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.saved-sql-result-descriptor
+    - id: entry-metric-current-field-type
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: entry_metric_rejects_a_current_non_scalar_form_field
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field
+    - id: entry-metric-complete-scalar-page
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: entry_metric_page_adapter_checks_one_complete_scalar_row
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: saved-sql-metric-alias-and-scalar-page
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: saved_sql_metric_page_adapter_checks_exact_alias_and_scalar_shape
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.saved-sql-result-descriptor
+    - id: metric-page-binding-kind
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: metric_page_adapter_rejects_wrong_binding_kind
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field

@@ -31,7 +31,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-001#criterion.one-entry-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-route
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "surfaces a stale base conflict without leaving the route" } }
           - id: restore-append-case
             adapter: typescript
@@ -41,7 +41,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-001#criterion.one-entry-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-restore
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-restore
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "restores a historical revision with source base and a stable retry key" } }
           - id: restore-stale-base-case
             adapter: typescript
@@ -51,7 +51,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-001#criterion.one-entry-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-restore
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-restore
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "surfaces a stale base conflict with a recovery link to history" } }
   - id: REQ-COMP-002
     title: Restricted portable Composition format
@@ -289,7 +289,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-dashboard-flow-renderer
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-dashboard-flow-renderer
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "renders rows in order with parameter controls interleaved" } }
           - id: flow-parameter-control-case
             adapter: typescript
@@ -299,7 +299,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-parameter-control
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-parameter-control
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "binds parameter changes to transient work state" } }
           - id: flow-text-style-case
             adapter: typescript
@@ -309,7 +309,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.text-style-enum
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-flow-text
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-flow-text
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "renders each text style without fetching sources" } }
           - id: renderer-text-binding-case
             adapter: typescript
@@ -319,7 +319,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.text-style-enum
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-renderer
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-renderer
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "renders text bindings from joined declarations without source requests" } }
       - id: design-canvas-verification
         role: verification
@@ -334,7 +334,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "selects canvas blocks without touching the draft" } }
           - id: design-canvas-text-insertion-case
             adapter: typescript
@@ -344,12 +344,12 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "inserts text blocks declared and placed exactly once" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.text-style-enum
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "inserts text blocks declared and placed exactly once" } }
           - id: design-canvas-parameter-placement-case
             adapter: typescript
@@ -359,7 +359,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "places existing parameter controls without creating parameters" } }
           - id: design-canvas-reorder-case
             adapter: typescript
@@ -369,7 +369,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "reorders rows and items with keyboard-operable buttons" } }
           - id: design-canvas-remove-case
             adapter: typescript
@@ -379,12 +379,12 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "removes component declarations and unplaces parameter controls" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "removes component declarations and unplaces parameter controls" } }
           - id: design-canvas-no-refetch-case
             adapter: typescript
@@ -394,7 +394,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.used-field-fingerprint
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "routes block operations through the draft channel without extra queries" } }
           - id: design-canvas-draft-moves-case
             adapter: typescript
@@ -404,7 +404,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "reorders rows and items within rows only" } }
           - id: design-canvas-draft-query-stable-case
             adapter: typescript
@@ -414,7 +414,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.used-field-fingerprint
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "keeps layout-only edits query-stable without refetching sources" } }
       - id: studio-seed-readiness-verification
         role: verification
@@ -429,7 +429,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds a form entry point with an entry-query source and a default table" } }
           - id: studio-saved-sql-seed-case
             adapter: typescript
@@ -439,12 +439,12 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds a saved sql entry point with mapped variables and placed controls" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds a saved sql entry point with mapped variables and placed controls" } }
           - id: studio-seed-without-variables-case
             adapter: typescript
@@ -454,7 +454,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "seeds saved sql without variables with a table and no parameter controls" } }
           - id: studio-seed-form-route-case
             adapter: typescript
@@ -464,7 +464,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from an entry query seed with a default table" } }
           - id: studio-seed-sql-route-case
             adapter: typescript
@@ -474,7 +474,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-seed
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls" } }
           - id: studio-readiness-matrix-case
             adapter: typescript
@@ -484,17 +484,17 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.empty-layout-rejected
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-save-readiness
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-save-readiness
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "blocks saves until the name, refs, and layout are all ready" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-save-readiness
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-save-readiness
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "blocks saves until the name, refs, and layout are all ready" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-save-readiness
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-save-readiness
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "blocks saves until the name, refs, and layout are all ready" } }
           - id: studio-source-only-route-case
             adapter: typescript
@@ -504,7 +504,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.empty-layout-rejected
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-save-readiness
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-save-readiness
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "blocks a source-only save with an accessible reason and no save call" } }
           - id: studio-canvas-operations-route-case
             adapter: typescript
@@ -514,7 +514,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "adds canvas blocks with label, reorder, and remove through canvas and inspector" } }
       - id: inspector-verification
         role: verification
@@ -529,7 +529,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.text-style-enum
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-inspector
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "binds text content and style edits without touching sources" } }
           - id: inspector-parameter-retarget-case
             adapter: typescript
@@ -539,7 +539,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-inspector
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "changes parameter placement targets without a label override" } }
           - id: inspector-draft-text-edits-case
             adapter: typescript
@@ -549,7 +549,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.text-style-enum
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-inspector
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "edits text content and style with a fixed enum" } }
           - id: inspector-draft-parameter-retarget-case
             adapter: typescript
@@ -559,7 +559,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-inspector
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "retargets parameter controls in place without touching declarations" } }
       - id: edit-round-trip-verification
         role: verification
@@ -574,7 +574,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "loads entry_query sources whose canonical query omits empty filters and sort" } }
           - id: edit-round-trip-multi-row-case
             adapter: typescript
@@ -584,17 +584,17 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and parameter placement" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.text-style-enum
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and parameter placement" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and parameter placement" } }
           - id: edit-round-trip-unknown-kinds-case
             adapter: typescript
@@ -604,17 +604,17 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and value-field kinds instead of approximating" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.text-style-enum
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and value-field kinds instead of approximating" } }
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and value-field kinds instead of approximating" } }
       - id: metric-value-verification
         role: verification
@@ -654,7 +654,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.metric-runtime-values
                 covers:
-                  - FEAT-COMP-001#binding.metric-page-validation/target.entry-metric-page-adapter
+                  - FEAT-COMP-002#binding.metric-page-validation/target.entry-metric-page-adapter
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::entry_metric_page_adapter_checks_one_complete_scalar_row } }
           - id: saved-sql-case
             adapter: rust
@@ -664,7 +664,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.metric-runtime-values
                 covers:
-                  - FEAT-COMP-001#binding.metric-page-validation/target.saved-sql-metric-page-adapter
+                  - FEAT-COMP-002#binding.metric-page-validation/target.saved-sql-metric-page-adapter
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_metric_page_adapter_checks_exact_alias_and_scalar_shape } }
       - id: browser-metric-verification
         role: verification
@@ -679,7 +679,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.metric-runtime-values
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-shared-metric-evaluator
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-shared-metric-evaluator
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/ugoite-client/protocol.test.ts, test: adapts metric protocol envelopes to scalar and diagnostic results } }
           - id: renderer-case
             adapter: typescript
@@ -689,7 +689,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.metric-runtime-values
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-renderer
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-renderer
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: renders section order and displays the shared WASM metric result } }
     criteria:
       - id: typed-dashboard-model

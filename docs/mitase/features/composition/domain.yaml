@@ -1,0 +1,773 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Saved, portable Composition documents
+features:
+- id: FEAT-COMP-001
+  title: Composition Knowledge and semantic contract
+  summary: Define restricted, portable Composition documents as Space-owned Knowledge with shared Rust
+    semantics and bounded execution through existing query contracts. Browser evidence for the localized
+    save-diagnostic matrix is not bound because its cases are parameterized cases the spec inventory cannot
+    address.
+  status: implemented
+  bindings:
+  - id: contract
+    role: contract-source
+    facet: domain
+    responsibility: Define the Composition v1 document, semantic authority, recovery boundary, and transient
+      Work boundary without claiming the planned persistence or UI behavior is already implemented.
+    targets:
+    - id: composition-contract
+      adapter: declared
+      path: docs/architecture/contracts/composition.md
+      selector:
+        kind: file
+      claims:
+      - kind: documents
+        anchor: REQ-COMP-001#criterion.space-authority
+      - kind: documents
+        anchor: REQ-COMP-002#criterion.typed-dashboard-model
+      - kind: documents
+        anchor: REQ-COMP-002#criterion.composition-tags
+      - kind: documents
+        anchor: REQ-COMP-002#criterion.saved-sql-result-descriptor
+      - kind: documents
+        anchor: REQ-COMP-002#criterion.optional-display-labels
+      - kind: documents
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field
+      - kind: documents
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+      - kind: documents
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: documents
+        anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+      - kind: documents
+        anchor: REQ-COMP-003#criterion.canonical-yaml
+      - kind: documents
+        anchor: REQ-COMP-003#criterion.semantic-fingerprint
+      - kind: documents
+        anchor: REQ-COMP-003#criterion.wasm-parity
+      - kind: documents
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: documents
+        anchor: REQ-COMP-004#criterion.used-field-fingerprint
+      - kind: documents
+        anchor: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+      - kind: documents
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+      - kind: documents
+        anchor: REQ-COMP-004#criterion.draft-preview
+      - kind: documents
+        anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+      - kind: documents
+        anchor: REQ-COMP-005#criterion.raw-inspection
+      - kind: documents
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: monthly-expense-fixture
+      adapter: declared
+      path: crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml
+      selector:
+        kind: file
+    - id: monthly-expense-labeled-fixture
+      adapter: declared
+      path: crates/ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml
+      selector:
+        kind: file
+    - id: metric-value-fields-fixture
+      adapter: declared
+      path: crates/ugoite-domain/tests/fixtures/composition/metric-value-fields.ugcomp.yaml
+      selector:
+        kind: file
+  - id: portable-envelope-domain
+    role: implementation
+    facet: domain
+    responsibility: Represent the fixed Composition envelope, Entry tags, and ordered Saved SQL result
+      descriptors as typed Rust values.
+    targets:
+    - id: composition-document-type
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: CompositionDocument
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.typed-dashboard-model
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.composition-tags
+    - id: composition-format-marker-type
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: CompositionFormat
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.typed-dashboard-model
+    - id: saved-sql-result-column-type
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: CompositionResultColumn
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.saved-sql-result-descriptor
+    - id: saved-sql-result-field-types
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: CompositionResultFieldType
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.saved-sql-result-descriptor
+  - id: portable-envelope-domain-evidence
+    role: evidence
+    facet: domain-tests
+    responsibility: Verify the fixed envelope field names in the shared Rust contract and pin the byte,
+      nesting-depth, and collection parser limits through the frozen v1 contract test; ordered descriptors,
+      restricted YAML rejection, fingerprint inputs, and runtime enforcement across native and WASM are
+      evidenced by portable-envelope-wasm-parity.
+    targets:
+    - id: portable-envelope-fields
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: document_uses_the_portable_envelope_field_names
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-dashboard-model
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.composition-tags
+    - id: bounded-envelope-collections
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: composition_v1_freeze_pins_portable_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.bounded-parser
+    - id: bounded-envelope-input-bytes
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: composition_v1_freeze_pins_portable_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.bounded-parser
+    - id: bounded-envelope-nesting-depth
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: composition_v1_freeze_pins_portable_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.bounded-parser
+  - id: composition-tag-storage-evidence
+    role: evidence
+    facet: iceberg-tests
+    responsibility: Verify that document tags round-trip as the same ordered Entry metadata tags on a
+      saved Composition revision.
+    targets:
+    - id: composition-tag-entry-identity
+      adapter: rust
+      path: crates/ugoite-iceberg/tests/test_composition.rs
+      selector:
+        kind: symbol
+        name: composition_save_persists_canonical_carrier_and_receipt
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.composition-tags
+  - id: portable-envelope-wasm-parity
+    role: evidence
+    facet: wasm-tests
+    responsibility: Keep the fixed marker, tags, ordered result descriptors, canonical bytes, fingerprint,
+      unknown-field rejection, diagnostics, and parser resource limits aligned between native Rust and
+      WASM.
+    targets:
+    - id: ordered-result-descriptor-validation
+      adapter: rust
+      path: crates/ugoite-wasm/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_canonicalization_matches_the_native_domain_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.saved-sql-result-descriptor
+    - id: restricted-envelope-yaml
+      adapter: rust
+      path: crates/ugoite-wasm/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_canonicalization_matches_the_native_domain_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.restricted-yaml
+    - id: envelope-fingerprint-inputs
+      adapter: rust
+      path: crates/ugoite-wasm/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_canonicalization_matches_the_native_domain_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-003#criterion.semantic-fingerprint
+    - id: native-envelope-parity
+      adapter: rust
+      path: crates/ugoite-wasm/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_canonicalization_matches_the_native_domain_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.composition-tags
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.saved-sql-result-descriptor
+      - kind: evidences
+        anchor: REQ-COMP-003#criterion.wasm-parity
+    - id: wasm32-envelope-parity
+      adapter: typescript
+      path: crates/ugoite-wasm/tests/composition_parity.ts
+      selector:
+        kind: symbol
+        name: main
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.composition-tags
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.saved-sql-result-descriptor
+      - kind: evidences
+        anchor: REQ-COMP-003#criterion.wasm-parity
+    - id: wasm32-bounded-parser-runtime
+      adapter: typescript
+      path: crates/ugoite-wasm/tests/composition_parity.ts
+      selector:
+        kind: symbol
+        name: main
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.bounded-parser
+  - id: display-label-domain
+    role: implementation
+    facet: domain
+    responsibility: Represent optional Composition display labels without changing stable IDs or source
+      and query binding semantics.
+    targets:
+    - id: parameter-display-label
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: CompositionParameter
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.optional-display-labels
+    - id: component-display-label
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: CompositionComponent
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.optional-display-labels
+  - id: display-label-domain-tests
+    role: evidence
+    facet: domain-tests
+    responsibility: Prove labeled and unlabeled documents canonicalize to identical bytes and fingerprints
+      across native Rust and WASM; exact golden-byte pinning lives in focused domain unit tests inside
+      private submodules that the spec inventory cannot address and is not bound here.
+    targets:
+    - id: labeled-canonical-golden
+      adapter: rust
+      path: crates/ugoite-wasm/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_canonicalization_matches_the_native_domain_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.optional-display-labels
+      - kind: evidences
+        anchor: REQ-COMP-003#criterion.semantic-fingerprint
+    - id: unlabeled-canonical-golden
+      adapter: rust
+      path: crates/ugoite-wasm/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_canonicalization_matches_the_native_domain_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.optional-display-labels
+      - kind: evidences
+        anchor: REQ-COMP-003#criterion.canonical-yaml
+    - id: wasm-label-parity
+      adapter: rust
+      path: crates/ugoite-wasm/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_canonicalization_matches_the_native_domain_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.optional-display-labels
+      - kind: evidences
+        anchor: REQ-COMP-003#criterion.wasm-parity
+    - id: wasm32-label-parity
+      adapter: typescript
+      path: crates/ugoite-wasm/tests/composition_parity.ts
+      selector:
+        kind: symbol
+        name: main
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.optional-display-labels
+      - kind: evidences
+        anchor: REQ-COMP-003#criterion.wasm-parity
+  - id: metric-value-field-domain
+    role: implementation
+    facet: domain
+    responsibility: Model EntryQuery metric properties by stable FieldId and Saved SQL metric output by
+      exact column name.
+    targets:
+    - id: metric-value-field-type
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: CompositionMetricValueField
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.typed-metric-value-field
+  - id: metric-runtime-value-domain
+    role: implementation
+    facet: domain
+    responsibility: Validate selected date and timestamp metric values with the shared Rust domain semantics.
+    targets:
+    - id: metric-runtime-value-validator
+      adapter: rust
+      path: crates/ugoite-domain/src/composition_metric.rs
+      selector:
+        kind: symbol
+        name: evaluate_composition_metric_page
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.metric-runtime-values
+  - id: metric-runtime-value-evidence
+    role: evidence
+    facet: domain-tests
+    responsibility: Verify accepted normalized date/time values and stable rejection of invalid calendar,
+      clock, precision, and offset forms.
+    targets:
+    - id: accepted-metric-date-time-values
+      adapter: rust
+      path: crates/ugoite-domain/src/composition_metric.rs
+      selector:
+        kind: symbol
+        name: accepts_normalized_composition_metric_dates_and_timestamps
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: rejected-metric-date-time-values
+      adapter: rust
+      path: crates/ugoite-domain/src/composition_metric.rs
+      selector:
+        kind: symbol
+        name: rejects_malformed_or_non_normalized_composition_metric_dates_and_timestamps
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+  - id: metric-value-field-contract-evidence
+    role: evidence
+    facet: domain-tests
+    responsibility: Verify typed metric references canonicalize and retain distinct stable identities
+      through native and WASM execution.
+    targets:
+    - id: metric-value-fields-canonical-golden
+      adapter: rust
+      path: crates/ugoite-wasm/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_canonicalization_matches_the_native_domain_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field
+    - id: invalid-metric-value-field-shapes
+      adapter: rust
+      path: crates/ugoite-wasm/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_canonicalization_matches_the_native_domain_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field
+    - id: wasm-metric-value-field-parity
+      adapter: rust
+      path: crates/ugoite-wasm/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_canonicalization_matches_the_native_domain_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field
+      - kind: evidences
+        anchor: REQ-COMP-003#criterion.wasm-parity
+    - id: wasm32-metric-value-field-parity
+      adapter: typescript
+      path: crates/ugoite-wasm/tests/composition_parity.ts
+      selector:
+        kind: symbol
+        name: main
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field
+      - kind: evidences
+        anchor: REQ-COMP-003#criterion.wasm-parity
+  - id: component-layout-domain
+    role: implementation
+    facet: domain
+    responsibility: Expose flow-layout row and item placement with text components and parameter controls,
+      and reject incomplete or ambiguous component layouts during canonicalization.
+    targets:
+    - id: ordered-components
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: components_in_render_order
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
+    - id: canonical-layout-validation
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: canonicalize_composition
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.empty-layout-rejected
+    - id: flow-layout
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: DashboardFlowLayout
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.empty-layout-rejected
+    - id: flow-row
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: FlowRow
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.empty-layout-rejected
+    - id: flow-item
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: FlowItem
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
+    - id: text-style
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: TextStyle
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.text-style-enum
+    - id: ordered-parameters
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: parameters_in_placement_order
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
+  - id: component-layout-domain-tests
+    role: evidence
+    facet: domain-tests
+    responsibility: Exercise layout row and item ordering, complete and unique component and parameter
+      references, required-parameter control placement, the text style enum, rejection of empty layouts
+      and rows, canonical rejection of invalid layouts, and native/WASM diagnostic parity.
+    targets:
+    - id: layout-reference-order
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: components_follow_layout_row_and_item_order
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: empty-layout
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: empty_layout_is_rejected
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.empty-layout-rejected
+    - id: empty-row
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: empty_rows_are_rejected
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.empty-layout-rejected
+    - id: duplicate-row-id
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: duplicate_row_ids_are_rejected
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: duplicate-component-id
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: duplicate_component_ids_are_invalid
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: duplicate-component-reference
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: duplicate_component_references_are_invalid
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: unknown-component-reference
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: unknown_component_references_are_invalid
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: unreferenced-component
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: unreferenced_components_are_invalid
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: unknown-parameter-reference
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: unknown_parameter_references_are_invalid
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: duplicate-parameter-placement
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: duplicate_parameter_placements_are_invalid
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: required-parameter-control
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: required_parameter_without_default_needs_a_layout_control
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: placed-parameter-order
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: placed_parameters_come_first_in_layout_order
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: invalid-parameter-placement-order
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: unknown_and_duplicate_parameter_placements_have_no_order
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: text-style-enum
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: text_style_enum_values_round_trip
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
+    - id: unknown-text-style-and-layout-kind
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: unknown_text_styles_and_layout_kinds_are_rejected
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
+    - id: canonical-invalid-layout
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: unreferenced_components_are_invalid
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: wasm-invalid-layout-parity
+      adapter: rust
+      path: crates/ugoite-wasm/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_canonicalization_matches_the_native_domain_contract
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: wasm32-invalid-layout-parity
+      adapter: typescript
+      path: crates/ugoite-wasm/tests/composition_parity.ts
+      selector:
+        kind: symbol
+        name: main
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+  contracts:
+  - id: metric-runtime-values
+    kind: custom
+    source: FEAT-COMP-001#binding.contract/target.composition-contract
+    participants:
+    - target: FEAT-COMP-001#binding.metric-runtime-value-domain/target.metric-runtime-value-validator
+      role: implementation
+    - target: FEAT-COMP-002#binding.metric-page-validation/target.entry-metric-page-adapter
+      role: implementation
+    - target: FEAT-COMP-002#binding.metric-page-validation/target.saved-sql-metric-page-adapter
+      role: implementation
+    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-shared-metric-evaluator
+      role: client
+    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-renderer
+      role: client
+    guarantees:
+    - REQ-COMP-002#criterion.metric-runtime-values
+  - id: ordered-component-layout
+    kind: custom
+    source: FEAT-COMP-001#binding.contract/target.composition-contract
+    participants:
+    - target: FEAT-COMP-001#binding.component-layout-domain/target.ordered-components
+      role: implementation
+    - target: FEAT-COMP-001#binding.component-layout-domain/target.flow-layout
+      role: implementation
+    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-dashboard-flow-renderer
+      role: client
+    - target: FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+      role: client
+    - target: FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
+      role: implementation
+    - target: FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-round-trip
+      role: implementation
+    guarantees:
+    - REQ-COMP-002#criterion.ordered-component-layout
+  - id: parameter-placement
+    kind: custom
+    source: FEAT-COMP-001#binding.contract/target.composition-contract
+    participants:
+    - target: FEAT-COMP-001#binding.component-layout-domain/target.flow-item
+      role: implementation
+    - target: FEAT-COMP-001#binding.component-layout-domain/target.ordered-parameters
+      role: implementation
+    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-parameter-control
+      role: client
+    - target: FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+      role: client
+    guarantees:
+    - REQ-COMP-002#criterion.parameter-placement
+  - id: text-style-enum
+    kind: custom
+    source: FEAT-COMP-001#binding.contract/target.composition-contract
+    participants:
+    - target: FEAT-COMP-001#binding.component-layout-domain/target.text-style
+      role: implementation
+    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-flow-text
+      role: client
+    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-renderer
+      role: client
+    - target: FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+      role: client
+    guarantees:
+    - REQ-COMP-002#criterion.text-style-enum
+  - id: used-field-fingerprint
+    kind: custom
+    source: FEAT-COMP-001#binding.contract/target.composition-contract
+    participants:
+    - target: FEAT-COMP-002#binding.entry-query-resolver/target.compile-entry-query-source
+      role: implementation
+    - target: FEAT-COMP-002#binding.layout-order-resolver/target.shared-plan-core
+      role: implementation
+    - target: FEAT-COMP-002#binding.layout-order-resolver/target.layout-component-bindings
+      role: implementation
+    - target: FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
+      role: client
+    guarantees:
+    - REQ-COMP-004#criterion.used-field-fingerprint
+  - id: entry-query-translation
+    kind: custom
+    source: FEAT-COMP-001#binding.contract/target.composition-contract
+    participants:
+    - target: FEAT-COMP-002#binding.entry-query-resolver/target.compile-entry-query-source
+      role: implementation
+    - target: FEAT-COMP-006#binding.studio-data-runtime/target.browser-entry-query-editor
+      role: client
+    guarantees:
+    - REQ-COMP-004#criterion.entry-query-translation
+  - id: exact-saved-sql-revision
+    kind: custom
+    source: FEAT-COMP-001#binding.contract/target.composition-contract
+    participants:
+    - target: FEAT-COMP-002#binding.saved-sql-resolver/target.compile-exact-saved-sql-source
+      role: implementation
+    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-saved-sql-viewer
+      role: client
+    - target: FEAT-COMP-006#binding.studio-data-runtime/target.browser-studio-seed
+      role: implementation
+    guarantees:
+    - REQ-COMP-004#criterion.exact-saved-sql-revision

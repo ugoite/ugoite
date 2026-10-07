@@ -1,0 +1,173 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Saved, portable Composition documents
+features:
+- id: FEAT-COMP-007
+  title: Composition Browser revision lifecycle
+  summary: Edit exact Composition revisions and inspect append-only history; restore historical revisions
+    as new revisions with stale-base conflicts surfaced.
+  status: implemented
+  bindings:
+  - id: composition-revision-lifecycle
+    role: implementation
+    facet: frontend
+    responsibility: Implement exact Composition revision editing, history, and append-only restore routes
+      using exact base revision identity.
+    targets:
+    - id: browser-edit-round-trip
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.ts
+      selector:
+        kind: symbol
+        name: draftFromDocument
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.text-style-enum
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-edit-route
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.tsx
+      selector:
+        kind: file
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.exact-composition-revision
+      - kind: satisfies
+        criterion: REQ-COMP-001#criterion.one-entry-revision
+    - id: browser-history-route
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx
+      selector:
+        kind: file
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-005#criterion.history-available
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-restore
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
+      selector:
+        kind: file
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-001#criterion.one-entry-revision
+  - id: composition-revision-lifecycle-evidence
+    role: evidence
+    facet: frontend-tests
+    responsibility: Verify exact revision editing and round trips, append-only history, and restore behavior
+      with stale-base conflicts.
+    targets:
+    - id: browser-edit-round-trip-multi-row
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: restores multi-row layout order with text and parameter placement
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-edit-round-trip-unknown-kinds
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: refuses unknown future component, layout, and value-field kinds instead of approximating
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-edit-route-load
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+      selector:
+        kind: test
+        name: loads the exact revision through get and lint with a prefilled studio
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-edit-route-save
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+      selector:
+        kind: test
+        name: saves an update with base revision identity and a stable retry key
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-edit-route-stale-base
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+      selector:
+        kind: test
+        name: surfaces a stale base conflict without leaving the route
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-001#criterion.one-entry-revision
+    - id: browser-edit-route-restore-continuity
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+      selector:
+        kind: test
+        name: reopens a restored multi-row revision for continued editing
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-history-route-list
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx
+      selector:
+        kind: test
+        name: lists revisions with human labels and opens the exact revision
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.history-available
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-history-route-pages
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx
+      selector:
+        kind: test
+        name: marks the current revision and pages through history
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.history-available
+    - id: browser-history-route-retry
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx
+      selector:
+        kind: test
+        name: shows a retry control when history fails to load
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.history-available
+    - id: browser-restore-append
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+      selector:
+        kind: test
+        name: restores a historical revision with source base and a stable retry key
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-001#criterion.one-entry-revision
+    - id: browser-restore-stale-base
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+      selector:
+        kind: test
+        name: surfaces a stale base conflict with a recovery link to history
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-001#criterion.one-entry-revision

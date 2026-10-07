@@ -1,0 +1,271 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Saved, portable Composition documents
+features:
+- id: FEAT-COMP-003
+  title: Composition CLI lifecycle
+  summary: Support Composition inspection, export, import, save, and restore through the CLI while preserving
+    exact revision selection and portable raw data.
+  status: planned
+  bindings:
+  - id: cli-raw-inspection-source-evidence
+    role: evidence
+    facet: cli
+    responsibility: Show the CLI read and raw-output paths as partial evidence for inspection behavior;
+      these source bindings do not establish export or history behavior.
+    targets:
+    - id: inspect-command
+      adapter: rust
+      path: crates/ugoite-cli/src/commands/composition.rs
+      selector:
+        kind: symbol
+        name: run
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.raw-inspection
+    - id: inspect-read-path
+      adapter: rust
+      path: crates/ugoite-cli/src/commands/composition.rs
+      selector:
+        kind: symbol
+        name: read_composition
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.raw-inspection
+    - id: inspect-raw-output
+      adapter: rust
+      path: crates/ugoite-cli/src/commands/composition.rs
+      selector:
+        kind: symbol
+        name: raw_spec_output
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.raw-inspection
+  - id: cli-raw-inspection-evidence
+    role: evidence
+    facet: cli-tests
+    responsibility: Preserve focused CLI evidence for raw-read projection, raw-carrier output, and exact
+      revision selection, including the no-fallback case. These selectors cover inspection behavior only;
+      they do not establish export or history evidence.
+    targets:
+    - id: portable-read-projection
+      adapter: rust
+      path: crates/ugoite-cli/src/commands/composition.rs
+      selector:
+        kind: symbol
+        name: local_raw_projection_matches_the_portable_composition_read_dto
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.raw-inspection
+    - id: raw-carrier-output
+      adapter: rust
+      path: crates/ugoite-cli/src/commands/composition.rs
+      selector:
+        kind: symbol
+        name: raw_spec_output_preserves_strings_and_represents_non_string_carriers
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.raw-inspection
+    - id: exact-revision-selection
+      adapter: rust
+      path: crates/ugoite-cli/src/commands/composition.rs
+      selector:
+        kind: symbol
+        name: inspect_selects_only_the_requested_composition_revision
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.raw-inspection
+    - id: missing-revision-no-fallback
+      adapter: rust
+      path: crates/ugoite-cli/src/commands/composition.rs
+      selector:
+        kind: symbol
+        name: inspect_missing_exact_revision_does_not_fall_back_to_latest
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.raw-inspection
+    - id: inspect-cli-arguments
+      adapter: rust
+      path: crates/ugoite-cli/src/main.rs
+      selector:
+        kind: symbol
+        name: composition_inspect_accepts_exact_revision_and_raw_output_without_becoming_a_write
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.raw-inspection
+  - id: cli-raw-export-evidence
+    role: evidence
+    facet: cli-tests
+    responsibility: Verify that remote export selects the requested exact revision and preserves unsupported-format
+      YAML byte for byte without blocking on interpretation; broken-reference export and history access
+      are covered separately by cli-broken-reference-evidence.
+    targets:
+    - id: remote-export-preserves-unknown-format-yaml
+      adapter: rust
+      path: crates/ugoite-cli/src/commands/composition.rs
+      selector:
+        kind: symbol
+        name: export_remote_selects_exact_revision_and_preserves_unknown_format_yaml
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.raw-inspection
+  - id: cli-core-remote-read-parity-evidence
+    role: evidence
+    facet: cli-tests
+    responsibility: Verify Core and Remote CLI inspect, parameterized entry_query, and raw export results
+      against one filesystem-backed Space, including byte-identical canonical output and unchanged history.
+      The journey publishes a distinct later revision and exercises the older exact revision throughout,
+      proving --revision selection is not latest by coincidence; saved-SQL execution remains covered by
+      the Browser journey.
+    targets:
+    - id: core-remote-read-parity
+      adapter: rust
+      path: crates/ugoite-cli/tests/test_journey_remote.rs
+      selector:
+        kind: symbol
+        name: test_cli_composition_inspect_query_export_match_core_remote
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+  - id: cli-broken-reference-evidence
+    role: evidence
+    facet: cli-tests
+    responsibility: 'Verify Core and Remote CLI recovery for one Space-owned Composition revision whose
+      EntryQuery source points at a never-created Form: typed inspect, raw inspect, and raw export stay
+      byte-identical across transports while query reports the same source_unavailable diagnostic without
+      source metadata, and read-only commands leave history unchanged.'
+    targets:
+    - id: core-remote-broken-reference-recovery
+      adapter: rust
+      path: crates/ugoite-cli/tests/test_journey_remote.rs
+      selector:
+        kind: symbol
+        name: test_cli_composition_broken_reference_recovery_matches_core_remote
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.raw-inspection
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.history-available
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+  - id: cli-unsupported-version-evidence
+    role: evidence
+    facet: cli-tests
+    responsibility: 'Verify Core and Remote CLI recovery for one fixture-seeded future-format-version
+      revision: typed inspect, raw inspect, and raw export preserve the exact raw carrier across transports
+      while typed execution reports the stable unsupported_format_version diagnostic, and read-only commands
+      leave history unchanged. Seeding travels through the reserved Registry admission without typed validation;
+      it is not a generic write bypass.'
+    targets:
+    - id: core-remote-unsupported-version-recovery
+      adapter: rust
+      path: crates/ugoite-cli/tests/test_journey_remote.rs
+      selector:
+        kind: symbol
+        name: test_cli_composition_unsupported_version_recovery_matches_core_remote
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.raw-inspection
+      - kind: evidences
+        anchor: REQ-COMP-005#criterion.history-available
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.deterministic-diagnostics
+  - id: cli-import-save-evidence
+    role: evidence
+    facet: cli-tests
+    responsibility: Verify local Core and remote Composition journeys reject unsupported-version imports
+      before registry mutation, return receipts tied to committed revisions during import/save, return
+      the original response when the same tested command/key is replayed, and retain the two-revision
+      history after a stale update conflict. These journeys cover replay only for their exercised keys;
+      they do not establish parity for every idempotency-key value.
+    targets:
+    - id: core-import-save-prevalidation-receipts-and-conflict
+      adapter: rust
+      path: crates/ugoite-cli/tests/test_journey_core.rs
+      selector:
+        kind: symbol
+        name: test_cli_core_composition_import_save_receipts_and_prevalidation
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-001#criterion.one-entry-revision
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.deterministic-diagnostics
+    - id: remote-import-save-prevalidation-receipts-and-conflict
+      adapter: rust
+      path: crates/ugoite-cli/tests/test_journey_remote.rs
+      selector:
+        kind: symbol
+        name: test_cli_remote_composition_import_save_receipts_and_prevalidation
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-001#criterion.one-entry-revision
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.deterministic-diagnostics
+  - id: composition-write-key-validation-evidence
+    role: evidence
+    facet: api-client-and-cli-tests
+    responsibility: 'Verify the portable protocol rejects missing, blank, and non-ASCII keys for Composition
+      save and restore, plus a line-feed-containing save key. The linked Core and Remote CLI test functions
+      reject the tested non-ASCII import key before Registry creation or a remote mutation; they separately
+      exercise successful receipts and replay for valid keys as covered by cli-import-save-evidence. These
+      invalid-key checks provide only partial evidence for REQ-COMP-001#criterion.one-entry-revision:
+      they do not assert exact revision cardinality or replay for rejected keys, and do not establish
+      arbitrary-key parity.'
+    targets:
+    - id: portable-save-restore-key-validation
+      adapter: rust
+      path: crates/ugoite-api-client/src/lib.rs
+      selector:
+        kind: symbol
+        name: composition_operations_prepare_and_decode_through_the_portable_protocol
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-001#criterion.one-entry-revision
+    - id: core-import-invalid-key-no-write
+      adapter: rust
+      path: crates/ugoite-cli/tests/test_journey_core.rs
+      selector:
+        kind: symbol
+        name: test_cli_core_composition_import_save_receipts_and_prevalidation
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-001#criterion.one-entry-revision
+    - id: remote-import-invalid-key-no-write
+      adapter: rust
+      path: crates/ugoite-cli/tests/test_journey_remote.rs
+      selector:
+        kind: symbol
+        name: test_cli_remote_composition_import_save_receipts_and_prevalidation
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-001#criterion.one-entry-revision
+  - id: cli-restore-invalid-key-evidence
+    role: evidence
+    facet: cli-tests
+    responsibility: Verify the Core and Remote CLI restore journeys reject the exercised non-ASCII restore
+      idempotency key with the same `invalid_input` diagnostic and empty stdout, leave Composition history
+      unchanged, and, for Remote, issue no Composition write request. The selected functions also exercise
+      valid-key replay and stale-base paths, but this evidence claim covers only invalid-key rejection
+      and no mutation; it does not establish idempotency parity beyond the exercised key.
+    targets:
+    - id: core-restore-invalid-key-prevalidation
+      adapter: rust
+      path: crates/ugoite-cli/tests/test_journey_core.rs
+      selector:
+        kind: symbol
+        name: test_cli_core_composition_restore_receipt_replay_and_stale_base
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-001#criterion.one-entry-revision
+    - id: remote-restore-invalid-key-prevalidation
+      adapter: rust
+      path: crates/ugoite-cli/tests/test_journey_remote.rs
+      selector:
+        kind: symbol
+        name: test_cli_remote_composition_restore_receipt_replay_and_stale_base
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-001#criterion.one-entry-revision

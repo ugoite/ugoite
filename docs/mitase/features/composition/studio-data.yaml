@@ -1,0 +1,505 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Saved, portable Composition documents
+features:
+- id: FEAT-COMP-006
+  title: Composition Studio Data authoring
+  summary: 'Provide the Data workspace for Composition authoring: source navigation, EntryQuery editing,
+    Saved SQL read-only controls, seed mappings, and source-aware previews.'
+  status: implemented
+  bindings:
+  - id: entry-query-save-builder-evidence
+    role: evidence
+    facet: frontend-tests
+    responsibility: Verify the pure EntryQuery to Composition source builder maps Form-scope text, filters,
+      sort, and projection to literals with a field_schema snapshot covering every query-used field (text-searchable
+      expansion and preview-wide coverage included, matching the resolver drift contract), and reports
+      All-scope, system-ref, non-scalar, unmapped-type, and unresolvable-reference states as inexpressible
+      without approximating.
+    targets:
+    - id: builder-round-trip
+      adapter: typescript
+      path: frontend/src/lib/entry-query-composition.test.ts
+      selector:
+        kind: test
+        name: round-trips a form-scope text+filter+sort+fields view to a source fragment
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+    - id: builder-preview-snapshot
+      adapter: typescript
+      path: frontend/src/lib/entry-query-composition.test.ts
+      selector:
+        kind: test
+        name: snapshots every form field for a preview projection
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+    - id: builder-text-snapshot
+      adapter: typescript
+      path: frontend/src/lib/entry-query-composition.test.ts
+      selector:
+        kind: test
+        name: snapshots text-searchable fields when text is set
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+    - id: builder-fail-closed
+      adapter: typescript
+      path: frontend/src/lib/entry-query-composition.test.ts
+      selector:
+        kind: test
+        name: reports All-scope as inexpressible without a form
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: builder-fail-closed-system-refs
+      adapter: typescript
+      path: frontend/src/lib/entry-query-composition.test.ts
+      selector:
+        kind: test
+        name: reports a system-ref filter as inexpressible
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: builder-fail-closed-unknown-type
+      adapter: typescript
+      path: frontend/src/lib/entry-query-composition.test.ts
+      selector:
+        kind: test
+        name: reports an unknown field type as inexpressible
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+    - id: builder-fail-closed-non-scalar
+      adapter: typescript
+      path: frontend/src/lib/entry-query-composition.test.ts
+      selector:
+        kind: test
+        name: reports non-scalar filter values as inexpressible
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+    - id: builder-fail-closed-reference
+      adapter: typescript
+      path: frontend/src/lib/entry-query-composition.test.ts
+      selector:
+        kind: test
+        name: reports an unresolvable reference target as inexpressible
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
+  - id: studio-data-runtime
+    role: implementation
+    facet: frontend
+    responsibility: Implement the Composition Studio Data workspace, source and query editors, seed mappings,
+      and source-scoped draft preview through the existing query contract.
+    targets:
+    - id: browser-data-workspace
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.tsx
+      selector:
+        kind: symbol
+        name: CompositionDataWorkspace
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-006#criterion.work-state-is-transient
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.controller-owned-paging
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.local-horizontal-overflow
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.controller-owned-paging
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.local-horizontal-overflow
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.source-native-composition-rendering
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.semantic-row-ownership
+    - id: browser-source-navigator
+      adapter: typescript
+      path: frontend/src/components/SourceNavigator.tsx
+      selector:
+        kind: symbol
+        name: SourceNavigator
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-006#criterion.work-state-is-transient
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.semantic-row-ownership
+    - id: browser-entry-query-editor
+      adapter: typescript
+      path: frontend/src/components/EntryQuerySourceEditor.tsx
+      selector:
+        kind: symbol
+        name: EntryQuerySourceEditor
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.source-native-composition-rendering
+    - id: browser-entry-query-studio-capabilities
+      adapter: typescript
+      path: frontend/src/lib/entry-query-studio-capabilities.ts
+      selector:
+        kind: file
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-studio-seed
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.ts
+      selector:
+        kind: symbol
+        name: applyStudioSeed
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-preview-handle
+      adapter: typescript
+      path: frontend/src/lib/composition-preview-handle.ts
+      selector:
+        kind: symbol
+        name: createCompositionPreviewHandle
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-006#criterion.work-state-is-transient
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.controller-owned-paging
+  - id: studio-data-evidence
+    role: evidence
+    facet: frontend-tests
+    responsibility: Verify the Composition Studio Data workspace, query editors, seed mappings, source-scoped
+      previews, and source result states.
+    targets:
+    - id: browser-data-navigator-selection
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: selects navigator sources with full-row activation
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.semantic-row-ownership
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-data-navigator-reorder
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: reorders sources with keyboard-operable move buttons
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-data-entry-query-edits
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: maps entry-query filter edits onto the draft query
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-sort-projection
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: maps entry-query sort and projection edits onto the draft query
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-operators
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: maps entry-query filter edits onto the draft with existing operators
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-invalid-operator
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: rejects entry-query filter edits with unknown operators
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-invalid-sort
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: rejects entry-query sort edits with unknown directions
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-projection
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: replaces entry-query projections between preview and fields
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-dialog-bindings
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: keeps parameter bindings through the shared dialog round trip
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-capability-gating
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: hides incapable fields behind the shared dialog gating
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.source-authoring
+    - id: browser-data-entry-query-definition-fallback
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: falls back to schema fields without a form definition
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-zero-capable
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: disables studio add controls with a reason at zero capable fields
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.source-authoring
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.structure-first-authoring
+    - id: browser-data-entry-query-dialog-mapping
+      adapter: typescript
+      path: frontend/src/lib/entry-query-studio-capabilities.test.ts
+      selector:
+        kind: test
+        name: maps draft filters through the dialog shape without flattening bindings
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-dialog-fail-closed
+      adapter: typescript
+      path: frontend/src/lib/entry-query-studio-capabilities.test.ts
+      selector:
+        kind: test
+        name: fails closed on non-property refs from the dialog
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-capability-derivation
+      adapter: typescript
+      path: frontend/src/lib/entry-query-studio-capabilities.test.ts
+      selector:
+        kind: test
+        name: derives names and capabilities from the form definition
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.source-authoring
+    - id: browser-data-entry-query-definition-cache
+      adapter: typescript
+      path: frontend/src/lib/entry-query-studio-capabilities.test.ts
+      selector:
+        kind: test
+        name: caches the transient form definition per source
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-saved-sql-readonly
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: renders saved sql read-only with variables and result schema
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+    - id: browser-data-saved-sql-exact-revision
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: updates the composition source to the exact new revision
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+    - id: browser-data-saved-sql-revision-merge
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: points saved sql sources at an exact revision preserving bindings
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+    - id: browser-data-source-concealment
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: conceals denied saved sql sources without identifiers
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+    - id: browser-data-result-states
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: renders explicit loading, empty, and error result states
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.controller-owned-paging
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.source-native-composition-rendering
+    - id: browser-data-result-preview-gating
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: renders nothing settled without a source page and no filter or sort prose
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.controller-owned-paging
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.structure-first-authoring
+    - id: browser-data-add-disabled-fields
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: keeps the add controls disabled without schema fields
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.structure-first-authoring
+    - id: browser-data-saved-sql-preview-gating
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: gates saved sql result spinners on the active preview
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.controller-owned-paging
+    - id: browser-data-narrow-stacking
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: stacks the navigator and editor at narrow widths
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.local-horizontal-overflow
+    - id: browser-preview-unscoped-fetch
+      adapter: typescript
+      path: frontend/src/lib/composition-preview-handle.test.ts
+      selector:
+        kind: test
+        name: fetches every plan source without a scope
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.controller-owned-paging
+    - id: browser-preview-scoped-fetch
+      adapter: typescript
+      path: frontend/src/lib/composition-preview-handle.test.ts
+      selector:
+        kind: test
+        name: fetches only visible-component and selected sources when scoped
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.controller-owned-paging
+    - id: browser-preview-stale-page-suppression
+      adapter: typescript
+      path: frontend/src/lib/composition-preview-handle.test.ts
+      selector:
+        kind: test
+        name: discards stale source pages from the previous draft
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-form-seed
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: seeds a form entry point with an entry-query source and a default table
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: browser-studio-saved-sql-seed
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: seeds a saved sql entry point with mapped variables and placed controls
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-studio-seed-without-variables
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: seeds saved sql without variables with a table and no parameter controls
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: browser-studio-seed-sql-route
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+      selector:
+        kind: test
+        name: seeds the studio from a saved sql seed with a table and placed controls
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+    - id: browser-studio-seed-form-route
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+      selector:
+        kind: test
+        name: seeds the studio from an entry query seed with a default table
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: browser-studio-parameters-disclosure
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+      selector:
+        kind: test
+        name: discloses Parameters in Data mode only once a source exists
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
