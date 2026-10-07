@@ -2976,32 +2976,6 @@ requirements:
         facet: verification
         responsibility: Verify the Studio display authoring (table or exact-scalar metric choice, scalar-only value candidates with disabled unavailable sources, inline label editing, keyboard-operable reorder, remove) through exact frontend unit tests.
         targets:
-          - id: studio-display-list-rows
-            adapter: typescript
-            path: frontend/src/components/CompositionDisplayList.test.tsx
-            selector: { kind: test, name: "renders display rows with default names and kind labels" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-070#criterion.display-authoring
-                covers: [FEAT-FE-014#binding.frontend/target.composition-display-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayList.test.tsx, test: "renders display rows with default names and kind labels" } }
-              - kind: verifies
-                criterion: REQ-FE-070#criterion.structure-first-authoring
-                covers: [FEAT-FE-014#binding.frontend/target.composition-display-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayList.test.tsx, test: "renders display rows with default names and kind labels" } }
-          - id: studio-display-list-edit
-            adapter: typescript
-            path: frontend/src/components/CompositionDisplayList.test.tsx
-            selector: { kind: test, name: "edits labels inline and reorders or removes displays" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-070#criterion.display-authoring
-                covers: [FEAT-FE-014#binding.frontend/target.composition-display-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayList.test.tsx, test: "edits labels inline and reorders or removes displays" } }
-              - kind: verifies
-                criterion: REQ-FE-070#criterion.structure-first-authoring
-                covers: [FEAT-FE-014#binding.frontend/target.composition-display-list]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayList.test.tsx, test: "edits labels inline and reorders or removes displays" } }
           - id: studio-display-picker-table
             adapter: typescript
             path: frontend/src/components/CompositionDisplayPicker.test.tsx
@@ -3094,16 +3068,16 @@ requirements:
           - id: studio-shell-structure
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
-            selector: { kind: test, name: "renders one back control, one save, and data-first studio structure" }
+            selector: { kind: test, name: "renders one back control, one save, and mode-switched studio structure" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.source-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "renders one back control, one save, and data-first studio structure" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "renders one back control, one save, and mode-switched studio structure" } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "renders one back control, one save, and data-first studio structure" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "renders one back control, one save, and mode-switched studio structure" } }
           - id: studio-shell-sources
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
@@ -3222,25 +3196,25 @@ requirements:
           - id: entry-point-studio-seed-saved-sql
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
-            selector: { kind: test, name: "seeds the studio from a saved sql seed with a prefilled name" }
+            selector: { kind: test, name: "seeds the studio from a saved sql seed with a table and placed controls" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.source-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a prefilled name" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls" } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a prefilled name" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls" } }
           - id: entry-point-studio-seed-entry-query
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
-            selector: { kind: test, name: "seeds the studio from an entry query seed with a prefilled name" }
+            selector: { kind: test, name: "seeds the studio from an entry query seed with a default table" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.source-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from an entry query seed with a prefilled name" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from an entry query seed with a default table" } }
       - id: studio-use-surface-verification
         role: verification
         facet: verification

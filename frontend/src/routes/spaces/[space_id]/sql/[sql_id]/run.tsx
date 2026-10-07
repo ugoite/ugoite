@@ -326,6 +326,14 @@ export default function SpaceSqlRunRoute() {
               variable.type as CompositionParameterType,
             ]),
           ),
+          // The run that was just executed supplies the parameter defaults
+          // so the seeded Studio opens showing the same result.
+          variableDefaults: Object.fromEntries(
+            current.variables.flatMap((variable) => {
+              const value = state().parameters?.[variable.name];
+              return value === undefined ? [] : [[variable.name, value]];
+            }),
+          ),
         },
       };
       setSaveError(null);

@@ -7,7 +7,7 @@ import {
   InspectorShell,
   InspectorSourceField,
 } from "~/components/composition/InspectorFields";
-import { displayValueName } from "~/components/CompositionDisplayList";
+import { displayValueName } from "~/lib/composition-display-name";
 import {
   type DisplayScalarCandidate,
   displayScalarCandidates,

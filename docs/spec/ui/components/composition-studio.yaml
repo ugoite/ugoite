@@ -23,6 +23,9 @@ components:
         title: Save
         single_control: true
         async_state: explicit-busy-without-layout-shift
+        save_readiness: name-non-empty-plus-valid-refs-plus-exactly-once-placement-plus-no-dangling-plus-one-layout-item
+        blocked_save: disabled-with-reason-in-accessible-name-and-title-no-prose
+        source_only: cannot-save-canonical-parse-gated-at-save-with-allowlisted-summary
   - id: studio-data
     type: list
     title: Data
@@ -61,15 +64,15 @@ components:
   - id: studio-display
     type: list
     title: Display
-    label_kind: compact-section-label
-    rows:
-      selection: full-row-activate
-      reorder: keyboard-operable-move-up-down
-      display_kinds: [table, metric]
-      table_presentation:
-        entry_query: EntryResultTable
-        saved_sql: SqlResultTable
-      metric_semantics: exact-scalar-no-aggregation
+    status: removed
+    ownership: design-canvas-plus-inspector
+    removal: legacy-display-list-removed-in-RA8-canvas-owns-add-remove-reorder-inspector-owns-label
+    insertion_delegate: display-picker-at-canvas-target-only
+    display_kinds: [table, metric]
+    table_presentation:
+      entry_query: EntryResultTable
+      saved_sql: SqlResultTable
+    metric_semantics: exact-scalar-no-aggregation
   - id: studio-parameters
     type: form
     title: Parameters

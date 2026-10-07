@@ -276,6 +276,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
               ],
               variables: { month_start: { parameter: "month_start" } },
               variableTypes: { month_start: "date" },
+              variableDefaults: { month_start: "2026-01-01" },
             },
           },
         },

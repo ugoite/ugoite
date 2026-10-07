@@ -202,22 +202,47 @@ function revisionFromUrl(url: string): {
   return { compositionId: match![1], revisionId: match![2] };
 }
 
+async function addCanvasDisplay(
+  page: Page,
+  kind: "Metric" | "Table",
+  sourceName: string,
+  value?: string,
+  label?: string,
+): Promise<void> {
+  // Canvas insertion path: a gap "+" opens the block palette, and the
+  // palette metric/table entries delegate to the display picker at the
+  // recorded target. The legacy Display section is gone.
+  await page.getByRole("button", { name: "Add block", exact: true }).first()
+    .click();
+  const palette = page.getByRole("dialog", {
+    name: "Add block",
+    exact: true,
+  });
+  await expect(palette).toBeVisible();
+  await palette.getByRole("button", { name: kind, exact: true }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "Add display",
+    exact: true,
+  });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: kind, exact: true }).click();
+  await dialog.getByRole("button", { name: sourceName, exact: true }).click();
+  if (kind === "Metric") {
+    await dialog.getByLabel("Value", { exact: true }).selectOption(value!);
+    await dialog.getByLabel("Label", { exact: true }).fill(label!);
+  }
+  await dialog.getByRole("button", { name: "Add display", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+}
+
 async function addMetricDisplay(
   page: Page,
   sourceName: string,
   value: string,
   label: string,
 ): Promise<void> {
-  await page.getByRole("button", { name: "Add display", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Metric", exact: true }).click();
-  await dialog.getByRole("button", { name: sourceName, exact: true }).click();
-  await dialog.getByLabel("Value", { exact: true }).selectOption(value);
-  await dialog.getByLabel("Label", { exact: true }).fill(label);
-  await dialog.getByRole("button", { name: "Add display", exact: true })
-    .click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await addCanvasDisplay(page, "Metric", sourceName, value, label);
 }
 
 async function openToolFromHome(
@@ -285,7 +310,8 @@ test.describe("Composition Studio Journey", () => {
       await expect(runTable.locator("tbody tr")).toHaveCount(1);
       await expect(runTable).toContainText(seed.expectedTotal);
 
-      // Studio opens prefilled from the Saved SQL run.
+      // Studio opens prefilled from the Saved SQL run, save-ready with a
+      // default Table on the seeded source: the canvas owns the block.
       await page.getByRole("button", { name: "Save as tool" }).click();
       await expect(page).toHaveURL(
         new RegExp(
@@ -294,6 +320,12 @@ test.describe("Composition Studio Journey", () => {
       );
       const nameInput = page.getByLabel("Name", { exact: true });
       await expect(nameInput).toHaveValue(seed.savedSqlName);
+      await expect(
+        page.getByRole("button", {
+          name: `Select ${seed.savedSqlName}`,
+          exact: true,
+        }),
+      ).toBeVisible();
       // Studio modes: the seeded source renders in the Data workspace.
       await page.getByRole("radio", { name: "Data", exact: true }).click();
       await expect(
@@ -305,10 +337,10 @@ test.describe("Composition Studio Journey", () => {
       await addMetricDisplay(page, seed.savedSqlName, "total", "Total");
       await addMetricDisplay(page, seed.savedSqlName, "count", "Count");
       await expect(
-        page.getByRole("button", { name: "Total", exact: true }),
+        page.getByRole("button", { name: "Select Total", exact: true }),
       ).toBeVisible();
       await expect(
-        page.getByRole("button", { name: "Count", exact: true }),
+        page.getByRole("button", { name: "Select Count", exact: true }),
       ).toBeVisible();
 
       // EntryQuery source through the Forms picker.
@@ -324,25 +356,17 @@ test.describe("Composition Studio Journey", () => {
         page.getByRole("button", { name: seed.formName, exact: true }),
       ).toHaveCount(1);
 
-      // Table display on the EntryQuery source.
-      await page.getByRole("button", { name: "Add display", exact: true })
-        .click();
-      const tableDialog = page.getByRole("dialog");
-      await expect(tableDialog).toBeVisible();
-      await tableDialog.getByRole("button", { name: "Table", exact: true })
-        .click();
-      await tableDialog.getByRole("button", {
-        name: seed.formName,
-        exact: true,
-      }).click();
-      await tableDialog.getByRole("button", {
-        name: "Add display",
-        exact: true,
-      }).click();
-      await expect(page.getByRole("dialog")).toHaveCount(0);
+      // Table display on the EntryQuery source through the canvas.
+      await addCanvasDisplay(page, "Table", seed.formName);
       await expect(
         page.getByRole("button", { name: seed.formName, exact: true }),
-      ).toHaveCount(2);
+      ).toHaveCount(1);
+      await expect(
+        page.getByRole("button", {
+          name: `Select ${seed.formName}`,
+          exact: true,
+        }),
+      ).toBeVisible();
 
       // Back to the Design canvas for the display assertions.
       await page.getByRole("radio", { name: "Design", exact: true }).click();
@@ -416,7 +440,7 @@ test.describe("Composition Studio Journey", () => {
         await expect(savedTable).toContainText(purpose);
       }
 
-      // Edit the exact revision: relabel one display, save a new revision.
+      // Edit the exact revision: relabel one canvas block, save a new revision.
       await page.goto(
         getFrontendUrl(
           `/spaces/${seed.spaceId}/compositions/${compositionId}/${firstRevisionId}/edit`,
@@ -426,7 +450,8 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
         seed.toolName,
       );
-      await page.getByRole("button", { name: "Total", exact: true }).click();
+      await page.getByRole("button", { name: "Select Total", exact: true })
+        .click();
       await page.getByLabel("Label", { exact: true }).fill("Total spent");
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page).toHaveURL(

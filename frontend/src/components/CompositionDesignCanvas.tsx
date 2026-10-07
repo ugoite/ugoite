@@ -3,7 +3,7 @@ import {
   DashboardFlowItem,
   flowSourceStatusOwner,
 } from "~/components/DashboardFlowRenderer";
-import { displayDefaultName } from "~/components/CompositionDisplayList";
+import { displayDefaultName } from "~/lib/composition-display-name";
 import type { CompositionFieldNames } from "~/components/CompositionRenderer";
 import { IconButton } from "~/components/IconButton";
 import { UiIcon } from "~/components/UiIcon";

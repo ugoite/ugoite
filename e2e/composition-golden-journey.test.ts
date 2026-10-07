@@ -368,13 +368,14 @@ test.describe("Composition Golden Journey", () => {
         ),
       );
       // The Studio seed prefills the tool name from the Saved SQL entry and
-      // carries its exact revision as the first source, so no picker
-      // interaction is needed before saving.
+      // carries its exact revision as the first source with a default Table,
+      // so the canvas owns a visible block and no picker interaction is
+      // needed before saving.
       const nameInput = initialPage.getByLabel("Name", { exact: true });
       await expect(nameInput).toHaveValue(seed.savedSqlName);
       await expect(
         initialPage.getByRole("button", {
-          name: seed.savedSqlName,
+          name: `Select ${seed.savedSqlName}`,
           exact: true,
         }),
       ).toBeVisible();

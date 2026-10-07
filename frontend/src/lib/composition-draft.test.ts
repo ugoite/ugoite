@@ -6,12 +6,14 @@ import {
   addSavedSqlSource,
   addTableDisplay,
   addTextDisplay,
+  applyStudioSeed,
   canonicalizeDraft,
   type CompositionStudioDocument,
   createEmptyDraft,
   defaultParameterValues,
   displaysUsingSource,
   draftFromDocument,
+  draftSaveReadiness,
   ensureParametersForVariables,
   moveDisplay,
   moveLayoutItem,
@@ -880,5 +882,180 @@ describe("composition draft model", () => {
         variableNames: [],
       }),
     ).toEqual({ ok: false, error: "unknown-source" });
+  });
+
+  it("seeds a form entry point with an entry-query source and a default table", () => {
+    const { draft, draftId } = applyStudioSeed(createEmptyDraft(), {
+      kind: "entry_query",
+      seed: entrySeed(),
+    });
+    expect(draftId).toBe("src-1");
+    expect(draft.name).toBe("Expenses");
+    expect(draft.sources).toHaveLength(1);
+    // One default Table on the new source, placed in a single row: the
+    // Studio opens with a visible block, never zero-display.
+    expect(draft.displays).toHaveLength(1);
+    expect(draft.displays[0]).toMatchObject({
+      kind: "table",
+      draftId: "disp-1",
+      sourceDraftId: "src-1",
+    });
+    expect(draft.layoutRows).toHaveLength(1);
+    expect(draft.layoutRows[0].items).toEqual([
+      { kind: "component", draftId: "disp-1" },
+    ]);
+    expect(draftSaveReadiness(draft)).toEqual({ ready: true });
+  });
+
+  it("seeds a saved sql entry point with mapped variables and placed controls", () => {
+    const { draft, draftId } = applyStudioSeed(createEmptyDraft(), {
+      kind: "saved_sql",
+      seed: {
+        entryId: "sql-1",
+        revisionId: "rev-1",
+        name: "Monthly",
+        expectedResult: [{ name: "total", type: "float" as const }],
+        variables: {
+          month_start: { parameter: "month_start" },
+          month_end: { parameter: "month_end" },
+        },
+        variableTypes: { month_start: "date", month_end: "date" },
+        variableDefaults: { month_start: "2026-01-01" },
+      },
+    });
+    expect(draftId).toBe("src-1");
+    expect(draft.name).toBe("Monthly");
+    const source = draft.sources[0];
+    if (source.kind !== "saved_sql") throw new Error("expected saved sql");
+    expect(source.revisionId).toBe("rev-1");
+    // Parameters map from the exact-revision variables with server types.
+    expect(draft.parameters.map((parameter) => parameter.id)).toEqual([
+      "month_start",
+      "month_end",
+    ]);
+    // Run-time values ride along as defaults so the seeded Studio opens
+    // showing the same result; variables without a run value stay defaultless.
+    expect(
+      draft.parameters.map((parameter) => parameter.default ?? null),
+    ).toEqual(["2026-01-01", null]);
+    // Controls land only because variables exist, ahead of the table row
+    // item; the table keeps the draft save-ready and never zero-display.
+    const items = draft.layoutRows.flatMap((row) => row.items);
+    expect(items).toEqual([
+      { kind: "parameter", parameterId: "month_start" },
+      { kind: "parameter", parameterId: "month_end" },
+      { kind: "component", draftId: "disp-1" },
+    ]);
+    expect(draft.displays[0]).toMatchObject({
+      kind: "table",
+      sourceDraftId: "src-1",
+      label: "Monthly",
+    });
+    expect(unplacedParameters(draft)).toHaveLength(0);
+    expect(draftSaveReadiness(draft)).toEqual({ ready: true });
+  });
+
+  it("seeds saved sql without variables with a table and no parameter controls", () => {
+    const { draft } = applyStudioSeed(createEmptyDraft(), {
+      kind: "saved_sql",
+      seed: sqlSeed(),
+    });
+    expect(draft.parameters).toHaveLength(0);
+    const items = draft.layoutRows.flatMap((row) => row.items);
+    expect(items).toEqual([{ kind: "component", draftId: "disp-1" }]);
+    expect(draftSaveReadiness(draft)).toEqual({ ready: true });
+  });
+
+  it("blocks saves until the name, refs, and layout are all ready", () => {
+    expect(draftSaveReadiness(createEmptyDraft())).toEqual({
+      ready: false,
+      reason: "name",
+    });
+    expect(draftSaveReadiness(createEmptyDraft("  "))).toEqual({
+      ready: false,
+      reason: "name",
+    });
+    let draft = createEmptyDraft("Monthly");
+    expect(draftSaveReadiness(draft)).toEqual({
+      ready: false,
+      reason: "sources",
+    });
+
+    // A source-only draft cannot save: no layout item yet.
+    draft = addSavedSqlSource(draft, sqlSeed()).draft;
+    expect(draftSaveReadiness(draft)).toEqual({
+      ready: false,
+      reason: "layout",
+    });
+
+    // A declared but unplaced component dangles instead.
+    const tabled = addTableDisplay(draft, "src-1");
+    if (!tabled.ok) throw new Error("expected table block");
+    draft = { ...tabled.draft, layoutRows: [] };
+    expect(draftSaveReadiness(draft)).toEqual({
+      ready: false,
+      reason: "refs",
+    });
+
+    // Unknown display sources, dangling items, and duplicate placements
+    // all block with the refs reason.
+    draft = {
+      ...tabled.draft,
+      displays: [
+        {
+          kind: "table",
+          draftId: "disp-1",
+          sourceDraftId: "src-9",
+        },
+      ],
+    };
+    expect(draftSaveReadiness(draft)).toEqual({
+      ready: false,
+      reason: "refs",
+    });
+    draft = {
+      ...tabled.draft,
+      layoutRows: [{
+        id: "main",
+        items: [{ kind: "component", draftId: "disp-9" }],
+      }],
+    };
+    expect(draftSaveReadiness(draft)).toEqual({
+      ready: false,
+      reason: "refs",
+    });
+    draft = {
+      ...tabled.draft,
+      layoutRows: [{
+        id: "main",
+        items: [
+          { kind: "component", draftId: "disp-1" },
+          { kind: "component", draftId: "disp-1" },
+        ],
+      }],
+    };
+    expect(draftSaveReadiness(draft)).toEqual({
+      ready: false,
+      reason: "refs",
+    });
+
+    // The placed table is save-ready again.
+    draft = tabled.draft;
+    expect(draftSaveReadiness(draft)).toEqual({ ready: true });
+
+    // Required parameters without a default need a placed control.
+    const month = addParameter(draft, {
+      id: "month",
+      type: "date",
+      required: true,
+    });
+    if (!month.ok) throw new Error("expected parameter");
+    expect(draftSaveReadiness(month.draft)).toEqual({
+      ready: false,
+      reason: "refs",
+    });
+    const placed = placeParameterControl(month.draft, "month");
+    if (!placed.ok) throw new Error("expected parameter placement");
+    expect(draftSaveReadiness(placed.draft)).toEqual({ ready: true });
   });
 });

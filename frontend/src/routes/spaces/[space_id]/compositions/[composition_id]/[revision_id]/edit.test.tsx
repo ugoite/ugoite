@@ -216,9 +216,13 @@ describe("Composition edit route", () => {
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
         heading.textContent
       ),
-    ).toEqual(["Design", "Display", "Parameters", "Tags", "Preview"]);
+    ).toEqual(["Design", "Parameters", "Tags", "Preview"]);
+    expect(
+      screen.queryByRole("heading", { name: "Display" }),
+    ).not.toBeInTheDocument();
 
-    // Data mode: the source and display rows carry the Saved SQL entry name.
+    // Data mode: the source row carries the Saved SQL entry name. Display
+    // listing lives on the Design canvas now, not in a legacy section.
     fireEvent.click(
       within(screen.getByRole("radiogroup", { name: "Studio mode" })).getByRole(
         "radio",
@@ -226,7 +230,7 @@ describe("Composition edit route", () => {
       ),
     );
     expect(screen.getAllByRole("button", { name: "Monthly totals" }))
-      .toHaveLength(2);
+      .toHaveLength(1);
   });
 
   it("saves an update with base revision identity and a stable retry key", async () => {

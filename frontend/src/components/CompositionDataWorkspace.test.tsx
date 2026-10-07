@@ -335,7 +335,9 @@ describe("CompositionDataWorkspace", () => {
     });
     expect(sql.tagName).toBe("PRE");
     expect(within(editor).queryAllByRole("textbox")).toHaveLength(0);
-    expect(within(editor).getAllByText("month_start")).toHaveLength(2);
+    // The variable pill shows the bound parameter only when it differs
+    // from the variable name; here both read month_start once.
+    expect(within(editor).getAllByText("month_start")).toHaveLength(1);
     expect(within(editor).getByText("total")).toBeInTheDocument();
 
     const edit = within(editor).getByRole("link", { name: "Edit Saved SQL" });
