@@ -17,6 +17,10 @@ requirements:
         kind: behavior
         statement: When the page context already establishes its hierarchical destination, the shared back control presents a 44px circular chevron-left link without visible Back copy and keeps the destination-specific localized name available to assistive technology and on hover.
         governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: back-control-leading-position
+        kind: behavior
+        statement: Each nested surface places its single back control first at the leading edge of the page header, before the page title or other header content.
+        governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance]
       - id: no-duplicate-context
         kind: behavior
         statement: Each piece of information on a surface has one visible owner. Context established by shell navigation, a heading, a selected object, or a field label is not restated by another heading, eyebrow, explanation, placeholder, action label, or shortcut; a second presentation is appropriate only when it communicates a distinct operation, state, or subject.
@@ -125,6 +129,119 @@ requirements:
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
                 covers: [FEAT-UX-007#binding.back-control-implementation/target.sql-detail-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to saved SQL" } }
+      - id: back-control-placement-verification
+        role: verification
+        facet: verification
+        responsibility: Verify each nested surface places its single BackLink at the start of the header through exact Vitest cases, including the narrow Composition Studio header.
+        targets:
+          - id: entry-history-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx"
+            selector: { kind: test, name: "REQ-UX-NAV-001: exposes exactly one back control to the entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.entry-history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to the entry" } }
+          - id: entry-revision-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx"
+            selector: { kind: test, name: "REQ-UX-NAV-001: exposes exactly one back control to history" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.entry-revision-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to history" } }
+          - id: entry-info-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.test.tsx"
+            selector: { kind: test, name: "REQ-UX-NAV-001: exposes exactly one back control to the entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.entry-info-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/info.test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to the entry" } }
+          - id: entry-detail-leading-back
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.safety.test.tsx
+            selector: { kind: test, name: "cancelling the delete dialog sends nothing and keeps the draft" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "cancelling the delete dialog sends nothing and keeps the draft" } }
+          - id: sql-detail-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx"
+            selector: { kind: test, name: "REQ-UX-NAV-001: exposes exactly one back control to saved SQL" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-UX-NAV-001: exposes exactly one back control to saved SQL" } }
+          - id: sql-create-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/sql/new.test.tsx"
+            selector: { kind: test, name: "PR6: backs to Saved SQL once and reports diagnostics with line and column" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.sql-new-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "PR6: backs to Saved SQL once and reports diagnostics with line and column" } }
+          - id: sql-variables-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.test.tsx"
+            selector: { kind: test, name: "PR6: backs to the saved query once with typed variable inputs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.sql-variables-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/variables.test.tsx", test: "PR6: backs to the saved query once with typed variable inputs" } }
+          - id: sql-results-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx"
+            selector: { kind: test, name: "REQ-FE-068: omits persistent explanatory copy from saved SQL results" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.sql-run-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "REQ-FE-068: omits persistent explanatory copy from saved SQL results" } }
+          - id: composition-studio-leading-back
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: "fits the destination-named back link, name, and Save in one 390px header row" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "fits the destination-named back link, name, and Save in one 390px header row" } }
+          - id: composition-history-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx"
+            selector: { kind: test, name: "lists revisions with human labels and opens the exact revision" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.composition-history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "lists revisions with human labels and opens the exact revision" } }
+          - id: composition-edit-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx"
+            selector: { kind: test, name: "keeps the single back link at the header start when loading fails" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.composition-edit-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "keeps the single back link at the header start when loading fails" } }
+          - id: storage-test-leading-back
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/test-connection.test.tsx"
+            selector: { kind: test, name: "places its single storage-settings back link at the header start" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-NAV-001#criterion.back-control-leading-position
+                covers: [FEAT-UX-007#binding.back-control-implementation/target.storage-test-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/test-connection.test.tsx", test: "places its single storage-settings back link at the header start" } }
       - id: single-context-verification
         role: verification
         facet: verification

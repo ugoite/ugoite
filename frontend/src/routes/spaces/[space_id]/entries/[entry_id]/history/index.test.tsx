@@ -5,6 +5,7 @@ import { setLocale } from "~/lib/i18n";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import { entryApi, spaceApi } from "~/lib/ugoite-client";
 import SpaceEntryHistoryRoute from "./index";
+import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
 vi.mock("@solidjs/router", () => ({
   A: (props: {
@@ -67,6 +68,7 @@ describe("entry history route", () => {
     expect(back).toHaveAttribute("title", "Back to Entry");
     expect(screen.getAllByRole("link", { name: "Back to Entry" }))
       .toHaveLength(1);
+    expectBackLinkAtHeaderStart(back);
     // The space-history shortcut is gone: the shell owns that destination.
     expect(screen.queryByRole("link", { name: "View space history" }))
       .not.toBeInTheDocument();

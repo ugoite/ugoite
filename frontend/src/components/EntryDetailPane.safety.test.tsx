@@ -118,6 +118,11 @@ describe("EntryDetailPane safety/recovery", () => {
     ));
 
     const notes = await screen.findByLabelText("Notes");
+    const back = screen.getByRole("link", { name: "Back to Form" });
+    expect(screen.getAllByRole("link", { name: "Back to Form" }))
+      .toHaveLength(1);
+    const entryHeader = back.closest(".ui-entry-header");
+    expect(entryHeader?.firstElementChild?.firstElementChild).toBe(back);
     fireEvent.input(notes, { target: { value: "local edit" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Delete entry" }));

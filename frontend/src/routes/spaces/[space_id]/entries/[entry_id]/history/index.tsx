@@ -109,13 +109,15 @@ export default function SpaceEntryHistoryRoute() {
   return (
     <>
       <div class="screenHead">
-        <div class="screenTitle">
-          <h1 id="entry-history-title">{t("entryHistory.title")}</h1>
+        <div class="screenHeadStart">
+          <BackLink
+            href={entryHref()}
+            label={t("entryHistory.backToEntry")}
+          />
+          <div class="screenTitle">
+            <h1 id="entry-history-title">{t("entryHistory.title")}</h1>
+          </div>
         </div>
-        <BackLink
-          href={entryHref()}
-          label={t("entryHistory.backToEntry")}
-        />
       </div>
       {
         /* Panel-local spinner only: existing rows stay mounted during refetch,

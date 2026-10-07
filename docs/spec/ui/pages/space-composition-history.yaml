@@ -11,16 +11,20 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-    - id: composition-history-heading
-      type: heading
-      title: Saved tool name
-      ownership: object-identity
-    - id: composition-history-back
-      type: link
-      presentation: icon-only
-      accessible_name: Back to saved tools
-      visible_content: chevron-left
-      single_control: true
+    - id: composition-history-header
+      type: page-header
+      items:
+        - id: composition-history-back
+          type: link
+          position: leading
+          presentation: icon-only
+          accessible_name: Back to saved tools
+          visible_content: chevron-left
+          single_control: true
+        - id: composition-history-heading
+          type: heading
+          title: Saved tool name
+          ownership: object-identity
     - id: composition-history-list
       type: list
       title: Tool history

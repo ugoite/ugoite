@@ -57,15 +57,17 @@ export default function SpaceTestConnectionRoute() {
   return (
     <>
       <div class="screenHead">
-        <div class="screenTitle">
-          <h1>{t("spaceSettings.testConnection")}</h1>
+        <div class="screenHeadStart">
+          <BackLink
+            href={`/spaces/${
+              encodeURIComponent(spaceId())
+            }/settings?section=storage`}
+            label={t("spaceSettings.backToStorage")}
+          />
+          <div class="screenTitle">
+            <h1>{t("spaceSettings.testConnection")}</h1>
+          </div>
         </div>
-        <BackLink
-          href={`/spaces/${
-            encodeURIComponent(spaceId())
-          }/settings?section=storage`}
-          label={t("spaceSettings.backToStorage")}
-        />
       </div>
 
       {/* Panel-local spinner: the form stays mounted during load. */}

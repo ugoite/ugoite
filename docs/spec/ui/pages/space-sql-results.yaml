@@ -11,11 +11,21 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-    - id: query-identity-heading
-      type: heading
-      title: Saved query name
-      ownership: object-identity
-      copy: No persistent explanatory subtitle
+    - id: sql-results-header
+      type: page-header
+      items:
+        - id: saved-query-detail-action
+          type: link
+          position: leading
+          presentation: icon-only
+          accessible_name: Back to Saved SQL
+          visible_content: chevron-left
+          target_page: space-sql-detail
+        - id: query-identity-heading
+          type: heading
+          title: Saved query name
+          ownership: object-identity
+          copy: No persistent explanatory subtitle
     - id: sql-results-table
       type: query-results
       source: sql.query using exact Saved SQL ID and revision with server-derived Form bindings
@@ -40,9 +50,3 @@ components:
       source: current successful user-query result and its exact Saved SQL revision
       target_page: space-composition-new
       description: Navigates to the Studio with a saved-sql seed carrying server-owned column types; unique columns stay required and failures keep the concise error without navigating.
-    - id: saved-query-detail-action
-      type: link
-      presentation: icon-only
-      accessible_name: Back to Saved SQL
-      visible_content: chevron-left
-      target_page: space-sql-detail

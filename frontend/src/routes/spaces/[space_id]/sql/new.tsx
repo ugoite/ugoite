@@ -93,13 +93,15 @@ export default function SpaceQueryCreateRoute() {
   return (
     <>
       <div class="screenHead">
-        <div class="screenTitle">
-          <h1>{t("sqlPage.newSql")}</h1>
+        <div class="screenHeadStart">
+          <BackLink
+            href={`/spaces/${encodeURIComponent(spaceId())}/sql`}
+            label={t("sqlPage.backToSavedSql")}
+          />
+          <div class="screenTitle">
+            <h1>{t("sqlPage.newSql")}</h1>
+          </div>
         </div>
-        <BackLink
-          href={`/spaces/${encodeURIComponent(spaceId())}/sql`}
-          label={t("sqlPage.backToSavedSql")}
-        />
       </div>
       <div class="settingsMain surface">
         <label class="ui-label" for="query-title">

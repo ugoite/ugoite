@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { entryApi } from "~/lib/ugoite-client";
 import SpaceEntryRevisionRoute from "./[revision_id]";
+import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
 const navigate = vi.fn();
 
@@ -176,5 +177,6 @@ describe("entry revision review route", () => {
     expect(back).toHaveAttribute("title", "Back to history");
     expect(screen.getAllByRole("link", { name: "Back to history" }))
       .toHaveLength(1);
+    expectBackLinkAtHeaderStart(back);
   });
 });

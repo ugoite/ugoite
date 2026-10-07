@@ -11,9 +11,20 @@ components:
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-    - id: test-connection-heading
-      type: heading
-      title: Test Connection
+    - id: test-connection-header
+      type: page-header
+      items:
+        - id: storage-settings-parent
+          type: link
+          position: leading
+          presentation: icon-only
+          accessible_name: Back to Storage settings
+          visible_content: chevron-left
+          target_page: space-settings
+          section: storage
+        - id: test-connection-heading
+          type: heading
+          title: Test Connection
     - id: connection-form
       type: form
       fields:
@@ -23,10 +34,3 @@ components:
       type: button
       label: Test
       accessible_name: Test Connection
-    - id: storage-settings-parent
-      type: link
-      presentation: icon-only
-      accessible_name: Back to Storage settings
-      visible_content: chevron-left
-      target_page: space-settings
-      section: storage

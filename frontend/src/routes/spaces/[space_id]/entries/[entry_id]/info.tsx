@@ -41,10 +41,12 @@ export default function SpaceEntryInfoRoute() {
   return (
     <>
       <div class="screenHead">
-        <div class="screenTitle">
-          <h1>{t("entryInfo.title")}</h1>
+        <div class="screenHeadStart">
+          <BackLink href={entryPath()} label={t("entryInfo.backToEntry")} />
+          <div class="screenTitle">
+            <h1>{t("entryInfo.title")}</h1>
+          </div>
         </div>
-        <BackLink href={entryPath()} label={t("entryInfo.backToEntry")} />
       </div>
       {/* Panel-local spinner: rendered info stays mounted on refetch. */}
       <Show when={entry.loading}>

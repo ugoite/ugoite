@@ -75,15 +75,17 @@ export default function SpaceQueryVariablesRoute() {
   return (
     <>
       <div class="screenHead">
-        <div class="screenTitle">
-          <h1>{entry() ? displaySqlName(entry()!) : t("sqlPage.detail")}</h1>
+        <div class="screenHeadStart">
+          <BackLink
+            href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
+              encodeURIComponent(sqlId())
+            }`}
+            label={t("sqlPage.backToSavedSql")}
+          />
+          <div class="screenTitle">
+            <h1>{entry() ? displaySqlName(entry()!) : t("sqlPage.detail")}</h1>
+          </div>
         </div>
-        <BackLink
-          href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
-            encodeURIComponent(sqlId())
-          }`}
-          label={t("sqlPage.backToSavedSql")}
-        />
       </div>
 
       {/* Panel-local spinner: loaded variables stay mounted on refetch. */}

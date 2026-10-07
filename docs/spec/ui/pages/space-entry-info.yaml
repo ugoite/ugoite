@@ -16,6 +16,7 @@ components:
       items:
         - id: back-to-entry
           type: link
+          position: leading
           presentation: icon-only
           accessible_name: Back to Entry
           visible_content: chevron-left

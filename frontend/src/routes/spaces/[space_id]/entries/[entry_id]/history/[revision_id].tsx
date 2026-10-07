@@ -140,20 +140,22 @@ export default function SpaceEntryRevisionRoute() {
   return (
     <>
       <div class="screenHead">
-        <div class="screenTitle">
-          <h1>{t("entryRevision.title")}</h1>
-          <Show when={revision()}>
-            {(selected) => (
-              <p class="ui-page-subtitle revision-subtitle">
-                {formatRevisionSubtitle(selected().timestamp)}
-              </p>
-            )}
-          </Show>
+        <div class="screenHeadStart">
+          <BackLink
+            href={`${entryPath()}/history`}
+            label={t("entryRevision.backToHistory")}
+          />
+          <div class="screenTitle">
+            <h1>{t("entryRevision.title")}</h1>
+            <Show when={revision()}>
+              {(selected) => (
+                <p class="ui-page-subtitle revision-subtitle">
+                  {formatRevisionSubtitle(selected().timestamp)}
+                </p>
+              )}
+            </Show>
+          </div>
         </div>
-        <BackLink
-          href={`${entryPath()}/history`}
-          label={t("entryRevision.backToHistory")}
-        />
       </div>
 
       {/* Panel-local spinner: rendered content stays mounted on refetch. */}

@@ -529,6 +529,21 @@ code {
   min-height: 38px;
   margin-bottom: 20px;
 }
+.screenHeadStart {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.screenHeadStart > .back-link {
+  flex: 0 0 auto;
+}
+.screenHeadStart > .screenTitle,
+.screenHeadStart > .ui-stack-sm {
+  min-width: 0;
+  flex: 1 1 auto;
+}
 .screenTitle {
   display: grid;
   gap: 5px;
