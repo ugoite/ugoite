@@ -1,0 +1,586 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Saved, portable Composition documents
+features:
+- id: FEAT-COMP-005
+  title: Composition Studio Design authoring
+  summary: 'Provide the Design workspace for Composition authoring: canvas, inspector, selection, mode
+    coordination, responsive presentation, and save readiness, with edits confined to transient drafts.'
+  status: implemented
+  bindings:
+  - id: studio-design-runtime
+    role: implementation
+    facet: frontend
+    responsibility: Implement the Composition Studio Design workspace, including canvas and inspector
+      editing, mode coordination, responsive inspector presentation, selection, and save readiness.
+    targets:
+    - id: browser-design-canvas
+      adapter: typescript
+      path: frontend/src/components/CompositionDesignCanvas.tsx
+      selector:
+        kind: symbol
+        name: CompositionDesignCanvas
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.text-style-enum
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.used-field-fingerprint
+      - kind: satisfies
+        criterion: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-composition-inspector
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.tsx
+      selector:
+        kind: symbol
+        name: CompositionInspector
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.text-style-enum
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.optional-display-labels
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field
+    - id: browser-studio-mode
+      adapter: typescript
+      path: frontend/src/components/CompositionStudio.tsx
+      selector:
+        kind: symbol
+        name: CompositionStudio
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-006#criterion.work-state-is-transient
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.local-horizontal-overflow
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.mobile-one-column
+    - id: browser-inspector-sheet
+      adapter: typescript
+      path: frontend/src/components/CompositionInspectorSheet.tsx
+      selector:
+        kind: symbol
+        name: CompositionInspectorSheet
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-006#criterion.work-state-is-transient
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.local-horizontal-overflow
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.mobile-one-column
+    - id: browser-studio-sync
+      adapter: typescript
+      path: frontend/src/lib/composition-studio-sync.ts
+      selector:
+        kind: file
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-006#criterion.work-state-is-transient
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.controller-owned-paging
+    - id: browser-studio-save-readiness
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.ts
+      selector:
+        kind: symbol
+        name: draftSaveReadiness
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.empty-layout-rejected
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
+  - id: studio-design-evidence
+    role: evidence
+    facet: frontend-tests
+    responsibility: Verify the Composition Studio Design workspace, canvas and inspector editing, mode
+      coordination, responsive inspector, selection, and save readiness.
+    targets:
+    - id: browser-design-canvas-selection
+      adapter: typescript
+      path: frontend/src/components/CompositionDesignCanvas.test.tsx
+      selector:
+        kind: test
+        name: selects canvas blocks without touching the draft
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: browser-design-canvas-text-insertion
+      adapter: typescript
+      path: frontend/src/components/CompositionDesignCanvas.test.tsx
+      selector:
+        kind: test
+        name: inserts text blocks declared and placed exactly once
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
+    - id: browser-design-canvas-parameter-placement
+      adapter: typescript
+      path: frontend/src/components/CompositionDesignCanvas.test.tsx
+      selector:
+        kind: test
+        name: places existing parameter controls without creating parameters
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-design-canvas-reorder
+      adapter: typescript
+      path: frontend/src/components/CompositionDesignCanvas.test.tsx
+      selector:
+        kind: test
+        name: reorders rows and items with keyboard-operable buttons
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: browser-design-canvas-remove
+      adapter: typescript
+      path: frontend/src/components/CompositionDesignCanvas.test.tsx
+      selector:
+        kind: test
+        name: removes component declarations and unplaces parameter controls
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-design-canvas-no-refetch
+      adapter: typescript
+      path: frontend/src/components/CompositionDesignCanvas.test.tsx
+      selector:
+        kind: test
+        name: routes block operations through the draft channel without extra queries
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.used-field-fingerprint
+    - id: browser-design-canvas-draft-moves
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: reorders rows and items within rows only
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: browser-studio-document-empty-rows
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: drops empty layout rows when emitting the document
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: browser-design-canvas-draft-query-stable
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: keeps layout-only edits query-stable without refetching sources
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.used-field-fingerprint
+    - id: browser-inspector-metric-label
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: binds metric label edits to the draft display
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.optional-display-labels
+    - id: browser-inspector-metric-source
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: maps metric source changes to component source and value field
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field
+    - id: browser-inspector-metric-value
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: maps metric value changes to the typed value field
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field
+    - id: browser-inspector-table-edits
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: binds table label and source edits to the draft display
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.optional-display-labels
+    - id: browser-inspector-text-edits
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: binds text content and style edits without touching sources
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
+    - id: browser-inspector-parameter-retarget
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: changes parameter placement targets without a label override
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-inspector-data-jump
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: exposes a data jump for the selected block source
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: browser-inspector-empty-selection
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: renders nothing without a resolvable selection
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-inspector-draft-metric-source
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: retargets metric source and value field together
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-value-field
+    - id: browser-inspector-draft-text-edits
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: edits text content and style with a fixed enum
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
+    - id: browser-inspector-draft-parameter-retarget
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: retargets parameter controls in place without touching declarations
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-studio-mode-arrangement
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: switches the workspace arrangement through one Design Data Split control
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-mode-continuity
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: keeps draft, preview, and selection continuous across modes without refetching
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-block-to-source
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: auto-selects the block source in Data and keeps text and parameter selections
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-source-highlight
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: soft-highlights using blocks distinctly from the selection
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-stale-suppression
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: resolves block, source, and mode changes during an in-flight preview to the latest draft
+          only
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-split-narrow
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: keeps Split desktop-only with stacked panes at narrow widths
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.local-horizontal-overflow
+    - id: browser-studio-save-text-button
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: saves through one visible text button with the blocked reason in its name
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.no-persistent-explanatory-copy
+    - id: browser-studio-save-busy-label
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: keeps the steady Save label while the save is in flight
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.no-persistent-explanatory-copy
+    - id: browser-studio-header-narrow
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: fits the destination-named back link, name, and Save in one 390px header row
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.local-horizontal-overflow
+    - id: browser-studio-mobile-sheet
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioMobile.test.tsx
+      selector:
+        kind: test
+        name: opens the selected block inspector in a bottom sheet on narrow viewports and returns focus
+          on close
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-mobile-inline
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioMobile.test.tsx
+      selector:
+        kind: test
+        name: keeps the inspector inline with no dialog on wide viewports
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-mobile-forcing
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioMobile.test.tsx
+      selector:
+        kind: test
+        name: forces Design when crossing below the Split gate
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-mobile-data-jump
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioMobile.test.tsx
+      selector:
+        kind: test
+        name: moves the sheet data jump to the Data workspace on narrow viewports
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-mobile-insert
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioMobile.test.tsx
+      selector:
+        kind: test
+        name: opens the sheet for a freshly inserted block on narrow viewports
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-mobile-narrow-contract
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioMobile.test.tsx
+      selector:
+        kind: test
+        name: keeps the mode switch single-row and the sheet within the viewport at 320px and 390px widths
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.local-horizontal-overflow
+    - id: browser-studio-sync-modes
+      adapter: typescript
+      path: frontend/src/lib/composition-studio-sync.test.ts
+      selector:
+        kind: test
+        name: exposes the Design, Data, and Split workspace modes
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-sync-block-source
+      adapter: typescript
+      path: frontend/src/lib/composition-studio-sync.test.ts
+      selector:
+        kind: test
+        name: maps metric and table blocks to their component source
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-sync-block-no-source
+      adapter: typescript
+      path: frontend/src/lib/composition-studio-sync.test.ts
+      selector:
+        kind: test
+        name: keeps the Data selection for text, parameter, and unknown blocks
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-sync-source-blocks
+      adapter: typescript
+      path: frontend/src/lib/composition-studio-sync.test.ts
+      selector:
+        kind: test
+        name: maps a source to the component blocks that use it
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-sync-visible-sources
+      adapter: typescript
+      path: frontend/src/lib/composition-studio-sync.test.ts
+      selector:
+        kind: test
+        name: lists visible-component sources without text or unplaced blocks
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.controller-owned-paging
+    - id: browser-design-canvas-highlight
+      adapter: typescript
+      path: frontend/src/components/CompositionDesignCanvas.test.tsx
+      selector:
+        kind: test
+        name: soft-highlights source blocks without changing the selection
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-design-canvas-palette-modal
+      adapter: typescript
+      path: frontend/src/components/CompositionDesignCanvas.test.tsx
+      selector:
+        kind: test
+        name: opens the palette as a modal dialog with focus trap and focus return
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: browser-design-canvas-palette-gating
+      adapter: typescript
+      path: frontend/src/components/CompositionDesignCanvas.test.tsx
+      selector:
+        kind: test
+        name: hides metric, table, and parameter entries without sources or parameters
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-design-canvas-text-spacing
+      adapter: typescript
+      path: frontend/src/components/CompositionDesignCanvas.test.tsx
+      selector:
+        kind: test
+        name: separates text content from the block action bar with token spacing
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
+    - id: browser-parameter-add-reason
+      adapter: typescript
+      path: frontend/src/components/CompositionParameterList.test.tsx
+      selector:
+        kind: test
+        name: names the disabled reason on the add control without prose
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-parameter-add-taken-reason
+      adapter: typescript
+      path: frontend/src/components/CompositionParameterList.test.tsx
+      selector:
+        kind: test
+        name: names the colliding id when the parameter already exists
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-studio-save-readiness-matrix
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: blocks saves until the name, refs, and layout are all ready
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.empty-layout-rejected
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-studio-canvas-operations
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+      selector:
+        kind: test
+        name: adds canvas blocks with label, reorder, and remove through canvas and inspector
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.optional-display-labels
+    - id: browser-studio-source-only-blocked
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+      selector:
+        kind: test
+        name: blocks a source-only save with an accessible reason and no save call
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.empty-layout-rejected
+    - id: browser-studio-true-modes
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: scopes Parameters Tags and the Data workspace to their owning modes only
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-blank-guided
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: guides a blank canvas with one Add-data action that opens the single picker
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-studio-diagnostics-strip
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: renders resolve diagnostics in the strip in every mode without refetch
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient

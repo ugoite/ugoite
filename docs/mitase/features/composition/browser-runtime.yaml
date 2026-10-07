@@ -1,0 +1,332 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Saved, portable Composition documents
+features:
+- id: FEAT-COMP-004
+  title: Composition Browser read and render runtime
+  summary: Render saved Composition revisions and bounded source query results in the Browser through
+    shared domain and query contracts and source-native presentation.
+  status: implemented
+  bindings:
+  - id: browser-query-runtime
+    role: implementation
+    facet: frontend
+    responsibility: Provide Browser adapters for exact Composition reads and existing source queries,
+      keeping query state transient. Render bounded lists, exact revisions, source-native tables, flow
+      layout, text, parameter controls, and metric values through existing contracts.
+    targets:
+    - id: browser-composition-api
+      adapter: typescript
+      path: frontend/src/lib/composition-api.ts
+      selector:
+        kind: symbol
+        name: compositionApi
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.exact-composition-revision
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.server-typed-result-descriptor
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+    - id: browser-query-handle
+      adapter: typescript
+      path: frontend/src/lib/composition-query-handle.ts
+      selector:
+        kind: symbol
+        name: createCompositionQueryHandle
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-006#criterion.work-state-is-transient
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.controller-owned-paging
+    - id: browser-shared-metric-evaluator
+      adapter: typescript
+      path: frontend/src/lib/ugoite-client/protocol.ts
+      selector:
+        kind: symbol
+        name: evaluateCompositionMetricPage
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.metric-runtime-values
+    - id: browser-composition-renderer
+      adapter: typescript
+      path: frontend/src/components/CompositionRenderer.tsx
+      selector:
+        kind: symbol
+        name: CompositionRenderer
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.metric-runtime-values
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.text-style-enum
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.source-native-composition-rendering
+    - id: browser-dashboard-flow-renderer
+      adapter: typescript
+      path: frontend/src/components/DashboardFlowRenderer.tsx
+      selector:
+        kind: symbol
+        name: DashboardFlowRenderer
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.source-native-composition-rendering
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.local-horizontal-overflow
+    - id: browser-flow-text
+      adapter: typescript
+      path: frontend/src/components/composition/TextComponent.tsx
+      selector:
+        kind: symbol
+        name: TextComponent
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.text-style-enum
+    - id: browser-parameter-control
+      adapter: typescript
+      path: frontend/src/components/composition/ParameterControl.tsx
+      selector:
+        kind: symbol
+        name: ParameterControl
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-saved-sql-viewer
+      adapter: typescript
+      path: frontend/src/components/SavedSqlSourceViewer.tsx
+      selector:
+        kind: symbol
+        name: SavedSqlSourceViewer
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.concealed-unavailable-references
+    - id: browser-entry-query-table
+      adapter: typescript
+      path: frontend/src/components/CompositionEntryQueryTable.tsx
+      selector:
+        kind: symbol
+        name: entryQueryDisplayColumns
+      claims:
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.source-native-composition-rendering
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.local-horizontal-overflow
+    - id: browser-home-route
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/dashboard.tsx
+      selector:
+        kind: file
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-composition-list-route
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/index.tsx
+      selector:
+        kind: symbol
+        name: CompositionListRoute
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-exact-revision-route
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
+      selector:
+        kind: symbol
+        name: CompositionRevisionRoute
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.exact-composition-revision
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+  - id: browser-query-runtime-evidence
+    role: evidence
+    facet: frontend-tests
+    responsibility: Verify Browser reads, bounded source queries, exact revision rendering, and source-native
+      Composition results through the existing query contracts.
+    targets:
+    - id: browser-bounded-list-operations
+      adapter: typescript
+      path: frontend/src/lib/composition-api.test.ts
+      selector:
+        kind: test
+        name: uses bounded portable list and exact-revision get operations
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-source-forwarding
+      adapter: typescript
+      path: frontend/src/lib/composition-api.test.ts
+      selector:
+        kind: test
+        name: forwards EntryQuery and Saved SQL pages through their existing query adapters
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+    - id: browser-stale-response-suppression
+      adapter: typescript
+      path: frontend/src/lib/composition-query-handle.test.ts
+      selector:
+        kind: test
+        name: pins get and resolve to the selected revision and ignores a stale parameter response
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-source-pagination
+      adapter: typescript
+      path: frontend/src/lib/composition-query-handle.test.ts
+      selector:
+        kind: test
+        name: uses the existing opaque Entry continuation for next and previous pages
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-saved-sql-pagination
+      adapter: typescript
+      path: frontend/src/lib/composition-query-handle.test.ts
+      selector:
+        kind: test
+        name: reuses the exact Saved SQL revision and opaque continuation for next and previous pages
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-saved-sql-parameter-generation
+      adapter: typescript
+      path: frontend/src/lib/composition-query-handle.test.ts
+      selector:
+        kind: test
+        name: resets Saved SQL continuations on parameter change and discards its stale page
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-metric-protocol-adapter
+      adapter: typescript
+      path: frontend/src/lib/ugoite-client/protocol.test.ts
+      selector:
+        kind: test
+        name: adapts metric protocol envelopes to scalar and diagnostic results
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: browser-exact-parameter-resolution
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+      selector:
+        kind: test
+        name: loads and resolves only the exact revision and binds typed parameter changes
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-required-parameter-diagnostic
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+      selector:
+        kind: test
+        name: renders deterministic diagnostics and retains the parameter control
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-dashboard-model
+    - id: browser-detail-read-retry
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+      selector:
+        kind: test
+        name: retries an exact-revision open after a read failure
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-metric-page-rendering
+      adapter: typescript
+      path: frontend/src/components/CompositionRenderer.test.tsx
+      selector:
+        kind: test
+        name: renders section order and displays the shared WASM metric result
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: browser-renderer-text-binding
+      adapter: typescript
+      path: frontend/src/components/CompositionRenderer.test.tsx
+      selector:
+        kind: test
+        name: renders text bindings from joined declarations without source requests
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
+    - id: browser-flow-row-order
+      adapter: typescript
+      path: frontend/src/components/DashboardFlowRenderer.test.tsx
+      selector:
+        kind: test
+        name: renders rows in order with parameter controls interleaved
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-flow-text-styles
+      adapter: typescript
+      path: frontend/src/components/DashboardFlowRenderer.test.tsx
+      selector:
+        kind: test
+        name: renders each text style without fetching sources
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
+    - id: browser-flow-viewport
+      adapter: typescript
+      path: frontend/src/components/DashboardFlowRenderer.test.tsx
+      selector:
+        kind: test
+        name: keeps flow rows inline with tables scrolling in their own viewport
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.local-horizontal-overflow
+    - id: browser-flow-revision-route
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+      selector:
+        kind: test
+        name: renders placed controls in flow order with text and the source-native table
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-flow-legacy-fallback
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+      selector:
+        kind: test
+        name: falls back to the flat renderer when the layout cannot be normalized
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision
+    - id: browser-metric-continuation-guard
+      adapter: typescript
+      path: frontend/src/components/CompositionRenderer.test.tsx
+      selector:
+        kind: test
+        name: keeps the first-page metric when the table advances to a continuation page
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: browser-home-reopen
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
+      selector:
+        kind: test
+        name: rediscovers saved tools from Home and opens the listed exact revision
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-composition-revision

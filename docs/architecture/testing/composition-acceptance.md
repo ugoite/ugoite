@@ -4,10 +4,10 @@ title: "Composition acceptance plan"
 
 This document defines the Composition acceptance meaning: the selector and
 boundary inventory, the evidence recording method, and the
-recovery/authorization expectations. Implementation status for the
-Composition Requirements and Feature is recorded in Mitase
+recovery/authorization expectations. Mitase records implementation status for
+Composition Requirements and Features
 (`docs/mitase/requirements/composition` and
-`docs/mitase/features/composition.yaml`); this document carries no plan
+`docs/mitase/features/composition/`); this document carries no plan
 status. The portable list, get,
 history, lint, resolve, save, and restore operations are implemented, as are
 the CLI list, history, inspect, lint, query, export, save, import, and restore
@@ -20,10 +20,10 @@ structured locator map is
 
 ## Contract and evidence boundary
 
-Implementation status for the Composition Requirements and Feature is
-recorded in Mitase; this document does not restate it. Focused domain and
+Mitase records implementation status for Composition Requirements and
+Features; this document does not restate it. Focused domain and
 Core resolver tests
-are bound in `docs/mitase/features/composition.yaml`; they establish those Rust
+are bound in `docs/mitase/features/composition/`; they establish those Rust
 contracts only. The reserved selectors in the locator map are not Mitase
 verification bindings until the corresponding integration tests run. The D0
 check validates the map, fixture presence, selector inventory, and recorded

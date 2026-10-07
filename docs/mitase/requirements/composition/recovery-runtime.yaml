@@ -31,7 +31,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-005#criterion.history-available
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-history-route
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-history-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "marks the current revision and pages through history" } }
           - id: history-retry-case
             adapter: typescript
@@ -41,7 +41,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-005#criterion.history-available
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-history-route
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-history-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "shows a retry control when history fails to load" } }
   - id: REQ-COMP-006
     title: Transient Composition runtime state
@@ -62,7 +62,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-query-handle
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-query-handle
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: pins get and resolve to the selected revision and ignores a stale parameter response } }
       - id: data-workspace-transient-verification
         role: verification
@@ -77,8 +77,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-data-workspace
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-source-navigator
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-source-navigator
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: selects navigator sources with full-row activation } }
           - id: data-navigator-reorder-case
             adapter: typescript
@@ -88,8 +88,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-data-workspace
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-source-navigator
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-source-navigator
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: reorders sources with keyboard-operable move buttons } }
       - id: studio-sync-verification
         role: verification
@@ -104,7 +104,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: switches the workspace arrangement through one Design Data Split control } }
           - id: studio-mode-continuity-case
             adapter: typescript
@@ -114,7 +114,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "keeps draft, preview, and selection continuous across modes without refetching" } }
           - id: studio-block-to-source-case
             adapter: typescript
@@ -124,8 +124,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-sync
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-sync
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: auto-selects the block source in Data and keeps text and parameter selections } }
           - id: studio-source-highlight-case
             adapter: typescript
@@ -135,8 +135,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-sync
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-sync
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: soft-highlights using blocks distinctly from the selection } }
           - id: studio-stale-suppression-case
             adapter: typescript
@@ -146,7 +146,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "resolves block, source, and mode changes during an in-flight preview to the latest draft only" } }
           - id: studio-sync-modes-case
             adapter: typescript
@@ -156,7 +156,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-sync
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-sync
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-studio-sync.test.ts, test: "exposes the Design, Data, and Split workspace modes" } }
           - id: studio-sync-block-source-case
             adapter: typescript
@@ -166,7 +166,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-sync
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-sync
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-studio-sync.test.ts, test: maps metric and table blocks to their component source } }
           - id: studio-sync-block-no-source-case
             adapter: typescript
@@ -176,7 +176,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-sync
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-sync
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-studio-sync.test.ts, test: "keeps the Data selection for text, parameter, and unknown blocks" } }
           - id: studio-sync-source-blocks-case
             adapter: typescript
@@ -186,7 +186,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-sync
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-sync
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-studio-sync.test.ts, test: maps a source to the component blocks that use it } }
           - id: studio-canvas-highlight-case
             adapter: typescript
@@ -196,7 +196,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-design-canvas
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: soft-highlights source blocks without changing the selection } }
           - id: studio-preview-stale-page-case
             adapter: typescript
@@ -206,7 +206,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-preview-handle
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-preview-handle
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: discards stale source pages from the previous draft } }
           - id: studio-mobile-sheet-case
             adapter: typescript
@@ -216,7 +216,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-inspector-sheet
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-inspector-sheet
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: opens the selected block inspector in a bottom sheet on narrow viewports and returns focus on close } }
           - id: studio-mobile-inline-case
             adapter: typescript
@@ -226,7 +226,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-inspector-sheet
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-inspector-sheet
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: keeps the inspector inline with no dialog on wide viewports } }
           - id: studio-mobile-forcing-case
             adapter: typescript
@@ -236,7 +236,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: forces Design when crossing below the Split gate } }
           - id: studio-mobile-data-jump-case
             adapter: typescript
@@ -246,8 +246,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-inspector-sheet
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-inspector-sheet
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: moves the sheet data jump to the Data workspace on narrow viewports } }
           - id: studio-mobile-insert-case
             adapter: typescript
@@ -257,8 +257,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.work-state-is-transient
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-inspector-sheet
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-inspector-sheet
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: opens the sheet for a freshly inserted block on narrow viewports } }
     criteria:
       - id: work-state-is-transient

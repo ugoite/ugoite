@@ -22,7 +22,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.entry-query-translation
                 covers:
-                  - FEAT-COMP-001#binding.entry-query-resolver/target.compile-entry-query-source
+                  - FEAT-COMP-002#binding.entry-query-resolver/target.compile-entry-query-source
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_cli_composition_inspect_query_export_match_core_remote } }
       - id: used-field-verification
         role: verification
@@ -37,7 +37,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.used-field-fingerprint
                 covers:
-                  - FEAT-COMP-001#binding.entry-query-resolver/target.compile-entry-query-source
+                  - FEAT-COMP-002#binding.entry-query-resolver/target.compile-entry-query-source
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::entry_query_fingerprint_ignores_unreferenced_schema_fields } }
       - id: saved-sql-revision-verification
         role: verification
@@ -52,7 +52,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
                 covers:
-                  - FEAT-COMP-001#binding.saved-sql-resolver/target.compile-exact-saved-sql-source
+                  - FEAT-COMP-002#binding.saved-sql-resolver/target.compile-exact-saved-sql-source
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_source_requires_the_exact_current_revision_descriptor } }
       - id: saved-sql-fingerprint-verification
         role: verification
@@ -67,7 +67,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.saved-sql-result-fingerprint
                 covers:
-                  - FEAT-COMP-001#binding.saved-sql-resolver/target.fingerprint-resolved-saved-sql-source
+                  - FEAT-COMP-002#binding.saved-sql-resolver/target.fingerprint-resolved-saved-sql-source
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_result_fingerprint_tracks_selected_metric_column } }
       - id: browser-exact-revision-verification
         role: verification
@@ -82,8 +82,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-composition-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-api
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-list-route
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-api
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-list-route
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: uses bounded portable list and exact-revision get operations } }
           - id: edit-route-load-case
             adapter: typescript
@@ -93,7 +93,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-composition-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-route
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "loads the exact revision through get and lint with a prefilled studio" } }
           - id: edit-route-save-case
             adapter: typescript
@@ -103,7 +103,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-composition-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-route
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "saves an update with base revision identity and a stable retry key" } }
           - id: edit-route-restore-continuity-case
             adapter: typescript
@@ -113,7 +113,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-composition-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-route
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "reopens a restored multi-row revision for continued editing" } }
           - id: history-list-case
             adapter: typescript
@@ -123,7 +123,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-composition-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-history-route
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-history-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "lists revisions with human labels and opens the exact revision" } }
           - id: route-case
             adapter: typescript
@@ -133,7 +133,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-composition-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-exact-revision-route
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-exact-revision-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: loads and resolves only the exact revision and binds typed parameter changes } }
           - id: home-case
             adapter: typescript
@@ -143,7 +143,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-composition-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-home-route
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-home-route
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: rediscovers saved tools from Home and opens the listed exact revision } }
       - id: data-workspace-query-verification
         role: verification
@@ -158,8 +158,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.entry-query-translation
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-editor
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-studio-capabilities
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-entry-query-editor
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-entry-query-studio-capabilities
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: maps entry-query filter edits onto the draft query } }
           - id: data-entry-query-dialog-mapping-case
             adapter: typescript
@@ -169,7 +169,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.entry-query-translation
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-studio-capabilities
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-entry-query-studio-capabilities
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-query-studio-capabilities.test.ts, test: maps draft filters through the dialog shape without flattening bindings } }
           - id: data-entry-query-capability-derivation-case
             adapter: typescript
@@ -179,7 +179,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.entry-query-translation
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-studio-capabilities
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-entry-query-studio-capabilities
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-query-studio-capabilities.test.ts, test: derives names and capabilities from the form definition } }
           - id: data-entry-query-invalid-operator-case
             adapter: typescript
@@ -189,7 +189,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.entry-query-translation
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-editor
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-entry-query-editor
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: rejects entry-query filter edits with unknown operators } }
           - id: data-saved-sql-exact-revision-case
             adapter: typescript
@@ -199,7 +199,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-saved-sql-viewer
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-saved-sql-viewer
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: updates the composition source to the exact new revision } }
           - id: data-saved-sql-revision-merge-case
             adapter: typescript
@@ -209,7 +209,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
                 covers:
-                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-saved-sql-viewer
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-saved-sql-viewer
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: points saved sql sources at an exact revision preserving bindings } }
       - id: draft-preview-verification
         role: verification
@@ -224,9 +224,9 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.draft-preview
                 covers:
-                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
-                  - FEAT-COMP-001#binding.layout-order-resolver/target.shared-plan-core
-                  - FEAT-COMP-001#binding.layout-order-resolver/target.layout-component-bindings
+                  - FEAT-COMP-002#binding.preview-resolver/target.resolve-composition-preview
+                  - FEAT-COMP-002#binding.layout-order-resolver/target.shared-plan-core
+                  - FEAT-COMP-002#binding.layout-order-resolver/target.layout-component-bindings
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::preview_resolves_through_the_same_semantics_without_revision_identity } }
           - id: preview-without-publication-case
             adapter: rust
@@ -236,7 +236,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.draft-preview
                 covers:
-                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                  - FEAT-COMP-002#binding.preview-resolver/target.resolve-composition-preview
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: draft_preview_resolves_without_publication } }
           - id: preview-invalid-case
             adapter: rust
@@ -246,7 +246,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.draft-preview
                 covers:
-                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                  - FEAT-COMP-002#binding.preview-resolver/target.resolve-composition-preview
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: invalid_draft_preview_reports_diagnostics_without_identity } }
           - id: preview-contract-case
             adapter: rust
@@ -256,7 +256,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.draft-preview
                 covers:
-                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                  - FEAT-COMP-002#binding.preview-resolver/target.resolve-composition-preview
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_documents_composition_preview_without_publication } }
       - id: layout-resolver-verification
         role: verification
@@ -271,7 +271,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.used-field-fingerprint
                 covers:
-                  - FEAT-COMP-001#binding.layout-order-resolver/target.shared-plan-core
+                  - FEAT-COMP-002#binding.layout-order-resolver/target.shared-plan-core
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::layout_only_additions_leave_source_requests_unchanged } }
           - id: sourceless-text-query-case
             adapter: rust
@@ -281,7 +281,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.used-field-fingerprint
                 covers:
-                  - FEAT-COMP-001#binding.layout-order-resolver/target.layout-component-bindings
+                  - FEAT-COMP-002#binding.layout-order-resolver/target.layout-component-bindings
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::text_components_emit_layout_ordered_bindings_without_source_requests } }
           - id: preview-placement-order-case
             adapter: rust
@@ -291,7 +291,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.draft-preview
                 covers:
-                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                  - FEAT-COMP-002#binding.preview-resolver/target.resolve-composition-preview
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: preview_exposes_placed_parameters_in_layout_order } }
     criteria:
       - id: entry-query-translation

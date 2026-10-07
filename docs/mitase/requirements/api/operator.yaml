@@ -141,7 +141,7 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.server-typed-result-descriptor
-                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-api]
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-api]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: stores the server-owned column types unchanged and never infers from rows } }
   - id: REQ-API-016
     title: Bounded stateless SQL export
