@@ -54,6 +54,10 @@ export interface CompositionDataWorkspaceProps {
   planSources: readonly CompositionResolvedSource[];
   sourceStates: Record<string, CompositionSourcePageState>;
   diagnostics: readonly CompositionResolveDiagnostic[];
+  /** True while the shared debounced preview is in flight. Result spinners
+   * render only while active; a settled preview without a page for a source
+   * renders nothing (the diagnostics strip already covers failures). */
+  previewActive: boolean;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -110,6 +114,7 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                     planSources={props.planSources}
                     sourceStates={props.sourceStates}
                     diagnostics={props.diagnostics}
+                    previewActive={props.previewActive}
                     onNext={props.onNext}
                     onPrevious={props.onPrevious}
                     onRetry={props.onRetry}
@@ -137,6 +142,7 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                 planSources={props.planSources}
                 sourceStates={props.sourceStates}
                 diagnostics={props.diagnostics}
+                previewActive={props.previewActive}
                 onNext={props.onNext}
                 onPrevious={props.onPrevious}
                 onRetry={props.onRetry}

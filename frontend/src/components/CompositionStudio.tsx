@@ -28,7 +28,6 @@ import {
   CompositionSourcePicker,
   type CompositionSourceSeed,
 } from "~/components/CompositionSourcePicker";
-import { IconButton } from "~/components/IconButton";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { UiIcon } from "~/components/UiIcon";
 import {
@@ -742,6 +741,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       planSources={readyPlan()?.sources ?? []}
       sourceStates={readySources()}
       diagnostics={previewDiagnostics() ?? []}
+      previewActive={isPreviewing()}
       onNext={(sourceId) => previewHandle.next(sourceId)}
       onPrevious={(sourceId) => previewHandle.previous(sourceId)}
       onRetry={(sourceId) => previewHandle.retry(sourceId)}
@@ -872,13 +872,17 @@ export function CompositionStudio(props: CompositionStudioProps) {
           onInput={(event) =>
             setDraft(setDraftName(draft(), event.currentTarget.value))}
         />
-        <IconButton
-          icon="save"
-          label={saveLabel()}
+        {/* Visible text Save: the icon-button hid the primary mutation. */}
+        <button
+          class="ui-button"
+          type="button"
+          aria-label={saveLabel()}
           title={canSave() ? undefined : saveLabel()}
           disabled={!canSave()}
           onClick={() => void handleSave()}
-        />
+        >
+          {t("composition.save")}
+        </button>
       </header>
       <div
         class="studioMode"

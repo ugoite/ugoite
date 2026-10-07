@@ -56,6 +56,10 @@ interface EntryQuerySourceEditorProps {
   planSources: readonly CompositionResolvedSource[];
   sourceStates: Record<string, CompositionSourcePageState>;
   diagnostics: readonly CompositionResolveDiagnostic[];
+  /** True while the shared debounced preview is in flight. The result
+   * spinner renders only while active; settled without a page renders
+   * nothing. */
+  previewActive: boolean;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -136,12 +140,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
             {t("entryBrowser.addFilter")}
           </button>
         </div>
-        <Show
-          when={props.source.query.filters.length > 0}
-          fallback={
-            <p class="ui-muted">{t("entryBrowser.noFilterCapabilities")}</p>
-          }
-        >
+        <Show when={props.source.query.filters.length > 0}>
           <ul class="ui-stack-sm">
             <For each={props.source.query.filters}>
               {(filter, index) => (
@@ -253,12 +252,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
             {t("entryBrowser.addSort")}
           </button>
         </div>
-        <Show
-          when={props.source.query.sort.length > 0}
-          fallback={
-            <p class="ui-muted">{t("entryBrowser.noSortCapabilities")}</p>
-          }
-        >
+        <Show when={props.source.query.sort.length > 0}>
           <ul class="ui-stack-sm">
             <For each={props.source.query.sort}>
               {(clause, index) => (
@@ -406,6 +400,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
           planSource={planSource()}
           sourceState={sourceState()}
           unavailable={unavailable()}
+          previewActive={props.previewActive}
           onNext={() => props.onNext(props.source.draftId)}
           onPrevious={() => props.onPrevious(props.source.draftId)}
           onRetry={() => props.onRetry(props.source.draftId)}
@@ -429,6 +424,7 @@ function EntryQuerySourceResult(props: {
     | undefined;
   sourceState: CompositionSourcePageState | undefined;
   unavailable: boolean;
+  previewActive: boolean;
   onNext: () => void;
   onPrevious: () => void;
   onRetry: () => void;
@@ -440,6 +436,11 @@ function EntryQuerySourceResult(props: {
   const rows = () => page()?.rows ?? [];
   const status = () => props.sourceState?.status;
   const loading = () => !props.sourceState || status() === "loading";
+  // The spinner renders only while the shared preview is in flight. Settled
+  // without a page for this source renders nothing here; the diagnostics
+  // strip already covers failures.
+  const showSpinner = () =>
+    !props.unavailable && props.previewActive && loading();
 
   return (
     <div>
@@ -448,7 +449,7 @@ function EntryQuerySourceResult(props: {
           {t("composition.diagnostic.source_unavailable")}
         </p>
       </Show>
-      <Show when={!props.unavailable && loading()}>
+      <Show when={showSpinner()}>
         <LocalBusyIndicator label={t("composition.queryLoading")} />
       </Show>
       <Show when={!props.unavailable && status() === "error"}>

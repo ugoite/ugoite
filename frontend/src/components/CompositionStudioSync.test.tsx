@@ -28,6 +28,7 @@ const {
   previewMock,
   querySourceMock,
   canonicalizeMock,
+  saveMock,
   sqlGetMock,
   sqlQueryMock,
   sqlListMock,
@@ -37,6 +38,7 @@ const {
   previewMock: vi.fn(),
   querySourceMock: vi.fn(),
   canonicalizeMock: vi.fn(),
+  saveMock: vi.fn(),
   sqlGetMock: vi.fn(),
   sqlQueryMock: vi.fn(),
   sqlListMock: vi.fn(),
@@ -64,6 +66,8 @@ vi.mock("~/lib/composition-api", () => ({
       (previewMock as (...call: unknown[]) => unknown)(...args),
     querySource: (...args: unknown[]) =>
       (querySourceMock as (...call: unknown[]) => unknown)(...args),
+    save: (...args: unknown[]) =>
+      (saveMock as (...call: unknown[]) => unknown)(...args),
   },
 }));
 
@@ -508,6 +512,71 @@ describe("CompositionStudioSync", () => {
 
     await sleep(700);
     expect(previewMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves through one visible text button with the blocked reason in its name", () => {
+    renderStudio(createEmptyDraft(""));
+    // Single control: visible text, never an icon-only button.
+    const save = screen.getByRole("button", {
+      name: "Save, Enter a name to save.",
+    });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute("title", "Save, Enter a name to save.");
+    expect(save.textContent).toBe("Save");
+    expect(save.querySelector("svg")).toBeNull();
+  });
+
+  it("keeps the steady Save label while the save is in flight", async () => {
+    let resolveSave!: (response: unknown) => void;
+    saveMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    renderStudio();
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeEnabled();
+    expect(save.textContent).toBe("Save");
+
+    fireEvent.click(save);
+    // Explicit busy without layout shift: the same label, disabled, still
+    // the single Save control.
+    await waitFor(() => {
+      expect(save).toBeDisabled();
+    });
+    expect(save.textContent).toBe("Save");
+    expect(screen.getByRole("button", { name: "Save" })).toBe(save);
+
+    await sleep(700);
+    expect(saveMock).toHaveBeenCalledTimes(1);
+    resolveSave({ composition_id: "tool-1", revision_id: "rev-1" });
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledTimes(1);
+    });
+    expect(save).toBeEnabled();
+  });
+
+  it("fits Back, name, and Save in one header row at 390px widths", () => {
+    const { container } = renderStudio();
+    const header = container.querySelector("header");
+    expect(header).not.toBeNull();
+    const scope = within(header as HTMLElement);
+    // One Back control, one name input, one Save text button. The mocked
+    // router link drops the destination sentence, so the name is the
+    // visible positional short form here.
+    expect(
+      scope.getByRole("link", { name: "Back" }),
+    ).toBeInTheDocument();
+    const name = scope.getByLabelText("Name");
+    expect(name).toHaveClass("ui-input");
+    expect(scope.getByRole("button", { name: "Save" })).toHaveTextContent(
+      "Save",
+    );
+    // The name input flexes: it shrinks inside the one-row flex header, so
+    // the text Save never pushes the row past 390px.
+    expect(header).toHaveClass("flex");
+    expect(stylesheet()).toMatch(/\.ui-input[\s\S]*?min-width:\s*0/);
   });
 
   it("keeps Split desktop-only with stacked panes at narrow widths", () => {

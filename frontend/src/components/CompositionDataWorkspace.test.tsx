@@ -112,6 +112,7 @@ const renderWorkspace = (
     planSources?: readonly CompositionResolvedSource[];
     sourceStates?: Record<string, CompositionSourcePageState>;
     diagnostics?: readonly CompositionResolveDiagnostic[];
+    previewActive?: boolean;
   } = {},
 ): Harness => {
   const [current, setCurrent] = createSignal(initial);
@@ -163,7 +164,7 @@ const renderWorkspace = (
       planSources={overrides.planSources ?? []}
       sourceStates={overrides.sourceStates ?? {}}
       diagnostics={overrides.diagnostics ?? []}
-      previewing={false}
+      previewActive={overrides.previewActive ?? false}
       onNext={harness.onNext}
       onPrevious={harness.onPrevious}
       onRetry={harness.onRetry}
@@ -401,12 +402,12 @@ describe("CompositionDataWorkspace", () => {
   });
 
   it("renders explicit loading, empty, and error result states", async () => {
-    const harness = renderWorkspace(twoSourceDraft());
+    const loading = renderWorkspace(twoSourceDraft(), { previewActive: true });
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     await screen.findByRole("heading", { name: "Expenses" });
-    // No page yet: the existing preview path is still loading.
+    // No page yet with the shared preview in flight: the spinner shows.
     expect(
-      await within(harness.editor()).findByText("Loading results…"),
+      await within(loading.editor()).findByText("Loading results…"),
     ).toBeInTheDocument();
 
     cleanup();
@@ -475,6 +476,130 @@ describe("CompositionDataWorkspace", () => {
     expect(
       await within(empty.editor()).findByText("No results"),
     ).toBeInTheDocument();
+  });
+
+  it("renders nothing settled without a source page and no filter or sort prose", async () => {
+    const harness = renderWorkspace(twoSourceDraft());
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+    // Settled preview without a page for this source: no spinner, no error,
+    // no empty text. The diagnostics strip already covers failures.
+    expect(within(editor).queryByText("Loading results…")).toBeNull();
+    expect(within(editor).queryByText("Could not load results.")).toBeNull();
+    expect(within(editor).queryByText("No results")).toBeNull();
+    // Zero clauses render nothing: the Add buttons stay the guidance.
+    expect(
+      within(editor).queryByText("No filterable fields are available", {
+        exact: false,
+      }),
+    ).toBeNull();
+    expect(
+      within(editor).queryByText("No sortable fields are available", {
+        exact: false,
+      }),
+    ).toBeNull();
+    expect(
+      within(editor).getByRole("button", { name: "Add filter" }),
+    ).toBeEnabled();
+    expect(
+      within(editor).getByRole("button", { name: "Add sort" }),
+    ).toBeEnabled();
+  });
+
+  it("keeps the add controls disabled without schema fields", async () => {
+    let draft = createEmptyDraft("Tool");
+    draft = addEntryQuerySource(draft, {
+      formId: "11111111-1111-4111-8111-111111111111",
+      name: "Fieldless",
+      fieldSchema: [],
+      query: {
+        filters: [],
+        sort: [],
+        projection: { kind: "preview" as const },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Fieldless" }));
+    await screen.findByRole("heading", { name: "Fieldless" });
+    const editor = harness.editor();
+    // Genuinely empty fields: the Add buttons disable, still with no prose.
+    expect(
+      within(editor).getByRole("button", { name: "Add filter" }),
+    ).toBeDisabled();
+    expect(
+      within(editor).getByRole("button", { name: "Add sort" }),
+    ).toBeDisabled();
+    expect(
+      within(editor).queryByText("No filterable fields are available", {
+        exact: false,
+      }),
+    ).toBeNull();
+    expect(
+      within(editor).queryByText("No sortable fields are available", {
+        exact: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("gates saved sql result spinners on the active preview", async () => {
+    const idle = renderWorkspace(twoSourceDraft());
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Monthly totals" }),
+    );
+    await screen.findByRole("heading", { name: "Monthly totals" });
+    // The Saved SQL entry loads, but the settled preview carries no page
+    // for this source: no spinner, no error.
+    const idleEditor = idle.editor();
+    await within(idleEditor).findByText("SELECT SUM(amount) AS total", {
+      exact: false,
+    });
+    expect(within(idleEditor).queryByText("Loading results…")).toBeNull();
+    expect(within(idleEditor).queryByText("Could not load results."))
+      .toBeNull();
+
+    cleanup();
+    const active = renderWorkspace(twoSourceDraft(), { previewActive: true });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Monthly totals" }),
+    );
+    await screen.findByRole("heading", { name: "Monthly totals" });
+    expect(
+      await within(active.editor()).findByText("Loading results…"),
+    ).toBeInTheDocument();
+
+    cleanup();
+    const ready = renderWorkspace(twoSourceDraft(), {
+      planSources: [{
+        kind: "saved_sql",
+        source_id: "src-1",
+        request: {
+          sql: "SELECT SUM(amount) AS total FROM expenses",
+          limit: 100,
+          saved_sql: { id: "sql-1", revision_id: "sql-rev-1" },
+        },
+        source_schema_fingerprint: "fp",
+      }],
+      sourceStates: {
+        "src-1": {
+          status: "ready",
+          cursorStack: [undefined],
+          page: {
+            kind: "saved_sql",
+            page: { columns: ["total"], rows: [[128400]], has_more: false },
+          },
+        },
+      },
+      diagnostics: [],
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Monthly totals" }),
+    );
+    await screen.findByRole("heading", { name: "Monthly totals" });
+    // Ready rows render settled exactly as before, spinner-free.
+    const readyEditor = ready.editor();
+    await within(readyEditor).findByText("128400");
+    expect(within(readyEditor).queryByText("Loading results…")).toBeNull();
   });
 
   it("stacks the navigator and editor at narrow widths", () => {

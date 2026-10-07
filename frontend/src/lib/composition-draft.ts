@@ -1346,16 +1346,24 @@ export const toStudioDocument = (
     }),
     layout: {
       kind: "flow",
-      rows: draft.layoutRows.length > 0
-        ? draft.layoutRows.map((row) => ({
-          id: row.id,
-          items: row.items.map((item) =>
-            item.kind === "component"
-              ? { kind: "component" as const, component: item.draftId }
-              : { kind: "parameter" as const, parameter: item.parameterId }
-          ),
-        }))
-        : [{ id: "main", items: [] }],
+      // Empty rows carry no placement meaning and the domain rejects them,
+      // so they never reach the document; palette insertions routinely leave
+      // the initial empty row behind. A draft with no placed items at all
+      // still emits one empty row so the failure stays a clean validation
+      // diagnostic instead of a shape error.
+      rows: (() => {
+        const placed = draft.layoutRows.filter((row) => row.items.length > 0);
+        const rows = (placed.length > 0 ? placed : [{ id: "main", items: [] }])
+          .map((row) => ({
+            id: row.id,
+            items: row.items.map((item) =>
+              item.kind === "component"
+                ? { kind: "component" as const, component: item.draftId }
+                : { kind: "parameter" as const, parameter: item.parameterId }
+            ),
+          }));
+        return rows;
+      })(),
     },
   },
 });

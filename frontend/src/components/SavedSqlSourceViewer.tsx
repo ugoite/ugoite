@@ -43,6 +43,10 @@ interface SavedSqlSourceViewerProps {
   planSources: readonly CompositionResolvedSource[];
   sourceStates: Record<string, CompositionSourcePageState>;
   diagnostics: readonly CompositionResolveDiagnostic[];
+  /** True while the shared debounced preview is in flight. The result
+   * spinner renders only while active; settled without a page renders
+   * nothing. */
+  previewActive: boolean;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -256,6 +260,7 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
                 source={props.source}
                 planSource={planSource()}
                 sourceState={sourceState()}
+                previewActive={props.previewActive}
                 onNext={() => props.onNext(props.source.draftId)}
                 onPrevious={() => props.onPrevious(props.source.draftId)}
                 onRetry={() => props.onRetry(props.source.draftId)}
@@ -283,6 +288,7 @@ function SavedSqlSourceResult(props: {
     | Extract<CompositionResolvedSource, { kind: "saved_sql" }>
     | undefined;
   sourceState: CompositionSourcePageState | undefined;
+  previewActive: boolean;
   onNext: () => void;
   onPrevious: () => void;
   onRetry: () => void;
@@ -294,10 +300,14 @@ function SavedSqlSourceResult(props: {
   const rows = () => page()?.rows ?? [];
   const status = () => props.sourceState?.status;
   const loading = () => !props.sourceState || status() === "loading";
+  // The spinner renders only while the shared preview is in flight. Settled
+  // without a page for this source renders nothing here; the diagnostics
+  // strip already covers failures.
+  const showSpinner = () => props.previewActive && loading();
 
   return (
     <div>
-      <Show when={loading()}>
+      <Show when={showSpinner()}>
         <LocalBusyIndicator label={t("composition.queryLoading")} />
       </Show>
       <Show when={status() === "error"}>
