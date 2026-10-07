@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-04"
+updated: "2026-10-07"
 page:
   id: space-sql-results
   title: Saved query results
@@ -15,6 +15,7 @@ components:
       type: heading
       title: Saved query name
       ownership: object-identity
+      copy: No persistent explanatory subtitle
     - id: sql-results-table
       type: query-results
       source: sql.query using exact Saved SQL ID and revision with server-derived Form bindings

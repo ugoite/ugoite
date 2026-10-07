@@ -434,6 +434,8 @@ features:
                 criterion: REQ-FE-068#criterion.shared-result-visual-language
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.controller-owned-paging
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.no-redundant-result-explanation
           - id: sql-result-table
             adapter: typescript
             path: frontend/src/components/SqlResultTable.tsx

@@ -156,6 +156,21 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
     }, expect.any(AbortSignal));
   });
 
+  it("REQ-FE-068: omits persistent explanatory copy from saved SQL results", async () => {
+    const renderResults = async () => {
+      render(() => <SpaceSqlRunRoute />);
+      await screen.findByRole("columnheader", { name: "value" });
+      expect(document.querySelector(".ui-page-subtitle")).toBeNull();
+    };
+
+    setLocale("en");
+    await renderResults();
+    cleanup();
+
+    setLocale("ja");
+    await renderResults();
+  });
+
   it("keeps duplicate SQL column names attached to their original positions", async () => {
     queryMock.mockReset().mockResolvedValueOnce({
       columns: ["same", "same"],

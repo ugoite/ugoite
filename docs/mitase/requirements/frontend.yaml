@@ -2308,6 +2308,10 @@ requirements:
         kind: behavior
         statement: Horizontal scrolling is contained in the result viewport; pages do not overflow horizontally at 320px and 390px widths, and narrow one- or two-column tables fit the viewport without a fixed giant minimum width.
         governed_by: [POL-006#rule.governance]
+      - id: no-redundant-result-explanation
+        kind: behavior
+        statement: A result surface gives query identity, results, and operative controls their visible owners without persistent explanatory copy that repeats already-established context or the result's transient state.
+        governed_by: [POL-UI-002#rule.governance]
       - id: source-native-composition-rendering
         kind: behavior
         statement: Composition table components delegate presentation to the source-native Entry or SQL result presenter and never define a third generic table grammar; source query semantics remain unchanged and metrics use the shared evaluator without Browser aggregation.
@@ -2478,6 +2482,15 @@ requirements:
                 criterion: REQ-FE-068#criterion.controller-owned-paging
                 covers: [FEAT-FE-007#binding.frontend/target.sql-run-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "renders arbitrary SQL rows and keeps pagination client-held" } }
+          - id: sql-results-no-explanatory-copy
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
+            selector: { kind: test, name: "REQ-FE-068: omits persistent explanatory copy from saved SQL results" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.no-redundant-result-explanation
+                covers: [FEAT-FE-007#binding.frontend/target.sql-run-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "REQ-FE-068: omits persistent explanatory copy from saved SQL results" } }
           - id: sql-result-table-rendering
             adapter: typescript
             path: frontend/src/components/SqlResultTable.test.tsx
