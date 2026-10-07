@@ -443,4 +443,3 @@ requirements:
                 criterion: REQ-OPS-024#criterion.docsite-coverage-gate
                 covers: [FEAT-OPS-001#binding.migrated-ops-coverage/target.docsite-coverage-config, FEAT-OPS-001#binding.automation/target.root-mise]
                 runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: 'REQ-OPS-024: docsite coverage remains developer convenience' } }
-

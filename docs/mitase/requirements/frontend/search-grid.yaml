@@ -263,4 +263,3 @@ requirements:
                 criterion: REQ-FE-065#criterion.confirm-action
                 covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/components/EntryResultTable.test.tsx", test: "REQ-FE-065: confirms with a compact, accessibly named chevron in select mode" } }
-

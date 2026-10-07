@@ -185,4 +185,3 @@ requirements:
                 criterion: REQ-SEC-005#criterion.opaque-bootstrap-session
                 covers: [FEAT-SEC-002#binding.identity/target.session-validation]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-identity, test: node_identity::tests::browser_sessions_expire_and_are_revoked_without_exposing_verifiers } }
-

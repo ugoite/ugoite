@@ -76,4 +76,3 @@ features:
             adapter: openapi
             path: crates/ugoite-server/src/openapi.json
             selector: { kind: operation, method: get, path: /spaces }
-

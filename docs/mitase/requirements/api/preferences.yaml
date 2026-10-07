@@ -17,4 +17,3 @@ requirements:
         kind: behavior
         statement: Preference updates validate selected_space_id and return an explicit error when preference storage fails.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
-

@@ -182,4 +182,3 @@ requirements:
                 criterion: REQ-API-002#criterion.entry-lifecycle
                 covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_entry_create_req_api_002_routes_to_backend_post_entries } }
-

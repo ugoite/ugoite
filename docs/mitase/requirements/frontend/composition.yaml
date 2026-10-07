@@ -743,4 +743,3 @@ requirements:
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: renders resolve diagnostics in the strip in every mode without refetch } }
-

@@ -385,4 +385,3 @@ requirements:
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" } }
-

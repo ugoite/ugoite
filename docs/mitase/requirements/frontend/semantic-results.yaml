@@ -425,4 +425,3 @@ requirements:
                 criterion: REQ-FE-068#criterion.controller-owned-paging
                 covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-sync]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-studio-sync.test.ts, test: lists visible-component sources without text or unplaced blocks } }
-

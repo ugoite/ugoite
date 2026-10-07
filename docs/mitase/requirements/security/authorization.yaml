@@ -200,4 +200,3 @@ requirements:
                   - FEAT-SEC-004#binding.audit/target.audit-list
                   - FEAT-SEC-004#binding.audit/target.audit-server
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::req_sec_008_space_audit_is_visible_only_to_space_owners } }
-

@@ -190,4 +190,3 @@ features:
             role: backend
         guarantees:
           - REQ-SEC-014#criterion.recovery-audit-attribution
-

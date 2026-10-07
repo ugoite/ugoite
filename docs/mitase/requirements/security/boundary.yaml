@@ -146,4 +146,3 @@ requirements:
                 criterion: REQ-SEC-003#criterion.protected-mcp
                 covers: [FEAT-SEC-001#binding.server/target.mcp-authentication]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: mcp_v1_transport_rejects_legacy_methods_and_validates_the_wire_shape } }
-

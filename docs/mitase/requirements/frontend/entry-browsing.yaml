@@ -229,4 +229,3 @@ requirements:
                 criterion: REQ-FE-043#criterion.readable-errors
                 covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-043: create-entry dialog renders rejected submit errors inline" } }
-

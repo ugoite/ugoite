@@ -109,4 +109,3 @@ requirements:
                 criterion: REQ-STO-013#criterion.canonical-coordinate-resolution
                 covers: [FEAT-STO-001#binding.derived/target.logical-coordinate-resolver]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: logical_storage::tests::logical_coordinates_resolve_to_the_bound_memory_space } }
-

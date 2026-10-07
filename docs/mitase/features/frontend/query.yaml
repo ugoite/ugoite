@@ -120,4 +120,3 @@ features:
                 criterion: REQ-FE-068#criterion.controller-owned-paging
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.local-horizontal-overflow
-

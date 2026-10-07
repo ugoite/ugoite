@@ -230,4 +230,3 @@ requirements:
                 criterion: REQ-OPS-025#criterion.release-authority-drift-gate
                 covers: [FEAT-OPS-001#binding.release-authority/target.authority-gate, FEAT-OPS-001#binding.release-authority/target.roadmap-claims]
                 runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::roadmap_with_returned_view_claim_fails } }
-

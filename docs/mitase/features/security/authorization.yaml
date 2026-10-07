@@ -234,4 +234,3 @@ features:
         guarantees:
           - REQ-SEC-008#criterion.attributed-append-only-audit
           - REQ-SEC-008#criterion.owner-authorized-audit-read
-

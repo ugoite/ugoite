@@ -167,4 +167,3 @@ requirements:
                 criterion: REQ-SEC-014#criterion.recovery-audit-attribution
                 covers: [FEAT-SEC-003#binding.server/target.node-audit]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_014_openapi_publishes_account_recovery_surfaces } }
-

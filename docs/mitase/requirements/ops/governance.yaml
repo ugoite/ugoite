@@ -118,4 +118,3 @@ requirements:
                 criterion: REQ-OPS-043#criterion.knowledge-compatibility-gate
                 covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.knowledge-compatibility]
                 runner: { runner: deno-test-file, arguments: { file: tools/knowledge_compatibility_test.ts, test: Knowledge Compatibility Review is a checked PR gate } }
-

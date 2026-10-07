@@ -369,4 +369,3 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-059#criterion.system-appearance
-

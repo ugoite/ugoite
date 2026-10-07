@@ -415,4 +415,3 @@ requirements:
                 criterion: REQ-STO-010#criterion.routing-help-contract
                 covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_cli_help_req_sto_010_describes_context_routing } }
-

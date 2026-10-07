@@ -24,4 +24,3 @@ requirements:
         kind: behavior
         statement: A future sample-data API exposes scenario discovery and asynchronous generation job status.
         governed_by: [POL-002#rule.governance, POL-004#rule.governance]
-

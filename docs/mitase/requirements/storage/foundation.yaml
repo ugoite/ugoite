@@ -141,4 +141,3 @@ requirements:
                 criterion: REQ-STO-007#criterion.backend-neutral-io
                 covers: [FEAT-STO-001#binding.opendal/target.operator-factory]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-storage, test: tests::operator_from_uri_supports_fs_and_memory } }
-

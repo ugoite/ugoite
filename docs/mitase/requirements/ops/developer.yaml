@@ -244,4 +244,3 @@ requirements:
                 criterion: REQ-OPS-019#criterion.root-mise-surface
                 covers: [FEAT-OPS-001#binding.automation/target.root-mise]
                 runner: { runner: deno-test-file, arguments: { file: tools/workspace_test.ts, test: 'REQ-OPS-019: supported developer entrypoints use the root Mise surface' } }
-

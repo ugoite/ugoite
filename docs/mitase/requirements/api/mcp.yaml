@@ -121,4 +121,3 @@ requirements:
         kind: documentation
         statement: Current MCP documentation describes the shipped search, save, delete, and lazy Entry/Form resource facade and separates future capabilities.
         governed_by: [POL-015#rule.governance]
-

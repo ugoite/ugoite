@@ -220,4 +220,3 @@ features:
           - REQ-SEC-005#criterion.initial-owner-passkey
           - REQ-SEC-005#criterion.bootstrap-recovery-material
           - REQ-SEC-005#criterion.opaque-bootstrap-session
-
