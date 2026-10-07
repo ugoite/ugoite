@@ -842,18 +842,19 @@ describe("CreateEntryDialog", () => {
     expect(amount).toHaveValue("12.");
 
     const startedAt = screen.getByLabelText(/StartedAt/);
-    expect(startedAt).toHaveAttribute("type", "text");
+    expect(startedAt).toHaveAttribute("type", "datetime-local");
+    const startedAtValue = "2026-07-18T12:34:56.123";
     fireEvent.input(startedAt, {
-      target: { value: "2026-07-18T12:34:56.123456789+09:00" },
+      target: { value: startedAtValue },
     });
-    expect(startedAt).toHaveValue("2026-07-18T12:34:56.123456789+09:00");
+    expect(startedAt).toHaveValue(startedAtValue);
 
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(onSubmit).toHaveBeenCalledWith(
       "Event",
       {
         Amount: "12.",
-        StartedAt: "2026-07-18T12:34:56.123456789+09:00",
+        StartedAt: startedAtValue,
       },
       "webform",
     );

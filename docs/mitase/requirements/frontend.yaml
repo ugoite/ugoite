@@ -3415,3 +3415,64 @@ requirements:
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: renders resolve diagnostics in the strip in every mode without refetch } }
+
+  - id: REQ-FE-071
+    title: Typed Entry Field Controls
+    description: Shared Entry creation and editing controls match each field type while preserving the value semantics owned by the Rust boundary.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: string-autogrow
+        kind: behavior
+        statement: String fields start as a single row and grow to show entered line breaks; read-only string values retain those line breaks, while Markdown fields keep their distinct initially multiline editor.
+        governed_by: [POL-UI-002#rule.governance]
+      - id: temporal-controls
+        kind: behavior
+        statement: Date, time, and timestamp fields use their corresponding native browser controls; timezone-aware timestamp editing preserves the represented instant and fractional seconds.
+        governed_by: [POL-UI-002#rule.governance]
+      - id: uuid-generation
+        kind: behavior
+        statement: UUID fields keep a direct value control and provide a compact action that generates a UUID into that field.
+        governed_by: [POL-UI-002#rule.governance]
+    bindings:
+      - id: field-input-verification
+        role: verification
+        facet: verification
+        responsibility: Verify one-row string expansion, read-only line-break display, native temporal controls, offset preservation, fractional seconds, and UUID generation through exact frontend tests.
+        targets:
+          - id: string-auto-grow-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "grows string fields from one row and preserves number-oriented input" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-071#criterion.string-autogrow
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "grows string fields from one row and preserves number-oriented input" } }
+          - id: temporal-controls-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "renders time and timestamp fields with native temporal controls" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-071#criterion.temporal-controls
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "renders time and timestamp fields with native temporal controls" } }
+          - id: read-only-string-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "preserves line breaks in read-only string values" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-071#criterion.string-autogrow
+                covers: [FEAT-FE-003#binding.frontend/target.field-value-view]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "preserves line breaks in read-only string values" } }
+          - id: uuid-generation-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "generates UUID values from the compact field action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-071#criterion.uuid-generation
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "generates UUID values from the compact field action" } }

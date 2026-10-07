@@ -50,6 +50,14 @@ components:
         list: multiline-input
         markdown: multiline-input
         row_reference: searchable-entry-picker
+        string: single-row-autogrowing-textarea
+        string_view: preserve-line-breaks
+        time: native-time-input
+        timestamp: native-datetime-local-input
+        timestamp_tz: browser-local-datetime-input-with-offset-preservation
+        timestamp_ns: native-datetime-local-input-with-fractional-seconds
+        timestamp_tz_ns: browser-local-datetime-input-with-offset-and-fractional-seconds
+        uuid: text-input-with-generate-action
         scalar: free-form-text-input
       validation: inline
 responsive:

@@ -757,6 +757,15 @@ code {
   min-height: 120px;
   resize: vertical;
 }
+.ui-textarea-auto {
+  min-height: 38px;
+  overflow-y: hidden;
+  resize: none;
+}
+.ui-field-value-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .ui-alert {
   border: 1px solid var(--line);
   border-radius: 11px;
