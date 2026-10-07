@@ -28,6 +28,7 @@ type Surface = {
   id: string;
   path: (seed: CompactControlSeed) => string;
   layout: "screen-head" | "composition-studio" | "entry-detail";
+  backName: string;
 };
 type EvidenceResult = {
   source_sha: string;
@@ -52,63 +53,75 @@ const surfaces: Surface[] = [
   {
     id: "sql-new",
     layout: "screen-head",
+    backName: "Back to Saved SQL",
     path: (s) => `/spaces/${s.spaceId}/sql/new`,
   },
   {
     id: "sql-detail",
     layout: "screen-head",
+    backName: "Back to Saved SQL",
     path: (s) => `/spaces/${s.spaceId}/sql/${s.sqlId}`,
   },
   {
     id: "sql-variables",
     layout: "screen-head",
+    backName: "Back to Saved SQL",
     path: (s) => `/spaces/${s.spaceId}/sql/${s.sqlId}/variables`,
   },
   {
     id: "sql-run",
     layout: "screen-head",
+    backName: "Back to Saved SQL",
     path: (s) => `/spaces/${s.spaceId}/sql/${s.sqlId}/run`,
   },
   {
     id: "composition-new",
     layout: "composition-studio",
+    backName: "Saved tools",
     path: (s) => `/spaces/${s.spaceId}/compositions/new`,
   },
   {
     id: "composition-edit",
     layout: "composition-studio",
+    backName: "Back to revision",
     path: (s) =>
       `/spaces/${s.spaceId}/compositions/${s.compositionId}/${s.compositionRevisionId}/edit`,
   },
   {
     id: "composition-history",
     layout: "screen-head",
+    backName: "Back to saved tools",
     path: (s) => `/spaces/${s.spaceId}/compositions/${s.compositionId}/history`,
   },
   {
     id: "entry-detail",
     layout: "entry-detail",
+    backName: "Back to Form",
     path: (s) => `/spaces/${s.spaceId}/entries/${s.entryId}`,
   },
   {
     id: "entry-info",
     layout: "screen-head",
+    backName: "Back to Entry",
     path: (s) => `/spaces/${s.spaceId}/entries/${s.entryId}/info`,
   },
   {
     id: "entry-history",
     layout: "screen-head",
+    backName: "Back to Entry",
     path: (s) => `/spaces/${s.spaceId}/entries/${s.entryId}/history`,
   },
   {
     id: "entry-revision",
     layout: "screen-head",
+    backName: "Back to history",
     path: (s) =>
       `/spaces/${s.spaceId}/entries/${s.entryId}/history/${s.entryRevisionId}`,
   },
   {
     id: "storage-test-connection",
     layout: "screen-head",
+    backName: "Back to Storage settings",
     path: (s) => `/spaces/${s.spaceId}/test-connection`,
   },
 ];
@@ -371,9 +384,10 @@ async function assertCompactHeader(
 ) {
   const selectors = selectorsForSurface(surface);
   const backLink = page.locator(selectors.back);
+  await expect(page.locator("a.back-link")).toHaveCount(1);
   await expect(backLink).toHaveCount(1);
   await expect(backLink).toBeVisible();
-  await expect(backLink).toHaveAccessibleName(/\S+/);
+  await expect(backLink).toHaveAccessibleName(surface.backName);
 
   const title = page.locator(selectors.title);
   await expect(title).toHaveCount(1);
