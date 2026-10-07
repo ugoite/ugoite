@@ -141,7 +141,7 @@ function AutoGrowStringInput(props: {
 }) {
   let textarea: HTMLTextAreaElement | undefined;
   const resize = () => {
-    if (!textarea) return;
+    if (textarea === undefined) return;
     textarea.style.height = "auto";
     textarea.style.height = `${Math.max(textarea.scrollHeight, 38)}px`;
   };
