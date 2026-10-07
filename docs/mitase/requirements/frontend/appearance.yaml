@@ -1,0 +1,233 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: frontend
+category: Frontend route, component, and interaction requirements
+requirements:
+  - id: REQ-FE-044
+    title: Frontend multilingual dictionary and locale switching
+    description: Frontend UI labels use the shared English and Japanese dictionary, allow locale switching, and persist the selected locale through portable preferences with localStorage only as fallback or migration state.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: dictionary-localization
+        kind: behavior
+        statement: Shared frontend surfaces render dictionary-backed English and Japanese labels and update their visible copy when the active locale changes.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: portable-locale
+        kind: behavior
+        statement: The selected locale is loaded from and persisted through portable user preferences, while localStorage remains a fallback or migration layer.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: localization-verification
+        role: verification
+        facet: verification
+        responsibility: Verify shared dictionary rendering, locale switching, and portable locale preference hydration through exact frontend tests.
+        targets:
+          - id: dictionary-switch
+            adapter: typescript
+            path: frontend/src/lib/i18n.test.ts
+            selector: { kind: test, name: "REQ-FE-044: initializeLocale refreshes locale from stored preferences" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-004#binding.frontend/target.locale-dictionary]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/i18n.test.ts, test: "REQ-FE-044: initializeLocale refreshes locale from stored preferences" } }
+          - id: dictionary-completeness
+            adapter: typescript
+            path: frontend/src/lib/i18n.test.ts
+            selector: { kind: test, name: "REQ-FE-044: keeps the English and Japanese key sets identical" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-004#binding.frontend/target.locale-dictionary]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/i18n.test.ts, test: "REQ-FE-044: keeps the English and Japanese key sets identical" } }
+          - id: portable-locale-hydration
+            adapter: typescript
+            path: frontend/src/lib/preferences-store.test.ts
+            selector: { kind: test, name: "REQ-FE-044: initializes locale from portable preferences and refreshes local fallback" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.portable-locale
+                covers: [FEAT-FE-001#binding.frontend/target.portable-preferences-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/preferences-store.test.ts, test: "REQ-FE-044: initializes locale from portable preferences and refreshes local fallback" } }
+          - id: localized-list
+            adapter: typescript
+            path: frontend/src/components/ListPanel.test.tsx
+            selector: { kind: test, name: "REQ-FE-044: localizes entry list controls and empty state in Japanese" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "REQ-FE-044: localizes entry list controls and empty state in Japanese" } }
+          - id: localized-search
+            adapter: typescript
+            path: frontend/src/components/SearchBar.test.tsx
+            selector: { kind: test, name: "REQ-FE-044: renders localized zero-result fallback when count is nullish" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-004#binding.frontend/target.search-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SearchBar.test.tsx, test: "REQ-FE-044: renders localized zero-result fallback when count is nullish" } }
+          - id: localized-create-form
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-044: localizes create-form dialog copy in Japanese" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-044: localizes create-form dialog copy in Japanese" } }
+          - id: localized-create-entry
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-044: localizes create-entry dialog copy in Japanese" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-044: localizes create-entry dialog copy in Japanese" } }
+
+  - id: REQ-FE-041
+    title: Fixed Surface Palette
+    description: The frontend uses one approved v5 surface palette with responsive shell tokens and dark-mode surfaces, without reintroducing retired theme or accent variants.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: fixed-palette
+        kind: behavior
+        statement: The frontend stylesheet defines the approved v5 palette, shell dimensions, and responsive breakpoint, and does not import retired theme stylesheets.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: system-appearance
+        kind: behavior
+        statement: Dark mode swaps the approved surfaces and foregrounds while retaining the fixed palette and omitting product-specific theme or accent variants.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: fixed-palette-verification
+        role: verification
+        facet: verification
+        responsibility: Verify fixed palette, responsive shell, and dark-mode stylesheet invariants through exact frontend tests.
+        targets:
+          - id: palette-contract
+            adapter: typescript
+            path: frontend/src/themes/registry.test.ts
+            selector: { kind: test, name: "uses the approved concept palette" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-041#criterion.fixed-palette
+                covers: [FEAT-FE-011#binding.frontend/target.surface-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/registry.test.ts, test: "uses the approved concept palette" } }
+          - id: shell-contract
+            adapter: typescript
+            path: frontend/src/themes/registry.test.ts
+            selector: { kind: test, name: "uses the approved shell dimensions and responsive breakpoint" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-041#criterion.fixed-palette
+                covers: [FEAT-FE-011#binding.frontend/target.surface-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/registry.test.ts, test: "uses the approved shell dimensions and responsive breakpoint" } }
+          - id: retired-themes
+            adapter: typescript
+            path: frontend/src/themes/registry.test.ts
+            selector: { kind: test, name: "does not import the retired theme stylesheets" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-041#criterion.fixed-palette
+                covers: [FEAT-FE-011#binding.frontend/target.surface-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/registry.test.ts, test: "does not import the retired theme stylesheets" } }
+          - id: dark-surfaces
+            adapter: typescript
+            path: frontend/src/themes/registry.test.ts
+            selector: { kind: test, name: "keeps dark-mode surfaces readable without theme or accent variants" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-041#criterion.system-appearance
+                covers: [FEAT-FE-011#binding.frontend/target.surface-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/registry.test.ts, test: "keeps dark-mode surfaces readable without theme or accent variants" } }
+              - kind: verifies
+                criterion: REQ-FE-059#criterion.system-appearance
+                covers: [FEAT-FE-011#binding.frontend/target.surface-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/registry.test.ts, test: "keeps dark-mode surfaces readable without theme or accent variants" } }
+  - id: REQ-FE-042
+    title: Surface Token Coverage Enforcement
+    description: Surface-aware components use shared UI tokens instead of raw color utilities or inline color styles.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: surface-tokens
+        kind: quality
+        statement: Surface-aware frontend components contain no raw Tailwind color utilities or inline color styles, so the fixed palette remains centrally governed.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: surface-token-verification
+        role: verification
+        facet: verification
+        responsibility: Verify token-only surface styling through the exact frontend source scan tests.
+        targets:
+          - id: raw-color-utilities
+            adapter: typescript
+            path: frontend/src/themes/usage.test.ts
+            selector: { kind: test, name: "REQ-FE-042: avoids raw color utilities in surface-aware components" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-042#criterion.surface-tokens
+                covers: [FEAT-FE-011#binding.frontend/target.surface-usage-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/usage.test.ts, test: "REQ-FE-042: avoids raw color utilities in surface-aware components" } }
+          - id: inline-color-styles
+            adapter: typescript
+            path: frontend/src/themes/usage.test.ts
+            selector: { kind: test, name: "REQ-FE-042: avoids inline color styles in surface-aware components" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-042#criterion.surface-tokens
+                covers: [FEAT-FE-011#binding.frontend/target.surface-usage-contract]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/themes/usage.test.ts, test: "REQ-FE-042: avoids inline color styles in surface-aware components" } }
+  - id: REQ-FE-059
+    title: System Appearance
+    description: The frontend follows the operating-system color preference for its fixed surface palette and does not expose product-specific appearance, theme, accent, or content-width controls.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: system-appearance
+        kind: behavior
+        statement: The frontend initializes and updates the document color mode from the operating-system preference while retaining the fixed surface palette and without product-specific appearance controls.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: system-appearance-verification
+        role: verification
+        facet: verification
+        responsibility: Verify operating-system color preference hydration and live updates through exact frontend tests.
+        targets:
+          - id: color-mode-updates
+            adapter: typescript
+            path: frontend/src/lib/color-mode.test.ts
+            selector: { kind: test, name: "updates the document when the operating system preference changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-059#criterion.system-appearance
+                covers: [FEAT-FE-011#binding.frontend/target.color-mode]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/color-mode.test.ts, test: "updates the document when the operating system preference changes" } }
+  - id: REQ-FE-058
+    title: Calm Dashboard Loading Treatment
+    description: The Space dashboard keeps meaningful shell content visible while metadata loads, using the Space identifier as a stable fallback before replacing it with the resolved name.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: calm-loading
+        kind: behavior
+        statement: While Space metadata is unresolved, the dashboard renders a stable identifier and no persistent loading banner; after resolution it renders the backend-reported Space name.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: calm-dashboard-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Space selector identifier fallback and resolved Space name transition through the exact frontend test.
+        targets:
+          - id: metadata-fallback
+            adapter: typescript
+            path: frontend/src/components/SpaceShell.test.tsx
+            selector: { kind: test, name: "REQ-FE-058: keeps Space identity available while Spaces load" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-058#criterion.calm-loading
+                covers: [FEAT-FE-009#binding.frontend/target.space-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/SpaceShell.test.tsx", test: "REQ-FE-058: keeps Space identity available while Spaces load" } }

@@ -1,0 +1,123 @@
+schema: mitase/authoring/v2
+kind: policies
+namespace: product
+category: Implementation Policies
+policies:
+  - id: POL-UI-001
+    title: Single Back Control
+    summary: Each surface exposes exactly one operative back control in its back chain.
+    description: Back navigation uses a single operative control per surface so the back chain stays unambiguous and screen-reader traversal encounters one back intent.
+    rules:
+      - id: governance
+        level: must
+        statement: Each surface exposes exactly one operative back control in its back chain; duplicate back links or buttons for the same intent are not added.
+        governed_by: [PHIL-INTERACTION-001#principle.single-control, PHIL-INTERACTION-001#principle.structure-before-explanation]
+    bindings:
+      - id: single-back-evidence
+        role: evidence
+        facet: navigation
+        responsibility: Record the shipped shell and entry workspace that carry the single back control.
+        targets:
+          - id: space-shell-surface
+            adapter: declared
+            path: frontend/src/components/SpaceShell.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-001#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for the single back control.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-001#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-001#rule.governance }]
+  - id: POL-UI-005
+    title: UUIDs Advanced-Only
+    summary: Raw UUIDs and internal identifiers stay out of primary paths and appear only in advanced or diagnostic disclosure.
+    description: Primary list rows, headings, and actions show human-meaningful names; raw UUIDs and internal identifiers appear only inside explicitly advanced or diagnostic disclosure.
+    rules:
+      - id: governance
+        level: must
+        statement: Primary surfaces show human-meaningful names while raw UUIDs and internal identifiers appear only inside explicitly advanced or diagnostic disclosure.
+        governed_by: [PHIL-INTERACTION-001#principle.no-decoration, PHIL-INTERACTION-001#principle.structure-before-explanation]
+    bindings:
+      - id: identifier-evidence
+        role: evidence
+        facet: presentation
+        responsibility: Record the list panel surface where identifiers stay progressively disclosed.
+        targets:
+          - id: list-panel-surface
+            adapter: declared
+            path: frontend/src/components/ListPanel.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-005#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for advanced-only identifiers.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-005#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-005#rule.governance }]
+  - id: POL-UI-011
+    title: Single Shell Navigation Ownership
+    summary: Navigation ownership stays in the designated shell and is not duplicated by route-level navigation chrome.
+    description: Global and Space navigation controls live in the designated shell components so routes inherit one navigation structure instead of adding parallel navigation chrome.
+    rules:
+      - id: governance
+        level: must
+        statement: Navigation controls live in the designated global and Space shells; routes do not add parallel navigation chrome duplicating shell destinations.
+        governed_by: [PHIL-INTERACTION-001#principle.single-control, PHIL-INTERACTION-001#principle.structure-before-explanation]
+    bindings:
+      - id: shell-evidence
+        role: evidence
+        facet: navigation
+        responsibility: Record the designated global and Space shell components owning navigation.
+        targets:
+          - id: global-shell-surface
+            adapter: declared
+            path: frontend/src/components/GlobalShell.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-011#rule.governance
+          - id: space-shell-surface
+            adapter: declared
+            path: frontend/src/components/SpaceShell.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-011#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for shell navigation ownership.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-011#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-011#rule.governance }]

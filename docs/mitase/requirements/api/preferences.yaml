@@ -1,0 +1,19 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: api
+category: API contracts and operator surfaces
+requirements:
+  - id: REQ-API-011
+    title: Portable user preferences API
+    description: The API exposes authenticated GET /preferences/me and PATCH /preferences/me operations for portable user preferences, including selected Space and locale. selected_space_id inputs are validated and dependency failures are returned explicitly.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: preferences-roundtrip
+        kind: behavior
+        statement: Authenticated callers can retrieve and patch the current user's portable preferences through the supported API operations.
+        governed_by: [POL-004#rule.governance, POL-006#rule.governance]
+      - id: selected-space-validation
+        kind: behavior
+        statement: Preference updates validate selected_space_id and return an explicit error when preference storage fails.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]

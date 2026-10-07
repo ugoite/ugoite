@@ -1,0 +1,427 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: frontend
+category: Frontend route, component, and interaction requirements
+requirements:
+  - id: REQ-FE-068
+    title: Semantic Result Surface Rendering
+    description: Semantic result surfaces render already-fetched pages with a shared visual and interaction vocabulary while preserving surface-owned row semantics and controller-owned paging. UI consistency does not require one generic result component.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: native-page-rows
+        kind: behavior
+        statement: Every row in the already-fetched page is rendered as a native table row; changing table rendering does not change page requests or represent a server total.
+        governed_by: [POL-006#rule.governance]
+      - id: semantic-row-ownership
+        kind: behavior
+        statement: Entry, Saved SQL, History Change, and Composition source rows keep surface-owned selection and open semantics; shared presentation never reinterprets one surface row as another surface row.
+        governed_by: [POL-006#rule.governance]
+      - id: shared-result-visual-language
+        kind: behavior
+        statement: Result surfaces share header typography, row height, dividers, cell padding, scroll containment, focus rings, and Previous/Next touch targets without sharing row semantics or paging state.
+        governed_by: [POL-006#rule.governance]
+      - id: controller-owned-paging
+        kind: behavior
+        statement: Cursors, continuations, request generation, fetch, retry identity, and query identity stay in the surface controller or query handle; table presenters render the current page only.
+        governed_by: [POL-006#rule.governance]
+      - id: keyboard-row-navigation
+        kind: behavior
+        statement: Native table headers and cells remain available, and keyboard focus can move between row actions.
+        governed_by: [POL-006#rule.governance]
+      - id: local-horizontal-overflow
+        kind: behavior
+        statement: Horizontal scrolling is contained in the result viewport; pages do not overflow horizontally at 320px and 390px widths, and narrow one- or two-column tables fit the viewport without a fixed giant minimum width.
+        governed_by: [POL-006#rule.governance]
+      - id: no-redundant-result-explanation
+        kind: behavior
+        statement: A result surface gives query identity, results, and operative controls their visible owners without persistent explanatory copy that repeats already-established context or the result's transient state.
+        governed_by: [POL-UI-002#rule.governance]
+      - id: source-native-composition-rendering
+        kind: behavior
+        statement: Composition table components delegate presentation to the source-native Entry or SQL result presenter and never define a third generic table grammar; source query semantics remain unchanged and metrics use the shared evaluator without Browser aggregation.
+        governed_by: [POL-006#rule.governance]
+    bindings:
+      - id: result-surface-verification
+        role: verification
+        facet: verification
+        responsibility: Verify complete native row rendering, shared visual language, row actions, and keyboard focus using deterministic component tests.
+        targets:
+          - id: result-pagination-shared-control
+            adapter: typescript
+            path: frontend/src/components/ResultPagination.test.tsx
+            selector: { kind: test, name: "moves to the previous page through the shared control" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+                covers: [FEAT-SRCH-001#binding.frontend/target.result-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ResultPagination.test.tsx, test: "moves to the previous page through the shared control" } }
+          - id: result-pagination-single-page
+            adapter: typescript
+            path: frontend/src/components/ResultPagination.test.tsx
+            selector: { kind: test, name: "renders no navigation for a single page" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-SRCH-001#binding.frontend/target.result-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ResultPagination.test.tsx, test: "renders no navigation for a single page" } }
+          - id: row-action-keyboard-helper
+            adapter: typescript
+            path: frontend/src/lib/row-action-focus.test.tsx
+            selector: { kind: test, name: "moves focus to the action in the next and previous rows" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.keyboard-row-navigation
+                covers: [FEAT-SRCH-001#binding.frontend/target.row-action-focus-helper]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/row-action-focus.test.tsx, test: "moves focus to the action in the next and previous rows" } }
+          - id: entry-browser-selection
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "keeps selection separate from server mutation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "keeps selection separate from server mutation" } }
+          - id: entry-shared-trailing-action
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "navigates only from the shared trailing chevron action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "navigates only from the shared trailing chevron action" } }
+          - id: entry-browser-paging
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "advances pages through the shared controls while the controller owns the query" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "advances pages through the shared controls while the controller owns the query" } }
+          - id: entry-browser-single-page
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "hides pagination for a single page" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "hides pagination for a single page" } }
+          - id: entry-result-table-rendering
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.test.tsx
+            selector: { kind: test, name: "renders the current page as a native table with Entry identity" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.native-page-rows
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "renders the current page as a native table with Entry identity" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "renders the current page as a native table with Entry identity" } }
+          - id: entry-result-table-selection
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.test.tsx
+            selector: { kind: test, name: "selects on row click and opens only from the trailing control" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "selects on row click and opens only from the trailing control" } }
+          - id: entry-result-table-trailing
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.test.tsx
+            selector: { kind: test, name: "keeps the open action in a sticky trailing cell" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "keeps the open action in a sticky trailing cell" } }
+          - id: entry-result-table-keyboard
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.test.tsx
+            selector: { kind: test, name: "moves keyboard focus between row actions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.keyboard-row-navigation
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "moves keyboard focus between row actions" } }
+          - id: history-change-table-rendering
+            adapter: typescript
+            path: frontend/src/components/HistoryChangeTable.test.tsx
+            selector: { kind: test, name: "renders the current Change page as a native table" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.native-page-rows
+                covers: [FEAT-JOURNEY-001#binding.history-result-surface/target.history-change-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/HistoryChangeTable.test.tsx", test: "renders the current Change page as a native table" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-JOURNEY-001#binding.history-result-surface/target.history-change-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/HistoryChangeTable.test.tsx", test: "renders the current Change page as a native table" } }
+          - id: history-change-table-selection
+            adapter: typescript
+            path: frontend/src/components/HistoryChangeTable.test.tsx
+            selector: { kind: test, name: "selects on row click and opens only from the trailing control" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+                covers: [FEAT-JOURNEY-001#binding.history-result-surface/target.history-change-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/HistoryChangeTable.test.tsx", test: "selects on row click and opens only from the trailing control" } }
+          - id: history-change-table-trailing
+            adapter: typescript
+            path: frontend/src/components/HistoryChangeTable.test.tsx
+            selector: { kind: test, name: "keeps the open action in a sticky trailing cell" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+                covers: [FEAT-JOURNEY-001#binding.history-result-surface/target.history-change-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/HistoryChangeTable.test.tsx", test: "keeps the open action in a sticky trailing cell" } }
+          - id: history-change-table-keyboard
+            adapter: typescript
+            path: frontend/src/components/HistoryChangeTable.test.tsx
+            selector: { kind: test, name: "moves keyboard focus between row actions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.keyboard-row-navigation
+                covers: [FEAT-JOURNEY-001#binding.history-result-surface/target.history-change-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/HistoryChangeTable.test.tsx", test: "moves keyboard focus between row actions" } }
+          - id: sql-result-table
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
+            selector: { kind: test, name: "renders arbitrary SQL rows and keeps pagination client-held" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+                covers: [FEAT-FE-007#binding.frontend/target.sql-run-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "renders arbitrary SQL rows and keeps pagination client-held" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+                covers: [FEAT-FE-007#binding.frontend/target.sql-run-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "renders arbitrary SQL rows and keeps pagination client-held" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-FE-007#binding.frontend/target.sql-run-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "renders arbitrary SQL rows and keeps pagination client-held" } }
+          - id: sql-results-no-explanatory-copy
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
+            selector: { kind: test, name: "REQ-FE-068: omits persistent explanatory copy from saved SQL results" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.no-redundant-result-explanation
+                covers: [FEAT-FE-007#binding.frontend/target.sql-run-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "REQ-FE-068: omits persistent explanatory copy from saved SQL results" } }
+          - id: sql-result-table-rendering
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: "renders the 100-row page as a complete native table" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.native-page-rows
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "renders the 100-row page as a complete native table" } }
+          - id: sql-result-table-ownership
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: "formats scalar and structured values without selection semantics" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "formats scalar and structured values without selection semantics" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "formats scalar and structured values without selection semantics" } }
+          - id: sql-result-table-viewport
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: "fits narrow results without a fixed giant width" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "fits narrow results without a fixed giant width" } }
+          - id: composition-paging-ownership
+            adapter: typescript
+            path: frontend/src/lib/composition-query-handle.test.ts
+            selector: { kind: test, name: "uses the existing opaque Entry continuation for next and previous pages" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-query-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-query-handle.test.ts, test: "uses the existing opaque Entry continuation for next and previous pages" } }
+          - id: entry-overflow-containment
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "keeps the table structure inside a horizontal scroll container" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "keeps the table structure inside a horizontal scroll container" } }
+          - id: result-surface-narrow-composition-one-column
+            adapter: typescript
+            path: e2e/result-surface-narrow.test.ts
+            selector: { kind: test, name: "REQ-FE-068: Composition 1-column fits 320px and 390px without page overflow" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: Composition 1-column fits 320px and 390px without page overflow" } }
+          - id: result-surface-narrow-composition-two-column
+            adapter: typescript
+            path: e2e/result-surface-narrow.test.ts
+            selector: { kind: test, name: "REQ-FE-068: Composition 2-column confines overflow to the result viewport" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: Composition 2-column confines overflow to the result viewport" } }
+          - id: result-surface-narrow-sql-one-column
+            adapter: typescript
+            path: e2e/result-surface-narrow.test.ts
+            selector: { kind: test, name: "REQ-FE-068: Saved SQL 1-column keeps Count and Save-as-tool operable at narrow widths" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: Saved SQL 1-column keeps Count and Save-as-tool operable at narrow widths" } }
+          - id: result-surface-narrow-sql-many-column
+            adapter: typescript
+            path: e2e/result-surface-narrow.test.ts
+            selector: { kind: test, name: "REQ-FE-068: Saved SQL many-column localizes overflow in the result viewport" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: Saved SQL many-column localizes overflow in the result viewport" } }
+          # Source-native Composition table delegation is implemented (RS5):
+          # entry_query sources render through Entry presentation,
+          # saved_sql sources through SqlResultTable, metrics through the
+          # shared evaluator. The metric half remains verified through
+          # REQ-COMP-002 bindings. Mobile browser overflow keeps its single
+          # REQ-FE-067 owner; RS7 refreshes narrow-viewport evidence on the
+          # post-refactor source.
+          - id: composition-source-rendering
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: "composition_renderer_delegates_to_source_native_presenters_without_client_aggregation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "composition_renderer_delegates_to_source_native_presenters_without_client_aggregation" } }
+          - id: composition-flow-row-rendering
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: delegates flow metrics and tables to source-native presenters }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-dashboard-flow-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "delegates flow metrics and tables to source-native presenters" } }
+          - id: composition-flow-viewport
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: keeps flow rows inline with tables scrolling in their own viewport }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-dashboard-flow-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "keeps flow rows inline with tables scrolling in their own viewport" } }
+          - id: composition-entry-columns-preview
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: "renders preview projections as Preview, Created, Updated" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "renders preview projections as Preview, Created, Updated" } }
+          - id: composition-entry-columns-fields
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: "renders fields projections in projection order with timestamps last" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "renders fields projections in projection order with timestamps last" } }
+          - id: composition-entry-columns-fallback
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: "falls back to the current row key order without field metadata" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "falls back to the current row key order without field metadata" } }
+          - id: composition-data-result-states
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "renders explicit loading, empty, and error result states" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "renders explicit loading, empty, and error result states" } }
+          - id: composition-data-narrow-stacking
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: stacks the navigator and editor at narrow widths }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: stacks the navigator and editor at narrow widths } }
+          - id: studio-split-narrow-stacking
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: keeps Split desktop-only with stacked panes at narrow widths }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: keeps Split desktop-only with stacked panes at narrow widths } }
+          - id: studio-mobile-narrow-contract
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: keeps the mode switch single-row and the sheet within the viewport at 320px and 390px widths }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode, FEAT-COMP-001#binding.browser-query-runtime/target.browser-inspector-sheet]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: keeps the mode switch single-row and the sheet within the viewport at 320px and 390px widths } }
+          - id: studio-preview-unscoped-fetch
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: fetches every plan source without a scope }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: fetches every plan source without a scope } }
+          - id: studio-preview-scoped-fetch
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: fetches only visible-component and selected sources when scoped }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: fetches only visible-component and selected sources when scoped } }
+          - id: studio-sync-visible-sources
+            adapter: typescript
+            path: frontend/src/lib/composition-studio-sync.test.ts
+            selector: { kind: test, name: lists visible-component sources without text or unplaced blocks }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-sync]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-studio-sync.test.ts, test: lists visible-component sources without text or unplaced blocks } }

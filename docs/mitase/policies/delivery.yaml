@@ -1,0 +1,181 @@
+schema: mitase/authoring/v2
+kind: policies
+namespace: product
+category: Implementation Policies
+policies:
+  - id: POL-003
+    title: Minimal Node Deployment
+    summary: Optimize for low-node, serverless-oriented deployments.
+    description: This policy keeps runtime topology intentionally small so product capabilities do not depend on unnecessary always-on services. It turns the serverless-oriented philosophy into operational guidance by preferring explicit, removable infrastructure over hidden long-lived dependencies.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy keeps runtime topology intentionally small so product capabilities do not depend on unnecessary always-on services. It turns the serverless-oriented philosophy into operational guidance by preferring explicit, removable infrastructure over hidden long-lived dependencies.
+        governed_by: [PHIL-000#principle.stable-foundation, PHIL-002#principle.product-design-principle]
+    bindings:
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the deployment references that define the minimal-node boundary. The CI gate contract is bound once under FEAT-OPS-001, not here.
+        targets:
+          - id: architecture-stack
+            adapter: declared
+            path: docs/architecture/contracts/stack.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-003#rule.governance }]
+          - id: architecture-future-proofing
+            adapter: declared
+            path: docs/architecture/contracts/future-proofing.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-003#rule.governance }]
+  - id: POL-005
+    title: CLI as First-Class Operator Surface
+    summary: Use CLI workflows to keep automation explicit, inspectable, and scriptable.
+    description: This policy keeps automation visible and scriptable by treating the CLI as a first-class operational surface rather than a secondary afterthought. It reinforces low-node operation, reusable workflows, and durable rule-based automation that can be inspected directly by users and maintainers.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy keeps automation visible and scriptable by treating the CLI as a first-class operational surface rather than a secondary afterthought. It reinforces low-node operation, reusable workflows, and durable rule-based automation that can be inspected directly by users and maintainers.
+        governed_by: [PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-002#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+    bindings:
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the CLI, operator-surface, and testing-strategy references for this policy. The CI gate contract is bound once under FEAT-OPS-001, not here.
+        targets:
+          - id: architecture-stack
+            adapter: declared
+            path: docs/architecture/contracts/stack.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-005#rule.governance }]
+          - id: api-surfaces
+            adapter: declared
+            path: docs/architecture/api/operator-surfaces.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-005#rule.governance }]
+          - id: testing-strategy
+            adapter: declared
+            path: docs/architecture/testing/strategy.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-005#rule.governance }]
+  - id: POL-008
+    title: Requirement-to-Test Traceability
+    summary: Require machine-readable linkage from requirement to executable tests.
+    description: This policy turns specifications into enforceable quality rules by requiring machine-readable links from requirements to tests. It strengthens trusted autonomy by ensuring that contributors and AI agents change behavior only through paths that remain continuously checkable in CI.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy turns specifications into enforceable quality rules by requiring machine-readable links from requirements to tests. It strengthens trusted autonomy by ensuring that contributors and AI agents change behavior only through paths that remain continuously checkable in CI.
+        governed_by: [PHIL-000#principle.stable-foundation, PHIL-000#principle.tools-without-authority, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+    bindings:
+      - id: requirement-traceability-boundary
+        role: evidence
+        facet: traceability
+        responsibility: Record the bounded requirement-to-test traceability currently checked for connected Mitase criteria; repository-wide enforcement remains staged.
+        targets:
+          - id: requirement-traceability-boundary
+            adapter: declared
+            path: scripts/mitase
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-008#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the testing-strategy and error-handling references for requirement-to-test traceability. The CI gate contract is bound once under FEAT-OPS-001, not here.
+        targets:
+          - id: testing-strategy
+            adapter: declared
+            path: docs/architecture/testing/strategy.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-008#rule.governance }]
+          - id: quality-errors
+            adapter: declared
+            path: docs/architecture/quality/error-handling.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-008#rule.governance }]
+  - id: POL-009
+    title: Quality Gates Before Integration
+    summary: Apply strict linting, typing, and regression gates before merging and release.
+    description: This policy enforces pre-integration quality gates so regressions are caught before they become shared product behavior. It operationalizes rule-based development and trusted constraints by making type checks, lint rules, and regression suites mandatory for change integration.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy enforces pre-integration quality gates so regressions are caught before they become shared product behavior. It operationalizes rule-based development and trusted constraints by making type checks, lint rules, and regression suites mandatory for change integration.
+        governed_by: [PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+    bindings:
+      - id: integration-quality-gate
+        role: enforcement
+        facet: integration
+        responsibility: Enforce the repository quality gate before integration through the required CI workflow.
+        targets:
+          - id: integration-quality-gate
+            adapter: declared
+            path: .github/workflows/ci.yml
+            selector: { kind: file }
+            claims:
+              - kind: enforces
+                rule: POL-009#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the testing-strategy and product-metrics references for pre-integration quality gates. CI enforcement lives in the required workflow binding above, and the CI gate contract document is bound once under FEAT-OPS-001, not here.
+        targets:
+          - id: testing-strategy
+            adapter: declared
+            path: docs/architecture/testing/strategy.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-009#rule.governance }]
+          - id: product-metrics
+            adapter: declared
+            path: docs/architecture/product/success-metrics.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-009#rule.governance }]
+  - id: POL-013
+    title: Spec-Driven Product Iteration
+    summary: Evolve product behavior through explicit specifications before implementation drift.
+    description: This policy requires product evolution to move through explicit specs and shared documentation before implementation fragments into local decisions. It keeps iteration aligned with reusable rules so behavior changes remain reviewable, explainable, and continuously validated.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy requires product evolution to move through explicit specs and shared documentation before implementation fragments into local decisions. It keeps iteration aligned with reusable rules so behavior changes remain reviewable, explainable, and continuously validated.
+        governed_by: [PHIL-000#principle.stable-foundation, PHIL-003#principle.product-design-principle]
+    bindings:
+      - id: specification-first-boundary
+        role: evidence
+        facet: governance
+        responsibility: Record the permanent specification map and its specification-first change boundary.
+        targets:
+          - id: specification-first-evidence
+            adapter: declared
+            path: docs/spec/index.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-013#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the core, advanced, metrics, and experimental references for specification-first product iteration.
+        targets:
+          - id: stories-core
+            adapter: declared
+            path: docs/spec/stories/core.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-013#rule.governance }]
+          - id: stories-advanced
+            adapter: declared
+            path: docs/spec/stories/advanced.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-013#rule.governance }]
+          - id: product-metrics
+            adapter: declared
+            path: docs/architecture/product/success-metrics.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-013#rule.governance }]
+          - id: stories-experimental
+            adapter: declared
+            path: docs/spec/stories/experimental.yaml
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-013#rule.governance }]

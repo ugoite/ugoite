@@ -1,0 +1,120 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ops
+category: Operations, development, and quality-gate requirements
+requirements:
+  - id: REQ-OPS-003
+    title: Governance Taxonomy Link Integrity
+    description: Governance and specification YAML remain parseable and free of dangling identifiers.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: taxonomy-integrity
+        kind: quality
+        statement: The governance registries, requirement references, related documents, and test references resolve without duplicate or dangling identifiers.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: taxonomy-integrity-verification
+        role: verification
+        facet: docsite-test
+        responsibility: Verify the current legacy registry link-integrity contract through the exact repository test. The legacy registries remain migration evidence for this slice; later domain migrations may move the checked authority.
+        targets:
+          - id: taxonomy-integrity-test
+            adapter: typescript
+            path: tools/spec_integrity_test.ts
+            selector: { kind: test, name: 'REQ-OPS-003: requirement IDs, related documents, and test references resolve' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-003#criterion.taxonomy-integrity
+                covers: [FEAT-OPS-001#binding.registries/target.taxonomy-registry]
+                runner: { runner: deno-test-file, arguments: { file: tools/spec_integrity_test.ts, test: 'REQ-OPS-003: requirement IDs, related documents, and test references resolve' } }
+
+  - id: REQ-OPS-004
+    title: Version Milestone Definitions
+    description: Version and milestone status is represented under docs/version and distinguishes implemented, in-progress, and planned work.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: milestone-status
+        kind: quality
+        statement: Version documents expose valid milestone and phase statuses whose aggregate status agrees with their child work and whose source paths resolve.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: milestone-status-verification
+        role: verification
+        facet: docsite-test
+        responsibility: Verify the version status and source-integrity contract through the exact repository test; this does not promote planned milestones to implemented behavior.
+        targets:
+          - id: milestone-status-test
+            adapter: typescript
+            path: tools/spec_integrity_test.ts
+            selector: { kind: test, name: 'REQ-OPS-004: version statuses agree with their tasks and canonical sources' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-004#criterion.milestone-status
+                covers: [FEAT-OPS-001#binding.versions/target.version-v01, FEAT-OPS-001#binding.versions/target.version-v02]
+                runner: { runner: deno-test-file, arguments: { file: tools/spec_integrity_test.ts, test: 'REQ-OPS-004: version statuses agree with their tasks and canonical sources' } }
+
+  - id: REQ-OPS-014
+    title: CLI Language Classification Consistency
+    description: Documentation and automation must classify the CLI as Rust.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: cli-language-classification
+        kind: quality
+        statement: Repository architecture, build, and release surfaces consistently identify `ugoite-cli` as the Rust CLI adapter.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: cli-language-evidence
+        role: evidence
+        facet: language-classification
+        responsibility: Connect the architecture documentation, Rust workspace membership, and Rust build/release automation that establish the CLI language classification.
+        targets:
+          - id: stack-contract
+            adapter: declared
+            path: docs/architecture/contracts/stack.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-014#criterion.cli-language-classification
+          - id: rust-workspace
+            adapter: declared
+            path: Cargo.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-014#criterion.cli-language-classification
+          - id: cli-release-workflow
+            adapter: declared
+            path: .github/workflows/release-candidate.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-014#criterion.cli-language-classification
+
+  - id: REQ-OPS-043
+    title: Knowledge Compatibility Review Gate
+    description: Pull requests that can affect v0.1 Space ownership, authority, append-only history, adapter authority, or the canonical fixture must include a checked Knowledge Compatibility Review classification before merge.
+    priority: high
+    status: implemented
+    criteria:
+      - id: knowledge-compatibility-gate
+        kind: quality
+        statement: The trusted pull-request validation path checks exactly one valid Knowledge Compatibility Review classification against the repository's v0.1 semantic contract before merge.
+        governed_by: [POL-008#rule.governance, POL-013#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: knowledge-compatibility-verification
+        role: verification
+        facet: deno-test
+        responsibility: Verify that the PR template, trusted validator, workflow, and required status declaration enforce the Knowledge Compatibility Review gate through the exact repository test.
+        targets:
+          - id: knowledge-compatibility-test
+            adapter: typescript
+            path: tools/knowledge_compatibility_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-043#criterion.knowledge-compatibility-gate
+                covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.knowledge-compatibility]
+                runner: { runner: deno-test-file, arguments: { file: tools/knowledge_compatibility_test.ts, test: Knowledge Compatibility Review is a checked PR gate } }

@@ -1,0 +1,293 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: api
+category: API contracts and operator surfaces
+requirements:
+  - id: REQ-API-006
+    title: Saved SQL CRUD
+    description: Saved SQL is durable Knowledge with list, create, read, update, and delete operations across the supported API and CLI surfaces, including validation of SQL variable objects.
+    priority: high
+    status: implemented
+    criteria:
+      - id: saved-sql-lifecycle
+        kind: behavior
+        statement: The supported API and CLI surfaces create, retrieve, update, and delete saved SQL entries.
+        governed_by: [POL-004#rule.governance, POL-005#rule.governance]
+      - id: saved-sql-variable-validation
+        kind: behavior
+        statement: Saved SQL operations validate their SQL variable objects before persistence or execution.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: saved-sql-name-field
+        kind: behavior
+        statement: A Saved SQL display name is optional human-readable metadata distinct from SQL identity; unnamed queries use the untitled representation.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-007#rule.governance]
+    bindings:
+      - id: saved-sql-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Saved SQL persistence, generated identity, content updates, and delete behavior at the shared Iceberg boundary.
+        targets:
+          - id: iceberg-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_saved_sql.rs
+            selector: { kind: test, name: test_saved_sql_req_api_006_crud }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+                covers:
+                  - FEAT-API-001#binding.core/target.list-sql
+                  - FEAT-API-001#binding.core/target.get-sql
+                  - FEAT-API-001#binding.core/target.create-sql
+                  - FEAT-API-001#binding.core/target.update-sql
+                  - FEAT-API-001#binding.core/target.delete-sql
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
+      - id: name-field-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the saved-SQL name field and nameless historical records through the exact Iceberg integration case.
+        targets:
+          - id: name-field-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_saved_sql.rs
+            selector: { kind: test, name: saved_sql_name_is_a_normal_field }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-name-field
+                covers:
+                  - FEAT-API-001#binding.core/target.list-sql
+                  - FEAT-API-001#binding.core/target.get-sql
+                  - FEAT-API-001#binding.core/target.create-sql
+                  - FEAT-API-001#binding.core/target.update-sql
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_saved_sql, test: saved_sql_name_is_a_normal_field } }
+      - id: cli-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the nested Saved SQL CLI lifecycle, including optional names, current-revision update defaults, explicit stale-revision conflicts, and remote request contracts through exact integration cases.
+        targets:
+          - id: lifecycle
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_saved_sql.rs
+            selector: { kind: test, name: test_saved_sql_req_api_006_crud }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-name-field
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_saved_sql, test: test_saved_sql_req_api_006_crud } }
+          - id: remote-create
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_saved_sql_create_req_api_006_uses_server_generated_id }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_saved_sql_create_req_api_006_uses_server_generated_id } }
+          - id: remote-update
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_saved_sql_update_req_api_006_sends_parent_revision_without_author }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-006#criterion.saved-sql-lifecycle
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_saved_sql_update_req_api_006_sends_parent_revision_without_author } }
+
+  - id: REQ-API-007
+    title: Saved SQL template validation
+    description: Saved SQL entries declare every {{variable_name}} template reference. Template execution is rejected until values are bound through DataFusion parameters; Ugoite never substitutes literal text into SQL.
+    priority: high
+    status: implemented
+    criteria:
+      - id: declared-template-bindings
+        kind: behavior
+        statement: Saved SQL validation requires every template reference to be declared before execution.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: parameterized-execution
+        kind: security
+        statement: SQL template values are bound through DataFusion parameters and are never substituted as literal SQL text.
+        governed_by: [POL-001#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: template-verification
+        role: verification
+        facet: verification
+        responsibility: Verify saved SQL template rejection through the exact Iceberg integration case; the CLI path remains explicitly unverified.
+        targets:
+          - id: iceberg-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_saved_sql.rs
+            selector: { kind: test, name: test_saved_sql_req_api_007_validation_errors }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-007#criterion.declared-template-bindings
+                covers: [FEAT-API-001#binding.core/target.create-sql]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_saved_sql, test: test_saved_sql_req_api_007_validation_errors } }
+
+  - id: REQ-API-018
+    title: SQL Form-name resolution and Saved SQL bindings
+    description: SQL resolves exact quoted Form names only from the current authorized Publication. New Saved SQL revisions bind those names to server-derived stable Form IDs, and every execution rechecks current authorization without same-name fallback. Issue #3342 adds current-reader evidence for synthetic pre-binding revisions; a frozen Space written by a historical pre-binding binary remains distinct provenance evidence.
+    priority: high
+    status: implemented
+    criteria:
+      - id: quoted-form-name-resolution
+        kind: behavior
+        statement: Quoted Form names resolve exactly and case-sensitively in SQL relation positions; legacy form_<UUID> relations remain supported, and literals, comments, CTEs, and nested queries are not rewritten as names.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: saved-sql-revision-binding
+        kind: quality
+        statement: Each newly saved SQL revision stores server-derived Form ID bindings as part of revision integrity; execution of a selected revision keeps those identities across rename and rejects missing Forms without same-name fallback.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: current-form-authorization
+        kind: security
+        statement: Saved SQL page, count, and continuation execution rechecks current authorization for every bound Form and rejects access after authorization is revoked.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: legacy-saved-sql-preservation
+        kind: compatibility
+        statement: Saved SQL that uses the existing form_<UUID> relation syntax remains executable, and querying that revision leaves its SQL and revision identity unchanged. Persisted revisions written before Form-binding metadata remain an explicit compatibility claim; this synthetic generic Entry fixture verifies the current reader path, while a frozen Space written through a pre-binding binary remains separate provenance evidence.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: sql-resolution-and-binding-verification
+        role: verification
+        facet: verification
+        responsibility: Verify quoted-name AST resolution, revision-bound Saved SQL, current Form authorization, and existing ID-relation compatibility through exact Rust tests.
+        targets:
+          - id: quoted-name-page-and-count
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: {
+              kind: test,
+              name: quoted_form_name_resolves_for_page_and_count,
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-018#criterion.quoted-form-name-resolution
+                covers:
+                  - FEAT-API-001#binding.sql-name-resolution/target.resolve-form-name-references
+                  - FEAT-API-001#binding.sql-service-implementation/target.query-sql
+                runner: {
+                  runner: cargo-test-integration,
+                  arguments: {
+                    package: ugoite-iceberg,
+                    harness: test_sql_stateless,
+                    test: quoted_form_name_resolves_for_page_and_count,
+                  },
+                }
+          - id: special-name-parameter
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: {
+              kind: test,
+              name: quoted_form_name_with_digits_hyphen_and_parameter_resolves,
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-018#criterion.quoted-form-name-resolution
+                covers:
+                  - FEAT-API-001#binding.sql-name-resolution/target.resolve-form-name-references
+                  - FEAT-API-001#binding.sql-service-implementation/target.query-sql
+                runner: {
+                  runner: cargo-test-integration,
+                  arguments: {
+                    package: ugoite-iceberg,
+                    harness: test_sql_stateless,
+                    test: quoted_form_name_with_digits_hyphen_and_parameter_resolves,
+                  },
+                }
+          - id: saved-revision-binding
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: {
+              kind: test,
+              name: saved_sql_revision_uses_fixed_form_binding_and_continuation_identity,
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-018#criterion.saved-sql-revision-binding
+                covers: [
+                  FEAT-API-001#binding.core/target.create-sql,
+                  FEAT-API-001#binding.core/target.update-sql,
+                  FEAT-API-001#binding.sql-service-implementation/target.query-sql,
+                ]
+                runner: {
+                  runner: cargo-test-integration,
+                  arguments: {
+                    package: ugoite-iceberg,
+                    harness: test_sql_stateless,
+                    test: saved_sql_revision_uses_fixed_form_binding_and_continuation_identity,
+                  },
+                }
+          - id: form-authorization-recheck
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_service.rs
+            selector: {
+              kind: test,
+              name: saved_sql_form_authorization_is_rechecked_for_continuation_and_count,
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-018#criterion.current-form-authorization
+                covers: [
+                  FEAT-API-001#binding.sql-service-implementation/target.query-sql,
+                  FEAT-API-001#binding.sql-service-implementation/target.count-sql,
+                ]
+                runner: {
+                  runner: cargo-test-integration,
+                  arguments: {
+                    package: ugoite-iceberg,
+                    harness: test_service,
+                    test: saved_sql_form_authorization_is_rechecked_for_continuation_and_count,
+                  },
+                }
+          - id: cli-saved-revision
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_sql_stateless_cli.rs
+            selector: { kind: test, name: cli_saved_sql_run_executes_current_or_selected_bound_revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-018#criterion.saved-sql-revision-binding
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_sql_stateless_cli, test: cli_saved_sql_run_executes_current_or_selected_bound_revision } }
+          - id: saved-sql-rename-and-replacement
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: {
+              kind: symbol,
+              name: service::saved_sql_binding_execution_tests::saved_sql_binding_tracks_form_id_across_rename_and_rejects_replacement,
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-018#criterion.saved-sql-revision-binding
+                covers: [
+                  FEAT-API-001#binding.sql-service-implementation/target.query-sql,
+                ]
+                runner: {
+                  runner: cargo-test-unit,
+                  arguments: {
+                    package: ugoite-iceberg,
+                    test: service::saved_sql_binding_execution_tests::saved_sql_binding_tracks_form_id_across_rename_and_rejects_replacement,
+                  },
+                }
+          - id: legacy-relation-resolution
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: {
+              kind: test,
+              name: synthetic_prebinding_revision_reads_and_runs_without_rewrite,
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-018#criterion.legacy-saved-sql-preservation
+                covers:
+                  - FEAT-API-001#binding.sql-name-resolution/target.resolve-form-name-references
+                  - FEAT-API-001#binding.sql-service-implementation/target.query-sql
+                runner: {
+                  runner: cargo-test-integration,
+                  arguments: {
+                    package: ugoite-iceberg,
+                    harness: test_sql_stateless,
+                    test: synthetic_prebinding_revision_reads_and_runs_without_rewrite,
+                  },
+                }

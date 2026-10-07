@@ -282,11 +282,11 @@ inventory:
         - AGENTS.md
         - docs/spec/index.md
         - docs/mitase/philosophies/foundation.yaml
-        - docs/mitase/policies/policies.yaml
+        - docs/mitase/policies
         - docs/mitase/requirements/search.yaml
         - docs/mitase/requirements/entries.yaml
         - docs/mitase/requirements/forms.yaml
-        - docs/mitase/requirements/api.yaml
+        - docs/mitase/requirements/api
         - docs/mitase/requirements/assets.yaml
         - docs/mitase/requirements/integrity.yaml
         - docs/mitase/features/search.yaml
@@ -295,8 +295,9 @@ inventory:
         - docs/mitase/features/api.yaml
         - docs/mitase/features/assets.yaml
         - docs/mitase/features/integrity.yaml
-        - docs/mitase/requirements/frontend.yaml
-        - docs/mitase/features/frontend.yaml
+        - docs/mitase/requirements/composition
+        - docs/mitase/requirements/frontend
+        - docs/mitase/features/frontend
         - docs/spec/ui/components/entry-browser.yaml
         - docs/spec/ui/pages/space-compositions.yaml
         - docs/spec/ui/pages/space-composition-revision.yaml
@@ -305,13 +306,13 @@ inventory:
         - docs/mitase/features/e2e.yaml
         - docs/mitase/requirements/journey.yaml
         - docs/mitase/features/journey.yaml
-        - docs/mitase/requirements/security.yaml
-        - docs/mitase/features/security.yaml
+        - docs/mitase/requirements/security
+        - docs/mitase/features/security
         - docs/mitase/features/authentication.yaml
-        - docs/mitase/requirements/storage.yaml
+        - docs/mitase/requirements/storage
         - docs/mitase/features/storage.yaml
         - docs/mitase/features/spaces.yaml
-        - docs/mitase/requirements/ops.yaml
+        - docs/mitase/requirements/ops
         - docs/mitase/features/ops.yaml
         - docs/index.md
         - docs/get-started/index.md

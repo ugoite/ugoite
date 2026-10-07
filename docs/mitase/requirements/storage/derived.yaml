@@ -1,0 +1,111 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: storage
+category: Space storage boundaries and bootstrap
+requirements:
+  - id: REQ-STO-013
+    title: Rebuildable DerivedRelation storage
+    description: >-
+      DerivedRelation Heads and immutable Iceberg builds remain under the
+      owning Space prefix and use exact conditional Head publication. Derived
+      state stays outside the authoritative Catalog Head and SpaceCheckpoint,
+      can be rebuilt from authoritative data, and uses canonical
+      ugoite://{space_uid}/{space-relative-key} coordinates. The logical
+      resolver rejects malformed or cross-Space coordinates.
+    priority: high
+    status: implemented
+    criteria:
+      - id: space-local-coordinates
+        kind: security
+        statement: A DerivedRelation Head and its immutable build coordinates are bound to the owning Space and cannot escape its relation/build prefix.
+        governed_by: [POL-001#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: conditional-head-publication
+        kind: quality
+        statement: DerivedRelation Head publication uses exact read and conditional replacement semantics so a stale single-process writer cannot replace the current build.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+      - id: non-authoritative-derived-state
+        kind: behavior
+        statement: DerivedRelation publication does not mutate the authoritative Catalog Head, and an empty Space can be rebuilt with only derived state being published.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: rebuildable-builds
+        kind: behavior
+        statement: A malformed or missing current DerivedRelation build can be replaced by a subsequent rebuild from authoritative Space data without requiring a migration reader for the discarded representation.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: canonical-coordinate-resolution
+        kind: security
+        statement: Iceberg metadata and data locations use canonical logical Space URIs, and the resolver rejects malformed, traversal, cross-Space, or physical-backend locations.
+        governed_by: [POL-001#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: derived-verification
+        role: verification
+        facet: verification
+        responsibility: Verify relation-local Head publication, rebuild recovery, non-authoritative publication, and logical coordinate resolution through exact storage and Iceberg tests. Shared-backend conditional-write behavior remains fail-closed until its backend contract is established; the traced publication tests cover the current single-process boundary.
+        targets:
+          - id: head-publication-case
+            adapter: rust
+            path: crates/ugoite-storage/src/lib.rs
+            selector: { kind: symbol, name: tests::derived_head_uses_checksum_and_single_process_publication }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.space-local-coordinates
+                covers: [FEAT-STO-001#binding.derived/target.head-store]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-storage, test: tests::derived_head_uses_checksum_and_single_process_publication } }
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.conditional-head-publication
+                covers: [FEAT-STO-001#binding.derived/target.head-store]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-storage, test: tests::derived_head_uses_checksum_and_single_process_publication } }
+          - id: stale-writer-case
+            adapter: rust
+            path: crates/ugoite-storage/src/lib.rs
+            selector: { kind: symbol, name: tests::derived_publish_rejects_a_stale_single_process_writer }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.conditional-head-publication
+                covers: [FEAT-STO-001#binding.derived/target.head-store]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-storage, test: tests::derived_publish_rejects_a_stale_single_process_writer } }
+          - id: empty-rebuild-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/derived_relation.rs
+            selector: { kind: symbol, name: derived_relation::tests::empty_space_rebuild_publishes_only_a_derived_head }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.non-authoritative-derived-state
+                covers:
+                  - FEAT-STO-001#binding.derived/target.head-store
+                  - FEAT-ASSET-001#binding.derived/target.asset-text-rebuild
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::empty_space_rebuild_publishes_only_a_derived_head } }
+          - id: rebuild-recovery-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/derived_relation.rs
+            selector: { kind: symbol, name: derived_relation::tests::malformed_derived_head_is_replaced_by_the_next_rebuild }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.rebuildable-builds
+                covers: [FEAT-ASSET-001#binding.derived/target.asset-text-rebuild]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::malformed_derived_head_is_replaced_by_the_next_rebuild } }
+          - id: materialized-coordinate-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/derived_relation.rs
+            selector: { kind: symbol, name: derived_relation::tests::text_asset_materializes_and_is_searchable }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.space-local-coordinates
+                covers:
+                  - FEAT-STO-001#binding.derived/target.head-store
+                  - FEAT-ASSET-001#binding.derived/target.asset-text-rebuild
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::text_asset_materializes_and_is_searchable } }
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.non-authoritative-derived-state
+                covers:
+                  - FEAT-STO-001#binding.derived/target.head-store
+                  - FEAT-ASSET-001#binding.derived/target.asset-text-rebuild
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: derived_relation::tests::text_asset_materializes_and_is_searchable } }
+          - id: logical-coordinate-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/logical_storage.rs
+            selector: { kind: symbol, name: logical_storage::tests::logical_coordinates_resolve_to_the_bound_memory_space }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-013#criterion.canonical-coordinate-resolution
+                covers: [FEAT-STO-001#binding.derived/target.logical-coordinate-resolver]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: logical_storage::tests::logical_coordinates_resolve_to_the_bound_memory_space } }

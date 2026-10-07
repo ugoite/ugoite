@@ -1,0 +1,26 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: api
+category: API contracts and operator surfaces
+requirements:
+  - id: REQ-API-009
+    title: Sample data Space generation
+    description: "The API is intended to provide a way to generate a sample-data Space from a small set of inputs: Space slug, scenario, Entry count, and seed. Backend REST exposure is currently unshipped; core implementation and tests remain retained for future re-exposure."
+    priority: medium
+    status: planned
+    criteria:
+      - id: sample-space-inputs
+        kind: behavior
+        statement: A future sample-data operation accepts Space slug, scenario, Entry count, and seed as explicit inputs.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance]
+
+  - id: REQ-API-010
+    title: Sample data scenarios and asynchronous jobs
+    description: The API is intended to expose a catalog of sample-data scenarios and asynchronous sample-data generation jobs with status reporting. Backend REST exposure is currently unshipped.
+    priority: medium
+    status: planned
+    criteria:
+      - id: sample-job-lifecycle
+        kind: behavior
+        statement: A future sample-data API exposes scenario discovery and asynchronous generation job status.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance]

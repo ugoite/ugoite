@@ -1,0 +1,745 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: frontend
+category: Frontend route, component, and interaction requirements
+requirements:
+  - id: REQ-FE-070
+    title: Composition Studio Authoring
+    description: |
+      Composition Studio lets the Browser combine existing Space-owned Knowledge (Saved SQL revisions, Form views, parameters) into a reusable Tool with multiple data sources, table and exact-scalar metric displays, labels, tags, side-effect-free live preview, and exact-revision edit. Richness is typed, reproducible combination of existing Knowledge, not free-form layout. The Browser never owns Composition semantics. Drafts canonicalize through the shared Rust/WASM contract, metric evaluation stays exact-scalar without Browser aggregation, and SQL types stay server-owned without Browser inference. Verification bindings for the draft Work state land with this change; route, picker, preview, and edit-surface verification lands with the Studio implementation, and the remaining criteria stay an explicit evidence gap until then.
+    priority: high
+    status: planned
+    criteria:
+      - id: structure-first-authoring
+        kind: behavior
+        statement: The Studio steady state shows the operative structure (tool name, Data, Display, Parameters, Tags, Preview, Save) without explanatory paragraphs; prose appears only to instruct the next ambiguous operation, recover from errors, warn, disambiguate unavailability, or show one empty-state next action.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance]
+      - id: no-persistent-explanatory-copy
+        kind: behavior
+        statement: Steady-state Studio and saved-Tool surfaces carry no product explanation, tutorial paragraph, repeated context sentence, persistent success prose, or primary-path internal identifiers; each datum keeps one visible owner and each navigation or mutation intent keeps exactly one operative control per surface.
+        governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-003#rule.governance]
+      - id: source-authoring
+        kind: behavior
+        statement: A Tool pins one or more exact sources (Saved SQL at an exact revision, EntryQuery from an existing Form view or Form-scoped query control) with full-row selection, reorder controls, and a guarded remove that blocks while displays reference the source instead of cascading silently.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
+      - id: display-authoring
+        kind: behavior
+        statement: Displays are table or exact-scalar metric components only; a table renders through the source-native Entry or SQL presenter, a metric selects one scalar-compatible field or column with an optional label, and several displays may share one source without duplicate fetching.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
+      - id: typed-parameter-binding
+        kind: behavior
+        statement: Parameters use the existing Composition parameter grammar with labels, defaults, and date/month/timestamp inputs; Saved SQL variables and EntryQuery filter values bind to parameters by reference, and type compatibility is decided by the Rust-owned capability and diagnostics, never by Browser inference.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: side-effect-free-preview
+        kind: behavior
+        statement: Unsaved drafts preview through a side-effect-free resolution that parses the candidate document, applies current source authorization, resolves through the shared Core resolver, and executes only the existing entry.query and sql.query operations without creating registry, history, or publication state.
+        governed_by: [POL-UI-009#rule.governance]
+      - id: exact-revision-edit
+        kind: behavior
+        statement: Editing opens the exact saved revision through composition.get and composition.lint normalization, saves with the exact composition and base revision identity plus idempotency, and appends a new revision on success; stale bases conflict and uncertain saves retry the identical payload and key.
+        governed_by: [POL-UI-008#rule.governance, POL-UI-009#rule.governance]
+      - id: mobile-one-column
+        kind: quality
+        statement: At 390px width (and 320px effective zoom width) the Studio is one column with reachable primary actions, touch-sized controls, no page-level horizontal overflow, and tables scrolling inside their own viewport; reorder and all operations remain available without hover-only or drag-only interaction.
+        governed_by: [POL-UI-004#rule.governance, POL-UI-007#rule.governance]
+      - id: accessible-icon-actions
+        kind: quality
+        statement: Every icon action carries an accessible name, tooltip or title where the visible label collapses, a 44px target, and a focus order matching the visual order.
+        governed_by: [POL-UI-007#rule.governance, POL-UI-012#rule.governance]
+    bindings:
+      - id: draft-model-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio draft Work state (stable identities, blocked removes, keyboard-operable reorder, typed document assembly, shared-contract canonicalization) through exact frontend unit tests. Route, picker, preview, and edit-surface verification lands with the Studio implementation.
+        targets:
+          - id: draft-identities
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: builds stable draft identities without owning semantics }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: builds stable draft identities without owning semantics } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: builds stable draft identities without owning semantics } }
+          - id: draft-blocked-remove
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: blocks source removal while displays reference it }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: blocks source removal while displays reference it } }
+          - id: draft-reorder
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: reorders sources and displays by keyboard-operable moves }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: reorders sources and displays by keyboard-operable moves } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: reorders sources and displays by keyboard-operable moves } }
+      - id: preview-handle-verification
+        role: verification
+        facet: verification
+        responsibility: Verify draft preview execution identity, stale-response guards, parameter re-preview, and error surfacing through exact frontend unit tests.
+        targets:
+          - id: preview-fingerprint-identity
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: keys execution identity by draft fingerprint }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+                covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: keys execution identity by draft fingerprint } }
+          - id: preview-stale-guard
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: drops stale previews when the draft changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+                covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: drops stale previews when the draft changes } }
+          - id: preview-parameter-repreview
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: re-previews the stored draft when a parameter changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+                covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: re-previews the stored draft when a parameter changes } }
+          - id: preview-error-state
+            adapter: typescript
+            path: frontend/src/lib/composition-preview-handle.test.ts
+            selector: { kind: test, name: surfaces preview errors without stale overwrite }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+                covers: [FEAT-FE-014#binding.frontend/target.composition-preview-handle]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: surfaces preview errors without stale overwrite } }
+      - id: studio-edit-verification
+        role: verification
+        facet: verification
+        responsibility: Verify exact-revision edit (open the exact saved revision through composition.get and composition.lint normalization, restore the shared studio draft, save with the exact composition and base revision identity plus idempotency, refuse invalid documents without opening the studio) through exact frontend unit tests.
+        targets:
+          - id: studio-edit-restore
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: "restores a draft from a lint-normalized document" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores a draft from a lint-normalized document" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores a draft from a lint-normalized document" } }
+          - id: studio-edit-load
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+            selector: { kind: test, name: "loads the exact revision through get and lint with a prefilled studio" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "loads the exact revision through get and lint with a prefilled studio" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "loads the exact revision through get and lint with a prefilled studio" } }
+          - id: studio-edit-save
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+            selector: { kind: test, name: "saves an update with base revision identity and a stable retry key" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "saves an update with base revision identity and a stable retry key" } }
+          - id: studio-edit-invalid
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+            selector: { kind: test, name: "refuses an invalid lint without opening the studio" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "refuses an invalid lint without opening the studio" } }
+      - id: studio-history-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Composition history route and its historical restore flow (bounded history rows with human labels and full-row exact-revision activation, current-revision marking, the header history action, and append-only restore with source and base identity plus a stable idempotency key) through exact frontend unit tests.
+        targets:
+          - id: composition-history-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx
+            selector: { kind: test, name: lists revisions with human labels and opens the exact revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: lists revisions with human labels and opens the exact revision } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.accessible-icon-actions
+                covers: [FEAT-FE-014#binding.frontend/target.composition-history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: lists revisions with human labels and opens the exact revision } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: lists revisions with human labels and opens the exact revision } }
+      - id: studio-display-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio display authoring (table or exact-scalar metric choice, scalar-only value candidates with disabled unavailable sources, inline label editing, keyboard-operable reorder, remove) through exact frontend unit tests.
+        targets:
+          - id: studio-display-picker-table
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "adds a table display from a draft source" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a table display from a draft source" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a table display from a draft source" } }
+          - id: studio-display-picker-metric
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "adds a metric display with scalar-only candidates" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a metric display with scalar-only candidates" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a metric display with scalar-only candidates" } }
+          - id: studio-display-picker-unavailable
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "disables sources without scalar candidates" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "disables sources without scalar candidates" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "disables sources without scalar candidates" } }
+          - id: studio-canvas-palette-modal
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: opens the palette as a modal dialog with focus trap and focus return }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: opens the palette as a modal dialog with focus trap and focus return } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.accessible-icon-actions
+                covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: opens the palette as a modal dialog with focus trap and focus return } }
+          - id: studio-canvas-palette-gating
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: "hides metric, table, and parameter entries without sources or parameters" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides metric, table, and parameter entries without sources or parameters" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides metric, table, and parameter entries without sources or parameters" } }
+          - id: studio-canvas-text-spacing
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: separates text content from the block action bar with token spacing }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: separates text content from the block action bar with token spacing } }
+      - id: studio-parameter-verification
+        role: verification
+        facet: verification
+        responsibility: Verify typed parameter provisioning, inline default editing, guarded removal, and preview default values through exact frontend unit tests. Rust-owned type compatibility stays covered by resolve diagnostics.
+        targets:
+          - id: parameter-provisioning
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: provisions missing variable parameters without touching existing ones }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: provisions missing variable parameters without touching existing ones } }
+          - id: parameter-inline-edit
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: adds typed parameters and edits defaults inline }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: adds typed parameters and edits defaults inline } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: adds typed parameters and edits defaults inline } }
+          - id: parameter-guarded-remove
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: surfaces guarded removal without deleting }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: surfaces guarded removal without deleting } }
+          - id: parameter-add-reason
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: names the disabled reason on the add control without prose }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: names the disabled reason on the add control without prose } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.accessible-icon-actions
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: names the disabled reason on the add control without prose } }
+          - id: parameter-add-taken-reason
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: names the colliding id when the parameter already exists }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: names the colliding id when the parameter already exists } }
+          - id: parameter-route-provisioning
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: provisions typed parameters from saved sql variables and guards removal }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: provisions typed parameters from saved sql variables and guards removal } }
+      - id: studio-shell-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio shell route and data-source picker (one Back, one Save, tool-name-owned structure, full-row selection behind Forms and Saved SQL tabs with shared row labels, hidden internal forms, fixed dialog width, and explicit loading, empty, and error states, keyboard-operable reorder, guarded remove, canonical create-save with a stable idempotency key) through exact frontend unit tests.
+        targets:
+          - id: studio-shell-structure
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "renders one back control, one save, and mode-switched studio structure" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "renders one back control, one save, and mode-switched studio structure" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "renders one back control, one save, and mode-switched studio structure" } }
+          - id: studio-shell-sources
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "adds data sources with full-row selection and keyboard-operable reorder" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "adds data sources with full-row selection and keyboard-operable reorder" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "adds data sources with full-row selection and keyboard-operable reorder" } }
+          - id: studio-shell-save
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "saves the canonical draft with a stable idempotency key" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "saves the canonical draft with a stable idempotency key" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "saves the canonical draft with a stable idempotency key" } }
+          - id: studio-shell-save-retry
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "retries an uncertain save with the identical payload and key" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "retries an uncertain save with the identical payload and key" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "retries an uncertain save with the identical payload and key" } }
+          - id: studio-source-picker-list
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "lists forms and saved sql with full-row selection" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "lists forms and saved sql with full-row selection" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "lists forms and saved sql with full-row selection" } }
+          - id: studio-source-picker-pin
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "pins the exact saved sql revision with server-owned column types" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "pins the exact saved sql revision with server-owned column types" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "pins the exact saved sql revision with server-owned column types" } }
+          - id: studio-source-picker-tabs
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "switches the source lists behind Forms and Saved SQL tabs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "switches the source lists behind Forms and Saved SQL tabs" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "switches the source lists behind Forms and Saved SQL tabs" } }
+          - id: studio-source-picker-internal-forms
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "hides internal registry forms while keeping user forms" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "hides internal registry forms while keeping user forms" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "hides internal registry forms while keeping user forms" } }
+          - id: studio-source-picker-shared-labels
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "renders the shared list-page row labels in the picker" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "renders the shared list-page row labels in the picker" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "renders the shared list-page row labels in the picker" } }
+          - id: studio-source-picker-width
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "keeps the source picker dialog at a fixed readable width" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "keeps the source picker dialog at a fixed readable width" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "keeps the source picker dialog at a fixed readable width" } }
+          - id: studio-source-picker-async-states
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "preserves loading, empty, and error states across tabs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "preserves loading, empty, and error states across tabs" } }
+          - id: studio-source-picker-retry
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector: { kind: test, name: "recovers from a list failure through retry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionSourcePicker.test.tsx, test: "recovers from a list failure through retry" } }
+          - id: source-row-label-form
+            adapter: typescript
+            path: frontend/src/components/SourceRowLabels.test.tsx
+            selector: { kind: test, name: "renders a user form with a glyph and no system marker" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "renders a user form with a glyph and no system marker" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "renders a user form with a glyph and no system marker" } }
+          - id: source-row-label-system-marker
+            adapter: typescript
+            path: frontend/src/components/SourceRowLabels.test.tsx
+            selector: { kind: test, name: "marks reserved metadata forms with the system marker" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "marks reserved metadata forms with the system marker" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "marks reserved metadata forms with the system marker" } }
+          - id: source-row-label-saved-sql
+            adapter: typescript
+            path: frontend/src/components/SourceRowLabels.test.tsx
+            selector: { kind: test, name: "renders saved sql names with variables and updated meta" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "renders saved sql names with variables and updated meta" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.source-row-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SourceRowLabels.test.tsx, test: "renders saved sql names with variables and updated meta" } }
+      - id: studio-entry-point-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio entry points (one New tool action per saved-tools surface, Saved SQL run and EntryQuery seed navigation, once-only seed consumption with a prefilled save-ready draft) through exact frontend unit tests. Seeds reuse the existing builders and descriptors; inexpressible queries stay fail-closed.
+        targets:
+          - id: entry-point-list-new
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/index.test.tsx
+            selector: { kind: test, name: "links a single new tool action to the studio" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+                covers: [FEAT-FE-014#binding.frontend/target.composition-list-new]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/index.test.tsx", test: "links a single new tool action to the studio" } }
+          - id: entry-point-dashboard-new
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
+            selector: { kind: test, name: "links saved tools to the new tool studio action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+                covers: [FEAT-FE-014#binding.frontend/target.dashboard-saved-tools-new]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "links saved tools to the new tool studio action" } }
+          - id: entry-point-saved-sql-seed
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
+            selector: { kind: test, name: "navigates to the studio with the saved sql seed" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.saved-sql-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "navigates to the studio with the saved sql seed" } }
+          - id: entry-point-saved-sql-duplicates
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx
+            selector: { kind: test, name: "keeps duplicate columns out of the studio without navigating" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.saved-sql-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id]/run.test.tsx", test: "keeps duplicate columns out of the studio without navigating" } }
+          - id: entry-point-entry-query-seed
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx
+            selector: { kind: test, name: "navigates to the studio with the entry query seed" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.entry-query-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "navigates to the studio with the entry query seed" } }
+          - id: entry-point-studio-seed-saved-sql
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "seeds the studio from a saved sql seed with a table and placed controls" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from a saved sql seed with a table and placed controls" } }
+          - id: entry-point-studio-seed-entry-query
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: "seeds the studio from an entry query seed with a default table" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-seed]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "seeds the studio from an entry query seed with a default table" } }
+      - id: studio-use-surface-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the saved-tool read surface owns the tool name once and links a single edit action with an accessible name through exact frontend unit tests.
+        targets:
+          - id: use-surface-header
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: owns the tool name once and links a single edit action }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-use-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: owns the tool name once and links a single edit action } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.accessible-icon-actions
+                covers: [FEAT-FE-014#binding.frontend/target.composition-use-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: owns the tool name once and links a single edit action } }
+      - id: studio-mobile-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio mobile arrangement stays one column with reachable primary actions and no page-level horizontal overflow at 390px and the 320px effective width — Design Data toggle with forced Design below the Split gate, inspector bottom sheet with dialog semantics and focus return on narrow viewports, inline inspector on wide viewports, sheet data jump to the Data workspace, and the single-row mode plus viewport-bound sheet CSS contract.
+        targets:
+          - id: studio-mobile-sheet-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: opens the selected block inspector in a bottom sheet on narrow viewports and returns focus on close }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-mobile]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: opens the selected block inspector in a bottom sheet on narrow viewports and returns focus on close } }
+          - id: studio-mobile-inline-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: keeps the inspector inline with no dialog on wide viewports }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-mobile]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: keeps the inspector inline with no dialog on wide viewports } }
+          - id: studio-mobile-forcing-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: forces Design when crossing below the Split gate }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: forces Design when crossing below the Split gate } }
+          - id: studio-mobile-data-jump-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: moves the sheet data jump to the Data workspace on narrow viewports }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-mobile]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: moves the sheet data jump to the Data workspace on narrow viewports } }
+          - id: studio-mobile-insert-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: opens the sheet for a freshly inserted block on narrow viewports }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-mobile]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: opens the sheet for a freshly inserted block on narrow viewports } }
+          - id: studio-mobile-narrow-contract-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: keeps the mode switch single-row and the sheet within the viewport at 320px and 390px widths }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-mobile]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: keeps the mode switch single-row and the sheet within the viewport at 320px and 390px widths } }
+      - id: studio-mode-verification
+        role: verification
+        facet: verification
+        responsibility: Verify true mode separation (Design shows the finished shape only, Data shows the fetch definition only with Parameters disclosed once a source exists and Tags, Split pairs the canvas with the scoped data pane), the guided blank-canvas Add-data action through the single source picker, and the every-mode diagnostics strip through exact frontend unit tests.
+        targets:
+          - id: studio-true-modes-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: scopes Parameters Tags and the Data workspace to their owning modes only }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: scopes Parameters Tags and the Data workspace to their owning modes only } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: scopes Parameters Tags and the Data workspace to their owning modes only } }
+          - id: studio-blank-guided-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: guides a blank canvas with one Add-data action that opens the single picker }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: guides a blank canvas with one Add-data action that opens the single picker } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: guides a blank canvas with one Add-data action that opens the single picker } }
+          - id: studio-parameters-disclosure-case
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: discloses Parameters in Data mode only once a source exists }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: discloses Parameters in Data mode only once a source exists } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: discloses Parameters in Data mode only once a source exists } }
+          - id: studio-diagnostics-strip-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: renders resolve diagnostics in the strip in every mode without refetch }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: renders resolve diagnostics in the strip in every mode without refetch } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: renders resolve diagnostics in the strip in every mode without refetch } }

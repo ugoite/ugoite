@@ -1,0 +1,417 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: storage
+category: Space storage boundaries and bootstrap
+requirements:
+  - id: REQ-STO-004
+    title: Space registry management
+    description: The spaces/ directory and each Space's current metadata maintain the Space registry, while the service exposes validated local Space locators without fabricating incomplete entries. Remote adapters expose immutable Space UIDs from that metadata.
+    priority: high
+    status: implemented
+    criteria:
+      - id: directory-registry
+        kind: behavior
+        statement: Listing Spaces discovers valid Space directories and returns their identifiers from current metadata-backed Space state.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: service-space-listing
+        kind: behavior
+        statement: The application service exposes the current validated Space directory locators through the same metadata-backed registry rather than a separate registry source; remote adapters resolve immutable Space UIDs from each locator's metadata.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: portable-storage-config
+        kind: quality
+        statement: Portable Space storage configuration normalizes local and remote URI forms without making a provider-specific representation the registry authority.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: registry-verification
+        role: verification
+        facet: verification
+        responsibility: Verify directory-backed Space discovery and service-level Space locator listing through exact Rust tests.
+        targets:
+          - id: directory-list-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_004_list_spaces_from_directory }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-004#criterion.directory-registry
+                covers: [FEAT-STO-001#binding.space/target.list-spaces]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_004_list_spaces_from_directory } }
+              - kind: verifies
+                criterion: REQ-STO-004#criterion.service-space-listing
+                covers: [FEAT-STO-001#binding.service/target.list-space-ids]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_004_list_spaces_from_directory } }
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-STO-001#binding.service/target.list-space-ids]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_004_list_spaces_from_directory } }
+          - id: domain-storage-config-case
+            adapter: rust
+            path: crates/ugoite-domain/tests/test_coverage.rs
+            selector: { kind: test, name: test_space_req_sto_004_storage_type_and_root_normalizes_local_and_remote_uris }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-004#criterion.portable-storage-config
+                covers: [FEAT-STO-001#binding.domain/target.storage-config]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_coverage, test: test_space_req_sto_004_storage_type_and_root_normalizes_local_and_remote_uris } }
+
+  - id: REQ-STO-005
+    title: Space creation retry and duplicate conflict
+    description: The authenticated POST /spaces operation creates a new Space with HTTP 201, returns the existing Space with HTTP 200 only when the same Node account retries an already-bound Space creation, and rejects another account attempting the existing slug with HTTP 409. A complete bootstrap with a missing final Node binding remains recoverable through the same authenticated creation path.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: new-space-created
+        kind: behavior
+        statement: A valid new Space slug creates the Space and returns its immutable identity with HTTP 201.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: bound-account-retry
+        kind: behavior
+        statement: A retry from the Node account already bound to the Space slug returns the same immutable Space identity with HTTP 200 and does not create another Space.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: duplicate-slug-conflict
+        kind: security
+        statement: An account that is not already bound to an existing Space slug receives the explicit SPACE_ALREADY_EXISTS conflict with HTTP 409 and cannot claim that slug.
+        governed_by: [POL-002#rule.governance, POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: missing-binding-recovery
+        kind: quality
+        statement: An already complete Space whose final Node binding is missing can be repaired by the authenticated creation retry without rebuilding or replacing the Space.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: creation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the authenticated Space creation outcomes, duplicate admission boundary, recovery behavior, and published OpenAPI contract through exact server tests.
+        targets:
+          - id: behavior-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.new-space-created
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug } }
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.bound-account-retry
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug } }
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.duplicate-slug-conflict
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug } }
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers:
+                  - FEAT-API-001#binding.space-service-implementation/target.create-space
+                  - FEAT-STO-001#binding.space-api/target.create-space-api
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug } }
+              - kind: verifies
+                criterion: REQ-API-001#criterion.stable-space-identity
+                covers:
+                  - FEAT-API-001#binding.space-service-implementation/target.create-space
+                  - FEAT-STO-001#binding.space-api/target.create-space-api
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_api_distinguishes_bound_retry_from_duplicate_slug } }
+          - id: recovery-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::space_creation_retry_repairs_a_missing_node_binding }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.missing-binding-recovery
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_creation_retry_repairs_a_missing_node_binding } }
+          - id: openapi-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: issue_2212_openapi_documents_space_creation_outcomes }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.new-space-created
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2212_openapi_documents_space_creation_outcomes } }
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.bound-account-retry
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2212_openapi_documents_space_creation_outcomes } }
+              - kind: verifies
+                criterion: REQ-STO-005#criterion.duplicate-slug-conflict
+                covers: [FEAT-STO-001#binding.space-api/target.create-space-api]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2212_openapi_documents_space_creation_outcomes } }
+      - id: contract
+        role: contract-source
+        facet: api
+        responsibility: Publish the authenticated POST /spaces request and its creation, retry, and duplicate-conflict responses as the authoritative HTTP contract.
+        owns:
+          - id: openapi-source
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: file }
+        targets:
+          - id: create-space
+            adapter: openapi
+            path: crates/ugoite-server/src/openapi.json
+            selector: { kind: operation, method: post, path: '/spaces' }
+
+  - id: REQ-STO-006
+    title: Storage connector validation
+    description: Spaces MUST accept storage connector updates and provide a validation endpoint before committing changes. Unsafe connector endpoints such as loopback or link-local hosts MUST be rejected before the core binding attempts a connection test, and unreachable targets MUST return a connectivity failure rather than a false success.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: connector-updates
+        kind: behavior
+        statement: The Space update surface accepts storage connector metadata without treating that metadata change as a physical data migration.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: validation-endpoint
+        kind: behavior
+        statement: A dedicated Space connection-validation endpoint accepts a proposed connector configuration and delegates validation to the shared storage boundary.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-008#rule.governance]
+      - id: pre-commit-validation
+        kind: quality
+        statement: Callers can validate a proposed connector through the validation endpoint before committing a connector update; mandatory sequencing of those two operations remains an explicit contract boundary.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-008#rule.governance]
+      - id: supported-connector-config
+        kind: behavior
+        statement: Storage connection validation rejects unsupported URI schemes and reports a supported local or in-memory configuration as the corresponding connection mode.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: safe-remote-endpoint
+        kind: security
+        statement: Storage connection validation rejects loopback, link-local, private, and otherwise unsafe remote endpoints before the connection probe attempts network access.
+        governed_by: [POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: explicit-connectivity-failure
+        kind: behavior
+        statement: An unreachable custom remote storage endpoint returns a connectivity failure and never reports a false successful validation.
+        governed_by: [POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: connector-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the connector update and validation surfaces plus supported modes, endpoint safety, and typed connectivity failure through exact API, frontend, Iceberg integration, and unit cases. The repository exposes the validation-before-update workflow, while evidence that every update is rejected unless a prior validation succeeds remains unverified in this migration slice.
+        targets:
+          - id: connector-api-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: issue_2029_openapi_documents_storage_connection_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.connector-updates
+                covers: [FEAT-STO-001#binding.connector-api/target.patch-space]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2029_openapi_documents_storage_connection_contract } }
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.validation-endpoint
+                covers: [FEAT-STO-001#binding.connector-api/target.test-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2029_openapi_documents_storage_connection_contract } }
+          - id: connector-save-case
+            adapter: typescript
+            path: frontend/src/components/SpaceSettings.test.tsx
+            selector: { kind: test, name: renders storage values and saves only storage configuration }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.connector-updates
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: renders storage values and saves only storage configuration } }
+              - kind: verifies
+                criterion: REQ-FE-017#criterion.storage-configuration
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: renders storage values and saves only storage configuration } }
+              - kind: verifies
+                criterion: REQ-FE-060#criterion.topology-separation
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: renders storage values and saves only storage configuration } }
+          - id: connector-test-case
+            adapter: typescript
+            path: frontend/src/components/SpaceSettings.test.tsx
+            selector: { kind: test, name: tests the edited storage connection }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.validation-endpoint
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: tests the edited storage connection } }
+              - kind: verifies
+                criterion: REQ-FE-017#criterion.storage-configuration
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSettings.test.tsx, test: tests the edited storage connection } }
+          - id: unsupported-scheme-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_006_test_storage_connection_unknown_rejects_unsupported_scheme }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.supported-connector-config
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_006_test_storage_connection_unknown_rejects_unsupported_scheme } }
+          - id: memory-mode-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_002_test_storage_connection_memory }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.supported-connector-config
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_002_test_storage_connection_memory } }
+          - id: local-mode-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_002_test_storage_connection_local }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.supported-connector-config
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_002_test_storage_connection_local } }
+          - id: blocked-endpoint-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_006_test_storage_connection_rejects_blocked_endpoint }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.safe-remote-endpoint
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_006_test_storage_connection_rejects_blocked_endpoint } }
+          - id: blocked-addresses-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: service::storage_connection_tests::endpoint_validation_rejects_blocked_hosts }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.safe-remote-endpoint
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: service::storage_connection_tests::endpoint_validation_rejects_blocked_hosts } }
+          - id: unreachable-endpoint-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_006_test_storage_connection_accepts_custom_s3_endpoint_validation }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.explicit-connectivity-failure
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_006_test_storage_connection_accepts_custom_s3_endpoint_validation } }
+          - id: typed-connectivity-failure-case
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service.rs
+            selector: { kind: symbol, name: service::storage_connection_tests::probe_unreachable_endpoint_maps_to_storage_connection_failure }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-006#criterion.explicit-connectivity-failure
+                covers: [FEAT-STO-001#binding.connector/target.test-storage-connection]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: service::storage_connection_tests::probe_unreachable_endpoint_maps_to_storage_connection_failure } }
+
+  - id: REQ-STO-008
+    title: Fail-closed directory-based Space listing
+    description: Listing Spaces discovers only durable metadata-backed directories and reports missing or corrupt current metadata as a typed failure instead of silently omitting Knowledge or returning a partial successful list.
+    priority: high
+    status: implemented
+    criteria:
+      - id: incomplete-directory-filtering
+        kind: behavior
+        statement: Space discovery fails closed when a durable Space directory is missing current metadata or has invalid identity; only explicitly reserved node-local control directories are excluded from discovery.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: resilient-listing-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that incomplete Space directories fail closed through the exact Iceberg integration case.
+        targets:
+          - id: missing-meta-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: test_space_req_sto_008_list_spaces_fails_on_missing_meta }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-008#criterion.incomplete-directory-filtering
+                covers:
+                  - FEAT-STO-001#binding.space/target.list-spaces
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_008_list_spaces_fails_on_missing_meta } }
+              - kind: verifies
+                criterion: REQ-STO-009#criterion.incomplete-space-filtering
+                covers: [FEAT-STO-001#binding.space/target.list-spaces]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: test_space_req_sto_008_list_spaces_fails_on_missing_meta } }
+
+  - id: REQ-STO-009
+    title: Accessible Space listing API
+    description: The authenticated Space listing API returns only Spaces where the caller has read permission, relies on the fail-closed core listing boundary for durable metadata, does not infer Space access from node administration, and propagates unexpected storage errors instead of returning false success.
+    priority: high
+    status: implemented
+    criteria:
+      - id: authorized-space-listing
+        kind: security
+        statement: The authenticated Space listing endpoint filters each discovered Space through the caller's read authorization before returning its metadata.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: authenticated-listing-contract
+        kind: behavior
+        statement: The published Space listing operation declares its authenticated JSON success and storage-error response boundary.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: incomplete-space-filtering
+        kind: behavior
+        statement: The API uses the metadata-backed fail-closed core listing boundary, so corrupt or unreadable Space directories fail instead of being fabricated as accessible entries or silently omitted.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-004#rule.governance]
+      - id: storage-error-propagation
+        kind: quality
+        statement: Unexpected storage errors from Space enumeration or authorized metadata reads are returned as errors rather than converted into an empty or successful response.
+        governed_by: [POL-002#rule.governance, POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: listing-contract
+        role: verification
+        facet: verification
+        responsibility: Verify the published Space listing operation through the exact server API contract test. Runtime authorization filtering, node-administration exclusion, and unexpected storage-error propagation remain explicit in the server implementation binding but unverified in this migration slice because this contract test inspects the OpenAPI shape only.
+        targets:
+          - id: visible-spaces-contract-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: test_space_req_sto_009_openapi_documents_authenticated_space_listing }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-009#criterion.authenticated-listing-contract
+                covers: [FEAT-E2E-001#binding.server/target.list-spaces]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: test_space_req_sto_009_openapi_documents_authenticated_space_listing } }
+
+  - id: REQ-STO-010
+    title: Mode-appropriate CLI Space UID and path routing
+    description: When endpoint routing is backend or API, Space commands accept immutable Space UIDs without misleading local-root positional arguments. When endpoint routing is core, commands that access local storage require an explicit local root before touching the filesystem.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: remote-identifier-routing
+        kind: behavior
+        statement: Backend and API routing accept a bare immutable Space UID for commands that operate through the server.
+        governed_by: [POL-004#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
+      - id: explicit-core-root
+        kind: security
+        statement: Core-mode Space commands require an explicit local root or Space path before accessing local storage.
+        governed_by: [POL-001#rule.governance, POL-003#rule.governance, POL-005#rule.governance]
+      - id: routing-help-contract
+        kind: quality
+        statement: CLI help explains the local Space path and immutable Space UID forms for the supported routing modes.
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: cli-routing-verification
+        role: verification
+        facet: verification
+        responsibility: Verify core-root requirements, remote identifier routing, and the user-facing routing help through exact CLI integration cases.
+        targets:
+          - id: core-root-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_create_space_req_sto_010_requires_root_only_in_core_mode }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-010#criterion.explicit-core-root
+                covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_create_space_req_sto_010_requires_root_only_in_core_mode } }
+          - id: remote-id-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_space_list_req_sto_010_accepts_backend_mode_without_local_root }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-010#criterion.remote-identifier-routing
+                covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_space_list_req_sto_010_accepts_backend_mode_without_local_root } }
+          - id: routing-help-case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_cli_help_req_sto_010_describes_context_routing }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-010#criterion.routing-help-contract
+                covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_cli_help_req_sto_010_describes_context_routing } }

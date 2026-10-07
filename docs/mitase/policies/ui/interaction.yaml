@@ -1,0 +1,301 @@
+schema: mitase/authoring/v2
+kind: policies
+namespace: product
+category: Implementation Policies
+policies:
+  - id: POL-UI-002
+    title: Single Semantic Owner Per Surface
+    summary: Each piece of information has one visible owner on a surface.
+    description: A surface gives each piece of information one visible owner. Context already established by shell navigation, a heading, selected object, or field label is not restated through another heading, eyebrow, explanation, placeholder, action label, or shortcut. A second presentation is appropriate only when it communicates a distinct operation, state, or subject.
+    rules:
+      - id: governance
+        level: must
+        statement: Each piece of information on a surface has one visible owner. Context established by shell navigation, a heading, a selected object, or a field label is not restated by another heading, eyebrow, explanation, placeholder, action label, or shortcut; a second presentation is permitted only when it communicates a distinct operation, state, or subject.
+        governed_by: [PHIL-INTERACTION-001#principle.structure-before-explanation, PHIL-INTERACTION-001#principle.single-control, PHIL-INTERACTION-001#principle.no-decoration]
+    bindings:
+      - id: context-evidence
+        role: evidence
+        facet: semantic-ownership
+        responsibility: 'Evidence the single-semantic-owner principle itself: each surface gives each piece of information one visible owner. The entry workspace component below is the recorded exemplar carrying the single context heading. Single-context verification for the join, setup, Space dashboard, and Spaces index surfaces lives under REQ-UX-NAV-001#criterion.no-duplicate-context; equivalent semantic-ownership evidence for the remaining surfaces remains an explicit evidence gap and must not be inferred from this exemplar.'
+        targets:
+          - id: entry-detail-surface
+            adapter: declared
+            path: frontend/src/components/EntryDetailPane.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-002#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for context singularity.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-002#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-002#rule.governance }]
+  - id: POL-UI-003
+    title: No Decorative Cards
+    summary: Card containers appear only when they group an operative action or a distinct selectable record.
+    description: Card styling is reserved for actionable or selectable groupings; explanatory copy, metadata summaries, and static detail sections use plain structure instead of decorative card chrome.
+    rules:
+      - id: governance
+        level: must
+        statement: Card containers appear only when they group an operative action or a distinct selectable record; static explanation or metadata uses plain structure without card chrome.
+        governed_by: [PHIL-INTERACTION-001#principle.no-decoration, PHIL-INTERACTION-001#principle.structure-before-explanation]
+    bindings:
+      - id: card-evidence
+        role: evidence
+        facet: presentation
+        responsibility: Record the entry list surface where card usage is constrained to selectable records.
+        targets:
+          - id: entry-list-surface
+            adapter: declared
+            path: frontend/src/components/EntryList.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-003#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for card discipline.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-003#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-003#rule.governance }]
+  - id: POL-UI-004
+    title: One-Row Action Bar at 390px
+    summary: Primary list and workspace actions remain in a single row without wrapping at 390px width.
+    description: Action bars keep their primary actions in one row at a 390px viewport so the operative actions stay visible and reachable without horizontal scrolling or wrapped overflow.
+    rules:
+      - id: governance
+        level: must
+        statement: Primary list and workspace action bars remain in a single row without wrapping or horizontal scrolling at a 390px viewport.
+        governed_by: [PHIL-INTERACTION-001#principle.single-control, PHIL-INTERACTION-001#principle.verifiable-interaction]
+    bindings:
+      - id: action-bar-evidence
+        role: evidence
+        facet: responsive-layout
+        responsibility: Record the shared action bar component constrained to one row at narrow widths.
+        targets:
+          - id: action-bar-surface
+            adapter: declared
+            path: frontend/src/components/ActionIconBar.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-004#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for the one-row action bar.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-004#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-004#rule.governance }]
+  - id: POL-UI-006
+    title: Full-Row Selection Without Boxed Chevron
+    summary: Selectable rows activate across the full row and do not add a boxed chevron affordance.
+    description: Row selection is triggered by activating the row itself; rows do not carry a separate boxed chevron button that duplicates the row activation intent.
+    rules:
+      - id: governance
+        level: must
+        statement: Selectable rows activate across the full row and do not add a separate boxed chevron control duplicating the row activation.
+        governed_by: [PHIL-INTERACTION-001#principle.single-control, PHIL-INTERACTION-001#principle.no-decoration]
+    bindings:
+      - id: row-selection-evidence
+        role: evidence
+        facet: interaction
+        responsibility: Record the entry list surface where full-row activation applies.
+        targets:
+          - id: entry-list-surface
+            adapter: declared
+            path: frontend/src/components/EntryList.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-006#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for full-row selection.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-006#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-006#rule.governance }]
+  - id: POL-UI-008
+    title: Append-Only Restore
+    summary: Restore appends a new revision and never shortens or rewrites existing history.
+    description: Entry restore creates a new revision derived from the selected historical revision while the existing revision history remains intact and append-only.
+    rules:
+      - id: governance
+        level: must
+        statement: Restore appends a new revision derived from the selected historical revision and never shortens, reorders, or rewrites existing history.
+        governed_by: [PHIL-INTERACTION-001#principle.structure-before-explanation, PHIL-INTERACTION-001#principle.verifiable-interaction]
+    bindings:
+      - id: restore-evidence
+        role: evidence
+        facet: history
+        responsibility: Record the shipped single-revision restore action that preserves append-only history.
+        targets:
+          - id: restore-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx"
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-008#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for append-only restore.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-008#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-008#rule.governance }]
+  - id: POL-UI-009
+    title: Explicit Loading, Empty, and Error States
+    summary: Asynchronous surfaces state loading, empty, and error conditions explicitly without silent blanks.
+    description: List and detail surfaces render an explicit loading, empty, or error state so users can distinguish pending, absent, and failed data without guessing at a blank surface.
+    rules:
+      - id: governance
+        level: must
+        statement: Asynchronous list and detail surfaces render explicit loading, empty, and error states instead of silent blank output.
+        governed_by: [PHIL-INTERACTION-001#principle.structure-before-explanation, PHIL-INTERACTION-001#principle.verifiable-interaction]
+    bindings:
+      - id: state-evidence
+        role: evidence
+        facet: presentation
+        responsibility: Record the list panel surface that renders explicit async states.
+        targets:
+          - id: list-panel-surface
+            adapter: declared
+            path: frontend/src/components/ListPanel.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-009#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for explicit async states.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-009#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-009#rule.governance }]
+  - id: POL-UI-010
+    title: Form-Derived Editor Guidance
+    summary: Editor guidance derives from the active Form and avoids inventing field headings for unstructured Forms.
+    description: Entry editor guidance reuses the active Form fields and typed values; when a Form has no suitable structured fields, the editor explains the unstructured shape without fabricating a field example.
+    rules:
+      - id: guidance
+        level: should
+        statement: Editor guidance should derive from the active Form fields and explain unstructured Forms without fabricating field headings or examples.
+        governed_by: [PHIL-INTERACTION-001#principle.structure-before-explanation, PHIL-INTERACTION-001#principle.no-decoration]
+    bindings:
+      - id: guidance-evidence
+        role: evidence
+        facet: presentation
+        responsibility: Record the entry workspace component that renders Form-derived guidance.
+        targets:
+          - id: entry-detail-surface
+            adapter: declared
+            path: frontend/src/components/EntryDetailPane.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-010#rule.guidance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for Form-derived guidance.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-010#rule.guidance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-010#rule.guidance }]
+  - id: POL-UI-012
+    title: Fixed Surface Tokens
+    summary: Surfaces use the fixed surface palette tokens and avoid inline or ad hoc color styling.
+    description: Surface styling uses the approved fixed palette tokens so light and dark system appearance stays consistent; inline color styles and ad hoc color utilities are not added in surface-aware components.
+    rules:
+      - id: governance
+        level: must
+        statement: Surface-aware components use the fixed surface palette tokens and do not add inline color styles or ad hoc color utilities.
+        governed_by: [PHIL-INTERACTION-001#principle.no-decoration, PHIL-INTERACTION-001#principle.verifiable-interaction]
+    bindings:
+      - id: surface-evidence
+        role: evidence
+        facet: presentation
+        responsibility: Record the search bar surface constrained to palette tokens.
+        targets:
+          - id: search-bar-surface
+            adapter: declared
+            path: frontend/src/components/SearchBar.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-012#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for surface tokens.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-012#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-012#rule.governance }]

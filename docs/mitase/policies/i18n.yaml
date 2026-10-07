@@ -1,0 +1,42 @@
+schema: mitase/authoring/v2
+kind: policies
+namespace: product
+category: Implementation Policies
+policies:
+  - id: POL-I18N-001
+    title: Dictionary Localization Without Legacy Strings
+    summary: User-facing copy resolves through the shared locale dictionary and contains no legacy hardcoded Japanese strings.
+    description: User-facing copy resolves through the shared English and Japanese locale dictionaries with identical key sets; legacy hardcoded Japanese strings outside the dictionary are absent from shipped surfaces.
+    rules:
+      - id: governance
+        level: must
+        statement: User-facing copy resolves through the shared locale dictionary with identical English and Japanese key sets, and legacy hardcoded Japanese strings outside the dictionary are absent.
+        governed_by: [PHIL-INTERACTION-001#principle.structure-before-explanation, PHIL-INTERACTION-001#principle.verifiable-interaction]
+    bindings:
+      - id: locale-evidence
+        role: evidence
+        facet: localization
+        responsibility: Record the shared locale dictionary carrying the authoritative copy.
+        targets:
+          - id: locale-dictionary
+            adapter: declared
+            path: frontend/src/lib/i18n.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-I18N-001#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for dictionary localization.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-I18N-001#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-I18N-001#rule.governance }]

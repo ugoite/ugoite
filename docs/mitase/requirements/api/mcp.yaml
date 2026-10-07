@@ -1,0 +1,123 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: api
+category: API contracts and operator surfaces
+requirements:
+  - id: REQ-API-003
+    title: MCP resource content framing
+    description: MCP resource responses label Entry content as user-supplied untrusted data and strip raw HTML or script-like constructs before returning JSON payloads to AI clients.
+    priority: high
+    status: implemented
+    criteria:
+      - id: untrusted-content
+        kind: security
+        statement: MCP resource responses frame Entry content as untrusted user data and sanitize raw HTML or script-like constructs before returning it to an AI client.
+        governed_by: [POL-010#rule.governance, POL-015#rule.governance]
+
+  - id: REQ-API-012
+    title: MCP resource input safety
+    description: MCP resource identifiers are validated with the shared safe-ID allowlist before authentication or storage calls. MCP resource descriptions warn that Entry content is untrusted user data and must never be treated as instructions.
+    priority: high
+    status: implemented
+    criteria:
+      - id: safe-resource-identifiers
+        kind: security
+        statement: MCP resource identifiers pass the shared safe-ID validation before authentication or storage access.
+        governed_by: [POL-011#rule.governance, POL-015#rule.governance]
+      - id: instruction-boundary
+        kind: security
+        statement: MCP resource descriptions distinguish untrusted Entry content from instructions.
+        governed_by: [POL-010#rule.governance, POL-015#rule.governance]
+      - id: selected-context-admission
+        kind: security
+        statement: A Konase Job receives only canonical Form or Entry resources explicitly selected for its current Space after resource-bound MCP reads whose requested and returned URIs and untrusted projections match. The portable Context admits at most four selected resources within its byte and model-prompt limits, and reports compacted or omitted resources before model dispatch. An unauthorized, stale, or invalid read stops dispatch; selected content remains transient Job Context.
+        governed_by: [POL-010#rule.governance, POL-011#rule.governance, POL-015#rule.governance]
+    bindings:
+      - id: konase-selected-context-verification
+        role: verification
+        facet: verification
+        responsibility: Verify portable resource admission and the Rust, WASM, CLI, and Browser Host boundaries for explicitly selected Context without treating Model output as evidence.
+        targets:
+          - id: portable-context
+            adapter: rust
+            path: crates/ugoite-konase/src/engine.rs
+            selector: { kind: test, name: tests::selected_resources_are_normalized_into_start_context_only }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.portable-engine]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-konase, test: tests::selected_resources_are_normalized_into_start_context_only } }
+          - id: portable-dedup-limit
+            adapter: rust
+            path: crates/ugoite-konase/src/engine.rs
+            selector: { kind: test, name: tests::selected_resources_keep_first_duplicate_and_enforce_limit }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.portable-engine]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-konase, test: tests::selected_resources_keep_first_duplicate_and_enforce_limit } }
+          - id: wasm-selected-context
+            adapter: rust
+            path: crates/ugoite-wasm/src/lib.rs
+            selector: { kind: test, name: tests::konase_protocol_creates_deterministic_state_and_steps_without_io }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.wasm-protocol]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::konase_protocol_creates_deterministic_state_and_steps_without_io } }
+          - id: cli-selected-context
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/konase.rs
+            selector: { kind: test, name: tests::selected_resource_is_read_before_model_and_normalized_context_is_sent }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.cli-host]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: tests::selected_resource_is_read_before_model_and_normalized_context_is_sent } }
+          - id: cli-denied-context
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/konase.rs
+            selector: { kind: test, name: tests::selected_context_denial_happens_after_read_but_before_model_or_write }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.cli-host]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: tests::selected_context_denial_happens_after_read_but_before_model_or_write } }
+          - id: browser-context-preview
+            adapter: typescript
+            path: frontend/src/lib/konase/host.test.ts
+            selector: { kind: test, name: "previews only selected portable Context and starts the model only after confirmation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.browser-host]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "previews only selected portable Context and starts the model only after confirmation" } }
+          - id: browser-context-denied-or-stale
+            adapter: typescript
+            path: frontend/src/lib/konase/host.test.ts
+            selector: { kind: test, name: "fails closed on a denied or mismatched selected resource before model dispatch" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.browser-host]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "fails closed on a denied or mismatched selected resource before model dispatch" } }
+          - id: browser-context-selection-ui
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "reads only selected Form and Entry candidates, previews normalized Context, then waits for send" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "reads only selected Form and Entry candidates, previews normalized Context, then waits for send" } }
+
+  - id: REQ-API-013
+    title: Current MCP surface documentation
+    description: "Current-state MCP documentation describes the shipped v1 semantic facade: ugoite.search, ugoite.save, and authorized ugoite.delete, plus lazy stable Entry/Form resources. ugoite.save creates a structured Entry without id or updates one opaque Entry with id using form, fields, tags, and optional extra_attributes values; a declared Markdown Form field remains ordinary Markdown text and the Entry itself is never submitted as a Markdown document. Storage-specific routes, prompts, SQL, and revision tools remain future work."
+    priority: medium
+    status: implemented
+    criteria:
+      - id: shipped-mcp-facade
+        kind: documentation
+        statement: Current MCP documentation describes the shipped search, save, delete, and lazy Entry/Form resource facade and separates future capabilities.
+        governed_by: [POL-015#rule.governance]

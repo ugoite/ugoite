@@ -1,0 +1,343 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: composition
+category: Portable Composition documents, execution, and recovery
+requirements:
+  - id: REQ-COMP-004
+    title: Existing query and authorization semantics
+    description: Composition sources compile into existing query contracts and retain their limits, exact-revision selection, current authorization checks, and source-schema identity boundaries.
+    priority: high
+    status: implemented
+    bindings:
+      - id: entry-query-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Core and Remote CLI inspect, parameterized entry_query, and raw export results against one filesystem-backed Space, exercising the existing EntryQuery contract end to end.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_remote.rs
+            selector: { kind: test, name: test_cli_composition_inspect_query_export_match_core_remote }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+                covers:
+                  - FEAT-COMP-001#binding.entry-query-resolver/target.compile-entry-query-source
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_remote, test: test_cli_composition_inspect_query_export_match_core_remote } }
+      - id: used-field-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the entry_query source-schema fingerprint ignores unreferenced schema fields.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::entry_query_fingerprint_ignores_unreferenced_schema_fields }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+                covers:
+                  - FEAT-COMP-001#binding.entry-query-resolver/target.compile-entry-query-source
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::entry_query_fingerprint_ignores_unreferenced_schema_fields } }
+      - id: saved-sql-revision-verification
+        role: verification
+        facet: verification
+        responsibility: Verify a Saved SQL source requires the exact current revision descriptor and never falls back silently.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_source_requires_the_exact_current_revision_descriptor }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+                covers:
+                  - FEAT-COMP-001#binding.saved-sql-resolver/target.compile-exact-saved-sql-source
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_source_requires_the_exact_current_revision_descriptor } }
+      - id: saved-sql-fingerprint-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the resolved Saved SQL result fingerprint tracks the selected metric result column.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_result_fingerprint_tracks_selected_metric_column }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.saved-sql-result-fingerprint
+                covers:
+                  - FEAT-COMP-001#binding.saved-sql-resolver/target.fingerprint-resolved-saved-sql-source
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_result_fingerprint_tracks_selected_metric_column } }
+      - id: browser-exact-revision-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Browser pins reads and resolution to the caller-selected exact Composition revision across the API adapter, list, detail route, Home, edit route, and history.
+        targets:
+          - id: bounded-list-case
+            adapter: typescript
+            path: frontend/src/lib/composition-api.test.ts
+            selector: { kind: test, name: uses bounded portable list and exact-revision get operations }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-api
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-list-route
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: uses bounded portable list and exact-revision get operations } }
+          - id: edit-route-load-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx"
+            selector: { kind: test, name: loads the exact revision through get and lint with a prefilled studio }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "loads the exact revision through get and lint with a prefilled studio" } }
+          - id: edit-route-save-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx"
+            selector: { kind: test, name: saves an update with base revision identity and a stable retry key }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "saves an update with base revision identity and a stable retry key" } }
+          - id: edit-route-restore-continuity-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx"
+            selector: { kind: test, name: reopens a restored multi-row revision for continued editing }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "reopens a restored multi-row revision for continued editing" } }
+          - id: history-list-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx"
+            selector: { kind: test, name: lists revisions with human labels and opens the exact revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-history-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "lists revisions with human labels and opens the exact revision" } }
+          - id: route-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
+            selector: { kind: test, name: loads and resolves only the exact revision and binds typed parameter changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-exact-revision-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: loads and resolves only the exact revision and binds typed parameter changes } }
+          - id: home-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/dashboard.test.tsx"
+            selector: { kind: test, name: rediscovers saved tools from Home and opens the listed exact revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-home-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: rediscovers saved tools from Home and opens the listed exact revision } }
+      - id: data-workspace-query-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Data workspace maps EntryQuery filter, sort, and projection edits onto the draft through the existing vocabulary with unknown operators and directions rejected, and points Saved SQL sources at exact revisions preserving variable bindings.
+        targets:
+          - id: data-entry-query-filter-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: maps entry-query filter edits onto the draft query }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-editor
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-studio-capabilities
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: maps entry-query filter edits onto the draft query } }
+          - id: data-entry-query-dialog-mapping-case
+            adapter: typescript
+            path: frontend/src/lib/entry-query-studio-capabilities.test.ts
+            selector: { kind: test, name: maps draft filters through the dialog shape without flattening bindings }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-studio-capabilities
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-query-studio-capabilities.test.ts, test: maps draft filters through the dialog shape without flattening bindings } }
+          - id: data-entry-query-capability-derivation-case
+            adapter: typescript
+            path: frontend/src/lib/entry-query-studio-capabilities.test.ts
+            selector: { kind: test, name: derives names and capabilities from the form definition }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-studio-capabilities
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-query-studio-capabilities.test.ts, test: derives names and capabilities from the form definition } }
+          - id: data-entry-query-invalid-operator-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: rejects entry-query filter edits with unknown operators }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.entry-query-translation
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-entry-query-editor
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: rejects entry-query filter edits with unknown operators } }
+          - id: data-saved-sql-exact-revision-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: updates the composition source to the exact new revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-saved-sql-viewer
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: updates the composition source to the exact new revision } }
+          - id: data-saved-sql-revision-merge-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: points saved sql sources at an exact revision preserving bindings }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-saved-sql-viewer
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: points saved sql sources at an exact revision preserving bindings } }
+      - id: draft-preview-verification
+        role: verification
+        facet: verification
+        responsibility: Verify unsaved draft preview resolves through the same semantics without publication, keyed by draft fingerprint, across the Core parity case, the service no-side-effect cases, and the server OpenAPI contract.
+        targets:
+          - id: preview-parity-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::preview_resolves_through_the_same_semantics_without_revision_identity }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.draft-preview
+                covers:
+                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                  - FEAT-COMP-001#binding.layout-order-resolver/target.shared-plan-core
+                  - FEAT-COMP-001#binding.layout-order-resolver/target.layout-component-bindings
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::preview_resolves_through_the_same_semantics_without_revision_identity } }
+          - id: preview-without-publication-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: draft_preview_resolves_without_publication }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.draft-preview
+                covers:
+                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: draft_preview_resolves_without_publication } }
+          - id: preview-invalid-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: invalid_draft_preview_reports_diagnostics_without_identity }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.draft-preview
+                covers:
+                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: invalid_draft_preview_reports_diagnostics_without_identity } }
+          - id: preview-contract-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: openapi_documents_composition_preview_without_publication }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.draft-preview
+                covers:
+                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: openapi_documents_composition_preview_without_publication } }
+      - id: layout-resolver-verification
+        role: verification
+        facet: verification
+        responsibility: Verify layout-ordered bindings stay identical across saved-revision and draft-preview resolution, layout-only additions preserve compiled source requests, sourceless text bindings add no query work, and draft preview exposes placed parameters in layout order.
+        targets:
+          - id: layout-additions-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::layout_only_additions_leave_source_requests_unchanged }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+                covers:
+                  - FEAT-COMP-001#binding.layout-order-resolver/target.shared-plan-core
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::layout_only_additions_leave_source_requests_unchanged } }
+          - id: sourceless-text-query-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::text_components_emit_layout_ordered_bindings_without_source_requests }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.used-field-fingerprint
+                covers:
+                  - FEAT-COMP-001#binding.layout-order-resolver/target.layout-component-bindings
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::text_components_emit_layout_ordered_bindings_without_source_requests } }
+          - id: preview-placement-order-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_preview.rs
+            selector: { kind: test, name: preview_exposes_placed_parameters_in_layout_order }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.draft-preview
+                covers:
+                  - FEAT-COMP-001#binding.preview-resolver/target.resolve-composition-preview
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_preview, test: preview_exposes_placed_parameters_in_layout_order } }
+    criteria:
+      - id: entry-query-translation
+        kind: behavior
+        statement: An entry_query source resolves to the existing bounded EntryQuery contract without creating a Composition-specific query engine.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-007#rule.governance]
+      - id: used-field-fingerprint
+        kind: behavior
+        statement: >-
+          Each entry_query source-schema fingerprint hashes only its source
+          FormId and normalized used-field schema snapshot from
+          REQ-COMP-002#criterion.used-field-schema-snapshot: explicitly used
+          filter, sort, and projection fields (or all property fields returned
+          by preview), plus the fields searched under existing EntryQuery
+          text-search semantics when text is present. The snapshot includes
+          field IDs and types with typed List item and RowReference target
+          metadata. A metric field contributes only when the source projection
+          already includes it; a component never changes the query or its
+          fingerprint. Unrelated fields, labels, and other Composition document
+          content are excluded from this fingerprint.
+        governed_by: [POL-007#rule.governance]
+      - id: exact-saved-sql-revision
+        kind: behavior
+        statement: A saved_sql source selects its exact Entry and Revision and never silently falls back to a newer revision.
+        governed_by: [POL-014#rule.governance, POL-016#rule.governance]
+      - id: saved-sql-result-fingerprint
+        kind: behavior
+        statement: A resolved saved_sql result fingerprint includes its exact Entry and Revision, normalized ordered expected_result descriptor, used variable schema, and selected metric result column when applicable.
+        governed_by: [POL-007#rule.governance, POL-014#rule.governance]
+      - id: exact-composition-revision
+        kind: behavior
+        statement: >-
+          Composition resolution reads and authorizes the caller-selected
+          EntryId and exact RevisionId before parsing; its typed spec and
+          reported Composition revision reference come from that same
+          revision, and a missing selected revision never falls back to latest.
+        governed_by: [POL-011#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: current-authorization
+        kind: behavior
+        statement: Composition list, get, resolve, and source execution stay within the existing current-authorization boundaries.
+        governed_by: [POL-011#rule.governance]
+      - id: concealed-unavailable-references
+        kind: behavior
+        statement: Missing and denied Composition reads use the same caller-visible generic error; within an authorized Composition, missing and denied source Form or exact Saved SQL references use the same source_unavailable diagnostic without source identifiers or metadata, and field-level schema diagnostics require an authorized source Form read.
+        governed_by: [POL-011#rule.governance]
+      - id: draft-preview
+        kind: behavior
+        statement: composition.preview resolves one unsaved candidate document through the same source compilation and current-authorization semantics as a saved revision; plan identity is the draft fingerprint rather than an entry or revision reference, and preview creates no registry, history, or publication state.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance, POL-011#rule.governance]

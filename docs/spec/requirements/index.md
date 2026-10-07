@@ -13,7 +13,7 @@ than being inferred from the existence of a binding.
 
 Operations requirements `REQ-OPS-001` through `REQ-OPS-024`, together with the
 inserted `REQ-OPS-043` and `REQ-OPS-044` gates, are now canonical in
-`docs/mitase/requirements/ops.yaml`.
+`docs/mitase/requirements/ops`.
 The legacy `requirements/ops.yaml` records remain read-only migration evidence
 for later Operations requirements. The canonical graph connects generic
 guides, workflows, settings, registries, release surfaces, and exact frontend,
@@ -22,7 +22,7 @@ work and unverified completeness as explicit gaps.
 
 The legacy API requirement registry at `requirements/api.yaml` is retired and
 is no longer included in Mitase's declared inventory. The canonical API
-requirements at `docs/mitase/requirements/api.yaml` are the only semantic
+requirements at `docs/mitase/requirements/api` are the only semantic
 authority for the migrated API domain.
 
 The legacy Asset requirement registry at `requirements/asset.yaml` is retired and
@@ -61,12 +61,12 @@ references, attribution, and typed property conversion.
 
 The legacy Frontend requirement registry at `requirements/frontend.yaml` is
 retired and is no longer included in Mitase's declared inventory. The canonical
-Frontend requirements at `docs/mitase/requirements/frontend.yaml` are the only
+Frontend requirements at `docs/mitase/requirements/frontend` are the only
 semantic authority for routes, components, interaction surfaces, API clients,
 and exact Frontend verification evidence.
 
 The OIDC external identity requirement `REQ-SEC-016` is represented canonically
-at `docs/mitase/requirements/security.yaml`. Its corresponding record in the
+at `docs/mitase/requirements/security/oidc.yaml`. Its corresponding record in the
 legacy Security registry remains read-only migration evidence for this slice;
 the remaining Security requirements continue to use their existing authority.
 The owner-approved Space Access Recovery regression now verifies that the old
@@ -81,7 +81,7 @@ semantic authority for the Integrity domain.
 The Storage Space foundation, creation contract, and connector/access/routing/preference slice
 (`REQ-STO-001`, `REQ-STO-002`, `REQ-STO-003`, `REQ-STO-004`, `REQ-STO-005`, `REQ-STO-006`,
 `REQ-STO-007`, `REQ-STO-008`, `REQ-STO-009`, `REQ-STO-010`, and `REQ-STO-011`)
-is represented canonically at `docs/mitase/requirements/storage.yaml`.
+is represented canonically at `docs/mitase/requirements/storage`.
 `REQ-STO-005` is now canonical: the same account-bound retry is HTTP 200,
 new creation is HTTP 201, and a different account's duplicate slug claim is
 HTTP 409 with `SPACE_ALREADY_EXISTS`. The legacy record remains a read-only
@@ -98,7 +98,7 @@ the published OpenAPI boundary.
 
 The Storage layout, DerivedRelation, and v0.1 Knowledge compatibility records
 (`REQ-STO-012`, `REQ-STO-013`, and `REQ-STO-014`) are now represented in
-`docs/mitase/requirements/storage.yaml`. The records in this legacy file are
+`docs/mitase/requirements/storage`. The records in this legacy file are
 retained as read-only migration evidence; the canonical graph carries the
 current artifact bindings and exact verification claims. Complete executable
 parity between every documented layout path and runtime creation remains an

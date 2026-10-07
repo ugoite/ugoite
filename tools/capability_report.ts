@@ -258,12 +258,12 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       },
     ],
     verification_claim_refs: [
-      "docs/mitase/requirements/api.yaml#REQ-API-015/binding.cli-verification/remote-page",
-      "docs/mitase/requirements/api.yaml#REQ-API-015/binding.cli-verification/remote-count",
-      "docs/mitase/requirements/api.yaml#REQ-API-016/binding.cli-export-verification/local-complete",
-      "docs/mitase/requirements/api.yaml#REQ-API-016/binding.cli-export-verification/local-limit-failure",
-      "docs/mitase/requirements/api.yaml#REQ-API-016/binding.cli-export-verification/remote-continuation",
-      "docs/mitase/requirements/api.yaml#REQ-API-016/binding.cli-export-verification/remote-failure",
+      "docs/mitase/requirements/api/operator.yaml#REQ-API-015/binding.cli-verification/remote-page",
+      "docs/mitase/requirements/api/operator.yaml#REQ-API-015/binding.cli-verification/remote-count",
+      "docs/mitase/requirements/api/operator.yaml#REQ-API-016/binding.cli-export-verification/local-complete",
+      "docs/mitase/requirements/api/operator.yaml#REQ-API-016/binding.cli-export-verification/local-limit-failure",
+      "docs/mitase/requirements/api/operator.yaml#REQ-API-016/binding.cli-export-verification/remote-continuation",
+      "docs/mitase/requirements/api/operator.yaml#REQ-API-016/binding.cli-export-verification/remote-failure",
     ],
     test_selectors: [
       {
@@ -491,12 +491,12 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       },
     ],
     verification_claim_refs: [
-      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/portable-context",
-      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/wasm-selected-context",
-      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/cli-selected-context",
-      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/browser-context-preview",
-      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/browser-context-denied-or-stale",
-      "docs/mitase/requirements/api.yaml#REQ-API-012/binding.konase-selected-context-verification/browser-context-selection-ui",
+      "docs/mitase/requirements/api/mcp.yaml#REQ-API-012/binding.konase-selected-context-verification/portable-context",
+      "docs/mitase/requirements/api/mcp.yaml#REQ-API-012/binding.konase-selected-context-verification/wasm-selected-context",
+      "docs/mitase/requirements/api/mcp.yaml#REQ-API-012/binding.konase-selected-context-verification/cli-selected-context",
+      "docs/mitase/requirements/api/mcp.yaml#REQ-API-012/binding.konase-selected-context-verification/browser-context-preview",
+      "docs/mitase/requirements/api/mcp.yaml#REQ-API-012/binding.konase-selected-context-verification/browser-context-denied-or-stale",
+      "docs/mitase/requirements/api/mcp.yaml#REQ-API-012/binding.konase-selected-context-verification/browser-context-selection-ui",
     ],
     test_selectors: [
       {
@@ -576,11 +576,11 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       },
     ],
     verification_claim_refs: [
-      "docs/mitase/requirements/api.yaml#REQ-API-017/binding.host-write-verification/cli-approval-denial",
-      "docs/mitase/requirements/api.yaml#REQ-API-017/binding.host-write-verification/cli-receipt-validation",
-      "docs/mitase/requirements/api.yaml#REQ-API-017/binding.host-write-verification/browser-approval-denial",
-      "docs/mitase/requirements/api.yaml#REQ-API-017/binding.host-write-verification/browser-receipt-and-undo",
-      "docs/mitase/requirements/api.yaml#REQ-API-017/binding.host-write-verification/browser-preserves-earlier-save",
+      "docs/mitase/requirements/api/operator.yaml#REQ-API-017/binding.host-write-verification/cli-approval-denial",
+      "docs/mitase/requirements/api/operator.yaml#REQ-API-017/binding.host-write-verification/cli-receipt-validation",
+      "docs/mitase/requirements/api/operator.yaml#REQ-API-017/binding.host-write-verification/browser-approval-denial",
+      "docs/mitase/requirements/api/operator.yaml#REQ-API-017/binding.host-write-verification/browser-receipt-and-undo",
+      "docs/mitase/requirements/api/operator.yaml#REQ-API-017/binding.host-write-verification/browser-preserves-earlier-save",
     ],
     test_selectors: [
       {

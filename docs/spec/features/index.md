@@ -48,7 +48,7 @@ requirement registry is retired; the canonical Asset requirements at
 `docs/mitase/requirements/assets.yaml` are the sole semantic authority for that
 domain.
 
-The canonical Frontend feature graph at `docs/mitase/features/frontend.yaml` is
+The canonical Frontend feature graph at `docs/mitase/features/frontend` is
 the only semantic authority for the migrated Frontend domain. The legacy
 Frontend requirement registry remains read-only migration evidence until the
 broader `docs/spec` cleanup is complete.
@@ -66,7 +66,7 @@ The stateless SQL read contract is documented in
 Knowledge and uses a fixed publication without persistent query state.
 
 The OIDC authentication and external identity linking slice remains connected
-to the canonical security graph at `docs/mitase/features/security.yaml` as
+to the canonical security graph at `docs/mitase/features/security/oidc.yaml` as
 `FEAT-SEC-005`.
 
 The complete shipped authentication and operator credential surface is now

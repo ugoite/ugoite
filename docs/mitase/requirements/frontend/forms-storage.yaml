@@ -1,0 +1,253 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: frontend
+category: Frontend route, component, and interaction requirements
+requirements:
+  - id: REQ-FE-017
+    title: Space Storage Configuration
+    description: Space settings save storage connector metadata independently from the current topology and provide an explicit connection-validation action before treating a proposed connector as usable.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: storage-configuration
+        kind: behavior
+        statement: Space settings display current storage topology separately from saved storage_config metadata, save only the edited configuration, and expose explicit connection validation with user-facing feedback.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: storage-configuration-verification
+        role: verification
+        facet: verification
+        responsibility: Verify storage metadata saving, explicit connection validation, and the browser guidance through exact frontend and browser tests.
+        targets:
+          - id: browser-guidance
+            adapter: typescript
+            path: e2e/space-settings-storage-guidance.test.ts
+            selector: { kind: test, name: "REQ-FE-017: storage settings explain that configuration does not move the current Space" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-017#criterion.storage-configuration
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-settings]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/space-settings-storage-guidance.test.ts, test: "REQ-FE-017: storage settings explain that configuration does not move the current Space" } }
+  - id: REQ-FE-060
+    title: Space Storage Topology Visibility
+    description: Authenticated frontend surfaces show backend-reported storage topology with user-facing labels and keep it distinct from saved storage_config metadata.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: topology-summary
+        kind: behavior
+        statement: The frontend maps backend local, S3, relative, and unknown storage metadata to stable user-facing topology labels and normalized URIs.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: topology-separation
+        kind: behavior
+        statement: Space settings show the current topology separately from saved storage_config metadata and explain that editing saved metadata does not move the current Space.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: storage-topology-verification
+        role: verification
+        facet: verification
+        responsibility: Verify storage topology normalization and its separation from saved configuration through exact frontend tests.
+        targets:
+          - id: local-topology
+            adapter: typescript
+            path: frontend/src/lib/storage-topology.test.ts
+            selector: { kind: test, name: "REQ-FE-060: summarizes backend local storage as local filesystem" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-060#criterion.topology-summary
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-topology]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/storage-topology.test.ts, test: "REQ-FE-060: summarizes backend local storage as local filesystem" } }
+          - id: remote-topology
+            adapter: typescript
+            path: frontend/src/lib/storage-topology.test.ts
+            selector: { kind: test, name: "REQ-FE-060: summarizes backend s3 storage as remote object store" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-060#criterion.topology-summary
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-topology]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/storage-topology.test.ts, test: "REQ-FE-060: summarizes backend s3 storage as remote object store" } }
+          - id: node-local-topology
+            adapter: typescript
+            path: frontend/src/lib/storage-topology.test.ts
+            selector: { kind: test, name: "REQ-FE-060: reads the v3 Node-local binding from storage_config" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-060#criterion.topology-summary
+                covers: [FEAT-STO-001#binding.connector-ui/target.storage-topology]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/storage-topology.test.ts, test: "REQ-FE-060: reads the v3 Node-local binding from storage_config" } }
+  - id: REQ-FE-039
+    title: Reserved Metadata Column Guardrails
+    description: Form authoring prevents collisions with reserved metadata names and only shows reserved-name guidance when the entered form or column name requires it.
+    priority: high
+    status: implemented
+    criteria:
+      - id: reserved-metadata
+        kind: behavior
+        statement: Create and edit Form dialogs reject reserved metadata column names and keep reserved-name guidance hidden until a reserved name is entered.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: reserved-metadata-verification
+        role: verification
+        facet: verification
+        responsibility: Verify reserved metadata rejection and contextual guidance in both Form authoring dialogs through exact frontend tests.
+        targets:
+          - id: reserved-column
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-039: blocks reserved metadata column names" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-039#criterion.reserved-metadata
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-039: blocks reserved metadata column names" } }
+          - id: create-guidance
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-039: hides reserved-name guidance until a reserved name is entered in create form" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-039#criterion.reserved-metadata
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-039: hides reserved-name guidance until a reserved name is entered in create form" } }
+          - id: edit-guidance
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-039: hides reserved-name guidance until a reserved name is entered in edit form" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-039#criterion.reserved-metadata
+                covers: [FEAT-FE-004#binding.frontend/target.edit-form-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-039: hides reserved-name guidance until a reserved name is entered in edit form" } }
+  - id: REQ-FE-055
+    title: Responsive Form Column Editor Layout
+    description: Form creation and editing dialogs keep the column name input readable on narrow layouts while secondary controls remain available.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: responsive-layout
+        kind: behavior
+        statement: Create and edit Form dialogs preserve a comfortably editable column name input on narrow layouts instead of collapsing it beside secondary controls.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: responsive-layout-verification
+        role: verification
+        facet: verification
+        responsibility: Verify readable column editor layout in both Form authoring dialogs through exact frontend tests.
+        targets:
+          - id: create-layout
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-055: keeps create-form column inputs readable on narrow layouts" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-055#criterion.responsive-layout
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-055: keeps create-form column inputs readable on narrow layouts" } }
+          - id: edit-layout
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-055: keeps edit-form column inputs readable on narrow layouts" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-055#criterion.responsive-layout
+                covers: [FEAT-FE-004#binding.frontend/target.edit-form-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-055: keeps edit-form column inputs readable on narrow layouts" } }
+  - id: REQ-FE-071
+    title: Typed Entry Field Controls
+    description: Shared Entry creation and editing controls match each field type while preserving the value semantics owned by the Rust boundary.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: string-autogrow
+        kind: behavior
+        statement: String fields start as a single row and grow to show entered line breaks; read-only string values retain those line breaks, while Markdown fields keep their distinct initially multiline editor.
+        governed_by: [POL-UI-002#rule.governance]
+      - id: temporal-controls
+        kind: behavior
+        statement: Date, time, and timestamp fields use their corresponding native browser controls; timezone-aware timestamp editing preserves the represented instant and fractional seconds.
+        governed_by: [POL-UI-002#rule.governance]
+      - id: uuid-generation
+        kind: behavior
+        statement: UUID fields keep a direct value control and provide a compact action that generates a UUID into that field.
+        governed_by: [POL-UI-002#rule.governance]
+    bindings:
+      - id: field-input-verification
+        role: verification
+        facet: verification
+        responsibility: Verify one-row string expansion, read-only line-break display, native temporal controls, offset preservation, fractional seconds, and UUID generation through exact frontend tests.
+        targets:
+          - id: string-auto-grow-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "grows string fields from one row and preserves number-oriented input" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-071#criterion.string-autogrow
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "grows string fields from one row and preserves number-oriented input" } }
+          - id: temporal-controls-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "renders time and timestamp fields with native temporal controls" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-071#criterion.temporal-controls
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "renders time and timestamp fields with native temporal controls" } }
+          - id: read-only-string-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "preserves line breaks in read-only string values" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-071#criterion.string-autogrow
+                covers: [FEAT-FE-003#binding.frontend/target.field-value-view]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "preserves line breaks in read-only string values" } }
+          - id: uuid-generation-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "generates UUID values from the compact field action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-071#criterion.uuid-generation
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "generates UUID values from the compact field action" } }
+
+  - id: REQ-FE-072
+    title: Markdown Form Field Preview
+    description: Structured Markdown fields expose a safe preview of the current draft without changing editor state.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: preview-dialog
+        kind: behavior
+        statement: Markdown fields provide an icon-only action above the multiline editor that opens a dialog rendering the current draft with the shared safe Markdown renderer; closing the dialog preserves the draft and returns focus to the action.
+        governed_by: [POL-UI-002#rule.governance]
+      - id: markdown-only
+        kind: behavior
+        statement: Non-Markdown multiline fields do not expose the Markdown preview action.
+        governed_by: [POL-UI-002#rule.governance]
+    bindings:
+      - id: markdown-field-preview-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Markdown preview dialog, current draft rendering, safe output, draft preservation, focus return, and field-type scope through exact frontend tests.
+        targets:
+          - id: preview-dialog-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "opens the current Markdown draft in a dialog and returns focus on close" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-072#criterion.preview-dialog
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "opens the current Markdown draft in a dialog and returns focus on close" } }
+          - id: markdown-only-case
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "does not add a preview action to non-Markdown multiline fields" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-072#criterion.markdown-only
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "does not add a preview action to non-Markdown multiline fields" } }

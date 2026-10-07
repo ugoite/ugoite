@@ -1,0 +1,153 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ops
+category: Operations, development, and quality-gate requirements
+requirements:
+  - id: REQ-OPS-017
+    title: Release Container Publishing and Health
+    description: Promotion publishes the verified runtime image digest without rebuilding, smoke-tests the exact candidate digest before publication, and verifies health for the published versioned image.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: release-container-promotion
+        kind: behavior
+        statement: The release publish workflow smoke-tests the exact candidate image before promotion and verifies the published container digest and health after promotion.
+        governed_by: [POL-003#rule.governance, POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: release-container-promotion-evidence
+        role: evidence
+        facet: release-gate
+        responsibility: Connect the release publish workflow and candidate/distribution verifiers as generic evidence; release execution remains external repository tooling.
+        targets:
+          - id: release-publish-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-017#criterion.release-container-promotion
+          - id: container-distribution-script
+            adapter: declared
+            path: scripts/verify-release-distribution.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-017#criterion.release-container-promotion
+
+  - id: REQ-OPS-018
+    title: CLI Release Binaries and Install Path
+    description: Candidate generation verifies checksum-verified CLI archives for supported platforms, and buildless promotion publishes those exact archives after candidate preflight and before post-publication installer distribution checks.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: cli-release-installation
+        kind: behavior
+        statement: The release publish workflow promotes verified CLI archives and the distribution verifier checks the published version and checksum-backed installer path without rebuilding.
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: cli-release-installation-evidence
+        role: evidence
+        facet: cli-release
+        responsibility: Connect the release publish workflow, public installer, and distribution verifier as generic repository evidence; release execution remains external repository tooling.
+        targets:
+          - id: release-publish-workflow
+            adapter: declared
+            path: .github/workflows/release-publish.yml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-018#criterion.cli-release-installation
+          - id: cli-install-script
+            adapter: declared
+            path: scripts/install-ugoite-cli.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-018#criterion.cli-release-installation
+          - id: cli-distribution-script
+            adapter: declared
+            path: scripts/verify-release-distribution.sh
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-018#criterion.cli-release-installation
+
+  - id: REQ-OPS-023
+    title: Public Installer Separation
+    description: The public packages/ugoite installer remains separate from repository development tooling.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: public-installer-separation
+        kind: quality
+        statement: The public CLI installer package is a release-facing artifact and its documented usage does not replace the repository's development toolchain.
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: public-installer-evidence
+        role: evidence
+        facet: release-installer
+        responsibility: Connect the public installer package documentation and root release tasks as generic evidence for the separation boundary; package publishing remains external repository tooling.
+        targets:
+          - id: installer-package
+            adapter: declared
+            path: packages/ugoite/package.json
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-023#criterion.public-installer-separation
+          - id: installer-readme
+            adapter: declared
+            path: packages/ugoite/README.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-023#criterion.public-installer-separation
+      - id: public-installer-separation-verification
+        role: verification
+        facet: repository-test
+        responsibility: Verify the public installer package metadata, release-facing documentation, and root release task boundary through the exact workspace test.
+        targets:
+          - id: public-installer-separation-test
+            adapter: typescript
+            path: tools/workspace_test.ts
+            selector: { kind: test, name: 'REQ-OPS-023: public installer remains separate from repository development tooling' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-023#criterion.public-installer-separation
+                covers: [FEAT-OPS-001#binding.public-installer/target.installer-package, FEAT-OPS-001#binding.public-installer/target.installer-readme]
+                runner: { runner: deno-test-file, arguments: { file: tools/workspace_test.ts, test: 'REQ-OPS-023: public installer remains separate from repository development tooling' } }
+
+  - id: REQ-OPS-026
+    title: Versioned Manual Release Note
+    description: Each stable candidate must contain a non-empty versioned manual Markdown release note whose matching source bytes are published into the GitHub Release body after distribution verification. Historical beta and alpha changelog files may remain as records but are not active publish channels.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: versioned-manual-release-note
+        kind: behavior
+        statement: Candidate preflight validates the exact versioned manual note, publication reads that note from the candidate source revision, and mutable aliases wait for successful note publication after distribution verification.
+        governed_by: [POL-008#rule.governance]
+    bindings:
+      - id: manual-release-note-verification
+        role: verification
+        facet: release-communication
+        responsibility: Verify the stable-only manual note validator and release workflow ordering through the exact repository tests; historical channel changelogs remain records and are not active publish authorities.
+        targets:
+          - id: release-note-test
+            adapter: typescript
+            path: tools/release-notes_test.ts
+            selector: { kind: test, name: 'REQ-OPS-026: the candidate and publish workflows use exact manual note bytes' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-026#criterion.versioned-manual-release-note
+                covers: [FEAT-OPS-001#binding.repository-native-release/target.candidate-workflow, FEAT-OPS-001#binding.repository-native-release/target.publish-workflow]
+                runner: { runner: deno-test-file, arguments: { file: tools/release-notes_test.ts, test: 'REQ-OPS-026: the candidate and publish workflows use exact manual note bytes' } }
+          - id: release-contract-test
+            adapter: typescript
+            path: tools/release_contract_test.ts
+            selector: { kind: test, name: 'REQ-OPS-044: release-publish promotion flows through distribution verification to release notes before mutable aliases' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-026#criterion.versioned-manual-release-note
+                covers: [FEAT-OPS-001#binding.repository-native-release/target.candidate-workflow, FEAT-OPS-001#binding.repository-native-release/target.publish-workflow]
+                runner: { runner: deno-test-file, arguments: { file: tools/release_contract_test.ts, test: 'REQ-OPS-044: release-publish promotion flows through distribution verification to release notes before mutable aliases' } }
