@@ -1,0 +1,185 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: api
+category: API contracts and operator surfaces
+requirements:
+  - id: REQ-API-001
+    title: Space CRUD
+    description: Create, retrieve, and list Spaces. Every Space exposes an immutable UUIDv7 space_uid independently from its mutable human-facing slug, and the list operation returns only Spaces authorized for the current principal.
+    priority: high
+    status: implemented
+    criteria:
+      - id: space-lifecycle
+        kind: behavior
+        statement: The supported API surfaces create, retrieve, and list Spaces.
+        governed_by: [POL-004#rule.governance, POL-005#rule.governance]
+      - id: stable-space-identity
+        kind: quality
+        statement: Every Space exposes an immutable UUIDv7 space_uid independently from its mutable human-facing slug.
+        governed_by: [POL-001#rule.governance, POL-004#rule.governance]
+      - id: authorized-space-list
+        kind: security
+        statement: Space listing returns only Spaces authorized for the current principal.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+    bindings:
+      - id: frontend-crud-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the frontend Space list and create adapters through exact MSW-backed Vitest cases; authorization filtering and immutable space_uid remain separate evidence.
+        targets:
+          - id: list-spaces
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should return all spaces" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-API-001#binding.frontend-implementation/target.space-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should return all spaces" } }
+          - id: create-space
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should create a new space" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-API-001#binding.frontend-implementation/target.space-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should create a new space" } }
+          - id: get-space
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "spaceApi.get returns a space" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-API-001#binding.frontend-implementation/target.space-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "spaceApi.get returns a space" } }
+      - id: identity-verification
+        role: verification
+        facet: verification
+        responsibility: Verify immutable Space metadata identity and UUIDv7 validation through the exact Iceberg integration case.
+        targets:
+          - id: metadata-identity
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_space.rs
+            selector: { kind: test, name: space_metadata_identity_must_match_directory_and_uuidv7_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.stable-space-identity
+                covers: [FEAT-API-001#binding.space-service-implementation/target.get-space]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_space, test: space_metadata_identity_must_match_directory_and_uuidv7_contract } }
+      - id: space-read-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the authenticated Space list and retrieve handlers through the exact server contract case.
+        targets:
+          - id: list-and-retrieve-space
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::space_read_api_returns_authorized_spaces_and_immutable_identity }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers:
+                  - FEAT-STO-001#binding.service/target.list-space-ids
+                  - FEAT-E2E-001#binding.server/target.list-spaces
+                  - FEAT-API-001#binding.space-service-implementation/target.get-space
+                  - FEAT-API-001#binding.space-backend-implementation/target.get-space
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_read_api_returns_authorized_spaces_and_immutable_identity } }
+              - kind: verifies
+                criterion: REQ-API-001#criterion.stable-space-identity
+                covers:
+                  - FEAT-API-001#binding.space-service-implementation/target.get-space
+                  - FEAT-API-001#binding.space-backend-implementation/target.get-space
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::space_read_api_returns_authorized_spaces_and_immutable_identity } }
+      - id: cli-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the CLI Space create routing through exact recording-server integration cases for backend and API modes.
+        targets:
+          - id: backend-create-space
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_create_space_req_api_001_routes_to_backend_post_spaces }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_create_space_req_api_001_routes_to_backend_post_spaces } }
+          - id: api-create-space
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_create_space_req_api_001_routes_to_api_post_spaces }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-001#criterion.space-lifecycle
+                covers: [FEAT-STO-001#binding.routing/target.space-command-routing]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_create_space_req_api_001_routes_to_api_post_spaces } }
+  - id: REQ-API-002
+    title: Entry CRUD
+    description: The API exposes creation, retrieval, update, and deletion of Entries while preserving the Entry lifecycle and revision semantics owned by the Entry domain.
+    priority: high
+    status: implemented
+    criteria:
+      - id: entry-lifecycle
+        kind: behavior
+        statement: The API exposes create, retrieve, update, and delete operations for Entries.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: service-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the service Entry create, list, retrieve, and delegated update paths through exact Rust integration cases; deletion and full authorization policy coverage remain separate evidence.
+        targets:
+          - id: create-and-list-entries
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_service.rs
+            selector: { kind: test, name: test_service_boundary_covers_primary_adapter_operations }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers:
+                  - FEAT-API-001#binding.service-implementation/target.create-entry
+                  - FEAT-API-001#binding.service-implementation/target.list-entries
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_service, test: test_service_boundary_covers_primary_adapter_operations } }
+          - id: retrieve-and-authorized-update
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_service.rs
+            selector: { kind: test, name: authorized_entry_writes_apply_form_entry_and_delegated_principal_policies }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers:
+                  - FEAT-API-001#binding.service-implementation/target.get-entry
+                  - FEAT-API-001#binding.service-implementation/target.create-entry-authorized
+                  - FEAT-API-001#binding.service-implementation/target.update-entry-authorized
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_service, test: authorized_entry_writes_apply_form_entry_and_delegated_principal_policies } }
+      - id: backend-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the backend Entry retrieve handler through the exact Rust route test; CLI evidence remains a separate binding. Entry create, update, and delete evidence moved to FEAT-ENTRY-001.
+        targets:
+          - id: retrieve-entry
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::issue_2037_authenticated_rest_apply_supports_create_update_remove }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers: [FEAT-API-001#binding.backend-implementation/target.get-entry]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2037_authenticated_rest_apply_supports_create_update_remove } }
+      - id: cli-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the CLI Entry create routing through the exact recording-server integration case.
+        targets:
+          - id: create-entry
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_entry_create_req_api_002_routes_to_backend_post_entries }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-002#criterion.entry-lifecycle
+                covers: [FEAT-API-001#binding.cli-implementation/target.entry-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_entry_create_req_api_002_routes_to_backend_post_entries } }
+

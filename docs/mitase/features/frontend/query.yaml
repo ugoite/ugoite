@@ -1,0 +1,123 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: frontend
+category: Frontend Space selection and preference surfaces
+features:
+  - id: FEAT-FE-006
+    title: SQL editor and stateless query clients
+    summary: Connect the browser SQL editor, shared SQL rules, saved-query client, and stateless SQL query result flow to exact frontend verification evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep SQL editing, shared lint and completion rules, saved-query lifecycle calls, and stateless SQL result access connected to the shipped frontend artifacts.
+        targets:
+          - id: sql-editor
+            adapter: typescript
+            path: frontend/src/components/SqlQueryEditor.tsx
+            selector: { kind: symbol, name: SqlQueryEditor }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-036#criterion.editor-contract
+              - kind: satisfies
+                criterion: REQ-FE-036#criterion.schema-completion
+          - id: sql-helpers
+            adapter: typescript
+            path: frontend/src/lib/sql.ts
+            selector: { kind: symbol, name: sqlLintDiagnostics }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-036#criterion.editor-contract
+              - kind: satisfies
+                criterion: REQ-FE-036#criterion.shared-rules
+          - id: shared-sql-rules
+            adapter: declared
+            path: shared/sql/ugoite-sql-rules.json
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-036#criterion.shared-rules
+          - id: saved-sql-client
+            adapter: typescript
+            path: frontend/src/lib/sql-api.ts
+            selector: { kind: symbol, name: sqlApi }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+              - kind: satisfies
+                criterion: REQ-FE-050#criterion.typed-errors
+  - id: FEAT-FE-007
+    title: Saved SQL route workflows
+    summary: Connect the saved SQL list, creation, and detail routes to exact frontend and browser verification for starter-query guidance, query metadata, and supported run actions.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep saved SQL list and creation actions, detail navigation, editable user-query content, read-only search-history review, stateless variable-free result navigation, and variable-input actions connected to the shipped routes.
+        targets:
+          - id: sql-index-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/index.tsx
+            selector: { kind: symbol, name: SpaceSqlIndexRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-061#criterion.list-and-create-action
+              - kind: satisfies
+                criterion: REQ-FE-061#criterion.empty-state
+              - kind: satisfies
+                criterion: REQ-FE-061#criterion.load-error
+          - id: sql-detail-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/index.tsx
+            selector: { kind: symbol, name: SpaceSqlDetailRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.detail-summary
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.supported-actions
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.revision-aware-save
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.delete
+              - kind: satisfies
+                criterion: REQ-FE-062#criterion.search-history-read-only
+          - id: sql-create-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/new.tsx
+            selector: { kind: symbol, name: SpaceQueryCreateRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-063#criterion.starter-query
+              - kind: satisfies
+                criterion: REQ-FE-063#criterion.explicit-save-and-run
+          - id: sql-run-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx
+            selector: { kind: symbol, name: SpaceSqlRunRoute }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.no-redundant-result-explanation
+          - id: sql-result-table
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.tsx
+            selector: { kind: symbol, name: SqlResultTable }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.native-page-rows
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.semantic-row-ownership
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.shared-result-visual-language
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.controller-owned-paging
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+

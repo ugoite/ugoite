@@ -1,0 +1,350 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: frontend
+category: Frontend route, component, and interaction requirements
+requirements:
+  - id: REQ-FE-064
+    title: Public Landing Page Localization and About Redirect
+    description: The public root route renders its user-facing copy through the shared locale dictionary and honors the selected locale on first load; /about keeps deep-link compatibility by redirecting to Docs, the single documentation authority, with no in-app About surface.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: public-locale
+        kind: behavior
+        statement: The public root route renders localized copy and preserves the selected locale without requiring an authenticated or portable-preference request; /about redirects bookmarks and deep links to Docs instead of rendering an in-app About surface.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: public-locale-verification
+        role: verification
+        facet: verification
+        responsibility: Verify selected-locale rendering for the public landing route and the About-to-Docs redirect through the exact frontend and browser tests.
+        targets:
+          - id: public-routes
+            adapter: typescript
+            path: frontend/src/routes/public-pages.test.tsx
+            selector: { kind: test, name: "REQ-FE-064: public landing pages render the selected locale" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-064#criterion.public-locale
+                covers: [FEAT-FE-004#binding.frontend/target.public-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/public-pages.test.tsx", test: "REQ-FE-064: public landing pages render the selected locale" } }
+          - id: about-redirect
+            adapter: typescript
+            path: frontend/src/routes/about.test.tsx
+            selector: { kind: test, name: "REQ-FE-064: redirects About deep links to the single Docs authority" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-064#criterion.public-locale
+                covers: [FEAT-FE-004#binding.frontend/target.about-docs-redirect]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/about.test.tsx", test: "REQ-FE-064: redirects About deep links to the single Docs authority" } }
+          - id: browser-public-routes
+            adapter: typescript
+            path: e2e/public-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-064: public landing pages respect the saved Japanese locale" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-064#criterion.public-locale
+                covers: [FEAT-FE-004#binding.frontend/target.public-index-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/public-pages.test.ts, test: "REQ-FE-064: public landing pages respect the saved Japanese locale" } }
+          - id: public-locale-request-absence
+            adapter: typescript
+            path: frontend/src/lib/preferences-store.test.ts
+            selector: { kind: test, name: "REQ-FE-064: public locale initialization avoids portable preference requests" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-064#criterion.public-locale
+                covers: [FEAT-FE-004#binding.frontend/target.public-locale-store]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/preferences-store.test.ts", test: "REQ-FE-064: public locale initialization avoids portable preference requests" } }
+
+  - id: REQ-FE-066
+    title: Auth-Aware Global Navigation Session Controls
+    description: The global frontend navigation exposes only Spaces, shows a sign-in entry point only for signed-out visitors, exposes an explicit account control for authenticated sessions, and clears the browser session before returning to the login route. The root navigation slot remains empty so the global and Space shells remain the only navigation owners.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: public-sign-in
+        kind: behavior
+        statement: A public GlobalShell renders a sign-in link to /login and does not render the authenticated account control.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: explicit-session-exit
+        kind: security
+        statement: An authenticated account control signs out only after the explicit menu action, clears the browser session through the auth client, and returns the user to /login.
+        governed_by: [POL-004#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-011#rule.governance]
+      - id: single-shell
+        kind: custom
+        statement: The root Nav slot remains empty so GlobalShell and SpaceShell own the shipped navigation without a duplicate header; GlobalShell owns only the global Spaces destination and SpaceShell owns Space-scoped destinations.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: auth-navigation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify signed-out navigation, explicit session exit, and single-shell ownership through exact frontend component tests.
+        targets:
+          - id: public-link
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.test.tsx
+            selector: { kind: test, name: "shows a sign-in link when used for a public route" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-066#criterion.public-sign-in
+                covers: [FEAT-FE-009#binding.frontend/target.global-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/GlobalShell.test.tsx", test: "shows a sign-in link when used for a public route" } }
+          - id: explicit-sign-out
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.test.tsx
+            selector: { kind: test, name: "signs out only from the explicit menu action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-066#criterion.explicit-session-exit
+                covers:
+                  - FEAT-FE-009#binding.frontend/target.global-shell
+                  - FEAT-FE-009#binding.frontend/target.account-menu
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/GlobalShell.test.tsx", test: "signs out only from the explicit menu action" } }
+          - id: root-navigation-slot
+            adapter: typescript
+            path: frontend/src/components/Nav.test.tsx
+            selector: { kind: test, name: "leaves navigation to the v5 page shells" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-066#criterion.single-shell
+                covers: [FEAT-FE-009#binding.frontend/target.root-nav]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/Nav.test.tsx", test: "leaves navigation to the v5 page shells" } }
+          - id: space-shell-navigation
+            adapter: typescript
+            path: frontend/src/components/SpaceShell.test.tsx
+            selector: { kind: test, name: "reaches the Forms workspace from desktop and mobile primary navigation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-066#criterion.single-shell
+                covers: [FEAT-FE-009#binding.frontend/target.space-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/SpaceShell.test.tsx", test: "reaches the Forms workspace from desktop and mobile primary navigation" } }
+          - id: duplicate-global-current-link
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.navigation.test.tsx
+            selector: { kind: test, name: "REQ-UX-NAV-001: exposes only Spaces in global navigation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-066#criterion.single-shell
+                covers: [FEAT-FE-009#binding.frontend/target.global-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/GlobalShell.navigation.test.tsx", test: "REQ-UX-NAV-001: exposes only Spaces in global navigation" } }
+
+  - id: REQ-FE-067
+    title: Form List Navigation and Form-Scoped Entries
+    description: The Forms route presents a list-only Form list where selecting a Form navigates to its form-scoped EntryBrowser, the Form's Entries workspace shows that Form's current Entries with creation and selection beside the browser, and Form/Entry dialogs retain usable action layout and visible icon affordances.
+    priority: high
+    status: implemented
+    criteria:
+      - id: form-grid
+        kind: behavior
+        statement: The Forms route presents a list-only Form list without a same-screen Entry grid or nested view tabs; selecting a Form navigates to the Form's Entries workspace at the canonical Form entries path.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: form-scoped-entries
+        kind: behavior
+        statement: The Form's Entries workspace shows that Form's Entries through a form-scoped EntryQuery, links back to Forms, keeps New Entry adjacent to the EntryBrowser, and does not expose the browser for an unknown Form.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: table-selection-open-action
+        kind: behavior
+        statement: In the Form-scoped Entry table, clicking a data row selects it without opening the Entry; a dedicated trailing native button opens that row's Entry.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: form-switch-results
+        kind: quality
+        statement: Navigating through the Forms workspace to another Form's Entries replaces the previous Form's rows with results for the selected Form.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: mobile-table-overflow-and-action
+        kind: quality
+        statement: At tested 320px and 390px viewport widths, the Form Entry table scrolls within its own viewport without document horizontal overflow, and the trailing Entry action remains at the table viewport's right edge.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: dialog-workspace
+        kind: quality
+        statement: Form creation and editing dialogs retain usable desktop action layout and preserve the explicit Form/Entry workflow.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: icon-actions
+        kind: custom
+        statement: Compact Form workspace actions expose visible icons alongside their accessible labels.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: unified-workspace-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the list-only Form list, form-scoped Entries, canonical EntryBrowser surface, dialog layout, and visible action icons through exact frontend tests.
+        targets:
+          - id: form-workspace
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+            selector: { kind: test, name: "renders Forms and exposes the create action accessibly" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.form-grid
+                covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders Forms and exposes the create action accessibly" } }
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.icon-actions
+                covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "renders Forms and exposes the create action accessibly" } }
+          - id: form-navigation
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+            selector: { kind: test, name: "navigates to the form-scoped Entry list on row click" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.form-grid
+                covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "navigates to the form-scoped Entry list on row click" } }
+          - id: form-edit-workspace
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+            selector: { kind: test, name: "keeps edit on a small per-row button that does not navigate" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.dialog-workspace
+                covers: [FEAT-FE-010#binding.frontend/target.forms-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/index.test.tsx", test: "keeps edit on a small per-row button that does not navigate" } }
+          - id: form-scoped-entries
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"
+            selector: { kind: test, name: "uses Form scope capabilities and keeps create beside the browser" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.form-scoped-entries
+                covers: [FEAT-FE-002#binding.frontend/target.form-entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "uses Form scope capabilities and keeps create beside the browser" } }
+          - id: entry-browser-mobile-action
+            adapter: typescript
+            path: e2e/entry-browser-ux.test.ts
+            selector: { kind: test, name: "REQ-E2E-003: selects rows and keeps the trailing action usable on mobile" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.table-selection-open-action
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entry-browser-ux.test.ts, test: "REQ-E2E-003: selects rows and keeps the trailing action usable on mobile" } }
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.mobile-table-overflow-and-action
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entry-browser-ux.test.ts, test: "REQ-E2E-003: selects rows and keeps the trailing action usable on mobile" } }
+          - id: entry-browser-form-switch
+            adapter: typescript
+            path: e2e/entry-browser-ux.test.ts
+            selector: { kind: test, name: "REQ-E2E-003: changing Forms does not retain the previous Entry rows" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.form-switch-results
+                covers: [FEAT-FE-002#binding.frontend/target.form-entry-browser]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entry-browser-ux.test.ts, test: "REQ-E2E-003: changing Forms does not retain the previous Entry rows" } }
+          - id: dialog-action-layout
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "keeps form dialog actions at their intrinsic height" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-067#criterion.dialog-workspace
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "keeps form dialog actions at their intrinsic height" } }
+  - id: REQ-FE-069
+    title: Unauthenticated Login Boundary
+    description: The Login surface is not a product capability authority; it starts authentication and presents authentication state only. Space navigation follows authentication.
+    priority: high
+    status: implemented
+    criteria:
+      - id: unauthenticated-entry
+        kind: behavior
+        statement: The Login surface MUST NOT be a product capability authority, and product capability descriptions MUST NOT be hard-coded into or rendered by the unauthenticated shell. The root route presents one primary Login action without a Space shortcut; /login presents configured authentication methods and recovery only.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance]
+      - id: authentication-state
+        kind: quality
+        statement: Authentication configuration loading, sign-in progress, and failure are explicit states; failures expose a keyboard-operable retry and status/error semantics for assistive technology, with technical detail only through disclosure. Manual VoiceOver/NVDA confirmation remains an explicit evidence gap.
+        governed_by: [POL-UI-007#rule.governance, POL-UI-009#rule.governance]
+      - id: narrow-accessible-entry
+        kind: quality
+        statement: At 320 CSS pixels (the effective layout width of a 640 CSS-pixel viewport at 200% browser zoom), the brand and primary authentication action remain visible without horizontal page overflow.
+        governed_by: [POL-UI-007#rule.governance]
+      - id: post-authentication-navigation
+        kind: behavior
+        statement: Only successful authentication continues to the requested route or first-run setup; an already authenticated root visit may continue to Spaces.
+        governed_by: [POL-UI-002#rule.governance]
+    bindings:
+      - id: login-boundary-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the unauthenticated entry, authentication states, retry behavior, effective 200% zoom width, and each successful continuation path through exact frontend and browser tests. Tests assert browser-exposed status/error semantics and keyboard operation; manual VoiceOver/NVDA confirmation remains an explicit evidence gap.
+        targets:
+          - id: home-entry
+            adapter: typescript
+            path: frontend/src/routes/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-069: keeps unauthenticated visitors on the login entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.unauthenticated-entry
+                covers: [FEAT-FE-004#binding.frontend/target.public-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/index.test.tsx, test: "REQ-FE-069: keeps unauthenticated visitors on the login entry" } }
+          - id: authenticated-home-to-spaces
+            adapter: typescript
+            path: frontend/src/routes/index.test.tsx
+            selector: { kind: test, name: opens Spaces for an authenticated session }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.post-authentication-navigation
+                covers: [FEAT-FE-004#binding.frontend/target.public-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/index.test.tsx, test: opens Spaces for an authenticated session } }
+          - id: login-shell
+            adapter: typescript
+            path: frontend/src/routes/login.test.tsx
+            selector: { kind: test, name: "REQ-FE-069: renders only the logo and authentication actions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.unauthenticated-entry
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/login.test.tsx, test: "REQ-FE-069: renders only the logo and authentication actions" } }
+          - id: login-first-run-setup
+            adapter: typescript
+            path: frontend/src/routes/login.test.tsx
+            selector: { kind: test, name: "REQ-FE-069: sends first-run authentication to setup" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.post-authentication-navigation
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/login.test.tsx, test: "REQ-FE-069: sends first-run authentication to setup" } }
+          - id: home-entry-browser
+            adapter: typescript
+            path: e2e/public-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-069: unauthenticated home has one primary login action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.unauthenticated-entry
+                covers: [FEAT-FE-004#binding.frontend/target.public-index-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/public-pages.test.ts, test: "REQ-FE-069: unauthenticated home has one primary login action" } }
+          - id: login-state-and-retry
+            adapter: typescript
+            path: e2e/login-responsive.test.ts
+            selector: { kind: test, name: "REQ-FE-069: exposes loading and configuration failure with a keyboard retry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.authentication-state
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/login-responsive.test.ts, test: "REQ-FE-069: exposes loading and configuration failure with a keyboard retry" } }
+          - id: login-failure-retry
+            adapter: typescript
+            path: e2e/login-responsive.test.ts
+            selector: { kind: test, name: "REQ-FE-069: exposes authentication failure and retry as accessible state" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.authentication-state
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/login-responsive.test.ts, test: "REQ-FE-069: exposes authentication failure and retry as accessible state" } }
+          - id: login-responsive-screenshot
+            adapter: typescript
+            path: e2e/login-responsive.test.ts
+            selector: { kind: test, name: "REQ-FE-069: login screenshot is anchored to brand, primary action, and state structure" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.narrow-accessible-entry
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/login-responsive.test.ts, test: "REQ-FE-069: login screenshot is anchored to brand, primary action, and state structure" } }
+          - id: login-effective-zoom-width
+            adapter: typescript
+            path: e2e/login-responsive.test.ts
+            selector: { kind: test, name: "REQ-FE-069: keeps login usable at the 320px effective width of 200% zoom" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-069#criterion.narrow-accessible-entry
+                covers: [FEAT-SEC-002#binding.client/target.login-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/login-responsive.test.ts, test: "REQ-FE-069: keeps login usable at the 320px effective width of 200% zoom" } }

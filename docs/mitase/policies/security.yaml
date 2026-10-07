@@ -1,0 +1,121 @@
+schema: mitase/authoring/v2
+kind: policies
+namespace: product
+category: Implementation Policies
+policies:
+  - id: POL-010
+    title: AI Under Trusted Tooling
+    summary: Allow AI autonomy only inside trusted tools, validated interfaces, and audit paths.
+    description: This policy defines the boundary for AI-assisted work by requiring trusted tools, validated interfaces, and auditable execution paths. It exists to preserve high autonomy only where risk remains observable, reviewable, and constrained by explicit contracts.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy defines the boundary for AI-assisted work by requiring trusted tools, validated interfaces, and auditable execution paths. It exists to preserve high autonomy only where risk remains observable, reviewable, and constrained by explicit contracts.
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-004#principle.product-design-principle]
+    bindings:
+      - id: trusted-ai-boundary
+        role: evidence
+        facet: ai-boundary
+        responsibility: Record the trusted AI runtime boundary at the serializable agent runtime.
+        targets:
+          - id: trusted-ai-boundary
+            adapter: declared
+            path: crates/ugoite-konase/src/agent_runtime.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-010#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the security, future-proofing, and operator-surface references for the trusted AI boundary.
+        targets:
+          - id: security-overview
+            adapter: declared
+            path: docs/architecture/security/overview.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-010#rule.governance }]
+          - id: security-sandbox
+            adapter: declared
+            path: docs/architecture/security/sandbox.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-010#rule.governance }]
+          - id: architecture-future-proofing
+            adapter: declared
+            path: docs/architecture/contracts/future-proofing.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-010#rule.governance }]
+          - id: api-surfaces
+            adapter: declared
+            path: docs/architecture/api/operator-surfaces.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-010#rule.governance }]
+  - id: POL-011
+    title: Security and Isolation by Default
+    summary: Design for secure defaults, bounded execution, and explicit trust boundaries.
+    description: This policy makes secure defaults and explicit trust boundaries part of the baseline product architecture instead of optional hardening. It supports minimal runtime topology and trusted AI operation by constraining what code can do, where it can run, and how risk is surfaced.
+    rules:
+      - id: governance
+        level: must
+        statement: This policy makes secure defaults and explicit trust boundaries part of the baseline product architecture instead of optional hardening. It supports minimal runtime topology and trusted AI operation by constraining what code can do, where it can run, and how risk is surfaced.
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-002#principle.product-design-principle, PHIL-004#principle.product-design-principle]
+    bindings:
+      - id: security-isolation-boundary
+        role: evidence
+        facet: security
+        responsibility: Record server security and isolation boundaries at the authenticated adapter surface.
+        targets:
+          - id: security-isolation-boundary
+            adapter: declared
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-011#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the security isolation and MCP references for this policy.
+        targets:
+          - id: security-overview
+            adapter: declared
+            path: docs/architecture/security/overview.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-011#rule.governance }]
+          - id: security-sandbox
+            adapter: declared
+            path: docs/architecture/security/sandbox.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-011#rule.governance }]
+          - id: api-mcp
+            adapter: declared
+            path: docs/architecture/api/mcp.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-011#rule.governance }]
+  - id: POL-015
+    title: MCP as Governed AI Operator Surface
+    summary: Position MCP as the AI-facing operator surface with explicit scope and trust boundaries.
+    description: This policy defines MCP as the operator surface for AI clients when they need structured, protocol-level access to Ugoite resources inside explicit trust boundaries. It keeps the current small semantic facade visible, separates AI-facing access from CLI-driven human automation and REST application integration, and requires expansion through documented, reviewable contracts.
+    rules:
+      - id: governance
+        level: should
+        statement: This policy defines MCP as the operator surface for AI clients when they need structured, protocol-level access to Ugoite resources inside explicit trust boundaries. It keeps the current small semantic facade visible, separates AI-facing access from CLI-driven human automation and REST application integration, and requires expansion through documented, reviewable contracts.
+        governed_by: [PHIL-000#principle.tools-without-authority, PHIL-000#principle.stable-foundation, PHIL-004#principle.product-design-principle]
+    bindings:
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the MCP and operator-surface references for the governed AI operator boundary.
+        targets:
+          - id: api-mcp
+            adapter: declared
+            path: docs/architecture/api/mcp.md
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: POL-015#rule.governance
+          - id: api-surfaces
+            adapter: declared
+            path: docs/architecture/api/operator-surfaces.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-015#rule.governance }]

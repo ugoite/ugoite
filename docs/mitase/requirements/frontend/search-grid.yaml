@@ -1,0 +1,266 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: frontend
+category: Frontend route, component, and interaction requirements
+requirements:
+  - id: REQ-FE-014
+    title: Search UI Component
+    description: The frontend provides a debounced search input that invokes the search callback, exposes result state, and supports the Cmd/Ctrl+K keyboard shortcut.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: search-input
+        kind: behavior
+        statement: The SearchBar renders a search input, reports the current query through its callback, and exposes loading and result-count state.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: keyboard-shortcut
+        kind: behavior
+        statement: Cmd/Ctrl+K focuses the SearchBar input without changing unrelated keyboard behavior.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: search-verification
+        role: verification
+        facet: verification
+        responsibility: Verify SearchBar query submission, state rendering, and keyboard shortcut behavior through exact frontend tests.
+        targets:
+          - id: query-submission
+            adapter: typescript
+            path: frontend/src/components/SearchBar.test.tsx
+            selector: { kind: test, name: "should call onSearch when form is submitted" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-014#criterion.search-input
+                covers: [FEAT-FE-004#binding.frontend/target.search-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SearchBar.test.tsx, test: "should call onSearch when form is submitted" } }
+          - id: loading-count
+            adapter: typescript
+            path: frontend/src/components/SearchBar.test.tsx
+            selector: { kind: test, name: "should display search results count" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-014#criterion.search-input
+                covers: [FEAT-FE-004#binding.frontend/target.search-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SearchBar.test.tsx, test: "should display search results count" } }
+          - id: keyboard-focus
+            adapter: typescript
+            path: frontend/src/components/SearchBar.test.tsx
+            selector: { kind: test, name: "should allow keyboard shortcut (Cmd/Ctrl+K)" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-014#criterion.keyboard-shortcut
+                covers: [FEAT-FE-004#binding.frontend/target.search-bar]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SearchBar.test.tsx, test: "should allow keyboard shortcut (Cmd/Ctrl+K)" } }
+
+  - id: REQ-FE-019
+    title: Multi-column Sorting
+    description: FormTable sends capability-approved multi-column sort clauses to the canonical EntryQuery and reflects the returned page.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: multi-column-sort
+        kind: behavior
+        statement: FormTable cycles a selected field through ascending, descending, and cleared states while preserving the ordered EntryQuery sort clauses and fixed page semantics.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: sorting-verification
+        role: verification
+        facet: verification
+        responsibility: Verify FormTable sorting through the exact frontend test.
+        targets:
+          - id: header-sorting
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: "REQ-FE-019: sends multi-column sort to EntryQuery" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-019#criterion.multi-column-sort
+                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-019: sends multi-column sort to EntryQuery" } }
+
+  - id: REQ-FE-020
+    title: Canonical EntryQuery Filtering
+    description: FormTable sends global text and capability-approved column filters through the canonical EntryQuery controller.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: entry-query-filtering
+        kind: behavior
+        statement: FormTable combines text and typed field filters in one EntryQuery request; filtering is applied before the page is rendered.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: filtering-verification
+        role: verification
+        facet: verification
+        responsibility: Verify global and column-specific FormTable filtering through exact frontend tests.
+        targets:
+          - id: global-filter
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: "REQ-FE-020: sends global text search to EntryQuery" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-020#criterion.entry-query-filtering
+                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-020: sends global text search to EntryQuery" } }
+          - id: column-filter
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: "column filter: updateColumnFilter via input" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-020#criterion.entry-query-filtering
+                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "column filter: updateColumnFilter via input" } }
+          - id: combined-filter
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: "REQ-FE-020: combines global and column filters" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-020#criterion.entry-query-filtering
+                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-020: combines global and column filters" } }
+
+  - id: REQ-FE-021
+    title: Context-aware CSV Export
+    description: Users can export the currently viewed FormTable records to CSV using the active view context.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: context-aware-export
+        kind: behavior
+        statement: FormTable exports the records currently represented by the view as a downloadable CSV file.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: csv-export-verification
+        role: verification
+        facet: verification
+        responsibility: Verify FormTable CSV export through the exact frontend test.
+        targets:
+          - id: csv-export
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: "REQ-FE-021: exports filtered data to CSV" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-021#criterion.context-aware-export
+                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-021: exports filtered data to CSV" } }
+
+  - id: REQ-FE-030
+    title: Form-aware Row Creation from Grid View
+    description: FormTable exposes an Add Row action that opens the canonical Form-aware entry editor and preserves the selected Form context.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: form-aware-add-row
+        kind: behavior
+        statement: Add Row delegates to the shared Form-aware entry creation flow without directly creating an entry outside that editor.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: add-row-verification
+        role: verification
+        facet: verification
+        responsibility: Verify FormTable Add Row delegation and return-to-Form behavior through exact frontend tests.
+        targets:
+          - id: add-row-delegation
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: "REQ-FE-030: Add Row button opens the canonical entry editor" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-030#criterion.form-aware-add-row
+                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-030: Add Row button opens the canonical entry editor" } }
+          - id: return-to-grid
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/new.test.tsx"
+            selector: { kind: test, name: "returns to the selected Form grid after Add Row creation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-030#criterion.form-aware-add-row
+                covers: [FEAT-FE-003#binding.frontend/target.new-entry-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/new.test.tsx", test: "returns to the selected Form grid after Add Row creation" } }
+
+  - id: REQ-FE-031
+    title: Spreadsheet-like Grid Editing and Selection
+    description: FormTable supports edit mode, inline cell updates, rectangular selection, and keyboard copy for the selected range.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: inline-edit-selection
+        kind: behavior
+        statement: Users can enable edit mode, update a cell inline, select a rectangular range, and copy the selected values as tabular text.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: grid-edit-verification
+        role: verification
+        facet: verification
+        responsibility: Verify FormTable inline editing and rectangular selection copy through exact frontend tests.
+        targets:
+          - id: inline-edit
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: "REQ-FE-031: Edit Mode toggle and inline edit" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-031#criterion.inline-edit-selection
+                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-031: Edit Mode toggle and inline edit" } }
+          - id: range-copy
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: "REQ-FE-031: keyboard copy shortcut" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-031#criterion.inline-edit-selection
+                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-FE-031: keyboard copy shortcut" } }
+
+  - id: REQ-FE-065
+    title: EntryQuery Row Reference Picker
+    description: Create-entry flows for row_reference fields use the shared EntryBrowser in select mode, scope queries to the declared target Form, show human-readable Entry content, and commit the stable referenced entry_id only after confirmation.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: search-and-store
+        kind: behavior
+        statement: The row_reference dialog searches the declared target Form through EntryQuery and stores the selected stable entry_id rather than the display label.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: submission-guard
+        kind: security
+        statement: Selecting a row_reference Entry does not mutate the parent draft until the dialog is confirmed; cancel leaves the draft unchanged.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: confirm-action
+        kind: behavior
+        statement: In row_reference selection mode, each result row uses the shared compact chevron action with a localized accessible confirmation name and 44px target; activating it preserves the existing confirm-only selection flow.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: row-reference-verification
+        role: verification
+        facet: verification
+        responsibility: Verify target-Form EntryQuery selection and confirm-only draft mutation through exact frontend tests.
+        targets:
+          - id: entry-query-picker
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "routes Row Reference selection through the target Form EntryQuery" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.search-and-store
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "routes Row Reference selection through the target Form EntryQuery" } }
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.submission-guard
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/create-dialogs.test.tsx", test: "routes Row Reference selection through the target Form EntryQuery" } }
+          - id: row-reference-confirm-action
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.test.tsx
+            selector: { kind: test, name: "REQ-FE-065: confirms with a compact, accessibly named chevron in select mode" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.confirm-action
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/EntryResultTable.test.tsx", test: "REQ-FE-065: confirms with a compact, accessibly named chevron in select mode" } }
+

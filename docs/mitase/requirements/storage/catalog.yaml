@@ -1,0 +1,330 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: storage
+category: Space storage boundaries and bootstrap
+requirements:
+  - id: REQ-STO-011
+    title: Hashed portable user preference storage
+    description: Portable user preferences persist under users/<sha256(user_id)>/preferences.json rather than exposing raw user identifiers in storage paths. Missing files resolve to a full null-valued preference object, and patch updates merge through the exact-read/CAS publication boundary without recreating raw user-id directories.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: hashed-user-path
+        kind: security
+        statement: Preference storage derives the user directory from the SHA-256 digest of the user identifier and never uses the raw identifier as a storage path segment.
+        governed_by: [POL-003#rule.governance, POL-011#rule.governance, POL-014#rule.governance]
+      - id: null-valued-default
+        kind: behavior
+        statement: A missing preference document resolves to the complete UserPreferences object with every optional field unset.
+        governed_by: [POL-002#rule.governance, POL-014#rule.governance]
+      - id: merged-concurrent-patch
+        kind: quality
+        statement: Preference patches merge into the stored document through exact-read and conditional publication semantics so concurrent updates are retried rather than silently discarded.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: preference-verification
+        role: verification
+        facet: verification
+        responsibility: Verify default preference shape, hashed path persistence, and concurrent patch preservation through exact Iceberg integration cases.
+        targets:
+          - id: default-preferences-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_preferences.rs
+            selector: { kind: test, name: test_preferences_req_sto_011_default_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-011#criterion.null-valued-default
+                covers: [FEAT-STO-001#binding.preferences/target.get-user-preferences]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_preferences, test: test_preferences_req_sto_011_default_values } }
+          - id: hashed-path-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_preferences.rs
+            selector: { kind: test, name: test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-011#criterion.hashed-user-path
+                covers: [FEAT-STO-001#binding.preferences/target.patch-user-preferences]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_preferences, test: test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path } }
+          - id: concurrent-patch-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_preferences.rs
+            selector: { kind: test, name: concurrent_preference_patches_preserve_both_updates }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-011#criterion.merged-concurrent-patch
+                covers: [FEAT-STO-001#binding.preferences/target.patch-user-preferences]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_preferences, test: concurrent_preference_patches_preserve_both_updates } }
+
+  - id: REQ-STO-012
+    title: Machine-readable Space layout boundaries
+    description: >-
+      The machine-readable Space layout records the distinction between
+      bootstrap scaffolding, lazily materialized paths, node-local control
+      state, and Space-owned data. The current migration traces the
+      create_space scaffold plus response-signing paths; disposable SQL query
+      continuations are held by clients rather than materialized in the Space;
+      complete executable parity check for every documented path remains an
+      explicit evidence gap.
+    priority: high
+    status: implemented
+    criteria:
+      - id: machine-readable-layout
+        kind: quality
+        statement: The current Space layout is recorded as a machine-readable artifact with explicit roots, bootstrap entries, trigger entries, and user preference entries.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+      - id: bootstrap-boundary
+        kind: behavior
+        statement: Space creation produces the documented metadata, settings, forms, and assets scaffold and bootstraps the Entry Form; DerivedRelation state is replaceable and is not required for an empty Space.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: lazy-path-boundary
+        kind: behavior
+        statement: Response-signing material is materialized under its documented lazy path rather than being treated as bootstrap Space metadata; SQL query continuations are not Space files.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: layout-verification
+        role: evidence
+        facet: storage-layout
+        responsibility: Record the machine-readable layout reference. The repository does not yet have a single parity test covering every documented path, so complete executable layout parity remains unverified.
+        targets:
+          - id: layout-source
+            adapter: declared
+            path: docs/architecture/data-model/directory-layout.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-STO-012#criterion.machine-readable-layout
+
+  - id: REQ-STO-014
+    title: v0.1 Knowledge semantic compatibility fixture
+    description: >-
+      The canonical v0.1 Knowledge fixture remains semantically readable
+      through the authoritative Space, publication, and append-only history
+      paths. The fixture protects recoverability and authority semantics; it
+      does not freeze physical storage encoding or require a pre-v1 migration
+      reader.
+    priority: high
+    status: implemented
+    criteria:
+      - id: fixture-identity
+        kind: quality
+        statement: The canonical compatibility fixture identifies the v0.1 release and its expected Knowledge observations without encoding a byte-for-byte Iceberg representation.
+        governed_by: [POL-014#rule.governance, POL-016#rule.governance]
+      - id: authoritative-recovery
+        kind: behavior
+        statement: The fixture can be written through the authoritative Space and publication paths, closed, reopened, and read with the expected current Knowledge values.
+        governed_by: [POL-002#rule.governance, POL-014#rule.governance, POL-016#rule.governance, POL-017#rule.knowledge-portability]
+      - id: append-only-history
+        kind: behavior
+        statement: The fixture preserves the expected append-only revision history and makes both the prior and current values readable after reopening the Space.
+        governed_by: [POL-002#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: compatibility-verification
+        role: verification
+        facet: compatibility
+        responsibility: Verify the canonical v0.1 fixture identity, authoritative Space/publication recovery, and append-only history through the exact close-and-reopen compatibility test. Physical encoding compatibility is intentionally outside this requirement.
+        targets:
+          - id: fixture-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_knowledge_compatibility.rs
+            selector: { kind: test, name: v01_knowledge_fixture_is_semantically_recoverable }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-014#criterion.fixture-identity
+                covers: [FEAT-STO-001#binding.compatibility/target.fixture]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_knowledge_compatibility, test: v01_knowledge_fixture_is_semantically_recoverable } }
+              - kind: verifies
+                criterion: REQ-STO-014#criterion.authoritative-recovery
+                covers: [FEAT-STO-001#binding.compatibility/target.fixture]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_knowledge_compatibility, test: v01_knowledge_fixture_is_semantically_recoverable } }
+              - kind: verifies
+                criterion: REQ-STO-014#criterion.append-only-history
+                covers: [FEAT-STO-001#binding.compatibility/target.fixture]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_knowledge_compatibility, test: v01_knowledge_fixture_is_semantically_recoverable } }
+
+  - id: REQ-STO-015
+    title: Space catalog Pin lifecycle
+    description: >-
+      Named Pins are immutable references to authoritative Space Catalog Heads.
+      The Space exposes the complete active Pin map, can capture the current
+      Catalog Head under a caller-supplied name, can remove one active Pin by
+      publishing a new Catalog Head, and can compare logical Entry revisions
+      between two active Pins without exposing manifest or data-file
+      differences.
+    priority: high
+    status: implemented
+    criteria:
+      - id: active-catalog-pins
+        kind: behavior
+        statement: Listing Pins returns the complete active Pin map from the authoritative Catalog Head rather than a separate registry or physical-file inventory.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: named-catalog-pin
+        kind: behavior
+        statement: Creating a named Pin captures the exact current Catalog Head and records the creating principal without changing the pinned immutable publication.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+      - id: pin-removal
+        kind: behavior
+        statement: Deleting a named Pin removes only that active Pin through a new authoritative Catalog Head publication and leaves other Pins and immutable publications unchanged.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+      - id: logical-pin-diff
+        kind: behavior
+        statement: Pin diff compares logical Entry revisions between two active Pins and does not report manifest or data-file differences as user-facing knowledge changes.
+        governed_by: [POL-001#rule.governance, POL-002#rule.governance, POL-014#rule.governance]
+      - id: pin-diff-contract
+        kind: quality
+        statement: The public immutable knowledge contract exposes Pin diff as a head-owned read and does not reintroduce the removed checkpoint read surface.
+        governed_by: [POL-002#rule.governance, POL-008#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: pin-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the authenticated Pin lifecycle, portable Pin coordinates, and head-owned public Pin diff contract through exact server and OpenAPI evidence.
+        targets:
+          - id: rest-lifecycle-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::issue_2037_authenticated_rest_pins_read_exact_immutable_state_and_delete }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.active-catalog-pins
+                covers:
+                  - FEAT-SPACE-001#binding.backend/target.list-pins
+                  - FEAT-SPACE-001#binding.service/target.list-pins
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2037_authenticated_rest_pins_read_exact_immutable_state_and_delete } }
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.named-catalog-pin
+                covers:
+                  - FEAT-SPACE-001#binding.backend/target.create-pin
+                  - FEAT-SPACE-001#binding.service/target.create-pin
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2037_authenticated_rest_pins_read_exact_immutable_state_and_delete } }
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.pin-removal
+                covers:
+                  - FEAT-SPACE-001#binding.backend/target.delete-pin
+                  - FEAT-SPACE-001#binding.service/target.delete-pin
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2037_authenticated_rest_pins_read_exact_immutable_state_and_delete } }
+          - id: coordinate-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::issue_2042_authenticated_changes_and_pins_return_portable_coordinates }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.named-catalog-pin
+                covers:
+                  - FEAT-SPACE-001#binding.backend/target.create-pin
+                  - FEAT-SPACE-001#binding.service/target.create-pin
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2042_authenticated_changes_and_pins_return_portable_coordinates } }
+          - id: pin-diff-contract-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: issue_2038_openapi_uses_head_owned_pins_for_immutable_knowledge_reads }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.pin-diff-contract
+                covers: [FEAT-SPACE-001#binding.backend/target.pin-diff]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2038_openapi_uses_head_owned_pins_for_immutable_knowledge_reads } }
+          - id: public-contract-case
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: issue_2037_openapi_publishes_the_public_knowledge_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.active-catalog-pins
+                covers: [FEAT-SPACE-001#binding.backend/target.list-pins]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: issue_2037_openapi_publishes_the_public_knowledge_contract } }
+          - id: pin-diff-case
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::issue_2307_authenticated_rest_pin_diff_returns_logical_entry_changes }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-015#criterion.logical-pin-diff
+                covers:
+                  - FEAT-SPACE-001#binding.backend/target.pin-diff
+                  - FEAT-SPACE-001#binding.service/target.diff-pins
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::issue_2307_authenticated_rest_pin_diff_returns_logical_entry_changes } }
+
+  - id: REQ-STO-016
+    title: Space compatibility identity and drift gate
+    description: >-
+      The durable Space compatibility identity stays pinned to Space 0.1 behind
+      the single domain classifier, which never promotes subsystem-local
+      schema_version fields, and the repository drift gate keeps the identity,
+      the frozen fixture, the metadata contract, and the regression coverage
+      from silently changing. Gate promotion to release-blocking remains
+      separate v0.2 work; the gates diagnose drift without becoming a second
+      Knowledge authority.
+    priority: high
+    status: implemented
+    criteria:
+      - id: space-version-identity
+        kind: behavior
+        statement: Space bootstrap metadata classifies through space_version 0.1 as the only supported identity, fails closed on missing, malformed, or unsupported values, and never infers compatibility from subsystem-local schema_version fields.
+        governed_by: [POL-014#rule.governance, POL-016#rule.governance]
+      - id: compatibility-drift-gate
+        kind: quality
+        statement: The repository gate pins the canonical identity, the frozen fixture metadata, the compatibility contract, and the regression coverage, and fails the canonical check path when they drift.
+        governed_by: [POL-008#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: identity-verification
+        role: verification
+        facet: compatibility
+        responsibility: Verify the frozen identity, the fail-closed classifier including the schema_version-only negative case, and the drift-gate contract behavior through the exact domain and gate tests.
+        targets:
+          - id: identity-case
+            adapter: rust
+            path: crates/ugoite-domain/tests/test_space_version.rs
+            selector: { kind: test, name: current_space_version_is_the_only_supported_identity }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.space-version-identity
+                covers: [FEAT-STO-001#binding.space-identity/target.version-authority, FEAT-STO-001#binding.space-identity/target.version-source]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_space_version, test: current_space_version_is_the_only_supported_identity } }
+          - id: parser-case
+            adapter: rust
+            path: crates/ugoite-domain/tests/test_space_version.rs
+            selector: { kind: test, name: parser_rejects_product_versions_and_non_canonical_values }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.space-version-identity
+                covers: [FEAT-STO-001#binding.space-identity/target.version-authority]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_space_version, test: parser_rejects_product_versions_and_non_canonical_values } }
+          - id: classifier-case
+            adapter: rust
+            path: crates/ugoite-domain/tests/test_space_version.rs
+            selector: { kind: test, name: classifier_fails_closed_without_schema_aliases }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.space-version-identity
+                covers: [FEAT-STO-001#binding.space-identity/target.version-authority]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-domain, harness: test_space_version, test: classifier_fails_closed_without_schema_aliases } }
+          - id: gate-identity-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::space_source_with_frozen_identity_passes }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.compatibility-drift-gate
+                covers: [FEAT-STO-001#binding.drift-gate/target.space-compat-gate]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::space_source_with_frozen_identity_passes } }
+          - id: gate-negative-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::classifier_consulting_schema_version_fails }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.compatibility-drift-gate
+                covers: [FEAT-STO-001#binding.drift-gate/target.space-compat-gate]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::classifier_consulting_schema_version_fails } }
+          - id: gate-fixture-case
+            adapter: rust
+            path: crates/xtask/src/main.rs
+            selector: { kind: test, name: gate_contract_tests::fixture_meta_requires_space_version_identity }
+            claims:
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.compatibility-drift-gate
+                covers: [FEAT-STO-001#binding.drift-gate/target.space-compat-gate]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::fixture_meta_requires_space_version_identity } }
+              - kind: verifies
+                criterion: REQ-STO-016#criterion.space-version-identity
+                covers: [FEAT-STO-001#binding.space-identity/target.space-fixture]
+                runner: { runner: cargo-test-unit, arguments: { package: xtask, test: gate_contract_tests::fixture_meta_requires_space_version_identity } }

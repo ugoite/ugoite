@@ -1,0 +1,71 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: frontend
+category: Frontend Space selection and preference surfaces
+features:
+  - id: FEAT-FE-009
+    title: Auth-aware global navigation
+    summary: Connect public sign-in visibility, authenticated account controls, explicit session exit, and single-shell navigation ownership to exact frontend evidence.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep signed-out global navigation, authenticated account controls, and the retired root navigation slot connected to the shipped shell and account artifacts.
+        targets:
+          - id: global-shell
+            adapter: typescript
+            path: frontend/src/components/GlobalShell.tsx
+            selector: { kind: symbol, name: GlobalShell }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.public-sign-in
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.explicit-session-exit
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.single-shell
+          - id: account-menu
+            adapter: typescript
+            path: frontend/src/components/AccountMenu.tsx
+            selector: { kind: symbol, name: AccountMenu }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.explicit-session-exit
+          - id: root-nav
+            adapter: typescript
+            path: frontend/src/components/Nav.tsx
+            selector: { kind: symbol, name: Nav }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.single-shell
+          - id: space-shell
+            adapter: typescript
+            path: frontend/src/components/SpaceShell.tsx
+            selector: { kind: symbol, name: SpaceShell }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-066#criterion.single-shell
+              - kind: satisfies
+                criterion: REQ-FE-058#criterion.calm-loading
+
+  - id: FEAT-FE-010
+    title: Form list navigation workspace
+    summary: Connect the Forms route's list-only Form navigation and visible action affordances to exact frontend evidence while the form-scoped Entry route and dialogs remain canonical collaborators.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep the list-only Form list and its visible action affordances connected to the shipped Forms route.
+        targets:
+          - id: forms-workspace
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/forms/index.tsx
+            selector: { kind: symbol, name: SpaceFormsIndexPane }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.form-grid
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.dialog-workspace
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.icon-actions

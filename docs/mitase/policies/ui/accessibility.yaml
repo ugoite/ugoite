@@ -1,0 +1,42 @@
+schema: mitase/authoring/v2
+kind: policies
+namespace: product
+category: Implementation Policies
+policies:
+  - id: POL-UI-007
+    title: Accessible Names and Focus
+    summary: Interactive controls expose accessible names and keep a visible, orderly focus path.
+    description: Buttons, links, rows, and inputs expose accessible names and keep focus visible and ordered so keyboard and screen-reader traversal reaches every operative control.
+    rules:
+      - id: governance
+        level: must
+        statement: Interactive controls expose accessible names and keep a visible, orderly focus path across the surface.
+        governed_by: [PHIL-INTERACTION-001#principle.single-control, PHIL-INTERACTION-001#principle.verifiable-interaction]
+    bindings:
+      - id: a11y-evidence
+        role: evidence
+        facet: accessibility
+        responsibility: Record the global shell surface that carries named controls and focus order.
+        targets:
+          - id: global-shell-surface
+            adapter: declared
+            path: frontend/src/components/GlobalShell.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-007#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the UI overview and route inventory references for accessible interaction.
+        targets:
+          - id: ui-overview
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-007#rule.governance }]
+          - id: route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-UI-007#rule.governance }]

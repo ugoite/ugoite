@@ -47,10 +47,12 @@ Deno.test("v0.3 preflight rows resolve real authorities and static artifacts", a
   for (
     const path of [
       "docs/mitase/requirements/search.yaml",
-      "docs/mitase/requirements/api.yaml",
+      "docs/mitase/requirements/api/crud.yaml",
+      "docs/mitase/requirements/api/mcp.yaml",
+      "docs/mitase/requirements/api/operator.yaml",
       "docs/mitase/requirements/forms.yaml",
       "docs/mitase/requirements/journey.yaml",
-      "docs/mitase/requirements/frontend.yaml",
+      "docs/mitase/requirements/frontend/search-grid.yaml",
       "docs/mitase/features/api.yaml",
       "docs/mitase/features/entries.yaml",
       "docs/mitase/features/journey.yaml",

@@ -1,0 +1,87 @@
+schema: mitase/authoring/v2
+kind: policies
+namespace: product
+category: Implementation Policies
+policies:
+  - id: POL-000
+    title: Foundation Authority and Precedence
+    summary: Foundation authority governs every migrated policy and cannot be displaced by implementation or experience preferences.
+    description: The user-owned Knowledge and stable-authority Foundation is the highest-order governance boundary for this repository. Product, runtime, adapter, and experience choices remain subordinate to it and must not create a second Knowledge authority.
+    rules:
+      - id: foundation-precedence
+        level: must
+        statement: Foundation authority and user-owned Knowledge take precedence over lower-level product, runtime, adapter, and experience choices; no migrated Policy may contradict or bypass that boundary.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation]
+        applies_to: { roles: [configuration, documentation, implementation, verification] }
+    bindings:
+      - id: foundation-precedence-guard
+        role: evidence
+        facet: authority
+        responsibility: Record the permanent v0.1 Foundation boundaries that govern lower-level product and implementation choices.
+        targets:
+          - id: foundation-precedence-evidence
+            adapter: declared
+            path: docs/architecture/release/v0.1.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-000#rule.foundation-precedence
+  - id: POL-016
+    title: v0.1 Knowledge Compatibility Floor
+    summary: Preserve v0.1 Knowledge meaning while allowing implementation evolution.
+    description: The v0.1 Knowledge compatibility floor freezes ownership, authority, append-only history, and adapter authority semantics. It does not freeze the physical Catalog Head encoding, Iceberg object layout, crate APIs, or frontend internals. A breaking semantic change requires an explicit compatibility review and must preserve the canonical v0.1 Knowledge fixture or establish a new versioned contract before it can merge.
+    rules:
+      - id: governance
+        level: must
+        statement: The v0.1 Knowledge compatibility floor freezes ownership, authority, append-only history, and adapter authority semantics. It does not freeze the physical Catalog Head encoding, Iceberg object layout, crate APIs, or frontend internals. A breaking semantic change requires an explicit compatibility review and must preserve the canonical v0.1 Knowledge fixture or establish a new versioned contract before it can merge.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle, PHIL-003#principle.product-design-principle]
+    bindings:
+      - id: compatibility-fixture
+        role: evidence
+        facet: compatibility
+        responsibility: Record the canonical v0.1 Knowledge fixture as exact compatibility evidence.
+        targets:
+          - id: compatibility-fixture
+            adapter: declared
+            path: crates/ugoite-iceberg/tests/fixtures/v0.1-knowledge.json
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-016#rule.governance
+      - id: design-references
+        role: documentation
+        facet: design-reference
+        responsibility: Preserve the v0.1 compatibility and Space Catalog references for the Knowledge compatibility floor.
+        targets:
+          - id: knowledge-compatibility
+            adapter: declared
+            path: docs/architecture/release/v0.1-knowledge-compatibility.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-016#rule.governance }]
+          - id: space-catalog
+            adapter: declared
+            path: docs/architecture/contracts/space-catalog.md
+            selector: { kind: file }
+            claims: [{ kind: documents, anchor: POL-016#rule.governance }]
+  - id: POL-017
+    title: Durable Knowledge Portability Boundary
+    summary: Keep durable Knowledge recoverable and semantically independent of a single provider.
+    description: Durable Knowledge recovery, meaning, and ownership must not depend on a single storage or service provider becoming its authority. Implementation abstractions remain context-dependent, but a provider cannot become the durable Knowledge boundary.
+    rules:
+      - id: knowledge-portability
+        level: must
+        statement: Durable Knowledge recovery, meaning, and ownership must not depend on a single provider authority.
+        governed_by: [PHIL-000#principle.user-owned-knowledge, PHIL-000#principle.stable-foundation, PHIL-001#principle.product-design-principle]
+    bindings:
+      - id: knowledge-portability-contract
+        role: evidence
+        facet: portability
+        responsibility: Record the provider-independent recovery and authority contract for durable Knowledge.
+        targets:
+          - id: knowledge-portability-contract
+            adapter: declared
+            path: docs/architecture/release/v0.1-knowledge-compatibility.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-017#rule.knowledge-portability

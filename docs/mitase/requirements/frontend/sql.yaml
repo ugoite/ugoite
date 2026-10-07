@@ -1,0 +1,388 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: frontend
+category: Frontend route, component, and interaction requirements
+requirements:
+  - id: REQ-FE-036
+    title: SQL Query Editor
+    description: The frontend provides a Ugoite SQL editor with syntax highlighting, lint feedback, and schema-backed completion using the shared SQL rules.
+    priority: high
+    status: implemented
+    criteria:
+      - id: editor-contract
+        kind: behavior
+        statement: The SQL editor renders without CodeMirror extension errors, propagates document changes, and reports parser and read-only diagnostics for the current query.
+        governed_by: [POL-001#rule.governance, POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: schema-completion
+        kind: behavior
+        statement: Backend Form metadata becomes the SQL schema used by the editor so table and field completion is limited to the current Form relations and columns.
+        governed_by: [POL-001#rule.governance, POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: shared-rules
+        kind: quality
+        statement: The frontend SQL helper loads the repository's shared Ugoite SQL rules rather than defining a second editor-only rule source.
+        governed_by: [POL-001#rule.governance, POL-012#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: sql-editor-verification
+        role: verification
+        facet: verification
+        responsibility: Verify SQL editor construction, document updates, diagnostics, Form schema completion data, and shared rule loading through exact frontend tests.
+        targets:
+          - id: editor-rendering
+            adapter: typescript
+            path: frontend/src/components/SqlQueryEditor.test.tsx
+            selector: { kind: test, name: "should render without runtime errors" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.editor-contract
+                covers: [FEAT-FE-006#binding.frontend/target.sql-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlQueryEditor.test.tsx, test: "should render without runtime errors" } }
+          - id: editor-updates
+            adapter: typescript
+            path: frontend/src/components/SqlQueryEditor.test.tsx
+            selector: { kind: test, name: "propagates editor updates through the change listener" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.editor-contract
+                covers: [FEAT-FE-006#binding.frontend/target.sql-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlQueryEditor.test.tsx, test: "propagates editor updates through the change listener" } }
+          - id: sql-diagnostics
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "should flag missing select clause" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.editor-contract
+                covers: [FEAT-FE-006#binding.frontend/target.sql-helpers]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "should flag missing select clause" } }
+          - id: sql-schema
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "should include form fields in schema" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.schema-completion
+                covers: [FEAT-FE-006#binding.frontend/target.sql-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "should include form fields in schema" } }
+          - id: shared-rules
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "should accept valid select queries" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.shared-rules
+                covers: [FEAT-FE-006#binding.frontend/target.sql-helpers, FEAT-FE-006#binding.frontend/target.shared-sql-rules]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "should accept valid select queries" } }
+          - id: shared-rules-lint
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "uses the shared SQL rules for linting" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.shared-rules
+                covers: [FEAT-FE-006#binding.frontend/target.sql-helpers, FEAT-FE-006#binding.frontend/target.shared-sql-rules]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "uses the shared SQL rules for linting" } }
+          - id: sql-read-only-policy
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "reports the read-only policy separately from server syntax lint" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-036#criterion.editor-contract
+                covers: [FEAT-FE-006#binding.frontend/target.sql-helpers]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql.test.ts, test: "reports the read-only policy separately from server syntax lint" } }
+
+  - id: REQ-FE-050
+    title: SQL Query Management API Client
+    description: The frontend SQL query API client supports typed list, create, get, update, and delete operations for saved SQL queries and preserves revision conflicts on updates.
+    priority: high
+    status: implemented
+    criteria:
+      - id: saved-query-lifecycle
+        kind: behavior
+        statement: The saved SQL client exposes list, create, get, update, and delete operations with the server's saved-query payload and revision contract.
+        governed_by: [POL-001#rule.governance, POL-009#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+      - id: typed-errors
+        kind: quality
+        statement: Saved SQL client failures remain typed protocol errors with server status and detail available to the frontend caller.
+        governed_by: [POL-001#rule.governance, POL-009#rule.governance, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: saved-sql-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the saved SQL client lifecycle, revision handling, and typed failure propagation through exact frontend tests.
+        targets:
+          - id: saved-query-list
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "lists SQL entries (empty by default)" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "lists SQL entries (empty by default)" } }
+          - id: saved-query-create
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "creates a SQL entry and returns id/revisionId" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "creates a SQL entry and returns id/revisionId" } }
+          - id: saved-query-get
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "gets a SQL entry by id" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "gets a SQL entry by id" } }
+          - id: saved-query-mutations
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "updates a SQL entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "updates a SQL entry" } }
+          - id: saved-query-revision
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "enforces the saved SQL update revision contract in the mock server" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "enforces the saved SQL update revision contract in the mock server" } }
+          - id: saved-query-errors
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "throws on list failure" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.typed-errors
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "throws on list failure" } }
+          - id: saved-query-delete
+            adapter: typescript
+            path: frontend/src/lib/sql-api.test.ts
+            selector: { kind: test, name: "deletes a SQL entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-050#criterion.saved-query-lifecycle
+                covers: [FEAT-FE-006#binding.frontend/target.saved-sql-client]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/sql-api.test.ts, test: "deletes a SQL entry" } }
+
+  - id: REQ-FE-063
+    title: Saved SQL Creation Starter and Save Flow
+    description: The saved SQL creation route provides a runnable total-ordered starter query for the selected Form relation and saves an explicitly named or generated query through the supported API before exposing the query for execution.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: starter-query
+        kind: behavior
+        statement: When a creatable Form relation is available, the saved SQL creation route starts with a runnable query ordered by the server-backed update timestamp and stable entry identifier with a bounded result limit.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: explicit-save-and-run
+        kind: behavior
+        statement: An explicit save submits the normalized saved-query payload and makes the created query available through the supported detail and Entry-result run flow.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: saved-sql-create-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the saved SQL creation starter query, normalized save payload, and browser journey through exact frontend and browser tests.
+        targets:
+          - id: create-route
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
+            selector: { kind: test, name: "REQ-FE-063: uses a runnable Form relation starter with session ordering" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.starter-query
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: uses a runnable Form relation starter with session ordering" } }
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.explicit-save-and-run
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: uses a runnable Form relation starter with session ordering" } }
+          - id: browser-create
+            adapter: typescript
+            path: e2e/saved-sql-route.test.ts
+            selector: { kind: test, name: "REQ-FE-063: new saved SQL starts with a runnable total-ordered query" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.starter-query
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063: new saved SQL starts with a runnable total-ordered query" } }
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.explicit-save-and-run
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063: new saved SQL starts with a runnable total-ordered query" } }
+
+  - id: REQ-FE-061
+    title: Saved SQL List Route Guidance
+    description: The saved SQL list route loads saved queries, provides the supported creation and navigation actions, and explains both the empty and load-error states.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: list-and-create-action
+        kind: behavior
+        statement: The saved SQL route loads the current Space's saved queries and links the user to the supported saved-query creation flow and saved-query detail routes.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: empty-state
+        kind: behavior
+        statement: When no saved SQL exists, the route explains the reusable-query empty state and keeps the explicit create action available.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: load-error
+        kind: quality
+        statement: A saved SQL list load failure is surfaced as a localized, user-facing error instead of an empty successful state.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: saved-sql-list-verification
+        role: verification
+        facet: verification
+        responsibility: Verify saved SQL list loading, creation/navigation actions, empty-state guidance, localized failure feedback, and the browser navigation journey through exact frontend tests.
+        targets:
+          - id: list-actions
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-061: saved SQL route provides the v5 list and create action" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.list-and-create-action
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "REQ-FE-061: saved SQL route provides the v5 list and create action" } }
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.empty-state
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "REQ-FE-061: saved SQL route provides the v5 list and create action" } }
+          - id: list-error
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-061: saved SQL route shows a canonical load error" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.load-error
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "REQ-FE-061: saved SQL route shows a canonical load error" } }
+          - id: list-detail-link
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-061: saved SQL route links a saved query to its detail route" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.list-and-create-action
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/index.test.tsx", test: "REQ-FE-061: saved SQL route links a saved query to its detail route" } }
+          - id: browser-list
+            adapter: typescript
+            path: e2e/saved-sql-route.test.ts
+            selector: { kind: test, name: "REQ-FE-061: saved SQL route shows its empty state and keeps current navigation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.list-and-create-action
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-061: saved SQL route shows its empty state and keeps current navigation" } }
+              - kind: verifies
+                criterion: REQ-FE-061#criterion.empty-state
+                covers: [FEAT-FE-007#binding.frontend/target.sql-index-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-061: saved SQL route shows its empty state and keeps current navigation" } }
+
+  - id: REQ-FE-062
+    title: Saved SQL Detail Route Actions
+    description: The saved SQL detail route loads and presents the saved query text and metadata, then exposes a stateless variable-free result flow or the variable-input flow.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: detail-summary
+        kind: behavior
+        statement: The saved SQL detail route displays the saved query name, timestamps, variables, and query text. For user-query entries it allows the saved query name and SQL body to be edited; search-history entries remain read-only.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: supported-actions
+        kind: behavior
+        statement: A variable-free saved query uses the canonical stateless SQL query API and routes to SQL results, while a query with variables links to the existing variable-input flow.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: revision-aware-save
+        kind: behavior
+        statement: Saving a user-query edit derives variables from the SQL body and uses the currently loaded revision as the optimistic concurrency base, then uses the returned revision for subsequent saves. Search-history entries remain read-only.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: delete
+        kind: behavior
+        statement: The saved SQL detail route requires the shared destructive confirmation before deleting a user-query entry and returns to the Saved SQL list after a successful deletion. Search-history entries remain read-only.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: search-history-read-only
+        kind: behavior
+        statement: Search-history entries remain read-only in the Saved SQL detail route, which retains their derived display label and does not expose saved-query editing or deletion actions.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: saved-sql-detail-verification
+        role: verification
+        facet: verification
+        responsibility: Verify saved SQL detail rendering, editable and revision-aware saves, delete confirmation and navigation, variable-input navigation, stateless variable-free execution, and the browser journey through exact frontend tests.
+        targets:
+          - id: detail-summary
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.detail-summary
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions" } }
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.supported-actions
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions" } }
+          - id: revision-aware-save
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "normalizes SQL variables and uses the returned revision for the next save" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.revision-aware-save
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "normalizes SQL variables and uses the returned revision for the next save" } }
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.detail-summary
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "normalizes SQL variables and uses the returned revision for the next save" } }
+          - id: delete
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "deletes only after shared confirmation and returns to the Saved SQL list" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.delete
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "deletes only after shared confirmation and returns to the Saved SQL list" } }
+          - id: search-history-read-only
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "keeps search-history detail read-only and retains its derived label" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.search-history-read-only
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "keeps search-history detail read-only and retains its derived label" } }
+          - id: detail-run
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail routes variable-free queries to stateless results" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.supported-actions
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail routes variable-free queries to stateless results" } }
+          - id: browser-detail
+            adapter: typescript
+            path: e2e/saved-sql-route.test.ts
+            selector: { kind: test, name: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.supported-actions
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to stateless results" } }
+

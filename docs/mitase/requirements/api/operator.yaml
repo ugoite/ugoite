@@ -1,0 +1,301 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: api
+category: API contracts and operator surfaces
+requirements:
+  - id: REQ-API-004
+    title: Feature registry consistency
+    description: API feature registry entries must match implemented backend and frontend paths, files, and functions. The canonical Feature graph supersedes the legacy registry as migration completes.
+    priority: high
+    status: implemented
+    criteria:
+      - id: implementation-alignment
+        kind: quality
+        statement: API Feature bindings identify the implemented backend and frontend artifacts they govern.
+        governed_by: [POL-008#rule.governance, POL-013#rule.governance]
+
+  - id: REQ-API-005
+    title: Requirements traceability automation
+    description: Requirements and tests should be linked by stable Requirement and Criterion IDs and validated automatically. Complete repository-wide coverage remains a migration target.
+    priority: high
+    status: planned
+    criteria:
+      - id: stable-traceability
+        kind: operational
+        statement: API verification claims use stable Requirement and Criterion IDs and are validated by the Mitase repository gate.
+        governed_by: [POL-008#rule.governance, POL-009#rule.governance]
+
+  - id: REQ-API-014
+    title: Operator surface positioning guide
+    description: Specification documentation positions MCP as the governed AI-facing operator surface, CLI as the explicit human and automation surface, and REST as the application and frontend integration surface. The small stable MCP v1 scope remains distinct from broader future capabilities.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: surface-roles
+        kind: documentation
+        statement: The API documentation assigns distinct roles to MCP, CLI, and REST and preserves the stable MCP v1 boundary.
+        governed_by: [POL-004#rule.governance, POL-005#rule.governance, POL-015#rule.governance]
+  - id: REQ-API-015
+    title: Stateless SQL query CLI
+    description: The CLI exposes canonical read-only SQL page and count operations using the stateless SqlQuery contract in both local and remote mode.
+    priority: high
+    status: implemented
+    criteria:
+      - id: canonical-sql-page
+        kind: behavior
+        statement: '`ugoite sql query` submits SqlQueryRequest with SQL, parameters, limit, and optional continuation and returns the canonical page envelope.'
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: canonical-sql-count
+        kind: behavior
+        statement: '`ugoite sql count` submits a separate SqlQueryCountRequest and returns an explicit count without coupling it to page retrieval.'
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: local-remote-parity
+        kind: quality
+        statement: Local and remote CLI SQL operations use the same canonical request and response DTOs.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: ordered-pagination
+        kind: security
+        statement: A SQL page that exceeds its limit must have an explicit ORDER BY; unordered results are rejected instead of silently discarding rows or issuing an unsafe continuation.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: typed-result-schema
+        kind: behavior
+        statement: Every SQL query page carries a server-owned portable column descriptor in column order alongside the unchanged columns and rows; null and empty results keep their planned output types, and the Browser stores the descriptor unchanged without inferring types from row values.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: cli-verification
+        role: verification
+        facet: verification
+        responsibility: Verify canonical stateless SQL page and count routing plus local execution through exact CLI integration cases.
+        targets:
+          - id: remote-page
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_sql_query_uses_stateless_route_and_dto }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-page
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_query_uses_stateless_route_and_dto } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.local-remote-parity
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_query_uses_stateless_route_and_dto } }
+          - id: remote-count
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_sql_query_count_uses_separate_stateless_route }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-count
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_query_count_uses_separate_stateless_route } }
+          - id: local-page-and-count
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_journey_core.rs
+            selector: { kind: test, name: test_cli_sql_query_and_count_use_stateless_local_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-page
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_cli_sql_query_and_count_use_stateless_local_contract } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-count
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_journey_core, test: test_cli_sql_query_and_count_use_stateless_local_contract } }
+      - id: result-schema-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the server-owned portable result descriptor on SQL pages, the Arrow mapping pins, and the Browser storing the descriptor unchanged through exact Rust and frontend tests.
+        targets:
+          - id: typed-page-and-empty-page
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: sql_query_page_carries_server_owned_result_schema }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.typed-result-schema
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.query-sql]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: sql_query_page_carries_server_owned_result_schema } }
+          - id: arrow-mapping-pin
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: result_schema_tests::arrow_output_types_map_to_portable_result_types }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.typed-result-schema
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.result-schema-mapping]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: query_context::result_schema_tests::arrow_output_types_map_to_portable_result_types } }
+          - id: arrow-fallback-pin
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: result_schema_tests::non_scalar_arrow_outputs_stay_json_without_inference }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.typed-result-schema
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.result-schema-mapping]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: query_context::result_schema_tests::non_scalar_arrow_outputs_stay_json_without_inference } }
+          - id: descriptor-passthrough
+            adapter: typescript
+            path: frontend/src/lib/composition-api.test.ts
+            selector: { kind: test, name: stores the server-owned column types unchanged and never infers from rows }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.server-typed-result-descriptor
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: stores the server-owned column types unchanged and never infers from rows } }
+  - id: REQ-API-016
+    title: Bounded stateless SQL export
+    description: The CLI can stream a complete, explicitly bounded multi-page SQL result as NDJSON through the existing stateless SQL query operation in local and remote mode.
+    priority: high
+    status: implemented
+    criteria:
+      - id: bounded-complete-export
+        kind: behavior
+        statement: '`ugoite sql export` requires a positive maximum row count, limits every request to the remaining budget, and succeeds only when the result is complete.'
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: stateless-query-only
+        kind: behavior
+        statement: Export repeats the canonical SqlQueryRequest/SqlQueryPage route and does not issue a count request, retain continuation state, or create Knowledge.'
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: partial-output-is-failure
+        kind: quality
+        statement: 'A later page, authorization, transport, output, or row-limit failure is nonzero; file output is not published and streamed stdout reports its completed row count.'
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: local-remote-parity
+        kind: quality
+        statement: Local and remote export use the same canonical page request and response DTOs, preserving shared authorization and continuation semantics.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: cli-export-verification
+        role: verification
+        facet: verification
+        responsibility: Verify complete local NDJSON export, bounded incomplete failure, and remote continuation routing through the canonical SQL page operation.
+        targets:
+          - id: local-complete
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_sql_stateless_cli.rs
+            selector: { kind: test, name: cli_sql_export_writes_complete_ndjson_atomically }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-016#criterion.bounded-complete-export
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_sql_stateless_cli, test: cli_sql_export_writes_complete_ndjson_atomically } }
+          - id: local-limit-failure
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_sql_stateless_cli.rs
+            selector: { kind: test, name: cli_sql_export_max_rows_does_not_publish_partial_file }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-016#criterion.partial-output-is-failure
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_sql_stateless_cli, test: cli_sql_export_max_rows_does_not_publish_partial_file } }
+          - id: remote-continuation
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_sql_export_reuses_stateless_route_and_continuation }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-016#criterion.stateless-query-only
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_export_reuses_stateless_route_and_continuation } }
+              - kind: verifies
+                criterion: REQ-API-016#criterion.local-remote-parity
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_export_reuses_stateless_route_and_continuation } }
+          - id: remote-failure
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+            selector: { kind: test, name: test_sql_export_discards_file_after_remote_failure_without_leaking_token }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-016#criterion.partial-output-is-failure
+                covers: [FEAT-API-001#binding.cli-implementation/target.sql-command]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-cli, harness: test_cli_endpoint_routing, test: test_sql_export_discards_file_after_remote_failure_without_leaking_token } }
+      - id: backend-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that unordered SQL results exceeding a page limit are rejected instead of silently truncated.
+        targets:
+          - id: ordered-pagination
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-page
+                covers: [FEAT-API-001#binding.backend-implementation/target.query-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.canonical-sql-count
+                covers: [FEAT-API-001#binding.backend-implementation/target.count-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.ordered-pagination
+                covers: [FEAT-API-001#binding.backend-implementation/target.query-sql]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::stateless_sql_query_pins_publication_and_separates_count } }
+
+  - id: REQ-API-017
+    title: Konase Host write confirmation and outcome
+    description: A Konase Host must preserve the per-call user authorization and confirmed-outcome boundary when temporary model Context leads to a proposed Knowledge mutation. Selected read Context does not authorize a write.
+    priority: high
+    status: implemented
+    criteria:
+      - id: request-scoped-write-approval
+        kind: security
+        statement: Before dispatching a model-requested Knowledge write, the Host requires a one-time explicit approval bound to the active Work, request ID, Space, operation, and original argument snapshot; denial, missing confirmation, expiry, disposal, or a changed Space prevents dispatch.
+        governed_by: [POL-010#rule.governance, POL-011#rule.governance, POL-015#rule.governance]
+      - id: receipt-gated-knowledge-outcome
+        kind: behavior
+        statement: The Host reports a Knowledge mutation as saved and exposes Work Undo only after validating the corresponding MCP mutation receipt; a model response, approval, missing receipt, or malformed receipt does not establish success, and a later failed write does not erase an earlier confirmed mutation.
+        governed_by: [POL-010#rule.governance, POL-011#rule.governance, POL-015#rule.governance]
+    bindings:
+      - id: host-write-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the independent one-time approval and receipt-gated outcome in both Konase Hosts.
+        targets:
+          - id: cli-approval-denial
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/konase.rs
+            selector: { kind: test, name: tests::denied_noninteractive_write_sends_no_mcp_call }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.request-scoped-write-approval
+                covers: [FEAT-API-001#binding.konase-host/target.cli-write-host]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: tests::denied_noninteractive_write_sends_no_mcp_call } }
+          - id: cli-receipt-validation
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/konase.rs
+            selector: { kind: test, name: tests::save_and_undo_receipts_must_match_the_mutation_contract }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
+                covers: [FEAT-API-001#binding.konase-host/target.cli-write-host]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: tests::save_and_undo_receipts_must_match_the_mutation_contract } }
+          - id: browser-approval-denial
+            adapter: typescript
+            path: frontend/src/lib/konase/host.test.ts
+            selector: { kind: test, name: "denies a write without dispatch and consumes each approval once" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.request-scoped-write-approval
+                covers: [FEAT-API-001#binding.konase-host/target.browser-write-host]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "denies a write without dispatch and consumes each approval once" } }
+          - id: browser-receipt-and-undo
+            adapter: typescript
+            path: frontend/src/lib/konase/host.test.ts
+            selector: { kind: test, name: "does not report saved or undoable when a save receipt is missing" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
+                covers: [FEAT-API-001#binding.konase-host/target.browser-write-host]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "does not report saved or undoable when a save receipt is missing" } }
+          - id: browser-preserves-earlier-save
+            adapter: typescript
+            path: frontend/src/lib/konase/host.test.ts
+            selector: { kind: test, name: "preserves a confirmed save and its Undo when a later write is denied" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
+                covers: [FEAT-API-001#binding.konase-host/target.browser-write-host]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "preserves a confirmed save and its Undo when a later write is denied" } }

@@ -1,0 +1,247 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ops
+category: Operations, development, and quality-gate requirements
+requirements:
+  - id: REQ-OPS-001
+    title: Developer Guides for Local Runs
+    description: Current English guides cover root Mise development, Docker Compose, CLI core and backend modes, and runtime prerequisites.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: local-run-guidance
+        kind: quality
+        statement: The repository publishes operator guidance for the supported local runtime and CLI entry paths, including prerequisites and the boundaries between local and server-backed operation.
+        governed_by: [POL-003#rule.governance, POL-005#rule.governance]
+    bindings:
+      - id: local-run-documentation
+        role: evidence
+        facet: operator-guide
+        responsibility: The guide artifacts cover the documented local and container paths. Exact parity between every legacy prose subsection and the current guides remains an explicit evidence gap; this slice does not infer completeness from file existence.
+        targets:
+          - id: operations-guide
+            adapter: declared
+            path: docs/operate/index.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-001#criterion.local-run-guidance
+          - id: container-quickstart
+            adapter: declared
+            path: docs/operate/install-deploy.md
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-001#criterion.local-run-guidance
+
+  - id: REQ-OPS-010
+    title: Frontend Local Dev Proxy Readiness
+    description: The integrated developer launcher must start the Rust server and make the browser `/api` route usable before normal interaction.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: frontend-dev-proxy-readiness
+        kind: behavior
+        statement: Frontend development either points contributors to the canonical root launcher or configures an explicit backend proxy whose `/api` route rewrites to the server API boundary.
+        governed_by: [POL-005#rule.governance]
+    bindings:
+      - id: frontend-dev-proxy-verification
+        role: verification
+        facet: frontend-vitest
+        responsibility: Verify the development error guidance, explicit backend proxy, production no-proxy boundary, and empty process environment behavior through the exact frontend configuration tests.
+        targets:
+          - id: missing-backend-guidance
+            adapter: typescript
+            path: frontend/src/app.config.test.ts
+            selector: { kind: test, name: 'REQ-OPS-010: missing BACKEND_URL points contributors to the canonical root dev workflow' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-010#criterion.frontend-dev-proxy-readiness
+                covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.frontend-proxy]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/app.config.test.ts, test: 'REQ-OPS-010: missing BACKEND_URL points contributors to the canonical root dev workflow' } }
+          - id: backend-proxy-config
+            adapter: typescript
+            path: frontend/src/app.config.test.ts
+            selector: { kind: test, name: 'REQ-OPS-010: backend proxy settings are wired when frontend-only dev mode targets a backend' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-010#criterion.frontend-dev-proxy-readiness
+                covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.frontend-proxy]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/app.config.test.ts, test: 'REQ-OPS-010: backend proxy settings are wired when frontend-only dev mode targets a backend' } }
+          - id: production-proxy-boundary
+            adapter: typescript
+            path: frontend/src/app.config.test.ts
+            selector: { kind: test, name: 'REQ-OPS-010: non-development imports keep an empty proxy map when no backend URL is configured' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-010#criterion.frontend-dev-proxy-readiness
+                covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.frontend-proxy]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/app.config.test.ts, test: 'REQ-OPS-010: non-development imports keep an empty proxy map when no backend URL is configured' } }
+          - id: empty-process-environment
+            adapter: typescript
+            path: frontend/src/app.config.test.ts
+            selector: { kind: test, name: 'REQ-OPS-010: config falls back to an empty env object when process.env is unavailable' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-010#criterion.frontend-dev-proxy-readiness
+                covers: [FEAT-OPS-001#binding.migrated-ops-verification/target.frontend-proxy]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/app.config.test.ts, test: 'REQ-OPS-010: config falls back to an empty env object when process.env is unavailable' } }
+
+  - id: REQ-OPS-015
+    title: Production Authentication in Development
+    description: Development must use the same setup, WebAuthn, OIDC, browser-session, and device-authorization protocols as production without fake identities or preconfigured credentials.
+    priority: medium
+    status: planned
+    criteria:
+      - id: production-authentication
+        kind: security
+        statement: Development authentication remains aligned with the production setup, WebAuthn, OIDC, browser-session, and device-authorization protocols; the current migrated slice preserves evidence without claiming parity completeness.
+        governed_by: [POL-003#rule.governance, POL-004#rule.governance, POL-005#rule.governance]
+    bindings:
+      - id: production-authentication-evidence
+        role: evidence
+        facet: authentication
+        responsibility: Preserve the existing CLI, frontend, and E2E authentication evidence while keeping the legacy planned status and its explicit completeness boundary.
+        targets:
+          - id: auth-command
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/auth.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-cli-test
+            adapter: rust
+            path: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-public-pages
+            adapter: typescript
+            path: e2e/public-pages.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-smoke
+            adapter: typescript
+            path: e2e/smoke.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-api-test
+            adapter: typescript
+            path: frontend/src/lib/api.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-origin-test
+            adapter: typescript
+            path: frontend/src/lib/frontend-origin.test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-about-test
+            adapter: typescript
+            path: frontend/src/routes/about.test.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-api-route-test
+            adapter: typescript
+            path: frontend/src/routes/api/[...path].test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-index-test
+            adapter: typescript
+            path: frontend/src/routes/index.test.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+          - id: auth-spaces-index-test
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-015#criterion.production-authentication
+
+  - id: REQ-OPS-016
+    title: Local Dev Sample-Data Seeding Workflow
+    description: The root developer task mise run seed exposes the sample-data helper with configurable local root, Space slug, scenario, entry count, and seed inputs.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: local-sample-data-seeding
+        kind: behavior
+        statement: The root seed task invokes the repository helper and forwards the supported sample-data inputs while protecting existing UUID-backed Spaces from overwrite.
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: sample-data-seeding-verification
+        role: verification
+        facet: deno-test
+        responsibility: Verify the root seed task and helper forwarding/protection behavior through the exact workspace tests.
+        targets:
+          - id: sample-data-seeding-test
+            adapter: typescript
+            path: tools/workspace_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-016#criterion.local-sample-data-seeding
+                covers: [FEAT-OPS-001#binding.ops-seeding/target.seed-helper]
+                runner: { runner: deno-test-file, arguments: { file: tools/workspace_test.ts, test: dev-seed forwards arguments and protects UUID-backed Spaces } }
+
+  - id: REQ-OPS-019
+    title: Explicit Root Mise Task Surface
+    description: All supported developer entrypoints are declared in the root mise.toml; package-scoped mise tasks are not part of the current repository.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: root-mise-surface
+        kind: quality
+        statement: The repository exposes its supported developer entrypoints through the root Mise task surface and does not require package-scoped Mise entrypoints.
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: root-mise-surface-evidence
+        role: evidence
+        facet: developer-entrypoints
+        responsibility: Connect the root task declaration and workspace entrypoint checks as generic evidence for the current repository task surface. This slice does not add a second task runner contract.
+        targets:
+          - id: root-mise
+            adapter: declared
+            path: mise.toml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-019#criterion.root-mise-surface
+          - id: workspace-entrypoint-check
+            adapter: typescript
+            path: tools/workspace_test.ts
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-OPS-019#criterion.root-mise-surface
+      - id: root-mise-surface-verification
+        role: verification
+        facet: repository-test
+        responsibility: Verify the exact supported developer task surface and the absence of package-scoped Mise entrypoints through the repository workspace test.
+        targets:
+          - id: root-mise-surface-test
+            adapter: typescript
+            path: tools/workspace_test.ts
+            selector: { kind: test, name: 'REQ-OPS-019: supported developer entrypoints use the root Mise surface' }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-019#criterion.root-mise-surface
+                covers: [FEAT-OPS-001#binding.automation/target.root-mise]
+                runner: { runner: deno-test-file, arguments: { file: tools/workspace_test.ts, test: 'REQ-OPS-019: supported developer entrypoints use the root Mise surface' } }
+

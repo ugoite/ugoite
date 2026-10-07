@@ -6,7 +6,7 @@ This document defines the Composition acceptance meaning: the selector and
 boundary inventory, the evidence recording method, and the
 recovery/authorization expectations. Implementation status for the
 Composition Requirements and Feature is recorded in Mitase
-(`docs/mitase/requirements/composition.yaml` and
+(`docs/mitase/requirements/composition` and
 `docs/mitase/features/composition.yaml`); this document carries no plan
 status. The portable list, get,
 history, lint, resolve, save, and restore operations are implemented, as are

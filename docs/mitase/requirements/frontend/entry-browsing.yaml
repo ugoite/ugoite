@@ -1,0 +1,232 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: frontend
+category: Frontend route, component, and interaction requirements
+requirements:
+  - id: REQ-FE-004
+    title: Entry List Display
+    description: The frontend displays the Entry list with titles and available properties, including explicit loading and empty states.
+    priority: high
+    status: implemented
+    criteria:
+      - id: display
+        kind: behavior
+        statement: The frontend renders current Entry records as titled cards and exposes their available Form and property values without failing on missing properties.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: entry-list-display-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Entry card rendering, property display, missing-property handling, and the plain Entries route through exact frontend tests.
+        targets:
+          - id: entry-list-properties
+            adapter: typescript
+            path: frontend/src/components/EntryList.test.tsx
+            selector: { kind: test, name: "should display extracted properties in entry cards" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.display
+                covers: [FEAT-FE-002#binding.frontend/target.entry-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should display extracted properties in entry cards" } }
+          - id: entry-list-missing-properties
+            adapter: typescript
+            path: frontend/src/components/EntryList.test.tsx
+            selector: { kind: test, name: "should handle entries with null or undefined properties gracefully" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.display
+                covers: [FEAT-FE-002#binding.frontend/target.entry-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should handle entries with null or undefined properties gracefully" } }
+          - id: list-panel-entries
+            adapter: typescript
+            path: frontend/src/components/ListPanel.test.tsx
+            selector: { kind: test, name: "should render entries list" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.display
+                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should render entries list" } }
+          - id: form-entries-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"
+            selector: { kind: test, name: "selects a row to open its Entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-004#criterion.display
+                covers: [FEAT-FE-002#binding.frontend/target.form-entries-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "selects a row to open its Entry" } }
+  - id: REQ-FE-008
+    title: Entry Selection and Highlight
+    description: The frontend highlights the selected Entry and lets the user select an Entry to load its detail view.
+    priority: high
+    status: implemented
+    criteria:
+      - id: selection
+        kind: behavior
+        statement: The frontend marks the selected Entry, invokes the selection callback for a clicked Entry, and routes the selected Entry to its detail view.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: entry-selection-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Entry selection callbacks, selected-card highlighting, and the list panel selection callback through exact frontend tests.
+        targets:
+          - id: entry-list-highlight
+            adapter: typescript
+            path: frontend/src/components/EntryList.test.tsx
+            selector: { kind: test, name: "should highlight selected entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-008#criterion.selection
+                covers: [FEAT-FE-002#binding.frontend/target.entry-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryList.test.tsx, test: "should highlight selected entry" } }
+          - id: list-panel-highlight
+            adapter: typescript
+            path: frontend/src/components/ListPanel.test.tsx
+            selector: { kind: test, name: "should highlight selected entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-008#criterion.selection
+                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should highlight selected entry" } }
+          - id: list-panel-select
+            adapter: typescript
+            path: frontend/src/components/ListPanel.test.tsx
+            selector: { kind: test, name: "should call onSelectEntry when a entry is clicked" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-008#criterion.selection
+                covers: [FEAT-FE-002#binding.frontend/target.list-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ListPanel.test.tsx, test: "should call onSelectEntry when a entry is clicked" } }
+  - id: REQ-FE-033
+    title: Entry Detail Navigation
+    description: Selecting or opening an Entry reaches the detail view and correctly handles encoded Entry identifiers.
+    priority: high
+    status: implemented
+    criteria:
+      - id: detail-route
+        kind: behavior
+        statement: The frontend Entry detail route renders the Entry workspace instead of a not-found page.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: encoded-entry-id
+        kind: behavior
+        statement: Entry detail navigation preserves identifiers containing special characters when they are URL-encoded.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: detail-navigation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Entry detail route rendering and encoded identifier handling through exact Playwright evidence.
+        targets:
+          - id: detail-route-renders
+            adapter: typescript
+            path: e2e/entries.test.ts
+            selector: { kind: test, name: "REQ-FE-033: frontend entry detail route renders (not SolidJS Not Found)" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-033#criterion.detail-route
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-033: frontend entry detail route renders (not SolidJS Not Found)" } }
+          - id: special-character-id
+            adapter: typescript
+            path: e2e/entries.test.ts
+            selector: { kind: test, name: "REQ-FE-033: Retrieve entry with special characters" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-033#criterion.encoded-entry-id
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-033: Retrieve entry with special characters" } }
+  - id: REQ-FE-034
+    title: Entry Detail Loading State Management
+    description: Navigating between Entries clears loading state and displays the selected Entry without requiring a page reload.
+    priority: high
+    status: implemented
+    criteria:
+      - id: navigation-loading
+        kind: behavior
+        statement: Sequential Entry detail navigation does not remain stuck in an Entry loading state.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: loading-state-verification
+        role: verification
+        facet: verification
+        responsibility: Verify sequential Entry detail navigation through the exact Playwright test.
+        targets:
+          - id: sequential-navigation
+            adapter: typescript
+            path: e2e/entries.test.ts
+            selector: { kind: test, name: "REQ-FE-034: Multi-entry navigation should not get stuck in loading state" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-034#criterion.navigation-loading
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-034: Multi-entry navigation should not get stuck in loading state" } }
+  - id: REQ-FE-035
+    title: Robust Entry Navigation and Recovery
+    description: Entry navigation resolves failed or slow loading states within a bounded flow and leaves the user able to retry or return to a stable route.
+    priority: high
+    status: implemented
+    criteria:
+      - id: navigation-recovery
+        kind: behavior
+        statement: Entry navigation does not remain in an unresolved loading state and provides a recoverable path when navigation cannot complete normally.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: navigation-recovery-verification
+        role: verification
+        facet: verification
+        responsibility: Verify bounded Entry navigation and recovery through the exact Playwright test.
+        targets:
+          - id: navigation-timeout-recovery
+            adapter: typescript
+            path: e2e/entries.test.ts
+            selector: { kind: test, name: "REQ-FE-035: Navigation timeout handling and recovery" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-035#criterion.navigation-recovery
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-035: Navigation timeout handling and recovery" } }
+  - id: REQ-FE-043
+    title: Sample data error formatting
+    description: Frontend API and creation dialogs present structured validation failures as human-readable messages without exposing object placeholders.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: readable-errors
+        kind: quality
+        statement: Structured API validation failures are rendered as readable user-facing messages and never as the literal string [object Object].
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: error-formatting-verification
+        role: verification
+        facet: verification
+        responsibility: Verify structured API error formatting in the API client and creation dialogs through exact frontend tests.
+        targets:
+          - id: api-validation-error
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: "should surface validation errors without object placeholders [REQ-FE-043]" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-043#criterion.readable-errors
+                covers: [FEAT-API-001#binding.frontend-implementation/target.space-api]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "should surface validation errors without object placeholders [REQ-FE-043]" } }
+          - id: form-submit-error
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-043: create-form dialog renders rejected submit errors inline" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-043#criterion.readable-errors
+                covers: [FEAT-FE-004#binding.frontend/target.create-dialogs]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-043: create-form dialog renders rejected submit errors inline" } }
+          - id: entry-submit-error
+            adapter: typescript
+            path: frontend/src/components/create-dialogs.test.tsx
+            selector: { kind: test, name: "REQ-FE-043: create-entry dialog renders rejected submit errors inline" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-043#criterion.readable-errors
+                covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-043: create-entry dialog renders rejected submit errors inline" } }
+
