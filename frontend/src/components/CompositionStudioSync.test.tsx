@@ -467,6 +467,18 @@ describe("CompositionStudioSync", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("keeps a single Add-data control for a blank draft in Split", async () => {
+    renderStudio(createEmptyDraft("Blank"));
+    fireEvent.click(
+      screen.getByRole("radio", { name: "Split", exact: true }),
+    );
+    // The canvas fallback owns the action; the pane button hides so the
+    // same name never appears twice.
+    expect(
+      screen.getAllByRole("button", { name: "Add data" }),
+    ).toHaveLength(1);
+  });
+
   it("renders resolve diagnostics in the strip in every mode without refetch", async () => {
     previewMock.mockImplementation(async () => ({
       ok: false,

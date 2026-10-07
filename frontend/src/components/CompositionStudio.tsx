@@ -983,13 +983,19 @@ export function CompositionStudio(props: CompositionStudioProps) {
             <div class="studioSplitPane" aria-labelledby={dataHeadingId}>
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
-                <button
-                  class="ui-button ui-button-secondary"
-                  type="button"
-                  onClick={() => setPickerOpen(true)}
-                >
-                  {t("composition.studioAddData")}
-                </button>
+                {
+                  /* Blank drafts expose a single Add-data control on the
+                    canvas; the pane button would duplicate it. */
+                }
+                <Show when={!isBlankDraft()}>
+                  <button
+                    class="ui-button ui-button-secondary"
+                    type="button"
+                    onClick={() => setPickerOpen(true)}
+                  >
+                    {t("composition.studioAddData")}
+                  </button>
+                </Show>
               </div>
               {renderDataWorkspace()}
             </div>
