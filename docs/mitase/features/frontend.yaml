@@ -172,6 +172,10 @@ features:
                 criterion: REQ-FE-071#criterion.temporal-controls
               - kind: satisfies
                 criterion: REQ-FE-071#criterion.uuid-generation
+              - kind: satisfies
+                criterion: REQ-FE-072#criterion.preview-dialog
+              - kind: satisfies
+                criterion: REQ-FE-072#criterion.markdown-only
           - id: field-value-view
             adapter: typescript
             path: frontend/src/components/fields/FieldValue.tsx

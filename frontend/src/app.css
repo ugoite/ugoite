@@ -1660,6 +1660,21 @@ textarea {
   align-items: center;
   gap: 10px;
 }
+.ui-dialog.ui-markdown-field-preview-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+}
+.ui-markdown-field-preview {
+  min-height: 4rem;
+  max-height: calc(100dvh - 144px);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 18px;
+  background: var(--ui-surface-1);
+}
 .ui-dialog-title {
   margin: 0;
   font-size: 20px;
