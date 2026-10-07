@@ -123,6 +123,7 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
               }
             >
               <EntryQuerySourceEditor
+                spaceId={props.spaceId}
                 source={source() as EntryQuerySource}
                 onFilters={(filters) =>
                   props.onEntryQueryFilters(
