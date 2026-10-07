@@ -10,7 +10,7 @@ DENO_NO_UPDATE_CHECK = "1"
 [tools]
 deno = "2.8.3"
 helm = "3.19.0"
-rust = "1.94.0"
+rust = "1.95.0"
 
 [tools."github:nextest-rs/nextest"]
 version = "cargo-nextest-0.9.143"
