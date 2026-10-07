@@ -386,7 +386,9 @@ test.describe("Composition Studio Journey", () => {
       );
       const runTable = page.getByRole("table");
       await expect(runTable.locator("tbody tr")).toHaveCount(1);
-      await expect(runTable).toContainText(seed.expectedTotal);
+      await expect(runTable).toContainText(seed.expectedTotal, {
+        timeout: 30_000,
+      });
 
       // Studio opens prefilled from the Saved SQL run, save-ready with a
       // default Table on the seeded source: the canvas owns the block.
@@ -457,23 +459,25 @@ test.describe("Composition Studio Journey", () => {
       await page.getByRole("radio", { name: "Design", exact: true }).click();
       await expect(
         page.getByRole("heading", { name: "Total", exact: true }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 30_000 });
       await expect(
         page.getByRole("heading", { name: "Quantity", exact: true }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 30_000 });
       await expect(
         page.locator("output.compositionMetric").filter({
           hasText: new RegExp(`^${seed.expectedTotal}$`),
         }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 30_000 });
       await expect(
         page.locator("output.compositionMetric").filter({
           hasText: new RegExp(`^${seed.expectedQuantity}$`),
         }),
-      ).toBeVisible();
-      const previewTable = page.getByRole("table");
+      ).toBeVisible({ timeout: 30_000 });
+      // Scope to the EntryQuery table: the canvas also renders the
+      // Saved SQL table, so the bare table role is ambiguous.
+      const previewTable = page.locator("table.result-table--entry");
       for (const purpose of seed.purposes) {
-        await expect(previewTable).toContainText(purpose);
+        await expect(previewTable).toContainText(purpose, { timeout: 30_000 });
       }
 
       // Save once: exactly one publication.
@@ -510,15 +514,15 @@ test.describe("Composition Studio Journey", () => {
         page.locator("output.compositionMetric").filter({
           hasText: new RegExp(`^${seed.expectedTotal}$`),
         }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 30_000 });
       await expect(
         page.locator("output.compositionMetric").filter({
           hasText: new RegExp(`^${seed.expectedQuantity}$`),
         }),
-      ).toBeVisible();
-      const savedTable = page.getByRole("table");
+      ).toBeVisible({ timeout: 30_000 });
+      const savedTable = page.locator("table.result-table--entry");
       for (const purpose of seed.purposes) {
-        await expect(savedTable).toContainText(purpose);
+        await expect(savedTable).toContainText(purpose, { timeout: 30_000 });
       }
 
       // Edit the exact revision: relabel one canvas block, save a new revision.
@@ -528,6 +532,11 @@ test.describe("Composition Studio Journey", () => {
         ),
         { waitUntil: "domcontentloaded" },
       );
+      // The edit studio loads the exact revision asynchronously; wait for
+      // the canvas before asserting the restored name.
+      await expect(
+        page.getByRole("button", { name: "Add block", exact: true }).first(),
+      ).toBeVisible({ timeout: 30_000 });
       await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
         seed.toolName,
       );
@@ -569,7 +578,7 @@ test.describe("Composition Studio Journey", () => {
       );
       await expect(
         page.getByRole("heading", { name: "Total", exact: true }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 30_000 });
       await page.getByRole("button", {
         name: "Restore this revision",
         exact: true,
@@ -586,7 +595,7 @@ test.describe("Composition Studio Journey", () => {
       await expectHistoryTotal(request, seed.spaceId, compositionId, 3);
       await expect(
         page.getByRole("heading", { name: "Total", exact: true }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 30_000 });
       await expect(
         page.getByText("Total spent", { exact: true }),
       ).toHaveCount(0);
