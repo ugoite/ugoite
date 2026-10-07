@@ -2,7 +2,7 @@ import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { RowList, RowListButton, RowListItem } from "~/components/RowList";
-import { UiIcon } from "~/components/UiIcon";
+import { FormRowLabel, SavedSqlRowLabel } from "~/components/SourceRowLabels";
 import {
   buildEntryQueryComposition,
   type EntryQueryCompositionFieldSchemaEntry,
@@ -17,6 +17,7 @@ import type {
   DraftSavedSqlSeed,
 } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
+import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { normalizeSqlVariables } from "~/lib/sql";
 import { displaySqlName } from "~/lib/sql-metadata";
 import { formApi, sqlApi } from "~/lib/ugoite-client";
@@ -42,15 +43,23 @@ const isAbort = (error: unknown): boolean =>
   (error as { name?: unknown }).name === "AbortError";
 
 /**
- * Data-source picker for the Composition Studio. Lists Forms and Saved SQL
- * (user-query only) with full-row selection and human names only. Seeds
- * reuse the existing builders: EntryQuery seeds go through
- * `buildEntryQueryComposition` with a preview projection (fail-closed),
- * Saved SQL seeds pin the exact revision with server-owned column types
- * from a bounded probe page (json fallback, unique columns required).
+ * Data-source picker for the Composition Studio. Forms and Saved SQL share
+ * one dialog behind Forms | Saved SQL tabs (the settings tablist pattern)
+ * reusing the list pages' shared row labels with full-row selection and
+ * human names only. Internal registry forms stay hidden through the shared
+ * `filterCreatableEntryForms` single source. Seeds reuse the existing
+ * builders: EntryQuery seeds go through `buildEntryQueryComposition` with a
+ * preview projection (fail-closed), Saved SQL seeds pin the exact revision
+ * with server-owned column types from a bounded probe page (json fallback,
+ * unique columns required).
  */
 export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
   const titleId = "composition-source-picker-title";
+  const formsTabId = "composition-source-tab-forms";
+  const formsPanelId = "composition-source-panel-forms";
+  const sqlTabId = "composition-source-tab-saved-sql";
+  const sqlPanelId = "composition-source-panel-saved-sql";
+  const [tab, setTab] = createSignal<"forms" | "savedSql">("forms");
   const [load, setLoad] = createSignal<PickerLoad>({ status: "loading" });
   const [adding, setAdding] = createSignal(false);
   const [addError, setAddError] = createSignal<string | null>(null);
@@ -76,7 +85,9 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
         if (
           requestGeneration !== generation || current.signal.aborted
         ) return;
-        forms = listedForms.filter((form) => Boolean(form.id));
+        forms = filterCreatableEntryForms(
+          listedForms.filter((form) => Boolean(form.id)),
+        );
         setLoad({
           status: "ready",
           forms,
@@ -268,7 +279,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
       >
         <div
           ref={dialog}
-          class="ui-dialog"
+          class="ui-dialog composition-source-picker"
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
@@ -297,60 +308,106 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
           </Show>
           <Show when={ready()}>
             {(sources) => (
-              <div class="ui-stack-sm">
-                <h3 class="ui-label">{t("composition.studioForms")}</h3>
-                <Show
-                  when={sources().forms.length > 0}
-                  fallback={
-                    <p class="ui-muted">{t("composition.studioNoForms")}</p>
-                  }
+              <div>
+                <div
+                  class="tabs"
+                  role="tablist"
+                  aria-labelledby={titleId}
                 >
-                  <RowList label={t("composition.studioForms")}>
-                    <For each={sources().forms}>
-                      {(form) => (
-                        <RowListItem
-                          main={
-                            <RowListButton
-                              primary={
-                                <span class="rowListName">
-                                  <UiIcon name="forms" />
-                                  <span>{form.name}</span>
-                                </span>
+                  <button
+                    type="button"
+                    role="tab"
+                    id={formsTabId}
+                    aria-selected={tab() === "forms"}
+                    aria-controls={formsPanelId}
+                    class="tab"
+                    classList={{ active: tab() === "forms" }}
+                    onClick={() => setTab("forms")}
+                  >
+                    {t("composition.studioForms")}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    id={sqlTabId}
+                    aria-selected={tab() === "savedSql"}
+                    aria-controls={sqlPanelId}
+                    class="tab"
+                    classList={{ active: tab() === "savedSql" }}
+                    onClick={() => setTab("savedSql")}
+                  >
+                    {t("spaceShell.title.savedSql")}
+                  </button>
+                </div>
+                <Show when={tab() === "forms"}>
+                  <section
+                    id={formsPanelId}
+                    role="tabpanel"
+                    aria-labelledby={formsTabId}
+                    class="ui-stack-sm"
+                  >
+                    <Show
+                      when={sources().forms.length > 0}
+                      fallback={
+                        <p class="ui-muted">
+                          {t("composition.studioNoForms")}
+                        </p>
+                      }
+                    >
+                      <RowList
+                        label={t("composition.studioForms")}
+                        labelledBy={formsTabId}
+                      >
+                        <For each={sources().forms}>
+                          {(form) => (
+                            <RowListItem
+                              main={
+                                <RowListButton
+                                  primary={<FormRowLabel name={form.name} />}
+                                  onActivate={() => addEntryQuery(form)}
+                                />
                               }
-                              onActivate={() => addEntryQuery(form)}
                             />
-                          }
-                        />
-                      )}
-                    </For>
-                  </RowList>
+                          )}
+                        </For>
+                      </RowList>
+                    </Show>
+                  </section>
                 </Show>
-                <h3 class="ui-label">{t("spaceShell.title.savedSql")}</h3>
-                <Show
-                  when={sources().queries.length > 0}
-                  fallback={
-                    <p class="ui-muted">{t("composition.studioNoSavedSql")}</p>
-                  }
-                >
-                  <RowList label={t("spaceShell.title.savedSql")}>
-                    <For each={sources().queries}>
-                      {(entry) => (
-                        <RowListItem
-                          main={
-                            <RowListButton
-                              primary={
-                                <span class="rowListName">
-                                  <UiIcon name="sql" />
-                                  <span>{displaySqlName(entry)}</span>
-                                </span>
+                <Show when={tab() === "savedSql"}>
+                  <section
+                    id={sqlPanelId}
+                    role="tabpanel"
+                    aria-labelledby={sqlTabId}
+                    class="ui-stack-sm"
+                  >
+                    <Show
+                      when={sources().queries.length > 0}
+                      fallback={
+                        <p class="ui-muted">
+                          {t("composition.studioNoSavedSql")}
+                        </p>
+                      }
+                    >
+                      <RowList
+                        label={t("spaceShell.title.savedSql")}
+                        labelledBy={sqlTabId}
+                      >
+                        <For each={sources().queries}>
+                          {(entry) => (
+                            <RowListItem
+                              main={
+                                <RowListButton
+                                  primary={<SavedSqlRowLabel entry={entry} />}
+                                  onActivate={() => void addSavedSql(entry)}
+                                />
                               }
-                              onActivate={() => void addSavedSql(entry)}
                             />
-                          }
-                        />
-                      )}
-                    </For>
-                  </RowList>
+                          )}
+                        </For>
+                      </RowList>
+                    </Show>
+                  </section>
                 </Show>
               </div>
             )}

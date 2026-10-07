@@ -152,8 +152,15 @@ describe("Composition studio shell", () => {
     );
   };
 
-  const addSourceViaPicker = async (name: string) => {
+  const addSourceViaPicker = async (
+    name: string,
+    tab: "Forms" | "Saved SQL" = "Forms",
+  ) => {
     fireEvent.click(screen.getByRole("button", { name: "Add data" }));
+    await screen.findByRole("dialog");
+    if (tab !== "Forms") {
+      fireEvent.click(await screen.findByRole("tab", { name: tab }));
+    }
     fireEvent.click(await screen.findByRole("button", { name }));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -366,6 +373,7 @@ describe("Composition studio shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add data" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("tab", { name: "Saved SQL" }));
     fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -416,7 +424,7 @@ describe("Composition studio shell", () => {
     ).toBeInTheDocument();
 
     showDataMode();
-    await addSourceViaPicker("Monthly");
+    await addSourceViaPicker("Monthly", "Saved SQL");
     showDesignMode();
     await addMetricViaCanvas("Monthly", "total", "Total");
     expect(
@@ -683,6 +691,7 @@ describe("Composition studio shell", () => {
     showDataMode();
 
     fireEvent.click(screen.getByRole("button", { name: "Add data" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Saved SQL" }));
     fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

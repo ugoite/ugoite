@@ -2,13 +2,11 @@ import { useNavigate } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { CreateFormDialog, EditFormDialog } from "~/components/create-dialogs";
 import { RowList, RowListButton, RowListItem } from "~/components/RowList";
+import { FormRowLabel } from "~/components/SourceRowLabels";
 import { UiIcon } from "~/components/UiIcon";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { t } from "~/lib/i18n";
-import {
-  filterCreatableEntryForms,
-  isReservedMetadataForm,
-} from "~/lib/metadata-forms";
+import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi } from "~/lib/ugoite-client";
 import type { Form, FormCreatePayload } from "~/lib/types";
 import { spaceFormEntriesPath } from "~/lib/space-path";
@@ -120,23 +118,7 @@ export default function SpaceFormsIndexPane() {
                           navigate(
                             spaceFormEntriesPath(ctx.spaceId(), form.name),
                           )}
-                        primary={
-                          <>
-                            <span class="glyph" aria-hidden="true">
-                              {form.name.slice(0, 1).toUpperCase()}
-                            </span>
-                            <span class="formRowName">{form.name}</span>
-                            <Show when={isReservedMetadataForm(form.name)}>
-                              <span
-                                class="systemFormIcon"
-                                aria-label={t("formsPage.systemForm")}
-                                title={t("formsPage.systemForm")}
-                              >
-                                <UiIcon name="storage" />
-                              </span>
-                            </Show>
-                          </>
-                        }
+                        primary={<FormRowLabel name={form.name} />}
                         chevron
                       />
                     }

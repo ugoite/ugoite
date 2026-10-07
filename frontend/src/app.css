@@ -1572,6 +1572,11 @@ textarea {
   flex-direction: column;
   gap: 12px;
 }
+/* Picker lists are denser than the save confirm, so the fixed width sits
+   above the 440px save-dialog convention under the same viewport cap. */
+.ui-dialog.composition-source-picker {
+  width: min(560px, calc(100vw - 32px));
+}
 .history-detail-backdrop {
   z-index: 60;
   padding: 0;

@@ -251,3 +251,20 @@ components:
       narrow_width: 390px
     surface_tokens: fixed-only-no-raw-color
     async_state: explicit-loading-empty-error
+  - id: source-picker
+    type: dialog
+    title: Source picker
+    status: implemented
+    ownership: single-add-data-dialog-with-forms-and-saved-sql-tabs
+    tabs: [forms, saved-sql]
+    tab_pattern: settings-tablist-with-tab-and-tabpanel-roles-no-arrow-key-nav
+    tab_labels: existing-composition-studioForms-and-spaceShell-savedSql-only
+    rows: shared-form-and-saved-sql-row-labels-with-full-row-button-activation
+    internal_forms: hidden-through-shared-filterCreatableEntryForms
+    dialog: fixed-width-min-560px-viewport-capped-backdrop-escape-trap-focus-return
+    empty_states: existing-studioNoForms-and-studioNoSavedSql-per-tab
+    async_state: explicit-loading-empty-error
+    responsive:
+      narrow: tabs-and-rows-fit-390px-through-viewport-cap
+      narrow_width: 390px
+    surface_tokens: fixed-only-no-raw-color

@@ -8,6 +8,11 @@ import {
   RowListItem,
   RowListLink,
 } from "~/components/RowList";
+import {
+  SavedSqlRowLabel,
+  savedSqlRowMeta,
+  savedSqlRowSecondary,
+} from "~/components/SourceRowLabels";
 import { UiIcon } from "~/components/UiIcon";
 import { sqlApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
@@ -104,11 +109,9 @@ export default function SpaceSqlIndexRoute() {
                       href={`/spaces/${encodeURIComponent(spaceId())}/sql/${
                         encodeURIComponent(query.id)
                       }`}
-                      primary={displaySqlName(query)}
-                      secondary={query.variables.length > 0
-                        ? t("searchPage.variables")
-                        : undefined}
-                      meta={formatDateLabel(query.updated_at)}
+                      primary={<SavedSqlRowLabel entry={query} />}
+                      secondary={savedSqlRowSecondary(query)}
+                      meta={savedSqlRowMeta(query)}
                       chevron
                     />
                   }
