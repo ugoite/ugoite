@@ -9,6 +9,7 @@ import {
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import CompositionEditRoute from "./edit";
 
 const {
@@ -286,5 +287,135 @@ describe("Composition edit route", () => {
         "/spaces/space-1/compositions/tool-1/revision-1",
       );
     expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a stale base conflict without leaving the route", async () => {
+    render(() => <CompositionEditRoute />);
+    expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");
+
+    // Another writer published first: the update carries the stale base
+    // and the server rejects it instead of rewriting history.
+    saveMock.mockRejectedValueOnce(
+      new UgoiteApiError({
+        kind: "conflict",
+        operation: "composition.save",
+        status: 409,
+        code: "REVISION_CONFLICT",
+        message: "base revision is stale",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(saveMock).toHaveBeenCalledTimes(1);
+    });
+    expect(saveMock).toHaveBeenCalledWith(
+      "space-1",
+      "canonical yaml",
+      expect.any(String),
+      { compositionId: "tool-1", baseRevisionId: "revision-1" },
+    );
+    expect(await screen.findByText("Could not save this tool."))
+      .toBeInTheDocument();
+    // The rejected attempt stays on the route with the draft intact: no
+    // new revision, no navigation, no silent retry.
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Name")).toHaveValue("Monthly review");
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reopens a restored multi-row revision for continued editing", async () => {
+    // A restored revision carries text blocks and several rows; the edit
+    // route loads it back into an editable draft so restore-then-edit
+    // continues without flattening or rejecting known kinds.
+    lintMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        document: {
+          format: "ugoite.composition",
+          format_version: 1,
+          kind: "dashboard",
+          name: "Monthly expenses",
+          tags: [],
+          spec: {
+            parameters: [
+              {
+                id: "month_start",
+                label: "Start month",
+                type: "date",
+                required: true,
+                format: "year-month",
+              },
+            ],
+            sources: [{
+              kind: "saved_sql",
+              id: "month_total",
+              entry_id: "sql-1",
+              revision_id: "sql-rev-1",
+              expected_result: [{ name: "total", type: "float" }],
+              variables: { month_start: { parameter: "month_start" } },
+            }],
+            components: [
+              {
+                kind: "text",
+                id: "summary_title",
+                text: "Monthly summary",
+                style: "heading",
+              },
+              {
+                kind: "metric",
+                id: "total",
+                label: "Monthly total",
+                source: "month_total",
+                value_field: { kind: "sql_column", name: "total" },
+              },
+            ],
+            layout: {
+              kind: "flow",
+              rows: [
+                {
+                  id: "controls",
+                  items: [{ kind: "parameter", parameter: "month_start" }],
+                },
+                {
+                  id: "summary",
+                  items: [
+                    { kind: "component", component: "summary_title" },
+                    { kind: "component", component: "total" },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        canonical_yaml: storedYaml,
+        fingerprint: "fingerprint",
+      },
+    });
+    render(() => <CompositionEditRoute />);
+
+    expect(await screen.findByLabelText("Name")).toHaveValue(
+      "Monthly expenses",
+    );
+    expect(getMock).toHaveBeenCalledWith("space-1", "tool-1", "revision-1");
+    // The studio opens in update mode: one Save, one way back, Design
+    // first with the restored blocks on the canvas.
+    expect(screen.getAllByRole("button", { name: "Save" })).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Back to revision" }))
+      .toHaveAttribute(
+        "href",
+        "/spaces/space-1/compositions/tool-1/revision-1",
+      );
+    // Data mode resolves the restored source to its Saved SQL entry name.
+    fireEvent.click(
+      within(screen.getByRole("radiogroup", { name: "Studio mode" })).getByRole(
+        "radio",
+        { name: "Data" },
+      ),
+    );
+    expect(screen.getAllByRole("button", { name: "Monthly totals" }))
+      .toHaveLength(1);
   });
 });

@@ -347,6 +347,383 @@ describe("composition draft model", () => {
     expect(() => draftFromDocument(document, {})).toThrow();
   });
 
+  it("restores multi-row layout order with text and parameter placement", () => {
+    // Labeled-fixture shape with semantic ids: an entry_query source with
+    // parameter-bound filters, a saved_sql source with variable bindings, a
+    // summary_title text block, and required parameter controls placed in
+    // their own row ahead of two component rows.
+    const document: CompositionStudioDocument = {
+      format: "ugoite.composition",
+      format_version: 1,
+      kind: "dashboard",
+      name: "Monthly expenses",
+      tags: [],
+      spec: {
+        parameters: [
+          {
+            id: "month_start",
+            label: "Start month",
+            type: "date",
+            required: true,
+            format: "year-month",
+          },
+          {
+            id: "month_end",
+            label: "End month",
+            type: "date",
+            required: true,
+            format: "year-month",
+          },
+        ],
+        sources: [
+          {
+            kind: "entry_query",
+            id: "expense_rows",
+            form_id: "00000000-0000-7000-8000-000000000010",
+            field_schema: [
+              { field_id: 100, field_type: "date" },
+              { field_id: 101, field_type: "string" },
+              { field_id: 102, field_type: "double" },
+            ],
+            query: {
+              filters: [
+                {
+                  field_id: 100,
+                  operator: "gte",
+                  value: { parameter: "month_start" },
+                },
+                {
+                  field_id: 100,
+                  operator: "lt",
+                  value: { parameter: "month_end" },
+                },
+              ],
+              sort: [{ field_id: 100, direction: "desc" }],
+              projection: { kind: "fields", fields: [100, 101, 102] },
+            },
+          },
+          {
+            kind: "saved_sql",
+            id: "month_total",
+            entry_id: "00000000-0000-7000-8000-000000000020",
+            revision_id: "00000000-0000-7000-8000-000000000021",
+            expected_result: [{ name: "total", type: "float" }],
+            variables: {
+              month_start: { parameter: "month_start" },
+              month_end: { parameter: "month_end" },
+            },
+          },
+        ],
+        components: [
+          {
+            kind: "text",
+            id: "summary_title",
+            text: "Monthly summary",
+            style: "heading",
+          },
+          {
+            kind: "metric",
+            id: "total",
+            label: "Monthly total",
+            source: "month_total",
+            value_field: { kind: "sql_column", name: "total" },
+          },
+          {
+            kind: "table",
+            id: "transactions",
+            label: "Expense transactions",
+            source: "expense_rows",
+          },
+        ],
+        layout: {
+          kind: "flow",
+          rows: [
+            {
+              id: "controls",
+              items: [
+                { kind: "parameter", parameter: "month_start" },
+                { kind: "parameter", parameter: "month_end" },
+              ],
+            },
+            {
+              id: "summary",
+              items: [
+                { kind: "component", component: "summary_title" },
+                { kind: "component", component: "total" },
+              ],
+            },
+            {
+              id: "detail",
+              items: [{ kind: "component", component: "transactions" }],
+            },
+          ],
+        },
+      },
+    };
+    const draft = draftFromDocument(document, {
+      expense_rows: "Expenses",
+      month_total: "Monthly totals",
+    });
+
+    // Rows keep document order and identity; nothing flattens to
+    // declaration order. Semantic source ids remap to stable draft ids
+    // while human names stay display-only.
+    expect(draft.layoutRows.map((row) => row.id)).toEqual([
+      "controls",
+      "summary",
+      "detail",
+    ]);
+    expect(draft.layoutRows[0].items).toEqual([
+      { kind: "parameter", parameterId: "month_start" },
+      { kind: "parameter", parameterId: "month_end" },
+    ]);
+    expect(draft.layoutRows[1].items).toEqual([
+      { kind: "component", draftId: "disp-1" },
+      { kind: "component", draftId: "disp-2" },
+    ]);
+    expect(draft.layoutRows[2].items).toEqual([
+      { kind: "component", draftId: "disp-3" },
+    ]);
+    // Text content and style survive with no source binding.
+    expect(draft.displays[0]).toEqual({
+      kind: "text",
+      draftId: "disp-1",
+      text: "Monthly summary",
+      style: "heading",
+    });
+    expect(draft.displays[1]).toMatchObject({
+      kind: "metric",
+      draftId: "disp-2",
+      sourceDraftId: "src-2",
+      valueField: { column: "total" },
+    });
+    expect(draft.displays[2]).toMatchObject({
+      kind: "table",
+      draftId: "disp-3",
+      sourceDraftId: "src-1",
+    });
+    expect(draft.sources.map((source) => source.name)).toEqual([
+      "Expenses",
+      "Monthly totals",
+    ]);
+    // Parameter-bound entry_query filters round-trip verbatim.
+    expect(toStudioDocument(draft).spec.sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        filters: [
+          {
+            field_id: 100,
+            operator: "gte",
+            value: { parameter: "month_start" },
+          },
+          { field_id: 100, operator: "lt", value: { parameter: "month_end" } },
+        ],
+      },
+    });
+    // Required parameters keep their placed controls: the restored draft
+    // is save-ready for the update flow.
+    expect(draftSaveReadiness(draft)).toEqual({ ready: true });
+
+    // The re-emitted document keeps row order, per-row placement, and
+    // component semantics with stable draft ids; every layout reference
+    // resolves to a declaration.
+    const emitted = toStudioDocument(draft);
+    expect(emitted.spec.layout.rows.map((row) => row.id)).toEqual([
+      "controls",
+      "summary",
+      "detail",
+    ]);
+    const emittedById = new Map(
+      emitted.spec.components.map((component) => [component.id, component]),
+    );
+    for (const row of emitted.spec.layout.rows) {
+      for (const item of row.items) {
+        if (item.kind === "component") {
+          expect(emittedById.has(item.component)).toBe(true);
+        } else {
+          expect(
+            document.spec.parameters.some((parameter) =>
+              parameter.id === item.parameter
+            ),
+          ).toBe(true);
+        }
+      }
+    }
+    expect(
+      emitted.spec.layout.rows.flatMap((row) => row.items),
+    ).toEqual([
+      { kind: "parameter", parameter: "month_start" },
+      { kind: "parameter", parameter: "month_end" },
+      { kind: "component", component: "disp-1" },
+      { kind: "component", component: "disp-2" },
+      { kind: "component", component: "disp-3" },
+    ]);
+    expect(emitted.spec.components).toContainEqual({
+      kind: "text",
+      id: "disp-1",
+      text: "Monthly summary",
+      style: "heading",
+    });
+    expect(emitted.spec.components).toContainEqual({
+      kind: "metric",
+      id: "disp-2",
+      label: "Monthly total",
+      source: "src-2",
+      value_field: { kind: "sql_column", name: "total" },
+    });
+    expect(emitted.spec.components).toContainEqual({
+      kind: "table",
+      id: "disp-3",
+      label: "Expense transactions",
+      source: "src-1",
+    });
+  });
+
+  it("refuses unknown future component, layout, and value-field kinds instead of approximating", () => {
+    const base = (): CompositionStudioDocument => ({
+      format: "ugoite.composition",
+      format_version: 1,
+      kind: "dashboard",
+      name: "Monthly expenses",
+      tags: [],
+      spec: {
+        parameters: [{ id: "month", type: "date", required: false }],
+        sources: [
+          {
+            kind: "saved_sql",
+            id: "month_total",
+            entry_id: "sql-1",
+            revision_id: "sql-rev-1",
+            expected_result: [{ name: "total", type: "float" }],
+            variables: {},
+          },
+        ],
+        components: [
+          {
+            kind: "metric",
+            id: "total",
+            source: "month_total",
+            value_field: { kind: "sql_column", name: "total" },
+          },
+        ],
+        layout: {
+          kind: "flow",
+          rows: [{
+            id: "main",
+            items: [{ kind: "component", component: "total" }],
+          }],
+        },
+      },
+    });
+    const withComponents = (
+      components: unknown,
+      rows?: unknown,
+    ): CompositionStudioDocument => {
+      const document = base();
+      (document.spec as { components: unknown }).components = components;
+      if (rows !== undefined) {
+        (document.spec as { layout: { rows: unknown } }).layout = {
+          kind: "flow",
+          rows,
+        } as never;
+      }
+      return document;
+    };
+    const withRows = (rows: unknown): CompositionStudioDocument => {
+      const document = base();
+      (document.spec as { layout: { rows: unknown } }).layout = {
+        kind: "flow",
+        rows,
+      } as never;
+      return document;
+    };
+
+    // Unknown future component kinds fail closed even when the layout
+    // references them; text itself is a known kind and loads (covered by
+    // the multi-row round trip above).
+    expect(() =>
+      draftFromDocument(
+        withComponents(
+          [{ kind: "chart", id: "future", source: "month_total" }],
+          [{
+            id: "main",
+            items: [{ kind: "component", component: "future" }],
+          }],
+        ),
+        {},
+      )
+    ).toThrow();
+    // Unknown future layout item kinds fail closed.
+    expect(() =>
+      draftFromDocument(
+        withRows([{
+          id: "main",
+          items: [{ kind: "widget", widget: "future" }],
+        }]),
+        {},
+      )
+    ).toThrow();
+    // Unknown future metric value-field kinds fail closed.
+    expect(() =>
+      draftFromDocument(
+        withComponents([{
+          kind: "metric",
+          id: "total",
+          source: "month_total",
+          value_field: { kind: "future_field" },
+        }]),
+        {},
+      )
+    ).toThrow();
+    // Genuinely invalid text shapes fail closed: unknown styles and
+    // non-string content are never approximated.
+    const textRow = [{
+      id: "main",
+      items: [{ kind: "component", component: "summary_title" }],
+    }];
+    expect(() =>
+      draftFromDocument(
+        withComponents([{
+          kind: "text",
+          id: "summary_title",
+          text: "Monthly summary",
+          style: "banner",
+        }], textRow),
+        {},
+      )
+    ).toThrow();
+    expect(() =>
+      draftFromDocument(
+        withComponents([{
+          kind: "text",
+          id: "summary_title",
+          text: 42,
+          style: "heading",
+        }], textRow),
+        {},
+      )
+    ).toThrow();
+    // Dangling layout references fail closed on both sides.
+    expect(() =>
+      draftFromDocument(
+        withRows([{
+          id: "main",
+          items: [{ kind: "component", component: "missing" }],
+        }]),
+        {},
+      )
+    ).toThrow();
+    expect(() =>
+      draftFromDocument(
+        withRows([{
+          id: "main",
+          items: [{ kind: "parameter", parameter: "missing" }],
+        }]),
+        {},
+      )
+    ).toThrow();
+  });
+
   it("ignores malformed studio seeds instead of approximating", () => {
     expect(studioSeedState(undefined)).toBeUndefined();
     expect(studioSeedState(null)).toBeUndefined();
