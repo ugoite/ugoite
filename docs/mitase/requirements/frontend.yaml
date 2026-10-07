@@ -3358,3 +3358,60 @@ requirements:
                 criterion: REQ-FE-070#criterion.mobile-one-column
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio-mobile]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: keeps the mode switch single-row and the sheet within the viewport at 320px and 390px widths } }
+      - id: studio-mode-verification
+        role: verification
+        facet: verification
+        responsibility: Verify true mode separation (Design shows the finished shape only, Data shows the fetch definition only with Parameters disclosed once a source exists and Tags, Split pairs the canvas with the scoped data pane), the guided blank-canvas Add-data action through the single source picker, and the every-mode diagnostics strip through exact frontend unit tests.
+        targets:
+          - id: studio-true-modes-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: scopes Parameters Tags and the Data workspace to their owning modes only }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: scopes Parameters Tags and the Data workspace to their owning modes only } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: scopes Parameters Tags and the Data workspace to their owning modes only } }
+          - id: studio-blank-guided-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: guides a blank canvas with one Add-data action that opens the single picker }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: guides a blank canvas with one Add-data action that opens the single picker } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: guides a blank canvas with one Add-data action that opens the single picker } }
+          - id: studio-parameters-disclosure-case
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: discloses Parameters in Data mode only once a source exists }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: discloses Parameters in Data mode only once a source exists } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: discloses Parameters in Data mode only once a source exists } }
+          - id: studio-diagnostics-strip-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: renders resolve diagnostics in the strip in every mode without refetch }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: renders resolve diagnostics in the strip in every mode without refetch } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.side-effect-free-preview
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: renders resolve diagnostics in the strip in every mode without refetch } }

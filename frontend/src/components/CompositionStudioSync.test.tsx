@@ -30,6 +30,8 @@ const {
   canonicalizeMock,
   sqlGetMock,
   sqlQueryMock,
+  sqlListMock,
+  formListMock,
   navigateMock,
 } = vi.hoisted(() => ({
   previewMock: vi.fn(),
@@ -37,6 +39,8 @@ const {
   canonicalizeMock: vi.fn(),
   sqlGetMock: vi.fn(),
   sqlQueryMock: vi.fn(),
+  sqlListMock: vi.fn(),
+  formListMock: vi.fn(),
   navigateMock: vi.fn(),
 }));
 
@@ -64,7 +68,13 @@ vi.mock("~/lib/composition-api", () => ({
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
+  formApi: {
+    list: (...args: unknown[]) =>
+      (formListMock as (...call: unknown[]) => unknown)(...args),
+  },
   sqlApi: {
+    list: (...args: unknown[]) =>
+      (sqlListMock as (...call: unknown[]) => unknown)(...args),
     get: (...args: unknown[]) =>
       (sqlGetMock as (...call: unknown[]) => unknown)(...args),
     query: (...args: unknown[]) =>
@@ -191,6 +201,16 @@ describe("CompositionStudioSync", () => {
       has_more: false,
       result_schema: [{ name: "total", type: "float" }],
     });
+    formListMock.mockResolvedValue([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Expenses",
+        version: 1,
+        template: "task",
+        fields: {},
+      },
+    ]);
+    sqlListMock.mockResolvedValue([]);
   });
 
   afterEach(() => cleanup());
@@ -349,6 +369,133 @@ describe("CompositionStudioSync", () => {
     resolveFirst(okPreview("fp-old"));
     await sleep(200);
     expect(previewMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("scopes Parameters Tags and the Data workspace to their owning modes only", () => {
+    const { container } = renderStudio();
+    const modes = modeRadios();
+    // Top-level studio sections only: canvas block content carries its own
+    // headings, so section chrome is counted from the studio root.
+    const topSectionCount = () =>
+      Array.from(container.firstElementChild?.children ?? []).filter(
+        (element) => element.tagName === "SECTION",
+      ).length;
+
+    // Design renders the finished shape only: canvas plus inspector, no
+    // Data workspace, no Parameters, no Tags, no Preview section.
+    expect(screen.getByRole("heading", { name: "Design" })).toBeInTheDocument();
+    expect(topSectionCount()).toBe(1);
+    expect(
+      screen.getByRole("button", { name: "Select Total" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Monthly totals" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Parameters" }),
+    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
+
+    // Data renders the fetch definition only: workspace, Parameters, Tags.
+    // No canvas, no Preview section.
+    fireEvent.click(modes.data);
+    expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Parameters" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Tags" })).toBeInTheDocument();
+    expect(topSectionCount()).toBe(3);
+    expect(
+      screen.getByRole("button", { name: "Monthly totals" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Select Total" }),
+    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
+
+    // Split pairs the canvas with the Data pane and nothing else:
+    // parameters and tags edit in Data mode.
+    fireEvent.click(modes.split);
+    expect(screen.getByRole("heading", { name: "Design" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
+    expect(topSectionCount()).toBe(1);
+    expect(
+      screen.getByRole("button", { name: "Select Total" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Monthly totals" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Parameters" }),
+    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
+  });
+
+  it("guides a blank canvas with one Add-data action that opens the single picker", async () => {
+    const { container } = renderStudio(createEmptyDraft("Blank"));
+
+    // One structural action, no prose paragraphs, no canvas gaps.
+    expect(
+      screen.getAllByRole("heading", { level: 2 }).map((heading) =>
+        heading.textContent
+      ),
+    ).toEqual(["Design"]);
+    expect(container.querySelectorAll("p")).toHaveLength(0);
+    expect(
+      screen.getAllByRole("button", { name: "Add data" }),
+    ).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: "Add block" }),
+    ).toBeNull();
+
+    // The action reuses the existing Add-data label and lifts the single
+    // source picker dialog; picking a source returns the normal canvas.
+    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Add data" }),
+    ).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("button", { name: "Add data" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Add block" }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("renders resolve diagnostics in the strip in every mode without refetch", async () => {
+    previewMock.mockImplementation(async () => ({
+      ok: false,
+      draft_fingerprint: "fp-bad",
+      diagnostics: [{ code: "source_unavailable" }],
+    }));
+    renderStudio();
+    const modes = modeRadios();
+
+    const stripAlert = () => screen.getByRole("alert", { name: "Diagnostics" });
+    await waitFor(() => {
+      expect(stripAlert()).toHaveTextContent("A data source is unavailable.");
+    });
+    // The removed Preview section is gone; the strip retry stays.
+    expect(
+      screen.getByRole("button", { name: "Retry preview" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
+
+    // Mode switches keep the shared diagnostics with no preview round-trip.
+    fireEvent.click(modes.data);
+    expect(stripAlert()).toHaveTextContent("A data source is unavailable.");
+    fireEvent.click(modes.split);
+    expect(stripAlert()).toHaveTextContent("A data source is unavailable.");
+    fireEvent.click(modes.design);
+    expect(stripAlert()).toHaveTextContent("A data source is unavailable.");
+
+    await sleep(700);
+    expect(previewMock).toHaveBeenCalledTimes(1);
   });
 
   it("keeps Split desktop-only with stacked panes at narrow widths", () => {

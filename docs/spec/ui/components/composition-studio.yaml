@@ -76,23 +76,39 @@ components:
   - id: studio-parameters
     type: form
     title: Parameters
+    status: implemented
+    scope: data-mode-only
+    disclosure: renders-only-with-at-least-one-source
     label_kind: compact-section-label
     binding: existing-composition-parameter-grammar-by-reference
     type_compatibility: rust-owned-diagnostics
   - id: studio-tags
     type: form
     title: Tags
+    status: implemented
+    scope: data-mode-only
     label_kind: compact-section-label
     semantics: entry-metadata-tags
   - id: studio-preview
     type: query-results
     title: Preview
-    label_kind: compact-section-label
-    semantics: side-effect-free-draft-resolution
+    status: removed
+    ownership: design-canvas-plus-data-workspace
+    removal: legacy-preview-section-removed-in-UXB-canvas-previews-blocks-inline-per-source-results-page-in-workspace-resolve-diagnostics-in-strip
     execution: existing-entry-query-and-sql-query-operations-only
     rendering:
       mode: shared-composition-renderer
       stale_responses: generation-guarded
+    async_state: explicit-loading-empty-error
+  - id: studio-diagnostics
+    type: query-results
+    title: Diagnostics
+    status: implemented
+    ownership: shared-resolve-and-preview-diagnostics-in-every-mode
+    source: debounced-shared-preview-handle-only-no-second-path
+    rendering:
+      mode: shared-composition-diagnostics-with-structural-alert-roles
+      placement: above-mode-content-in-design-data-and-split
     async_state: explicit-loading-empty-error
   - id: studio-layout
     type: two-column-workspace
@@ -133,6 +149,8 @@ components:
     status: implemented
     ownership: shared-flow-item-presenter-with-edit-only-affordances
     source: draft-components-and-layout-rows-with-debounced-shared-preview
+    blank_state: single-add-data-action-opens-source-picker-no-prose
+    blank_scope: zero-sources-and-zero-blocks-normal-canvas-after-first-source
     rows:
       order: layout-row-array-then-item-order
       reorder: keyboard-operable-move-up-down-buttons
@@ -203,6 +221,11 @@ components:
     labels: icon-with-short-label
     accessible_names: radiogroup-with-checked-option-and-native-focus
     arrangement_only: draft-preview-selection-shared-continuous-no-refetch
+    true_modes:
+      design: finished-shape-only-canvas-plus-inspector-no-data-no-parameters-no-tags-no-preview-section
+      data: fetch-definition-only-workspace-plus-parameters-plus-tags-no-canvas-no-preview-section
+      split: design-canvas-plus-scoped-data-pane-no-parameters-no-tags-no-preview-section
+    blank_design: single-add-data-action-opens-source-picker-no-prose
     split_availability: desktop-only-below-760px-design-data-only
     narrow_resize: crossing-below-760px-gate-returns-to-design-no-stuck-split
     persistence: transient-work-never-stored

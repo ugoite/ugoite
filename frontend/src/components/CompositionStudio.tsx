@@ -8,10 +8,7 @@ import {
   Show,
 } from "solid-js";
 import { BackLink } from "~/components/BackLink";
-import {
-  CompositionDiagnostics,
-  CompositionRenderer,
-} from "~/components/CompositionRenderer";
+import { CompositionDiagnostics } from "~/components/CompositionRenderer";
 import {
   CompositionDesignCanvas,
   designBlockIdForComponent,
@@ -654,6 +651,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // Preview selectors stay empty while the draft has no sources, so a
   // removed last source never leaves a stale preview on screen.
   const hasSources = () => draft().sources.length > 0;
+  // A blank draft carries no sources and no blocks: the canvas area offers
+  // the single Add-data action instead of the normal canvas, so beginners
+  // get one path forward with no prose. The first source returns the normal
+  // canvas. The picker stays the single dialog component.
+  const isBlankDraft = () =>
+    draft().sources.length === 0 && draft().displays.length === 0;
   const readySources = (): Record<string, CompositionSourcePageState> => {
     const current = previewState();
     return current.preview?.ok && hasSources() ? current.sources : {};
@@ -704,7 +707,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const designHeadingId = "studio-design-heading";
   const parametersHeadingId = "studio-parameters-heading";
   const tagsHeadingId = "studio-tags-heading";
-  const previewHeadingId = "studio-preview-heading";
   const nameInputId = "studio-name";
 
   const modeIcon = (entry: StudioMode): "canvas-table" | "sql" | "columns" =>
@@ -746,8 +748,60 @@ export function CompositionStudio(props: CompositionStudioProps) {
       registerSourceRow={registerSourceRow}
     />
   );
-  const renderDesignWorkspace = () => (
+  // The diagnostics strip replaces the removed Preview section: resolve
+  // and preview diagnostics render through the shared CompositionDiagnostics
+  // (structural alert roles, existing copy only) above the mode content in
+  // every mode. The Design canvas already previews blocks inline through the
+  // shared debounced handle, so no second preview path remains.
+  const renderDiagnosticsStrip = () => (
     <>
+      <Show when={isPreviewing()}>
+        <LocalBusyIndicator label={t("composition.queryLoading")} />
+      </Show>
+      <Show when={previewFailed()}>
+        <p class="ui-text-danger" role="alert">
+          {t("composition.queryFailed")}
+        </p>
+        <button
+          class="ui-button ui-button-secondary"
+          type="button"
+          aria-label={t("composition.studioRetryPreview")}
+          onClick={retryPreview}
+        >
+          {t("composition.retry")}
+        </button>
+      </Show>
+      <Show when={previewDiagnostics()}>
+        {(diagnostics) => (
+          <>
+            <CompositionDiagnostics diagnostics={diagnostics()} />
+            <button
+              class="ui-button ui-button-secondary"
+              type="button"
+              aria-label={t("composition.studioRetryPreview")}
+              onClick={retryPreview}
+            >
+              {t("composition.retry")}
+            </button>
+          </>
+        )}
+      </Show>
+    </>
+  );
+  const renderDesignWorkspace = () => (
+    <Show
+      when={!isBlankDraft()}
+      fallback={
+        <button
+          class="ui-button"
+          type="button"
+          onClick={() => setPickerOpen(true)}
+        >
+          <UiIcon name="plus" />
+          <span>{t("composition.studioAddData")}</span>
+        </button>
+      }
+    >
       <div class="studioDesign">
         <CompositionDesignCanvas
           draft={draft()}
@@ -797,7 +851,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           />
         )}
       </Show>
-    </>
+    </Show>
   );
 
   return (
@@ -863,6 +917,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
         </button>
       </Show>
 
+      {renderDiagnosticsStrip()}
+
       <Show when={mode() === "data"}>
         <section class="section" aria-labelledby={dataHeadingId}>
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -876,6 +932,37 @@ export function CompositionStudio(props: CompositionStudioProps) {
             </button>
           </div>
           {renderDataWorkspace()}
+        </section>
+        {
+          /* Parameters disclose progressively: the section renders only once
+          a source exists, and only in Data mode, so an empty draft opens
+          with one path forward instead of every section at once. */
+        }
+        <Show when={hasSources()}>
+          <section class="section" aria-labelledby={parametersHeadingId}>
+            <h2 id={parametersHeadingId}>
+              {t("composition.studioParameters")}
+            </h2>
+            <CompositionParameterList
+              parameters={draft().parameters}
+              headingId={parametersHeadingId}
+              onAdd={addDraftParameter}
+              onUpdate={updateDraftParameter}
+              onRemove={removeDraftParameter}
+            />
+          </section>
+        </Show>
+        <section class="section" aria-labelledby={tagsHeadingId}>
+          <h2 id={tagsHeadingId}>{t("composition.studioTags")}</h2>
+          <input
+            class="ui-input"
+            aria-label={t("composition.studioTags")}
+            value={draft().tags.join(", ")}
+            onInput={(event) =>
+              setDraft(
+                setDraftTags(draft(), parseTags(event.currentTarget.value)),
+              )}
+          />
         </section>
       </Show>
 
@@ -913,83 +1000,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
       {
         /* The legacy Display list lived here through RA7; the Design canvas
           plus inspector own display add/remove/reorder/label now, and the
-          display picker survives only as the canvas insertion delegate. */
+          display picker survives only as the canvas insertion delegate. The
+          legacy Preview section is gone too: the canvas previews blocks
+          inline through the shared debounced handle, per-source results page
+          inside the Data workspace, and resolve diagnostics render in the
+          strip above. Parameters and Tags edit in Data mode only. */
       }
-
-      <section class="section" aria-labelledby={parametersHeadingId}>
-        <h2 id={parametersHeadingId}>{t("composition.studioParameters")}</h2>
-        <CompositionParameterList
-          parameters={draft().parameters}
-          headingId={parametersHeadingId}
-          onAdd={addDraftParameter}
-          onUpdate={updateDraftParameter}
-          onRemove={removeDraftParameter}
-        />
-      </section>
-
-      <section class="section" aria-labelledby={tagsHeadingId}>
-        <h2 id={tagsHeadingId}>{t("composition.studioTags")}</h2>
-        <input
-          class="ui-input"
-          aria-label={t("composition.studioTags")}
-          value={draft().tags.join(", ")}
-          onInput={(event) =>
-            setDraft(
-              setDraftTags(draft(), parseTags(event.currentTarget.value)),
-            )}
-        />
-      </section>
-
-      <section class="section" aria-labelledby={previewHeadingId}>
-        <h2 id={previewHeadingId}>{t("composition.studioPreview")}</h2>
-        <Show when={isPreviewing()}>
-          <LocalBusyIndicator label={t("composition.queryLoading")} />
-        </Show>
-        <Show when={previewFailed()}>
-          <p class="ui-text-danger" role="alert">
-            {t("composition.queryFailed")}
-          </p>
-          <button
-            class="ui-button ui-button-secondary"
-            type="button"
-            aria-label={t("composition.studioRetryPreview")}
-            onClick={retryPreview}
-          >
-            {t("composition.retry")}
-          </button>
-        </Show>
-        <Show when={previewDiagnostics()}>
-          {(diagnostics) => (
-            <>
-              <CompositionDiagnostics diagnostics={diagnostics()} />
-              <button
-                class="ui-button ui-button-secondary"
-                type="button"
-                aria-label={t("composition.studioRetryPreview")}
-                onClick={retryPreview}
-              >
-                {t("composition.retry")}
-              </button>
-            </>
-          )}
-        </Show>
-        <Show when={readyPlan()}>
-          {(plan) => (
-            <Show
-              when={plan().component_bindings.length > 0}
-              fallback={<p class="ui-muted">{t("composition.queryEmpty")}</p>}
-            >
-              <CompositionRenderer
-                plan={plan()}
-                sources={readySources()}
-                onNext={(sourceId) => previewHandle.next(sourceId)}
-                onPrevious={(sourceId) => previewHandle.previous(sourceId)}
-                onRetry={(sourceId) => previewHandle.retry(sourceId)}
-              />
-            </Show>
-          )}
-        </Show>
-      </section>
 
       <Show when={pickerOpen()}>
         <CompositionSourcePicker

@@ -242,21 +242,25 @@ describe("Composition studio shell", () => {
       "Save, Enter a name to save.",
     );
 
-    // One segmented mode control: Design first, Data on demand. The legacy
-    // Display section is gone; the canvas owns display editing.
+    // True modes: a blank Design shows the finished shape only — header,
+    // mode switch, Design canvas area, inspector slot. Parameters, Tags,
+    // the Data workspace, and the Preview section never render here. The
+    // legacy Display section is gone; the canvas owns display editing.
     const modes = screen.getByRole("radiogroup", { name: "Studio mode" });
     const headings = screen.getAllByRole("heading", { level: 2 }).map(
       (heading) => heading.textContent,
     );
-    expect(headings).toEqual([
-      "Design",
-      "Parameters",
-      "Tags",
-      "Preview",
-    ]);
+    expect(headings).toEqual(["Design"]);
     expect(
       screen.queryByRole("heading", { name: "Display" }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Parameters" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Tags" })).not
+      .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Preview" })).not
+      .toBeInTheDocument();
 
     // The tool-name input owns the name: typing updates the heading owner.
     const nameInput = screen.getByLabelText("Name");
@@ -272,20 +276,57 @@ describe("Composition studio shell", () => {
       screen.getByRole("button", { name: "Save, Add data to save." }),
     ).toBeDisabled();
 
-    // Design-mode empty states carry one next-action line, nothing else.
-    expect(container.querySelectorAll("p")).toHaveLength(1);
+    // The blank canvas guides with one structural Add-data action and no
+    // prose paragraphs; it opens the single source picker dialog.
+    expect(container.querySelectorAll("p")).toHaveLength(0);
+    expect(
+      screen.getAllByRole("button", { name: "Add data" }),
+    ).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
 
-    // Data mode brings the Data section first with its own empty state.
+    // Data mode brings the fetch definition only: Data workspace, then
+    // Tags. Parameters disclose progressively only once a source exists,
+    // and the canvas and Preview section never render here.
     fireEvent.click(within(modes).getByRole("radio", { name: "Data" }));
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
         heading.textContent
       ),
-    ).toEqual(["Data", "Parameters", "Tags", "Preview"]);
+    ).toEqual(["Data", "Tags"]);
+    expect(
+      screen.queryByRole("heading", { name: "Parameters" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Select Tasks" }),
+    ).not.toBeInTheDocument();
     const paragraphs = container.querySelectorAll("p");
-    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs).toHaveLength(1);
     expect(paragraphs[0]).toHaveTextContent("Add data to begin.");
-    expect(paragraphs[1]).toHaveTextContent("Add a parameter to begin.");
+  });
+
+  it("discloses Parameters in Data mode only once a source exists", async () => {
+    render(() => <CompositionNewRoute />);
+    showDataMode();
+
+    expect(
+      screen.queryByRole("heading", { name: "Parameters" }),
+    ).not.toBeInTheDocument();
+    await addSourceViaPicker("Tasks");
+
+    expect(screen.getByRole("heading", { name: "Parameters" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Tags" })).toBeInTheDocument();
+    // Data mode never renders the canvas or the removed Preview section.
+    expect(screen.queryByRole("heading", { name: "Preview" })).not
+      .toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Select Tasks" }),
+    ).not.toBeInTheDocument();
   });
 
   it("adds data sources with full-row selection and keyboard-operable reorder", async () => {

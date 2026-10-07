@@ -326,8 +326,10 @@ test.describe("Composition Studio Journey", () => {
           exact: true,
         }),
       ).toBeVisible();
-      // Studio modes: the seeded source renders in the Data workspace.
-      await page.getByRole("radio", { name: "Data", exact: true }).click();
+      // Studio modes: Split pairs the Design canvas with the Data pane for
+      // the seeded source, so the build below covers add, label, params,
+      // and preview without leaving the mode.
+      await page.getByRole("radio", { name: "Split", exact: true }).click();
       await expect(
         page.getByRole("button", { name: seed.savedSqlName, exact: true }),
       ).toBeVisible();
@@ -368,12 +370,12 @@ test.describe("Composition Studio Journey", () => {
         }),
       ).toBeVisible();
 
-      // Back to the Design canvas for the display assertions.
-      await page.getByRole("radio", { name: "Design", exact: true }).click();
-
-      // Parameter defaults flow into the side-effect-free preview.
+      // Parameter defaults edit in Data mode, where Parameters live, then
+      // the Design canvas carries the display assertions.
+      await page.getByRole("radio", { name: "Data", exact: true }).click();
       await page.getByLabel("Default for month_start").fill(seed.monthStart);
       await page.getByLabel("Default for month_end").fill(seed.monthEnd);
+      await page.getByRole("radio", { name: "Design", exact: true }).click();
       await expect(
         page.getByRole("heading", { name: "Total", exact: true }),
       ).toBeVisible();

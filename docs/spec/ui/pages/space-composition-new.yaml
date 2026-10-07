@@ -53,9 +53,22 @@ components:
         diagnostic is absent or unknown. Clear the uncertain attempt on
         rejection and keep retry on the same route with the identical
         payload and key.
+    - id: studio-mode
+      type: segmented-control
+      title: Studio mode
+      ownership: single-operative-control-for-workspace-arrangement-only
+      description: True modes switch the arrangement only with shared draft, preview, and selection state. Design shows the finished shape only (canvas plus inspector, diagnostics strip); Data shows the fetch definition only (workspace, Parameters once a source exists, Tags); Split pairs the canvas with the scoped data pane. A blank draft guides with one Add-data action and no prose.
+    - id: studio-diagnostics
+      type: query-results
+      title: Diagnostics
+      source: shared CompositionDiagnostics over the debounced preview with structural alert roles, above the mode content in every mode
+      rendering:
+        mode: shared-composition-diagnostics
+      description: Replaces the removed Preview section for resolve and preview diagnostics; blocks preview inline on the canvas.
     - id: studio-data
       type: list
       title: Data
+      scope: data-mode-and-split-pane-only
       source: draft sources with human names only
       selection: full-row-activate
       reorder: keyboard-operable-move-up-down
@@ -80,6 +93,7 @@ components:
     - id: studio-parameters
       type: list
       title: Parameters
+      scope: data-mode-only-renders-only-with-at-least-one-source
       source: draft parameters provisioned from Saved SQL variable types
       selection: identity-rows-with-inline-editors
       remove: guarded remove with a short referenced reason
@@ -93,15 +107,17 @@ components:
     - id: studio-tags
       type: form
       title: Tags
+      scope: data-mode-only
       semantics: entry-metadata-tags
       source: comma-or-space-separated text parsed into draft tags
     - id: studio-preview
       type: query-results
       title: Preview
-      source: canonical draft YAML through composition.preview with debounced side-effect-free resolution
+      status: removed
+      source: blocks preview inline on the Design canvas through the shared debounced handle, per-source results page inside the Data workspace, and resolve diagnostics render in the every-mode strip
       result_presentation: CompositionRenderer
       rendering:
         mode: shared-composition-renderer
         rows: first-page-per-source
       pagination_owner: studio-new route
-      description: Renders the preview plan through the shared renderer without creating persistent execution state.
+      description: The standalone Preview section is removed; preview state lives in the canvas, the workspace, and the diagnostics strip without a second preview path.
