@@ -41,5 +41,7 @@ components:
       target_page: space-sql
     - id: saved-sql-parent-action
       type: link
-      label: Back to Saved SQL
+      presentation: icon-only
+      accessible_name: Back to Saved SQL
+      visible_content: chevron-left
       target_page: space-sql

@@ -557,17 +557,14 @@ describe("CompositionStudioSync", () => {
     expect(save).toBeEnabled();
   });
 
-  it("fits Back, name, and Save in one header row at 390px widths", () => {
+  it("fits the destination-named back link, name, and Save in one 390px header row", () => {
     const { container } = renderStudio();
     const header = container.querySelector("header");
     expect(header).not.toBeNull();
     const scope = within(header as HTMLElement);
-    // One Back control, one name input, one Save text button. The mocked
-    // router link drops the destination sentence, so the name is the
-    // visible positional short form here.
-    expect(
-      scope.getByRole("link", { name: "Back" }),
-    ).toBeInTheDocument();
+    // One icon-only parent link, one name input, one Save text button.
+    expect(scope.getByRole("link", { name: "Back to compositions" }))
+      .toHaveClass("pill", "iconpill", "icononly", "back-link");
     const name = scope.getByLabelText("Name");
     expect(name).toHaveClass("ui-input");
     expect(scope.getByRole("button", { name: "Save" })).toHaveTextContent(

@@ -239,7 +239,7 @@ features:
                 criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
   - id: FEAT-UX-007
     title: Shared positional back control
-    summary: Provide the shared BackLink rendered by nested Entry and SQL surfaces so each surface exposes exactly one positional back control to its hierarchical parent without destination prose or shell-duplicating shortcuts.
+    summary: Provide the shared BackLink as a 44px circular chevron-left link to the hierarchical parent, with no repeated visible Back copy and a localized destination name for assistive technology and hover discovery.
     status: planned
     bindings:
       - id: back-control-implementation
@@ -254,6 +254,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.back-control-presentation
           - id: entry-history-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx"
@@ -275,6 +277,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: entry-detail-pane
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
           - id: sql-detail-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/index.tsx"
@@ -282,9 +291,51 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
-          - id: form-types-route
+          - id: sql-new-route
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/forms/types.tsx"
+            path: "frontend/src/routes/spaces/[space_id]/sql/new.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: sql-variables-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/variables.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: sql-run-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: composition-studio
+            adapter: typescript
+            path: frontend/src/components/CompositionStudio.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: composition-history-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: composition-edit-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.single-back-control
+          - id: storage-test-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/test-connection.tsx"
             selector: { kind: file }
             claims:
               - kind: satisfies

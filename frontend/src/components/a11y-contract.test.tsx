@@ -90,7 +90,7 @@ describe("#2842 automated accessibility contract", () => {
     expect(screen.getByText("Konase")).toBeInTheDocument();
   });
 
-  it("declares 44px minimum targets for every action-bar and icon-only rule", () => {
+  it("REQ-UX-NAV-001: declares 44px targets and a visible focus ring for icon-only links", () => {
     const css = stylesheet();
     const block = (selector: string): string => {
       const start = css.indexOf(selector);
@@ -115,6 +115,9 @@ describe("#2842 automated accessibility contract", () => {
         /min-height:\s*44px/,
       );
     }
+    expect(css).toMatch(
+      /\.pill\.iconpill:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--focus,\s*var\(--brand\)\);[^}]*outline-offset:\s*2px;/,
+    );
   });
 
   it("keeps the one-row action bar at 390px widths", () => {

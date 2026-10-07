@@ -15,4 +15,8 @@ components:
       type: list
       title: Entry history
       accessible_name_source: entry-history-title
-      navigation: Back to Entry
+      navigation:
+        type: link
+        presentation: icon-only
+        accessible_name: Back to Entry
+        visible_content: chevron-left
