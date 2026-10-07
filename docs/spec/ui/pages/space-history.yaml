@@ -17,3 +17,10 @@ components:
     - id: change-detail
       type: dialog
       description: The selected Change detail uses a localized icon-only close button, retains Escape and backdrop dismissal, traps focus, and returns focus to the opener.
+    - id: change-detail-pagination
+      type: query-pagination
+      component: ResultPagination
+      reference: ../components/result-pagination.yaml
+      owner: Space History detail cursor handlers
+      scopes: [affected entries, related changes]
+      loading: separate status indicator

@@ -1,7 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@solidjs/testing-library";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { setLocale, t } from "~/lib/i18n";
 import { ResultPagination } from "./ResultPagination";
+
+afterEach(() => setLocale("en"));
 
 const renderPagination = (overrides?: {
   canPrevious?: boolean;
@@ -64,5 +67,34 @@ describe("ResultPagination", () => {
     });
     expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+  });
+
+  it("REQ-UX-PAGINATION-001: uses localized names and titles for chevron controls", () => {
+    setLocale("ja");
+    render(() => (
+      <ResultPagination
+        canPrevious
+        canNext
+        busy={false}
+        previousLabel={t("common.previous")}
+        nextLabel={t("common.next")}
+        ariaLabel={t("composition.resultPages")}
+        onPrevious={() => {}}
+        onNext={() => {}}
+      />
+    ));
+
+    const previous = screen.getByRole("button", { name: "前へ" });
+    const next = screen.getByRole("button", { name: "次へ" });
+    expect(previous).toHaveAttribute("title", "前へ");
+    expect(next).toHaveAttribute("title", "次へ");
+    expect(previous.querySelector("svg")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(next.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("navigation", { name: "結果ページ" }))
+      .toBeInTheDocument();
+    setLocale("en");
   });
 });

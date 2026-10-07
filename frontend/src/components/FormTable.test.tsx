@@ -201,7 +201,7 @@ describe("FormTable", () => {
     spy.mockRestore();
   });
 
-  it("uses a form-scoped keyset page chain", async () => {
+  it("REQ-UX-PAGINATION-001: preserves the FormTable controller page chain", async () => {
     const entryForm = {
       name: "Test",
       fields: { status: { type: "string" } },
@@ -247,6 +247,13 @@ describe("FormTable", () => {
       expect(desktopTable().getByText("entry-1"))
         .toBeInTheDocument()
     );
+    const pagination = screen.getByRole("navigation", {
+      name: "Form record pages",
+    });
+    expect(within(pagination).getByRole("button", { name: "Previous" }))
+      .toBeDisabled();
+    expect(within(pagination).getByRole("button", { name: "Next" }))
+      .toHaveAttribute("title", "Next");
     expect(query.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
       query: expect.objectContaining({
         scope: { kind: "form", form_id: "form-Test" },
@@ -267,6 +274,8 @@ describe("FormTable", () => {
         .toBeInTheDocument()
     );
     expect(query.mock.calls.at(-1)?.[1].after).toBe("cursor-1");
+    expect(within(pagination).getByRole("button", { name: "Next" }))
+      .toBeDisabled();
 
     fireEvent.click(getByRole("button", { name: "Previous" }));
     await waitFor(() =>

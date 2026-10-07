@@ -912,3 +912,80 @@ requirements:
                 criterion: REQ-UX-DISMISS-001#criterion.inline-error-dismissal
                 covers: [FEAT-UX-010#binding.frontend/target.form-table-error]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-UX-DISMISS-001: dismisses Form errors" } }
+  - id: REQ-UX-PAGINATION-001
+    title: Compact Result Pagination
+    description: Paged-result navigation uses compact localized directional controls while page ownership remains with the calling controller or route.
+    priority: medium
+    status: planned
+    criteria:
+      - id: directional-control-presentation
+        kind: behavior
+        statement: Previous and Next navigation presents a 44px icon-only chevron-left or chevron-right with a localized accessible name and matching title.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
+      - id: paging-state
+        kind: behavior
+        statement: An unavailable direction is disabled, busy results disable both directions, and a single-page result exposes no pagination navigation.
+        governed_by: [POL-UI-007#rule.governance]
+      - id: surface-owner-behavior
+        kind: behavior
+        statement: FormTable and Space History detail delegate page availability and changes to their existing controller or cursor operations; history loading is announced in a separate status.
+        governed_by: [POL-UI-007#rule.governance]
+    bindings:
+      - id: pagination-verification
+        role: verification
+        facet: verification
+        responsibility: Verify localized icon controls, target size, busy and single-page states, and unchanged FormTable and Space History paging ownership through exact frontend cases.
+        targets:
+          - id: localized-chevron-controls
+            adapter: typescript
+            path: frontend/src/components/ResultPagination.test.tsx
+            selector: { kind: test, name: "REQ-UX-PAGINATION-001: uses localized names and titles for chevron controls" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation
+                covers: [FEAT-UX-011#binding.frontend/target.shared-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ResultPagination.test.tsx, test: "REQ-UX-PAGINATION-001: uses localized names and titles for chevron controls" } }
+          - id: chevron-target-size
+            adapter: typescript
+            path: frontend/src/components/a11y-contract.test.tsx
+            selector: { kind: test, name: "REQ-UX-PAGINATION-001: keeps page chevrons at 44px with a visible focus ring" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation
+                covers: [FEAT-UX-011#binding.frontend/target.shared-pagination, FEAT-UX-011#binding.frontend/target.pagination-layout]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/a11y-contract.test.tsx, test: "REQ-UX-PAGINATION-001: keeps page chevrons at 44px with a visible focus ring" } }
+          - id: form-table-paging
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: "REQ-UX-PAGINATION-001: preserves the FormTable controller page chain" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-PAGINATION-001#criterion.paging-state
+                covers: [FEAT-UX-011#binding.frontend/target.form-table-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-UX-PAGINATION-001: preserves the FormTable controller page chain" } }
+              - kind: verifies
+                criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior
+                covers: [FEAT-UX-011#binding.frontend/target.form-table-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-UX-PAGINATION-001: preserves the FormTable controller page chain" } }
+          - id: history-affected-entry-paging
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "REQ-UX-PAGINATION-001: uses the shared pager for affected detail pages" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-PAGINATION-001#criterion.paging-state
+                covers: [FEAT-UX-011#binding.frontend/target.history-detail-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-PAGINATION-001: uses the shared pager for affected detail pages" } }
+              - kind: verifies
+                criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior
+                covers: [FEAT-UX-011#binding.frontend/target.history-detail-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-PAGINATION-001: uses the shared pager for affected detail pages" } }
+          - id: history-related-change-paging
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "REQ-UX-PAGINATION-001: uses the shared pager for related history pages" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior
+                covers: [FEAT-UX-011#binding.frontend/target.history-detail-pagination]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-PAGINATION-001: uses the shared pager for related history pages" } }

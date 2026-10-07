@@ -3699,6 +3699,18 @@ a.tool {
   min-height: 44px;
 }
 
+.result-pagination.history-detail-pagination {
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.result-pagination.form-table-pagination {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+
 /* Dashboard flow layout (REQ-COMP-002 ordered-component-layout, REQ-FE-068
  * local-horizontal-overflow). Rows render top to bottom; items within a row
  * sit inline on desktop and wrap on narrow viewports. No pixel coordinates

@@ -1,0 +1,23 @@
+version: "0.1"
+updated: "2026-10-08"
+component_group:
+  id: result-pagination
+  title: Shared Result Pagination
+components:
+  - id: result-pagination
+    type: query-pagination
+    implementation: frontend/src/components/ResultPagination.tsx
+    controls:
+      previous:
+        visible_content: chevron-left
+        accessible_name: localized-previous-label
+        title: localized-previous-label
+      next:
+        visible_content: chevron-right
+        accessible_name: localized-next-label
+        title: localized-next-label
+    target_size: 44px
+    unavailable_direction: disabled
+    busy: both-controls-disabled
+    single_page: navigation-hidden
+    paging_owner: calling-controller-or-route

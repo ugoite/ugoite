@@ -338,11 +338,13 @@ describe("space history list", () => {
     expect(setSearchParams).toHaveBeenCalledWith({ change: undefined });
   });
 
-  it("replaces affected Entry rows when moving between bounded detail pages", async () => {
+  it("REQ-UX-PAGINATION-001: uses the shared pager for affected detail pages", async () => {
+    type Inspection = Awaited<ReturnType<typeof changeApi.inspect>>;
+    let resolveSecondPage: ((value: Inspection) => void) | undefined;
     vi.mocked(changeApi.inspect).mockImplementation(async (_spaceId, changeId, options = {}) => {
       const source = row(changeId, 2);
       const secondPage = options.cursor === "entry-page-2";
-      return {
+      const page: Inspection = {
         change_id: changeId,
         change: source.change,
         target_visibility: "complete",
@@ -350,18 +352,75 @@ describe("space history list", () => {
         targets: [{ form_id: "form-1", entry_id: secondPage ? "entry-2" : "entry-1", before_revision_id: null, after_revision_id: secondPage ? "revision-2" : "revision-1", operation: "create", fields: [] }],
         next_cursor: secondPage ? null : "entry-page-2",
       };
+      if (secondPage) {
+        return await new Promise<Inspection>((resolve) => {
+          resolveSecondPage = resolve;
+        });
+      }
+      return page;
     });
     render(() => <SpaceHistoryRoute />);
     fireEvent.click((await screen.findAllByRole("button", { name: "Open change" }))[0]);
     await screen.findByRole("dialog", { name: "Expenses · 100 entries" });
     expect(await screen.findByText(/Entry 1/)).toBeInTheDocument();
     const pagination = document.querySelector(".history-affected-layout .history-detail-pagination")!;
-    fireEvent.click(within(pagination).getByRole("button", { name: "Next" }));
+    expect(pagination).toHaveAttribute("aria-label", "Affected entries");
+    const next = within(pagination).getByRole("button", { name: "Next" });
+    fireEvent.click(next);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Loading space history...",
+    );
+    expect(next).toBeDisabled();
+    const source = row("change-1", 2);
+    resolveSecondPage?.({
+      change_id: "change-1",
+      change: source.change,
+      target_visibility: "complete",
+      summary: source.summary,
+      targets: [{ form_id: "form-1", entry_id: "entry-2", before_revision_id: null, after_revision_id: "revision-2", operation: "create", fields: [] }],
+      next_cursor: null,
+    });
     await waitFor(() => expect(changeApi.affectedEntry).toHaveBeenCalledWith("default", "change-1", "entry-2"));
     expect(document.querySelectorAll(".history-affected-list li")).toHaveLength(1);
-    fireEvent.click(within(pagination).getByRole("button", { name: "Previous" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     await waitFor(() => expect(changeApi.inspect).toHaveBeenLastCalledWith("default", "change-1", { limit: 10, cursor: undefined }));
     expect(document.querySelectorAll(".history-affected-list li")).toHaveLength(1);
+  });
+
+  it("REQ-UX-PAGINATION-001: uses the shared pager for related history pages", async () => {
+    vi.mocked(changeApi.query).mockImplementation(async (_spaceId, request) => {
+      if (!request.run_id) {
+        return { changes: [row("change-1", 100, "run-1")], next_cursor: null };
+      }
+      const secondPage = request.cursor === "related-page-2";
+      return {
+        changes: [row(secondPage ? "change-3" : "change-2", 30, "run-1")],
+        next_cursor: secondPage ? null : "related-page-2",
+      };
+    });
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open change" }))[0]);
+    await screen.findByRole("dialog", { name: "Expenses · 100 entries" });
+
+    const pagination = await screen.findByRole("navigation", {
+      name: "Related changes in this Run",
+    });
+    const next = within(pagination).getByRole("button", { name: "Next" });
+    expect(next).toHaveAttribute("title", "Next");
+    fireEvent.click(next);
+    await waitFor(() => expect(changeApi.query).toHaveBeenLastCalledWith(
+      "default",
+      { limit: 10, run_id: "run-1", cursor: "related-page-2" },
+    ));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled());
+    const currentPagination = screen.getByRole("navigation", {
+      name: "Related changes in this Run",
+    });
+    expect(within(currentPagination).getByRole("button", { name: "Previous" }))
+      .toBeInTheDocument();
+    expect(within(currentPagination).getByRole("button", { name: "Next" }))
+      .toBeDisabled();
   });
 
   it("applies supported text, actor, date, sort, and column controls server-side", async () => {

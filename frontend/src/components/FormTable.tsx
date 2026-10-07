@@ -29,6 +29,7 @@ import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { IconButton } from "~/components/IconButton";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { ResultPagination } from "~/components/ResultPagination";
 import { formatDateLabel } from "~/lib/date-format";
 import {
   formatValueForDisplay,
@@ -1396,28 +1397,17 @@ export function FormTable(props: FormTableProps) {
             )}
           </For>
         </div>
-        <Show
-          when={controller.canGoPrevious() || controller.hasMore()}
-        >
-          <div class="mt-6 flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              class="ui-button ui-button-secondary text-sm"
-              disabled={!controller.canGoPrevious() || controller.loading()}
-              onClick={() => void controller.previous()}
-            >
-              {t("common.previous")}
-            </button>
-            <button
-              type="button"
-              class="ui-button ui-button-secondary text-sm"
-              disabled={!controller.hasMore() || controller.loading()}
-              onClick={() => void controller.next()}
-            >
-              {t("common.next")}
-            </button>
-          </div>
-        </Show>
+        <ResultPagination
+          class="form-table-pagination"
+          canPrevious={controller.canGoPrevious()}
+          canNext={controller.hasMore()}
+          busy={controller.loading()}
+          previousLabel={t("common.previous")}
+          nextLabel={t("common.next")}
+          ariaLabel={t("formTable.pagination")}
+          onPrevious={() => void controller.previous()}
+          onNext={() => void controller.next()}
+        />
       </div>
     </div>
   );
