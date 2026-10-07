@@ -49,11 +49,12 @@ components:
           presentation: icon-label
           danger: true
           confirmation: required
-    - id: entry-save-status
-      type: status
-      location: after-action-bar
-      values: [saving, transient-success]
-      persistent-saved-indicator: false
+      save_status:
+        id: entry-save-status
+        role: status
+        location: after-action-bar
+        values: [saving, transient-success]
+        persistent-saved-indicator: false
     - id: entry-fields-editor
       type: form
       visibility: form-defined-entry
