@@ -38,6 +38,8 @@ components:
     - id: sql-results-pagination
       type: button
       title: Previous and Next
+      component: ResultPagination
+      reference: ../components/result-pagination.yaml
       source: client-held continuation
     - id: sql-results-count
       type: button

@@ -12,6 +12,7 @@ import { ActionIconBar } from "./ActionIconBar";
 import { GlobalShell } from "./GlobalShell";
 import { IconButton } from "./IconButton";
 import { IconLink } from "./IconLink";
+import { ResultPagination } from "./ResultPagination";
 
 vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; children: unknown }) => (
@@ -118,6 +119,12 @@ describe("#2842 automated accessibility contract", () => {
     expect(css).toMatch(
       /\.pill\.iconpill:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--focus,\s*var\(--brand\)\);[^}]*outline-offset:\s*2px;/,
     );
+    expect(css).toMatch(
+      /\.result-pagination\.history-detail-pagination\s*\{[^}]*justify-content:\s*flex-start;[^}]*margin-top:\s*10px;/,
+    );
+    expect(css).toMatch(
+      /\.result-pagination\.form-table-pagination\s*\{[^}]*justify-content:\s*flex-end;[^}]*margin-top:\s*24px;/,
+    );
   });
 
   it("REQ-UX-DISMISS-001: keeps close controls at 44px with a visible focus ring", () => {
@@ -132,6 +139,43 @@ describe("#2842 automated accessibility contract", () => {
     expect(container.querySelector("svg")).toHaveAttribute(
       "aria-hidden",
       "true",
+    );
+
+    const css = stylesheet();
+    const start = css.indexOf(".pill.iconpill {");
+    expect(start).toBeGreaterThan(-1);
+    const open = css.indexOf("{", start);
+    const close = css.indexOf("}", open);
+    const declarations = css.slice(open, close);
+    expect(declarations).toMatch(/min-width:\s*44px/);
+    expect(declarations).toMatch(/min-height:\s*44px/);
+    expect(css).toMatch(
+      /\.pill\.iconpill:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--focus,\s*var\(--brand\)\);[^}]*outline-offset:\s*2px;/,
+    );
+  });
+
+  it("REQ-UX-PAGINATION-001: keeps page chevrons at 44px with a visible focus ring", () => {
+    render(() => (
+      <ResultPagination
+        canPrevious
+        canNext
+        busy={false}
+        previousLabel="Previous"
+        nextLabel="Next"
+        ariaLabel="Result pages"
+        onPrevious={() => {}}
+        onNext={() => {}}
+      />
+    ));
+    expect(screen.getByRole("button", { name: "Previous" })).toHaveClass(
+      "pill",
+      "iconpill",
+      "icononly",
+    );
+    expect(screen.getByRole("button", { name: "Next" })).toHaveClass(
+      "pill",
+      "iconpill",
+      "icononly",
     );
 
     const css = stylesheet();

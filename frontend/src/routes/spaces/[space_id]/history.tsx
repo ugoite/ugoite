@@ -603,16 +603,43 @@ export default function SpaceHistoryRoute() {
                   <section class="history-affected-layout"><div><h3>{t("spaceHistory.affectedEntries")}</h3>
                     <ul class="history-affected-list"><For each={targetRows()}>{(target, index) => <li><button type="button" classList={{ selected: selectedEntryId() === target.entry_id }} onClick={() => setSelectedEntryId(target.entry_id)}><span>{formName(target.form_id)} · {t("spaceHistory.entryNumber", { count: index() + 1 })}</span><span aria-hidden="true">›</span></button></li>}</For></ul>
                     <Show when={targetError()}><p role="alert">{t("spaceHistory.loadError")}</p></Show>
-                    <nav class="history-detail-pagination" aria-label={t("spaceHistory.affectedEntries")}>
-                      <Show when={targetHistory().length > 1}><button type="button" class="ui-button ui-button-secondary" disabled={targetLoading()} onClick={() => void loadTargetPage(targetHistory().at(-2), "previous")}>{t("common.previous")}</button></Show>
-                      <Show when={targetCursor()}><button type="button" class="ui-button ui-button-secondary" disabled={targetLoading()} onClick={() => void loadTargetPage(targetCursor(), "next")}>{targetLoading() ? t("spaceHistory.loading") : t("common.next")}</button></Show>
-                    </nav>
+                    <Show when={targetLoading()}>
+                      <LocalBusyIndicator label={t("spaceHistory.loading")} size="sm" />
+                    </Show>
+                    <ResultPagination
+                      class="history-detail-pagination"
+                      canPrevious={targetHistory().length > 1}
+                      canNext={!!targetCursor()}
+                      busy={targetLoading()}
+                      previousLabel={t("common.previous")}
+                      nextLabel={t("common.next")}
+                      ariaLabel={t("spaceHistory.affectedEntries")}
+                      onPrevious={() =>
+                        void loadTargetPage(targetHistory().at(-2), "previous")}
+                      onNext={() => void loadTargetPage(targetCursor(), "next")}
+                    />
                   </div><div class="history-entry-diff"><h3>{t("spaceHistory.selectedEntry")}</h3>
                     <Show when={affectedEntry.loading}><p>{t("spaceHistory.loading")}</p></Show>
                     <Show when={affectedEntry.error}><p role="alert">{t("spaceHistory.loadError")}</p></Show>
                     <Show when={affectedEntry()}><dl><For each={affectedEntry()!.fields}>{(field) => <><dt>{fieldName(affectedEntry()!.form_id, field.field_id)}</dt><dd><span>{userValue(field.before)}</span><span aria-hidden="true"> → </span><span>{userValue(field.after)}</span></dd></>}</For></dl></Show>
                   </div></section>
-                  <Show when={inspection()!.change.run_id}><section><h3>{t("spaceHistory.relatedChanges")}</h3><ul class="history-related-list"><For each={relatedChanges().filter((change) => change.change_id !== openChange())}>{(change) => <li><button type="button" onClick={() => setDetail(change.change_id)}>{formatDateTimeLabel(change.change.created_at_micros / 1000)} · {showSummary(change)}</button></li>}</For></ul><nav class="history-detail-pagination" aria-label={t("spaceHistory.relatedChanges")}><Show when={relatedHistory().length > 1}><button type="button" class="ui-button ui-button-secondary" disabled={relatedLoading()} onClick={() => void loadRelatedPage(relatedHistory().at(-2), "previous")}>{t("common.previous")}</button></Show><Show when={relatedCursor()}><button type="button" class="ui-button ui-button-secondary" disabled={relatedLoading()} onClick={() => void loadRelatedPage(relatedCursor(), "next")}>{relatedLoading() ? t("spaceHistory.loading") : t("common.next")}</button></Show></nav></section></Show>
+                  <Show when={inspection()!.change.run_id}><section><h3>{t("spaceHistory.relatedChanges")}</h3><ul class="history-related-list"><For each={relatedChanges().filter((change) => change.change_id !== openChange())}>{(change) => <li><button type="button" onClick={() => setDetail(change.change_id)}>{formatDateTimeLabel(change.change.created_at_micros / 1000)} · {showSummary(change)}</button></li>}</For></ul>
+                    <Show when={relatedLoading()}>
+                      <LocalBusyIndicator label={t("spaceHistory.loading")} size="sm" />
+                    </Show>
+                    <ResultPagination
+                      class="history-detail-pagination"
+                      canPrevious={relatedHistory().length > 1}
+                      canNext={!!relatedCursor()}
+                      busy={relatedLoading()}
+                      previousLabel={t("common.previous")}
+                      nextLabel={t("common.next")}
+                      ariaLabel={t("spaceHistory.relatedChanges")}
+                      onPrevious={() =>
+                        void loadRelatedPage(relatedHistory().at(-2), "previous")}
+                      onNext={() => void loadRelatedPage(relatedCursor(), "next")}
+                    />
+                  </section></Show>
                   <details class="history-technical-info"><summary>{t("spaceHistory.technicalInfo")}</summary><dl><dt>Change ID</dt><dd>{inspection()!.change_id}</dd><Show when={inspection()!.change.run_id}><dt>Run ID</dt><dd>{inspection()!.change.run_id}</dd></Show><Show when={selectedEntryId()}><dt>Entry ID</dt><dd>{selectedEntryId()}</dd></Show></dl></details>
                 </Show>
               </div>

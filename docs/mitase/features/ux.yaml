@@ -503,3 +503,54 @@ features:
                 criterion: REQ-UX-DISMISS-001#criterion.close-control-presentation
               - kind: satisfies
                 criterion: REQ-UX-DISMISS-001#criterion.inline-error-dismissal
+  - id: FEAT-UX-011
+    title: Compact result pagination
+    summary: Use shared localized icon-only chevron controls for paged results while preserving FormTable and Space History cursor ownership and loading state.
+    status: planned
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep shared result pagination, FormTable paging, and Space History detail cursors connected to the compact pagination criteria.
+        targets:
+          - id: shared-pagination
+            adapter: typescript
+            path: frontend/src/components/ResultPagination.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation
+              - kind: satisfies
+                criterion: REQ-UX-PAGINATION-001#criterion.paging-state
+          - id: pagination-layout
+            adapter: typescript
+            path: frontend/src/app.css
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation
+          - id: form-table-pagination
+            adapter: typescript
+            path: frontend/src/components/FormTable.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-PAGINATION-001#criterion.paging-state
+              - kind: satisfies
+                criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior
+          - id: history-detail-pagination
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-PAGINATION-001#criterion.paging-state
+              - kind: satisfies
+                criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior
+          - id: form-table-navigation-label
+            adapter: json
+            path: shared/i18n/ui.json
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation

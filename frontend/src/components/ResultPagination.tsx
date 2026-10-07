@@ -1,4 +1,5 @@
 import { Show } from "solid-js";
+import { IconButton } from "~/components/IconButton";
 
 export interface ResultPaginationProps {
   canPrevious: boolean;
@@ -7,6 +8,7 @@ export interface ResultPaginationProps {
   previousLabel: string;
   nextLabel: string;
   ariaLabel: string;
+  class?: string;
   onPrevious: () => void;
   onNext: () => void;
 }
@@ -19,25 +21,28 @@ export interface ResultPaginationProps {
  * no navigation at all.
  */
 export function ResultPagination(props: ResultPaginationProps) {
+  const navClass = () =>
+    ["result-pagination", props.class].filter(Boolean).join(" ");
+
   return (
     <Show when={props.canPrevious || props.canNext}>
-      <nav class="result-pagination" aria-label={props.ariaLabel}>
-        <button
-          type="button"
-          class="ui-button ui-button-secondary result-pagination-button"
+      <nav class={navClass()} aria-label={props.ariaLabel}>
+        <IconButton
+          class="result-pagination-button"
+          icon="chevron-left"
+          label={props.previousLabel}
+          title={props.previousLabel}
           disabled={!props.canPrevious || props.busy}
           onClick={() => props.onPrevious()}
-        >
-          {props.previousLabel}
-        </button>
-        <button
-          type="button"
-          class="ui-button ui-button-secondary result-pagination-button"
+        />
+        <IconButton
+          class="result-pagination-button"
+          icon="chevron-right"
+          label={props.nextLabel}
+          title={props.nextLabel}
           disabled={!props.canNext || props.busy}
           onClick={() => props.onNext()}
-        >
-          {props.nextLabel}
-        </button>
+        />
       </nav>
     </Show>
   );

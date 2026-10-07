@@ -9,6 +9,8 @@ components:
     implementation: frontend/src/components/EntryBrowser.tsx
     result_presentation: frontend/src/components/EntryResultTable.tsx
     pagination_owner: EntryBrowser
+    pagination_component: ResultPagination
+    pagination_reference: result-pagination.yaml
     controller: EntryQueryController
     scope: selected-form
     semantics: native-table
