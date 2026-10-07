@@ -1300,8 +1300,12 @@ export const toStudioDocument = (
           ...(source.query.text === undefined
             ? {}
             : { text: source.query.text }),
-          filters: source.query.filters.map((filter) => ({ ...filter })),
-          sort: source.query.sort.map((clause) => ({ ...clause })),
+          // Canonical documents omit empty filters/sort; readers must accept
+          // their absence exactly like the domain default does.
+          filters: (source.query.filters ?? []).map((filter) => ({
+            ...filter,
+          })),
+          sort: (source.query.sort ?? []).map((clause) => ({ ...clause })),
           ...(source.query.pageLimit === undefined
             ? {}
             : { page_limit: source.query.pageLimit }),
@@ -1400,8 +1404,12 @@ export const draftFromDocument = (
           ...(source.query.text === undefined
             ? {}
             : { text: source.query.text }),
-          filters: source.query.filters.map((filter) => ({ ...filter })),
-          sort: source.query.sort.map((clause) => ({ ...clause })),
+          // Canonical documents omit empty filters/sort; readers must accept
+          // their absence exactly like the domain default does.
+          filters: (source.query.filters ?? []).map((filter) => ({
+            ...filter,
+          })),
+          sort: (source.query.sort ?? []).map((clause) => ({ ...clause })),
           ...(source.query.page_limit === undefined
             ? {}
             : { pageLimit: source.query.page_limit }),
