@@ -376,7 +376,20 @@ features:
             claims:
               - kind: verifies
                 criterion: REQ-UX-NAV-001#criterion.single-back-control
-                covers: [FEAT-UX-007#binding.back-control-implementation/target.back-link-control]
+                covers:
+                  - FEAT-UX-007#binding.back-control-implementation/target.back-link-control
+                  - FEAT-UX-007#binding.back-control-implementation/target.entry-history-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.entry-revision-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.entry-info-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.entry-detail-pane
+                  - FEAT-UX-007#binding.back-control-implementation/target.sql-detail-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.sql-new-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.sql-variables-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.sql-run-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-studio
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-history-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.composition-edit-route
+                  - FEAT-UX-007#binding.back-control-implementation/target.storage-test-route
                 runner: { runner: e2e-playwright, arguments: { file: e2e/compact-controls-evidence.test.ts, test: "REQ-UX-NAV-001: keeps nested compact headers visible and keyboard reachable" } }
               - kind: verifies
                 criterion: REQ-UX-NAV-001#criterion.back-control-presentation
