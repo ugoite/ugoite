@@ -45,7 +45,7 @@ async function createHarness(): Promise<{
   const fakeBin = `${harnessRoot}/bin`;
   const fixtureDir = `${harnessRoot}/fixture`;
   const archive =
-    `${harnessRoot}/mitase-v0.2.2-x86_64-unknown-linux-gnu.tar.gz`;
+    `${harnessRoot}/mitase-v0.2.3-x86_64-unknown-linux-gnu.tar.gz`;
   const marker = `${harnessRoot}/invocation.txt`;
   await Deno.mkdir(fakeBin, { recursive: true });
   await Deno.mkdir(fixtureDir, { recursive: true });
@@ -54,7 +54,7 @@ async function createHarness(): Promise<{
     `#!/usr/bin/env bash
 set -euo pipefail
 case "\${1:-}" in
-  --version) printf 'mitase 0.2.2\n' ;;
+  --version) printf 'mitase 0.2.3\n' ;;
   check) printf '%s\n' "\$*" > "\${MITASE_TEST_MARKER}" ;;
   *) exit 2 ;;
 esac
@@ -108,7 +108,7 @@ esac
       MITASE_RELEASE_BASE_URL: "https://fixture.invalid/mitase",
       MITASE_TEST_ARCHIVE: archive,
       MITASE_TEST_SHA256:
-        "0e6cefbd60fc767c9591044bc8e293ef2766bfc73a3370f8613a78a3764cb6e7",
+        "a6fd8ceea3bac8f5990381af91ceb4edeedf29fc99291b54a4a21e736a26174e",
       MITASE_TEST_MARKER: marker,
     },
   };
@@ -239,7 +239,7 @@ Deno.test("Mitase bootstrap verifies, caches, and executes the archive", async (
     assertEquals(await Deno.readTextFile(harness.marker), "check .\n");
 
     const cachedBinary =
-      `${harness.root}/cache/mitase/0.2.2/x86_64-unknown-linux-gnu/mitase`;
+      `${harness.root}/cache/mitase/0.2.3/x86_64-unknown-linux-gnu/mitase`;
     await Deno.writeTextFile(cachedBinary, "corrupt cached binary\n");
     await Deno.chmod(cachedBinary, 0o755);
     const recovered = await runScript(harness);
