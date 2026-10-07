@@ -2,8 +2,6 @@
 title: "Compact control browser evidence"
 ---
 
-# Compact control browser evidence
-
 The merge-gated `mobile-ui` Playwright task runs
 `e2e/compact-controls-evidence.test.ts` for the twelve nested surfaces that
 render the shared `BackLink`. Each case checks one visible, destination-named
