@@ -68,6 +68,23 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
   const idTaken = () =>
     props.parameters.some((item) => item.id === newId().trim());
 
+  // A disabled Add carries its reason in the accessible name and title,
+  // mirroring the Studio save gate. Both reasons reuse existing vocabulary
+  // with no new copy: an empty field needs a parameter name, and a taken
+  // field names the colliding id.
+  const addBlockedReason = (): string | undefined => {
+    if (newId().trim().length === 0) return t("composition.studioParameterId");
+    if (idTaken()) return newId().trim();
+    return undefined;
+  };
+
+  const addLabel = (): string => {
+    const reason = addBlockedReason();
+    return reason
+      ? `${t("composition.studioAddParameter")}: ${reason}`
+      : t("composition.studioAddParameter");
+  };
+
   return (
     <div class="ui-stack-sm">
       <Show
@@ -226,7 +243,9 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
         <button
           class="ui-button ui-button-secondary"
           type="button"
-          disabled={newId().trim().length === 0 || idTaken()}
+          disabled={addBlockedReason() !== undefined}
+          aria-label={addLabel()}
+          title={addLabel()}
           onClick={addParameter}
         >
           {t("composition.studioAddParameter")}

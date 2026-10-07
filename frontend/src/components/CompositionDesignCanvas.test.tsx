@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@solidjs/testing-library";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -216,6 +222,77 @@ describe("CompositionDesignCanvas", () => {
     // The placed month control leaves no parameter to offer.
     expect(dialog.querySelector(".designPaletteParams")).toHaveTextContent(
       "Add a parameter to begin.",
+    );
+  });
+
+  it("opens the palette as a modal dialog with focus trap and focus return", async () => {
+    renderHarness();
+
+    const gap = screen.getAllByRole("button", { name: "Add block" })[0];
+    // A real pointer tap focuses the gap control before the dialog mounts,
+    // so the opener capture sees the invoking control.
+    (gap as HTMLElement).focus();
+    fireEvent.click(gap);
+    const dialog = screen.getByRole("dialog", { name: "Add block" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog.parentElement).toHaveClass("ui-backdrop");
+
+    // Focus moves into the dialog on open.
+    await waitFor(() => {
+      expect(dialog.querySelector("button")).toHaveFocus();
+    });
+
+    // Tab cycles within the dialog instead of reaching the canvas.
+    const buttons = Array.from(dialog.querySelectorAll("button"));
+    expect(buttons.length).toBeGreaterThan(1);
+    buttons[buttons.length - 1].focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(buttons[0]).toHaveFocus();
+
+    // Escape dismisses and returns focus to the invoking gap control
+    // without touching the draft.
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Add block" })).toBeNull();
+    await waitFor(() => {
+      expect(gap).toHaveFocus();
+    });
+    expect(harnessCalls.draft).toHaveLength(0);
+    expect(harnessCalls.picker).toHaveLength(0);
+  });
+
+  it("dismisses the palette on backdrop click without touching the draft", () => {
+    renderHarness();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
+    const dialog = screen.getByRole("dialog", { name: "Add block" });
+    fireEvent.click(dialog.parentElement!);
+
+    expect(screen.queryByRole("dialog", { name: "Add block" })).toBeNull();
+    expect(harnessCalls.draft).toHaveLength(0);
+    expect(harnessCalls.picker).toHaveLength(0);
+  });
+
+  it("hides metric, table, and parameter entries without sources or parameters", () => {
+    renderHarness(createEmptyDraft("Studio"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add block" }));
+    const dialog = screen.getByRole("dialog", { name: "Add block" });
+    const entries = Array.from(
+      dialog.querySelectorAll(".designPaletteItem"),
+    ).map((entry) => entry.textContent);
+
+    // Text insertion is always available; metric and table need a source.
+    expect(entries.join(" ")).toContain("Text");
+    expect(entries.join(" ")).not.toContain("Metric");
+    expect(entries.join(" ")).not.toContain("Table");
+    // The parameters section needs a declared parameter, not an empty state.
+    expect(dialog.querySelector(".designPaletteParams")).toBeNull();
+  });
+
+  it("separates text content from the block action bar with token spacing", () => {
+    const css = stylesheet();
+    expect(css).toMatch(
+      /\.designBlockContent\s*\{\s*margin-top:\s*var\(--ui-spacing-sm\);\s*\}/,
     );
   });
 

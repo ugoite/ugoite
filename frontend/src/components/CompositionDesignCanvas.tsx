@@ -1,4 +1,5 @@
-import { For, Show } from "solid-js";
+import { For, onCleanup, onMount, Show } from "solid-js";
+import { Portal } from "solid-js/web";
 import {
   DashboardFlowItem,
   flowSourceStatusOwner,
@@ -94,6 +95,166 @@ const blockName = (
   if (display.kind === "text") return display.text || display.draftId;
   return displayDefaultName(display, draft.sources);
 };
+
+/**
+ * Block palette as a true modal dialog. The Portal lifts the palette out of
+ * the canvas column so it can never visually collide with the inspector;
+ * the backdrop blocks canvas selection while open, and dismissal returns
+ * focus to the invoking gap control. Metric and table entries stay hidden
+ * until a source exists (the display picker fail-closes on zero sources),
+ * and the parameters section stays hidden until a parameter exists, so no
+ * disabled-with-reason copy is needed. Text insertion is always available.
+ */
+function PaletteDialog(props: {
+  target: DraftInsertTarget;
+  draft: CompositionDraft;
+  onInsertText: (target: DraftInsertTarget) => void;
+  onInsertParameter: (target: DraftInsertTarget, parameterId: string) => void;
+  onRequestDisplayPicker: (target: DraftInsertTarget) => void;
+  onClose: () => void;
+}) {
+  let dialog: HTMLDivElement | undefined;
+  let opener: HTMLElement | null = null;
+
+  // Read the insert target once while mounted: component props stay lazy
+  // getters over the Show key, which throws once the dialog unmounts.
+  const insertTarget = props.target;
+
+  onMount(() => {
+    opener = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const appRoot = document.getElementById("app");
+    appRoot?.setAttribute("inert", "");
+    queueMicrotask(() => dialog?.querySelector("button")?.focus());
+    onCleanup(() => {
+      appRoot?.removeAttribute("inert");
+      const target = opener;
+      opener = null;
+      queueMicrotask(() => {
+        if (target?.isConnected) target.focus();
+      });
+    });
+  });
+
+  const hasSources = () => props.draft.sources.length > 0;
+  const hasParameters = () => props.draft.parameters.length > 0;
+  const unplaced = () => unplacedParameters(props.draft);
+
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      props.onClose();
+      return;
+    }
+    if (event.key === "Tab") {
+      const container = event.currentTarget as HTMLElement;
+      const focusable = Array.from(
+        container.querySelectorAll<HTMLElement>("button:not([disabled])"),
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const currentIndex = focusable.indexOf(
+        document.activeElement as HTMLElement,
+      );
+      const nextIndex = event.shiftKey
+        ? currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1
+        : currentIndex < 0 || currentIndex === focusable.length - 1
+        ? 0
+        : currentIndex + 1;
+      event.preventDefault();
+      focusable[nextIndex].focus();
+    }
+  };
+
+  return (
+    <Portal>
+      <div
+        class="ui-backdrop"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) props.onClose();
+        }}
+      >
+        <div
+          ref={dialog}
+          class="designPalette"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("composition.studioAddBlock")}
+          onKeyDown={handleKeyDown}
+        >
+          <div class="designPaletteEntries">
+            <button
+              type="button"
+              class="designPaletteItem"
+              onClick={() => props.onInsertText(insertTarget)}
+            >
+              <UiIcon name="canvas-text" />
+              <span>{t("composition.studioText")}</span>
+            </button>
+            <Show when={hasSources()}>
+              <button
+                type="button"
+                class="designPaletteItem"
+                onClick={() => {
+                  props.onClose();
+                  props.onRequestDisplayPicker(insertTarget);
+                }}
+              >
+                <UiIcon name="canvas-metric" />
+                <span>{t("composition.studioMetric")}</span>
+              </button>
+              <button
+                type="button"
+                class="designPaletteItem"
+                onClick={() => {
+                  props.onClose();
+                  props.onRequestDisplayPicker(insertTarget);
+                }}
+              >
+                <UiIcon name="canvas-table" />
+                <span>{t("composition.studioTable")}</span>
+              </button>
+            </Show>
+          </div>
+          <Show when={hasParameters()}>
+            <div class="designPaletteParams">
+              <span class="ui-label">{t("composition.studioParameters")}</span>
+              <Show
+                when={unplaced().length > 0}
+                fallback={
+                  <p class="ui-muted">
+                    {t("composition.studioEmptyParameters")}
+                  </p>
+                }
+              >
+                <For each={unplaced()}>
+                  {(parameter) => (
+                    <button
+                      type="button"
+                      class="designPaletteItem"
+                      aria-label={t("composition.studioPlaceParameter", {
+                        name: parameter.label ?? parameter.id,
+                      })}
+                      onClick={() =>
+                        props.onInsertParameter(insertTarget, parameter.id)}
+                    >
+                      <UiIcon name="canvas-input" />
+                      <span>{parameter.label ?? parameter.id}</span>
+                    </button>
+                  )}
+                </For>
+              </Show>
+            </div>
+          </Show>
+        </div>
+      </div>
+    </Portal>
+  );
+}
 
 /**
  * Design canvas over the current draft. Blocks render through the shared
@@ -215,91 +376,6 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
       ? { kind: "component", component: item.draftId }
       : { kind: "parameter", parameter: item.parameterId };
 
-  const renderPalette = (target: DraftInsertTarget) => {
-    const unplaced = () => unplacedParameters(props.draft);
-    const close = () => props.onPaletteTarget(null);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        close();
-      }
-    };
-    return (
-      <div
-        class="designPalette"
-        role="dialog"
-        aria-label={t("composition.studioAddBlock")}
-        onKeyDown={onKeyDown}
-      >
-        <div class="designPaletteEntries">
-          <button
-            type="button"
-            class="designPaletteItem"
-            onClick={(event) => {
-              event.stopPropagation();
-              insertText(target);
-            }}
-          >
-            <UiIcon name="canvas-text" />
-            <span>{t("composition.studioText")}</span>
-          </button>
-          <button
-            type="button"
-            class="designPaletteItem"
-            onClick={(event) => {
-              event.stopPropagation();
-              props.onPaletteTarget(null);
-              props.onRequestDisplayPicker(target);
-            }}
-          >
-            <UiIcon name="canvas-metric" />
-            <span>{t("composition.studioMetric")}</span>
-          </button>
-          <button
-            type="button"
-            class="designPaletteItem"
-            onClick={(event) => {
-              event.stopPropagation();
-              props.onPaletteTarget(null);
-              props.onRequestDisplayPicker(target);
-            }}
-          >
-            <UiIcon name="canvas-table" />
-            <span>{t("composition.studioTable")}</span>
-          </button>
-        </div>
-        <div class="designPaletteParams">
-          <span class="ui-label">{t("composition.studioParameters")}</span>
-          <Show
-            when={unplaced().length > 0}
-            fallback={
-              <p class="ui-muted">{t("composition.studioEmptyParameters")}</p>
-            }
-          >
-            <For each={unplaced()}>
-              {(parameter) => (
-                <button
-                  type="button"
-                  class="designPaletteItem"
-                  aria-label={t("composition.studioPlaceParameter", {
-                    name: parameter.label ?? parameter.id,
-                  })}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    insertParameter(target, parameter.id);
-                  }}
-                >
-                  <UiIcon name="canvas-input" />
-                  <span>{parameter.label ?? parameter.id}</span>
-                </button>
-              )}
-            </For>
-          </Show>
-        </div>
-      </div>
-    );
-  };
-
   const renderGap = (target: DraftInsertTarget, inline: boolean) => (
     <div class={inline ? "designGap designGap--inline" : "designGap"}>
       <button
@@ -315,9 +391,6 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
       >
         <UiIcon name="plus" />
       </button>
-      <Show when={paletteKey() === gapKey(target)}>
-        {renderPalette(target)}
-      </Show>
     </div>
   );
 
@@ -502,6 +575,18 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
       </For>
       <Show when={visibleRows().length === 0}>
         {renderGap({ rowId: null, rowIndex: 0, itemIndex: 0 }, false)}
+      </Show>
+      <Show when={props.paletteTarget}>
+        {(target) => (
+          <PaletteDialog
+            target={target()}
+            draft={props.draft}
+            onInsertText={insertText}
+            onInsertParameter={insertParameter}
+            onRequestDisplayPicker={props.onRequestDisplayPicker}
+            onClose={() => props.onPaletteTarget(null)}
+          />
+        )}
       </Show>
     </div>
   );

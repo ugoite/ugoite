@@ -3806,6 +3806,9 @@ a.tool {
   gap: var(--ui-spacing-xs);
   margin-left: auto;
 }
+.designBlockContent {
+  margin-top: var(--ui-spacing-sm);
+}
 .designPalette {
   position: relative;
   border: var(--ui-border-width) solid var(--ui-border);
@@ -3818,16 +3821,6 @@ a.tool {
   width: max-content;
   max-width: min(320px, 100%);
   z-index: 1;
-}
-.designGap .designPalette {
-  position: absolute;
-  top: calc(100% + var(--ui-spacing-xs));
-  left: 50%;
-  transform: translateX(-50%);
-}
-.designGap--inline .designPalette {
-  left: 0;
-  transform: none;
 }
 .designPaletteEntries {
   display: grid;
@@ -3866,10 +3859,6 @@ a.tool {
     bottom: auto;
     width: auto;
     height: 1px;
-  }
-  .designGap .designPalette {
-    position: static;
-    transform: none;
   }
 }
 
