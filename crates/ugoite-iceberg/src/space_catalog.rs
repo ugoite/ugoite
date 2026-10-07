@@ -1252,7 +1252,7 @@ impl SpaceCatalog {
                 for reference in content_head.tables.values() {
                     tables.push(self.capture_checkpoint_table(reference).await?);
                 }
-                tables.sort_by(|left, right| left.form_id.cmp(&right.form_id));
+                tables.sort_by_key(|table| table.form_id);
                 selected = Some(SpaceCheckpoint::new(
                     self.space_id,
                     content_head.generation,
@@ -1516,7 +1516,7 @@ impl SpaceCatalog {
         for reference in content_head.tables.values() {
             tables.push(self.capture_checkpoint_table(reference).await?);
         }
-        tables.sort_by(|left, right| left.form_id.cmp(&right.form_id));
+        tables.sort_by_key(|table| table.form_id);
 
         Ok(SpaceCheckpoint::new(
             self.space_id,

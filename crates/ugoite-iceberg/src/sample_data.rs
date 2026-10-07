@@ -982,16 +982,14 @@ impl TerminalProgressWriter {
     fn render_line(&self, processed: usize, message: &str) -> String {
         let width = 20usize;
         let capped = processed.min(self.total_entries);
-        let percent = if self.total_entries == 0 {
-            100usize
-        } else {
-            ((capped * 100) / self.total_entries).min(100)
-        };
-        let filled = if self.total_entries == 0 {
-            width
-        } else {
-            (((capped * width) + (self.total_entries / 2)) / self.total_entries).min(width)
-        };
+        let percent = ((capped * 100)
+            .checked_div(self.total_entries)
+            .unwrap_or(100))
+        .min(100);
+        let filled = ((capped * width + (self.total_entries / 2))
+            .checked_div(self.total_entries)
+            .unwrap_or(width))
+        .min(width);
         let bar = format!("{}{}", "#".repeat(filled), "-".repeat(width - filled));
         format!(
             "Seed progress [{}] {:>3}% ({}/{}) {}",

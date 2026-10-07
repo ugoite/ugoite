@@ -26,6 +26,6 @@ pub fn undo_order<'a>(
     changes: impl IntoIterator<Item = &'a ChangeDescriptor>,
 ) -> Vec<&'a ChangeDescriptor> {
     let mut changes = changes.into_iter().collect::<Vec<_>>();
-    changes.sort_by(|left, right| right.created_at_micros.cmp(&left.created_at_micros));
+    changes.sort_by_key(|change| std::cmp::Reverse(change.created_at_micros));
     changes
 }

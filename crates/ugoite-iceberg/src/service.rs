@@ -3709,7 +3709,7 @@ impl UgoiteService {
                     && change.change.reverts_change_id.is_none()
             })
             .collect::<Vec<_>>();
-        originals.sort_by(|left, right| right.generation.cmp(&left.generation));
+        originals.sort_by_key(|change| std::cmp::Reverse(change.generation));
         let committed_change_count = originals.len();
         let already_reverted_count = originals
             .iter()
@@ -3839,7 +3839,7 @@ impl UgoiteService {
                     && !already_reverted.contains(change.change_id.as_str())
             })
             .collect::<Vec<_>>();
-        changes.sort_by(|left, right| right.generation.cmp(&left.generation));
+        changes.sort_by_key(|change| std::cmp::Reverse(change.generation));
         let mut inverses = Vec::with_capacity(changes.len());
         for change in &changes {
             let inverse = if let Some(principal_ids) = principal_ids {
