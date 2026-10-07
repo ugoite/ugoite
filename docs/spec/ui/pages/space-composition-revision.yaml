@@ -28,6 +28,13 @@ components:
           title: History
           status: implemented
           contract: docs/spec/ui/components/composition-studio.yaml
+        - id: composition-restore
+          type: button
+          title: Restore
+          status: implemented
+          availability: historical revisions only
+          source: composition.restore with the opened revision as the restore source, the latest revision as the base, and one Idempotency-Key reused for retry
+          description: Restore appends a new revision from the opened historical revision and never rewrites history. A stale base shows a conflict with a recovery link to history; the new revision opens for review and further edits.
     - id: composition-parameters
       type: form
       title: Declared parameters

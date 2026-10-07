@@ -17,6 +17,42 @@ requirements:
         kind: behavior
         statement: Each saved Composition is represented by one Entry revision and inherits the existing append-only history, restore, receipt, and stale-write conflict behavior.
         governed_by: [POL-000#rule.foundation-precedence, POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: composition-update-history-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Browser Composition updates save as the next revision with composition and base revision identity, historical revisions restore append-only with a stable retry key navigating to the new revision, and stale bases surface conflicts without rewriting history or leaving the route.
+        targets:
+          - id: edit-stale-base-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx"
+            selector: { kind: test, name: surfaces a stale base conflict without leaving the route }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-001#criterion.one-entry-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "surfaces a stale base conflict without leaving the route" } }
+          - id: restore-append-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
+            selector: { kind: test, name: restores a historical revision with source base and a stable retry key }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-001#criterion.one-entry-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-restore
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "restores a historical revision with source base and a stable retry key" } }
+          - id: restore-stale-base-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
+            selector: { kind: test, name: surfaces a stale base conflict with a recovery link to history }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-001#criterion.one-entry-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-restore
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "surfaces a stale base conflict with a recovery link to history" } }
   - id: REQ-COMP-002
     title: Restricted portable Composition format
     description: The v0.2.2 Composition exchange format is restricted `.ugcomp.yaml` v1, with a typed envelope and spec, dashboard as its only executable kind, and Rust semantics shared by native and WASM surfaces.
@@ -525,6 +561,51 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-inspector
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "retargets parameter controls in place without touching declarations" } }
+      - id: edit-round-trip-verification
+        role: verification
+        facet: verification
+        responsibility: Verify restoring a lint-normalized document into the draft keeps multi-row layout order with text content and style plus parameter placement against the labeled shape, and unknown future component, layout, and value-field kinds with invalid text shapes fail closed.
+        targets:
+          - id: edit-round-trip-multi-row-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: restores multi-row layout order with text and parameter placement }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and parameter placement" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and parameter placement" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "restores multi-row layout order with text and parameter placement" } }
+          - id: edit-round-trip-unknown-kinds-case
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: "refuses unknown future component, layout, and value-field kinds instead of approximating" }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and value-field kinds instead of approximating" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.text-style-enum
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and value-field kinds instead of approximating" } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-round-trip
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "refuses unknown future component, layout, and value-field kinds instead of approximating" } }
       - id: metric-value-verification
         role: verification
         facet: verification
@@ -766,7 +847,7 @@ requirements:
       - id: browser-exact-revision-verification
         role: verification
         facet: verification
-        responsibility: Verify the Browser pins reads and resolution to the caller-selected exact Composition revision across the API adapter, list, detail route, and Home.
+        responsibility: Verify the Browser pins reads and resolution to the caller-selected exact Composition revision across the API adapter, list, detail route, Home, edit route, and history.
         targets:
           - id: bounded-list-case
             adapter: typescript
@@ -779,6 +860,46 @@ requirements:
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-api
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-composition-list-route
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-api.test.ts, test: uses bounded portable list and exact-revision get operations } }
+          - id: edit-route-load-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx"
+            selector: { kind: test, name: loads the exact revision through get and lint with a prefilled studio }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "loads the exact revision through get and lint with a prefilled studio" } }
+          - id: edit-route-save-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx"
+            selector: { kind: test, name: saves an update with base revision identity and a stable retry key }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "saves an update with base revision identity and a stable retry key" } }
+          - id: edit-route-restore-continuity-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx"
+            selector: { kind: test, name: reopens a restored multi-row revision for continued editing }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-edit-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "reopens a restored multi-row revision for continued editing" } }
+          - id: history-list-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx"
+            selector: { kind: test, name: lists revisions with human labels and opens the exact revision }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.exact-composition-revision
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-history-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "lists revisions with human labels and opens the exact revision" } }
           - id: route-case
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
@@ -988,6 +1109,32 @@ requirements:
         kind: behavior
         statement: Unsupported versions and broken references do not prevent access to the Composition's existing revision history.
         governed_by: [POL-014#rule.governance, POL-016#rule.governance]
+    bindings:
+      - id: history-available-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Browser history route loads the bounded revision history with human labels, a current marker, pagination, and retry, independent of whether any single revision document stays editable.
+        targets:
+          - id: history-pages-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx"
+            selector: { kind: test, name: marks the current revision and pages through history }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-005#criterion.history-available
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-history-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "marks the current revision and pages through history" } }
+          - id: history-retry-case
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx"
+            selector: { kind: test, name: shows a retry control when history fails to load }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-005#criterion.history-available
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-history-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx", test: "shows a retry control when history fails to load" } }
   - id: REQ-COMP-006
     title: Transient Composition runtime state
     description: Browser navigation and query-result state is Work and is not persisted as part of Composition Knowledge.
