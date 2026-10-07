@@ -598,10 +598,6 @@ describe("composition draft model", () => {
             field_schema: [{ field_id: 100, field_type: "double" }],
             query: {
               projection: { kind: "preview" },
-            } as unknown as {
-              filters: [];
-              sort: [];
-              projection: { kind: "preview" };
             },
           },
         ],

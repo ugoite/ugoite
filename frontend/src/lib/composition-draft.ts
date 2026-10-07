@@ -251,8 +251,10 @@ export interface CompositionStudioDocument {
         field_schema: EntryQueryCompositionFieldSchemaEntry[];
         query: {
           text?: unknown;
-          filters: EntryQueryCompositionFilter[];
-          sort: EntryQueryCompositionSort[];
+          // Canonical documents omit empty filters/sort; readers default
+          // them like the domain does.
+          filters?: EntryQueryCompositionFilter[];
+          sort?: EntryQueryCompositionSort[];
           page_limit?: number;
           projection: EntryQueryCompositionProjection;
         };
@@ -1300,8 +1302,6 @@ export const toStudioDocument = (
           ...(source.query.text === undefined
             ? {}
             : { text: source.query.text }),
-          // Canonical documents omit empty filters/sort; readers must accept
-          // their absence exactly like the domain default does.
           filters: (source.query.filters ?? []).map((filter) => ({
             ...filter,
           })),
