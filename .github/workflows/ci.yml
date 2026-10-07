@@ -39,7 +39,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           install_args: deno
@@ -66,7 +66,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           cache: true
@@ -130,7 +130,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           cache: true
@@ -196,7 +196,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           cache: true
@@ -239,7 +239,7 @@ jobs:
       - name: Configure Deno cache path
         run: echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           cache: true
@@ -332,7 +332,7 @@ jobs:
           echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
           echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           cache: true
@@ -614,7 +614,7 @@ jobs:
           echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
           echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           install_args: deno
@@ -737,7 +737,7 @@ jobs:
           echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
           echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           install_args: deno
@@ -839,7 +839,7 @@ jobs:
           echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
           echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           install_args: deno
@@ -941,7 +941,7 @@ jobs:
           echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
           echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           install_args: deno
@@ -1032,7 +1032,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           cache: true
@@ -1124,7 +1124,7 @@ jobs:
           echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
           echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           install_args: deno
@@ -1247,7 +1247,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install: true
           install_args: deno
