@@ -468,3 +468,38 @@ features:
                 criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
               - kind: satisfies
                 criterion: REQ-UX-RESP-001#criterion.responsive-narrow-layout
+  - id: FEAT-UX-010
+    title: Shared compact dismiss controls
+    summary: Use the shared close icon button to dismiss Space History detail and FormTable error alerts, preserving accessible names and their existing focus and error behavior.
+    status: planned
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep the shared close button, the Space History detail dialog, and the FormTable dismissible error connected to the compact dismissal criteria.
+        targets:
+          - id: shared-icon-button
+            adapter: typescript
+            path: frontend/src/components/IconButton.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-DISMISS-001#criterion.close-control-presentation
+          - id: history-detail-dialog
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-DISMISS-001#criterion.close-control-presentation
+              - kind: satisfies
+                criterion: REQ-UX-DISMISS-001#criterion.history-detail-dismissal
+          - id: form-table-error
+            adapter: typescript
+            path: frontend/src/components/FormTable.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-DISMISS-001#criterion.close-control-presentation
+              - kind: satisfies
+                criterion: REQ-UX-DISMISS-001#criterion.inline-error-dismissal

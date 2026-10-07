@@ -2,6 +2,7 @@ import { useLocation, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ConfirmDestructiveAction } from "~/components/ConfirmDestructiveAction";
+import { IconButton } from "~/components/IconButton";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
 import { HistoryChangeTable, type HistoryChangeColumn } from "~/components/HistoryChangeTable";
@@ -582,7 +583,13 @@ export default function SpaceHistoryRoute() {
               <header class="history-detail-header">
                 <div><h2 id="history-detail-title">{detailRow() ? changeTitle(detailRow()!) : t("spaceHistory.detailTitle")}</h2>
                   <p>{inspection() ? formatDateTimeLabel(inspection()!.change.created_at_micros / 1000) : t("spaceHistory.loading")}{inspection() ? ` · ${actorName(inspection()!.change.actor_principal_id)}` : ""}</p></div>
-                <button ref={detailCloseButton} type="button" class="ui-button ui-button-secondary" onClick={() => closeDetail()}>{t("common.back")}</button>
+                <IconButton
+                  ref={(element) => detailCloseButton = element}
+                  icon="close"
+                  label={t("common.close")}
+                  title={t("common.close")}
+                  onClick={() => closeDetail()}
+                />
               </header>
               <div class="history-detail-content">
                 <Show when={inspection.error}><p class="ui-alert ui-alert-error" role="alert">{t("spaceHistory.loadError")}</p></Show>

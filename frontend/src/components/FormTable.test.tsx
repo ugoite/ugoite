@@ -135,6 +135,37 @@ describe("FormTable", () => {
     expect(getByText("0 records found")).toBeInTheDocument();
   });
 
+  it("REQ-UX-DISMISS-001: dismisses Form errors", async () => {
+    const query = vi.spyOn(entryApi, "query")
+      .mockResolvedValueOnce(entryQueryPage([]))
+      .mockRejectedValueOnce(new Error("offline"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={canonicalForm({ name: "Entry", fields: {} })}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
+    ));
+
+    await waitFor(() => expect(query).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText("Export CSV"));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Failed to export CSV. Please check the console for details.",
+    );
+    const close = within(alert).getByRole("button", { name: "Close" });
+    expect(close).toHaveAttribute("title", "Close");
+    expect(close).toHaveClass("pill", "iconpill", "icononly");
+    expect(close.querySelector(".ui-sr-only")).toHaveTextContent("Close");
+
+    fireEvent.click(close);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("renders '-' for missing properties and does not throw", async () => {
     const entryForm = {
       name: "Test",

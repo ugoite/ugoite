@@ -127,9 +127,42 @@ describe("space history list", () => {
     expect(await screen.findByText("Affected entries")).toBeInTheDocument();
     await waitFor(() => expect(changeApi.affectedEntry).toHaveBeenCalledWith("default", "change-1", "entry-1"));
     expect(setSearchParams).toHaveBeenCalledWith({ change: "change-1" });
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("searchbox", { name: "Search history" })).toHaveValue("");
+  });
+
+  it("REQ-UX-DISMISS-001: closes and returns focus", async () => {
+    render(() => <SpaceHistoryRoute />);
+    const [opener] = await screen.findAllByRole("button", {
+      name: "Open change",
+    });
+    fireEvent.click(opener);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Expenses · 100 entries",
+    });
+    const close = within(dialog).getByRole("button", { name: "Close" });
+
+    expect(close).toHaveAttribute("title", "Close");
+    expect(close).toHaveClass("pill", "iconpill", "icononly");
+    expect(close.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(close.querySelector(".ui-sr-only")).toHaveTextContent("Close");
+
+    fireEvent.click(close);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it("REQ-UX-DISMISS-001: localizes the close name", async () => {
+    setLocale("ja");
+    render(() => <SpaceHistoryRoute />);
+    const [opener] = await screen.findAllByRole("button", {
+      name: "変更を開く",
+    });
+    fireEvent.click(opener);
+    const dialog = await screen.findByRole("dialog");
+    const close = within(dialog).getByRole("button", { name: "閉じる" });
+    expect(close).toHaveAttribute("title", "閉じる");
   });
 
   it("keeps the existing Change revert flow available from the Change detail", async () => {
@@ -152,15 +185,32 @@ describe("space history list", () => {
     expect(await screen.findByText("Revert added to history.")).toBeInTheDocument();
   });
 
-  it("traps focus in the detail dialog and restores it when closed with Escape", async () => {
+  it("REQ-UX-DISMISS-001: traps focus and closes on Escape", async () => {
     render(() => <SpaceHistoryRoute />);
     const opener = (await screen.findAllByRole("button", { name: "Open change" }))[0];
     fireEvent.click(opener);
     const dialog = await screen.findByRole("dialog", { name: "Expenses · 100 entries" });
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Back" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Undo run" }));
     fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it("REQ-UX-DISMISS-001: closes on backdrop and returns focus", async () => {
+    render(() => <SpaceHistoryRoute />);
+    const [opener] = await screen.findAllByRole("button", {
+      name: "Open change",
+    });
+    fireEvent.click(opener);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Expenses · 100 entries",
+    });
+    const backdrop = dialog.parentElement;
+    if (!backdrop) throw new Error("history detail backdrop not found");
+
+    fireEvent.click(backdrop);
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(opener));
   });
@@ -284,7 +334,7 @@ describe("space history list", () => {
     expect(document.querySelector<HTMLDetailsElement>(".history-technical-info")?.open).toBe(false);
     fireEvent.click(screen.getByText("Technical info"));
     expect(await screen.findByText("entry-1")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(setSearchParams).toHaveBeenCalledWith({ change: undefined });
   });
 

@@ -27,6 +27,7 @@ import {
 } from "~/lib/entry-query";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import { IconButton } from "~/components/IconButton";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { formatDateLabel } from "~/lib/date-format";
 import {
@@ -874,14 +875,12 @@ export function FormTable(props: FormTableProps) {
             role="alert"
           >
             <span>{tableError()}</span>
-            <button
-              class="btn"
-              type="button"
-              aria-label={t("common.close")}
+            <IconButton
+              icon="close"
+              label={t("common.close")}
+              title={t("common.close")}
               onClick={() => setTableError(null)}
-            >
-              {t("common.close")}
-            </button>
+            />
           </div>
         </Show>
 
