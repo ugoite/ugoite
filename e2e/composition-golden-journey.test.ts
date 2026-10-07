@@ -186,21 +186,29 @@ async function seedSavedSql(
   expect(amountColumn).toBeTruthy();
 
   const rows = createSeedRows(manifest);
-  for (const row of rows) {
-    const entryResponse = await request.post(
-      getBackendUrl(`/spaces/${spaceId}/entries`),
-      {
-        data: {
-          form: formName,
-          fields: {
-            Date: row.date,
-            Merchant: row.merchant,
-            Amount: row.amount,
+  // Entries are independent (result order comes from ORDER BY date,
+  // merchant, never creation order), so seed in bounded-parallel chunks to
+  // keep the 102-row fixture inside the step-up auth window on slow hosts.
+  const SEED_CHUNK = 8;
+  for (let offset = 0; offset < rows.length; offset += SEED_CHUNK) {
+    const chunk = rows.slice(offset, offset + SEED_CHUNK);
+    const responses = await Promise.all(
+      chunk.map((row) =>
+        request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
+          data: {
+            form: formName,
+            fields: {
+              Date: row.date,
+              Merchant: row.merchant,
+              Amount: row.amount,
+            },
           },
-        },
-      },
+        })
+      ),
     );
-    expect(entryResponse.status()).toBe(201);
+    responses.forEach((entryResponse) => {
+      expect(entryResponse.status()).toBe(201);
+    });
   }
 
   const sql = manifest.saved_sql.sql_template
