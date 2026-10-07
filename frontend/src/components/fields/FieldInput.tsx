@@ -1,4 +1,4 @@
-import { createEffect, onMount, Show } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import { ListEditor } from "~/components/ListEditor";
 import { ObjectListEditor } from "~/components/ObjectListEditor";
 import { UiIcon } from "~/components/UiIcon";
@@ -139,21 +139,21 @@ function AutoGrowStringInput(props: {
   placeholder?: string;
   onChange: (value: string) => void;
 }) {
-  let textarea!: HTMLTextAreaElement;
-  const resize = () => {
+  const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+  const resize = (textarea: HTMLTextAreaElement) => {
     textarea.style.height = "auto";
     textarea.style.height = `${Math.max(textarea.scrollHeight, 38)}px`;
   };
 
-  onMount(resize);
   createEffect(() => {
+    const element = textarea();
     props.value;
-    resize();
+    if (element) resize(element);
   });
 
   return (
     <textarea
-      ref={textarea}
+      ref={setTextarea}
       id={props.fieldId}
       class="ui-input ui-textarea ui-textarea-auto"
       rows={1}
@@ -163,7 +163,7 @@ function AutoGrowStringInput(props: {
       placeholder={props.placeholder ?? t("entryDetail.fieldPlaceholder")}
       onInput={(event) => {
         props.onChange(event.currentTarget.value);
-        resize();
+        resize(event.currentTarget);
       }}
     />
   );
