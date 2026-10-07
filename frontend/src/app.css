@@ -3974,6 +3974,43 @@ a.tool {
   }
 }
 
+/* Studio inspector bottom sheet (narrow viewports only): the Design canvas
+ * keeps its layout behind a fixed overlay, so opening the sheet never
+ * shifts the canvas. The sheet reuses the shared dialog tokens and anchors
+ * to the viewport bottom; internal scrolling stays inside the sheet and the
+ * 320px effective width fits without document-level horizontal scrolling. */
+.ui-backdrop.studioSheetBackdrop {
+  align-items: end;
+  padding: 0;
+}
+.ui-dialog.studioInspectorSheet {
+  width: min(560px, 100%);
+  max-height: min(72dvh, 560px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  border-radius: 18px 18px 0 0;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.studioSheetClose {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Studio mode switch at narrow widths: Design | Data stay one operative
+ * row with icon and short labels at 390px and the 320px effective width.
+ * Split is unavailable below the desktop gate (see the Split rule above). */
+@media (max-width: 560px) {
+  .studioMode {
+    max-width: 100%;
+    gap: var(--ui-spacing-xs);
+    padding: var(--ui-spacing-xs);
+  }
+  .studioModeOption {
+    min-height: 44px;
+    padding: var(--ui-spacing-xs) var(--ui-spacing-sm);
+  }
+}
+
 /* Data workspace: source navigator beside the per-source editor. The
  * navigator and editor stack to one column at narrow viewports. */
 .dataWorkspace {

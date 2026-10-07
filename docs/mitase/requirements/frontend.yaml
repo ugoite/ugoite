@@ -2638,6 +2638,15 @@ requirements:
                 criterion: REQ-FE-068#criterion.local-horizontal-overflow
                 covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: keeps Split desktop-only with stacked panes at narrow widths } }
+          - id: studio-mobile-narrow-contract
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: keeps the mode switch single-row and the sheet within the viewport at 320px and 390px widths }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode, FEAT-COMP-001#binding.browser-query-runtime/target.browser-inspector-sheet]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: keeps the mode switch single-row and the sheet within the viewport at 320px and 390px widths } }
           - id: studio-preview-unscoped-fetch
             adapter: typescript
             path: frontend/src/lib/composition-preview-handle.test.ts
@@ -3233,3 +3242,62 @@ requirements:
                 criterion: REQ-FE-070#criterion.accessible-icon-actions
                 covers: [FEAT-FE-014#binding.frontend/target.composition-use-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: owns the tool name once and links a single edit action } }
+      - id: studio-mobile-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio mobile arrangement stays one column with reachable primary actions and no page-level horizontal overflow at 390px and the 320px effective width — Design Data toggle with forced Design below the Split gate, inspector bottom sheet with dialog semantics and focus return on narrow viewports, inline inspector on wide viewports, sheet data jump to the Data workspace, and the single-row mode plus viewport-bound sheet CSS contract.
+        targets:
+          - id: studio-mobile-sheet-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: opens the selected block inspector in a bottom sheet on narrow viewports and returns focus on close }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-mobile]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: opens the selected block inspector in a bottom sheet on narrow viewports and returns focus on close } }
+          - id: studio-mobile-inline-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: keeps the inspector inline with no dialog on wide viewports }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-mobile]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: keeps the inspector inline with no dialog on wide viewports } }
+          - id: studio-mobile-forcing-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: forces Design when crossing below the Split gate }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: forces Design when crossing below the Split gate } }
+          - id: studio-mobile-data-jump-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: moves the sheet data jump to the Data workspace on narrow viewports }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-mobile]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: moves the sheet data jump to the Data workspace on narrow viewports } }
+          - id: studio-mobile-insert-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: opens the sheet for a freshly inserted block on narrow viewports }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-mobile]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: opens the sheet for a freshly inserted block on narrow viewports } }
+          - id: studio-mobile-narrow-contract-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: keeps the mode switch single-row and the sheet within the viewport at 320px and 390px widths }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-mobile]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: keeps the mode switch single-row and the sheet within the viewport at 320px and 390px widths } }

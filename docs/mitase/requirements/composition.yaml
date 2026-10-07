@@ -1039,7 +1039,7 @@ requirements:
       - id: studio-sync-verification
         role: verification
         facet: verification
-        responsibility: Verify Studio mode, Design Data synchronization, and Split stay transient Work — shared draft preview and selection continuity across modes with no refetch, block to source auto-selection with text and parameter no-ops, source to block highlight distinct from selection, latest-draft resolution for sync transitions during an in-flight preview, scoped preview fetching, and stale page suppression.
+        responsibility: Verify Studio mode, Design Data synchronization, and Split stay transient Work — shared draft preview and selection continuity across modes with no refetch, block to source auto-selection with text and parameter no-ops, source to block highlight distinct from selection, latest-draft resolution for sync transitions during an in-flight preview, scoped preview fetching, stale page suppression, narrow bottom-sheet inspector open with focus return and dismissal, wide inline inspector, forced Design below the Split gate, and sheet data jump to Data.
         targets:
           - id: studio-mode-arrangement-case
             adapter: typescript
@@ -1153,6 +1153,58 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.browser-query-runtime/target.browser-preview-handle
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-preview-handle.test.ts, test: discards stale source pages from the previous draft } }
+          - id: studio-mobile-sheet-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: opens the selected block inspector in a bottom sheet on narrow viewports and returns focus on close }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-inspector-sheet
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: opens the selected block inspector in a bottom sheet on narrow viewports and returns focus on close } }
+          - id: studio-mobile-inline-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: keeps the inspector inline with no dialog on wide viewports }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-inspector-sheet
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: keeps the inspector inline with no dialog on wide viewports } }
+          - id: studio-mobile-forcing-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: forces Design when crossing below the Split gate }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: forces Design when crossing below the Split gate } }
+          - id: studio-mobile-data-jump-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: moves the sheet data jump to the Data workspace on narrow viewports }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-inspector-sheet
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: moves the sheet data jump to the Data workspace on narrow viewports } }
+          - id: studio-mobile-insert-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: opens the sheet for a freshly inserted block on narrow viewports }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.work-state-is-transient
+                covers:
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-studio-mode
+                  - FEAT-COMP-001#binding.browser-query-runtime/target.browser-inspector-sheet
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: opens the sheet for a freshly inserted block on narrow viewports } }
     criteria:
       - id: work-state-is-transient
         kind: behavior

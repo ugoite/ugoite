@@ -142,6 +142,7 @@ components:
       scope: transient-work-component-parameter-identity-only
       affordance: outline-with-pressed-toggle-and-visible-focus
       inspector_handoff: selected-block-identity-only
+      inspector_handoff_narrow: block-tap-opens-bottom-sheet-below-560px
     insertion:
       control: single-add-control-per-gap
       palette_entries: [text, metric, table, unplaced-parameters-only]
@@ -178,10 +179,15 @@ components:
       ref: owned-label-read-only-no-override
       placement: retarget-existing-parameter-in-place
     data_jump: expand-and-focus-existing-source-row
+    data_jump_narrow: dismiss-sheet-show-data-workspace-focus-jumped-row
     preview_discipline: existing-debounced-handle-only-no-second-path
     responsive:
-      narrow: stacked-below-canvas
+      narrow: bottom-sheet-dialog-on-block-tap
       narrow_width: 390px
+      narrow_gate: 560px
+    sheet: dialog-with-visible-focus-trap-escape-backdrop-close-focus-returns-to-block
+    sheet_state: transient-work-selected-id-plus-open-flag-only
+    sheet_reuse: existing-inspector-content-no-duplicated-editors
     surface_tokens: fixed-only-no-raw-color
   - id: studio-mode
     type: segmented-control
@@ -193,6 +199,7 @@ components:
     accessible_names: radiogroup-with-checked-option-and-native-focus
     arrangement_only: draft-preview-selection-shared-continuous-no-refetch
     split_availability: desktop-only-below-760px-design-data-only
+    narrow_resize: crossing-below-760px-gate-returns-to-design-no-stuck-split
     persistence: transient-work-never-stored
     responsive:
       narrow: design-data-toggle-split-unavailable
@@ -211,7 +218,7 @@ components:
     stale_responses: generation-guarded-latest-draft-only
     preview_discipline: scoped-visible-component-plus-selected-source-existing-path-only
     responsive:
-      narrow: split-stacks-to-one-column
+      narrow: forced-design-below-gate-with-stacked-fallback
       narrow_width: 390px
     surface_tokens: fixed-only-no-raw-color
     async_state: explicit-loading-empty-error
