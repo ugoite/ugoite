@@ -137,10 +137,16 @@ export default function SpaceHistoryRoute() {
       display_name: member.principal.display_name,
     })),
   ));
+  const actorDisplayName = (id: string) => {
+    const name = actorLookup()?.(id)?.trim();
+    return name && name.toLocaleLowerCase() !== id.trim().toLocaleLowerCase()
+      ? name
+      : undefined;
+  };
   const actorName = (id: string) =>
-    actorLookup()?.(id)?.trim() || t("entryHistory.unknownActor");
+    actorDisplayName(id) ?? t("entryHistory.unknownActor");
   const actorOptions = () => [...new Set((members() ?? [])
-    .filter((member) => member.principal.display_name.trim())
+    .filter((member) => actorDisplayName(member.principal.principal_id))
     .map((member) => member.principal.principal_id))].filter(Boolean);
   const formName = (id: string) => {
     const form = (forms() ?? []).find((candidate) =>

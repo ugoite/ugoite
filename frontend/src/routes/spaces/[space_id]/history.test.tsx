@@ -435,14 +435,22 @@ describe("space history list", () => {
     expect(setSearchParams).toHaveBeenCalledWith({ change: undefined });
   });
 
-  it("Space History: keeps unresolved actor IDs inside technical disclosure", async () => {
+  it("Space History: keeps actor IDs out of labels when display names echo them", async () => {
     const actorId = "123e4567-e89b-12d3-a456-426614174000";
     const source = row("change-1", 1, "run-1");
     const unresolvedRow = {
       ...source,
       change: { ...source.change, actor_principal_id: actorId },
     };
-    vi.mocked(spaceApi.listMembers).mockResolvedValue([]);
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([{
+      principal: {
+        principal_id: actorId,
+        display_name: actorId,
+        kind: "human",
+        state: "active",
+      },
+      role: "owner",
+    }]);
     vi.mocked(changeApi.query).mockResolvedValue({
       changes: [unresolvedRow],
       next_cursor: null,

@@ -110,12 +110,12 @@ requirements:
           - id: technical-identifier-disclosure
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
-            selector: { kind: test, name: "Space History: keeps unresolved actor IDs inside technical disclosure" }
+            selector: { kind: test, name: "Space History: keeps actor IDs out of labels when display names echo them" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-HISTORY-001#criterion.technical-identifiers
                 covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "Space History: keeps unresolved actor IDs inside technical disclosure" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "Space History: keeps actor IDs out of labels when display names echo them" } }
           - id: technical-resource-identifiers
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
