@@ -457,13 +457,13 @@ requirements:
 
   - id: REQ-E2E-010
     title: Safe service worker updates for open clients
-    description: A production service worker update must not replace the worker controlling an open client while that client may still need to load lazy route modules from its current build.
+    description: The production SPA entrypoint registers its service worker, and an update does not replace the worker controlling an open client while that client may still need to load lazy route modules from its current build.
     priority: high
     status: implemented
     criteria:
       - id: active-client-safety
         kind: behavior
-        statement: A newly installed production service worker waits while existing clients remain open, allowing each client to continue traversing lazy routes with the worker and assets from its current build.
+        statement: The production SPA entrypoint registers the generated service worker, which waits while existing clients remain open so each client can continue traversing lazy routes with its current worker and assets.
         governed_by: [POL-006#rule.governance, POL-014#rule.governance]
     bindings:
       - id: production-update-verification

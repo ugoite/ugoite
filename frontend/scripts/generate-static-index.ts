@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import { brandIconLinksHtml } from "../src/lib/brand-icon-links.ts";
+import { extractPwaHeadTags } from "./static-index.ts";
 
 const [manifestPath, outputPath] = Deno.args;
 
@@ -19,6 +20,8 @@ const manifest = JSON.parse(await Deno.readTextFile(manifestPath)) as Record<
   string,
   ManifestEntry
 >;
+const viteGeneratedHtml = await Deno.readTextFile(outputPath);
+const pwaHeadTags = extractPwaHeadTags(viteGeneratedHtml);
 const clientEntry = manifest["virtual:$vinxi/handler/client"];
 
 if (!clientEntry?.file) {
@@ -60,6 +63,7 @@ const html = `<!doctype html>
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>Ugoite</title>
 		${brandIconLinksHtml().replaceAll("\n", "\n\t\t")}
+\t\t${pwaHeadTags}
 ${preloadLinks}
 ${stylesheetLinks}
 		<script src="/_build/ugoite-manifest.js"></script>
