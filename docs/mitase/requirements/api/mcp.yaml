@@ -104,13 +104,12 @@ requirements:
           - id: browser-context-selection-ui
             adapter: typescript
             path: frontend/src/components/konase/KonasePanel.test.tsx
-            selector: { kind: test, name: "reads only selected Form and Entry candidates, previews normalized Context, then waits for send" }
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview" }
             claims:
               - kind: verifies
                 criterion: REQ-API-012#criterion.selected-context-admission
                 covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "reads only selected Form and Entry candidates, previews normalized Context, then waits for send" } }
-
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview" } }
   - id: REQ-API-013
     title: Current MCP surface documentation
     description: "Current-state MCP documentation describes the shipped v1 semantic facade: ugoite.search, ugoite.save, and authorized ugoite.delete, plus lazy stable Entry/Form resources. ugoite.save creates a structured Entry without id or updates one opaque Entry with id using form, fields, tags, and optional extra_attributes values; a declared Markdown Form field remains ordinary Markdown text and the Entry itself is never submitted as a Markdown document. Storage-specific routes, prompts, SQL, and revision tools remain future work."
@@ -121,3 +120,29 @@ requirements:
         kind: documentation
         statement: Current MCP documentation describes the shipped search, save, delete, and lazy Entry/Form resource facade and separates future capabilities.
         governed_by: [POL-015#rule.governance]
+
+  - id: REQ-API-019
+    title: Browser Konase Space scope
+    description: Browser Konase MCP authorization follows the currently rendered Space and drops a connected host when the Space changes.
+    priority: high
+    status: implemented
+    criteria:
+      - id: current-space-authorization
+        kind: security
+        statement: The Browser Konase panel starts MCP authorization using the currently rendered Space and discards its connected host when that Space changes.
+        governed_by: [POL-011#rule.governance, POL-015#rule.governance]
+    bindings:
+      - id: browser-space-scope-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Browser Konase authorization is bound to the rendered Space and a Space change discards the previous host through the exact panel test.
+        targets:
+          - id: browser-panel-space-scope
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "starts MCP authorization from the rendered Space and drops the host when the Space changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-019#criterion.current-space-authorization
+                covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "starts MCP authorization from the rendered Space and drops the host when the Space changes" } }

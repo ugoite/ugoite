@@ -20,6 +20,10 @@ components:
     type: top-bar
     height: 58px
     notes: Contains quiet Konase utility access and the account entry point. It does not own page identity; nested object or task identity is expressed by the page.
+    konase_panel:
+      reference: konase-panel.yaml
+      trigger: icon-only
+      lifetime: shell-owned-preserved-while-hidden
   - id: mobile-bottom-navigation
     type: bottom-navigation
     height: 66px

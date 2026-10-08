@@ -59,6 +59,9 @@ export function KonasePanel(props: KonasePanelProps) {
   );
   const [turn, setTurn] = createSignal<KonaseTurn>();
   const [selectedUris, setSelectedUris] = createSignal<string[]>([]);
+  const [resourceLabels, setResourceLabels] = createSignal<
+    Record<string, string>
+  >({});
   const [forms, setForms] = createSignal<Form[]>([]);
   const [formsLoading, setFormsLoading] = createSignal(false);
   const [entryText, setEntryText] = createSignal("");
@@ -144,6 +147,7 @@ export function KonasePanel(props: KonasePanelProps) {
       setUndoing(false);
       setTurn(undefined);
       setSelectedUris([]);
+      setResourceLabels({});
       setForms([]);
       setFormsLoading(false);
       setEntryRows([]);
@@ -332,7 +336,18 @@ export function KonasePanel(props: KonasePanelProps) {
     setFormsLoading(true);
     try {
       const candidates = await formApi.list(spaceId);
-      if (isCurrentLifetime(hostLifetime)) setForms(candidates);
+      if (isCurrentLifetime(hostLifetime)) {
+        setForms(candidates);
+        setResourceLabels((current) => ({
+          ...current,
+          ...Object.fromEntries(
+            candidates.filter((form) => form.id).map((form) => [
+              `ugoite://form/${form.id}`,
+              formCandidateLabel(form),
+            ]),
+          ),
+        }));
+      }
     } catch (cause) {
       if (isCurrentLifetime(hostLifetime)) {
         setError(formatUserFacingError(cause, "konase.candidateError"));
@@ -379,6 +394,13 @@ export function KonasePanel(props: KonasePanelProps) {
       ) return;
       setEntryRows(page.rows);
       setEntryPage(page);
+      setResourceLabels((current) => ({
+        ...current,
+        ...Object.fromEntries(page.rows.map((entry) => [
+          `ugoite://entry/${entry.id}`,
+          entryCandidateLabel(entry),
+        ])),
+      }));
       if (nextPath) setEntryCursorPath(nextPath);
     } catch (cause) {
       if (
@@ -407,6 +429,12 @@ export function KonasePanel(props: KonasePanelProps) {
       checked ? [...value, uri] : value.filter((selected) => selected !== uri)
     );
   };
+
+  const resourceLabel = (uri: string) =>
+    resourceLabels()[uri] ||
+    (uri.startsWith("ugoite://form/")
+      ? t("konase.formCandidate")
+      : t("konase.entryCandidate"));
 
   const editEntryText = (value: string) => {
     setEntryText(value);
@@ -594,12 +622,14 @@ export function KonasePanel(props: KonasePanelProps) {
               <For each={selectedUris()}>
                 {(uri) => (
                   <li>
-                    <span>{uri}</span>
+                    <span>{resourceLabel(uri)}</span>
                     <button
                       class="btn"
                       type="button"
                       disabled={running()}
-                      aria-label={t("konase.removeSelectedResource", { uri })}
+                      aria-label={t("konase.removeSelectedResource", {
+                        label: resourceLabel(uri),
+                      })}
                       onClick={() => toggleResource(uri, false)}
                     >
                       {t("konase.removeSelectedResourceButton")}
@@ -633,7 +663,7 @@ export function KonasePanel(props: KonasePanelProps) {
                       onChange={(event) =>
                         toggleResource(uri, event.currentTarget.checked)}
                     />
-                    {form.name} {form.id ? `(${form.id})` : ""}
+                    {formCandidateLabel(form)}
                   </label>
                 );
               }}
@@ -686,7 +716,7 @@ export function KonasePanel(props: KonasePanelProps) {
                         onChange={(event) =>
                           toggleResource(uri, event.currentTarget.checked)}
                       />
-                      {entry.preview || entry.id} ({entry.id})
+                      {entryCandidateLabel(entry)}
                     </label>
                   );
                 }}
@@ -937,6 +967,16 @@ export function KonasePanel(props: KonasePanelProps) {
     </section>
   );
 }
+
+const formCandidateLabel = (form: Form) => {
+  const name = form.name.trim();
+  return name && name !== form.id ? name : t("konase.formCandidate");
+};
+
+const entryCandidateLabel = (entry: EntryQueryResult) => {
+  const preview = entry.preview?.trim();
+  return preview && preview !== entry.id ? preview : t("konase.entryCandidate");
+};
 
 const progressLabel = (progress: KonaseProgress): string => {
   switch (progress.kind) {
