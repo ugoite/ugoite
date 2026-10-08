@@ -5,6 +5,7 @@ import {
   type CompositionInspectorDataJump,
 } from "~/components/CompositionInspector";
 import { IconButton } from "~/components/IconButton";
+import type { CompositionFieldNames } from "~/components/CompositionRenderer";
 import type { CompositionDraft } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 
@@ -12,6 +13,7 @@ export interface CompositionInspectorSheetProps {
   draft: CompositionDraft;
   /** Transient canvas selection; the sheet renders the block only. */
   selectedId: string | null;
+  fieldNames?: CompositionFieldNames;
   /** Single draft mutation channel shared with the canvas. */
   onDraftChange: (draft: CompositionDraft) => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
@@ -99,6 +101,7 @@ export function CompositionInspectorSheet(
             <CompositionInspector
               draft={props.draft}
               selectedId={props.selectedId}
+              fieldNames={props.fieldNames}
               onDraftChange={props.onDraftChange}
               onDataJump={props.onDataJump}
             />

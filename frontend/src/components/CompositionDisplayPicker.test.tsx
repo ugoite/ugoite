@@ -1,9 +1,12 @@
 import "@testing-library/jest-dom/vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   cleanup,
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -46,6 +49,8 @@ const jsonOnlySource: DraftSource = {
   variables: {},
 };
 
+const stylesheet = () => readFileSync(join(__dirname, "..", "app.css"), "utf8");
+
 describe("CompositionDisplayPicker", () => {
   beforeEach(() => {
     setLocale("en");
@@ -57,6 +62,7 @@ describe("CompositionDisplayPicker", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
+        kind="table"
         sources={[sqlSource, entrySource]}
         onAdd={onAdd}
         onClose={() => {}}
@@ -64,7 +70,7 @@ describe("CompositionDisplayPicker", () => {
     ));
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+    expect(screen.queryByRole("button", { name: "Table" })).toBeNull();
 
     const dialog = screen.getByRole("dialog");
     fireEvent.click(
@@ -91,14 +97,15 @@ describe("CompositionDisplayPicker", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
+        kind="metric"
         sources={[sqlSource, entrySource]}
         onAdd={onAdd}
         onClose={() => {}}
       />
     ));
 
-    fireEvent.click(screen.getByRole("button", { name: "Metric" }));
     const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByRole("button", { name: "Metric" })).toBeNull();
     fireEvent.click(
       within(dialog).getByRole("button", { name: /Monthly/ }),
     );
@@ -125,12 +132,13 @@ describe("CompositionDisplayPicker", () => {
     const entryAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
+        kind="metric"
         sources={[entrySource]}
+        fieldNames={(_formId, fieldId) => fieldId === 3 ? "Title" : undefined}
         onAdd={entryAdd}
         onClose={() => {}}
       />
     ));
-    fireEvent.click(screen.getByRole("button", { name: "Metric" }));
     const entryDialog = screen.getByRole("dialog");
     fireEvent.click(
       within(entryDialog).getByRole("button", { name: /Tasks/ }),
@@ -142,7 +150,7 @@ describe("CompositionDisplayPicker", () => {
       within(entrySelect).getAllByRole("option").map((option) =>
         option.textContent
       ),
-    ).toEqual(["#3"]);
+    ).toEqual(["Title"]);
     fireEvent.click(
       within(entryDialog).getByRole("button", { name: "Add display" }),
     );
@@ -157,13 +165,13 @@ describe("CompositionDisplayPicker", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
+        kind="metric"
         sources={[jsonOnlySource]}
         onAdd={onAdd}
         onClose={() => {}}
       />
     ));
 
-    fireEvent.click(screen.getByRole("button", { name: "Metric" }));
     const dialog = screen.getByRole("dialog");
     const disabledRow = within(dialog).getByRole("button", {
       name: "Blobs",
@@ -174,5 +182,57 @@ describe("CompositionDisplayPicker", () => {
       within(dialog).queryByRole("button", { name: "Add display" }),
     ).toBeNull();
     expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it("focuses the first available source after disabled metric sources", async () => {
+    render(() => (
+      <CompositionDisplayPicker
+        kind="metric"
+        sources={[jsonOnlySource, sqlSource]}
+        onAdd={() => {}}
+        onClose={() => {}}
+      />
+    ));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Blobs" }))
+      .toBeDisabled();
+    const availableSource = within(dialog).getByRole("button", {
+      name: "Monthly",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(availableSource));
+  });
+
+  it("keeps the metric choice through field selection and uses form labels", () => {
+    const onAdd = vi.fn();
+    render(() => (
+      <CompositionDisplayPicker
+        kind="metric"
+        sources={[entrySource]}
+        fieldNames={(_formId, fieldId) => fieldId === 3 ? "Title" : undefined}
+        onAdd={onAdd}
+        onClose={() => {}}
+      />
+    ));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByRole("button", { name: "Metric" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: /Tasks/ }));
+    const valueSelect = within(dialog).getByLabelText("Value");
+    expect(valueSelect).toHaveDisplayValue("Title");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add display" }),
+    );
+    expect(onAdd).toHaveBeenCalledWith({
+      kind: "metric",
+      sourceDraftId: "src-2",
+      valueField: { fieldId: 3 },
+    });
+    expect(stylesheet()).toMatch(
+      /\.ui-dialog\.composition-display-picker[\s\S]*?max-height:\s*calc\(100dvh - 32px\);[\s\S]*?overflow-y:\s*auto;/,
+    );
+    expect(stylesheet()).toMatch(
+      /\.ui-dialog\.composition-display-picker[\s\S]*?width:\s*min\(560px,\s*calc\(100vw - 32px\)\)/,
+    );
   });
 });

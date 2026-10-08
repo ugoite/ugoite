@@ -61,6 +61,15 @@ features:
                 criterion: REQ-FE-070#criterion.display-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
+          - id: composition-inspector
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
           - id: composition-design-canvas
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.tsx
@@ -88,6 +97,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.accessible-icon-actions
           - id: composition-studio-shell

@@ -83,7 +83,7 @@ const seedDraft = (): CompositionDraft => {
 const harnessCalls = vi.hoisted(() => ({
   draft: [] as CompositionDraft[],
   selected: [] as (string | null)[],
-  picker: [] as DraftInsertTarget[],
+  picker: [] as { target: DraftInsertTarget; kind: "metric" | "table" }[],
   parameters: [] as [string, unknown | undefined][],
 }));
 
@@ -121,7 +121,8 @@ function Harness(
         harnessCalls.draft.push(next);
         setDraft(next);
       }}
-      onRequestDisplayPicker={(target) => harnessCalls.picker.push(target)}
+      onRequestDisplayPicker={(target, kind) =>
+        harnessCalls.picker.push({ target, kind })}
       onParameterChange={(parameterId, value) => {
         harnessCalls.parameters.push([parameterId, value]);
       }}
@@ -223,6 +224,16 @@ describe("CompositionDesignCanvas", () => {
     expect(dialog.querySelector(".designPaletteParams")).toHaveTextContent(
       "Add a parameter to begin.",
     );
+  });
+
+  it("carries the selected display kind from the canvas palette", () => {
+    renderHarness();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Metric" }));
+
+    expect(harnessCalls.picker).toHaveLength(1);
+    expect(harnessCalls.picker[0].kind).toBe("metric");
   });
 
   it("opens the palette as a modal dialog with focus trap and focus return", async () => {
@@ -370,8 +381,22 @@ describe("CompositionDesignCanvas", () => {
     // No draft change: the shared picker owns source and value selection.
     expect(harnessCalls.draft).toHaveLength(0);
     expect(harnessCalls.picker).toHaveLength(1);
-    expect(harnessCalls.picker[0].rowId).toBeNull();
+    expect(harnessCalls.picker[0]).toMatchObject({
+      target: { rowId: null },
+      kind: "metric",
+    });
     expect(screen.queryByRole("dialog", { name: "Add block" })).toBeNull();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
+    const tableDialog = screen.getByRole("dialog", { name: "Add block" });
+    const tableEntries = tableDialog.querySelector(
+      ".designPaletteEntries",
+    )!.querySelectorAll("button");
+    fireEvent.click(tableEntries[2]);
+    expect(harnessCalls.picker[1]).toMatchObject({
+      target: { rowId: null },
+      kind: "table",
+    });
   });
 
   it("reorders rows and items with keyboard-operable buttons", () => {

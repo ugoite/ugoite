@@ -11,6 +11,7 @@ import {
   type CompositionDraft,
   type DraftDisplay,
 } from "~/lib/composition-draft";
+import type { CompositionFieldNames } from "~/components/CompositionRenderer";
 
 const PARAMETER_BLOCK_PREFIX = "param:";
 
@@ -20,6 +21,7 @@ export interface CompositionInspectorProps {
   draft: CompositionDraft;
   /** Transient canvas selection; the inspector renders one block only. */
   selectedId: string | null;
+  fieldNames?: CompositionFieldNames;
   /** Single draft mutation channel shared with the canvas. */
   onDraftChange: (draft: CompositionDraft) => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
@@ -75,6 +77,7 @@ export function CompositionInspector(props: CompositionInspectorProps) {
             <ComponentInspector
               draft={props.draft}
               display={(entry() as { display: DraftDisplay }).display}
+              fieldNames={props.fieldNames}
               onDraftChange={props.onDraftChange}
               onDataJump={props.onDataJump}
             />
@@ -94,6 +97,7 @@ export function CompositionInspector(props: CompositionInspectorProps) {
 function ComponentInspector(props: {
   draft: CompositionDraft;
   display: DraftDisplay;
+  fieldNames?: CompositionFieldNames;
   onDraftChange: (draft: CompositionDraft) => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
 }) {
@@ -120,6 +124,7 @@ function ComponentInspector(props: {
           <MetricInspector
             draft={props.draft}
             display={display()}
+            fieldNames={props.fieldNames}
             apply={apply}
             onDataJump={props.onDataJump}
           />

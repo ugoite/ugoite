@@ -1,13 +1,29 @@
 import { t } from "~/lib/i18n";
 import type { DraftDisplay, DraftSource } from "~/lib/composition-draft";
 
-export const displayValueName = (display: DraftDisplay): string => {
+export const displayValueName = (
+  display: DraftDisplay,
+  sources: readonly DraftSource[] = [],
+  fieldNames?: (formId: string, fieldId: number) => string | undefined,
+): string => {
   if (display.kind === "text") return "";
-  return display.kind === "table"
-    ? ""
-    : "column" in display.valueField
-    ? display.valueField.column
-    : `#${display.valueField.fieldId}`;
+  if (display.kind === "table") return "";
+  if ("column" in display.valueField) return display.valueField.column;
+  const source = sources.find((entry) =>
+    entry.draftId === display.sourceDraftId
+  );
+  if (source?.kind !== "entry_query") return t("composition.studioValue");
+  const field = source.fieldSchema.find((entry) =>
+    entry.field_id === display.valueField.fieldId
+  );
+  return fieldNames?.(source.formId, display.valueField.fieldId) ??
+    t("composition.studioFieldIndex", {
+      index: field
+        ? source.fieldSchema.findIndex((entry) =>
+          entry.field_id === field.field_id
+        ) + 1
+        : 1,
+    });
 };
 
 const sourceName = (
@@ -20,12 +36,15 @@ const sourceName = (
 export const displayDefaultName = (
   display: DraftDisplay,
   sources: readonly DraftSource[],
+  fieldNames?: (formId: string, fieldId: number) => string | undefined,
 ): string => {
   if (display.label) return display.label;
-  if (display.kind === "text") return display.text || display.draftId;
+  if (display.kind === "text") {
+    return display.text || t("composition.studioText");
+  }
   const name = sourceName(sources, display.sourceDraftId);
   if (display.kind === "table") return name;
-  const value = displayValueName(display);
+  const value = displayValueName(display, sources, fieldNames);
   return value ? `${name} / ${value}` : name;
 };
 

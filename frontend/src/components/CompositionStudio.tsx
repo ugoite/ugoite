@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from "@solidjs/router";
 import {
   createEffect,
+  createResource,
   createSignal,
   For,
   onCleanup,
@@ -8,7 +9,10 @@ import {
   Show,
 } from "solid-js";
 import { BackLink } from "~/components/BackLink";
-import { CompositionDiagnostics } from "~/components/CompositionRenderer";
+import {
+  CompositionDiagnostics,
+  type CompositionFieldNames,
+} from "~/components/CompositionRenderer";
 import {
   CompositionDesignCanvas,
   designBlockIdForComponent,
@@ -89,6 +93,7 @@ import {
 } from "~/lib/composition-save-attempt";
 import { t } from "~/lib/i18n";
 import { spaceCompositionRevisionPath } from "~/lib/space-path";
+import { formApi } from "~/lib/ugoite-client";
 
 export type CompositionStudioSaveMode =
   | { kind: "create" }
@@ -123,6 +128,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   );
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [displayPickerOpen, setDisplayPickerOpen] = createSignal(false);
+  const [displayPickerKind, setDisplayPickerKind] = createSignal<
+    "metric" | "table"
+  >("table");
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
   // Transient canvas Work: selected block identity for the inspector and
   // the pending palette insertion target for metric/table picks.
@@ -231,6 +239,25 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(false);
+
+  // Form labels are display metadata only. Composition fields keep their
+  // stable field IDs, while the editor shows the authorized Form labels.
+  const [forms] = createResource(
+    () =>
+      draft().sources.some((source) => source.kind === "entry_query")
+        ? props.spaceId
+        : undefined,
+    (spaceId) => formApi.list(spaceId).catch(() => []),
+  );
+  const fieldNames: CompositionFieldNames = (formId, fieldId) => {
+    const form = forms()?.find((entry) => entry.id === formId);
+    const field = Object.entries(form?.fields ?? {}).find(([, definition]) =>
+      (definition.query_capability?.field.field_id ?? definition.id) ===
+        fieldId
+    );
+    if (!field) return undefined;
+    return field[1].label?.trim() || undefined;
+  };
 
   const previewHandle = createCompositionPreviewHandle();
   onCleanup(previewHandle.dispose);
@@ -811,12 +838,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
             ...previewHandle.parameters(),
           }}
           sources={readySources()}
+          fieldNames={fieldNames}
           selectedId={selectedId()}
           highlightedIds={highlightedBlockIds()}
           onSelect={handleSelectBlock}
           onDraftChange={setDraft}
-          onRequestDisplayPicker={(target) => {
+          onRequestDisplayPicker={(target, kind) => {
             setPendingInsert(target);
+            setDisplayPickerKind(kind);
             setDisplayPickerOpen(true);
           }}
           onParameterChange={(parameterId, value) =>
@@ -835,6 +864,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           <CompositionInspector
             draft={draft()}
             selectedId={selectedId()}
+            fieldNames={fieldNames}
             onDraftChange={setDraft}
             onDataJump={jumpToSource}
           />
@@ -845,6 +875,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           <CompositionInspectorSheet
             draft={draft()}
             selectedId={activeId()}
+            fieldNames={fieldNames}
             onDraftChange={setDraft}
             onDataJump={jumpToSource}
             onClose={dismissSheet}
@@ -1027,7 +1058,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
       <Show when={displayPickerOpen()}>
         <CompositionDisplayPicker
+          kind={displayPickerKind()}
           sources={draft().sources}
+          fieldNames={fieldNames}
           onAdd={addDisplaySeed}
           onClose={() => {
             setPendingInsert(null);

@@ -9,6 +9,8 @@ import {
 import { A, useNavigate, useParams } from "@solidjs/router";
 import {
   CompositionDiagnostics,
+  type CompositionFieldKeys,
+  type CompositionFieldNames,
   CompositionRenderer,
 } from "~/components/CompositionRenderer";
 import { DashboardFlowRenderer } from "~/components/DashboardFlowRenderer";
@@ -29,25 +31,52 @@ import {
   spaceCompositionRevisionPath,
 } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
-import type { Form } from "~/lib/types";
+import type { Form, FormField } from "~/lib/types";
 
 export const route = spaceRoute({ navigation: "home" });
+
+const findCompositionFormField = (
+  forms: readonly Form[] | undefined,
+  formId: string,
+  fieldId: number,
+): [string, FormField] | undefined => {
+  const fields = (forms ?? []).find((form) => form.id === formId)?.fields ?? {};
+  return Object.entries(fields).find(([, field]) =>
+    (field.query_capability?.field.field_id ?? field.id) === fieldId
+  );
+};
 
 /**
  * Display-only Form field-name lookup for Composition entry_query tables.
  * Matches the stable Form id only; display names never participate so a
- * Form rename cannot change which fields resolve. Query semantics never
- * depend on this helper — missing metadata returns undefined and the
- * table falls back to the current row key order.
+ * Form rename cannot change which fields resolve. Form field keys provide
+ * their display names when no explicit label exists; the matching source's
+ * saved schema order is the final fallback. Query semantics never depend on
+ * this helper.
  */
 export const resolveCompositionFieldName = (
   forms: readonly Form[] | undefined,
   formId: string,
   fieldId: number,
+  fieldSchema?: readonly { field_id: number }[],
+): string | undefined => {
+  const entry = findCompositionFormField(forms, formId, fieldId);
+  const label = entry?.[1].label?.trim();
+  if (label) return label;
+  if (entry) return entry[0];
+  const index = fieldSchema?.findIndex((entry) => entry.field_id === fieldId) ??
+    -1;
+  return index < 0
+    ? undefined
+    : t("composition.studioFieldIndex", { index: index + 1 });
+};
+
+export const resolveCompositionFieldKey = (
+  forms: readonly Form[] | undefined,
+  formId: string,
+  fieldId: number,
 ): string | undefined =>
-  Object.entries(
-    (forms ?? []).find((form) => form.id === formId)?.fields ?? {},
-  ).find(([, field]) => field.id === fieldId)?.[0];
+  findCompositionFormField(forms, formId, fieldId)?.[0];
 
 export default function CompositionRevisionRoute() {
   const params = useParams<{
@@ -166,8 +195,6 @@ export default function CompositionRevisionRoute() {
     () => params.space_id,
     (spaceId) => formApi.list(spaceId).catch(() => []),
   );
-  const fieldNames = (formId: string, fieldId: number): string | undefined =>
-    resolveCompositionFieldName(forms(), formId, fieldId);
   const parameterMismatch = (parameterId: string) =>
     diagnostics().some((diagnostic) =>
       diagnostic.parameter_id === parameterId &&
@@ -199,6 +226,24 @@ export default function CompositionRevisionRoute() {
     ) return undefined;
     return document;
   };
+  const fieldNames: CompositionFieldNames = (
+    formId,
+    fieldId,
+    sourceId,
+  ) => {
+    const source = layoutDocument()?.spec.sources.find((entry) =>
+      entry.id === sourceId && entry.kind === "entry_query" &&
+      entry.form_id === formId
+    );
+    return resolveCompositionFieldName(
+      forms(),
+      formId,
+      fieldId,
+      source?.field_schema,
+    );
+  };
+  const fieldKeys: CompositionFieldKeys = (formId, fieldId) =>
+    resolveCompositionFieldKey(forms(), formId, fieldId);
   const flowRows = () => {
     const rows = layoutDocument()?.spec.layout?.rows;
     return Array.isArray(rows) ? rows : undefined;
@@ -348,6 +393,7 @@ export default function CompositionRevisionRoute() {
                 sources={current().sources}
                 texts={flowTexts()}
                 fieldNames={fieldNames}
+                fieldKeys={fieldKeys}
                 onNext={handle.next}
                 onPrevious={handle.previous}
                 onRetry={handle.retry}
@@ -366,6 +412,7 @@ export default function CompositionRevisionRoute() {
                 parameterInvalid={parameterMismatch}
                 sources={current().sources}
                 fieldNames={fieldNames}
+                fieldKeys={fieldKeys}
                 onNext={handle.next}
                 onPrevious={handle.previous}
                 onRetry={handle.retry}

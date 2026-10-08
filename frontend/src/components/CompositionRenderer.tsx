@@ -6,10 +6,10 @@ import { SqlResultTable } from "~/components/SqlResultTable";
 import { t, type TranslationKey } from "~/lib/i18n";
 import {
   compositionApi,
-  type CompositionResolvePlan,
   type CompositionResolvedComponentBinding,
   type CompositionResolveDiagnostic,
   type CompositionResolvedSource,
+  type CompositionResolvePlan,
   type CompositionTextStyle,
 } from "~/lib/composition-api";
 import { TextComponent } from "~/components/composition/TextComponent";
@@ -18,6 +18,13 @@ import type { CompositionSourcePageState } from "~/lib/composition-query-handle"
 export type CompositionFieldNames = (
   formId: string,
   fieldId: number,
+  sourceId?: string,
+) => string | undefined;
+
+export type CompositionFieldKeys = (
+  formId: string,
+  fieldId: number,
+  sourceId?: string,
 ) => string | undefined;
 
 type RendererProps = {
@@ -32,8 +39,11 @@ type RendererProps = {
    * Text content joined by component id. Surfaces without the component
    * declarations (draft previews) omit this and skip text bindings.
    */
-  texts?: Readonly<Record<string, { text: string; style: CompositionTextStyle }>>;
+  texts?: Readonly<
+    Record<string, { text: string; style: CompositionTextStyle }>
+  >;
   fieldNames?: CompositionFieldNames;
+  fieldKeys?: CompositionFieldKeys;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -138,8 +148,7 @@ export function CompositionSavedSqlTable(props: {
   const loading = () =>
     props.ownsSourceStatus &&
     (!props.sourceState || status() === "loading");
-  const failed = () =>
-    props.ownsSourceStatus && status() === "error";
+  const failed = () => props.ownsSourceStatus && status() === "error";
 
   return (
     <section class="section">
@@ -171,7 +180,9 @@ export function CompositionSavedSqlTable(props: {
           <SqlResultTable
             columns={page()?.columns ?? []}
             rows={rows()}
-            pageIdentity={`${sourceId()}:${props.sourceState?.cursor ?? "first"}`}
+            pageIdentity={`${sourceId()}:${
+              props.sourceState?.cursor ?? "first"
+            }`}
             tableLabel={props.binding.label ?? t("composition.resultPages")}
           />
         </Show>
@@ -382,9 +393,8 @@ export function CompositionRenderer(props: RendererProps) {
           const source = sourceById.get(binding.source_id);
           const sourceState = () => props.sources[binding.source_id];
           if (!source) return null;
-          const ownsSourceStatus =
-            sourceStatusOwner.get(binding.source_id) ===
-              binding.component_id;
+          const ownsSourceStatus = sourceStatusOwner.get(binding.source_id) ===
+            binding.component_id;
           if (binding.kind === "metric") {
             return (
               <CompositionMetric
@@ -404,6 +414,7 @@ export function CompositionRenderer(props: RendererProps) {
                 sourceState={sourceState()}
                 ownsSourceStatus={ownsSourceStatus}
                 fieldNames={props.fieldNames}
+                fieldKeys={props.fieldKeys}
                 onNext={() => props.onNext(binding.source_id)}
                 onPrevious={() => props.onPrevious(binding.source_id)}
                 onRetry={() => props.onRetry(binding.source_id)}

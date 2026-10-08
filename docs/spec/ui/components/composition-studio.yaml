@@ -86,6 +86,20 @@ components:
       entry_query: EntryResultTable
       saved_sql: SqlResultTable
     metric_semantics: exact-scalar-no-aggregation
+  - id: studio-display-picker
+    type: dialog
+    title: Add display
+    status: implemented
+    ownership: canvas-insertion-delegate
+    kind: carried-from-palette-no-second-selection
+    sequence: [source, metric-value-field, optional-label, add]
+    entry_query_field_labels: transient-form-label-or-localized-source-schema-index
+    internal_field_ids: never-rendered
+    form_metadata: authorized-form-list-transient-never-stored
+    sizing:
+      width: min(560px, calc(100vw - 32px))
+      height: max-viewport-minus-32px-with-vertical-scroll
+    semantics: exact-scalar-no-aggregation
   - id: studio-parameters
     type: form
     title: Parameters
@@ -182,7 +196,7 @@ components:
         metric-table-only-with-sources,
         parameters-only-with-parameters,
       ]
-      metric_table: existing-display-picker-at-target
+      metric_table: existing-display-picker-at-target-with-kind-carried-through
       parameter: place-existing-only-no-creation
     removal:
       component: remove-declaration-and-unplace
@@ -205,6 +219,7 @@ components:
       label: optional-display-label
       data: existing-source-picker-only
       value: entry-field-or-sql-column-no-inference
+      entry_field_label: transient-form-label-or-localized-source-schema-index-never-id
     table_fields:
       label: optional-display-label
       data: existing-source-picker-only

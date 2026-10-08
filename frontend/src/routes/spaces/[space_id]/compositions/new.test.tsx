@@ -168,7 +168,7 @@ describe("Composition studio shell", () => {
   };
 
   // Canvas insertion path: a gap "+" opens the block palette, and the
-  // palette metric/table entries delegate to the display picker at the
+  // palette metric/table choice carries into the display picker at the
   // recorded target. The legacy Display section is gone; this is the only
   // insertion path.
   const addTableViaCanvas = async (sourceName: string) => {
@@ -176,7 +176,6 @@ describe("Composition studio shell", () => {
     const palette = screen.getByRole("dialog", { name: "Add block" });
     fireEvent.click(within(palette).getByRole("button", { name: "Table" }));
     const picker = await screen.findByRole("dialog", { name: "Add display" });
-    fireEvent.click(within(picker).getByRole("button", { name: "Table" }));
     fireEvent.click(within(picker).getByRole("button", { name: sourceName }));
     fireEvent.click(
       within(picker).getByRole("button", { name: "Add display" }),
@@ -195,7 +194,6 @@ describe("Composition studio shell", () => {
     const palette = screen.getByRole("dialog", { name: "Add block" });
     fireEvent.click(within(palette).getByRole("button", { name: "Metric" }));
     const picker = await screen.findByRole("dialog", { name: "Add display" });
-    fireEvent.click(within(picker).getByRole("button", { name: "Metric" }));
     fireEvent.click(within(picker).getByRole("button", { name: sourceName }));
     fireEvent.change(within(picker).getByLabelText("Value"), {
       target: { value },

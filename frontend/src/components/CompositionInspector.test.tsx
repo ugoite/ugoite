@@ -153,6 +153,29 @@ describe("CompositionInspector", () => {
     expect(harnessCalls.jump).toHaveLength(0);
   });
 
+  it("shows Form labels instead of field IDs for metric values", () => {
+    const added = addMetricDisplay(seedDraft(), "src-2", { fieldId: 1 });
+    if (!added.ok || !added.draftId) throw new Error("expected metric block");
+
+    render(() => (
+      <CompositionInspector
+        draft={added.draft}
+        selectedId={added.draftId}
+        fieldNames={(_formId, fieldId) =>
+          fieldId === 1 ? "Expense type" : undefined}
+        onDraftChange={() => {}}
+        onDataJump={() => {}}
+      />
+    ));
+
+    const valueSelect = screen.getByLabelText("Value");
+    const options = Array.from(valueSelect.querySelectorAll("option")).map(
+      (option) => option.textContent,
+    );
+    expect(options).toEqual(["Expense type", "Field 2"]);
+    expect(options.join(" ")).not.toContain("1");
+  });
+
   it("maps metric source changes to component source and value field", () => {
     renderHarness("disp-1");
 

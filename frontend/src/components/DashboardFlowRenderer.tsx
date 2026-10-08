@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js";
 import { CompositionEntryQueryTable } from "~/components/CompositionEntryQueryTable";
 import {
+  type CompositionFieldKeys,
   type CompositionFieldNames,
   CompositionMetric,
   CompositionSavedSqlTable,
@@ -64,6 +65,7 @@ export interface DashboardFlowItemProps {
   >;
   ownsSourceStatus: boolean;
   fieldNames?: CompositionFieldNames;
+  fieldKeys?: CompositionFieldKeys;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -103,6 +105,7 @@ export function DashboardFlowItem(props: DashboardFlowItemProps) {
           sourceById={props.sourceById}
           ownsSourceStatus={props.ownsSourceStatus}
           fieldNames={props.fieldNames}
+          fieldKeys={props.fieldKeys}
           onNext={props.onNext}
           onPrevious={props.onPrevious}
           onRetry={props.onRetry}
@@ -131,6 +134,7 @@ type DashboardFlowRendererProps = {
   parameterInvalid?: (parameterId: string) => boolean;
   sources: Record<string, CompositionSourcePageState>;
   fieldNames?: CompositionFieldNames;
+  fieldKeys?: CompositionFieldKeys;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -202,6 +206,7 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
                       sourceById={sourceById()}
                       ownsSourceStatus={ownsSourceStatus()}
                       fieldNames={props.fieldNames}
+                      fieldKeys={props.fieldKeys}
                       onNext={props.onNext}
                       onPrevious={props.onPrevious}
                       onRetry={props.onRetry}
@@ -227,6 +232,7 @@ function DashboardFlowComponent(props: {
   >;
   ownsSourceStatus: boolean;
   fieldNames?: CompositionFieldNames;
+  fieldKeys?: CompositionFieldKeys;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -287,6 +293,7 @@ function DashboardFlowComponent(props: {
                   sourceState={sourceState()}
                   ownsSourceStatus={props.ownsSourceStatus}
                   fieldNames={props.fieldNames}
+                  fieldKeys={props.fieldKeys}
                   onNext={() => props.onNext(sourced().source_id)}
                   onPrevious={() => props.onPrevious(sourced().source_id)}
                   onRetry={() => props.onRetry(sourced().source_id)}
