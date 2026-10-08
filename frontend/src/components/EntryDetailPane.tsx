@@ -264,9 +264,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     null,
   );
   // 409 recovery state: the user draft is never touched on conflict. The
-  // server revision id is shown, the latest saved version can be fetched for
-  // side-by-side review (read-only latest via FieldValuesView), and the next
-  // save re-runs explicitly against the adopted base. No auto-merge.
+  // server revision id stays internal to the explicit adopt action; it is not
+  // included in the visible conflict alert. The latest saved version can be
+  // fetched for side-by-side review, and the next save runs against the
+  // adopted base. No auto-merge.
   const [serverRevisionId, setServerRevisionId] = createSignal<string | null>(
     null,
   );
@@ -681,15 +682,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       );
       setLatestEntry(null);
       setShowLatest(false);
-      setConflictMessage(
-        error.apiError
-          ? formatUserFacingError(
-            error.apiError,
-            "entryDetail.saveFailed",
-            "entry.update",
-          )
-          : t("errors.code.revisionConflict"),
-      );
+      // The API conflict detail can contain the stable server revision ID.
+      // Keep this primary alert human-readable and leave the identifier in
+      // state only for the explicit adopt action.
+      setConflictMessage(t("errors.code.revisionConflict"));
     } else {
       setConflictMessage(
         formatUserFacingError(error, "entryDetail.saveFailed", "entry.update"),
@@ -1221,21 +1217,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 class="ui-alert ui-alert-error text-sm ui-entry-conflict"
                 role="alert"
               >
-                <Show
-                  when={serverRevisionId()}
-                  fallback={conflictMessage()}
-                >
-                  {(serverRevision) => (
+                <Show when={serverRevisionId()} fallback={conflictMessage()}>
+                  {() => (
                     <div class="ui-stack-sm">
                       <p class="font-semibold">
                         {t("entryDetail.conflictHeading")}
                       </p>
                       <p>{t("entryDetail.conflictBody")}</p>
-                      <p>
-                        {t("entryDetail.conflictServerRevision", {
-                          revision: serverRevision(),
-                        })}
-                      </p>
                       <p class="ui-muted">{conflictMessage()}</p>
                       <div class="flex flex-wrap gap-2">
                         <button

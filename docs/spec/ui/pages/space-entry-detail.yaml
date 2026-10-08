@@ -10,6 +10,12 @@ page:
       content: localized-error-summary
       recovery_actions: [retry, back-to-form]
       visible_identifiers: none
+    revision_conflict:
+      content: localized-conflict-summary
+      preserves: current-user-draft
+      recovery_actions: [review-latest-saved-version, adopt-latest-revision, save-again]
+      primary_feedback: human-readable-newer-revision-state
+      raw_revision_id: advanced-entry-info-only
 components:
   shared:
     - id: space-shell
