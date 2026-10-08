@@ -218,10 +218,26 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
     const normalizedName = displayName.toLowerCase();
     const normalizedId = raw.toLowerCase();
     const normalizedShortId = shortActorFallback(raw).toLowerCase();
-    const containsIdentifier = (identifier: string) =>
-      identifier.length >= 8 && normalizedName.includes(identifier);
+    const containsIdentifier = (identifier: string): boolean => {
+      const isIdentifierCharacter = (character: string | undefined) =>
+        Boolean(character && /[\p{L}\p{N}_-]/u.test(character));
+      let offset = normalizedName.indexOf(identifier);
+      while (offset >= 0) {
+        if (identifier.length >= 8) return true;
+        const before = Array.from(normalizedName.slice(0, offset)).at(-1);
+        const after = Array.from(
+          normalizedName.slice(offset + identifier.length),
+        )[0];
+        if (
+          !isIdentifierCharacter(before) && !isIdentifierCharacter(after)
+        ) {
+          return true;
+        }
+        offset = normalizedName.indexOf(identifier, offset + 1);
+      }
+      return false;
+    };
     if (
-      normalizedName === normalizedId ||
       containsIdentifier(normalizedId) ||
       containsIdentifier(normalizedShortId)
     ) {

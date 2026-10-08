@@ -270,6 +270,7 @@ describe("AuditLogViewer", () => {
       { actorId: uuid, displayName: uuid },
       { actorId: uuid, displayName: uuid.slice(0, 8) },
       { actorId: "actor-7", displayName: "actor-7" },
+      { actorId: "actor-7", displayName: "Member actor-7" },
     ];
     for (const { actorId, displayName } of echoes) {
       vi.mocked(spaceApi.listMembers).mockResolvedValue([
