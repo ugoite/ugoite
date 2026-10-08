@@ -76,6 +76,8 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-062#criterion.detail-summary
               - kind: satisfies
+                criterion: REQ-FE-062#criterion.form-binding-identifiers
+              - kind: satisfies
                 criterion: REQ-FE-062#criterion.supported-actions
               - kind: satisfies
                 criterion: REQ-FE-062#criterion.revision-aware-save
