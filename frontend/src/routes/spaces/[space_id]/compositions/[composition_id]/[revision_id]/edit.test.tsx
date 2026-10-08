@@ -281,7 +281,7 @@ describe("Composition edit route", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
   });
 
-  it("refuses explicit null optional collections as malformed", async () => {
+  it("refuses explicit null parameters as malformed", async () => {
     lintMock.mockResolvedValueOnce({
       ok: true,
       value: {
@@ -290,6 +290,30 @@ describe("Composition edit route", () => {
           spec: {
             ...lintDocument.spec,
             parameters: null,
+          },
+        },
+        canonical_yaml: storedYaml,
+        fingerprint: "fingerprint",
+      },
+    });
+
+    render(() => <CompositionEditRoute />);
+
+    expect(await screen.findByText("This revision cannot be edited."))
+      .toBeInTheDocument();
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+  });
+
+  it("refuses explicit null Saved SQL variables as malformed", async () => {
+    const { parameters: _parameters, ...specWithoutParameters } =
+      lintDocument.spec;
+    lintMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        document: {
+          ...lintDocument,
+          spec: {
+            ...specWithoutParameters,
             sources: [{ ...lintDocument.spec.sources[0], variables: null }],
           },
         },

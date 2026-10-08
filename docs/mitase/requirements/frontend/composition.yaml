@@ -168,15 +168,24 @@ requirements:
                 criterion: REQ-FE-070#criterion.exact-revision-edit
                 covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "opens canonical revisions when empty parameters and variables are omitted" } }
-          - id: studio-edit-null-optional-collections
+          - id: studio-edit-null-parameters
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
-            selector: { kind: test, name: "refuses explicit null optional collections as malformed" }
+            selector: { kind: test, name: "refuses explicit null parameters as malformed" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.exact-revision-edit
                 covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "refuses explicit null optional collections as malformed" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "refuses explicit null parameters as malformed" } }
+          - id: studio-edit-null-saved-sql-variables
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+            selector: { kind: test, name: "refuses explicit null Saved SQL variables as malformed" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "refuses explicit null Saved SQL variables as malformed" } }
           - id: studio-edit-save
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
