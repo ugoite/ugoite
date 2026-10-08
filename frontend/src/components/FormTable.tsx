@@ -661,14 +661,9 @@ export function FormTable(props: FormTableProps) {
     c2: number,
   ) => {
     const rowData = [];
-    // Col 0: stable Entry ID (identity, never a synthesized title)
-    /* v8 ignore start */
-    if (c1 <= 0 && c2 >= 0) rowData.push(entry.id);
-    /* v8 ignore stop */
-
-    // Cols 1..N: Fields
+    // Cols 0..N-1: Form fields
     for (let i = 0; i < currentFields.length; i++) {
-      const colIdx = i + 1;
+      const colIdx = i;
       /* v8 ignore start */
       if (colIdx >= c1 && colIdx <= c2) {
         rowData.push(
@@ -682,8 +677,8 @@ export function FormTable(props: FormTableProps) {
       /* v8 ignore stop */
     }
 
-    // Col N+1: Updated
-    const lastCol = currentFields.length + 1;
+    // Col N: Updated
+    const lastCol = currentFields.length;
     if (c1 <= lastCol && c2 >= lastCol) {
       rowData.push(formatDateLabel(entry.updated_at));
     }
@@ -1029,10 +1024,6 @@ export function FormTable(props: FormTableProps) {
                 >
                   <span class="sr-only">{t("formTable.actions")}</span>
                 </th>
-                <th scope="col" class="ui-table-header-cell sticky top-0 z-10">
-                  <span>{t("formTable.id")}</span>
-                </th>
-
                 <For each={fields()}>
                   {(field) => (
                     <th
@@ -1136,35 +1127,22 @@ export function FormTable(props: FormTableProps) {
                         <span>{t("formTable.view")}</span>
                       </button>
                     </td>
-                    {/* biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now */}
-                    <td
-                      class={`ui-table-cell whitespace-nowrap font-medium ${
-                        isSelected(rowIndex(), 0)
-                          ? "ui-table-cell-selected"
-                          : ""
-                      }`}
-                      onMouseDown={() => handleCellMouseDown(rowIndex(), 0)}
-                      onMouseEnter={(e) =>
-                        handleCellMouseEnter(e, rowIndex(), 0)}
-                    >
-                      {entry.id}
-                    </td>
                     <For each={fields()}>
                       {(field, fieldIndex) => (
                         // biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now
                         <td
                           class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
-                            isSelected(rowIndex(), fieldIndex() + 1)
+                            isSelected(rowIndex(), fieldIndex())
                               ? "ui-table-cell-selected"
                               : ""
                           }`}
                           onMouseDown={() =>
-                            handleCellMouseDown(rowIndex(), fieldIndex() + 1)}
+                            handleCellMouseDown(rowIndex(), fieldIndex())}
                           onMouseEnter={(e) =>
                             handleCellMouseEnter(
                               e,
                               rowIndex(),
-                              fieldIndex() + 1,
+                              fieldIndex(),
                             )}
                           onClick={(e) => {
                             if (
@@ -1208,17 +1186,17 @@ export function FormTable(props: FormTableProps) {
                     </For>
                     <td
                       class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
-                        isSelected(rowIndex(), fields().length + 1)
+                        isSelected(rowIndex(), fields().length)
                           ? "ui-table-cell-selected"
                           : ""
                       }`}
                       onMouseDown={() =>
-                        handleCellMouseDown(rowIndex(), fields().length + 1)}
+                        handleCellMouseDown(rowIndex(), fields().length)}
                       onMouseEnter={(e) =>
                         handleCellMouseEnter(
                           e,
                           rowIndex(),
-                          fields().length + 1,
+                          fields().length,
                         )}
                     >
                       {formatDateLabel(entry.updated_at)}
@@ -1238,13 +1216,6 @@ export function FormTable(props: FormTableProps) {
             {(entry) => (
               <article class="ui-table-mobile-card" role="listitem">
                 <div class="ui-table-mobile-card-header">
-                  <button
-                    type="button"
-                    class="ui-table-mobile-title"
-                    onClick={() => props.onEntryClick(entry.id)}
-                  >
-                    {entry.id}
-                  </button>
                   <button
                     type="button"
                     class="ui-button ui-button-secondary ui-button-sm"
@@ -1382,7 +1353,8 @@ export function FormTable(props: FormTableProps) {
                                     );
                                     setEditingCell(null);
                                   }}
-                                  onKeyDown={(event) => event.key === "Enter" &&
+                                  onKeyDown={(event) =>
+                                    event.key === "Enter" &&
                                     event.currentTarget.blur()}
                                 />
                               </Show>

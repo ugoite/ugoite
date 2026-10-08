@@ -1,0 +1,84 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: FormTable Entry identity presentation
+requirements:
+  - id: REQ-UX-FORMTABLE-001
+    title: FormTable Entry IDs Stay Out of Primary Rows
+    description: FormTable primary rows use form-defined values while stable Entry IDs remain available through advanced Entry Info details.
+    priority: high
+    status: implemented
+    criteria:
+      - id: primary-rows-id-free
+        kind: behavior
+        statement: Desktop and mobile FormTable primary rows and row-action accessible names do not display stable Entry IDs; the localized open action navigates to the selected Entry.
+        governed_by: [POL-UI-005#rule.governance]
+      - id: advanced-id-access
+        kind: behavior
+        statement: The exact stable Entry ID remains visible and copyable inside the collapsed advanced Entry Info details disclosure.
+        governed_by: [POL-UI-005#rule.governance]
+    bindings:
+      - id: formtable-entry-identity-verification
+        role: verification
+        facet: verification
+        responsibility: Verify FormTable hides stable Entry IDs from primary rows while Entry Info retains exact IDs inside advanced details.
+        targets:
+          - id: desktop-id-free-rows
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-FORMTABLE-001: keeps Entry IDs out of desktop rows and opens entries by action",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-FORMTABLE-001#criterion.primary-rows-id-free
+                covers:
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-surface
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/FormTable.test.tsx,
+                    test: "REQ-UX-FORMTABLE-001: keeps Entry IDs out of desktop rows and opens entries by action",
+                  },
+                }
+          - id: mobile-id-free-rows
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-FORMTABLE-001: keeps Entry IDs out of mobile rows and opens entries by action",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-FORMTABLE-001#criterion.primary-rows-id-free
+                covers:
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-surface
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/FormTable.test.tsx,
+                    test: "REQ-UX-FORMTABLE-001: keeps Entry IDs out of mobile rows and opens entries by action",
+                  },
+                }
+          - id: advanced-entry-id-access
+            adapter: typescript
+            path: frontend/src/components/EntryInfoIdentity.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-FORMTABLE-001: keeps Entry IDs in advanced Info details",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-FORMTABLE-001#criterion.advanced-id-access
+                covers:
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/EntryInfoIdentity.test.tsx,
+                    test: "REQ-UX-FORMTABLE-001: keeps Entry IDs in advanced Info details",
+                  },
+                }
