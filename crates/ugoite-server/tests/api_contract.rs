@@ -609,6 +609,72 @@ async fn req_sec_002_covers_the_static_browser_root() {
 }
 
 #[tokio::test]
+async fn req_ops_045_revalidates_only_the_static_shell_html() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let static_dir =
+        std::env::temp_dir().join(format!("ugoite-spa-shell-cache-{}", uuid::Uuid::now_v7()));
+    std::fs::create_dir_all(static_dir.join("assets")).unwrap();
+    std::fs::write(static_dir.join("index.html"), "<!doctype html>").unwrap();
+    std::fs::write(static_dir.join("assets/app.js"), "console.log('app')").unwrap();
+    let _static_dir = EnvVarGuard::set("UGOITE_STATIC_DIR", &static_dir);
+    let app = initialized_app_without_env_lock("spa-shell-cache-static").await;
+    let response = app
+        .clone()
+        .oneshot(Request::get("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers().get("content-type").unwrap(), "text/html");
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-cache");
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/spaces/cache-contract/forms")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers().get("content-type").unwrap(), "text/html");
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-cache");
+
+    let response = app
+        .clone()
+        .oneshot(Request::get("/assets/app.js").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "text/javascript"
+    );
+    assert!(response.headers().get("cache-control").is_none());
+
+    let response = app
+        .clone()
+        .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().get("cache-control").is_none());
+
+    let response = app
+        .oneshot(
+            Request::get("/api/oauth/authorize?response_type=code")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(response.status().is_client_error());
+    assert!(response.headers().get("cache-control").is_none());
+
+    std::fs::remove_dir_all(static_dir).unwrap();
+}
+
+#[tokio::test]
 async fn req_sec_002_keeps_security_headers_on_cors_preflight() {
     let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
     let _cors_origins = EnvVarGuard::set("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");

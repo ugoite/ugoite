@@ -41,6 +41,7 @@ use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestId, PropagateRequestIdLayer, RequestId, SetRequestIdLayer},
     services::{ServeDir, ServeFile},
+    set_header::SetResponseHeader,
     trace::TraceLayer,
 };
 use ugoite_api_client::{
@@ -2114,12 +2115,22 @@ fn app_with_static_dir(state: AppState, static_dir: Option<String>) -> Router {
             .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
             .route("/openapi.json", get(|| async { OPENAPI_JSON }))
             .route("/mcp", any(mcp::handle))
-            .route_service("/", ServeFile::new(format!("{static_dir}/index.html")))
-            .nest("/api", api_routes(state.clone()))
-            .fallback_service(
-                ServeDir::new(&static_dir)
-                    .fallback(ServeFile::new(format!("{static_dir}/index.html"))),
+            .route_service(
+                "/",
+                SetResponseHeader::if_not_present(
+                    ServeFile::new(format!("{static_dir}/index.html")),
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static("no-cache"),
+                ),
             )
+            .nest("/api", api_routes(state.clone()))
+            .fallback_service(ServeDir::new(&static_dir).fallback(
+                SetResponseHeader::if_not_present(
+                    ServeFile::new(format!("{static_dir}/index.html")),
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static("no-cache"),
+                ),
+            ))
     } else {
         metadata
             .merge(api_routes(state.clone()))
