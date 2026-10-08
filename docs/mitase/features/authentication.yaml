@@ -135,6 +135,24 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-AUDIT-002#criterion.unresolved-actor-neutral-label
+      - id: audit-viewer-interactions
+        role: implementation
+        facet: frontend
+        responsibility: Keep the shared Node and Space audit viewer aligned with its filter, pagination, state, and event-details contract.
+        targets:
+          - id: shared-audit-viewer
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.tsx
+            selector: { kind: symbol, name: AuditLogViewer }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-AUDIT-003#criterion.filter-scope
+              - kind: satisfies
+                criterion: REQ-UX-AUDIT-003#criterion.page-navigation
+              - kind: satisfies
+                criterion: REQ-UX-AUDIT-003#criterion.query-states
+              - kind: satisfies
+                criterion: REQ-UX-AUDIT-003#criterion.event-details
       - id: contract
         role: contract-source
         facet: api

@@ -1,0 +1,71 @@
+version: "0.1"
+updated: "2026-10-08"
+component_group:
+  id: audit-log-viewer
+  title: Shared Audit Log Viewer
+components:
+  - id: audit-log-viewer
+    type: read-only-audit-event-table
+    implementation: frontend/src/components/AuditLogViewer.tsx
+    consumers:
+      node:
+        wrapper: NodeAuditLogViewer
+        route: /settings/security?tab=audit
+      space:
+        wrapper: SpaceAuditLogViewer
+        page: space-settings#section.audit
+    columns: [timestamp, action, actor, outcome, target-type, details]
+    filters: [action, actor-id, outcome]
+    page_size: 25
+    pagination: previous-next-with-page-and-count
+    states: [loading, complete, empty, no-matches, error]
+    identifier_visibility:
+      primary_rows: human-meaningful-actor-and-target-type
+      exact_identifiers: event-details-only
+    actor_labels:
+      resolved: display-name
+      unresolved: localized-neutral-label
+      exact_actor_id: event-details-only
+    event_details:
+      disclosure: collapsed-until-requested
+      identities:
+        - event-id
+        - actor-id
+        - subject-id
+        - scope-id
+        - credential-id
+        - request-id
+        - target-id
+        - event-hash-when-present
+      request: [method, path]
+      metadata: safe-event-metadata
+    variants:
+      node:
+        loader: authApi.listAudit
+        filtering: locally-within-the-bounded-response
+        bounded_notice: visible
+      space:
+        loader: spaceApi.listAudit
+        filtering: server-side-with-offsets
+        actor_directory: current-space-members
+    tests:
+      - path: frontend/src/components/AuditLogViewer.test.tsx
+        selector: filters node events locally and resets to the first page
+      - path: frontend/src/components/AuditLogViewer.test.tsx
+        selector: pages the bounded node response
+      - path: frontend/src/components/AuditLogViewer.test.tsx
+        selector: sends Space filters and server offsets to the existing endpoint
+      - path: frontend/src/components/AuditLogViewer.test.tsx
+        selector: shows empty and localized API failure states
+      - path: frontend/src/components/AuditLogViewer.test.tsx
+        selector: shows request details and tolerates system events without an actor
+      - path: frontend/src/components/AuditLogViewer.test.tsx
+        selector: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only"
+      - path: frontend/src/components/AuditLogViewer.test.tsx
+        selector: "REQ-UX-AUDIT-002: uses a localized neutral label for unresolved actors"
+      - path: frontend/src/components/AuditLogViewer.contract.test.tsx
+        selector: keeps the busy state until the page load finishes
+      - path: frontend/src/components/AuditLogViewer.contract.test.tsx
+        selector: shows the no-matches state after a filtered page has no rows
+      - path: frontend/src/components/AuditLogViewer.contract.test.tsx
+        selector: discloses exact event identities only in the opened details

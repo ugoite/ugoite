@@ -97,6 +97,9 @@ components:
             - frontend/src/routes/spaces/[space_id]/settings.tsx
             - frontend/src/components/AuditLogViewer.tsx
           component: SpaceAuditLogViewer
+          component_contract:
+            id: audit-log-viewer
+            reference: ../components/audit-log-viewer.yaml
           interaction: read-only-filtered-event-list-with-details
           tests:
             - path: frontend/src/components/AuditLogViewer.test.tsx

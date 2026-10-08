@@ -1,0 +1,114 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Shared audit viewer behavior
+requirements:
+  - id: REQ-UX-AUDIT-003
+    title: Shared Audit Log Viewer Behavior
+    description: The shared Node and Space Audit Log viewer provides scoped filtering, bounded page navigation, explicit loading and failure states, and on-demand event details.
+    priority: high
+    status: implemented
+    criteria:
+      - id: filter-scope
+        kind: behavior
+        statement: Action, actor, and outcome filters reset navigation to the first page; Node events are filtered within the bounded response and Space filters are sent to the server with the selected offset.
+        governed_by: [POL-UI-005#rule.governance, POL-UI-006#rule.governance]
+      - id: page-navigation
+        kind: behavior
+        statement: The viewer requests and displays pages of 25 events with previous/next controls that respect the current page, result count, and loading state.
+        governed_by: [POL-UI-006#rule.governance]
+      - id: query-states
+        kind: behavior
+        statement: The viewer distinguishes loading, empty, no-matches, and localized load-error states without rendering stale rows after a failed request.
+        governed_by: [POL-UI-005#rule.governance, POL-UI-006#rule.governance]
+      - id: event-details
+        kind: behavior
+        statement: Event details remain collapsed until requested and expose exact event identity, actor and subject identities, scope, request, metadata, and optional event hash; rows use a human-readable actor label or a localized neutral fallback.
+        governed_by: [POL-UI-005#rule.governance]
+    bindings:
+      - id: audit-viewer-verification
+        role: verification
+        facet: verification
+        responsibility: Verify both viewer variants' scoped filters, paging, query states, and event-details disclosure through exact frontend cases.
+        targets:
+          - id: node-filter-scope
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: { kind: test, name: filters node events locally and resets to the first page }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.filter-scope
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: filters node events locally and resets to the first page } }
+          - id: node-page-navigation
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: { kind: test, name: pages the bounded node response }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.page-navigation
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: pages the bounded node response } }
+          - id: space-filter-scope
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: { kind: test, name: sends Space filters and server offsets to the existing endpoint }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.filter-scope
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: sends Space filters and server offsets to the existing endpoint } }
+          - id: query-state-presentation
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: { kind: test, name: shows empty and localized API failure states }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.query-states
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: shows empty and localized API failure states } }
+          - id: event-details-disclosure
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: { kind: test, name: shows request details and tolerates system events without an actor }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.event-details
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: shows request details and tolerates system events without an actor } }
+          - id: exact-actor-details
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: { kind: test, name: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.event-details
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only" } }
+          - id: loading-state
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.contract.test.tsx
+            selector: { kind: test, name: keeps the busy state until the page load finishes }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.query-states
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.contract.test.tsx, test: keeps the busy state until the page load finishes } }
+          - id: no-matches-state
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.contract.test.tsx
+            selector: { kind: test, name: shows the no-matches state after a filtered page has no rows }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.query-states
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.contract.test.tsx, test: shows the no-matches state after a filtered page has no rows } }
+          - id: exact-identities-in-details
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.contract.test.tsx
+            selector: { kind: test, name: discloses exact event identities only in the opened details }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.event-details
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.contract.test.tsx, test: discloses exact event identities only in the opened details } }
