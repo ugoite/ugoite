@@ -75,6 +75,28 @@ describe("AuditLogViewer component contract", () => {
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
   });
 
+  it("updates the page count through previous and next controls", async () => {
+    const load = vi.fn().mockResolvedValue({
+      ...page(
+        Array.from({ length: 30 }, (_, index) => ({
+          ...event,
+          event_id: `audit-event-${index}`,
+        })),
+      ),
+      total: 30,
+    });
+    render(() => <AuditLogViewer source="node" load={load} />);
+
+    expect(await screen.findByText("Page 1 of 2 · 30 events"))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Page 2 of 2 · 30 events"))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    expect(await screen.findByText("Page 1 of 2 · 30 events"))
+      .toBeInTheDocument();
+  });
+
   it("discloses exact event identities only in the opened details", async () => {
     const load = vi.fn().mockResolvedValue(page([event]));
     render(() => (

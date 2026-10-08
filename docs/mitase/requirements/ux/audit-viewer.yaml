@@ -15,7 +15,7 @@ requirements:
         governed_by: [POL-UI-005#rule.governance, POL-UI-006#rule.governance]
       - id: page-navigation
         kind: behavior
-        statement: The viewer requests and displays pages of 25 events with previous/next controls that respect the current page, result count, and loading state.
+        statement: The viewer requests 25 events per page, presents the current page and result count, and previous/next controls change the requested page without exceeding the available range.
         governed_by: [POL-UI-006#rule.governance]
       - id: query-states
         kind: behavior
@@ -23,7 +23,7 @@ requirements:
         governed_by: [POL-UI-005#rule.governance, POL-UI-006#rule.governance]
       - id: event-details
         kind: behavior
-        statement: Event details remain collapsed until requested and expose exact event identity, actor and subject identities, scope, request, metadata, and optional event hash; rows use a human-readable actor label or a localized neutral fallback.
+        statement: Event details remain collapsed until requested; exact event, actor, subject, scope, credential, request, metadata, optional hash, and target identity values are disclosed there while primary row content stays human-readable.
         governed_by: [POL-UI-005#rule.governance]
     bindings:
       - id: audit-viewer-verification
@@ -49,6 +49,15 @@ requirements:
                 criterion: REQ-UX-AUDIT-003#criterion.page-navigation
                 covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: pages the bounded node response } }
+          - id: previous-next-navigation
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.contract.test.tsx
+            selector: { kind: test, name: updates the page count through previous and next controls }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.page-navigation
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.contract.test.tsx, test: updates the page count through previous and next controls } }
           - id: space-filter-scope
             adapter: typescript
             path: frontend/src/components/AuditLogViewer.test.tsx
