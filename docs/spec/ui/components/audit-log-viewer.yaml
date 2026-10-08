@@ -55,6 +55,8 @@ components:
         selector: pages the bounded node response
       - path: frontend/src/components/AuditLogViewer.contract.test.tsx
         selector: updates the page count through previous and next controls
+      - path: frontend/src/components/AuditLogViewer.contract.test.tsx
+        selector: resets paging before applying a filter
       - path: frontend/src/components/AuditLogViewer.test.tsx
         selector: sends Space filters and server offsets to the existing endpoint
       - path: frontend/src/components/AuditLogViewer.test.tsx

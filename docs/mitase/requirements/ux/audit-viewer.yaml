@@ -58,6 +58,15 @@ requirements:
                 criterion: REQ-UX-AUDIT-003#criterion.page-navigation
                 covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.contract.test.tsx, test: updates the page count through previous and next controls } }
+          - id: filter-reset-page-index
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.contract.test.tsx
+            selector: { kind: test, name: resets paging before applying a filter }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.filter-scope
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.contract.test.tsx, test: resets paging before applying a filter } }
           - id: space-filter-scope
             adapter: typescript
             path: frontend/src/components/AuditLogViewer.test.tsx

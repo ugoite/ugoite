@@ -133,6 +133,51 @@ describe("AuditLogViewer component contract", () => {
       .toBeInTheDocument();
   });
 
+  it("resets paging before applying a filter", async () => {
+    const events = Array.from({ length: 30 }, (_, index) => ({
+      ...event,
+      event_id: `filter-reset-${index}`,
+      action: index < 25 ? "authorization.denied" : "session.revoked",
+    }));
+    const load = vi.fn(({
+      offset,
+      limit,
+      filters,
+    }: {
+      offset: number;
+      limit: number;
+      filters: { action: string; actorId: string; outcome: string };
+    }) => {
+      const filtered = events.filter((item) =>
+        !filters.action || item.action === filters.action
+      );
+      return Promise.resolve({
+        items: filtered.slice(offset, offset + limit),
+        total: filtered.length,
+        offset,
+        limit,
+      });
+    });
+    render(() => <AuditLogViewer source="node" load={load} />);
+
+    expect(await screen.findByText("Page 1 of 2 · 30 events"))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Page 2 of 2 · 30 events"))
+      .toBeInTheDocument();
+    fireEvent.input(screen.getByPlaceholderText("Exact action"), {
+      target: { value: "authorization.denied" },
+    });
+
+    expect(await screen.findByText("Page 1 of 1 · 25 events"))
+      .toBeInTheDocument();
+    expect(load).toHaveBeenLastCalledWith({
+      offset: 0,
+      limit: 25,
+      filters: { action: "authorization.denied", actorId: "", outcome: "" },
+    });
+  });
+
   it("discloses exact event identities only in the opened details", async () => {
     const load = vi.fn().mockResolvedValue(page([event]));
     render(() => (
