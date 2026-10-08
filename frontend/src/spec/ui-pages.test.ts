@@ -237,6 +237,9 @@ describe("UI spec YAML registry", () => {
       reference: "result-pagination.yaml",
       presentation: "localized-icon-only-chevron-controls",
     });
+    expect(studioData?.result_pages).toBe(
+      "bounded-shared-page-with-controller-owned-paging",
+    );
 
     const pageContractPath = path.resolve(
       path.dirname(revision!.filePath),
