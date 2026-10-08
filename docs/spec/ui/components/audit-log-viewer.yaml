@@ -64,7 +64,7 @@ components:
       - path: frontend/src/components/AuditLogViewer.test.tsx
         selector: shows request details and tolerates system events without an actor
       - path: frontend/src/components/AuditLogViewer.test.tsx
-        selector: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only"
+        selector: "REQ-UX-AUDIT-001: keeps actor IDs inside audit details"
       - path: frontend/src/components/AuditLogViewer.test.tsx
         selector: "REQ-UX-AUDIT-002: uses a localized neutral label for unresolved actors"
       - path: frontend/src/components/AuditLogViewer.contract.test.tsx

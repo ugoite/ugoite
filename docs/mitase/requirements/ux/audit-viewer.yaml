@@ -97,12 +97,12 @@ requirements:
           - id: exact-actor-details
             adapter: typescript
             path: frontend/src/components/AuditLogViewer.test.tsx
-            selector: { kind: test, name: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only" }
+            selector: { kind: test, name: "REQ-UX-AUDIT-001: keeps actor IDs inside audit details" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-AUDIT-003#criterion.event-details
                 covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "REQ-UX-AUDIT-001: keeps actor IDs inside audit details" } }
           - id: loading-state
             adapter: typescript
             path: frontend/src/components/AuditLogViewer.contract.test.tsx
