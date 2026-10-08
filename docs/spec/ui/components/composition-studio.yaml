@@ -101,8 +101,8 @@ components:
     kind_selection: Table/Metric-tabs-inside-picker
     sequence: [kind, source, metric-value-field-only-for-metric, optional-label, add]
     source_selection: visibly-pressed-row-preserved-when-compatible-across-tabs
-    entry_query_field_labels: transient-form-label-or-localized-source-schema-index
-    internal_field_ids: never-rendered
+    entry_query_field_labels: transient-form-label-or-distinct-localized-source-schema-index
+    internal_identifiers: field-source-entry-revision-ids-never-rendered
     form_metadata: authorized-form-list-transient-never-stored
     sizing:
       width: min(720px, calc(100vw - 32px))

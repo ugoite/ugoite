@@ -80,6 +80,9 @@ describe("CompositionDisplayPicker", () => {
     fireEvent.click(
       within(dialog).getByRole("button", { name: /Monthly/ }),
     );
+    expect(dialog).not.toHaveTextContent(sqlSource.draftId);
+    expect(dialog).not.toHaveTextContent(sqlSource.entryId);
+    expect(dialog).not.toHaveTextContent(sqlSource.revisionId);
 
     const labelInput = within(dialog).getByLabelText("Label");
     fireEvent.input(labelInput, { target: { value: "Totals" } });
@@ -268,6 +271,38 @@ describe("CompositionDisplayPicker", () => {
     expect(dialog).not.toHaveTextContent("100");
   });
 
+  it("keeps metric field labels distinct when a Form name looks like a fallback", () => {
+    const source: DraftSource = {
+      ...entrySource,
+      fieldSchema: [
+        { field_id: 100, field_type: "string" },
+        { field_id: 101, field_type: "string" },
+        { field_id: 102, field_type: "string" },
+      ],
+    };
+    render(() => (
+      <CompositionDisplayPicker
+        sources={[source]}
+        fieldNames={(_formId, fieldId) =>
+          fieldId === 100 ? "Field 2" : undefined}
+        onAdd={() => {}}
+        onClose={() => {}}
+      />
+    ));
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Tasks" }));
+    const options = within(within(dialog).getByLabelText("Value"))
+      .getAllByRole("option").map((option) => option.textContent);
+
+    expect(options).toEqual(["Field 2", "Field 3", "Field 4"]);
+    expect(new Set(options).size).toBe(options.length);
+    expect(dialog).not.toHaveTextContent("100");
+    expect(dialog).not.toHaveTextContent("101");
+    expect(dialog).not.toHaveTextContent("102");
+  });
+
   it("keeps compatible sources across kind tabs and clears metric values for Table", () => {
     render(() => (
       <CompositionDisplayPicker
@@ -303,6 +338,9 @@ describe("CompositionDisplayPicker", () => {
 
     fireEvent.keyDown(tableTab, { key: "ArrowRight" });
     expect(metricTab).toHaveFocus();
+    expect(metricTab).toHaveAttribute("aria-selected", "true");
+    expect(monthly).toHaveAttribute("aria-pressed", "true");
+    expect(within(dialog).getByLabelText("Value")).toHaveDisplayValue("total");
     fireEvent.keyDown(metricTab, { key: "Tab" });
     expect(within(dialog).getByRole("button", { name: "Monthly" }))
       .toHaveFocus();

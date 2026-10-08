@@ -28,7 +28,7 @@ requirements:
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
       - id: display-authoring
         kind: behavior
-        statement: Canvas insertion opens one display picker with Table and Metric tabs above source selection. A table needs a source; a metric additionally selects one scalar-compatible field or column and offers no field control while Table is active. Compatible source selection stays visible across tabs, while a Table source without scalar values is cleared when switching to Metric. Form field choices use human labels or localized ordinals, never numeric IDs. A table renders through the source-native Entry or SQL presenter, saved EntryQuery tables use Form labels or Form field keys as headings while reading values by the stable field key, and missing Form metadata falls back to projected row keys without exposing field IDs. Both display kinds support an optional label, and several displays may share one source without duplicate fetching.
+        statement: Canvas insertion opens one display picker with Table and Metric tabs above source selection. A table needs a source; a metric additionally selects one scalar-compatible field or column and offers no field control while Table is active. Compatible source selection stays visible across tabs, while a Table source without scalar values is cleared when switching to Metric. Form field choices use human labels or distinct localized fallback ordinals, never numeric IDs; opaque source, Entry, and revision IDs stay out of visible labels. A table renders through the source-native Entry or SQL presenter, saved EntryQuery tables use Form labels or Form field keys as headings while reading values by the stable field key, and missing Form metadata falls back to projected row keys without exposing field IDs. Both display kinds support an optional label, and several displays may share one source without duplicate fetching.
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
       - id: typed-parameter-binding
         kind: behavior
@@ -292,6 +292,24 @@ requirements:
                 criterion: REQ-FE-070#criterion.entry-query-field-labels
                 covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "uses a localized field ordinal without exposing a Form field ID" } }
+          - id: studio-display-picker-distinct-field-labels
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "keeps metric field labels distinct when a Form name looks like a fallback" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "keeps metric field labels distinct when a Form name looks like a fallback" } }
+          - id: studio-display-picker-source-identifiers-hidden
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "adds a table display from a draft source" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a table display from a draft source" } }
           - id: studio-metric-inspector-field-labels
             adapter: typescript
             path: frontend/src/components/CompositionInspector.test.tsx

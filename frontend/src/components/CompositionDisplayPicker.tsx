@@ -64,15 +64,40 @@ export const entryQueryScalarCandidates = (
   fieldSchema: readonly { field_id: number; field_type: string }[],
   formId: string,
   fieldNames?: (formId: string, fieldId: number) => string | undefined,
-): DisplayScalarCandidate[] =>
-  fieldSchema.flatMap((entry, index) =>
-    nonScalarFieldTypes.has(entry.field_type) ? [] : [{
-      id: String(entry.field_id),
-      name: fieldNames?.(formId, entry.field_id) ??
-        t("composition.studioFieldIndex", { index: index + 1 }),
-      valueField: { fieldId: entry.field_id },
-    }]
+): DisplayScalarCandidate[] => {
+  const resolvedNames = new Map(
+    fieldSchema.map((entry) => [
+      entry.field_id,
+      fieldNames?.(formId, entry.field_id),
+    ]),
   );
+  const usedNames = new Set(
+    [...resolvedNames.values()].filter((name): name is string => !!name),
+  );
+  const candidates: DisplayScalarCandidate[] = [];
+
+  fieldSchema.forEach((entry, index) => {
+    if (nonScalarFieldTypes.has(entry.field_type)) return;
+    const formName = resolvedNames.get(entry.field_id);
+    let name = formName ??
+      t("composition.studioFieldIndex", { index: index + 1 });
+    if (!formName) {
+      let fallbackIndex = index + 1;
+      while (usedNames.has(name)) {
+        fallbackIndex += 1;
+        name = t("composition.studioFieldIndex", { index: fallbackIndex });
+      }
+      usedNames.add(name);
+    }
+    candidates.push({
+      id: String(entry.field_id),
+      name,
+      valueField: { fieldId: entry.field_id },
+    });
+  });
+
+  return candidates;
+};
 
 export const displayScalarCandidates = (
   source: DraftSource,
