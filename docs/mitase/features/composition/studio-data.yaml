@@ -341,6 +341,15 @@ features:
         anchor: REQ-FE-070#criterion.source-authoring
       - kind: evidences
         anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-data-entry-query-field-label-collision
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: "REQ-FE-070: skips localized fallback labels used by live Form fields"
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
     - id: browser-data-entry-query-zero-capable
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx

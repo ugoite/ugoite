@@ -20,7 +20,7 @@ requirements:
         governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-003#rule.governance]
       - id: entry-query-field-labels
         kind: behavior
-        statement: EntryQuery field labels in the Composition Data editor use transient Form field names whenever live Form metadata resolves a field; otherwise they use localized schema ordinals, including distinct deterministic ordinals for unresolved references missing from the schema snapshot. While metadata is loading, absent, or unavailable, labels use the schema ordinal fallback. Raw numeric field IDs stay in query data and never render in field, filter, sort, projection, or dialog labels.
+        statement: EntryQuery field labels in the Composition Data editor use transient Form field names whenever live Form metadata resolves a field; otherwise they use localized schema ordinals. Fallback ordinals are deterministic and distinct, skipping names used by live Form fields and earlier fallbacks, including for unresolved references missing from the schema snapshot. While metadata is loading, absent, or unavailable, labels use the schema ordinal fallback. Raw numeric field IDs stay in query data and never render in field, filter, sort, projection, or dialog labels.
         governed_by: [POL-UI-005#rule.governance]
       - id: source-authoring
         kind: behavior
@@ -835,7 +835,7 @@ requirements:
       - id: studio-entry-query-field-label-verification
         role: verification
         facet: verification
-        responsibility: Verify that EntryQuery Data editor labels prefer transient Form names when live metadata resolves a field, otherwise use localized schema ordinals and distinct deterministic ordinals for references missing from the schema snapshot, and keep raw field IDs out of visible labels while preserving the IDs in query data through exact frontend tests.
+        responsibility: Verify that EntryQuery Data editor labels prefer transient Form names when live metadata resolves a field, otherwise use localized schema ordinals that deterministically skip live Form names and prior fallbacks, including for references missing from the schema snapshot, and keep raw field IDs out of visible labels while preserving the IDs in query data through exact frontend tests.
         targets:
           - id: entry-query-field-labels-resolved
             adapter: typescript
@@ -891,3 +891,12 @@ requirements:
                 criterion: REQ-FE-070#criterion.entry-query-field-labels
                 covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-stale-field-labels]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "REQ-FE-070: uses distinct localized labels for fields missing from the schema snapshot" } }
+          - id: entry-query-field-labels-collision
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-070: skips localized fallback labels used by live Form fields" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-field-label-collision]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "REQ-FE-070: skips localized fallback labels used by live Form fields" } }

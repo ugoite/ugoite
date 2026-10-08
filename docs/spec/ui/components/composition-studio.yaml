@@ -55,8 +55,8 @@ components:
       field_identity:
         display_name: transient-form-field-name-first-when-form-resolves-the-field
         fallback:
-          schema_field: localized-schema-ordinal-when-form-does-not-resolve-the-field
-          referenced_field_missing_from_schema_snapshot: distinct-deterministic-localized-ordinal-when-form-does-not-resolve-the-field
+          schema_field: localized-schema-ordinal-skipping-live-form-names-and-prior-fallbacks
+          referenced_field_missing_from_schema_snapshot: distinct-deterministic-localized-ordinal-skipping-live-form-names-and-prior-fallbacks
         raw_field_id: query-data-only-never-rendered-in-field-filter-sort-projection-or-dialog-labels
       capability_gating: dialog-offers-only-capable-fields-with-disabled-add-and-reason-at-zero
       projection_placement: inline-unchanged-dialog-columns-contract-not-identical

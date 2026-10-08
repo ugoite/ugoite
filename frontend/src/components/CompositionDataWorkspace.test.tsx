@@ -669,6 +669,67 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
+  it("REQ-FE-070: skips localized fallback labels used by live Form fields", async () => {
+    setLocale("ja");
+    const form = expenseForm();
+    form.fields.ordinal_label = {
+      id: 108,
+      type: "string",
+      required: false,
+      query_capability: {
+        field: { kind: "property", field_id: 108 },
+        name: "項目 3",
+        field_type: "string",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals"],
+      },
+    };
+    formApiListMock.mockResolvedValue([form]);
+    let draft = createEmptyDraft("Tool");
+    draft = addEntryQuerySource(draft, {
+      ...entrySeed(),
+      fieldSchema: [
+        ...entrySeed().fieldSchema,
+        { field_id: 103, field_type: "string" },
+      ],
+      query: {
+        filters: [
+          { field_id: 103, operator: "equals", value: "schema-missing" },
+          { field_id: 108, operator: "equals", value: "known" },
+          { field_id: 109, operator: "equals", value: "missing" },
+        ],
+        sort: [],
+        projection: { kind: "fields", fields: [103, 108, 109] },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+
+    await waitFor(() => {
+      expect(editor.textContent).toContain("項目 3 一致する known");
+      expect(editor.textContent).toContain("項目 4 一致する schema-missing");
+      expect(editor.textContent).toContain("項目 5 一致する missing");
+    });
+    expect(within(editor).queryByText("103", { exact: true })).toBeNull();
+    expect(within(editor).queryByText("108", { exact: true })).toBeNull();
+    expect(within(editor).queryByText("109", { exact: true })).toBeNull();
+    expect(harness.current().sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        filters: [
+          { field_id: 103, operator: "equals", value: "schema-missing" },
+          { field_id: 108, operator: "equals", value: "known" },
+          { field_id: 109, operator: "equals", value: "missing" },
+        ],
+        projection: { kind: "fields", fields: [103, 108, 109] },
+      },
+    });
+  });
+
   it("uses transient Form names for referenced fields missing from the schema snapshot", async () => {
     const form = expenseForm();
     form.fields.tax_code = {

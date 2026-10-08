@@ -150,7 +150,25 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
   const names = createMemo(() => studioFieldNames(definitionForm()));
   const fallbackFieldName = (index: number): string =>
     t("entryBrowser.fieldOrdinal", { number: index + 1 });
-  const staleFieldOrdinals = createMemo(() => {
+  const fallbackFieldLabels = createMemo(() => {
+    const labels = new Map<number, string>();
+    const usedLabels = new Set(names().values());
+    const assignFallback = (fieldId: number, startIndex: number) => {
+      if (labels.has(fieldId) || names().has(fieldId)) return;
+      let index = startIndex;
+      let label = fallbackFieldName(index);
+      while (usedLabels.has(label)) {
+        index += 1;
+        label = fallbackFieldName(index);
+      }
+      labels.set(fieldId, label);
+      usedLabels.add(label);
+    };
+
+    props.source.fieldSchema.forEach((entry, index) => {
+      assignFallback(entry.field_id, index);
+    });
+
     const schemaFieldIds = new Set(
       props.source.fieldSchema.map((entry) => entry.field_id),
     );
@@ -164,25 +182,19 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
     const staleFieldIds = [...referencedFieldIds].filter((fieldId) =>
       !schemaFieldIds.has(fieldId) && !names().has(fieldId)
     ).sort((left, right) => left - right);
-    const ordinals = new Map<number, number>();
     staleFieldIds.forEach((fieldId, index) => {
-      ordinals.set(fieldId, props.source.fieldSchema.length + index);
+      assignFallback(fieldId, props.source.fieldSchema.length + index);
     });
-    return ordinals;
+    return labels;
   });
   const fieldName = (fieldId: number): string => {
     const knownName = names().get(fieldId);
     if (knownName) return knownName;
-    const index = props.source.fieldSchema.findIndex((entry) =>
-      entry.field_id === fieldId
-    );
-    if (index >= 0) return fallbackFieldName(index);
-    // Schema snapshots normally cover every referenced field. If a stale
-    // query contains several references outside that snapshot, keep their
-    // localized labels distinct without rendering their IDs.
-    return fallbackFieldName(
-      staleFieldOrdinals().get(fieldId) ?? props.source.fieldSchema.length,
-    );
+    // Allocate fallbacks around live Form names and earlier fallbacks so
+    // unknown fields remain distinguishable even when a Form uses an
+    // ordinal-looking name such as "Field 3".
+    return fallbackFieldLabels().get(fieldId) ??
+      fallbackFieldName(props.source.fieldSchema.length);
   };
   const capabilities = createMemo((): EntryFieldCapability[] => {
     const form = definitionForm();
