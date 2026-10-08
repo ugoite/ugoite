@@ -1,0 +1,136 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Space History timeline and Change detail
+requirements:
+  - id: REQ-UX-HISTORY-001
+    title: Space History Timeline, Detail, and Recovery Feedback
+    description: The Space History route reports timeline and detail load states, supports its shipped history controls, distinguishes recovery outcomes, and keeps technical identifiers out of primary labels.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: timeline-controls
+        kind: behavior
+        statement: The Space History timeline sends supported text, resolved-actor, date, sort, and column controls through its existing server-backed query and cursor owner.
+        governed_by: [POL-UI-007#rule.governance]
+      - id: timeline-feedback
+        kind: behavior
+        statement: The timeline announces loading separately from rows, shows a localized empty state when no changes exist, and offers retry after a load error.
+        governed_by: [POL-UI-007#rule.governance]
+      - id: detail-feedback
+        kind: behavior
+        statement: A selected or directly linked Change keeps its detail dialog available while inspection loads or reports a localized inspection error.
+        governed_by: [POL-UI-007#rule.governance]
+      - id: recovery-feedback
+        kind: behavior
+        statement: Recovery success is reported after refreshing history; definite rejection and conflict are surfaced; an unknown outcome is reconciled against history before another recovery attempt is allowed.
+        governed_by: [POL-UI-008#rule.governance]
+      - id: technical-identifiers
+        kind: behavior
+        statement: Change, actor, Run, and Entry identifiers stay out of ordinary labels and accessible names and appear only inside the collapsed, localized technical disclosure.
+        governed_by: [POL-UI-005#rule.governance]
+    bindings:
+      - id: space-history-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Space History query controls, timeline and detail states, recovery outcomes, and technical identifier disclosure through exact route tests.
+        targets:
+          - id: timeline-query-controls
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "applies supported text, actor, date, sort, and column controls server-side" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-HISTORY-001#criterion.timeline-controls
+                covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "applies supported text, actor, date, sort, and column controls server-side" } }
+          - id: timeline-loading-empty
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "Space History: announces list loading separately and renders the empty state" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-HISTORY-001#criterion.timeline-feedback
+                covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "Space History: announces list loading separately and renders the empty state" } }
+          - id: timeline-error-retry
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "Space History: retries a failed timeline request" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-HISTORY-001#criterion.timeline-feedback
+                covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "Space History: retries a failed timeline request" } }
+          - id: detail-inspection-error
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "Space History: keeps Change detail open and reports inspection failure" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-HISTORY-001#criterion.detail-feedback
+                covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "Space History: keeps Change detail open and reports inspection failure" } }
+          - id: recovery-success
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "keeps the existing Change revert flow available from the Change detail" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-HISTORY-001#criterion.recovery-feedback
+                covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "keeps the existing Change revert flow available from the Change detail" } }
+          - id: recovery-rejection
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "Space History: reports a rejected recovery without claiming success" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-HISTORY-001#criterion.recovery-feedback
+                covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "Space History: reports a rejected recovery without claiming success" } }
+          - id: recovery-conflict
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "Space History: reports a revision conflict and refreshes the timeline" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-HISTORY-001#criterion.recovery-feedback
+                covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "Space History: reports a revision conflict and refreshes the timeline" } }
+          - id: recovery-unknown-outcome
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "blocks another recovery attempt until an unknown result is reconciled" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-HISTORY-001#criterion.recovery-feedback
+                covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "blocks another recovery attempt until an unknown result is reconciled" } }
+          - id: technical-identifier-disclosure
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "Space History: keeps actor IDs out of labels when display names echo them" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-HISTORY-001#criterion.technical-identifiers
+                covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "Space History: keeps actor IDs out of labels when display names echo them" } }
+          - id: technical-resource-identifiers
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "opens a direct detail URL with related Run Changes and collapsed identifiers" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-HISTORY-001#criterion.technical-identifiers
+                covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "opens a direct detail URL with related Run Changes and collapsed identifiers" } }
+          - id: technical-label-localization
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
+            selector: { kind: test, name: "localizes the technical detail labels" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-HISTORY-001#criterion.technical-identifiers
+                covers: [FEAT-UX-014#binding.space-history-page/target.history-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "localizes the technical detail labels" } }
