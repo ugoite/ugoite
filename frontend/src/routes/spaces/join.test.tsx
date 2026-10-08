@@ -41,9 +41,11 @@ describe("/spaces/join", () => {
     vi.mocked(authApi.registerInvitation).mockReset();
   });
 
-  it("renders as a public shell before an invitation recipient signs in", async () => {
+  it("REQ-UX-NAV-001: states the join context once without a competing title", async () => {
     render(() => <SpaceInvitationJoinRoute />);
 
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Join" })).toBeInTheDocument();
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { name: "Join" }).parentElement
@@ -90,6 +92,7 @@ describe("/spaces/join", () => {
       "provider-1",
       "invitation-token",
     );
+    expect(screen.queryByText("provider-1")).not.toBeInTheDocument();
   });
 
   it("shows the expiry reason with resume guidance and stays on join", async () => {
