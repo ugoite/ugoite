@@ -103,7 +103,10 @@ describe("v5 space Home", () => {
         id: "entry-travel",
         form: "Notes",
         updated_at: "2026-10-07T00:00:00Z",
-        properties: { name: "Travel notes" },
+        properties: {
+          name: "Travel notes",
+          private_note: "dashboard-recent-unrelated-field-marker",
+        },
         tags: [],
       },
       {
@@ -149,9 +152,15 @@ describe("v5 space Home", () => {
       expect(link).not.toHaveAccessibleName(
         /entry-(?:old-no-title|plan|travel|latest-no-title)/,
       );
+      expect(link).not.toHaveAccessibleName(
+        /dashboard-recent-unrelated-field-marker/,
+      );
     }
     expect(document.body.textContent).not.toMatch(
       /entry-(?:old-no-title|plan|travel|latest-no-title)/,
+    );
+    expect(document.body.textContent).not.toContain(
+      "dashboard-recent-unrelated-field-marker",
     );
     expect(
       screen.queryByRole("link", { name: /entry-old-no-title/i }),

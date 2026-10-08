@@ -170,7 +170,7 @@ features:
       - id: dashboard-entry-identifier-verification
         role: verification
         facet: verification
-        responsibility: Verify same-Form dashboard Entries use distinct human-facing labels, suppress duplicate generic labels, and retain exact Entry IDs only in route targets.
+        responsibility: Verify same-Form dashboard Entries use distinct human-facing labels, suppress duplicate generic labels, ignore unrelated Entry properties, and retain exact Entry IDs only in route targets.
         targets:
           - id: dashboard-entry-labels
             adapter: typescript
