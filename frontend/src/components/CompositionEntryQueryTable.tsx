@@ -5,10 +5,10 @@ import { ResultPagination } from "./ResultPagination";
 import { formatDateLabel } from "~/lib/date-format";
 import { formatValueForDisplay } from "~/lib/display-value";
 import {
-  systemEntryCapabilities,
   type EntryFieldRef,
   type EntryProjection,
   type EntryQueryResult,
+  systemEntryCapabilities,
 } from "~/lib/entry-query";
 import type {
   CompositionResolvedComponentBinding,
@@ -51,7 +51,11 @@ const timestampLabel = (kind: "created_at" | "updated_at"): string =>
 export function entryQueryDisplayColumns(
   source: Extract<CompositionResolvedSource, { kind: "entry_query" }>,
   rows: readonly EntryQueryResult[],
-  fieldNames?: (formId: string, fieldId: number) => string | undefined,
+  fieldNames?: (
+    formId: string,
+    fieldId: number,
+    sourceId?: string,
+  ) => string | undefined,
 ): EntryDisplayColumn[] {
   const projection: EntryProjection = source.request.projection;
   if (projection.kind === "preview") {
@@ -76,7 +80,12 @@ export function entryQueryDisplayColumns(
   const timestamps: EntryDisplayColumn[] = [];
   let projectedProperties = 0;
   for (const field of projection.fields) {
-    const column = displayColumnForField(field, formId, fieldNames);
+    const column = displayColumnForField(
+      field,
+      formId,
+      source.source_id,
+      fieldNames,
+    );
     if (column === "unresolved") {
       projectedProperties += 1;
       continue;
@@ -112,7 +121,14 @@ export function entryQueryDisplayColumns(
 const displayColumnForField = (
   field: EntryFieldRef,
   formId: string | undefined,
-  fieldNames: ((formId: string, fieldId: number) => string | undefined) | undefined,
+  sourceId: string,
+  fieldNames:
+    | ((
+      formId: string,
+      fieldId: number,
+      sourceId?: string,
+    ) => string | undefined)
+    | undefined,
 ): EntryDisplayColumn | null | "unresolved" => {
   if (field.kind === "created_at" || field.kind === "updated_at") {
     return {
@@ -128,7 +144,7 @@ const displayColumnForField = (
   }
   if (field.kind === "property") {
     const name = formId && fieldNames
-      ? fieldNames(formId, field.field_id)
+      ? fieldNames(formId, field.field_id, sourceId)
       : undefined;
     if (!name) return "unresolved";
     return {
@@ -145,7 +161,11 @@ export function CompositionEntryQueryTable(props: {
   source: Extract<CompositionResolvedSource, { kind: "entry_query" }>;
   sourceState?: CompositionSourcePageState;
   ownsSourceStatus: boolean;
-  fieldNames?: (formId: string, fieldId: number) => string | undefined;
+  fieldNames?: (
+    formId: string,
+    fieldId: number,
+    sourceId?: string,
+  ) => string | undefined;
   onNext: () => void;
   onPrevious: () => void;
   onRetry: () => void;
@@ -162,8 +182,7 @@ export function CompositionEntryQueryTable(props: {
   const loading = () =>
     props.ownsSourceStatus &&
     (!props.sourceState || status() === "loading");
-  const failed = () =>
-    props.ownsSourceStatus && status() === "error";
+  const failed = () => props.ownsSourceStatus && status() === "error";
 
   return (
     <section class="section">
@@ -201,7 +220,9 @@ export function CompositionEntryQueryTable(props: {
               ),
             }))}
             rows={rows()}
-            pageIdentity={`${sourceId()}:${props.sourceState?.cursor ?? "first"}`}
+            pageIdentity={`${sourceId()}:${
+              props.sourceState?.cursor ?? "first"
+            }`}
             tableLabel={props.binding.label ?? t("composition.resultPages")}
           />
         </Show>

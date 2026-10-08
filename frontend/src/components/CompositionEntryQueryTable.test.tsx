@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { entryQueryDisplayColumns } from "./CompositionEntryQueryTable";
 import type { CompositionResolvedSource } from "~/lib/composition-api";
 import type { EntryQueryResult } from "~/lib/entry-query";
 
 const source = (
-  projection:
-    Extract<CompositionResolvedSource, { kind: "entry_query" } >["request"]["projection"],
+  projection: Extract<
+    CompositionResolvedSource,
+    { kind: "entry_query" }
+  >["request"]["projection"],
 ): Extract<CompositionResolvedSource, { kind: "entry_query" }> => ({
   kind: "entry_query",
   source_id: "entries",
@@ -50,6 +52,11 @@ describe("entryQueryDisplayColumns", () => {
   });
 
   it("renders fields projections in projection order with timestamps last", () => {
+    const fieldNames = vi.fn((
+      formId: string,
+      fieldId: number,
+      sourceId?: string,
+    ) => sourceId === "entries" ? names(formId, fieldId) : undefined);
     const columns = entryQueryDisplayColumns(
       source({
         kind: "fields",
@@ -59,12 +66,13 @@ describe("entryQueryDisplayColumns", () => {
         ],
       }),
       [entryRow()],
-      names,
+      fieldNames,
     );
     expect(columns.map((column) => column.label)).toEqual([
       "purpose",
       "Created",
     ]);
+    expect(fieldNames).toHaveBeenCalledWith("form-1", 7, "entries");
     expect(columns[0].text(entryRow())).toBe("Travel");
   });
 

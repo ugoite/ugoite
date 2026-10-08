@@ -54,7 +54,10 @@ export interface CompositionDesignCanvasProps {
   /** Single draft mutation channel: every canvas op maps onto the document. */
   onDraftChange: (draft: CompositionDraft) => void;
   /** Metric/table insertion reuses the existing display picker at a target. */
-  onRequestDisplayPicker: (target: DraftInsertTarget) => void;
+  onRequestDisplayPicker: (
+    target: DraftInsertTarget,
+    kind: "metric" | "table",
+  ) => void;
   onParameterChange: (parameterId: string, value: unknown | undefined) => void;
   fieldNames?: CompositionFieldNames;
   onNext: (sourceId: string) => void;
@@ -83,6 +86,7 @@ const blockName = (
   draft: CompositionDraft,
   definitions: ReadonlyMap<string, CompositionParameterDefinition>,
   item: DraftLayoutItem,
+  fieldNames?: CompositionFieldNames,
 ): string => {
   if (item.kind === "parameter") {
     return definitions.get(item.parameterId)?.label ?? item.parameterId;
@@ -90,10 +94,12 @@ const blockName = (
   const display = draft.displays.find((entry) =>
     entry.draftId === item.draftId
   );
-  if (!display) return item.draftId;
+  if (!display) return t("composition.studioDisplay");
   if (display.label) return display.label;
-  if (display.kind === "text") return display.text || display.draftId;
-  return displayDefaultName(display, draft.sources);
+  if (display.kind === "text") {
+    return display.text || t("composition.studioText");
+  }
+  return displayDefaultName(display, draft.sources, fieldNames);
 };
 
 /**
@@ -110,7 +116,10 @@ function PaletteDialog(props: {
   draft: CompositionDraft;
   onInsertText: (target: DraftInsertTarget) => void;
   onInsertParameter: (target: DraftInsertTarget, parameterId: string) => void;
-  onRequestDisplayPicker: (target: DraftInsertTarget) => void;
+  onRequestDisplayPicker: (
+    target: DraftInsertTarget,
+    kind: "metric" | "table",
+  ) => void;
   onClose: () => void;
 }) {
   let dialog: HTMLDivElement | undefined;
@@ -201,7 +210,7 @@ function PaletteDialog(props: {
                 class="designPaletteItem"
                 onClick={() => {
                   props.onClose();
-                  props.onRequestDisplayPicker(insertTarget);
+                  props.onRequestDisplayPicker(insertTarget, "metric");
                 }}
               >
                 <UiIcon name="canvas-metric" />
@@ -212,7 +221,7 @@ function PaletteDialog(props: {
                 class="designPaletteItem"
                 onClick={() => {
                   props.onClose();
-                  props.onRequestDisplayPicker(insertTarget);
+                  props.onRequestDisplayPicker(insertTarget, "table");
                 }}
               >
                 <UiIcon name="canvas-table" />
@@ -406,7 +415,8 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
         : designBlockIdForComponent(item.draftId);
     const selected = () => props.selectedId === blockId();
     const highlighted = () => props.highlightedIds?.has(blockId()) ?? false;
-    const name = () => blockName(props.draft, definitionById(), item);
+    const name = () =>
+      blockName(props.draft, definitionById(), item, props.fieldNames);
     const binding = () =>
       item.kind === "component" ? bindingById().get(item.draftId) : undefined;
     const ownsSourceStatus = () => {

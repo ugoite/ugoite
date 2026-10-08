@@ -571,13 +571,27 @@ describe("resolveCompositionFieldName", () => {
       version: 1,
       template: "entry",
       fields: {
-        amount: { id: 101, type: "number", required: true },
+        amount: {
+          id: 101,
+          type: "number",
+          required: true,
+          label: "Amount spent",
+        },
+        visits: { id: 102, type: "number", required: false },
       },
     },
   ];
 
   it("resolves a field label by stable form id", () => {
-    expect(resolveCompositionFieldName(forms(), "form-1", 101)).toBe("amount");
+    expect(resolveCompositionFieldName(forms(), "form-1", 101)).toBe(
+      "Amount spent",
+    );
+  });
+
+  it("uses the source schema ordinal when a Form field has no label", () => {
+    expect(
+      resolveCompositionFieldName(forms(), "form-1", 102, [{ field_id: 102 }]),
+    ).toBe("Field 1");
   });
 
   it("does not resolve by display name", () => {
@@ -589,7 +603,9 @@ describe("resolveCompositionFieldName", () => {
     const renamed = forms();
     renamed[0].name = "Renamed expenses";
     // Display metadata renames never change id-based resolution.
-    expect(resolveCompositionFieldName(renamed, "form-1", 101)).toBe("amount");
+    expect(resolveCompositionFieldName(renamed, "form-1", 101)).toBe(
+      "Amount spent",
+    );
     expect(resolveCompositionFieldName(renamed, "Renamed expenses", 101))
       .toBeUndefined();
     // Unknown forms and fields stay unresolved so the table falls back

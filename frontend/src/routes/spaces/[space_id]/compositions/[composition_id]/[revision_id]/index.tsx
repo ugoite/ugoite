@@ -9,6 +9,7 @@ import {
 import { A, useNavigate, useParams } from "@solidjs/router";
 import {
   CompositionDiagnostics,
+  type CompositionFieldNames,
   CompositionRenderer,
 } from "~/components/CompositionRenderer";
 import { DashboardFlowRenderer } from "~/components/DashboardFlowRenderer";
@@ -36,18 +37,29 @@ export const route = spaceRoute({ navigation: "home" });
 /**
  * Display-only Form field-name lookup for Composition entry_query tables.
  * Matches the stable Form id only; display names never participate so a
- * Form rename cannot change which fields resolve. Query semantics never
- * depend on this helper — missing metadata returns undefined and the
- * table falls back to the current row key order.
+ * Form rename cannot change which fields resolve. Unlabeled fields use the
+ * matching source's saved schema order. Query semantics never depend on
+ * this helper.
  */
 export const resolveCompositionFieldName = (
   forms: readonly Form[] | undefined,
   formId: string,
   fieldId: number,
-): string | undefined =>
-  Object.entries(
+  fieldSchema?: readonly { field_id: number }[],
+): string | undefined => {
+  const field = Object.values(
     (forms ?? []).find((form) => form.id === formId)?.fields ?? {},
-  ).find(([, field]) => field.id === fieldId)?.[0];
+  ).find((definition) =>
+    (definition.query_capability?.field.field_id ?? definition.id) === fieldId
+  );
+  const label = field?.label?.trim();
+  if (label) return label;
+  const index = fieldSchema?.findIndex((entry) => entry.field_id === fieldId) ??
+    -1;
+  return index < 0
+    ? undefined
+    : t("composition.studioFieldIndex", { index: index + 1 });
+};
 
 export default function CompositionRevisionRoute() {
   const params = useParams<{
@@ -166,8 +178,6 @@ export default function CompositionRevisionRoute() {
     () => params.space_id,
     (spaceId) => formApi.list(spaceId).catch(() => []),
   );
-  const fieldNames = (formId: string, fieldId: number): string | undefined =>
-    resolveCompositionFieldName(forms(), formId, fieldId);
   const parameterMismatch = (parameterId: string) =>
     diagnostics().some((diagnostic) =>
       diagnostic.parameter_id === parameterId &&
@@ -198,6 +208,22 @@ export default function CompositionRevisionRoute() {
       document.kind !== "dashboard" || !Array.isArray(document.spec.components)
     ) return undefined;
     return document;
+  };
+  const fieldNames: CompositionFieldNames = (
+    formId,
+    fieldId,
+    sourceId,
+  ) => {
+    const source = layoutDocument()?.spec.sources.find((entry) =>
+      entry.id === sourceId && entry.kind === "entry_query" &&
+      entry.form_id === formId
+    );
+    return resolveCompositionFieldName(
+      forms(),
+      formId,
+      fieldId,
+      source?.field_schema,
+    );
   };
   const flowRows = () => {
     const rows = layoutDocument()?.spec.layout?.rows;

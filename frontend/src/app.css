@@ -1591,6 +1591,11 @@ textarea {
 .ui-dialog.composition-source-picker {
   width: min(560px, calc(100vw - 32px));
 }
+.ui-dialog.composition-display-picker {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
 .history-detail-backdrop {
   z-index: 60;
   padding: 0;

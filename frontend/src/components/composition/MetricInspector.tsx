@@ -45,6 +45,7 @@ const candidateIdForValueField = (
 export function MetricInspector(props: {
   draft: CompositionDraft;
   display: DraftDisplay;
+  fieldNames?: (formId: string, fieldId: number) => string | undefined;
   apply: InspectorApply;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
 }) {
@@ -55,7 +56,7 @@ export function MetricInspector(props: {
     const source = props.draft.sources.find((entry) =>
       entry.draftId === sourceId()
     );
-    return source ? displayScalarCandidates(source) : [];
+    return source ? displayScalarCandidates(source, props.fieldNames) : [];
   };
   const currentValueId = () =>
     candidateIdForValueField(
@@ -73,7 +74,7 @@ export function MetricInspector(props: {
       entry.draftId === nextSourceId
     );
     if (!next) return;
-    const nextCandidates = displayScalarCandidates(next);
+    const nextCandidates = displayScalarCandidates(next, props.fieldNames);
     const kept =
       nextCandidates.some((candidate) =>
           sameValueField(candidate.valueField, current.valueField)
@@ -126,7 +127,11 @@ export function MetricInspector(props: {
               >
                 <Show when={!matchedValueId()}>
                   <option value="" disabled>
-                    {displayValueName(entry())}
+                    {displayValueName(
+                      entry(),
+                      props.draft.sources,
+                      props.fieldNames,
+                    )}
                   </option>
                 </Show>
                 <For each={candidates()}>

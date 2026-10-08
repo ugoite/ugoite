@@ -73,6 +73,14 @@ components:
       title: Display
       status: removed
       source: display add, remove, reorder, and label editing are owned by the Design canvas and inspector; the display picker serves only as the canvas insertion delegate
+    - id: studio-display-picker
+      type: dialog
+      title: Add display
+      kind: carried from the canvas palette through source and value selection
+      sequence: source, metric value field, optional label, add
+      entry_query_field_labels: transient Form labels or localized source schema ordinals
+      internal_field_ids: never rendered
+      sizing: 560px maximum width and viewport-capped vertical scrolling
     - id: studio-tags
       type: form
       title: Tags
