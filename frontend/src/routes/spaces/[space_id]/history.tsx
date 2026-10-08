@@ -649,7 +649,7 @@ export default function SpaceHistoryRoute() {
                       onNext={() => void loadRelatedPage(relatedCursor(), "next")}
                     />
                   </section></Show>
-                  <details class="history-technical-info"><summary>{t("spaceHistory.technicalInfo")}</summary><dl><dt>{t("spaceHistory.changeId")}</dt><dd>{inspectionValue()!.change_id}</dd><dt>{t("spaceHistory.actorId")}</dt><dd>{inspectionValue()!.change.actor_principal_id}</dd><Show when={inspectionValue()!.change.run_id}><dt>{t("spaceHistory.runId")}</dt><dd>{inspectionValue()!.change.run_id}</dd></Show><Show when={selectedEntryId()}><dt>{t("spaceHistory.entryId")}</dt><dd>{selectedEntryId()}</dd></Show></dl></details>
+                  <details class="history-technical-info"><summary>{t("spaceHistory.technicalInfo")}</summary><dl><dt>{t("spaceHistory.technical.changeId")}</dt><dd>{inspectionValue()!.change_id}</dd><dt>{t("spaceHistory.technical.actorId")}</dt><dd>{inspectionValue()!.change.actor_principal_id}</dd><Show when={inspectionValue()!.change.run_id}><dt>{t("spaceHistory.technical.runId")}</dt><dd>{inspectionValue()!.change.run_id}</dd></Show><Show when={selectedEntryId()}><dt>{t("spaceHistory.technical.entryId")}</dt><dd>{selectedEntryId()}</dd></Show></dl></details>
                 </Show>
               </div>
               <footer class="ui-dialog-actions history-detail-actions">
