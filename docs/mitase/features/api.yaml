@@ -481,6 +481,8 @@ features:
               - kind: satisfies
                 criterion: REQ-API-012#criterion.selected-context-admission
               - kind: satisfies
+                criterion: REQ-API-019#criterion.current-space-authorization
+              - kind: satisfies
                 criterion: REQ-API-017#criterion.request-scoped-write-approval
               - kind: satisfies
                 criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
