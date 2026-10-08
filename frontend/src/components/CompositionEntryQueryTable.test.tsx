@@ -94,6 +94,42 @@ describe("entryQueryDisplayColumns", () => {
     expect(columns[0].text(entryRow())).toBe("Travel");
   });
 
+  it("keeps projected timestamps while showing unresolved row keys by name", () => {
+    const row = {
+      ...entryRow(),
+      properties: {
+        zeta: "Z",
+        created_at_micros: 123,
+        alpha: "A",
+        updated_at_micros: 456,
+      },
+    };
+    const columns = entryQueryDisplayColumns(
+      source({
+        kind: "fields",
+        fields: [
+          { kind: "property", field_id: 7 },
+          { kind: "property", field_id: 8 },
+          { kind: "created_at" },
+          { kind: "updated_at" },
+        ],
+      }),
+      [row],
+      () => "Field 1",
+    );
+    const byLabel = new Map(columns.map((column) => [column.label, column]));
+    expect(byLabel.get("alpha")?.text(row)).toBe("A");
+    expect(byLabel.get("zeta")?.text(row)).toBe("Z");
+    expect(columns.slice(-2).map((column) => column.label)).toEqual([
+      "Created",
+      "Updated",
+    ]);
+    expect(columns.some((column) => column.label === "created_at_micros"))
+      .toBe(false);
+    expect(columns.some((column) => column.label === "updated_at_micros"))
+      .toBe(false);
+  });
+
   it("falls back to the current row key order without field metadata", () => {
     const columns = entryQueryDisplayColumns(
       source({

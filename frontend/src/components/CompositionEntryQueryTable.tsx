@@ -45,8 +45,8 @@ const timestampLabel = (kind: "created_at" | "updated_at"): string =>
  * same presentation vocabulary as EntryBrowser. Preview projections render
  * Preview/Created/Updated; fields projections render projected properties
  * in projection order with timestamps last. Property names resolve through
- * authorized Form metadata supplied by the route; when no property name
- * resolves, the current row key order is a temporary fallback only.
+ * authorized Form metadata supplied by the route; unresolved properties use
+ * their own projected row keys without guessing a field-to-key position.
  */
 export function entryQueryDisplayColumns(
   source: Extract<CompositionResolvedSource, { kind: "entry_query" }>,
@@ -83,25 +83,31 @@ export function entryQueryDisplayColumns(
     : undefined;
   const regular: EntryDisplayColumn[] = [];
   const timestamps: EntryDisplayColumn[] = [];
-  let projectedProperties = 0;
-  let propertyIndex = 0;
+  let unresolvedProjectedProperties = 0;
   const rowPropertyKeys = rows.length > 0
-    ? Object.keys(rows[0].properties ?? {})
+    ? Object.keys(rows[0].properties ?? {}).filter((key) =>
+      key !== "form_id" && key !== "created_at_micros" &&
+      key !== "updated_at_micros"
+    )
     : [];
+  const resolvedPropertyKeys = new Set<string>();
   for (const field of projection.fields) {
-    const fallbackPropertyKey = field.kind === "property"
-      ? rowPropertyKeys[propertyIndex++]
+    const label = field.kind === "property" && formId && fieldNames
+      ? fieldNames(formId, field.field_id, source.source_id)
       : undefined;
+    const resolvedPropertyKey = field.kind === "property" && formId && fieldKeys
+      ? fieldKeys(formId, field.field_id, source.source_id)
+      : undefined;
+    const propertyKey = resolvedPropertyKey ?? (
+      label && rowPropertyKeys.includes(label) ? label : undefined
+    );
     const column = displayColumnForField(
       field,
-      formId,
-      source.source_id,
-      fieldNames,
-      fieldKeys,
-      fallbackPropertyKey,
+      label,
+      propertyKey,
     );
     if (column === "unresolved") {
-      projectedProperties += 1;
+      unresolvedProjectedProperties += 1;
       continue;
     }
     if (!column) continue;
@@ -112,45 +118,31 @@ export function entryQueryDisplayColumns(
     } else {
       regular.push(column);
     }
-    if (field.kind === "property") projectedProperties += 1;
+    if (field.kind === "property" && propertyKey) {
+      resolvedPropertyKeys.add(propertyKey);
+    }
   }
   // Timestamps keep the canonical Created-then-Updated order, matching
   // EntryBrowser regardless of projection encounter order.
   timestamps.sort((left, right) =>
     left.key === right.key ? 0 : left.key === "created_at" ? -1 : 1
   );
-  if (projectedProperties > 0 && regular.length === 0) {
-    const fallback = rows.length > 0
-      ? Object.keys(rows[0].properties ?? {})
-      : [];
-    return fallback.map((name) => ({
-      key: name,
-      label: name,
-      text: (row) => propertyText(row, name),
-    }));
-  }
-  return [...regular, ...timestamps];
+  const fallback = unresolvedProjectedProperties > 0
+    ? rowPropertyKeys.filter((key) => !resolvedPropertyKeys.has(key)).map(
+      (name) => ({
+        key: name,
+        label: name,
+        text: (row) => propertyText(row, name),
+      }),
+    )
+    : [];
+  return [...regular, ...fallback, ...timestamps];
 }
 
 const displayColumnForField = (
   field: EntryFieldRef,
-  formId: string | undefined,
-  sourceId: string,
-  fieldNames:
-    | ((
-      formId: string,
-      fieldId: number,
-      sourceId?: string,
-    ) => string | undefined)
-    | undefined,
-  fieldKeys:
-    | ((
-      formId: string,
-      fieldId: number,
-      sourceId?: string,
-    ) => string | undefined)
-    | undefined,
-  fallbackPropertyKey: string | undefined,
+  label: string | undefined,
+  propertyKey: string | undefined,
 ): EntryDisplayColumn | null | "unresolved" => {
   if (field.kind === "created_at" || field.kind === "updated_at") {
     return {
@@ -165,25 +157,10 @@ const displayColumnForField = (
     };
   }
   if (field.kind === "property") {
-    const label = formId && fieldNames
-      ? fieldNames(formId, field.field_id, sourceId)
-      : undefined;
-    const resolvedPropertyKey = formId && fieldKeys
-      ? fieldKeys(formId, field.field_id, sourceId)
-      : undefined;
-    const fieldNameIsKey = label !== undefined &&
-      label === fallbackPropertyKey;
-    const propertyKey = resolvedPropertyKey ??
-      (fieldNameIsKey ? label : fallbackPropertyKey);
     if (!propertyKey) return "unresolved";
-    const displayLabel = resolvedPropertyKey
-      ? label ?? resolvedPropertyKey
-      : fieldNameIsKey
-      ? label
-      : fallbackPropertyKey;
     return {
       key: `property:${field.field_id}`,
-      label: displayLabel,
+      label: label === propertyKey ? label : label ?? propertyKey,
       text: (row) => propertyText(row, propertyKey),
     };
   }
