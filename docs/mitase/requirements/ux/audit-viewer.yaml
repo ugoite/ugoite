@@ -112,6 +112,15 @@ requirements:
                 criterion: REQ-UX-AUDIT-003#criterion.query-states
                 covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.contract.test.tsx, test: shows the no-matches state after a filtered page has no rows } }
+          - id: stale-rows-on-query-error
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.contract.test.tsx
+            selector: { kind: test, name: replaces stale rows with a localized error after a failed query }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.query-states
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.contract.test.tsx, test: replaces stale rows with a localized error after a failed query } }
           - id: exact-identities-in-details
             adapter: typescript
             path: frontend/src/components/AuditLogViewer.contract.test.tsx
@@ -121,3 +130,12 @@ requirements:
                 criterion: REQ-UX-AUDIT-003#criterion.event-details
                 covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.contract.test.tsx, test: discloses exact event identities only in the opened details } }
+          - id: space-metadata-and-hash-details
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.contract.test.tsx
+            selector: { kind: test, name: discloses safe Space metadata and an optional event hash in details }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.event-details
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.contract.test.tsx, test: discloses safe Space metadata and an optional event hash in details } }

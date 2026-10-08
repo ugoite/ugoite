@@ -10,7 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuditLogViewer } from "./AuditLogViewer";
 import { setLocale } from "~/lib/i18n";
-import type { NodeAuditEvent } from "~/lib/types";
+import type { NodeAuditEvent, SpaceAuditEvent } from "~/lib/types";
 
 vi.mock("~/lib/ugoite-client", () => ({
   authApi: { listAudit: vi.fn() },
@@ -30,6 +30,25 @@ const event: NodeAuditEvent = {
   outcome: "deny",
   request_id: "request-1",
   safe_metadata: { source: "router" },
+};
+
+const spaceEvent: SpaceAuditEvent = {
+  event_id: "space-event-1",
+  timestamp: "2026-10-08T10:05:00Z",
+  space_id: "space-1",
+  action: "authorization.denied",
+  subject_principal_id: "space-subject-1",
+  actor_principal_id: "space-actor-1",
+  credential_id: "space-credential-1",
+  outcome: "deny",
+  target_type: "entry",
+  target_id: "space-target-1",
+  request_method: "POST",
+  request_path: "/spaces/space-1/entries",
+  request_id: "space-request-1",
+  metadata: { source: "space-router" },
+  prev_hash: "previous-hash-1",
+  event_hash: "event-hash-1",
 };
 
 const page = (items: NodeAuditEvent[]) => ({
@@ -73,6 +92,23 @@ describe("AuditLogViewer component contract", () => {
       await screen.findByText("No audit events match these filters."),
     ).toBeInTheDocument();
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+  });
+
+  it("replaces stale rows with a localized error after a failed query", async () => {
+    const load = vi.fn()
+      .mockResolvedValueOnce(page([event]))
+      .mockRejectedValueOnce(new Error("unavailable"));
+    render(() => <AuditLogViewer source="node" load={load} />);
+
+    expect(await screen.findByText("authorization.denied")).toBeInTheDocument();
+    fireEvent.input(screen.getByPlaceholderText("Exact action"), {
+      target: { value: "next.action" },
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Failed to load node audit events.",
+    );
+    expect(screen.queryByText("authorization.denied")).not.toBeInTheDocument();
   });
 
   it("updates the page count through previous and next controls", async () => {
@@ -146,5 +182,28 @@ describe("AuditLogViewer component contract", () => {
     ) {
       expect(within(details).getByText(identifier)).toBeVisible();
     }
+    expect(details).toHaveTextContent('"source": "router"');
+  });
+
+  it("discloses safe Space metadata and an optional event hash in details", async () => {
+    const load = vi.fn().mockResolvedValue({
+      items: [spaceEvent],
+      total: 1,
+      offset: 0,
+      limit: 25,
+    });
+    render(() => <AuditLogViewer source="space" load={load} />);
+
+    const action = await screen.findByText("authorization.denied");
+    const row = action.closest("tr");
+    if (!row) throw new Error("Audit event row was not rendered");
+    const details = row.querySelector("details");
+    if (!details) throw new Error("Audit event details were not rendered");
+    const eventHash = within(details).getByText("event-hash-1");
+    expect(eventHash).not.toBeVisible();
+
+    fireEvent.click(within(details).getByText("View details"));
+    expect(eventHash).toBeVisible();
+    expect(details).toHaveTextContent('"source": "space-router"');
   });
 });
