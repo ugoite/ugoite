@@ -381,14 +381,6 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
                             </td>
                             <td class="ui-table-cell">
                               {event.target_type ?? "—"}
-                              <Show when={event.target_id}>
-                                {(targetId) => (
-                                  <>
-                                    <br />
-                                    <code>{targetId()}</code>
-                                  </>
-                                )}
-                              </Show>
                             </td>
                             <td class="ui-table-cell">
                               <details>
@@ -414,6 +406,12 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
                                     <dt>{t("auditLog.scope")}</dt>
                                     <dd>
                                       <code>{eventScopeId(event)}</code>
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>{t("auditLog.targetId")}</dt>
+                                    <dd>
+                                      <code>{event.target_id ?? "—"}</code>
                                     </dd>
                                   </div>
                                   <div>
