@@ -5,17 +5,17 @@ page:
   title: Entry Detail
   route: /spaces/{space_id}/entries/{entry_id}
   implementation: implemented
+  states:
+    load_failure:
+      content: localized-error-summary
+      recovery_actions: [retry, back-to-form]
+      visible_identifiers: none
 components:
   shared:
     - id: space-shell
       type: persistent-workspace-navigation
       reference: ../components/space-shell.yaml
   body:
-    - id: entry-load-failure
-      type: inline-error-state
-      content: localized-error-summary
-      recovery_actions: [retry, back-to-form]
-      visible_identifiers: none
     - id: entry-header
       type: page-header
       items:
