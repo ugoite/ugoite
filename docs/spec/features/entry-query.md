@@ -17,7 +17,11 @@ Projection is separate from query identity. A page request carries an
 `EntryProjection`, a bounded per-request limit, and an optional opaque cursor.
 Count is a separate request and is never implicitly coupled to page retrieval.
 The result contains stable machine identity and revision data plus only the
-requested properties or Preview.
+requested Form properties or Preview. Requested system timestamps remain in
+their dedicated `created_at_micros` and `updated_at_micros` result fields; they
+are never added to `properties`. System Form identity likewise remains in the
+dedicated `form_id` field. This keeps user properties distinct from system
+values even when their names overlap.
 
 The cursor is signed and contains the Space identity, immutable PublicationRef,
 query fingerprint, current-authorization fingerprint, typed sort tuple, Form

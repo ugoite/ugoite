@@ -94,14 +94,14 @@ describe("entryQueryDisplayColumns", () => {
     expect(columns[0].text(entryRow())).toBe("Travel");
   });
 
-  it("keeps projected timestamps while showing unresolved row keys by name", () => {
+  it("keeps colliding Form properties and dedicated timestamps separate", () => {
     const row = {
       ...entryRow(),
       properties: {
         zeta: "Z",
-        created_at_micros: 123,
+        created_at_micros: "Form created value",
         alpha: "A",
-        updated_at_micros: 456,
+        updated_at_micros: "Form updated value",
       },
     };
     const columns = entryQueryDisplayColumns(
@@ -120,14 +120,18 @@ describe("entryQueryDisplayColumns", () => {
     const byLabel = new Map(columns.map((column) => [column.label, column]));
     expect(byLabel.get("alpha")?.text(row)).toBe("A");
     expect(byLabel.get("zeta")?.text(row)).toBe("Z");
+    expect(byLabel.get("created_at_micros")?.text(row)).toBe(
+      "Form created value",
+    );
+    expect(byLabel.get("updated_at_micros")?.text(row)).toBe(
+      "Form updated value",
+    );
     expect(columns.slice(-2).map((column) => column.label)).toEqual([
       "Created",
       "Updated",
     ]);
-    expect(columns.some((column) => column.label === "created_at_micros"))
-      .toBe(false);
-    expect(columns.some((column) => column.label === "updated_at_micros"))
-      .toBe(false);
+    expect(columns.at(-2)?.text(row)).not.toBe("Form created value");
+    expect(columns.at(-1)?.text(row)).not.toBe("Form updated value");
   });
 
   it("keeps a Form property named like a timestamp when that timestamp is not projected", () => {
@@ -159,5 +163,37 @@ describe("entryQueryDisplayColumns", () => {
     );
     expect(columns.map((column) => column.label)).toEqual(["purpose"]);
     expect(columns[0].text(entryRow())).toBe("Travel");
+  });
+
+  it("keeps a Form property named form_id in Form scope", () => {
+    const row = {
+      ...entryRow(),
+      properties: { form_id: "projected Form value" },
+    };
+    const columns = entryQueryDisplayColumns(
+      source({
+        kind: "fields",
+        fields: [{ kind: "property", field_id: 8 }],
+      }),
+      [row],
+    );
+    expect(columns.map((column) => column.label)).toEqual(["form_id"]);
+    expect(columns[0].text(row)).toBe("projected Form value");
+  });
+
+  it("does not render Form identity as an all-Forms table column", () => {
+    const allFormsSource = source({
+      kind: "fields",
+      fields: [{ kind: "form" }],
+    });
+    allFormsSource.request.query.scope = { kind: "all" };
+    const row = {
+      ...entryRow(),
+      properties: { form_id: "internal-form-uuid" },
+    };
+    const columns = entryQueryDisplayColumns(allFormsSource, [row]);
+
+    expect(columns.some((column) => column.text(row) === "internal-form-uuid"))
+      .toBe(false);
   });
 });

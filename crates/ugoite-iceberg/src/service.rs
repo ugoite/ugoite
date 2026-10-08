@@ -8333,20 +8333,10 @@ fn project_entry_fields(
                     source.get(&definition.name).cloned().unwrap_or(Value::Null),
                 );
             }
-            EntryFieldRef::Form => {
-                projected.insert("form_id".to_string(), Value::String(form.id.to_string()));
-            }
-            EntryFieldRef::CreatedAt => {
-                projected.insert(
-                    "created_at_micros".to_string(),
-                    Value::from(micros_from_seconds(row.created_at, "created_at")?),
-                );
-            }
-            EntryFieldRef::UpdatedAt => {
-                projected.insert(
-                    "updated_at_micros".to_string(),
-                    Value::from(micros_from_seconds(row.updated_at, "updated_at")?),
-                );
+            EntryFieldRef::Form | EntryFieldRef::CreatedAt | EntryFieldRef::UpdatedAt => {
+                // System identity and timestamps are returned in dedicated
+                // top-level fields on EntryResult. Keeping them out of
+                // `properties` leaves Form property names unambiguous.
             }
         }
     }
