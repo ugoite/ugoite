@@ -604,6 +604,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
           - id: form-dialog-surface
             adapter: typescript
             path: frontend/src/components/create-dialogs.tsx

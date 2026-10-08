@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SecuritySettingsRoute from "./security";
 import { authApi } from "~/lib/auth-api";
@@ -106,6 +112,58 @@ describe("SecuritySettingsRoute", () => {
       .toHaveAttribute("aria-selected", "true");
   });
 
+  it("REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details", async () => {
+    const credentialId = "passkey-internal-id";
+    const secondCredentialId = "passkey-second-internal-id";
+    const sessionId = "session-internal-id";
+    const secondSessionId = "session-second-internal-id";
+    vi.mocked(authApi.listPasskeys).mockResolvedValue([{
+      credential_id: credentialId,
+      last_used_at: null,
+    }, {
+      credential_id: secondCredentialId,
+      last_used_at: null,
+    }]);
+    vi.mocked(authApi.listSessions).mockResolvedValue([{
+      session_id: sessionId,
+      last_seen_at: null,
+    }, {
+      session_id: secondSessionId,
+      last_seen_at: null,
+    }]);
+
+    render(() => <SecuritySettingsRoute />);
+
+    const credentialValue = await screen.findByText(credentialId);
+    const credentialDetails = credentialValue.closest("details");
+    expect(credentialDetails).not.toHaveAttribute("open");
+    expect(credentialValue).not.toBeVisible();
+    expect(screen.getAllByText("Passkey · last used never")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Revoke passkey 1" }))
+      .toBeVisible();
+    expect(screen.getByRole("button", { name: "Revoke passkey 2" }))
+      .toBeVisible();
+    fireEvent.click(
+      within(credentialDetails!).getByText("Technical details"),
+    );
+    expect(credentialValue).toBeVisible();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Sessions" }));
+    const sessionValue = await screen.findByText(sessionId);
+    const sessionDetails = sessionValue.closest("details");
+    expect(sessionDetails).not.toHaveAttribute("open");
+    expect(sessionValue).not.toBeVisible();
+    expect(screen.getAllByText("Session · last seen never")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Revoke session 1" }))
+      .toBeVisible();
+    expect(screen.getByRole("button", { name: "Revoke session 2" }))
+      .toBeVisible();
+    fireEvent.click(
+      within(sessionDetails!).getByText("Technical details"),
+    );
+    expect(sessionValue).toBeVisible();
+  });
+
   it("exposes the node audit viewer from account security settings", async () => {
     searchParams.tab = "audit";
     render(() => <SecuritySettingsRoute />);
@@ -210,7 +268,9 @@ describe("SecuritySettingsRoute", () => {
     ]);
     vi.mocked(authApi.revokeSession).mockRejectedValue(failure);
     render(() => <SecuritySettingsRoute />);
-    fireEvent.click(await screen.findByRole("button", { name: "取り消し" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "取り消し: セッション 1" }),
+    );
     await screen.findByRole("alert");
     expect(screen.getByRole("alert")).toHaveTextContent(
       "この操作を行う権限がありません。",
