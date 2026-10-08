@@ -130,7 +130,7 @@ export default defineConfig({
         },
         workbox: {
           skipWaiting: false,
-          clientsClaim: false,
+          clientsClaim: true,
           // The SPA shell is served at the origin root after the build. A
           // worker under /_build cannot precache Workbox's default relative
           // index.html fallback, so let navigations reach the server.
