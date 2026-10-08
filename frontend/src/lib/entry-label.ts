@@ -1,5 +1,4 @@
-import type { EntryRecord } from "~/lib/types";
+import { t } from "~/lib/i18n";
 
-/** Entry IDs are the only deterministic display identity owned by Ugoite. */
-export const entryDisplayLabel = (entry: Pick<EntryRecord, "id">): string =>
-  entry.id;
+/** Entry IDs are route identity; the human-facing label stays generic. */
+export const entryDisplayLabel = (): string => t("dashboard.entry");

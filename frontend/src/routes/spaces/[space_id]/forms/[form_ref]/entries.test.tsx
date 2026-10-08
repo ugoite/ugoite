@@ -187,7 +187,7 @@ describe("/spaces/:space_id/forms/:form_ref/entries", () => {
     );
   });
 
-  it("REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates", async () => {
+  it("REQ-UX-LIST-001: keeps Entry IDs out of form rows with compact right-meta dates", async () => {
     vi.mocked(entryApi.query).mockResolvedValue({
       rows: [{
         id: "entry-1",
@@ -219,7 +219,9 @@ describe("/spaces/:space_id/forms/:form_ref/entries", () => {
       );
     });
 
-    await screen.findByText("Hello");
+    const row = await screen.findByRole("row", { name: /Hello/ });
+    expect(row).not.toHaveAccessibleName(/entry-1/);
+    expect(document.body.textContent).not.toContain("entry-1");
     expect(container.querySelector('[class*="chip"]')).toBeNull();
     expect(
       screen.getAllByText(

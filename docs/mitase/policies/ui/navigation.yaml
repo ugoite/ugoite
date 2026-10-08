@@ -53,11 +53,32 @@ policies:
       - id: identifier-evidence
         role: evidence
         facet: presentation
-        responsibility: Record the ListPanel surface where identifiers stay out of the primary path.
+        responsibility: Record the live Space list, dashboard, form-entry list, and Asset detail surfaces where identifiers stay out of primary labels.
         targets:
-          - id: list-panel-surface
+          - id: spaces-route-surface
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-005#rule.governance
+          - id: dashboard-route-surface
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/dashboard.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-005#rule.governance
+          - id: form-entry-list-surface
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-005#rule.governance
+          - id: asset-detail-page-spec
             adapter: declared
-            path: frontend/src/components/ListPanel.tsx
+            path: docs/spec/ui/pages/space-asset-detail.yaml
             selector: { kind: file }
             claims:
               - kind: evidences

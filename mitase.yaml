@@ -151,6 +151,8 @@ inventory:
         - e2e/navigation.test.ts
         - frontend/src/routes/spaces/[space_id]/dashboard.tsx
         - frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
+        - frontend/src/routes/spaces/[space_id]/assets/[asset_id].tsx
+        - frontend/src/routes/spaces/[space_id]/assets/[asset_id].test.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/index.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx
@@ -363,6 +365,7 @@ inventory:
         - docs/spec/stories/experimental.yaml
         - docs/spec/ui/index.md
         - docs/spec/ui/pages/space-assets.yaml
+        - docs/spec/ui/pages/space-asset-detail.yaml
         - docs/spec/ui/pages/space-dashboard.yaml
         - docs/spec/ui/pages/space-entries-object.yaml
         - docs/spec/ui/pages/space-entry-detail.yaml

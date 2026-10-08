@@ -448,12 +448,12 @@ requirements:
           - id: entry-rows-compact
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"
-            selector: { kind: test, name: "REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates" }
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps Entry IDs out of form rows with compact right-meta dates" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
-                covers: [FEAT-UX-008#binding.row-list-implementation/target.form-entries-route]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "REQ-UX-LIST-001: renders entry rows without type chips and with compact right-meta dates" } }
+                covers: [FEAT-UX-008#binding.row-list-implementation/target.form-entries-route, FEAT-UX-003#binding.list-baseline/target.form-entries-route-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "REQ-UX-LIST-001: keeps Entry IDs out of form rows with compact right-meta dates" } }
       - id: history-row-verification
         role: verification
         facet: verification
@@ -593,12 +593,12 @@ requirements:
           - id: pr6-asset-detail-rows
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/assets/[asset_id].test.tsx"
-            selector: { kind: test, name: "PR6: shows type/size meta with download/delete actions and entry references" }
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps Entry IDs out of asset references and blocked-delete labels" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
-                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/assets/[asset_id].test.tsx", test: "PR6: shows type/size meta with download/delete actions and entry references" } }
+                covers: [FEAT-UX-003#binding.list-baseline/target.asset-entry-reference-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/assets/[asset_id].test.tsx", test: "REQ-UX-LIST-001: keeps Entry IDs out of asset references and blocked-delete labels" } }
   - id: REQ-UX-LIST-002
     title: One-Row Action Bar at 390px
     description: Primary list and workspace action bars remain in a single row without wrapping or horizontal scrolling at a 390px viewport.

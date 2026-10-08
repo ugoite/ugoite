@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-09-24"
+updated: "2026-10-08"
 page:
   id: space-dashboard
   title: Space Dashboard
@@ -52,3 +52,23 @@ components:
           label: "New form"
           target_page: space-form-grid
           emphasis_when: no-creatable-forms
+    - id: continue-entry
+      type: link
+      when: a-recent-entry-exists
+      label: Entry
+      secondary: form-name-or-em-dash
+      source: entry.list
+      presentation: full-row
+      target_page: space-entry-detail
+      visible_identifier: none
+      route_identity: entry-id
+    - id: recent-entries
+      type: list
+      count: 4
+      source: entry.list
+      selection: full-row-activate
+      label: Entry
+      secondary: form-name-or-em-dash
+      target_page: space-entry-detail
+      visible_identifier: none
+      route_identity: entry-id

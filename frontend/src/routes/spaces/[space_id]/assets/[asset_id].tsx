@@ -38,9 +38,7 @@ export default function SpaceAssetDetailRoute() {
   const isReferenced = createMemo(() => occurrences().length > 0);
   const referenceSummary = createMemo(() =>
     occurrences()
-      .map((occurrence) =>
-        `${occurrence.form} · ${occurrence.field} (${occurrence.entry_id})`
-      )
+      .map((occurrence) => `${occurrence.form} · ${occurrence.field}`)
       .join(", ")
   );
   const [deleteConfirmOpen, setDeleteConfirmOpen] = createSignal(false);

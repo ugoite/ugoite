@@ -31,6 +31,15 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
+          - id: page-space-asset-detail
+            adapter: declared
+            path: docs/spec/ui/pages/space-asset-detail.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
           - id: page-space-dashboard
             adapter: declared
             path: docs/spec/ui/pages/space-dashboard.yaml
@@ -203,6 +212,13 @@ features:
           - id: route-assets
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/assets.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.route-coverage
+          - id: route-asset-detail
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/assets/[asset_id].tsx
             selector: { kind: file }
             claims:
               - kind: satisfies
