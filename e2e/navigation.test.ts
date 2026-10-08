@@ -233,6 +233,90 @@ test.describe("Manifest-discovered route chunk recovery", () => {
 	});
 });
 
+test.describe("PWA update lifecycle", () => {
+	let spaceId = "";
+
+	test.beforeAll(async ({ request }) => {
+		await waitForServers(request);
+		spaceId = await getDefaultSpaceId(request);
+		await ensureDefaultForm(request, spaceId);
+	});
+
+	test("REQ-E2E-010: a new production worker waits while an open client traverses a lazy route", async ({ page }) => {
+		test.setTimeout(60_000);
+
+		const formsPath = `/spaces/${spaceId}/forms`;
+		await page.goto(formsPath, { waitUntil: "load" });
+		await settleUiLoading(page);
+
+		await page.waitForFunction(async () => {
+			const registration = await navigator.serviceWorker.getRegistration();
+			return registration?.active?.state === "activated";
+		});
+		if (!(await page.evaluate(() => !!navigator.serviceWorker.controller))) {
+			await page.reload({ waitUntil: "load" });
+		}
+		await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+
+		const activeClient = await page.evaluate(async () => {
+			const registration = await navigator.serviceWorker.ready;
+			if (!registration.active || !navigator.serviceWorker.controller) {
+				throw new Error("Expected the page to have an active service worker");
+			}
+
+			const activeScript = registration.active.scriptURL;
+			const updateUrl = new URL(activeScript);
+			updateUrl.searchParams.set("pwa-update-test", "next");
+			await navigator.serviceWorker.register(updateUrl.href, {
+				scope: `${location.origin}/`,
+			});
+
+			return {
+				activeScript,
+				controllerScript: navigator.serviceWorker.controller.scriptURL,
+				timeOrigin: performance.timeOrigin,
+			};
+		});
+
+		await page.waitForFunction(async () => {
+			const registration = await navigator.serviceWorker.getRegistration();
+			return registration?.waiting?.state === "installed";
+		}, undefined, { timeout: 15_000 });
+
+		const waitingState = await page.evaluate(async () => {
+			const registration = await navigator.serviceWorker.getRegistration();
+			return {
+				waiting: registration?.waiting?.state === "installed",
+				activeScript: registration?.active?.scriptURL,
+				controllerScript: navigator.serviceWorker.controller?.scriptURL,
+				timeOrigin: performance.timeOrigin,
+			};
+		});
+		expect(waitingState.waiting).toBe(true);
+		expect(waitingState.activeScript).toBe(activeClient.activeScript);
+		expect(waitingState.controllerScript).toBe(activeClient.controllerScript);
+		expect(waitingState.timeOrigin).toBe(activeClient.timeOrigin);
+
+		const targetPath = `/spaces/${spaceId}/forms/Entry/entries`;
+		await page.getByRole("button", { name: "Entry", exact: true }).click();
+		await expect(page).toHaveURL(new RegExp(`${escapeRegExp(targetPath)}$`));
+		await expect(page.locator(".entriesPage h1")).toHaveText("Entry");
+		await expectAppHealthy(page);
+
+		const afterNavigation = await page.evaluate(async () => {
+			const registration = await navigator.serviceWorker.getRegistration();
+			return {
+				waiting: registration?.waiting?.state === "installed",
+				controllerScript: navigator.serviceWorker.controller?.scriptURL,
+				timeOrigin: performance.timeOrigin,
+			};
+		});
+		expect(afterNavigation.waiting).toBe(true);
+		expect(afterNavigation.controllerScript).toBe(activeClient.controllerScript);
+		expect(afterNavigation.timeOrigin).toBe(activeClient.timeOrigin);
+	});
+});
+
 type InternalLink = {
 	path: string;
 	href: string;

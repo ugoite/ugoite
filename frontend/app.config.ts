@@ -89,7 +89,10 @@ export default defineConfig({
     plugins: [
       tailwindcss(),
       VitePWA({
-        registerType: "autoUpdate",
+        // Keep already-open clients on the asset set their current worker
+        // controls. Auto-updating this lazy-loaded app can retire route chunks
+        // while an older client still needs to import them.
+        registerType: "prompt",
         injectRegister: "auto",
         includeAssets: [
           "favicon.ico",
@@ -123,6 +126,8 @@ export default defineConfig({
           ],
         },
         workbox: {
+          skipWaiting: false,
+          clientsClaim: false,
           globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
           additionalManifestEntries: brandIconPrecacheEntries,
         },

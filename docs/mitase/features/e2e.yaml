@@ -58,6 +58,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-E2E-004#criterion.real-preload-recovery
+          - id: pwa-update-lifecycle
+            adapter: typescript
+            path: frontend/app.config.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-010#criterion.active-client-safety
       - id: server
         role: implementation
         facet: backend

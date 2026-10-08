@@ -454,3 +454,29 @@ requirements:
         kind: quality
         statement: A small documentation viewport renders the same canonical Ugoite navigation paths without requiring framework-specific selectors.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance]
+
+  - id: REQ-E2E-010
+    title: Safe service worker updates for open clients
+    description: A production service worker update must not replace the worker controlling an open client while that client may still need to load lazy route modules from its current build.
+    priority: high
+    status: implemented
+    criteria:
+      - id: active-client-safety
+        kind: behavior
+        statement: A newly installed production service worker waits while existing clients remain open, allowing each client to continue traversing lazy routes with the worker and assets from its current build.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: production-update-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that a production service worker update waits for an existing client and that the client can still load a previously unvisited lazy route.
+        targets:
+          - id: open-client-update-case
+            adapter: typescript
+            path: e2e/navigation.test.ts
+            selector: { kind: test, name: 'REQ-E2E-010: a new production worker waits while an open client traverses a lazy route' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-010#criterion.active-client-safety
+                covers: [FEAT-E2E-001#binding.frontend/target.pwa-update-lifecycle]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-010: a new production worker waits while an open client traverses a lazy route' } }
