@@ -594,18 +594,66 @@ async fn req_sec_002_covers_the_static_browser_root() {
         "ugoite-security-headers-static-{}",
         uuid::Uuid::now_v7()
     ));
-    std::fs::create_dir_all(&static_dir).unwrap();
+    std::fs::create_dir_all(static_dir.join("assets")).unwrap();
     std::fs::write(static_dir.join("index.html"), "<!doctype html>").unwrap();
+    std::fs::write(static_dir.join("assets/app.js"), "console.log('app')").unwrap();
     let _static_dir = EnvVarGuard::set("UGOITE_STATIC_DIR", &static_dir);
     let app = initialized_app_without_env_lock("security-headers-static").await;
     let response = app
+        .clone()
         .oneshot(Request::get("/").body(Body::empty()).unwrap())
         .await
         .unwrap();
-    std::fs::remove_dir_all(static_dir).unwrap();
-
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers().get("content-type").unwrap(), "text/html");
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-cache");
     assert_common_security_headers(&response, false);
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/spaces/cache-contract/forms")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers().get("content-type").unwrap(), "text/html");
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-cache");
+
+    let response = app
+        .clone()
+        .oneshot(Request::get("/assets/app.js").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "text/javascript"
+    );
+    assert!(response.headers().get("cache-control").is_none());
+
+    let response = app
+        .clone()
+        .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().get("cache-control").is_none());
+
+    let response = app
+        .oneshot(
+            Request::get("/api/oauth/authorize?response_type=code")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(response.status().is_client_error());
+    assert!(response.headers().get("cache-control").is_none());
+
+    std::fs::remove_dir_all(static_dir).unwrap();
 }
 
 #[tokio::test]

@@ -244,3 +244,29 @@ requirements:
                 criterion: REQ-OPS-019#criterion.root-mise-surface
                 covers: [FEAT-OPS-001#binding.automation/target.root-mise]
                 runner: { runner: deno-test-file, arguments: { file: tools/workspace_test.ts, test: 'REQ-OPS-019: supported developer entrypoints use the root Mise surface' } }
+
+  - id: REQ-OPS-045
+    title: SPA Shell HTML Cache Revalidation
+    description: Browser shell documents served at the root and for client-side routes must revalidate so deployments do not keep stale HTML references to route chunks.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: spa-shell-html-revalidation
+        kind: behavior
+        statement: 'Root and SPA fallback HTML responses include Cache-Control: no-cache unless a more specific cache policy is already present, while non-HTML static assets and API response cache behavior remain unchanged.'
+        governed_by: [POL-005#rule.governance, POL-008#rule.governance]
+    bindings:
+      - id: spa-shell-cache-verification
+        role: verification
+        facet: cargo-test
+        responsibility: Verify root and client-route fallback HTML revalidation while confirming the static JavaScript asset does not gain the new policy.
+        targets:
+          - id: spa-shell-cache-test
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_sec_002_covers_the_static_browser_root }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-045#criterion.spa-shell-html-revalidation
+                covers: [FEAT-OPS-001#binding.spa-shell-delivery/target.html-shell-cache-header]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_002_covers_the_static_browser_root } }
