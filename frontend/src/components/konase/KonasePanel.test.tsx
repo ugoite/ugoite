@@ -578,6 +578,102 @@ describe("KonasePanel Space authority", () => {
     );
   });
 
+  it("REQ-UX-LIST-003: disambiguates repeated Entry previews across pages", async () => {
+    mockConnection();
+    const candidate = (id: string) => ({
+      id,
+      form_id: "form-a",
+      revision_id: `revision-${id}`,
+      created_at_micros: 1,
+      updated_at_micros: 1,
+      preview: "Shared preview",
+    });
+    queryEntriesMock.mockResolvedValueOnce({
+      rows: [candidate("entry-a"), candidate("entry-b")],
+      has_more: true,
+      next: "page-2",
+    }).mockResolvedValueOnce({
+      rows: [candidate("entry-c")],
+      has_more: false,
+    });
+
+    render(() => <KonasePanel spaceId="space-a" />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Search Entries" }));
+
+    const firstCandidate = await screen.findByRole("checkbox", {
+      name: "Shared preview · Entry 1",
+      exact: true,
+    });
+    expect(screen.getByRole("checkbox", {
+      name: "Shared preview · Entry 2",
+      exact: true,
+    })).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/entry-[abc]/);
+    fireEvent.click(firstCandidate);
+
+    const selectedResources = screen.getByRole("list", {
+      name: "Selected resources",
+    });
+    expect(within(selectedResources).getByText("Shared preview · Entry 1"))
+      .toBeInTheDocument();
+    expect(
+      within(selectedResources).getByRole("button", {
+        name: "Remove Shared preview · Entry 1 from selected resources",
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    const thirdCandidate = await screen.findByRole("checkbox", {
+      name: "Shared preview · Entry 3",
+      exact: true,
+    });
+    expect(within(selectedResources).getByText("Shared preview · Entry 1"))
+      .toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/entry-[abc]/);
+    fireEvent.click(thirdCandidate);
+    expect(within(selectedResources).getByText("Shared preview · Entry 3"))
+      .toBeInTheDocument();
+    expect(
+      within(selectedResources).getByRole("button", {
+        name: "Remove Shared preview · Entry 3 from selected resources",
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
+      target: { value: "Explain these resources" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Preview selected Context" }),
+    );
+
+    const host = hostInstances[0];
+    await waitFor(() => expect(host.previewDeferreds).toHaveLength(1));
+    const firstUri = "ugoite://entry/entry-a";
+    const thirdUri = "ugoite://entry/entry-c";
+    expect(host.selectedUriCalls).toEqual([[firstUri, thirdUri]]);
+    host.previewDeferreds[0].resolve({
+      id: "preview-duplicates",
+      spaceId: "space-a",
+      selectedUris: [firstUri, thirdUri],
+      admission: [
+        { uri: firstUri, status: "included" },
+        { uri: thirdUri, status: "included" },
+      ],
+      resources: [
+        { uri: firstUri, content: "First Entry projection" },
+        { uri: thirdUri, content: "Third Entry projection" },
+      ],
+    });
+    await waitFor(() =>
+      expect(screen.getByText("First Entry projection")).toBeInTheDocument()
+    );
+  });
+
   it("restores keyboard focus to the preview trigger when the preview is cancelled", async () => {
     mockConnection();
     listFormsMock.mockResolvedValue([

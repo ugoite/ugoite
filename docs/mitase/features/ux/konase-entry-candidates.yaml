@@ -1,0 +1,29 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: ux
+category: Browser Konase Entry candidate labels
+features:
+  - id: FEAT-UX-015
+    title: Browser Konase Entry candidate disambiguation
+    summary: Keep repeated Entry previews distinguishable in candidate and selected-resource surfaces without exposing resource identifiers.
+    status: implemented
+    bindings:
+      - id: konase-entry-choice-implementation
+        role: implementation
+        facet: frontend
+        responsibility: Keep repeated Entry preview labels connected to the Konase candidate surface and its component contract.
+        targets:
+          - id: konase-panel-surface
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-003#criterion.same-preview-entry-choices
+          - id: konase-panel-specification
+            adapter: declared
+            path: docs/spec/ui/components/konase-panel.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-003#criterion.same-preview-entry-choices
