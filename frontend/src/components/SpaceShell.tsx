@@ -6,6 +6,7 @@ import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
 import { KonasePanel } from "~/components/konase/KonasePanel";
 import { createSpaceStore } from "~/lib/space-store";
+import { spaceDisplayLabel } from "~/lib/space-label";
 import { spaceUid } from "~/lib/space-list";
 import { spacePath, spaceSettingsPath } from "~/lib/space-path";
 
@@ -285,7 +286,11 @@ export function SpaceShell(props: SpaceShellProps) {
                 spaceUid(space) === props.spaceId
               )}
             >
-              <option value={props.spaceId}>{props.spaceId}</option>
+              <option value={props.spaceId}>
+                {spaceStore.loading()
+                  ? t("spacesPage.loading")
+                  : t("common.space")}
+              </option>
             </Show>
             <For each={spaceStore.spaces()}>
               {(space) => (
@@ -293,7 +298,7 @@ export function SpaceShell(props: SpaceShellProps) {
                   value={spaceUid(space)}
                   selected={spaceUid(space) === props.spaceId}
                 >
-                  {space.name || space.slug || spaceUid(space)}
+                  {spaceDisplayLabel(space)}
                 </option>
               )}
             </For>

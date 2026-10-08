@@ -47,6 +47,8 @@ features:
                 criterion: REQ-FE-066#criterion.single-shell
               - kind: satisfies
                 criterion: REQ-FE-058#criterion.calm-loading
+              - kind: satisfies
+                criterion: REQ-FE-001#criterion.human-readable-labels
 
   - id: FEAT-FE-010
     title: Form list navigation workspace

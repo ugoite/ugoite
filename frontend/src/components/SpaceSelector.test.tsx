@@ -100,9 +100,16 @@ describe("SpaceSelector", () => {
     expect(onSelect).toHaveBeenCalledWith("ws-2");
   });
 
-  it("should show the Space UID when name is not available", () => {
+  it("REQ-FE-001: uses Space names or slugs without exposing Space UIDs", () => {
     const spaces = [{
       space_uid: "space-uid-1",
+      name: "",
+      slug: "research-notes",
+      created_at: "2025-01-01T00:00:00Z",
+    }, {
+      space_uid: "space-uid-2",
+      name: "",
+      slug: "",
       created_at: "2025-01-01T00:00:00Z",
     }];
     render(() => (
@@ -114,6 +121,13 @@ describe("SpaceSelector", () => {
         onSelect={vi.fn()}
       />
     ));
-    expect(screen.getByText("space-uid-1")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "research-notes" })).toHaveValue(
+      "space-uid-1",
+    );
+    expect(screen.getByRole("option", { name: "Untitled" })).toHaveValue(
+      "space-uid-2",
+    );
+    expect(screen.getByRole("combobox")).not.toHaveTextContent("space-uid-1");
+    expect(screen.getByRole("combobox")).not.toHaveTextContent("space-uid-2");
   });
 });

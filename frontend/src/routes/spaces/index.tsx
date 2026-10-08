@@ -11,6 +11,7 @@ import { sortSpaces, spaceUid } from "~/lib/space-list";
 import type { Space } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
+import { spaceDisplayLabel } from "~/lib/space-label";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 
@@ -56,7 +57,7 @@ function SpaceTable(props: {
               main={
                 <RowListLink
                   href={`/spaces/${encodeURIComponent(uid)}/dashboard`}
-                  primary={space.name || space.slug || uid}
+                  primary={spaceDisplayLabel(space)}
                   chevron
                 />
               }

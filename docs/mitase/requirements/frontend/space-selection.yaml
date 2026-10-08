@@ -17,6 +17,10 @@ requirements:
         kind: behavior
         statement: A user can switch the selected Space through the frontend Space selector.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: human-readable-labels
+        kind: behavior
+        statement: Space selectors and lists show the Space name, slug, or a localized neutral label; the stable Space UID remains internal to routing and selection.
+        governed_by: [POL-UI-005#rule.governance]
     bindings:
       - id: space-selection-verification
         role: verification
@@ -41,6 +45,15 @@ requirements:
                 criterion: REQ-FE-001#criterion.switch-space
                 covers: [FEAT-FE-001#binding.frontend/target.space-selector]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSelector.test.tsx, test: "should call onSelect when space changes" } }
+          - id: selector-human-readable-labels
+            adapter: typescript
+            path: frontend/src/components/SpaceSelector.test.tsx
+            selector: { kind: test, name: "REQ-FE-001: uses Space names or slugs without exposing Space UIDs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-001#criterion.human-readable-labels
+                covers: [FEAT-FE-001#binding.frontend/target.space-selector]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SpaceSelector.test.tsx, test: "REQ-FE-001: uses Space names or slugs without exposing Space UIDs" } }
           - id: store-fallback
             adapter: typescript
             path: frontend/src/lib/space-store.test.ts
@@ -77,6 +90,15 @@ requirements:
                 criterion: REQ-FE-001#criterion.authorized-space-selection
                 covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-FE-001: lists every authorized Space in one section" } }
+          - id: route-space-human-readable-labels
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-001: uses Space names or slugs without exposing Space UIDs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-001#criterion.human-readable-labels
+                covers: [FEAT-FE-001#binding.frontend/target.spaces-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-FE-001: uses Space names or slugs without exposing Space UIDs" } }
 
   - id: REQ-FE-002
     title: No Client-side Default Space Creation

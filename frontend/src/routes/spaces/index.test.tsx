@@ -309,6 +309,33 @@ describe("/spaces", () => {
       );
   });
 
+  it("REQ-FE-001: uses Space names or slugs without exposing Space UIDs", async () => {
+    (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        space_uid: "space-with-slug-uid",
+        name: "",
+        slug: "research-notes",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        space_uid: "unnamed-space-uid",
+        name: "",
+        slug: "",
+        created_at: "2026-01-02T00:00:00Z",
+      },
+    ]);
+
+    render(() => <SpacesIndexRoute />);
+
+    const spacesList = await screen.findByRole("list", { name: "Spaces" });
+    expect(within(spacesList).getByRole("link", { name: "research-notes" }))
+      .toHaveAttribute("href", "/spaces/space-with-slug-uid/dashboard");
+    expect(within(spacesList).getByRole("link", { name: "Untitled" }))
+      .toHaveAttribute("href", "/spaces/unnamed-space-uid/dashboard");
+    expect(spacesList).not.toHaveTextContent("space-with-slug-uid");
+    expect(spacesList).not.toHaveTextContent("unnamed-space-uid");
+  });
+
   it("REQ-UX-LIST-001: opens spaces through full-row links with an unboxed secondary settings action", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {

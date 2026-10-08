@@ -1,5 +1,5 @@
-version: "0.2"
-updated: "2026-09-14"
+version: "0.3"
+updated: "2026-10-08"
 component_group:
   id: space-shell-shared
   title: Space Shell Shared Components
@@ -30,3 +30,10 @@ components:
     height: 66px
     breakpoint: 900px
     items: [Spaces]
+  - id: space-selector
+    type: select
+    scope: authorized-spaces
+    option_label: name-then-slug-then-localized-untitled
+    unresolved_current_space_label: localized-loading-text
+    unavailable_current_space_label: localized-neutral-label
+    displays_space_uid: false

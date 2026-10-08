@@ -9,6 +9,7 @@ const spaceStoreState = vi.hoisted(() => ({
   initialSpaces: [] as Array<{
     space_uid: string;
     name: string;
+    slug?: string;
     created_at: string;
   }>,
   loadSpaces: vi.fn(),
@@ -26,12 +27,19 @@ vi.mock("@solidjs/router", () => ({
 vi.mock("~/lib/space-store", () => ({
   createSpaceStore: () => {
     const [spaces, setSpaces] = createSignal(spaceStoreState.initialSpaces);
+    const [loading, setLoading] = createSignal(false);
     return {
       spaces,
+      loading,
       loadSpaces: async () => {
-        const loaded = await spaceStoreState.loadSpaces();
-        if (Array.isArray(loaded)) setSpaces(loaded);
-        return "my-space-uid";
+        setLoading(true);
+        try {
+          const loaded = await spaceStoreState.loadSpaces();
+          if (Array.isArray(loaded)) setSpaces(loaded);
+          return "my-space-uid";
+        } finally {
+          setLoading(false);
+        }
       },
       selectSpace: vi.fn(),
     };
@@ -133,7 +141,7 @@ describe("v5 SpaceShell", () => {
         "/spaces/my-space-uid/settings?section=credentials",
       );
   });
-  it("REQ-FE-058: keeps Space identity available while Spaces load", async () => {
+  it("REQ-FE-058: keeps Space navigation usable while Spaces load without showing IDs", async () => {
     let resolveSpaces!: (
       spaces: typeof spaceStoreState.initialSpaces,
     ) => void;
@@ -150,12 +158,20 @@ describe("v5 SpaceShell", () => {
 
     expect(container.querySelector(".loadingBar")).toBeNull();
     expect(container.querySelector(".ui-loading-bar")).toBeNull();
-    expect(screen.getByRole("option", { name: "my-space-uid" })).toHaveValue(
-      "my-space-uid",
-    );
+    expect(screen.getByRole("option", { name: "Loading spaces..." }))
+      .toHaveValue("my-space-uid");
+    expect(screen.queryByRole("option", { name: "my-space-uid" }))
+      .not.toBeInTheDocument();
+    expect(container).not.toHaveTextContent("my-space-uid");
     resolveSpaces([
       { space_uid: "my-space-uid", name: "My Space", created_at: "" },
       { space_uid: "other-space-uid", name: "Other Space", created_at: "" },
+      {
+        space_uid: "unnamed-space-uid",
+        name: "",
+        slug: "",
+        created_at: "",
+      },
     ]);
     expect(await screen.findByRole("option", { name: "My Space" }))
       .toHaveValue("my-space-uid");
@@ -165,9 +181,33 @@ describe("v5 SpaceShell", () => {
     expect(screen.getByRole("option", { name: "Other Space" })).toHaveValue(
       "other-space-uid",
     );
+    expect(screen.getByRole("option", { name: "Untitled" })).toHaveValue(
+      "unnamed-space-uid",
+    );
     expect(screen.getByRole("combobox", { name: "Space" })).toHaveValue(
       "my-space-uid",
     );
+    expect(container).not.toHaveTextContent("my-space-uid");
+  });
+  it("REQ-FE-058: hides a missing Space UID after the authorized list finishes loading", async () => {
+    spaceStoreState.initialSpaces = [];
+    spaceStoreState.loadSpaces.mockResolvedValue([
+      { space_uid: "other-space-uid", name: "Other Space", created_at: "" },
+    ]);
+
+    const { container } = render(() => (
+      <SpaceShell spaceId="my-space-uid" activeNavigation="home">
+        <p>Content</p>
+      </SpaceShell>
+    ));
+
+    expect(await screen.findByRole("option", { name: "Space" })).toHaveValue(
+      "my-space-uid",
+    );
+    expect(screen.getByRole("option", { name: "Other Space" })).toHaveValue(
+      "other-space-uid",
+    );
+    expect(container).not.toHaveTextContent("my-space-uid");
   });
   it("preserves Konase state while the utility panel is closed", () => {
     render(() => (
