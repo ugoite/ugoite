@@ -697,6 +697,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-ACTION-001#criterion.icon-only-accessibility
+              - kind: satisfies
+                criterion: REQ-UX-ACTION-001#criterion.icon-only-overflow
           - id: entry-action-bar
             adapter: typescript
             path: frontend/src/components/EntryDetailPane.tsx
@@ -764,6 +766,15 @@ features:
                 criterion: REQ-UX-ACTION-001#criterion.icon-only-accessibility
                 covers: [FEAT-UX-012#binding.frontend/target.action-bar-layout]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/a11y-contract.test.tsx, test: "REQ-UX-ACTION-001: keeps icon-only utilities at 44px with visible focus" } }
+          - id: action-bar-narrow-overflow
+            adapter: typescript
+            path: e2e/compact-controls-evidence.test.ts
+            selector: { kind: test, name: "REQ-UX-ACTION-001: keeps over-capacity icon-only action bars on one row" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.icon-only-overflow
+                covers: [FEAT-UX-012#binding.frontend/target.action-bar-layout]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/compact-controls-evidence.test.ts, test: "REQ-UX-ACTION-001: keeps over-capacity icon-only action bars on one row" } }
           - id: entry-utility-actions
             adapter: typescript
             path: frontend/src/components/EntryDetailPane.safety.test.tsx

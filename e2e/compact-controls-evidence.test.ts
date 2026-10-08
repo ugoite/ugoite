@@ -569,4 +569,139 @@ test.describe("compact BackLink header evidence", () => {
       expect(evidence).toHaveLength(surfaces.length * viewports.length);
     },
   );
+
+  test(
+    "REQ-UX-ACTION-001: keeps over-capacity icon-only action bars on one row",
+    async ({ page }) => {
+      for (const viewport of viewports) {
+        await page.setViewportSize({ width: viewport.width, height: 844 });
+        const entryDetail = surfaces.find((surface) =>
+          surface.id === "entry-detail"
+        );
+        if (!entryDetail) throw new Error("Entry detail surface is missing");
+        await page.goto(getFrontendUrl(entryDetail.path(seed)), {
+          waitUntil: "domcontentloaded",
+        });
+        await expect(page.locator(".ui-entry-action-bar")).toBeVisible({
+          timeout: 15_000,
+        });
+
+        await page.locator(".ui-entry-action-bar").evaluate((element) => {
+          const bar = element as HTMLElement;
+          const originalTools = Array.from(
+            bar.querySelectorAll<HTMLElement>(".tool"),
+          );
+          const source = originalTools.find((tool) =>
+            !(tool instanceof HTMLButtonElement) || !tool.disabled
+          );
+          if (!source) throw new Error("ActionIconBar has no enabled action");
+
+          bar.classList.add("actionbar--icon-only");
+          bar.setAttribute("aria-label", "Icon-only actions");
+          const nameTool = (tool: HTMLElement, index: number) => {
+            const name = `Toolbar action ${index + 1}`;
+            tool.classList.add("tool--icon-only");
+            tool.setAttribute("aria-label", name);
+            tool.setAttribute("title", name);
+            tool.removeAttribute("id");
+            const label = tool.querySelector<HTMLElement>(".toolLabel");
+            if (!label) throw new Error("ActionIconBar tool has no label");
+            label.textContent = name;
+            label.classList.add("ui-sr-only");
+          };
+
+          originalTools.forEach(nameTool);
+          for (let index = originalTools.length; index < 12; index += 1) {
+            const clone = source.cloneNode(true) as HTMLElement;
+            clone.setAttribute("data-overflow-test-action", "true");
+            nameTool(clone, index);
+            bar.append(clone);
+          }
+        });
+
+        const bar = page.locator(".ui-entry-action-bar");
+        const layout = await bar.evaluate((element) => {
+          const toolbar = element as HTMLElement;
+          const controls = Array.from(
+            toolbar.querySelectorAll<HTMLElement>(":scope > .tool"),
+          );
+          const boxes = controls.map((control) => {
+            const rect = control.getBoundingClientRect();
+            return {
+              left: rect.left,
+              right: rect.right,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+            };
+          });
+          return {
+            display: getComputedStyle(toolbar).display,
+            flexWrap: getComputedStyle(toolbar).flexWrap,
+            overflowX: getComputedStyle(toolbar).overflowX,
+            scrollbarWidth: getComputedStyle(toolbar).scrollbarWidth,
+            clientWidth: toolbar.clientWidth,
+            scrollWidth: toolbar.scrollWidth,
+            documentWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
+            boxes,
+          };
+        });
+
+        expect(layout.viewportWidth).toBe(viewport.width);
+        expect(layout.display).toBe("flex");
+        expect(layout.flexWrap).toBe("nowrap");
+        expect(layout.overflowX).toBe("auto");
+        expect(layout.scrollbarWidth).not.toBe("none");
+        expect(layout.scrollWidth).toBeGreaterThan(layout.clientWidth);
+        expect(layout.documentWidth).toBeLessThanOrEqual(viewport.width + 1);
+        expect(layout.boxes).toHaveLength(12);
+        const rowTop = layout.boxes[0].top;
+        for (const box of layout.boxes) {
+          expect(box.width).toBe(44);
+          expect(box.height).toBe(44);
+          expect(Math.abs(box.top - rowTop)).toBeLessThanOrEqual(1);
+        }
+
+        const lastAction = bar.locator(
+          '[data-overflow-test-action="true"]',
+        ).last();
+        await page.evaluate(() => {
+          const active = document.activeElement;
+          if (active instanceof HTMLElement) active.blur();
+        });
+        for (let tab = 0; tab < 80; tab += 1) {
+          await page.keyboard.press("Tab");
+          if (
+            await lastAction.evaluate((element) =>
+              element === document.activeElement
+            )
+          ) break;
+        }
+        await expect(lastAction).toBeFocused();
+        await expect(lastAction).toHaveAccessibleName("Toolbar action 12");
+
+        const focused = await lastAction.evaluate((element) => {
+          const control = element as HTMLElement;
+          const bar = control.parentElement!;
+          const rect = control.getBoundingClientRect();
+          const barRect = bar.getBoundingClientRect();
+          const style = getComputedStyle(control);
+          return {
+            visibleInsideToolbar: rect.left >= barRect.left - 1 &&
+              rect.right <= barRect.right + 1,
+            scrollLeft: bar.scrollLeft,
+            focusVisible: control.matches(":focus-visible"),
+            outlineStyle: style.outlineStyle,
+            outlineWidth: Number.parseFloat(style.outlineWidth),
+          };
+        });
+        expect(focused.visibleInsideToolbar).toBe(true);
+        expect(focused.scrollLeft).toBeGreaterThan(0);
+        expect(focused.focusVisible).toBe(true);
+        expect(focused.outlineStyle).not.toBe("none");
+        expect(focused.outlineWidth).toBeGreaterThanOrEqual(2);
+      }
+    },
+  );
 });

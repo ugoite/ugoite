@@ -70,8 +70,9 @@ describe("#2842 automated accessibility contract", () => {
       /\.tool:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--focus,\s*var\(--brand\)\);[^}]*outline-offset:\s*-3px;/,
     );
     expect(css).toMatch(
-      /\.actionbar\.compact-actions\.actionbar--icon-only\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*44px\);/,
+      /\.actionbar\.compact-actions\.actionbar--icon-only\s*\{[^}]*display:\s*flex;[^}]*flex-flow:\s*row nowrap;[^}]*overflow-x:\s*auto;[^}]*overflow-y:\s*hidden;/,
     );
+    expect(css).toMatch(/\.tool--icon-only\s*\{[^}]*flex:\s*0 0 44px;/);
   });
 
   it("never renders a disabled anchor: unavailable nav targets are omitted", () => {

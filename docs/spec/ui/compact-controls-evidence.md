@@ -17,6 +17,11 @@ convention as `login-responsive.test.ts`; Playwright sets the viewport width
 to 320 CSS pixels rather than changing Chromium's browser zoom. The screenshots
 and JSON record are part of the `ci-e2e-smoke-mobile` artifact.
 
+The same mobile task exercises an over-capacity all-icon-only `ActionIconBar`
+at both widths. It verifies that all controls stay in one row, each target stays
+44px, the toolbar itself becomes horizontally scrollable without widening the
+page, and keyboard focus scrolls the final action into view with its focus ring.
+
 Automated accessible-name and keyboard-focus checks run in Chromium. Manual
 VoiceOver or NVDA reading-order and announcement evidence has not been
 collected and remains unverified; the browser record states this gap for every

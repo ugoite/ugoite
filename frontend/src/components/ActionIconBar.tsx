@@ -55,8 +55,9 @@ export interface ActionIconBarProps {
  * Shared compact action strip. Primary actions stay in the page header;
  * secondary actions live here with 44px targets and long accessible names.
  * The bar defaults to visible short labels; a bar or an individual utility
- * action can opt into icon-only presentation. The bar never wraps; only table
- * wrappers scroll.
+ * action can opt into icon-only presentation. Icon-only bars stay on one row
+ * and scroll horizontally when their actions exceed the available width; other
+ * action bars do not scroll.
  * A nav target that is unavailable is omitted (never a disabled `<a>`);
  * a disabled action renders a true disabled `<button>`.
  *
