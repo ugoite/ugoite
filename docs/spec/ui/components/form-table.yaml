@@ -1,0 +1,25 @@
+version: "0.1"
+updated: "2026-10-08"
+component_group:
+  id: form-table
+  title: Form-scoped Entry Table
+components:
+  - id: editable-form-entry-table
+    type: editable-data-grid
+    implementation: frontend/src/components/FormTable.tsx
+    tests: frontend/src/components/FormTable.test.tsx
+    scope: selected-form
+    columns:
+      desktop: [form-fields, updated-at]
+      mobile: [form-fields, updated-at]
+    identity:
+      entry_id:
+        primary_rows: hidden
+        accessible_names: hidden
+        access: advanced-entry-info-details-with-copy
+    row_open:
+      control: localized-view-entry-button
+      target: selected-entry
+    selection:
+      cells: [form-fields, updated-at]
+      copy: selected-visible-values-only
