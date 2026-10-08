@@ -162,6 +162,77 @@ test.describe("Dynamic navigation traversal", () => {
 	});
 });
 
+test.describe("Manifest-discovered route chunk recovery", () => {
+	test.use({ serviceWorkers: "block" });
+
+	let spaceId = "";
+
+	test.beforeAll(async ({ request }) => {
+		await waitForServers(request);
+		spaceId = await getDefaultSpaceId(request);
+		await ensureDefaultForm(request, spaceId);
+	});
+
+	test("REQ-E2E-004: recovers after a failed route chunk request", async ({ page }) => {
+		test.setTimeout(60_000);
+		await page.goto(`/spaces/${spaceId}/forms`, { waitUntil: "load" });
+		await settleUiLoading(page);
+
+		const routeChunkUrl = await findRouteChunkUrl(
+			page,
+			"src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx",
+		);
+		let chunkRequests = 0;
+		await page.route(routeChunkUrl, async (route) => {
+			chunkRequests += 1;
+			if (chunkRequests === 1) {
+				await route.abort("failed");
+				return;
+			}
+			await route.continue();
+		});
+
+		const targetPath = `/spaces/${spaceId}/forms/Entry/entries`;
+		const reload = page.waitForEvent("load");
+		await page.getByRole("button", { name: "Entry", exact: true }).click();
+		await reload;
+
+		await expect(page).toHaveURL(new RegExp(`${escapeRegExp(targetPath)}$`));
+		await expect(page.locator(".entriesPage h1")).toHaveText("Entry");
+		await expectAppHealthy(page);
+		expect(chunkRequests).toBe(2);
+	});
+
+	test("REQ-E2E-004: bounds retries when the real route chunk keeps failing", async ({ page }) => {
+		test.setTimeout(60_000);
+		await page.goto(`/spaces/${spaceId}/forms`, { waitUntil: "load" });
+		await settleUiLoading(page);
+
+		const routeChunkUrl = await findRouteChunkUrl(
+			page,
+			"src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx",
+		);
+		let chunkRequests = 0;
+		await page.route(routeChunkUrl, async (route) => {
+			chunkRequests += 1;
+			await route.abort("failed");
+		});
+
+		const targetPath = `/spaces/${spaceId}/forms/Entry/entries`;
+		const reload = page.waitForEvent("load");
+		await page.getByRole("button", { name: "Entry", exact: true }).click();
+		await reload;
+
+		await expect(page).toHaveURL(new RegExp(`${escapeRegExp(targetPath)}$`));
+		await expect(
+			page.getByText(/This page could not be displayed|ページを表示できませんでした/),
+		).toBeVisible();
+		await expect.poll(() => chunkRequests).toBe(2);
+		await page.waitForTimeout(300);
+		expect(chunkRequests).toBe(2);
+	});
+});
+
 type InternalLink = {
 	path: string;
 	href: string;
@@ -187,6 +258,20 @@ async function expectAppHealthy(page: Page, consoleErrors: string[] = []): Promi
 
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function findRouteChunkUrl(page: Page, manifestKeyPart: string): Promise<string> {
+	const output = await page.evaluate((keyPart) => {
+		const manifest = (window as Window & {
+			manifest?: Record<string, { output?: string }>;
+		}).manifest;
+		return Object.entries(manifest ?? {}).find(([key, asset]) =>
+			key.includes(keyPart) && asset.output?.endsWith(".js")
+		)?.[1].output ?? null;
+	}, manifestKeyPart);
+
+	expect(output, `the build manifest contains ${manifestKeyPart}`).toBeTruthy();
+	return new URL(output!, page.url()).href;
 }
 
 async function settleUiLoading(page: Page): Promise<void> {

@@ -49,6 +49,15 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-E2E-004#criterion.preload-recovery
+              - kind: satisfies
+                criterion: REQ-E2E-004#criterion.real-preload-recovery
+          - id: app-boundary-route-chunk-recovery
+            adapter: typescript
+            path: frontend/src/components/AppErrorBoundary.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-004#criterion.real-preload-recovery
       - id: server
         role: implementation
         facet: backend

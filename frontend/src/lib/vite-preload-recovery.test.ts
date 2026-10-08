@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  recoverFromRouteChunkFailure,
   recoverFromVitePreloadError,
   type VitePreloadErrorEvent,
 } from "./vite-preload-recovery";
@@ -166,6 +167,72 @@ describe("Vite dynamic import recovery", () => {
       ),
     ).toBe(false);
     expect(event.defaultPrevented).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("REQ-E2E-004: reloads once for failed route chunk imports", () => {
+    const session = createSession();
+    const reload = vi.fn();
+    const error = new TypeError(
+      "Failed to fetch dynamically imported module: http://localhost/_build/assets/route.js",
+    );
+
+    expect(
+      recoverFromRouteChunkFailure(
+        error,
+        session,
+        reload,
+        "/spaces/one/forms",
+        1_000,
+      ),
+    ).toBe(true);
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it("REQ-E2E-004: lets a repeated failed route chunk reach the app boundary", () => {
+    const session = createSession();
+    const firstReload = vi.fn();
+    const repeatedReload = vi.fn();
+    const error = new TypeError(
+      "Failed to fetch dynamically imported module: http://localhost/_build/assets/route.js",
+    );
+
+    expect(
+      recoverFromRouteChunkFailure(
+        error,
+        session,
+        firstReload,
+        "/spaces/one/forms",
+        1_000,
+      ),
+    ).toBe(true);
+    expect(
+      recoverFromRouteChunkFailure(
+        error,
+        session,
+        repeatedReload,
+        "/spaces/one/forms",
+        1_001,
+      ),
+    ).toBe(false);
+    expect(firstReload).toHaveBeenCalledOnce();
+    expect(repeatedReload).not.toHaveBeenCalled();
+  });
+
+  it("REQ-E2E-004: does not reload for unrelated route rendering errors", () => {
+    const session = createSession();
+    const reload = vi.fn();
+
+    expect(
+      recoverFromRouteChunkFailure(
+        new Error("sensitive internal error"),
+        session,
+        reload,
+        "/spaces/one/forms",
+        1_000,
+      ),
+    ).toBe(false);
+    expect(session.setItem).not.toHaveBeenCalled();
     expect(reload).not.toHaveBeenCalled();
   });
 });

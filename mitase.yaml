@@ -65,6 +65,8 @@ inventory:
         - frontend/src/lib/entry-label.test.ts
         - frontend/src/lib/vite-preload-recovery.ts
         - frontend/src/lib/vite-preload-recovery.test.ts
+        - frontend/src/components/AppErrorBoundary.tsx
+        - frontend/src/components/AppErrorBoundary.test.tsx
         - frontend/src/lib/form-api.ts
         - frontend/src/components/EntryBrowser.tsx
         - frontend/src/components/EntryBrowser.test.tsx
