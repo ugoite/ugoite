@@ -286,6 +286,24 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-field-ordinals
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: uses localized field ordinals while form metadata is loading
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-absent-form
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: uses field ordinals when the form is absent
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
     - id: browser-data-entry-query-zero-capable
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx

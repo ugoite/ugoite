@@ -344,6 +344,8 @@ describe("CompositionDataWorkspace", () => {
     // Human field names from the transient definition, not raw IDs.
     expect(await within(editor).findByText("Occurred")).toBeInTheDocument();
     expect(within(editor).getByText("Title")).toBeInTheDocument();
+    expect(within(editor).queryByText("100", { exact: true })).toBeNull();
+    expect(within(editor).queryByText("101", { exact: true })).toBeNull();
 
     // Add routes through the shared dialog: rows are added, operator and
     // value edit inside, Apply writes back through the narrow updater.
@@ -522,6 +524,53 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
+  it("uses localized field ordinals while form metadata is loading", async () => {
+    setLocale("ja");
+    formApiListMock.mockReturnValue(new Promise(() => {}));
+    let draft = createEmptyDraft("Tool");
+    draft = addEntryQuerySource(draft, {
+      ...entrySeed(),
+      query: {
+        filters: [{ field_id: 100, operator: "equals", value: "lunch" }],
+        sort: [{ field_id: 101, direction: "desc" }],
+        projection: { kind: "fields", fields: [100, 101] },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+
+    expect((await within(editor).findAllByText("項目 1")).length)
+      .toBeGreaterThan(0);
+    expect(within(editor).getAllByText("項目 2").length).toBeGreaterThan(0);
+    expect(editor.textContent).toContain("項目 1 一致する lunch");
+    expect(editor.textContent).toContain("項目 2 · 降順");
+    expect(within(editor).queryByText("100", { exact: true })).toBeNull();
+    expect(within(editor).queryByText("101", { exact: true })).toBeNull();
+    expect(harness.current().sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        filters: [{ field_id: 100, operator: "equals", value: "lunch" }],
+        sort: [{ field_id: 101, direction: "desc" }],
+        projection: { kind: "fields", fields: [100, 101] },
+      },
+    });
+  });
+
+  it("uses field ordinals when the form is absent", async () => {
+    formApiListMock.mockResolvedValue([]);
+    const harness = renderWorkspace(twoSourceDraft());
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+
+    expect(await within(editor).findByText("Field 1")).toBeInTheDocument();
+    expect(within(editor).getByText("Field 2")).toBeInTheDocument();
+    expect(within(editor).queryByText("100", { exact: true })).toBeNull();
+    expect(within(editor).queryByText("101", { exact: true })).toBeNull();
+  });
+
   it("falls back to schema fields without a form definition", async () => {
     formApiListMock.mockRejectedValue(new Error("denied"));
     const harness = renderWorkspace(twoSourceDraft());
@@ -536,8 +585,11 @@ describe("CompositionDataWorkspace", () => {
     expect(
       within(editor).getByRole("button", { name: "Add filter" }),
     ).toBeEnabled();
-    // Fallback pills keep the current field-ID rendering.
-    expect(within(editor).getByText("100")).toBeInTheDocument();
+    // Fallback labels stay human-readable while IDs remain in query data.
+    expect(within(editor).getByText("Field 1")).toBeInTheDocument();
+    expect(within(editor).getByText("Field 2")).toBeInTheDocument();
+    expect(within(editor).queryByText("100", { exact: true })).toBeNull();
+    expect(within(editor).queryByText("101", { exact: true })).toBeNull();
 
     // The dialog still edits through the schema snapshot.
     fireEvent.click(within(editor).getByRole("button", { name: "Add filter" }));
@@ -547,7 +599,7 @@ describe("CompositionDataWorkspace", () => {
       within(within(dialog).getByLabelText("Filter field 1"))
         .getAllByRole("option")
         .map((option) => option.textContent),
-    ).toEqual(["100", "101"]);
+    ).toEqual(["Field 1", "Field 2"]);
     fireEvent.input(within(dialog).getByLabelText("Value"), {
       target: { value: "2026-10-01" },
     });

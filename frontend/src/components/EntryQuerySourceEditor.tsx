@@ -148,14 +148,27 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
     return load.status === "ready" ? load.form : undefined;
   };
   const names = createMemo(() => studioFieldNames(definitionForm()));
+  const fallbackFieldName = (index: number): string =>
+    t("entryBrowser.fieldOrdinal", { number: index + 1 });
+  const fieldName = (fieldId: number): string => {
+    const knownName = names().get(fieldId);
+    if (knownName) return knownName;
+    const index = props.source.fieldSchema.findIndex((entry) =>
+      entry.field_id === fieldId
+    );
+    // Query-used fields are covered by the schema snapshot. If a stale query
+    // refers to a field outside it, keep the fallback neutral as well.
+    return fallbackFieldName(
+      index >= 0 ? index : props.source.fieldSchema.length,
+    );
+  };
   const capabilities = createMemo((): EntryFieldCapability[] => {
     const form = definitionForm();
-    return form
-      ? studioCapabilitiesFromForm(form)
-      : studioFallbackCapabilities(props.source.fieldSchema);
+    return form ? studioCapabilitiesFromForm(form) : studioFallbackCapabilities(
+      props.source.fieldSchema,
+      (_entry, index) => fallbackFieldName(index),
+    );
   });
-  const fieldName = (fieldId: number): string | undefined =>
-    names().get(fieldId);
 
   const [dialogMode, setDialogMode] = createSignal<
     EntryBrowserDisplayMode | null
@@ -254,7 +267,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               {(entry) => (
                 <li>
                   <span class="pill">
-                    <span>{fieldName(entry.field_id) ?? entry.field_id}</span>
+                    <span>{fieldName(entry.field_id)}</span>
                     <span class="ui-muted">{entry.field_type}</span>
                   </span>
                 </li>
@@ -284,7 +297,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               {(filter, index) => (
                 <li class="flex flex-wrap items-center gap-2">
                   <span>
-                    {fieldName(filter.field_id) ?? filter.field_id}{" "}
+                    {fieldName(filter.field_id)}{" "}
                     {operatorLabel(filter.operator)}{" "}
                     {filterValueText(filter.value)}
                   </span>
@@ -337,8 +350,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               {(clause, index) => (
                 <li class="flex flex-wrap items-center gap-2">
                   <span>
-                    {fieldName(clause.field_id) ?? clause.field_id} ·{" "}
-                    {clause.direction ===
+                    {fieldName(clause.field_id)} · {clause.direction ===
                         "asc"
                       ? t("entryBrowser.ascending")
                       : t("entryBrowser.descending")}
@@ -431,7 +443,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
                           props.onProjection({ kind: "fields", fields });
                         }}
                       />
-                      <span>{fieldName(fieldId) ?? fieldId}</span>
+                      <span>{fieldName(fieldId)}</span>
                     </label>
                   </li>
                 );

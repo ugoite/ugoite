@@ -151,16 +151,25 @@ describe("entry-query-studio-capabilities", () => {
     });
   });
 
-  it("falls back to schema field IDs without a definition", () => {
+  it("keeps schema field IDs while using supplied fallback labels", () => {
     expect(studioFieldNames(undefined).size).toBe(0);
     expect(
-      studioFallbackCapabilities([{ field_id: 100, field_type: "date" }]),
+      studioFallbackCapabilities(
+        [
+          { field_id: 100, field_type: "date" },
+          { field_id: 101, field_type: "string" },
+        ],
+        (_entry, index) => `Field ${index + 1}`,
+      ),
     ).toMatchObject([{
       field: { kind: "property", field_id: 100 },
-      name: "100",
+      name: "Field 1",
       field_type: "date",
       filterable: true,
       sortable: true,
+    }, {
+      field: { kind: "property", field_id: 101 },
+      name: "Field 2",
     }]);
   });
 
