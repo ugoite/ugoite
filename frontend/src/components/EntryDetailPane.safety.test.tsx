@@ -10,6 +10,7 @@ import {
 } from "@solidjs/testing-library";
 import { EntryDetailPane } from "./EntryDetailPane";
 import { entryApi, RevisionConflictError } from "~/lib/ugoite-client";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
 
@@ -203,7 +204,7 @@ describe("EntryDetailPane safety/recovery", () => {
     expect(screen.getByLabelText("Notes")).toHaveValue("local edit");
   });
 
-  it("keeps the user draft on 409, shows the server revision, and re-saves on the adopted base", async () => {
+  it("keeps the user draft on 409, gives ID-free conflict guidance, and re-saves on the adopted base", async () => {
     const getMock = entryApi.get as ReturnType<typeof vi.fn>;
     getMock.mockResolvedValueOnce(storedEntry()).mockResolvedValueOnce(
       storedEntry({
@@ -213,7 +214,18 @@ describe("EntryDetailPane safety/recovery", () => {
     );
     const updateMock = entryApi.update as ReturnType<typeof vi.fn>;
     updateMock.mockRejectedValueOnce(
-      new RevisionConflictError("Revision conflict", "server-rev"),
+      new RevisionConflictError(
+        "Revision conflict",
+        "server-rev",
+        new UgoiteApiError({
+          kind: "conflict",
+          code: "REVISION_CONFLICT",
+          operation: "entry.update",
+          status: 409,
+          message: "Revision conflict",
+          detail: { current_revision_id: "server-rev" },
+        }),
+      ),
     );
     updateMock.mockResolvedValue({ id: "entry-1", revision_id: "rev-3" });
 
@@ -230,15 +242,16 @@ describe("EntryDetailPane safety/recovery", () => {
     fireEvent.input(notes, { target: { value: "my draft edit" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    // No Reload-destroys-draft: the heading, server revision, and the exact
-    // typed draft all stay visible.
+    // No Reload-destroys-draft: the conflict guidance and exact typed draft
+    // stay visible without exposing the raw server revision ID.
     const conflict = await screen.findByText(
       "Someone else saved first — your draft is kept",
     );
     expect(conflict).toBeInTheDocument();
-    expect(
-      screen.getByText("Current server revision: server-rev"),
-    ).toBeInTheDocument();
+    const conflictAlert = conflict.closest('[role="alert"]')!;
+    expect(conflictAlert).toHaveTextContent("The server has a newer revision.");
+    expect(conflictAlert).not.toHaveTextContent("server-rev");
+    expect(document.body).not.toHaveTextContent("server-rev");
     expect(screen.getByLabelText("Notes")).toHaveValue("my draft edit");
 
     // Side-by-side review: latest is read-only text, local stays editable.
