@@ -72,4 +72,35 @@ describe("/setup continuation", () => {
       { replace: true },
     );
   });
+
+  it("REQ-SEC-005: presents the bootstrap account ID with recovery codes", async () => {
+    const accountId = "bootstrap-account-123";
+    const recoveryCode = "offline-recovery-code-456";
+    vi.mocked(authApi.setup).mockResolvedValueOnce({
+      recovery_codes: [recoveryCode],
+      account: { account_id: accountId, display_name: "Admin" },
+    });
+    render(() => <SetupRoute />);
+
+    expect(screen.queryByTestId("recovery-account-id")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bootstrap-recovery-codes"))
+      .not.toBeInTheDocument();
+    fireEvent.input(screen.getByLabelText("Setup secret"), {
+      target: { value: "setup-secret" },
+    });
+    fireEvent.input(screen.getByLabelText("Display name"), {
+      target: { value: "Admin" },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Create administrator passkey",
+      }),
+    );
+
+    const codes = await screen.findByTestId("bootstrap-recovery-codes");
+    const recoveryAccountId = screen.getByTestId("recovery-account-id");
+    expect(codes).toHaveTextContent(/^offline-recovery-code-456$/);
+    expect(recoveryAccountId).toHaveTextContent(/^bootstrap-account-123$/);
+    expect(codes.parentElement).toContainElement(recoveryAccountId);
+  });
 });

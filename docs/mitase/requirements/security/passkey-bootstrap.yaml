@@ -113,6 +113,10 @@ requirements:
         kind: security
         statement: Successful initial setup returns bootstrap-only recovery-code material for offline storage and the setup UI does not present it as a reusable login method.
         governed_by: [POL-004#rule.governance, POL-011#rule.governance]
+      - id: bootstrap-recovery-account-identity
+        kind: security
+        statement: After successful initial setup, the setup UI presents the returned account ID alongside the one-time recovery codes because Account Self-Recovery requires both values.
+        governed_by: [POL-004#rule.governance, POL-011#rule.governance]
       - id: opaque-bootstrap-session
         kind: security
         statement: Successful setup creates the ordinary opaque browser session, while session expiry and revocation invalidate its server-side authority without exposing a verifier.
@@ -176,6 +180,15 @@ requirements:
                 criterion: REQ-SEC-005#criterion.bootstrap-recovery-material
                 covers: [FEAT-SEC-002#binding.client/target.auth-client, FEAT-SEC-002#binding.client/target.setup-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/setup.test.tsx, test: keeps the protected route after setup strengthening } }
+          - id: setup-recovery-handoff-case
+            adapter: typescript
+            path: frontend/src/routes/setup.test.tsx
+            selector: { kind: test, name: "REQ-SEC-005: presents the bootstrap account ID with recovery codes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-SEC-005#criterion.bootstrap-recovery-account-identity
+                covers: [FEAT-SEC-002#binding.client/target.setup-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/setup.test.tsx, test: "REQ-SEC-005: presents the bootstrap account ID with recovery codes" } }
           - id: opaque-session-case
             adapter: rust
             path: crates/ugoite-identity/src/node_identity.rs
