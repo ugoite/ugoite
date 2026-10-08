@@ -150,16 +150,38 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
   const names = createMemo(() => studioFieldNames(definitionForm()));
   const fallbackFieldName = (index: number): string =>
     t("entryBrowser.fieldOrdinal", { number: index + 1 });
+  const staleFieldOrdinals = createMemo(() => {
+    const schemaFieldIds = new Set(
+      props.source.fieldSchema.map((entry) => entry.field_id),
+    );
+    const referencedFieldIds = new Set([
+      ...props.source.query.filters.map((filter) => filter.field_id),
+      ...props.source.query.sort.map((clause) => clause.field_id),
+      ...(props.source.query.projection.kind === "fields"
+        ? props.source.query.projection.fields
+        : []),
+    ]);
+    const staleFieldIds = [...referencedFieldIds].filter((fieldId) =>
+      !schemaFieldIds.has(fieldId) && !names().has(fieldId)
+    ).sort((left, right) => left - right);
+    const ordinals = new Map<number, number>();
+    staleFieldIds.forEach((fieldId, index) => {
+      ordinals.set(fieldId, props.source.fieldSchema.length + index);
+    });
+    return ordinals;
+  });
   const fieldName = (fieldId: number): string => {
     const knownName = names().get(fieldId);
     if (knownName) return knownName;
     const index = props.source.fieldSchema.findIndex((entry) =>
       entry.field_id === fieldId
     );
-    // Query-used fields are covered by the schema snapshot. If a stale query
-    // refers to a field outside it, keep the fallback neutral as well.
+    if (index >= 0) return fallbackFieldName(index);
+    // Schema snapshots normally cover every referenced field. If a stale
+    // query contains several references outside that snapshot, keep their
+    // localized labels distinct without rendering their IDs.
     return fallbackFieldName(
-      index >= 0 ? index : props.source.fieldSchema.length,
+      staleFieldOrdinals().get(fieldId) ?? props.source.fieldSchema.length,
     );
   };
   const capabilities = createMemo((): EntryFieldCapability[] => {
