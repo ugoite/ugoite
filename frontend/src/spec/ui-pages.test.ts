@@ -4,6 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { settingsSections } from "../lib/settings-sections";
 
 type PageSpec = {
   page?: {
@@ -204,6 +205,103 @@ describe("UI spec YAML registry", () => {
           pageIds.has(target),
           `${filePath} references missing page: ${target}`,
         ).toBe(true);
+      }
+    }
+  });
+
+  it("REQ-FE-040: connects Space Settings sections to implementation and test evidence", () => {
+    const page = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-settings"
+    );
+    const panel = page?.spec.components?.body?.find(({ id }) =>
+      id === "settings-panel"
+    );
+    expect(panel).toBeTruthy();
+    expect(
+      statSync(path.join(repoRoot, String(panel?.implementation))).isFile(),
+    ).toBe(true);
+    expect(panel?.navigation).toMatchObject({
+      component: "RowList",
+      section_source: "frontend/src/lib/settings-sections.ts",
+      section_state: "query.section",
+      layout: "flat-category-list",
+    });
+    const navigation = panel?.navigation as {
+      implementation: string;
+      tests: Array<{ path: string; selector: string }>;
+    };
+    expect(
+      statSync(path.join(repoRoot, navigation.implementation)).isFile(),
+    ).toBe(true);
+    for (const test of navigation.tests) {
+      const testSource = readFileSync(path.join(repoRoot, test.path), "utf8");
+      expect(testSource, `navigation test selector: ${test.path}`).toContain(
+        test.selector,
+      );
+    }
+
+    const sections = panel?.sections as Array<Record<string, unknown>>;
+    expect(sections.map(({ id }) => id)).toEqual(
+      settingsSections.map(({ id }) => id),
+    );
+
+    for (const section of sections) {
+      expect(typeof section.title).toBe("string");
+      const implementation = section.implementation as string[];
+      expect(implementation.length, `${String(section.id)} implementation`)
+        .toBeGreaterThan(0);
+      for (const sourcePath of implementation) {
+        expect(
+          statSync(path.join(repoRoot, sourcePath)).isFile(),
+          `${String(section.id)} implementation is missing: ${sourcePath}`,
+        ).toBe(true);
+      }
+
+      const tests = section.tests as Array<{
+        path: string;
+        selector: string;
+      }>;
+      expect(tests.length, `${String(section.id)} tests`).toBeGreaterThan(0);
+      for (const test of tests) {
+        const testSource = readFileSync(path.join(repoRoot, test.path), "utf8");
+        expect(testSource, `${String(section.id)} test selector: ${test.path}`)
+          .toContain(test.selector);
+      }
+
+      const contract = section.component_contract as
+        | { id: string; reference: string }
+        | undefined;
+      if (contract) {
+        const contractPath = path.resolve(
+          path.dirname(page!.filePath),
+          contract.reference,
+        );
+        expect(statSync(contractPath).isFile()).toBe(true);
+        const componentSpec = parse(readFileSync(contractPath, "utf8")) as {
+          components?: Array<Record<string, unknown>>;
+        };
+        const component = componentSpec.components?.find(({ id }) =>
+          id === contract.id
+        );
+        expect(component).toBeTruthy();
+        expect(implementation).toContain(component?.implementation);
+        expect(component?.variants).toMatchObject({
+          general: { controls: ["space-name", "save"] },
+          storage: {
+            controls: ["storage-uri", "test-connection", "save"],
+            advanced_details: ["endpoint", "configuration-status"],
+            save_payload: "storage-configuration-only",
+          },
+        });
+      }
+
+      const targetPage = section.target_page;
+      if (targetPage) {
+        const target = loadPages().find(({ spec }) =>
+          spec.page?.id === targetPage
+        );
+        expect(target, `${String(section.id)} target page: ${targetPage}`)
+          .toBeTruthy();
       }
     }
   });

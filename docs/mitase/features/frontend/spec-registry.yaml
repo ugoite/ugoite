@@ -5,7 +5,7 @@ category: Frontend Space selection and preference surfaces
 features:
   - id: FEAT-FE-013
     title: UI specification registry
-    summary: Connect the declarative UI page registry, shared Space chrome declaration, and their consistency tests to exact frontend specification evidence.
+    summary: Connect the declarative UI page registry, shared Space chrome and settings contracts, and their consistency tests to exact frontend specification evidence.
     status: implemented
     bindings:
       - id: frontend
@@ -209,6 +209,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.shared-chrome
+          - id: component-space-settings
+            adapter: declared
+            path: docs/spec/ui/components/space-settings.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
           - id: route-assets
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/assets.tsx

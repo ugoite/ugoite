@@ -386,6 +386,7 @@ inventory:
         - docs/spec/ui/pages/space-test-connection.yaml
         - docs/spec/ui/components/space-shell.yaml
         - docs/spec/ui/components/konase-panel.yaml
+        - docs/spec/ui/components/space-settings.yaml
         - docs/spec/ui/ux-route-inventory.md
         - .github/workflows/ci.yml
         - .github/workflows/codeql.yml
