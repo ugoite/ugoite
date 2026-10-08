@@ -594,11 +594,30 @@ async fn req_sec_002_covers_the_static_browser_root() {
         "ugoite-security-headers-static-{}",
         uuid::Uuid::now_v7()
     ));
+    std::fs::create_dir_all(&static_dir).unwrap();
+    std::fs::write(static_dir.join("index.html"), "<!doctype html>").unwrap();
+    let _static_dir = EnvVarGuard::set("UGOITE_STATIC_DIR", &static_dir);
+    let app = initialized_app_without_env_lock("security-headers-static").await;
+    let response = app
+        .oneshot(Request::get("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    std::fs::remove_dir_all(static_dir).unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_common_security_headers(&response, false);
+}
+
+#[tokio::test]
+async fn req_ops_045_revalidates_only_the_static_shell_html() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let static_dir =
+        std::env::temp_dir().join(format!("ugoite-spa-shell-cache-{}", uuid::Uuid::now_v7()));
     std::fs::create_dir_all(static_dir.join("assets")).unwrap();
     std::fs::write(static_dir.join("index.html"), "<!doctype html>").unwrap();
     std::fs::write(static_dir.join("assets/app.js"), "console.log('app')").unwrap();
     let _static_dir = EnvVarGuard::set("UGOITE_STATIC_DIR", &static_dir);
-    let app = initialized_app_without_env_lock("security-headers-static").await;
+    let app = initialized_app_without_env_lock("spa-shell-cache-static").await;
     let response = app
         .clone()
         .oneshot(Request::get("/").body(Body::empty()).unwrap())
@@ -607,7 +626,6 @@ async fn req_sec_002_covers_the_static_browser_root() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers().get("content-type").unwrap(), "text/html");
     assert_eq!(response.headers().get("cache-control").unwrap(), "no-cache");
-    assert_common_security_headers(&response, false);
 
     let response = app
         .clone()

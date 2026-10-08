@@ -264,9 +264,9 @@ requirements:
           - id: spa-shell-cache-test
             adapter: rust
             path: crates/ugoite-server/tests/api_contract.rs
-            selector: { kind: test, name: req_sec_002_covers_the_static_browser_root }
+            selector: { kind: test, name: req_ops_045_revalidates_only_the_static_shell_html }
             claims:
               - kind: verifies
                 criterion: REQ-OPS-045#criterion.spa-shell-html-revalidation
                 covers: [FEAT-OPS-001#binding.spa-shell-delivery/target.html-shell-cache-header]
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_sec_002_covers_the_static_browser_root } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_ops_045_revalidates_only_the_static_shell_html } }
