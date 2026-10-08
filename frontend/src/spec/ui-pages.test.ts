@@ -58,6 +58,7 @@ const allowedComponentTypes = new Set([
   "searchable-master-list",
   "redirect",
   "query-results",
+  "query-pagination",
   "select",
 ]);
 
@@ -221,6 +222,74 @@ describe("UI spec YAML registry", () => {
         ).toBe(true);
       }
     }
+  });
+
+  it("REQ-UX-PAGINATION-001: connects Composition pagination specs to shared chevrons", () => {
+    const revision = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-composition-revision"
+    );
+    const pagePagination = revision?.spec.components?.body?.find(({ id }) =>
+      id === "composition-pagination"
+    );
+    expect(pagePagination).toMatchObject({
+      type: "query-pagination",
+      component: "ResultPagination",
+      reference: "../components/result-pagination.yaml",
+      presentation: "localized-icon-only-chevron-controls",
+      source: "existing query continuation",
+    });
+
+    const studioPath = path.join(componentsDir, "composition-studio.yaml");
+    const studio = parse(readFileSync(studioPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    const studioData = studio.components?.find(({ id }) =>
+      id === "studio-data"
+    );
+    expect(studioData?.pagination).toMatchObject({
+      component: "ResultPagination",
+      reference: "result-pagination.yaml",
+      presentation: "localized-icon-only-chevron-controls",
+    });
+    expect(studioData?.result_pages).toBe(
+      "bounded-shared-page-with-controller-owned-paging",
+    );
+
+    const pageContractPath = path.resolve(
+      path.dirname(revision!.filePath),
+      String(pagePagination?.reference),
+    );
+    const studioContractPath = path.resolve(
+      path.dirname(studioPath),
+      String((studioData?.pagination as Record<string, unknown>).reference),
+    );
+    const expectedContractPath = path.join(
+      componentsDir,
+      "result-pagination.yaml",
+    );
+    expect(pageContractPath).toBe(expectedContractPath);
+    expect(studioContractPath).toBe(expectedContractPath);
+
+    const shared = parse(readFileSync(expectedContractPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    expect(shared.components?.find(({ id }) => id === "result-pagination"))
+      .toMatchObject({
+        type: "query-pagination",
+        controls: {
+          previous: {
+            visible_content: "chevron-left",
+            accessible_name: "localized-previous-label",
+            title: "localized-previous-label",
+          },
+          next: {
+            visible_content: "chevron-right",
+            accessible_name: "localized-next-label",
+            title: "localized-next-label",
+          },
+        },
+        target_size: "44px",
+      });
   });
 
   it("REQ-FE-040: connects Space Settings sections to implementation and test evidence", () => {

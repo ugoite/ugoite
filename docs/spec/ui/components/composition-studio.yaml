@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-05"
+updated: "2026-10-08"
 component_group:
   id: composition-studio
   title: Composition Studio
@@ -65,6 +65,10 @@ components:
     concealment: denied-or-missing-renders-source-unavailable-no-identifiers
     preview_discipline: existing-debounced-handle-only-no-second-path
     result_pages: bounded-shared-page-with-controller-owned-paging
+    pagination:
+      component: ResultPagination
+      reference: result-pagination.yaml
+      presentation: localized-icon-only-chevron-controls
     responsive:
       narrow: navigator-and-editor-stack
       narrow_width: 390px
