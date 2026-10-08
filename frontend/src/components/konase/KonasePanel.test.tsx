@@ -1134,6 +1134,7 @@ describe("KonasePanel Space authority", () => {
       spaceId: "space-private-opaque-id",
       action: "update",
       entryId: "entry-private-opaque-id",
+      entryIdLabel: "entry-private-opaque-id",
     }));
 
     const dialog = screen.getByRole("alertdialog");
@@ -1153,6 +1154,72 @@ describe("KonasePanel Space authority", () => {
     );
     expect(host.resolvedConfirmations).toEqual([{
       requestId: "job-update:mcp:1",
+      approved: true,
+    }]);
+  });
+
+  it("uses the current candidate label for the exact updated Entry", async () => {
+    mockConnection();
+    getSpaceMock.mockResolvedValue({
+      space_uid: "space-a-uid",
+      name: "Project Notes",
+      created_at: "",
+    });
+    queryEntriesMock.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "entry-other",
+          form_id: "form-a",
+          revision_id: "rev-other",
+          created_at_micros: 1,
+          updated_at_micros: 1,
+          preview: "Onboarding notes",
+        },
+        {
+          id: "entry-target",
+          form_id: "form-a",
+          revision_id: "rev-target",
+          created_at_micros: 2,
+          updated_at_micros: 2,
+          preview: "Quarterly plan",
+        },
+      ],
+      has_more: false,
+    });
+    render(() => <KonasePanel spaceId="space-a" />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Search Entries" }));
+    await screen.findByRole("checkbox", {
+      name: "Quarterly plan",
+      exact: true,
+    });
+
+    const host = hostInstances[0];
+    host.requestConfirmation(fakeWritePreview({
+      action: "update",
+      entryId: "entry-target",
+      entryIdLabel: "entry-target",
+    }));
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(
+      within(dialog).getByText(
+        "Project Notes / Note / Quarterly plan",
+      ),
+    ).toBeVisible();
+    expect(within(dialog).getByText("entry-target")).not.toBeVisible();
+
+    fireEvent.click(within(dialog).getByText("Technical details"));
+    expect(within(dialog).getByText("entry-target")).toBeVisible();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Approve write" }),
+    );
+    expect(host.resolvedConfirmations).toEqual([{
+      requestId: "job-1:mcp:1",
       approved: true,
     }]);
   });
