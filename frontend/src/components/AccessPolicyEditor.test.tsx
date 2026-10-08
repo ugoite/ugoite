@@ -197,7 +197,7 @@ describe("AccessPolicyEditor", () => {
 
     const detailSummaries = screen.getAllByText("詳細情報");
     fireEvent.click(detailSummaries[1]);
-    expect(screen.getByText(unknownPrincipalId)).toBeInTheDocument();
+    expect(screen.getByText(unknownPrincipalId)).toBeVisible();
   });
 
   it("REQ-UX-ACCESS-001: selects a member by name and preserves its ID in the grant payload", async () => {
