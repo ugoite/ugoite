@@ -108,6 +108,15 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-space-settings
                   - FEAT-FE-013#binding.frontend/target.component-space-settings
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: connects Space Settings sections to implementation and test evidence" } }
+          - id: invitation-join-contract
+            adapter: typescript
+            path: frontend/src/routes/spaces/join.test.tsx
+            selector: { kind: test, name: "REQ-FE-040: matches the invitation Join declaration to the rendered route" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.component-invitation-join]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/join.test.tsx, test: "REQ-FE-040: matches the invitation Join declaration to the rendered route" } }
           - id: documented-routes
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts

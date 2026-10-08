@@ -557,6 +557,85 @@ describe("UI spec YAML registry", () => {
     });
   });
 
+  it("REQ-FE-040: declares the invitation Join surface and its visible identity boundaries", () => {
+    const joinPath = path.join(
+      repoRoot,
+      "docs/spec/ui/components/invitation-join.yaml",
+    );
+    const join = parse(readFileSync(joinPath, "utf8")) as {
+      component_group?: Record<string, unknown>;
+      components?: Array<Record<string, unknown>>;
+    };
+    const components = join.components ?? [];
+    const header = components.find((component) =>
+      component.id === "join-context"
+    );
+    const guidance = components.find((component) =>
+      component.id === "authentication-guidance"
+    );
+    const form = components.find((component) =>
+      component.id === "invitation-acceptance"
+    );
+    const identityOptions = components.find((component) =>
+      component.id === "identity-options"
+    );
+    const failure = components.find((component) =>
+      component.id === "invitation-failure"
+    );
+
+    expect(join.component_group).toMatchObject({
+      id: "invitation-join",
+      routes: ["/spaces/join"],
+    });
+    expect(header).toMatchObject({
+      type: "page-header",
+      title: "Join",
+      visible_headings: 1,
+    });
+    expect(guidance).toMatchObject({
+      type: "inline-guidance",
+      placement: "below-heading",
+      purpose: "distinguish-signed-in-acceptance-from-passkey-registration",
+    });
+    expect(form).toMatchObject({
+      type: "form",
+      order: ["invitation-token", "accept-invitation"],
+      invitation_token: {
+        type: "required-multiline-text-input",
+        label: "Invitation token",
+        value_kind: "user-provided-invitation-credential",
+      },
+      accept_action: {
+        type: "submit-button",
+        label: "Accept invitation",
+        busy_label: "Joining…",
+        single_flight: true,
+      },
+      success: {
+        clears_invitation_token_from_url_hash: true,
+        replaces_route_with: "/spaces",
+      },
+    });
+    expect(identityOptions).toMatchObject({
+      type: "alternate-authentication-actions",
+      oidc_providers: {
+        visible_when: "provider-list-is-nonempty",
+        separator: "or",
+        accessible_name_uses_provider_id: false,
+      },
+      sign_in_link: {
+        destination: "/login",
+      },
+    });
+    expect(failure).toMatchObject({
+      type: "alert",
+      role: "alert",
+      includes: ["failure-message", "resume-guidance"],
+      show_spaces_action_when:
+        "invitation-is-consumed-and-visitor-remains-unauthenticated",
+    });
+  });
+
   it("REQ-FE-067: keeps one ordinary Form and Entry workspace", () => {
     const pages = loadPages();
     const forms = pages.find(({ spec }) => spec.page?.id === "space-form-grid");

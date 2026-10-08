@@ -1,0 +1,53 @@
+version: "0.1"
+updated: "2026-10-09"
+component_group:
+  id: invitation-join
+  title: Invitation Join
+  routes: [/spaces/join]
+  notes: The global shell owns site navigation. This route owns the Join task and its form states; it does not display internal provider or Space identifiers.
+components:
+  - id: join-context
+    type: page-header
+    title: Join
+    ownership: single-task-context
+    visible_headings: 1
+  - id: authentication-guidance
+    type: inline-guidance
+    placement: below-heading
+    purpose: distinguish-signed-in-acceptance-from-passkey-registration
+  - id: invitation-acceptance
+    type: form
+    order: [invitation-token, accept-invitation]
+    invitation_token:
+      type: required-multiline-text-input
+      label: Invitation token
+      initial_value: token-from-url-hash-when-present
+      value_kind: user-provided-invitation-credential
+    accept_action:
+      type: submit-button
+      label: Accept invitation
+      busy_label: Joining…
+      disabled_while_busy: true
+      single_flight: true
+    success:
+      clears_invitation_token_from_url_hash: true
+      replaces_route_with: /spaces
+  - id: identity-options
+    type: alternate-authentication-actions
+    oidc_providers:
+      visible_when: provider-list-is-nonempty
+      separator: or
+      label: Continue with issuer-host-and-nonroot-path
+      accessible_name_uses_provider_id: false
+      action_uses_invitation_token: true
+    sign_in_link:
+      label: Already registered? Sign in
+      destination: /login
+  - id: invitation-failure
+    type: alert
+    role: alert
+    includes: [failure-message, resume-guidance]
+    show_spaces_action_when: invitation-is-consumed-and-visitor-remains-unauthenticated
+    action:
+      label: Go to Spaces
+      destination: /spaces

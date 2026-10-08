@@ -402,6 +402,7 @@ inventory:
         - docs/spec/ui/components/global-shell.yaml
         - docs/spec/ui/components/konase-panel.yaml
         - docs/spec/ui/components/space-settings.yaml
+        - docs/spec/ui/components/invitation-join.yaml
         - docs/spec/ui/ux-route-inventory.md
         - .github/workflows/ci.yml
         - .github/workflows/codeql.yml

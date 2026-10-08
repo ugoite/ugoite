@@ -5,13 +5,13 @@ category: Frontend Space selection and preference surfaces
 features:
   - id: FEAT-FE-013
     title: UI specification registry
-    summary: Connect the declarative UI page registry, shared Space chrome and settings contracts, and their consistency tests to exact frontend specification evidence.
+    summary: Connect the declarative UI page registry, shared Space chrome, settings, and auth-surface contracts to exact frontend specification evidence.
     status: implemented
     bindings:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep declarative UI page and shared Space chrome artifacts connected to the frontend registry tests that validate their structure and route coverage.
+        responsibility: Keep declarative UI page, shared Space chrome, and auth-surface artifacts connected to the frontend registry tests that validate their structure and route coverage.
         targets:
           - id: page-registry
             adapter: declared
@@ -22,6 +22,13 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
+          - id: component-invitation-join
+            adapter: declared
+            path: docs/spec/ui/components/invitation-join.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
           - id: page-space-assets
             adapter: declared
             path: docs/spec/ui/pages/space-assets.yaml
