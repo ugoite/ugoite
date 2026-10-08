@@ -53,7 +53,7 @@ policies:
       - id: identifier-evidence
         role: evidence
         facet: presentation
-        responsibility: Record the list panel surface where identifiers stay progressively disclosed.
+        responsibility: Record the ListPanel surface where identifiers stay out of the primary path.
         targets:
           - id: list-panel-surface
             adapter: declared

@@ -2,6 +2,7 @@ import { For, Show } from "solid-js";
 import type { Space } from "~/lib/types";
 import { t } from "~/lib/i18n";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { spaceDisplayLabel } from "~/lib/space-label";
 import { spaceUid } from "~/lib/space-list";
 
 export interface SpaceSelectorProps {
@@ -32,7 +33,7 @@ export function SpaceSelector(props: SpaceSelectorProps) {
           <For each={props.spaces}>
             {(space) => (
               <option value={spaceUid(space)}>
-                {space.name || space.slug || spaceUid(space)}
+                {spaceDisplayLabel(space)}
               </option>
             )}
           </For>

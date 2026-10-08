@@ -18,6 +18,7 @@ const { loadSpacesMock } = vi.hoisted(() => ({
 vi.mock("~/lib/space-store", () => ({
   createSpaceStore: () => ({
     spaces: () => [{ space_uid: "demo", name: "Demo", created_at: "" }],
+    loading: () => false,
     loadSpaces: loadSpacesMock,
     selectSpace: vi.fn(),
   }),

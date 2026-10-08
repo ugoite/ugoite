@@ -288,6 +288,9 @@ describe("UI spec YAML registry", () => {
     const mobileNavigation = components.find((component) =>
       component.id === "mobile-bottom-navigation"
     );
+    const spaceSelector = components.find((component) =>
+      component.id === "space-selector"
+    );
 
     expect(sidebar).toMatchObject({
       type: "sidebar",
@@ -319,6 +322,14 @@ describe("UI spec YAML registry", () => {
       height: "66px",
       breakpoint: "900px",
       items: ["Spaces"],
+    });
+    expect(spaceSelector).toMatchObject({
+      type: "select",
+      scope: "authorized-spaces",
+      option_label: "name-then-slug-then-localized-untitled",
+      unresolved_current_space_label: "localized-loading-text",
+      unavailable_current_space_label: "localized-neutral-label",
+      displays_space_uid: false,
     });
   });
 

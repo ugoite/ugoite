@@ -436,6 +436,15 @@ requirements:
                 criterion: REQ-UX-LIST-001#criterion.full-row-activation
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.spaces-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-UX-LIST-001: opens spaces through full-row links with an unboxed secondary settings action" } }
+          - id: spaces-human-readable-identifiers
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.test.tsx
+            selector: { kind: test, name: "REQ-FE-001: uses Space names or slugs without exposing Space UIDs" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-003#binding.list-baseline/target.spaces-route-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/index.test.tsx, test: "REQ-FE-001: uses Space names or slugs without exposing Space UIDs" } }
           - id: entry-rows-compact
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx"

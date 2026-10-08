@@ -207,27 +207,44 @@ requirements:
                 covers: [FEAT-FE-011#binding.frontend/target.color-mode]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/color-mode.test.ts, test: "updates the document when the operating system preference changes" } }
   - id: REQ-FE-058
-    title: Calm Dashboard Loading Treatment
-    description: The Space dashboard keeps meaningful shell content visible while metadata loads, using the Space identifier as a stable fallback before replacing it with the resolved name.
+    title: Calm Space Shell Loading Treatment
+    description: The Space shell keeps navigation usable while Spaces load and shows human-readable labels without exposing a Space UID.
     priority: medium
     status: implemented
     criteria:
       - id: calm-loading
         kind: behavior
-        statement: While Space metadata is unresolved, the dashboard renders a stable identifier and no persistent loading banner; after resolution it renders the backend-reported Space name.
-        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+        statement: While the authorized Space list loads, the current selection has a localized loading label without a persistent banner; after loading, known Spaces use their name, slug, or localized neutral label, and an unavailable current UID is not shown.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance, POL-UI-005#rule.governance]
     bindings:
-      - id: calm-dashboard-verification
+      - id: calm-space-shell-verification
         role: verification
         facet: verification
-        responsibility: Verify the Space selector identifier fallback and resolved Space name transition through the exact frontend test.
+        responsibility: Verify usable Space navigation and human-readable labels while the authorized Space list loads and after it resolves.
         targets:
           - id: metadata-fallback
             adapter: typescript
             path: frontend/src/components/SpaceShell.test.tsx
-            selector: { kind: test, name: "REQ-FE-058: keeps Space identity available while Spaces load" }
+            selector: { kind: test, name: "REQ-FE-058: keeps Space navigation usable while Spaces load without showing IDs" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-058#criterion.calm-loading
                 covers: [FEAT-FE-009#binding.frontend/target.space-shell]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/SpaceShell.test.tsx", test: "REQ-FE-058: keeps Space identity available while Spaces load" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/SpaceShell.test.tsx", test: "REQ-FE-058: keeps Space navigation usable while Spaces load without showing IDs" } }
+              - kind: verifies
+                criterion: REQ-FE-001#criterion.human-readable-labels
+                covers: [FEAT-FE-009#binding.frontend/target.space-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/SpaceShell.test.tsx", test: "REQ-FE-058: keeps Space navigation usable while Spaces load without showing IDs" } }
+          - id: unavailable-current-space
+            adapter: typescript
+            path: frontend/src/components/SpaceShell.test.tsx
+            selector: { kind: test, name: "REQ-FE-058: hides a missing Space UID after the authorized list finishes loading" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-058#criterion.calm-loading
+                covers: [FEAT-FE-009#binding.frontend/target.space-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/SpaceShell.test.tsx", test: "REQ-FE-058: hides a missing Space UID after the authorized list finishes loading" } }
+              - kind: verifies
+                criterion: REQ-FE-001#criterion.human-readable-labels
+                covers: [FEAT-FE-009#binding.frontend/target.space-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/SpaceShell.test.tsx", test: "REQ-FE-058: hides a missing Space UID after the authorized list finishes loading" } }

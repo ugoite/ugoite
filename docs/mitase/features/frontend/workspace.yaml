@@ -21,6 +21,8 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-001#criterion.authorized-space-selection
               - kind: satisfies
+                criterion: REQ-FE-001#criterion.human-readable-labels
+              - kind: satisfies
                 criterion: REQ-FE-001#criterion.switch-space
           - id: space-store
             adapter: typescript
@@ -58,6 +60,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-001#criterion.authorized-space-selection
+              - kind: satisfies
+                criterion: REQ-FE-001#criterion.human-readable-labels
               - kind: satisfies
                 criterion: REQ-FE-002#criterion.no-implicit-creation
               - kind: satisfies

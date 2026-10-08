@@ -123,6 +123,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+          - id: spaces-route-surface
+            adapter: typescript
+            path: frontend/src/routes/spaces/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
           - id: action-bar-surface
             adapter: typescript
             path: frontend/src/components/ActionIconBar.tsx
