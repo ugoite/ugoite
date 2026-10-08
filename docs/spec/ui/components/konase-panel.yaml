@@ -1,0 +1,35 @@
+version: "0.1"
+updated: "2026-10-08"
+component_group:
+  id: browser-konase-panel
+  title: Browser Konase Panel
+components:
+  - id: browser-konase-panel
+    type: utility-panel
+    implementation: frontend/src/components/konase/KonasePanel.tsx
+    tests: frontend/src/components/konase/KonasePanel.test.tsx
+    scope: current-space
+    connection:
+      setup: in-memory-model-key-and-space-approval
+      approval_link: external-new-tab
+    candidates:
+      forms: current-space
+      entries: current-space-preview-query
+      maximum_selected: 4
+      form_label: trimmed-name-unless-empty-or-id-then-localized-form
+      entry_label: trimmed-preview-unless-empty-or-id-then-localized-entry
+      identifiers_in_visible_or_accessible_names: false
+    selected_resources:
+      label: remembered-candidate-label-then-localized-kind
+      remove_action: localized-label-without-resource-uri
+      identifiers_in_visible_or_accessible_names: false
+      selection_identity: stable-resource-uri
+    context_preview:
+      review_before_send: true
+      resource_identity: full-resource-uri
+      content: normalized-projection
+      admission: status-and-optional-reason
+      trust_notice: selected-context-is-untrusted-data
+      send: explicit-confirmation
+      write_approval: separate-explicit-confirmation
+    states: [disconnected, connected, resource-selection, context-preview, sending, write-approval, result, undo]

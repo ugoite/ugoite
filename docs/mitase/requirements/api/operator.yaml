@@ -252,7 +252,7 @@ requirements:
       - id: host-write-verification
         role: verification
         facet: verification
-        responsibility: Verify the independent one-time approval and receipt-gated outcome in both Konase Hosts.
+        responsibility: Verify the independent one-time approval and receipt-gated outcome across the CLI Host, Browser Host, and Browser panel.
         targets:
           - id: cli-approval-denial
             adapter: rust
@@ -299,3 +299,39 @@ requirements:
                 criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
                 covers: [FEAT-API-001#binding.konase-host/target.browser-write-host]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "preserves a confirmed save and its Undo when a later write is denied" } }
+          - id: browser-panel-approval-action
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "shows an accessible write approval preview and does not mark MCP start as success" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.request-scoped-write-approval
+                covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "shows an accessible write approval preview and does not mark MCP start as success" } }
+          - id: browser-panel-write-denial
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "denies a pending write explicitly" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.request-scoped-write-approval
+                covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "denies a pending write explicitly" } }
+          - id: browser-panel-saved-outcome-and-undo
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "keeps Undo available after a confirmed save followed by a denied write" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
+                covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "keeps Undo available after a confirmed save followed by a denied write" } }
+          - id: browser-panel-model-answer-outcome
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "shows an unchanged Knowledge outcome when the model only answers" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
+                covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "shows an unchanged Knowledge outcome when the model only answers" } }

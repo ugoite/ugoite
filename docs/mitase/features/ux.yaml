@@ -99,13 +99,13 @@ features:
                 criterion: REQ-UX-ENTRY-001#criterion.form-derived-guidance
   - id: FEAT-UX-003
     title: List interaction baseline
-    summary: Record that the Spaces list uses names or slugs and live Entry and Asset rows keep raw identifiers out of primary labels, alongside the shared row and action-bar constraints.
+    summary: Record that the Spaces list uses names or slugs and live Entry, Asset, and Browser Konase surfaces keep raw identifiers out of primary labels, alongside the shared row and action-bar constraints.
     status: planned
     bindings:
       - id: list-baseline
         role: implementation
         facet: frontend
-        responsibility: Keep the list interaction baseline connected to live Space, dashboard, form-entry, and Asset detail surfaces plus the route inventory record.
+        responsibility: Keep the list interaction baseline connected to live Space, dashboard, form-entry, Asset detail, and Browser Konase surfaces plus the route inventory record.
         targets:
           - id: spaces-route-surface
             adapter: typescript
@@ -131,6 +131,20 @@ features:
           - id: asset-entry-reference-surface
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/assets/[asset_id].tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+          - id: konase-panel-surface
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+          - id: konase-panel-specification
+            adapter: declared
+            path: docs/spec/ui/components/konase-panel.yaml
             selector: { kind: file }
             claims:
               - kind: satisfies
@@ -167,6 +181,20 @@ features:
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-003#binding.list-baseline/target.dashboard-entry-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "REQ-UX-LIST-001: gives same-Form Recent links unique ID-free labels" } }
+      - id: konase-resource-label-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Browser Konase uses human-readable candidate and selected-resource labels while keeping stable URIs in the selected Context preview.
+        targets:
+          - id: konase-resource-labels-and-preview
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-003#binding.list-baseline/target.konase-panel-surface, FEAT-UX-003#binding.list-baseline/target.konase-panel-specification]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview" } }
   - id: FEAT-UX-004
     title: Localization baseline
     summary: Record the shared locale dictionary satisfying the dictionary-copy criteria without changing UI behavior.

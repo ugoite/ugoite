@@ -104,12 +104,21 @@ requirements:
           - id: browser-context-selection-ui
             adapter: typescript
             path: frontend/src/components/konase/KonasePanel.test.tsx
-            selector: { kind: test, name: "reads only selected Form and Entry candidates, previews normalized Context, then waits for send" }
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview" }
             claims:
               - kind: verifies
                 criterion: REQ-API-012#criterion.selected-context-admission
                 covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "reads only selected Form and Entry candidates, previews normalized Context, then waits for send" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview" } }
+          - id: browser-panel-space-connection
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "starts MCP authorization from the rendered Space and drops the host when the Space changes" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-012#criterion.selected-context-admission
+                covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "starts MCP authorization from the rendered Space and drops the host when the Space changes" } }
 
   - id: REQ-API-013
     title: Current MCP surface documentation

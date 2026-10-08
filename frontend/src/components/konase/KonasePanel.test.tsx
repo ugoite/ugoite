@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
@@ -371,10 +377,17 @@ describe("KonasePanel Space authority", () => {
       .toBeInTheDocument();
   });
 
-  it("reads only selected Form and Entry candidates, previews normalized Context, then waits for send", async () => {
+  it("REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview", async () => {
     mockConnection();
     listFormsMock.mockResolvedValue([
       { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
+      {
+        id: "form-unnamed",
+        name: "form-unnamed",
+        version: 1,
+        template: "",
+        fields: {},
+      },
     ]);
     queryEntriesMock.mockResolvedValueOnce({
       rows: [
@@ -393,6 +406,14 @@ describe("KonasePanel Space authority", () => {
           created_at_micros: 2,
           updated_at_micros: 2,
           preview: "Other entry",
+        },
+        {
+          id: "entry-unnamed",
+          form_id: "form-a",
+          revision_id: "rev-empty",
+          created_at_micros: 4,
+          updated_at_micros: 4,
+          preview: "entry-unnamed",
         },
       ],
       has_more: true,
@@ -417,14 +438,38 @@ describe("KonasePanel Space authority", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
     await waitFor(() => expect(hostInstances).toHaveLength(1));
     await waitFor(() =>
-      expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument()
+      expect(screen.getByRole("checkbox", { name: "Note", exact: true }))
+        .toHaveAccessibleName("Note")
     );
-    fireEvent.click(screen.getByLabelText("Note (form-a)"));
+    expect(screen.getByRole("checkbox", { name: "Form", exact: true }))
+      .toBeInTheDocument();
+    expect(screen.queryByText("form-unnamed")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Note", exact: true }),
+    );
+    const selectedResources = screen.getByRole("list", {
+      name: "Selected resources",
+    });
+    expect(within(selectedResources).getByText("Note")).toBeInTheDocument();
+    expect(within(selectedResources).queryByText(/form-a/)).not
+      .toBeInTheDocument();
+    expect(screen.queryByText("form-a")).not.toBeInTheDocument();
+    expect(screen.queryByText("ugoite://form/form-a")).not.toBeInTheDocument();
+    expect(
+      within(selectedResources).getByRole("button", {
+        name: "Remove Note from selected resources",
+      }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Search Entries" }));
     await waitFor(() =>
-      expect(screen.getByLabelText("Selected entry (entry-a)"))
-        .toBeInTheDocument()
+      expect(screen.getByRole("checkbox", {
+        name: "Selected entry",
+        exact: true,
+      })).toHaveAccessibleName("Selected entry")
     );
+    expect(screen.getByRole("checkbox", { name: "Entry", exact: true }))
+      .toBeInTheDocument();
+    expect(screen.queryByText("entry-unnamed")).not.toBeInTheDocument();
     expect(queryEntriesMock).toHaveBeenCalledWith(
       "space-a",
       expect.objectContaining({
@@ -433,10 +478,16 @@ describe("KonasePanel Space authority", () => {
       }),
       expect.any(AbortSignal),
     );
-    fireEvent.click(screen.getByLabelText("Selected entry (entry-a)"));
+    fireEvent.click(screen.getByRole("checkbox", {
+      name: "Selected entry",
+      exact: true,
+    }));
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     await waitFor(() =>
-      expect(screen.getByLabelText("Second page entry (entry-b)"))
+      expect(screen.getByRole("checkbox", {
+        name: "Second page entry",
+        exact: true,
+      }))
         .toBeInTheDocument()
     );
     expect(queryEntriesMock).toHaveBeenLastCalledWith(
@@ -444,7 +495,18 @@ describe("KonasePanel Space authority", () => {
       expect.objectContaining({ after: "page-2", limit: 20 }),
       expect.any(AbortSignal),
     );
-    fireEvent.click(screen.getByLabelText("Second page entry (entry-b)"));
+    fireEvent.click(screen.getByRole("checkbox", {
+      name: "Second page entry",
+      exact: true,
+    }));
+    expect(within(selectedResources).getByText("Selected entry"))
+      .toBeInTheDocument();
+    expect(within(selectedResources).getByText("Second page entry"))
+      .toBeInTheDocument();
+    expect(within(selectedResources).queryByText(/entry-[ab]/)).not
+      .toBeInTheDocument();
+    expect(screen.queryByText("entry-a")).not.toBeInTheDocument();
+    expect(screen.queryByText("entry-b")).not.toBeInTheDocument();
     fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
       target: { value: "Explain these resources" },
     });
@@ -492,6 +554,9 @@ describe("KonasePanel Space authority", () => {
     await waitFor(() =>
       expect(screen.getByText("normalized Form projection")).toBeInTheDocument()
     );
+    expect(screen.getByText("ugoite://form/form-a")).toBeInTheDocument();
+    expect(screen.getByText("ugoite://entry/entry-a")).toBeInTheDocument();
+    expect(screen.getByText("ugoite://entry/entry-b")).toBeInTheDocument();
     const previewHeading = screen.getByRole("heading", {
       name: "Review Context before sending",
     });
@@ -523,9 +588,9 @@ describe("KonasePanel Space authority", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
     await waitFor(() => expect(hostInstances).toHaveLength(1));
     await waitFor(() =>
-      expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument()
+      expect(screen.getByLabelText("Note")).toBeInTheDocument()
     );
-    fireEvent.click(screen.getByLabelText("Note (form-a)"));
+    fireEvent.click(screen.getByLabelText("Note"));
     fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
       target: { value: "Explain this Form" },
     });
@@ -574,9 +639,9 @@ describe("KonasePanel Space authority", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
     await waitFor(() => expect(hostInstances).toHaveLength(1));
     await waitFor(() =>
-      expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument()
+      expect(screen.getByLabelText("Note")).toBeInTheDocument()
     );
-    fireEvent.click(screen.getByLabelText("Note (form-a)"));
+    fireEvent.click(screen.getByLabelText("Note"));
     fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
       target: { value: "Explain this Form" },
     });
@@ -628,9 +693,9 @@ describe("KonasePanel Space authority", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
     await waitFor(() => expect(hostInstances).toHaveLength(1));
     await waitFor(() =>
-      expect(screen.getByLabelText("Note (form-a)")).toBeInTheDocument()
+      expect(screen.getByLabelText("Note")).toBeInTheDocument()
     );
-    fireEvent.click(screen.getByLabelText("Note (form-a)"));
+    fireEvent.click(screen.getByLabelText("Note"));
     fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
       target: { value: "Explain this Form" },
     });
