@@ -7,7 +7,7 @@ import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
 import { HistoryChangeTable, type HistoryChangeColumn } from "~/components/HistoryChangeTable";
 import { formatDateTimeLabel } from "~/lib/date-format";
-import { actorDisplayNameLookup, shortActorFallback } from "~/lib/entry-history";
+import { actorDisplayNameLookup } from "~/lib/entry-history";
 import { t } from "~/lib/i18n";
 import { changeApi, formApi, spaceApi, type SpaceChangeQueryRow, type SpaceChangeSort } from "~/lib/ugoite-client";
 import type { Form, SpaceMember } from "~/lib/types";
@@ -79,6 +79,7 @@ export default function SpaceHistoryRoute() {
   const [inspection] = createResource(openChange, (changeId) =>
     changeId ? changeApi.inspect(spaceId(), changeId, { limit: 10 }) : undefined
   );
+  const inspectionValue = () => inspection.error ? undefined : inspection();
   const [affectedEntry] = createResource(
     () => openChange() && selectedEntryId() ? `${openChange()}\n${selectedEntryId()}` : undefined,
     async (key) => {
@@ -86,6 +87,7 @@ export default function SpaceHistoryRoute() {
       return await changeApi.affectedEntry(spaceId(), changeId, entryId);
     },
   );
+  const affectedEntryValue = () => affectedEntry.error ? undefined : affectedEntry();
   const cursor = () => cursors()[cursors().length - 1];
   const queryKey = createMemo(() => JSON.stringify({
     spaceId: spaceId(),
@@ -136,11 +138,10 @@ export default function SpaceHistoryRoute() {
     })),
   ));
   const actorName = (id: string) =>
-    actorLookup()?.(id)?.trim() || shortActorFallback(id);
-  const actorOptions = () => [...new Set([
-    ...(members() ?? []).map((member) => member.principal.principal_id),
-    ...currentRows().map((row) => row.change.actor_principal_id),
-  ])].filter(Boolean);
+    actorLookup()?.(id)?.trim() || t("entryHistory.unknownActor");
+  const actorOptions = () => [...new Set((members() ?? [])
+    .filter((member) => member.principal.display_name.trim())
+    .map((member) => member.principal.principal_id))].filter(Boolean);
   const formName = (id: string) => {
     const form = (forms() ?? []).find((candidate) =>
       candidate.id === id || candidate.name === id
@@ -184,8 +185,9 @@ export default function SpaceHistoryRoute() {
   const openedRow = () => currentRows().find((row) => row.change_id === openChange());
   const detailRow = () => {
     const row = openedRow();
-    const inspected = inspection();
-    if (row || !inspected) return row;
+    if (row) return row;
+    const inspected = inspectionValue();
+    if (!inspected) return row;
     return {
       change_id: inspected.change_id,
       generation: 0,
@@ -211,7 +213,7 @@ export default function SpaceHistoryRoute() {
     (value) => setOpenChange(typeof value === "string" && value ? value : undefined),
   ));
   createEffect(() => {
-    const current = inspection();
+    const current = inspectionValue();
     if (!current || current.change_id !== openChange()) return;
     setTargetRows(current.targets);
     setTargetCursor(current.next_cursor ?? undefined);
@@ -253,7 +255,7 @@ export default function SpaceHistoryRoute() {
     }
   };
   const loadRelatedPage = async (cursor: string | undefined, direction: "next" | "previous") => {
-    const runId = inspection()?.change.run_id;
+    const runId = inspectionValue()?.change.run_id;
     const changeId = openChange();
     if (!runId || !changeId || relatedLoading()) return;
     setRelatedLoading(true);
@@ -492,7 +494,8 @@ export default function SpaceHistoryRoute() {
     });
     resetPaging();
   };
-  const currentRows = () => page()?.changes ?? [];
+  const pageValue = () => page.error ? undefined : page();
+  const currentRows = () => pageValue()?.changes ?? [];
 
   return (
     <section class="space-history" aria-busy={page.loading || undefined}>
@@ -558,7 +561,7 @@ export default function SpaceHistoryRoute() {
       </Show>
       <ResultPagination
         canPrevious={cursors().length > 1}
-        canNext={!!page()?.next_cursor}
+        canNext={!page.error && !!pageValue()?.next_cursor}
         busy={page.loading || !!page.error}
         previousLabel={t("common.previous")}
         nextLabel={t("common.next")}
@@ -568,7 +571,7 @@ export default function SpaceHistoryRoute() {
           setSelectedChange(undefined);
         }}
         onNext={() => {
-          const next = page()?.next_cursor;
+          const next = pageValue()?.next_cursor;
           if (next) {
             setCursors((current) => [...current, next]);
             setSelectedChange(undefined);
@@ -582,7 +585,7 @@ export default function SpaceHistoryRoute() {
             <section class="ui-dialog history-detail" role="dialog" aria-modal="true" aria-labelledby="history-detail-title" onKeyDown={handleDetailKeyDown}>
               <header class="history-detail-header">
                 <div><h2 id="history-detail-title">{detailRow() ? changeTitle(detailRow()!) : t("spaceHistory.detailTitle")}</h2>
-                  <p>{inspection() ? formatDateTimeLabel(inspection()!.change.created_at_micros / 1000) : t("spaceHistory.loading")}{inspection() ? ` · ${actorName(inspection()!.change.actor_principal_id)}` : ""}</p></div>
+                  <p>{inspectionValue() ? formatDateTimeLabel(inspectionValue()!.change.created_at_micros / 1000) : t("spaceHistory.loading")}{inspectionValue() ? ` · ${actorName(inspectionValue()!.change.actor_principal_id)}` : ""}</p></div>
                 <IconButton
                   ref={(element) => detailCloseButton = element}
                   icon="close"
@@ -594,10 +597,10 @@ export default function SpaceHistoryRoute() {
               <div class="history-detail-content">
                 <Show when={inspection.error}><p class="ui-alert ui-alert-error" role="alert">{t("spaceHistory.loadError")}</p></Show>
                 <Show when={inspection.loading}><p>{t("spaceHistory.loading")}</p></Show>
-                <Show when={inspection()}>
+                <Show when={inspectionValue()}>
                   <section><h3>{t("spaceHistory.confirmedBreakdown")}</h3>
-                    <Show when={inspection()!.target_visibility === "complete" && inspection()!.summary} fallback={<p>{t("spaceHistory.restrictedSummary")}</p>}>
-                      <ul class="history-summary-list"><For each={inspection()!.summary!.field_groups}>{(group) => <li>{fieldName(group.form_id, group.field_id)}: {userValue(group.before)} → {userValue(group.after)} <span>({t("spaceHistory.targetCount", { count: group.affected_entry_count })})</span></li>}</For></ul>
+                    <Show when={inspectionValue()!.target_visibility === "complete" && inspectionValue()!.summary} fallback={<p>{t("spaceHistory.restrictedSummary")}</p>}>
+                      <ul class="history-summary-list"><For each={inspectionValue()!.summary!.field_groups}>{(group) => <li>{fieldName(group.form_id, group.field_id)}: {userValue(group.before)} → {userValue(group.after)} <span>({t("spaceHistory.targetCount", { count: group.affected_entry_count })})</span></li>}</For></ul>
                     </Show>
                   </section>
                   <section class="history-affected-layout"><div><h3>{t("spaceHistory.affectedEntries")}</h3>
@@ -621,9 +624,9 @@ export default function SpaceHistoryRoute() {
                   </div><div class="history-entry-diff"><h3>{t("spaceHistory.selectedEntry")}</h3>
                     <Show when={affectedEntry.loading}><p>{t("spaceHistory.loading")}</p></Show>
                     <Show when={affectedEntry.error}><p role="alert">{t("spaceHistory.loadError")}</p></Show>
-                    <Show when={affectedEntry()}><dl><For each={affectedEntry()!.fields}>{(field) => <><dt>{fieldName(affectedEntry()!.form_id, field.field_id)}</dt><dd><span>{userValue(field.before)}</span><span aria-hidden="true"> → </span><span>{userValue(field.after)}</span></dd></>}</For></dl></Show>
+                    <Show when={affectedEntryValue()}><dl><For each={affectedEntryValue()!.fields}>{(field) => <><dt>{fieldName(affectedEntryValue()!.form_id, field.field_id)}</dt><dd><span>{userValue(field.before)}</span><span aria-hidden="true"> → </span><span>{userValue(field.after)}</span></dd></>}</For></dl></Show>
                   </div></section>
-                  <Show when={inspection()!.change.run_id}><section><h3>{t("spaceHistory.relatedChanges")}</h3><ul class="history-related-list"><For each={relatedChanges().filter((change) => change.change_id !== openChange())}>{(change) => <li><button type="button" onClick={() => setDetail(change.change_id)}>{formatDateTimeLabel(change.change.created_at_micros / 1000)} · {showSummary(change)}</button></li>}</For></ul>
+                  <Show when={inspectionValue()!.change.run_id}><section><h3>{t("spaceHistory.relatedChanges")}</h3><ul class="history-related-list"><For each={relatedChanges().filter((change) => change.change_id !== openChange())}>{(change) => <li><button type="button" onClick={() => setDetail(change.change_id)}>{formatDateTimeLabel(change.change.created_at_micros / 1000)} · {showSummary(change)}</button></li>}</For></ul>
                     <Show when={relatedLoading()}>
                       <LocalBusyIndicator label={t("spaceHistory.loading")} size="sm" />
                     </Show>
@@ -640,12 +643,12 @@ export default function SpaceHistoryRoute() {
                       onNext={() => void loadRelatedPage(relatedCursor(), "next")}
                     />
                   </section></Show>
-                  <details class="history-technical-info"><summary>{t("spaceHistory.technicalInfo")}</summary><dl><dt>Change ID</dt><dd>{inspection()!.change_id}</dd><Show when={inspection()!.change.run_id}><dt>Run ID</dt><dd>{inspection()!.change.run_id}</dd></Show><Show when={selectedEntryId()}><dt>Entry ID</dt><dd>{selectedEntryId()}</dd></Show></dl></details>
+                  <details class="history-technical-info"><summary>{t("spaceHistory.technicalInfo")}</summary><dl><dt>{t("spaceHistory.changeId")}</dt><dd>{inspectionValue()!.change_id}</dd><dt>{t("spaceHistory.actorId")}</dt><dd>{inspectionValue()!.change.actor_principal_id}</dd><Show when={inspectionValue()!.change.run_id}><dt>{t("spaceHistory.runId")}</dt><dd>{inspectionValue()!.change.run_id}</dd></Show><Show when={selectedEntryId()}><dt>{t("spaceHistory.entryId")}</dt><dd>{selectedEntryId()}</dd></Show></dl></details>
                 </Show>
               </div>
               <footer class="ui-dialog-actions history-detail-actions">
-                <button type="button" class="ui-button ui-button-secondary" disabled={!inspection() || historyNeedsReview() || recoveryBusy()} onClick={() => { setRecoveryNotice(null); setRecoveryFailure(null); setPendingRecovery("revert"); }}>{t("spaceHistory.revertAction")}</button>
-                <Show when={inspection()?.change.run_id}><button type="button" class="ui-button ui-button-secondary" disabled={historyNeedsReview() || recoveryBusy()} onClick={() => { setRecoveryNotice(null); setRecoveryFailure(null); setPendingRecovery("undo"); }}>{t("spaceHistory.undoRunAction")}</button></Show>
+                <button type="button" class="ui-button ui-button-secondary" disabled={!inspectionValue() || historyNeedsReview() || recoveryBusy()} onClick={() => { setRecoveryNotice(null); setRecoveryFailure(null); setPendingRecovery("revert"); }}>{t("spaceHistory.revertAction")}</button>
+                <Show when={inspectionValue()?.change.run_id}><button type="button" class="ui-button ui-button-secondary" disabled={historyNeedsReview() || recoveryBusy()} onClick={() => { setRecoveryNotice(null); setRecoveryFailure(null); setPendingRecovery("undo"); }}>{t("spaceHistory.undoRunAction")}</button></Show>
               </footer>
             </section>
           </div>

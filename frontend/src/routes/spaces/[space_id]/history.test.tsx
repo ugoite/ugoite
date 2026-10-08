@@ -117,6 +117,7 @@ describe("space history list", () => {
     expect(await screen.findByText("Expenses · 100 entries")).toBeInTheDocument();
     expect(screen.getByText("purpose: Travel → Business travel (100)")).toBeInTheDocument();
     expect(within(document.querySelector("tbody")!).getAllByText("Ada Example")).toHaveLength(2);
+    expect(screen.queryByText("human:editor")).toBeNull();
     expect(document.querySelectorAll("tbody tr")).toHaveLength(2);
     expect(screen.queryByText("change-1")).toBeNull();
     expect(screen.queryByText("run-1")).toBeNull();
@@ -130,6 +131,49 @@ describe("space history list", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("searchbox", { name: "Search history" })).toHaveValue("");
+  });
+
+  it("Space History: announces list loading separately and renders the empty state", async () => {
+    type ChangePage = Awaited<ReturnType<typeof changeApi.query>>;
+    let finishQuery: ((page: ChangePage) => void) | undefined;
+    vi.mocked(changeApi.query).mockImplementation(() =>
+      new Promise<ChangePage>((resolve) => { finishQuery = resolve; })
+    );
+    render(() => <SpaceHistoryRoute />);
+
+    expect(document.querySelector(".space-history")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Loading space history...");
+    expect(screen.queryByRole("table")).toBeNull();
+
+    finishQuery?.({ changes: [], next_cursor: null });
+    expect(await screen.findByText("No changes yet. Create, edit, delete, or restore an entry and it will appear here.")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("Space History: retries a failed timeline request", async () => {
+    type ChangePage = Awaited<ReturnType<typeof changeApi.query>>;
+    let rejectQuery: ((reason?: unknown) => void) | undefined;
+    vi.mocked(changeApi.query).mockImplementationOnce(() =>
+      new Promise<ChangePage>((_resolve, reject) => { rejectQuery = reject; })
+    );
+    render(() => <SpaceHistoryRoute />);
+    await waitFor(() => expect(changeApi.query).toHaveBeenCalledTimes(1));
+    rejectQuery?.(new Error("offline"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Failed to load space history.");
+    (screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).click();
+    expect(await screen.findByText("Expenses · 100 entries")).toBeInTheDocument();
+    expect(changeApi.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("Space History: keeps Change detail open and reports inspection failure", async () => {
+    vi.mocked(changeApi.inspect).mockRejectedValue(new Error("offline"));
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open change" }))[0]);
+
+    const dialog = await screen.findByRole("dialog", { name: "Expenses · 100 entries" });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Failed to load space history.");
+    expect(dialog).toBeInTheDocument();
   });
 
   it("REQ-UX-DISMISS-001: closes and returns focus", async () => {
@@ -165,6 +209,20 @@ describe("space history list", () => {
     expect(close).toHaveAttribute("title", "閉じる");
   });
 
+  it("localizes the technical detail labels", async () => {
+    setLocale("ja");
+    searchParams.value = { change: "change-1" };
+    render(() => <SpaceHistoryRoute />);
+    const dialog = await screen.findByRole("dialog");
+    const technicalInfo = within(dialog).getByText("技術情報");
+    fireEvent.click(technicalInfo);
+
+    expect(await within(dialog).findByText("変更ID")).toBeVisible();
+    expect(within(dialog).getByText("実行者ID")).toBeVisible();
+    expect(within(dialog).getByText("Run ID")).toBeVisible();
+    expect(within(dialog).getByText("エントリーID")).toBeVisible();
+  });
+
   it("keeps the existing Change revert flow available from the Change detail", async () => {
     render(() => <SpaceHistoryRoute />);
     fireEvent.click((await screen.findAllByRole("button", { name: "Open change" }))[0]);
@@ -183,6 +241,36 @@ describe("space history list", () => {
     cleanup();
     render(() => <SpaceHistoryRoute />);
     expect(await screen.findByText("Revert added to history.")).toBeInTheDocument();
+  });
+
+  it("Space History: reports a rejected recovery without claiming success", async () => {
+    vi.mocked(changeApi.revert).mockRejectedValue({
+      status: 403,
+      mutationOutcome: "rejected",
+    });
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open change" }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "Revert this change" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm revert" }));
+
+    expect(await screen.findByText("The recovery request was rejected. Review the error before trying again.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry history refresh" })).toBeNull();
+  });
+
+  it("Space History: reports a revision conflict and refreshes the timeline", async () => {
+    vi.mocked(changeApi.revert).mockRejectedValue({
+      code: "REVISION_CONFLICT",
+      status: 409,
+    });
+    render(() => <SpaceHistoryRoute />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open change" }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "Revert this change" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm revert" }));
+
+    expect(await screen.findByText("This change conflicts with newer history. Refresh the timeline and review it before trying again.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(changeApi.query).toHaveBeenCalledWith("default", expect.objectContaining({ limit: 50 }));
   });
 
   it("REQ-UX-DISMISS-001: traps focus and closes on Escape", async () => {
@@ -328,14 +416,72 @@ describe("space history list", () => {
   it("opens a direct detail URL with related Run Changes and collapsed identifiers", async () => {
     searchParams.value = { change: "change-1" };
     render(() => <SpaceHistoryRoute />);
-    expect(await screen.findByRole("dialog", { name: "Expenses · 100 entries" })).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "Expenses · 100 entries" });
     await waitFor(() => expect(changeApi.query).toHaveBeenCalledWith("default", { limit: 10, run_id: "run-1" }));
     expect(screen.getByText("Related changes in this Run")).toBeInTheDocument();
-    expect(document.querySelector<HTMLDetailsElement>(".history-technical-info")?.open).toBe(false);
-    fireEvent.click(screen.getByText("Technical info"));
-    expect(await screen.findByText("entry-1")).toBeInTheDocument();
+    const technicalInfo = document.querySelector<HTMLDetailsElement>(".history-technical-info");
+    expect(technicalInfo?.open).toBe(false);
+    expect(within(dialog).getByText("change-1")).not.toBeVisible();
+    expect(within(dialog).getByText("human:editor")).not.toBeVisible();
+    expect(within(dialog).getByText("run-1")).not.toBeVisible();
+    expect(within(dialog).getByText("entry-1")).not.toBeVisible();
+    fireEvent.click(within(dialog).getByText("Technical info"));
+    expect(await within(dialog).findByText("Change ID")).toBeVisible();
+    expect(within(dialog).getByText("Actor ID")).toBeVisible();
+    expect(within(dialog).getByText("Run ID")).toBeVisible();
+    expect(await within(dialog).findByText("entry-1")).toBeVisible();
+    expect(within(dialog).getByText("human:editor")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(setSearchParams).toHaveBeenCalledWith({ change: undefined });
+  });
+
+  it("Space History: keeps unresolved actor IDs inside technical disclosure", async () => {
+    const actorId = "123e4567-e89b-12d3-a456-426614174000";
+    const source = row("change-1", 1, "run-1");
+    const unresolvedRow = {
+      ...source,
+      change: { ...source.change, actor_principal_id: actorId },
+    };
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([]);
+    vi.mocked(changeApi.query).mockResolvedValue({
+      changes: [unresolvedRow],
+      next_cursor: null,
+    });
+    vi.mocked(changeApi.inspect).mockResolvedValue({
+      change_id: "change-1",
+      change: unresolvedRow.change,
+      target_visibility: "complete",
+      summary: source.summary,
+      targets: [{
+        form_id: "form-1",
+        entry_id: "entry-1",
+        before_revision_id: "rev-0",
+        after_revision_id: "rev-1",
+        operation: "update",
+        fields: [{
+          field_id: 1,
+          before: { state: "value", value: "Travel" },
+          after: { state: "value", value: "Business travel" },
+        }],
+      }],
+      next_cursor: null,
+    });
+
+    render(() => <SpaceHistoryRoute />);
+    const historyRow = await screen.findByRole("row", { name: /Unknown actor/ });
+    expect(historyRow).not.toHaveTextContent(actorId);
+
+    fireEvent.click(screen.getByText("Columns, filters, and sort"));
+    const actorFilter = screen.getByLabelText("Filter by actor");
+    expect(within(actorFilter).getAllByRole("option")).toHaveLength(1);
+    expect(within(actorFilter).queryByRole("option", { name: actorId })).toBeNull();
+
+    fireEvent.click(within(historyRow).getByRole("button", { name: "Open change" }));
+    const dialog = await screen.findByRole("dialog");
+    const technicalActorId = within(dialog).getByText(actorId);
+    expect(technicalActorId).not.toBeVisible();
+    fireEvent.click(within(dialog).getByText("Technical info"));
+    expect(technicalActorId).toBeVisible();
   });
 
   it("REQ-UX-PAGINATION-001: uses the shared pager for affected detail pages", async () => {
