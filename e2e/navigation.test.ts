@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { join } from "node:path";
 import {
@@ -9,6 +10,8 @@ import {
 } from "./lib/client.ts";
 
 const maxVisitedPages = 16;
+const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
+const staticPublicDirectory = join(repositoryRoot, "frontend/.output/public");
 
 // Canonical Mitase evidence for dynamic route traversal and browser/runtime
 // error stability. The Mitase runner invokes this file from the repository
@@ -302,26 +305,97 @@ test.describe("PWA update lifecycle", () => {
 		expect(new URL(activeClient.scope).pathname).toBe("/");
 		expect(new URL(activeClient.activeScript).pathname).toBe("/_build/sw.js");
 		expect(activeClient.controllerScript).toBe(activeClient.activeScript);
-
-		const targetPath = `/spaces/${spaceId}/forms/Entry/entries`;
-		await page.getByRole("button", { name: "Entry", exact: true }).click();
-		await expect(page).toHaveURL(new RegExp(`${escapeRegExp(targetPath)}$`));
-		await expect(page.locator(".entriesPage h1")).toHaveText("Entry");
-		await expectAppHealthy(page);
-
-		const afterNavigation = await page.evaluate(async () => {
-			const registration = await navigator.serviceWorker.getRegistration();
-			return {
-				scope: registration?.scope,
-				activeScript: registration?.active?.scriptURL,
-				controllerScript: navigator.serviceWorker.controller?.scriptURL,
-				timeOrigin: performance.timeOrigin,
-			};
+		await page.evaluate(() => {
+			(window as Window & { __ugoiteInitialController?: ServiceWorker })
+				.__ugoiteInitialController = navigator.serviceWorker.controller ?? undefined;
 		});
-		expect(afterNavigation.scope).toBe(activeClient.scope);
-		expect(afterNavigation.activeScript).toBe(activeClient.activeScript);
-		expect(afterNavigation.controllerScript).toBe(activeClient.controllerScript);
-		expect(afterNavigation.timeOrigin).toBe(activeClient.timeOrigin);
+
+		const routeChunkUrl = await findRouteChunkUrl(
+			page,
+			"src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx",
+		);
+		const routeChunkPath = new URL(routeChunkUrl).pathname.replace(/^\//, "");
+		const cachedRouteChunk = await page.evaluate(
+			async (url) => (await caches.match(url))?.status === 200,
+			routeChunkUrl,
+		);
+		expect(cachedRouteChunk).toBe(true);
+		expect(
+			await page.evaluate((url) => performance.getEntriesByName(url).length > 0, routeChunkUrl),
+		).toBe(false);
+
+		const serviceWorkerPath = "_build/sw.js";
+		const originalServiceWorker = await readStaticFile(serviceWorkerPath);
+		const waitingUpdateWorker = `
+self.addEventListener("install", () => {});
+self.addEventListener("message", (event) => {
+	if (event.data?.type === "SKIP_WAITING") event.waitUntil(self.skipWaiting());
+});
+self.addEventListener("activate", (event) => {
+	event.waitUntil(self.clients.claim());
+});
+`;
+		const unavailableRouteChunk = `${routeChunkPath}.unavailable-during-update`;
+		let displacedRouteChunk = false;
+
+		try {
+			// Replace the unversioned worker response in the static deployment with
+			// a second worker build. The fixture can accept the update message sent
+			// by auto-update clients, but otherwise uses normal worker activation.
+			await writeStaticFile(serviceWorkerPath, waitingUpdateWorker);
+			await page.evaluate(async () => {
+				const registration = await navigator.serviceWorker.ready;
+				await registration.update();
+			});
+			await page.waitForFunction(async () => {
+				const registration = await navigator.serviceWorker.getRegistration();
+				return registration?.waiting?.state === "installed";
+			});
+
+			// The old worker has precached this not-yet-loaded route. Removing the
+			// network copy proves the existing client can still use its own cache.
+			await moveStaticFile(routeChunkPath, unavailableRouteChunk);
+			displacedRouteChunk = true;
+			const chunkResponsePromise = page.waitForResponse((response) =>
+				response.url() === routeChunkUrl
+			);
+			const targetPath = `/spaces/${spaceId}/forms/Entry/entries`;
+			await page.getByRole("button", { name: "Entry", exact: true }).click();
+			const chunkResponse = await chunkResponsePromise;
+			expect(chunkResponse.status()).toBe(200);
+			expect(chunkResponse.fromServiceWorker()).toBe(true);
+			await expect(page).toHaveURL(new RegExp(`${escapeRegExp(targetPath)}$`));
+			await expect(page.locator(".entriesPage h1")).toHaveText("Entry");
+			await expectAppHealthy(page);
+
+			const afterNavigation = await page.evaluate(async () => {
+				const registration = await navigator.serviceWorker.getRegistration();
+				return {
+					waiting: registration?.waiting?.state,
+					scope: registration?.scope,
+					activeScript: registration?.active?.scriptURL,
+					controllerScript: navigator.serviceWorker.controller?.scriptURL,
+					sameController: navigator.serviceWorker.controller ===
+						(window as Window & { __ugoiteInitialController?: ServiceWorker })
+							.__ugoiteInitialController,
+					timeOrigin: performance.timeOrigin,
+				};
+			});
+			expect(afterNavigation.waiting).toBe("installed");
+			expect(afterNavigation.scope).toBe(activeClient.scope);
+			expect(afterNavigation.activeScript).toBe(activeClient.activeScript);
+			expect(afterNavigation.controllerScript).toBe(activeClient.controllerScript);
+			expect(afterNavigation.sameController).toBe(true);
+			expect(afterNavigation.timeOrigin).toBe(activeClient.timeOrigin);
+		} finally {
+			try {
+				if (displacedRouteChunk) {
+					await moveStaticFile(unavailableRouteChunk, routeChunkPath);
+				}
+			} finally {
+				await writeStaticFile(serviceWorkerPath, originalServiceWorker);
+			}
+		}
 	});
 
 	test("REQ-E2E-010: a waiting update keeps a cached lazy route available to an open client", async ({ page }) => {
@@ -573,4 +647,78 @@ async function collectInternalLinks(page: Page, currentSpaceId: string): Promise
 	}
 
 	return Array.from(normalized.entries()).map(([path, href]) => ({ path, href }));
+}
+
+async function readStaticFile(relativePath: string): Promise<Uint8Array> {
+	const containerId = Deno.env.get("UGOITE_E2E_STATIC_CONTAINER_ID")?.trim();
+	if (!containerId) {
+		return await Deno.readFile(join(staticPublicDirectory, relativePath));
+	}
+
+	const temporaryFile = await Deno.makeTempFile({ prefix: "ugoite-static-read-" });
+	try {
+		await runDocker(["cp", `${containerId}:/app/static/${relativePath}`, temporaryFile]);
+		return await Deno.readFile(temporaryFile);
+	} finally {
+		await Deno.remove(temporaryFile);
+	}
+}
+
+async function writeStaticFile(
+	relativePath: string,
+	contents: string | Uint8Array,
+): Promise<void> {
+	const bytes = typeof contents === "string"
+		? new TextEncoder().encode(contents)
+		: contents;
+	const containerId = Deno.env.get("UGOITE_E2E_STATIC_CONTAINER_ID")?.trim();
+	if (!containerId) {
+		await Deno.writeFile(join(staticPublicDirectory, relativePath), bytes);
+		return;
+	}
+
+	const temporaryFile = await Deno.makeTempFile({ prefix: "ugoite-static-write-" });
+	try {
+		await Deno.writeFile(temporaryFile, bytes);
+		await Deno.chmod(temporaryFile, 0o644);
+		await runDocker([
+			"cp",
+			temporaryFile,
+			`${containerId}:/app/static/${relativePath}`,
+		]);
+	} finally {
+		await Deno.remove(temporaryFile);
+	}
+}
+
+async function moveStaticFile(from: string, to: string): Promise<void> {
+	const containerId = Deno.env.get("UGOITE_E2E_STATIC_CONTAINER_ID")?.trim();
+	if (!containerId) {
+		await Deno.rename(
+			join(staticPublicDirectory, from),
+			join(staticPublicDirectory, to),
+		);
+		return;
+	}
+
+	await runDocker([
+		"exec",
+		"--user",
+		"0:0",
+		containerId,
+		"mv",
+		`/app/static/${from}`,
+		`/app/static/${to}`,
+	]);
+}
+
+async function runDocker(args: string[]): Promise<void> {
+	const result = await new Deno.Command("docker", {
+		args,
+		stderr: "piped",
+	}).output();
+	if (result.code !== 0) {
+		const details = new TextDecoder().decode(result.stderr).trim();
+		throw new Error(`Docker command failed${details ? `: ${details}` : ""}`);
+	}
 }

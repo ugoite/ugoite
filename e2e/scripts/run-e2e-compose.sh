@@ -351,6 +351,14 @@ if [ -z "$compose_host_port" ]; then
   "${compose_cmd[@]}" logs ugoite
   exit 1
 fi
+if [ "$TEST_TYPE" = "navigation" ]; then
+  UGOITE_E2E_STATIC_CONTAINER_ID="$("${compose_cmd[@]}" ps -q ugoite)"
+  if [ -z "$UGOITE_E2E_STATIC_CONTAINER_ID" ]; then
+    echo "✗ ERROR: could not identify the composed static server container"
+    exit 1
+  fi
+  export UGOITE_E2E_STATIC_CONTAINER_ID
+fi
 
 export FRONTEND_URL="http://localhost:${compose_host_port}"
 export BACKEND_URL="http://localhost:${compose_host_port}"
