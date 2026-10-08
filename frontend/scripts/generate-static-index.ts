@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import { brandIconLinksHtml } from "../src/lib/brand-icon-links.ts";
+import { buildPwaHeadTags } from "./static-index.ts";
 
 const [manifestPath, outputPath] = Deno.args;
 
@@ -19,6 +20,7 @@ const manifest = JSON.parse(await Deno.readTextFile(manifestPath)) as Record<
   string,
   ManifestEntry
 >;
+const pwaHeadTags = buildPwaHeadTags();
 const clientEntry = manifest["virtual:$vinxi/handler/client"];
 
 if (!clientEntry?.file) {
@@ -52,6 +54,19 @@ const manifestScriptPath = join(
   "_build",
   "ugoite-manifest.js",
 );
+for (
+  const assetPath of [
+    join(dirname(outputPath), "_build", "manifest.webmanifest"),
+    join(dirname(outputPath), "_build", "registerSW.js"),
+    join(dirname(outputPath), "_build", "sw.js"),
+  ]
+) {
+  try {
+    await Deno.stat(assetPath);
+  } catch {
+    throw new Error(`Missing generated PWA asset: ${assetPath}`);
+  }
+}
 
 const html = `<!doctype html>
 <html lang="en">
@@ -60,6 +75,7 @@ const html = `<!doctype html>
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>Ugoite</title>
 		${brandIconLinksHtml().replaceAll("\n", "\n\t\t")}
+		${pwaHeadTags}
 ${preloadLinks}
 ${stylesheetLinks}
 		<script src="/_build/ugoite-manifest.js"></script>

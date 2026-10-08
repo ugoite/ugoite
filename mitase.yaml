@@ -65,6 +65,8 @@ inventory:
         - frontend/src/lib/entry-label.test.ts
         - frontend/src/lib/vite-preload-recovery.ts
         - frontend/src/lib/vite-preload-recovery.test.ts
+        - frontend/src/lib/pwa-update-policy.ts
+        - frontend/src/lib/pwa-update-policy.test.ts
         - frontend/src/components/AppErrorBoundary.tsx
         - frontend/src/components/AppErrorBoundary.test.tsx
         - frontend/src/lib/form-api.ts
@@ -207,6 +209,7 @@ inventory:
         - frontend/src/routes/spaces/join.test.tsx
         - frontend/src/app.config.test.ts
         - frontend/app.config.ts
+        - frontend/scripts/generate-static-index.ts
         - frontend/src/lib/api.test.ts
         - frontend/src/lib/frontend-origin.test.ts
         - frontend/vitest.config.ts

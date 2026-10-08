@@ -233,6 +233,71 @@ test.describe("Manifest-discovered route chunk recovery", () => {
 	});
 });
 
+test.describe("PWA update lifecycle", () => {
+	let spaceId = "";
+
+	test.beforeAll(async ({ request }) => {
+		await waitForServers(request);
+		spaceId = await getDefaultSpaceId(request);
+		await ensureDefaultForm(request, spaceId);
+	});
+
+	test("REQ-E2E-010: a root-scoped production worker keeps lazy navigation on the current client", async ({ page }) => {
+		test.setTimeout(60_000);
+
+		const formsPath = `/spaces/${spaceId}/forms`;
+		await page.goto(formsPath, { waitUntil: "load" });
+		await settleUiLoading(page);
+
+		await page.waitForFunction(async () => {
+			const registration = await navigator.serviceWorker.getRegistration();
+			return registration?.active?.state === "activated";
+		});
+		if (!(await page.evaluate(() => !!navigator.serviceWorker.controller))) {
+			await page.reload({ waitUntil: "load" });
+		}
+		await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+
+		const activeClient = await page.evaluate(async () => {
+			const registration = await navigator.serviceWorker.ready;
+			const controller = navigator.serviceWorker.controller;
+			if (!registration.active || !controller) {
+				throw new Error("Expected the page to have an active service worker");
+			}
+
+			return {
+				scope: registration.scope,
+				activeScript: registration.active.scriptURL,
+				controllerScript: controller.scriptURL,
+				timeOrigin: performance.timeOrigin,
+			};
+		});
+		expect(new URL(activeClient.scope).pathname).toBe("/");
+		expect(new URL(activeClient.activeScript).pathname).toBe("/_build/sw.js");
+		expect(activeClient.controllerScript).toBe(activeClient.activeScript);
+
+		const targetPath = `/spaces/${spaceId}/forms/Entry/entries`;
+		await page.getByRole("button", { name: "Entry", exact: true }).click();
+		await expect(page).toHaveURL(new RegExp(`${escapeRegExp(targetPath)}$`));
+		await expect(page.locator(".entriesPage h1")).toHaveText("Entry");
+		await expectAppHealthy(page);
+
+		const afterNavigation = await page.evaluate(async () => {
+			const registration = await navigator.serviceWorker.getRegistration();
+			return {
+				scope: registration?.scope,
+				activeScript: registration?.active?.scriptURL,
+				controllerScript: navigator.serviceWorker.controller?.scriptURL,
+				timeOrigin: performance.timeOrigin,
+			};
+		});
+		expect(afterNavigation.scope).toBe(activeClient.scope);
+		expect(afterNavigation.activeScript).toBe(activeClient.activeScript);
+		expect(afterNavigation.controllerScript).toBe(activeClient.controllerScript);
+		expect(afterNavigation.timeOrigin).toBe(activeClient.timeOrigin);
+	});
+});
+
 type InternalLink = {
 	path: string;
 	href: string;

@@ -1991,6 +1991,15 @@ fn app_layers(router: Router<AppState>, state: AppState) -> Router {
     router.with_state(state)
 }
 
+fn add_service_worker_scope_header(headers: &mut HeaderMap, is_service_worker_script: bool) {
+    if is_service_worker_script {
+        headers.insert(
+            HeaderName::from_static("service-worker-allowed"),
+            HeaderValue::from_static("/"),
+        );
+    }
+}
+
 async fn add_security_headers(
     State(state): State<AppState>,
     request: Request,
@@ -2008,9 +2017,11 @@ async fn add_security_headers(
         .map(|OriginalUri(uri)| uri.clone())
         .unwrap_or_else(|| request.uri().clone());
     let is_head = request.method() == Method::HEAD;
+    let is_service_worker_script = request.uri().path() == "/_build/sw.js";
     let scope = response_signing_scope(&uri);
     let mut response = next.run(request).await;
     state.security_headers.apply(response.headers_mut());
+    add_service_worker_scope_header(response.headers_mut(), is_service_worker_script);
     if no_store {
         response.headers_mut().insert(
             HeaderName::from_static("cache-control"),
