@@ -37,8 +37,9 @@ export const route = spaceRoute({ navigation: "home" });
 /**
  * Display-only Form field-name lookup for Composition entry_query tables.
  * Matches the stable Form id only; display names never participate so a
- * Form rename cannot change which fields resolve. Unlabeled fields use the
- * matching source's saved schema order. Query semantics never depend on
+ * Form rename cannot change which fields resolve. Form field keys provide
+ * their display names when no explicit label exists; the matching source's
+ * saved schema order is the final fallback. Query semantics never depend on
  * this helper.
  */
 export const resolveCompositionFieldName = (
@@ -47,13 +48,14 @@ export const resolveCompositionFieldName = (
   fieldId: number,
   fieldSchema?: readonly { field_id: number }[],
 ): string | undefined => {
-  const field = Object.values(
+  const entry = Object.entries(
     (forms ?? []).find((form) => form.id === formId)?.fields ?? {},
-  ).find((definition) =>
+  ).find(([, definition]) =>
     (definition.query_capability?.field.field_id ?? definition.id) === fieldId
   );
-  const label = field?.label?.trim();
+  const label = entry?.[1].label?.trim();
   if (label) return label;
+  if (entry) return entry[0];
   const index = fieldSchema?.findIndex((entry) => entry.field_id === fieldId) ??
     -1;
   return index < 0

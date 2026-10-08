@@ -588,9 +588,15 @@ describe("resolveCompositionFieldName", () => {
     );
   });
 
-  it("uses the source schema ordinal when a Form field has no label", () => {
+  it("uses the Form field key when a Form field has no explicit label", () => {
     expect(
       resolveCompositionFieldName(forms(), "form-1", 102, [{ field_id: 102 }]),
+    ).toBe("visits");
+  });
+
+  it("uses the source schema ordinal when Form metadata is unavailable", () => {
+    expect(
+      resolveCompositionFieldName(undefined, "form-1", 102, [{ field_id: 102 }]),
     ).toBe("Field 1");
   });
 
