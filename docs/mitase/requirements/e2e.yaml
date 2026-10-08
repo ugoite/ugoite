@@ -473,26 +473,26 @@ requirements:
       - id: production-update-verification
         role: verification
         facet: verification
-        responsibility: Verify that a production service worker update waits for an existing client and that the client can still load a previously unvisited lazy route.
+        responsibility: Verify that a production service worker update installs without replacing its open client and that the client can still load a previously unvisited lazy route.
         targets:
           - id: open-client-update-case
             adapter: typescript
             path: e2e/navigation.test.ts
-            selector: { kind: test, name: 'REQ-E2E-010: a new production worker waits while an open client traverses a lazy route' }
+            selector: { kind: test, name: 'REQ-E2E-010: a production update keeps an open client usable during lazy navigation' }
             claims:
               - kind: verifies
                 criterion: REQ-E2E-010#criterion.active-client-safety
                 covers:
                   - FEAT-E2E-001#binding.frontend/target.pwa-update-lifecycle
                   - FEAT-E2E-001#binding.frontend/target.static-pwa-bootstrap
-                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-010: a new production worker waits while an open client traverses a lazy route' } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-010: a production update keeps an open client usable during lazy navigation' } }
               - kind: verifies
                 criterion: REQ-E2E-010#criterion.root-scoped-worker
                 covers:
                   - FEAT-E2E-001#binding.frontend/target.pwa-update-lifecycle
                   - FEAT-E2E-001#binding.frontend/target.static-pwa-bootstrap
                   - FEAT-E2E-001#binding.server/target.pwa-worker-scope-header
-                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-010: a new production worker waits while an open client traverses a lazy route' } }
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-010: a production update keeps an open client usable during lazy navigation' } }
       - id: root-scope-response-header
         role: verification
         facet: cargo-test

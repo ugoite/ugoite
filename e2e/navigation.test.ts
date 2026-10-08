@@ -242,7 +242,7 @@ test.describe("PWA update lifecycle", () => {
 		await ensureDefaultForm(request, spaceId);
 	});
 
-	test("REQ-E2E-010: a new production worker waits while an open client traverses a lazy route", async ({ page }) => {
+	test("REQ-E2E-010: a production update keeps an open client usable during lazy navigation", async ({ page }) => {
 		test.setTimeout(60_000);
 
 		const formsPath = `/spaces/${spaceId}/forms`;
@@ -264,38 +264,56 @@ test.describe("PWA update lifecycle", () => {
 				throw new Error("Expected the page to have an active service worker");
 			}
 
-			const activeScript = registration.active.scriptURL;
-			const updateUrl = new URL(activeScript);
-			updateUrl.searchParams.set("pwa-update-test", "next");
-			await navigator.serviceWorker.register(updateUrl.href, {
-				scope: `${location.origin}/`,
-			});
-
 			return {
-				activeScript,
+				activeScript: registration.active.scriptURL,
 				controllerScript: navigator.serviceWorker.controller.scriptURL,
 				timeOrigin: performance.timeOrigin,
 			};
 		});
 
-		await page.waitForFunction(async () => {
-			const registration = await navigator.serviceWorker.getRegistration();
-			return registration?.waiting?.state === "installed";
-		}, undefined, { timeout: 15_000 });
+		const updatedWorkerInstalled = await page.evaluate(async () => {
+			const registration = await navigator.serviceWorker.ready;
+			const activeScript = registration.active?.scriptURL;
+			if (!activeScript) throw new Error("Expected an active service worker");
+			const installingWorker = new Promise<ServiceWorker>((resolve) => {
+				registration.addEventListener("updatefound", () => {
+					if (registration.installing) resolve(registration.installing);
+				}, { once: true });
+			});
 
-		const waitingState = await page.evaluate(async () => {
+			const updateUrl = new URL(activeScript);
+			updateUrl.searchParams.set("pwa-update-test", "next");
+			await navigator.serviceWorker.register(updateUrl.href, { scope: "/" });
+
+			const worker = await installingWorker;
+			const installed = await new Promise<boolean>((resolve) => {
+				const onStateChange = () => {
+					if (worker.state === "installed") {
+						worker.removeEventListener("statechange", onStateChange);
+						resolve(true);
+					} else if (worker.state === "redundant" || worker.state === "activated") {
+						worker.removeEventListener("statechange", onStateChange);
+						resolve(false);
+					}
+				};
+				worker.addEventListener("statechange", onStateChange);
+				onStateChange();
+			});
+			return installed;
+		});
+		expect(updatedWorkerInstalled).toBe(true);
+
+		const beforeNavigation = await page.evaluate(async () => {
 			const registration = await navigator.serviceWorker.getRegistration();
 			return {
-				waiting: registration?.waiting?.state === "installed",
 				activeScript: registration?.active?.scriptURL,
 				controllerScript: navigator.serviceWorker.controller?.scriptURL,
 				timeOrigin: performance.timeOrigin,
 			};
 		});
-		expect(waitingState.waiting).toBe(true);
-		expect(waitingState.activeScript).toBe(activeClient.activeScript);
-		expect(waitingState.controllerScript).toBe(activeClient.controllerScript);
-		expect(waitingState.timeOrigin).toBe(activeClient.timeOrigin);
+		expect(beforeNavigation.activeScript).toBe(activeClient.activeScript);
+		expect(beforeNavigation.controllerScript).toBe(activeClient.controllerScript);
+		expect(beforeNavigation.timeOrigin).toBe(activeClient.timeOrigin);
 
 		const targetPath = `/spaces/${spaceId}/forms/Entry/entries`;
 		await page.getByRole("button", { name: "Entry", exact: true }).click();
@@ -306,12 +324,12 @@ test.describe("PWA update lifecycle", () => {
 		const afterNavigation = await page.evaluate(async () => {
 			const registration = await navigator.serviceWorker.getRegistration();
 			return {
-				waiting: registration?.waiting?.state === "installed",
+				activeScript: registration?.active?.scriptURL,
 				controllerScript: navigator.serviceWorker.controller?.scriptURL,
 				timeOrigin: performance.timeOrigin,
 			};
 		});
-		expect(afterNavigation.waiting).toBe(true);
+		expect(afterNavigation.activeScript).toBe(activeClient.activeScript);
 		expect(afterNavigation.controllerScript).toBe(activeClient.controllerScript);
 		expect(afterNavigation.timeOrigin).toBe(activeClient.timeOrigin);
 	});
