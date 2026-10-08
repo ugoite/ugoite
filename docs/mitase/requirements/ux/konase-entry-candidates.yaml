@@ -11,7 +11,7 @@ requirements:
     criteria:
       - id: same-preview-entry-choices
         kind: behavior
-        statement: Browser Konase gives Entries with repeated previews distinct localized visible and accessible labels across loaded pages, reuses those labels in selected-resource rows and remove actions, and preserves each exact stable Entry URI for selection and Context preview without showing IDs or URIs in ordinary choices.
+        statement: Browser Konase gives Entries with repeated previews distinct localized visible and accessible labels across loaded pages, falls back to unique candidate ordinals if a literal preview collides with a generated label, reuses those labels in selected-resource rows and remove actions, and preserves each exact stable Entry URI for selection and Context preview without showing IDs or URIs in ordinary choices.
         governed_by: [POL-UI-005#rule.governance]
     bindings:
       - id: same-preview-entry-choice-verification

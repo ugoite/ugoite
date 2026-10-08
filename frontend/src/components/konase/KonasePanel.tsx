@@ -148,6 +148,17 @@ export function KonasePanel(props: KonasePanelProps) {
           });
       });
     }
+
+    if (new Set(Object.values(labels)).size !== Object.keys(labels).length) {
+      Array.from(entryBaseLabels).forEach(([uri, label], index) => {
+        labels[uri] = label === t("konase.entryCandidate")
+          ? t("konase.entryOrdinalLabel", { count: index + 1 })
+          : t("konase.entryCandidateIndexedLabel", {
+            label,
+            count: index + 1,
+          });
+      });
+    }
     return labels;
   };
 

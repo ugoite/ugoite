@@ -18,7 +18,7 @@ components:
       maximum_selected: 4
       form_label: trimmed-name-unless-empty-or-id-then-localized-form
       entry_label: trimmed-preview-unless-empty-or-id-then-localized-entry
-      entry_disambiguator: localized-entry-ordinal-for-repeated-preview-labels-across-loaded-pages
+      entry_disambiguator: localized-entry-ordinal-for-repeated-preview-labels-across-loaded-pages-with-collision-safe-numbered-fallback
       identifiers_in_visible_or_accessible_names: false
     selected_resources:
       label: remembered-disambiguated-candidate-label-then-localized-kind

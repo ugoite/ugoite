@@ -580,20 +580,23 @@ describe("KonasePanel Space authority", () => {
 
   it("REQ-UX-LIST-003: disambiguates repeated Entry previews across pages", async () => {
     mockConnection();
-    const candidate = (id: string) => ({
+    const candidate = (id: string, preview = "Shared preview") => ({
       id,
       form_id: "form-a",
       revision_id: `revision-${id}`,
       created_at_micros: 1,
       updated_at_micros: 1,
-      preview: "Shared preview",
+      preview,
     });
     queryEntriesMock.mockResolvedValueOnce({
       rows: [candidate("entry-a"), candidate("entry-b")],
       has_more: true,
       next: "page-2",
     }).mockResolvedValueOnce({
-      rows: [candidate("entry-c")],
+      rows: [
+        candidate("entry-c"),
+        candidate("entry-d", "Shared preview · Entry 1"),
+      ],
       has_more: false,
     });
 
@@ -609,12 +612,13 @@ describe("KonasePanel Space authority", () => {
       name: "Shared preview · Entry 1",
       exact: true,
     });
-    expect(screen.getByRole("checkbox", {
+    const secondCandidate = screen.getByRole("checkbox", {
       name: "Shared preview · Entry 2",
       exact: true,
-    })).toBeInTheDocument();
+    });
     expect(document.body.textContent).not.toMatch(/entry-[abc]/);
     fireEvent.click(firstCandidate);
+    fireEvent.click(secondCandidate);
 
     const selectedResources = screen.getByRole("list", {
       name: "Selected resources",
@@ -626,22 +630,48 @@ describe("KonasePanel Space authority", () => {
         name: "Remove Shared preview · Entry 1 from selected resources",
       }),
     ).toBeInTheDocument();
+    expect(within(selectedResources).getByText("Shared preview · Entry 2"))
+      .toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     const thirdCandidate = await screen.findByRole("checkbox", {
-      name: "Shared preview · Entry 3",
+      name: "Entry 3 · Shared preview",
       exact: true,
     });
-    expect(within(selectedResources).getByText("Shared preview · Entry 1"))
+    const fourthCandidate = screen.getByRole("checkbox", {
+      name: "Entry 4 · Shared preview · Entry 1",
+      exact: true,
+    });
+    expect(within(selectedResources).getByText("Entry 1 · Shared preview"))
       .toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/entry-[abc]/);
-    fireEvent.click(thirdCandidate);
-    expect(within(selectedResources).getByText("Shared preview · Entry 3"))
+    expect(within(selectedResources).getByText("Entry 2 · Shared preview"))
       .toBeInTheDocument();
     expect(
       within(selectedResources).getByRole("button", {
-        name: "Remove Shared preview · Entry 3 from selected resources",
+        name: "Remove Entry 1 · Shared preview from selected resources",
       }),
+    ).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/entry-[abcd]/);
+    fireEvent.click(thirdCandidate);
+    expect(within(selectedResources).getByText("Entry 3 · Shared preview"))
+      .toBeInTheDocument();
+    fireEvent.click(
+      within(selectedResources).getByRole("button", {
+        name: "Remove Entry 3 · Shared preview from selected resources",
+      }),
+    );
+    expect(within(selectedResources).queryByText("Entry 3 · Shared preview"))
+      .not.toBeInTheDocument();
+    expect(thirdCandidate).not.toBeChecked();
+    expect(within(selectedResources).getByText("Entry 1 · Shared preview"))
+      .toBeInTheDocument();
+    expect(within(selectedResources).getByText("Entry 2 · Shared preview"))
+      .toBeInTheDocument();
+    fireEvent.click(fourthCandidate);
+    expect(
+      within(selectedResources).getByText(
+        "Entry 4 · Shared preview · Entry 1",
+      ),
     ).toBeInTheDocument();
 
     fireEvent.input(screen.getByPlaceholderText(/Ask Konase/), {
@@ -654,23 +684,26 @@ describe("KonasePanel Space authority", () => {
     const host = hostInstances[0];
     await waitFor(() => expect(host.previewDeferreds).toHaveLength(1));
     const firstUri = "ugoite://entry/entry-a";
-    const thirdUri = "ugoite://entry/entry-c";
-    expect(host.selectedUriCalls).toEqual([[firstUri, thirdUri]]);
+    const secondUri = "ugoite://entry/entry-b";
+    const fourthUri = "ugoite://entry/entry-d";
+    expect(host.selectedUriCalls).toEqual([[firstUri, secondUri, fourthUri]]);
     host.previewDeferreds[0].resolve({
       id: "preview-duplicates",
       spaceId: "space-a",
-      selectedUris: [firstUri, thirdUri],
+      selectedUris: [firstUri, secondUri, fourthUri],
       admission: [
         { uri: firstUri, status: "included" },
-        { uri: thirdUri, status: "included" },
+        { uri: secondUri, status: "included" },
+        { uri: fourthUri, status: "included" },
       ],
       resources: [
         { uri: firstUri, content: "First Entry projection" },
-        { uri: thirdUri, content: "Third Entry projection" },
+        { uri: secondUri, content: "Second Entry projection" },
+        { uri: fourthUri, content: "Fourth Entry projection" },
       ],
     });
     await waitFor(() =>
-      expect(screen.getByText("First Entry projection")).toBeInTheDocument()
+      expect(screen.getByText("Fourth Entry projection")).toBeInTheDocument()
     );
   });
 
