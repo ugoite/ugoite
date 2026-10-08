@@ -1424,7 +1424,9 @@ export const draftFromDocument = (
         name,
         expectedResult: source.expected_result.map((column) => ({ ...column })),
         variables: Object.fromEntries(
-          Object.entries(source.variables ?? {}).map(([key, binding]) => [
+          Object.entries(
+            source.variables === undefined ? {} : source.variables,
+          ).map(([key, binding]) => [
             key,
             { ...binding },
           ]),
@@ -1533,7 +1535,9 @@ export const draftFromDocument = (
       `disp-${index + 1}`,
     ]),
   );
-  const parameters = document.spec.parameters ?? [];
+  const parameters = document.spec.parameters === undefined
+    ? []
+    : document.spec.parameters;
   const parameterIds = new Set(parameters.map((parameter) => parameter.id));
   const layoutRows: DraftLayoutRow[] = document.spec.layout.rows.map((row) => ({
     id: row.id,

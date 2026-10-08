@@ -281,6 +281,30 @@ describe("Composition edit route", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
   });
 
+  it("refuses explicit null optional collections as malformed", async () => {
+    lintMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        document: {
+          ...lintDocument,
+          spec: {
+            ...lintDocument.spec,
+            parameters: null,
+            sources: [{ ...lintDocument.spec.sources[0], variables: null }],
+          },
+        },
+        canonical_yaml: storedYaml,
+        fingerprint: "fingerprint",
+      },
+    });
+
+    render(() => <CompositionEditRoute />);
+
+    expect(await screen.findByText("This revision cannot be edited."))
+      .toBeInTheDocument();
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+  });
+
   it("saves an update with base revision identity and a stable retry key", async () => {
     render(() => <CompositionEditRoute />);
     expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");
