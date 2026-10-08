@@ -1224,6 +1224,107 @@ describe("KonasePanel Space authority", () => {
     }]);
   });
 
+  it("uses a selected Entry label after paging away from its candidate row", async () => {
+    mockConnection();
+    getSpaceMock.mockResolvedValue({
+      space_uid: "space-a-uid",
+      name: "Project Notes",
+      created_at: "",
+    });
+    queryEntriesMock.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "entry-selected",
+          form_id: "form-a",
+          revision_id: "rev-selected",
+          created_at_micros: 1,
+          updated_at_micros: 1,
+          preview: "Quarterly plan",
+        },
+      ],
+      has_more: true,
+      next: "page-2",
+    }).mockResolvedValueOnce({
+      rows: [
+        {
+          id: "entry-current-page",
+          form_id: "form-a",
+          revision_id: "rev-current-page",
+          created_at_micros: 2,
+          updated_at_micros: 2,
+          preview: "Onboarding notes",
+        },
+      ],
+      has_more: false,
+    });
+    render(() => <KonasePanel spaceId="space-a" />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Search Entries" }));
+    const selectedEntry = await screen.findByRole("checkbox", {
+      name: "Quarterly plan",
+      exact: true,
+    });
+    fireEvent.click(selectedEntry);
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByRole("checkbox", {
+      name: "Onboarding notes",
+      exact: true,
+    });
+
+    const host = hostInstances[0];
+    host.requestConfirmation(fakeWritePreview({
+      action: "update",
+      entryId: "entry-selected",
+      entryIdLabel: "entry-selected",
+    }));
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(
+      within(dialog).getByText(
+        "Project Notes / Note / Quarterly plan",
+      ),
+    ).toBeVisible();
+    expect(within(dialog).getByText("entry-selected")).not.toBeVisible();
+    expect(within(dialog).queryByText(/Onboarding notes/)).toBeNull();
+
+    fireEvent.click(within(dialog).getByText("Technical details"));
+    expect(within(dialog).getByText("entry-selected")).toBeVisible();
+    fireEvent.click(within(dialog).getByText("Technical details"));
+    expect(within(dialog).getByText("entry-selected")).not.toBeVisible();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Approve write" }),
+    );
+    expect(host.resolvedConfirmations).toEqual([{
+      requestId: "job-1:mcp:1",
+      approved: true,
+    }]);
+
+    host.requestConfirmation(fakeWritePreview({
+      action: "update",
+      entryId: "entry-unmatched",
+      entryIdLabel: "entry-unmatched",
+    }));
+    const unmatchedDialog = screen.getByRole("alertdialog");
+    expect(
+      within(unmatchedDialog).getByText(
+        "Project Notes / Note / Existing Entry",
+      ),
+    ).toBeVisible();
+    expect(within(unmatchedDialog).queryByText(/Quarterly plan/)).toBeNull();
+    expect(within(unmatchedDialog).queryByText(/Onboarding notes/)).toBeNull();
+    expect(within(unmatchedDialog).getByText("entry-unmatched"))
+      .not.toBeVisible();
+    fireEvent.click(within(unmatchedDialog).getByText("Technical details"));
+    expect(within(unmatchedDialog).getByText("entry-unmatched")).toBeVisible();
+    fireEvent.click(
+      within(unmatchedDialog).getByRole("button", { name: "Deny write" }),
+    );
+  });
+
   it("denies a pending write explicitly", async () => {
     mockConnection();
     render(() => <KonasePanel spaceId="space-a" />);
