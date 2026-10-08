@@ -4,14 +4,14 @@ namespace: ux
 category: Browser Konase Entry candidate labels
 features:
   - id: FEAT-UX-015
-    title: Browser Konase Entry candidate disambiguation
-    summary: Keep repeated Entry previews distinguishable in candidate and selected-resource surfaces without exposing resource identifiers.
+    title: Browser Konase Choice Labels and Panel States
+    summary: Keep Entry previews distinguishable and Browser Konase connection and candidate states explicit without exposing resource identifiers.
     status: implemented
     bindings:
       - id: konase-entry-choice-implementation
         role: implementation
         facet: frontend
-        responsibility: Keep repeated Entry preview labels connected to the Konase candidate surface and its component contract.
+        responsibility: Keep Browser Konase choice labels and connection or candidate state behavior connected to the panel surface and component contract.
         targets:
           - id: konase-panel-surface
             adapter: typescript
@@ -20,6 +20,16 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-LIST-003#criterion.same-preview-entry-choices
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.connection-progress
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.form-candidate-loading
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.no-form-candidates
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.entry-candidate-loading
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.candidate-load-error
           - id: konase-panel-specification
             adapter: declared
             path: docs/spec/ui/components/konase-panel.yaml
@@ -27,3 +37,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-LIST-003#criterion.same-preview-entry-choices
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.connection-progress
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.form-candidate-loading
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.no-form-candidates
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.entry-candidate-loading
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.candidate-load-error

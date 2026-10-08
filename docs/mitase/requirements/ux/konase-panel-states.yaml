@@ -1,0 +1,155 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Browser Konase connection and candidate states
+requirements:
+  - id: REQ-UX-KONASE-001
+    title: Browser Konase Connection and Candidate States
+    description: Browser Konase exposes pending connection and current-Space candidate loading, empty, and failure states in the panel.
+    priority: high
+    status: implemented
+    criteria:
+      - id: connection-progress
+        kind: behavior
+        statement: While the current Space is being resolved for connection, the Connect control is busy and disabled with a spinner.
+        governed_by: [POL-UI-009#rule.governance]
+      - id: form-candidate-loading
+        kind: behavior
+        statement: While current-Space Form candidates are loading, Browser Konase announces the pending state with a live status.
+        governed_by: [POL-UI-009#rule.governance]
+      - id: no-form-candidates
+        kind: behavior
+        statement: Browser Konase shows the localized empty Forms state only after a successful current-Space Form lookup returns no candidates.
+        governed_by: [POL-UI-009#rule.governance]
+      - id: entry-candidate-loading
+        kind: behavior
+        statement: While a current-Space Entry candidate search is loading, Browser Konase announces the pending state with a live status.
+        governed_by: [POL-UI-009#rule.governance]
+      - id: candidate-load-error
+        kind: behavior
+        statement: Form and Entry candidate lookup failures appear as inline alerts with a localized current-Space candidate error summary.
+        governed_by: [POL-UI-009#rule.governance]
+    bindings:
+      - id: browser-konase-state-verification
+        role: verification
+        facet: verification
+        responsibility: Verify each pending, empty, and failed connection or candidate state through its exact Browser Konase component test.
+        targets:
+          - id: connection-pending-state
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: {
+              kind: test,
+              name: "shows connection progress while the current Space is being resolved",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-KONASE-001#criterion.connection-progress
+                covers: [
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-surface,
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-specification,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/konase/KonasePanel.test.tsx,
+                    test: "shows connection progress while the current Space is being resolved",
+                  },
+                }
+          - id: form-loading-and-empty-state
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: {
+              kind: test,
+              name: "announces Form candidate loading and the empty Forms state",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-KONASE-001#criterion.form-candidate-loading
+                covers: [
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-surface,
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-specification,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/konase/KonasePanel.test.tsx,
+                    test: "announces Form candidate loading and the empty Forms state",
+                  },
+                }
+              - kind: verifies
+                criterion: REQ-UX-KONASE-001#criterion.no-form-candidates
+                covers: [
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-surface,
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-specification,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/konase/KonasePanel.test.tsx,
+                    test: "announces Form candidate loading and the empty Forms state",
+                  },
+                }
+          - id: entry-candidate-loading-state
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: {
+              kind: test,
+              name: "announces Entry candidate loading while a search is pending",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-KONASE-001#criterion.entry-candidate-loading
+                covers: [
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-surface,
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-specification,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/konase/KonasePanel.test.tsx,
+                    test: "announces Entry candidate loading while a search is pending",
+                  },
+                }
+          - id: form-candidate-error-state
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: {
+              kind: test,
+              name: "shows an inline alert when Form candidates fail to load",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-KONASE-001#criterion.candidate-load-error
+                covers: [
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-surface,
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-specification,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/konase/KonasePanel.test.tsx,
+                    test: "shows an inline alert when Form candidates fail to load",
+                  },
+                }
+          - id: entry-candidate-error-state
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: {
+              kind: test,
+              name: "shows an inline alert when Entry candidates fail to load",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-KONASE-001#criterion.candidate-load-error
+                covers: [
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-surface,
+                  FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-specification,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/konase/KonasePanel.test.tsx,
+                    test: "shows an inline alert when Entry candidates fail to load",
+                  },
+                }
