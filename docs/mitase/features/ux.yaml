@@ -198,7 +198,7 @@ features:
       - id: konase-write-approval-target-verification
         role: verification
         facet: verification
-        responsibility: Verify write approval shows current Space and Form context, keeps opaque target IDs in collapsed technical details, and retains the exact request-bound approval.
+        responsibility: Verify write approval shows current Space and Form context, uses a preview only for the exact updated Entry among visible current-Space candidates or selected resources, falls back to existing-Entry context, keeps opaque target IDs in collapsed technical details, and retains the exact request-bound approval.
         targets:
           - id: konase-readable-write-target
             adapter: typescript
@@ -209,6 +209,15 @@ features:
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-003#binding.list-baseline/target.konase-panel-surface, FEAT-UX-003#binding.list-baseline/target.konase-panel-specification]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "keeps update targets readable and reveals opaque IDs only on demand" } }
+          - id: konase-exact-updated-entry-label
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "uses the current candidate label for the exact updated Entry" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-003#binding.list-baseline/target.konase-panel-surface, FEAT-UX-003#binding.list-baseline/target.konase-panel-specification]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "uses the current candidate label for the exact updated Entry" } }
   - id: FEAT-UX-004
     title: Localization baseline
     summary: Record the shared locale dictionary satisfying the dictionary-copy criteria without changing UI behavior.

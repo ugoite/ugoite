@@ -166,6 +166,7 @@ export type WritePreview = {
   action: "create" | "update" | "undo";
   form?: string;
   entryId?: string;
+  entryIdLabel?: string;
   summary: string;
 };
 
@@ -1272,7 +1273,8 @@ function createWritePreview(
     operation: "ugoite.save",
     action: entryId ? "update" : "create",
     form: formName ? safePreviewLabel(formName) : undefined,
-    entryId: entryId ? safePreviewLabel(entryId) : undefined,
+    entryId,
+    entryIdLabel: entryId ? safePreviewLabel(entryId) : undefined,
     summary,
   };
 }

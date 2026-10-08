@@ -34,7 +34,8 @@ components:
       send: explicit-confirmation
       write_approval: separate-explicit-confirmation
     write_approval:
-      target_label: current-space-name-form-name-and-existing-entry-context
+      target_label: current-space-name-form-name-and-exact-entry-preview-from-visible-candidate-or-selection
+      target_label_fallback: existing-entry-context
       identifiers: collapsed-technical-details
       disclosed_identifiers: [space-id, entry-id-when-present, work-id-for-undo]
       change_summary: excludes-opaque-identifiers

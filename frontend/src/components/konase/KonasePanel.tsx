@@ -82,6 +82,7 @@ export function KonasePanel(props: KonasePanelProps) {
   let entrySearchGeneration = 0;
   let entrySearchController: AbortController | undefined;
   const entryBaseLabels = new Map<string, string>();
+  const entryLabelsWithPreview = new Set<string>();
   let unsubscribe: (() => void) | undefined;
   let pendingSpaceId: string | undefined;
   let panelHeading: HTMLHeadingElement | undefined;
@@ -122,10 +123,13 @@ export function KonasePanel(props: KonasePanelProps) {
 
   const rememberEntryCandidateLabels = (entries: EntryQueryResult[]) => {
     for (const entry of entries) {
-      entryBaseLabels.set(
-        `ugoite://entry/${entry.id}`,
-        entryCandidateLabel(entry),
-      );
+      const uri = `ugoite://entry/${entry.id}`;
+      entryBaseLabels.set(uri, entryCandidateLabel(entry));
+      if (hasReadableEntryCandidateLabel(entry)) {
+        entryLabelsWithPreview.add(uri);
+      } else {
+        entryLabelsWithPreview.delete(uri);
+      }
     }
 
     const entriesByLabel = new Map<string, string[]>();
@@ -194,6 +198,7 @@ export function KonasePanel(props: KonasePanelProps) {
       setSelectedUris([]);
       setResourceLabels({});
       entryBaseLabels.clear();
+      entryLabelsWithPreview.clear();
       setForms([]);
       setFormsLoading(false);
       setEntryRows([]);
@@ -487,6 +492,19 @@ export function KonasePanel(props: KonasePanelProps) {
     (uri.startsWith("ugoite://form/")
       ? t("konase.formCandidate")
       : t("konase.entryCandidate"));
+
+  const writeApprovalEntryLabel = (preview: WritePreview) => {
+    const entryId = preview.entryId;
+    if (!entryId) return;
+    const uri = `ugoite://entry/${entryId}`;
+    const hasAuthorizedEntryContext =
+      entryRows().some((entry) => entry.id === entryId) ||
+      selectedUris().includes(uri);
+    if (!hasAuthorizedEntryContext || !entryLabelsWithPreview.has(uri)) {
+      return;
+    }
+    return resourceLabels()[uri] || entryBaseLabels.get(uri);
+  };
 
   const editEntryText = (value: string) => {
     setEntryText(value);
@@ -945,7 +963,10 @@ export function KonasePanel(props: KonasePanelProps) {
                   {connectedSpaceName() || t("konase.currentSpace")}
                   {preview().form ? ` / ${preview().form}` : ""}
                   {preview().action === "update"
-                    ? ` / ${t("konase.existingEntry")}`
+                    ? ` / ${
+                      writeApprovalEntryLabel(preview()) ||
+                      t("konase.existingEntry")
+                    }`
                     : ""}
                 </dd>
               </div>
@@ -978,7 +999,7 @@ export function KonasePanel(props: KonasePanelProps) {
                     <div>
                       <dt>{t("konase.entryId")}</dt>
                       <dd>
-                        <code>{entryId()}</code>
+                        <code>{preview().entryIdLabel ?? entryId()}</code>
                       </dd>
                     </div>
                   )}
@@ -1072,6 +1093,11 @@ const readableSpaceLabel = (
 const entryCandidateLabel = (entry: EntryQueryResult) => {
   const preview = entry.preview?.trim();
   return preview && preview !== entry.id ? preview : t("konase.entryCandidate");
+};
+
+const hasReadableEntryCandidateLabel = (entry: EntryQueryResult) => {
+  const preview = entry.preview?.trim();
+  return Boolean(preview && preview !== entry.id);
 };
 
 const progressLabel = (progress: KonaseProgress): string => {
