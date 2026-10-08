@@ -491,7 +491,7 @@ features:
       path: frontend/src/components/CompositionDesignCanvas.test.tsx
       selector:
         kind: test
-        name: hides metric, table, and parameter entries without sources or parameters
+        name: hides display and parameter entries without sources or parameters
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout

@@ -100,11 +100,12 @@ components:
     - id: studio-display-picker
       type: dialog
       title: Add display
-      kind: carried from the canvas palette through source and value selection
-      sequence: source, metric value field, optional label, add
+      kind_selection: Table/Metric tabs inside the picker
+      sequence: kind, source, metric value field only for Metric, optional label, add
+      source_selection: selected row remains visible across compatible kind changes
       entry_query_field_labels: transient Form labels or localized source schema ordinals
       internal_field_ids: never rendered
-      sizing: 560px maximum width and viewport-capped vertical scrolling
+      sizing: 720px maximum width and viewport-capped vertical scrolling
     - id: studio-parameters
       type: list
       title: Parameters

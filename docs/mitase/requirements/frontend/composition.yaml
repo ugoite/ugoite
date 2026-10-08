@@ -20,7 +20,7 @@ requirements:
         governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-003#rule.governance]
       - id: entry-query-field-labels
         kind: behavior
-        statement: EntryQuery field labels in the Composition Data editor use transient Form field names whenever live Form metadata resolves a field; otherwise they use localized schema ordinals. Fallback ordinals are deterministic and distinct, skipping names used by live Form fields and earlier fallbacks, including for unresolved references missing from the schema snapshot. While metadata is loading, absent, or unavailable, labels use the schema ordinal fallback. Raw numeric field IDs stay in query data and never render in field, filter, sort, projection, or dialog labels.
+        statement: EntryQuery field labels in the Composition Data editor and metric value picker use transient Form field names whenever live Form metadata resolves a field; otherwise they use localized schema ordinals. Fallback ordinals are deterministic and distinct, skipping names used by live Form fields and earlier fallbacks, including for unresolved references missing from the schema snapshot. While metadata is loading, absent, or unavailable, labels use the schema ordinal fallback. Raw numeric field IDs stay in query data and never render in field, filter, sort, projection, metric-value, or dialog labels.
         governed_by: [POL-UI-005#rule.governance]
       - id: source-authoring
         kind: behavior
@@ -28,7 +28,7 @@ requirements:
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
       - id: display-authoring
         kind: behavior
-        statement: Displays are table or exact-scalar metric components only; a table renders through the source-native Entry or SQL presenter, saved EntryQuery tables use Form labels or Form field keys as headings while reading values by the stable field key, and missing Form metadata falls back to projected row keys without exposing field IDs. A metric selects one scalar-compatible field or column with an optional label, and several displays may share one source without duplicate fetching.
+        statement: Canvas insertion opens one display picker with Table and Metric tabs above source selection. A table needs a source; a metric additionally selects one scalar-compatible field or column and offers no field control while Table is active. Compatible source selection stays visible across tabs, while a Table source without scalar values is cleared when switching to Metric. Form field choices use human labels or localized ordinals, never numeric IDs. A table renders through the source-native Entry or SQL presenter, saved EntryQuery tables use Form labels or Form field keys as headings while reading values by the stable field key, and missing Form metadata falls back to projected row keys without exposing field IDs. Both display kinds support an optional label, and several displays may share one source without duplicate fetching.
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
       - id: typed-parameter-binding
         kind: behavior
@@ -233,7 +233,7 @@ requirements:
       - id: studio-display-verification
         role: verification
         facet: verification
-        responsibility: Verify Studio display authoring and human field labels in saved EntryQuery views (table or exact-scalar metric choice, scalar-only value candidates with disabled unavailable sources, inline label editing, keyboard-operable reorder, remove) through exact frontend unit tests.
+        responsibility: Verify the unified Table/Metric display picker, human field labels and hidden field IDs in EntryQuery choices, scalar-only value candidates with disabled unavailable sources, inline label editing, keyboard-operable reorder, and remove through exact frontend unit tests.
         targets:
           - id: studio-display-picker-table
             adapter: typescript
@@ -261,15 +261,37 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a metric display with scalar-only candidates" } }
-          - id: studio-display-picker-carried-kind-and-labels
+          - id: studio-display-picker-kind-and-labels
             adapter: typescript
             path: frontend/src/components/CompositionDisplayPicker.test.tsx
-            selector: { kind: test, name: "keeps the metric choice through field selection and uses form labels" }
+            selector: { kind: test, name: "selects Metric in the picker and uses Form labels" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "keeps the metric choice through field selection and uses form labels" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "selects Metric in the picker and uses Form labels" } }
+          - id: studio-display-picker-kind-switch
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "keeps compatible sources across kind tabs and clears metric values for Table" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "keeps compatible sources across kind tabs and clears metric values for Table" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "keeps compatible sources across kind tabs and clears metric values for Table" } }
+          - id: studio-display-picker-field-id-hidden
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "uses a localized field ordinal without exposing a Form field ID" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "uses a localized field ordinal without exposing a Form field ID" } }
           - id: studio-metric-inspector-field-labels
             adapter: typescript
             path: frontend/src/components/CompositionInspector.test.tsx
@@ -323,28 +345,28 @@ requirements:
                 criterion: REQ-FE-070#criterion.accessible-icon-actions
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: opens the palette as a modal dialog with focus trap and focus return } }
-          - id: studio-canvas-palette-kind
+          - id: studio-canvas-palette-display-picker
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
-            selector: { kind: test, name: "carries the selected display kind from the canvas palette" }
+            selector: { kind: test, name: "opens the unified display picker from the canvas palette" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "carries the selected display kind from the canvas palette" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "opens the unified display picker from the canvas palette" } }
           - id: studio-canvas-palette-gating
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
-            selector: { kind: test, name: "hides metric, table, and parameter entries without sources or parameters" }
+            selector: { kind: test, name: "hides display and parameter entries without sources or parameters" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides metric, table, and parameter entries without sources or parameters" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides display and parameter entries without sources or parameters" } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides metric, table, and parameter entries without sources or parameters" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides display and parameter entries without sources or parameters" } }
           - id: studio-canvas-text-spacing
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx

@@ -33,8 +33,8 @@ const entrySource: DraftSource = {
   formId: "11111111-1111-4111-8111-111111111111",
   name: "Tasks",
   fieldSchema: [
-    { field_id: 3, field_type: "string" },
-    { field_id: 4, field_type: "asset_reference" },
+    { field_id: 100, field_type: "string" },
+    { field_id: 101, field_type: "asset_reference" },
   ],
   query: { filters: [], sort: [], projection: { kind: "preview" } },
 };
@@ -62,7 +62,6 @@ describe("CompositionDisplayPicker", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
-        kind="table"
         sources={[sqlSource, entrySource]}
         onAdd={onAdd}
         onClose={() => {}}
@@ -70,9 +69,14 @@ describe("CompositionDisplayPicker", () => {
     ));
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Table" })).toBeNull();
 
     const dialog = screen.getByRole("dialog");
+    const kindGroup = within(dialog).getByRole("tablist", {
+      name: "Display type",
+    });
+    expect(within(kindGroup).getByRole("tab", { name: "Table" }))
+      .toHaveAttribute("aria-selected", "true");
+    expect(within(dialog).queryByLabelText("Value")).toBeNull();
     fireEvent.click(
       within(dialog).getByRole("button", { name: /Monthly/ }),
     );
@@ -80,7 +84,7 @@ describe("CompositionDisplayPicker", () => {
     const labelInput = within(dialog).getByLabelText("Label");
     fireEvent.input(labelInput, { target: { value: "Totals" } });
     const addButton = within(dialog).getByRole("button", {
-      name: "Add display",
+      name: "Add",
     });
     expect(addButton).toBeEnabled();
     fireEvent.click(addButton);
@@ -97,7 +101,6 @@ describe("CompositionDisplayPicker", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
-        kind="metric"
         sources={[sqlSource, entrySource]}
         onAdd={onAdd}
         onClose={() => {}}
@@ -105,7 +108,7 @@ describe("CompositionDisplayPicker", () => {
     ));
 
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).queryByRole("button", { name: "Metric" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
     fireEvent.click(
       within(dialog).getByRole("button", { name: /Monthly/ }),
     );
@@ -119,7 +122,7 @@ describe("CompositionDisplayPicker", () => {
     expect(valueSelect.value).toBe("total");
 
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Add display" }),
+      within(dialog).getByRole("button", { name: "Add" }),
     );
     expect(onAdd).toHaveBeenCalledWith({
       kind: "metric",
@@ -132,14 +135,16 @@ describe("CompositionDisplayPicker", () => {
     const entryAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
-        kind="metric"
         sources={[entrySource]}
-        fieldNames={(_formId, fieldId) => fieldId === 3 ? "Title" : undefined}
+        fieldNames={(_formId, fieldId) => fieldId === 100 ? "Title" : undefined}
         onAdd={entryAdd}
         onClose={() => {}}
       />
     ));
     const entryDialog = screen.getByRole("dialog");
+    fireEvent.click(
+      within(entryDialog).getByRole("tab", { name: "Metric" }),
+    );
     fireEvent.click(
       within(entryDialog).getByRole("button", { name: /Tasks/ }),
     );
@@ -151,13 +156,15 @@ describe("CompositionDisplayPicker", () => {
         option.textContent
       ),
     ).toEqual(["Title"]);
+    expect(entryDialog).not.toHaveTextContent(entrySource.formId);
+    expect(entryDialog).not.toHaveTextContent("100");
     fireEvent.click(
-      within(entryDialog).getByRole("button", { name: "Add display" }),
+      within(entryDialog).getByRole("button", { name: "Add" }),
     );
     expect(entryAdd).toHaveBeenCalledWith({
       kind: "metric",
       sourceDraftId: "src-2",
-      valueField: { fieldId: 3 },
+      valueField: { fieldId: 100 },
     });
   });
 
@@ -165,7 +172,6 @@ describe("CompositionDisplayPicker", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
-        kind="metric"
         sources={[jsonOnlySource]}
         onAdd={onAdd}
         onClose={() => {}}
@@ -173,21 +179,21 @@ describe("CompositionDisplayPicker", () => {
     ));
 
     const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
     const disabledRow = within(dialog).getByRole("button", {
       name: "Blobs",
     });
     expect(disabledRow).toBeDisabled();
     expect(disabledRow.textContent).toMatch(/No scalar values/);
     expect(
-      within(dialog).queryByRole("button", { name: "Add display" }),
+      within(dialog).queryByRole("button", { name: "Add" }),
     ).toBeNull();
     expect(onAdd).not.toHaveBeenCalled();
   });
 
-  it("focuses the first available source after disabled metric sources", async () => {
+  it("keeps the display kind selected while metric sources are filtered", async () => {
     render(() => (
       <CompositionDisplayPicker
-        kind="metric"
         sources={[jsonOnlySource, sqlSource]}
         onAdd={() => {}}
         onClose={() => {}}
@@ -195,44 +201,130 @@ describe("CompositionDisplayPicker", () => {
     ));
 
     const dialog = screen.getByRole("dialog");
+    const metricButton = within(dialog).getByRole("tab", {
+      name: "Metric",
+    });
+    fireEvent.click(metricButton);
+    expect(metricButton).toHaveAttribute("aria-selected", "true");
     expect(within(dialog).getByRole("button", { name: "Blobs" }))
       .toBeDisabled();
     const availableSource = within(dialog).getByRole("button", {
       name: "Monthly",
     });
-    await waitFor(() => expect(document.activeElement).toBe(availableSource));
+    expect(availableSource).toBeEnabled();
+    await waitFor(() =>
+      expect(metricButton).toHaveAttribute("aria-selected", "true")
+    );
   });
 
-  it("keeps the metric choice through field selection and uses form labels", () => {
+  it("selects Metric in the picker and uses Form labels", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
-        kind="metric"
         sources={[entrySource]}
-        fieldNames={(_formId, fieldId) => fieldId === 3 ? "Title" : undefined}
+        fieldNames={(_formId, fieldId) => fieldId === 100 ? "Title" : undefined}
         onAdd={onAdd}
         onClose={() => {}}
       />
     ));
 
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).queryByRole("button", { name: "Metric" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
     fireEvent.click(within(dialog).getByRole("button", { name: /Tasks/ }));
     const valueSelect = within(dialog).getByLabelText("Value");
     expect(valueSelect).toHaveDisplayValue("Title");
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Add display" }),
+      within(dialog).getByRole("button", { name: "Add" }),
     );
     expect(onAdd).toHaveBeenCalledWith({
       kind: "metric",
       sourceDraftId: "src-2",
-      valueField: { fieldId: 3 },
+      valueField: { fieldId: 100 },
     });
     expect(stylesheet()).toMatch(
       /\.ui-dialog\.composition-display-picker[\s\S]*?max-height:\s*calc\(100dvh - 32px\);[\s\S]*?overflow-y:\s*auto;/,
     );
     expect(stylesheet()).toMatch(
-      /\.ui-dialog\.composition-display-picker[\s\S]*?width:\s*min\(560px,\s*calc\(100vw - 32px\)\)/,
+      /\.ui-dialog\.composition-display-picker[\s\S]*?width:\s*min\(720px,\s*calc\(100vw - 32px\)\)/,
     );
+  });
+
+  it("uses a localized field ordinal without exposing a Form field ID", () => {
+    render(() => (
+      <CompositionDisplayPicker
+        sources={[entrySource]}
+        onAdd={() => {}}
+        onClose={() => {}}
+      />
+    ));
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Tasks" }));
+
+    const value = within(dialog).getByLabelText("Value");
+    expect(value).toHaveDisplayValue("Field 1");
+    expect(dialog).not.toHaveTextContent(entrySource.formId);
+    expect(dialog).not.toHaveTextContent("100");
+  });
+
+  it("keeps compatible sources across kind tabs and clears metric values for Table", () => {
+    render(() => (
+      <CompositionDisplayPicker
+        sources={[sqlSource, entrySource]}
+        onAdd={() => {}}
+        onClose={() => {}}
+      />
+    ));
+
+    const dialog = screen.getByRole("dialog");
+    const kindGroup = within(dialog).getByRole("tablist", {
+      name: "Display type",
+    });
+    const monthly = within(dialog).getByRole("button", { name: "Monthly" });
+    fireEvent.click(monthly);
+    expect(monthly).toHaveAttribute("aria-pressed", "true");
+    expect(within(dialog).queryByLabelText("Value")).toBeNull();
+    expect(within(dialog).getByLabelText("Label")).toBeInTheDocument();
+
+    const metricTab = within(kindGroup).getByRole("tab", { name: "Metric" });
+    fireEvent.click(metricTab);
+    expect(metricTab).toHaveAttribute("aria-selected", "true");
+    expect(monthly).toHaveAttribute("aria-pressed", "true");
+    expect(within(dialog).getByLabelText("Label")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Value")).toHaveDisplayValue("total");
+
+    const tableTab = within(kindGroup).getByRole("tab", { name: "Table" });
+    fireEvent.keyDown(metricTab, { key: "ArrowLeft" });
+    expect(tableTab).toHaveAttribute("aria-selected", "true");
+    expect(tableTab).toHaveFocus();
+    expect(within(dialog).queryByLabelText("Value")).toBeNull();
+    expect(within(dialog).getByLabelText("Label")).toBeInTheDocument();
+
+    fireEvent.keyDown(tableTab, { key: "ArrowRight" });
+    expect(metricTab).toHaveFocus();
+    fireEvent.keyDown(metricTab, { key: "Tab" });
+    expect(within(dialog).getByRole("button", { name: "Monthly" }))
+      .toHaveFocus();
+  });
+
+  it("clears a Table source that cannot provide a metric value", () => {
+    render(() => (
+      <CompositionDisplayPicker
+        sources={[jsonOnlySource]}
+        onAdd={() => {}}
+        onClose={() => {}}
+      />
+    ));
+
+    const dialog = screen.getByRole("dialog");
+    const source = within(dialog).getByRole("button", { name: "Blobs" });
+    fireEvent.click(source);
+    expect(source).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
+    expect(within(dialog).getByRole("button", { name: "Blobs" }))
+      .toBeDisabled();
+    expect(within(dialog).queryByLabelText("Label")).toBeNull();
   });
 });

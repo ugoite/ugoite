@@ -83,7 +83,7 @@ const seedDraft = (): CompositionDraft => {
 const harnessCalls = vi.hoisted(() => ({
   draft: [] as CompositionDraft[],
   selected: [] as (string | null)[],
-  picker: [] as { target: DraftInsertTarget; kind: "metric" | "table" }[],
+  picker: [] as { target: DraftInsertTarget }[],
   parameters: [] as [string, unknown | undefined][],
 }));
 
@@ -121,8 +121,7 @@ function Harness(
         harnessCalls.draft.push(next);
         setDraft(next);
       }}
-      onRequestDisplayPicker={(target, kind) =>
-        harnessCalls.picker.push({ target, kind })}
+      onRequestDisplayPicker={(target) => harnessCalls.picker.push({ target })}
       onParameterChange={(parameterId, value) => {
         harnessCalls.parameters.push([parameterId, value]);
       }}
@@ -203,13 +202,13 @@ describe("CompositionDesignCanvas", () => {
     ).toHaveLength(0);
   });
 
-  it("shows one palette entry per component kind with icon and short label", () => {
+  it("shows one palette entry per block kind with icon and short label", () => {
     renderHarness();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
     const dialog = screen.getByRole("dialog", { name: "Add block" });
 
-    // Text, metric, and table entries each pair an icon with a short label.
+    // Text and display entries each pair an icon with a short label.
     expect(dialog.querySelectorAll(".designPaletteItem svg")).not.toHaveLength(
       0,
     );
@@ -217,8 +216,9 @@ describe("CompositionDesignCanvas", () => {
       dialog.querySelectorAll(".designPaletteItem"),
     ).map((entry) => entry.textContent);
     expect(entries.join(" ")).toContain("Text");
-    expect(entries.join(" ")).toContain("Metric");
-    expect(entries.join(" ")).toContain("Table");
+    expect(entries.join(" ")).toContain("Display");
+    expect(entries.join(" ")).not.toContain("Metric");
+    expect(entries.join(" ")).not.toContain("Table");
 
     // The placed month control leaves no parameter to offer.
     expect(dialog.querySelector(".designPaletteParams")).toHaveTextContent(
@@ -226,14 +226,16 @@ describe("CompositionDesignCanvas", () => {
     );
   });
 
-  it("carries the selected display kind from the canvas palette", () => {
+  it("opens the unified display picker from the canvas palette", () => {
     renderHarness();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
-    fireEvent.click(screen.getByRole("button", { name: "Metric" }));
+    fireEvent.click(screen.getByRole("button", { name: "Display" }));
 
     expect(harnessCalls.picker).toHaveLength(1);
-    expect(harnessCalls.picker[0].kind).toBe("metric");
+    expect(harnessCalls.picker[0]).toEqual({
+      target: { rowId: null, rowIndex: 0, itemIndex: 0 },
+    });
   });
 
   it("opens the palette as a modal dialog with focus trap and focus return", async () => {
@@ -283,7 +285,7 @@ describe("CompositionDesignCanvas", () => {
     expect(harnessCalls.picker).toHaveLength(0);
   });
 
-  it("hides metric, table, and parameter entries without sources or parameters", () => {
+  it("hides display and parameter entries without sources or parameters", () => {
     renderHarness(createEmptyDraft("Studio"));
 
     fireEvent.click(screen.getByRole("button", { name: "Add block" }));
@@ -292,10 +294,9 @@ describe("CompositionDesignCanvas", () => {
       dialog.querySelectorAll(".designPaletteItem"),
     ).map((entry) => entry.textContent);
 
-    // Text insertion is always available; metric and table need a source.
+    // Text insertion is always available; displays need a source.
     expect(entries.join(" ")).toContain("Text");
-    expect(entries.join(" ")).not.toContain("Metric");
-    expect(entries.join(" ")).not.toContain("Table");
+    expect(entries.join(" ")).not.toContain("Display");
     // The parameters section needs a declared parameter, not an empty state.
     expect(dialog.querySelector(".designPaletteParams")).toBeNull();
   });
@@ -367,36 +368,6 @@ describe("CompositionDesignCanvas", () => {
     expect(harnessCalls.selected).toEqual([
       designBlockIdForParameter("region"),
     ]);
-  });
-
-  it("delegates metric and table insertion to the existing display picker", () => {
-    renderHarness();
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
-    const dialog = screen.getByRole("dialog", { name: "Add block" });
-    const entries = dialog.querySelector(".designPaletteEntries")!
-      .querySelectorAll("button");
-    fireEvent.click(entries[1]);
-
-    // No draft change: the shared picker owns source and value selection.
-    expect(harnessCalls.draft).toHaveLength(0);
-    expect(harnessCalls.picker).toHaveLength(1);
-    expect(harnessCalls.picker[0]).toMatchObject({
-      target: { rowId: null },
-      kind: "metric",
-    });
-    expect(screen.queryByRole("dialog", { name: "Add block" })).toBeNull();
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
-    const tableDialog = screen.getByRole("dialog", { name: "Add block" });
-    const tableEntries = tableDialog.querySelector(
-      ".designPaletteEntries",
-    )!.querySelectorAll("button");
-    fireEvent.click(tableEntries[2]);
-    expect(harnessCalls.picker[1]).toMatchObject({
-      target: { rowId: null },
-      kind: "table",
-    });
   });
 
   it("reorders rows and items with keyboard-operable buttons", () => {
