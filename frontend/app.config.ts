@@ -1,6 +1,7 @@
 import type { ProxyOptions } from "vite";
 import { readFileSync } from "node:fs";
 import { getBrandIconPrecacheEntries } from "./src/lib/brand-icon-precache.ts";
+import { pwaUpdatePolicy } from "./src/lib/pwa-update-policy.ts";
 
 type ProcessLike = {
   env?: Record<string, string | undefined>;
@@ -92,7 +93,7 @@ export default defineConfig({
         // Keep already-open clients on the asset set their current worker
         // controls. Auto-updating this lazy-loaded app can retire route chunks
         // while an older client still needs to import them.
-        registerType: "prompt",
+        registerType: pwaUpdatePolicy.registerType,
         injectRegister: "auto",
         // The server allows only this generated worker to request the origin
         // root scope, so it can control app routes outside the /_build base.
@@ -129,12 +130,10 @@ export default defineConfig({
           ],
         },
         workbox: {
-          skipWaiting: false,
-          clientsClaim: true,
+          ...pwaUpdatePolicy.workbox,
           // The SPA shell is served at the origin root after the build. A
           // worker under /_build cannot precache Workbox's default relative
           // index.html fallback, so let navigations reach the server.
-          navigateFallback: null,
           globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
           additionalManifestEntries: brandIconPrecacheEntries,
         },

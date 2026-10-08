@@ -67,6 +67,13 @@ features:
                 criterion: REQ-E2E-010#criterion.active-client-safety
               - kind: satisfies
                 criterion: REQ-E2E-010#criterion.root-scoped-worker
+          - id: pwa-update-policy
+            adapter: typescript
+            path: frontend/src/lib/pwa-update-policy.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-010#criterion.active-client-safety
           - id: static-pwa-bootstrap
             adapter: typescript
             path: frontend/scripts/generate-static-index.ts

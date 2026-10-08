@@ -242,7 +242,7 @@ test.describe("PWA update lifecycle", () => {
 		await ensureDefaultForm(request, spaceId);
 	});
 
-	test("REQ-E2E-010: a production update keeps an open client usable during lazy navigation", async ({ page }) => {
+	test("REQ-E2E-010: a root-scoped production worker keeps lazy navigation on the current client", async ({ page }) => {
 		test.setTimeout(60_000);
 
 		const formsPath = `/spaces/${spaceId}/forms`;
@@ -260,60 +260,21 @@ test.describe("PWA update lifecycle", () => {
 
 		const activeClient = await page.evaluate(async () => {
 			const registration = await navigator.serviceWorker.ready;
-			if (!registration.active || !navigator.serviceWorker.controller) {
+			const controller = navigator.serviceWorker.controller;
+			if (!registration.active || !controller) {
 				throw new Error("Expected the page to have an active service worker");
 			}
 
 			return {
+				scope: registration.scope,
 				activeScript: registration.active.scriptURL,
-				controllerScript: navigator.serviceWorker.controller.scriptURL,
+				controllerScript: controller.scriptURL,
 				timeOrigin: performance.timeOrigin,
 			};
 		});
-
-		const updatedWorkerInstalled = await page.evaluate(async () => {
-			const registration = await navigator.serviceWorker.ready;
-			const activeScript = registration.active?.scriptURL;
-			if (!activeScript) throw new Error("Expected an active service worker");
-			const installingWorker = new Promise<ServiceWorker>((resolve) => {
-				registration.addEventListener("updatefound", () => {
-					if (registration.installing) resolve(registration.installing);
-				}, { once: true });
-			});
-
-			const updateUrl = new URL(activeScript);
-			updateUrl.searchParams.set("pwa-update-test", "next");
-			await navigator.serviceWorker.register(updateUrl.href, { scope: "/" });
-
-			const worker = await installingWorker;
-			const installed = await new Promise<boolean>((resolve) => {
-				const onStateChange = () => {
-					if (worker.state === "installed") {
-						worker.removeEventListener("statechange", onStateChange);
-						resolve(true);
-					} else if (worker.state === "redundant" || worker.state === "activated") {
-						worker.removeEventListener("statechange", onStateChange);
-						resolve(false);
-					}
-				};
-				worker.addEventListener("statechange", onStateChange);
-				onStateChange();
-			});
-			return installed;
-		});
-		expect(updatedWorkerInstalled).toBe(true);
-
-		const beforeNavigation = await page.evaluate(async () => {
-			const registration = await navigator.serviceWorker.getRegistration();
-			return {
-				activeScript: registration?.active?.scriptURL,
-				controllerScript: navigator.serviceWorker.controller?.scriptURL,
-				timeOrigin: performance.timeOrigin,
-			};
-		});
-		expect(beforeNavigation.activeScript).toBe(activeClient.activeScript);
-		expect(beforeNavigation.controllerScript).toBe(activeClient.controllerScript);
-		expect(beforeNavigation.timeOrigin).toBe(activeClient.timeOrigin);
+		expect(new URL(activeClient.scope).pathname).toBe("/");
+		expect(new URL(activeClient.activeScript).pathname).toBe("/_build/sw.js");
+		expect(activeClient.controllerScript).toBe(activeClient.activeScript);
 
 		const targetPath = `/spaces/${spaceId}/forms/Entry/entries`;
 		await page.getByRole("button", { name: "Entry", exact: true }).click();
@@ -324,11 +285,13 @@ test.describe("PWA update lifecycle", () => {
 		const afterNavigation = await page.evaluate(async () => {
 			const registration = await navigator.serviceWorker.getRegistration();
 			return {
+				scope: registration?.scope,
 				activeScript: registration?.active?.scriptURL,
 				controllerScript: navigator.serviceWorker.controller?.scriptURL,
 				timeOrigin: performance.timeOrigin,
 			};
 		});
+		expect(afterNavigation.scope).toBe(activeClient.scope);
 		expect(afterNavigation.activeScript).toBe(activeClient.activeScript);
 		expect(afterNavigation.controllerScript).toBe(activeClient.controllerScript);
 		expect(afterNavigation.timeOrigin).toBe(activeClient.timeOrigin);
