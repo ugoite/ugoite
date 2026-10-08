@@ -103,6 +103,15 @@ requirements:
                 criterion: REQ-UX-AUDIT-003#criterion.event-details
                 covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "REQ-UX-AUDIT-001: keeps actor IDs inside audit details" } }
+          - id: exact-target-details
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: { kind: test, name: "REQ-UX-AUDIT-001: keeps target IDs out of audit rows and in details" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-003#criterion.event-details
+                covers: [FEAT-AUTH-001#binding.audit-viewer-interactions/target.shared-audit-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "REQ-UX-AUDIT-001: keeps target IDs out of audit rows and in details" } }
           - id: loading-state
             adapter: typescript
             path: frontend/src/components/AuditLogViewer.contract.test.tsx
