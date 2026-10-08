@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-05"
+updated: "2026-10-08"
 page:
   id: space-composition-new
   title: New tool
@@ -96,7 +96,9 @@ components:
       title: Parameters
       scope: data-mode-only-renders-only-with-at-least-one-source
       source: draft parameters provisioned from Saved SQL variable types
-      selection: identity-rows-with-inline-editors
+      selection: rows-with-inline-editors
+      row_label: declared-human-label-then-user-authored-parameter-name
+      row_metadata: parameter-type
       remove: guarded remove with a short referenced reason
       binding: existing-composition-parameter-grammar-by-reference
       type_compatibility: rust-owned-diagnostics
