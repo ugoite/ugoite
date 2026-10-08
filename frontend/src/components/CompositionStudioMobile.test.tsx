@@ -365,9 +365,9 @@ describe("CompositionStudioMobile", () => {
       name: "Add display",
       exact: true,
     });
-    fireEvent.click(
-      within(picker).getByRole("button", { name: "Table", exact: true }),
-    );
+    expect(
+      within(picker).queryByRole("button", { name: "Table", exact: true }),
+    ).toBeNull();
     fireEvent.click(
       within(picker).getByRole("button", { name: "Monthly totals" }),
     );
