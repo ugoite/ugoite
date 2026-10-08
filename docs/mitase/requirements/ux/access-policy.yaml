@@ -1,0 +1,27 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Resource access identity presentation
+requirements:
+  - id: REQ-UX-ACCESS-001
+    title: Human-Readable Resource Access Grants
+    description: People manage resource access using Space member names while principal identifiers remain internal to grant routing and explicit technical details.
+    priority: high
+    status: implemented
+    criteria:
+      - id: member-selection
+        kind: behavior
+        statement: The resource access editor offers active Space members by display name, and principal IDs do not appear in the visible member choices.
+        governed_by: [POL-UI-005#rule.governance]
+      - id: grant-identity-display
+        kind: behavior
+        statement: Existing grants show the member display name or a neutral unknown-member label; exact principal IDs appear only inside collapsed advanced details.
+        governed_by: [POL-UI-005#rule.governance]
+      - id: preserve-principal-routing
+        kind: behavior
+        statement: Saving a selected member preserves that member's exact principal ID in the access grant payload.
+        governed_by: [POL-UI-005#rule.governance]
+      - id: member-directory-recovery
+        kind: behavior
+        statement: If the Space member directory cannot be loaded, existing grants use the neutral label, adding grants is disabled, and retrying the directory can restore member selection.
+        governed_by: [POL-UI-005#rule.governance]
