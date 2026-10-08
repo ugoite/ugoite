@@ -524,6 +524,66 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
+  it("REQ-FE-070: keeps EntryQuery field IDs in query data and out of editor labels", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
+    let draft = createEmptyDraft("Tool");
+    draft = addEntryQuerySource(draft, {
+      ...entrySeed(),
+      query: {
+        filters: [{ field_id: 100, operator: "equals", value: "lunch" }],
+        sort: [{ field_id: 101, direction: "desc" }],
+        projection: { kind: "fields", fields: [100, 101] },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+
+    await within(editor).findAllByText("Occurred");
+    expect(editor.textContent).toContain("Occurred Equals lunch");
+    expect(editor.textContent).toContain("Title · Descending");
+    expect(editor.textContent).toContain("Title");
+    expect(editor.textContent).not.toMatch(/\b100\b|\b101\b/);
+
+    fireEvent.click(within(editor).getByRole("button", { name: "Add filter" }));
+    const filterDialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(filterDialog).getByRole("button", { name: "Add filter" }),
+    );
+    const filterFieldLabels =
+      within(within(filterDialog).getByLabelText("Filter field 1"))
+        .getAllByRole("option")
+        .map((option) => option.textContent);
+    expect(filterFieldLabels).toContain("Title");
+    expect(filterFieldLabels.join(" ")).not.toMatch(/\b100\b|\b101\b/);
+    fireEvent.click(
+      within(filterDialog).getByRole("button", { name: "Cancel" }),
+    );
+
+    fireEvent.click(within(editor).getByRole("button", { name: "Add sort" }));
+    const sortDialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(sortDialog).getByRole("button", { name: "Add sort" }),
+    );
+    const sortFieldLabels =
+      within(within(sortDialog).getByLabelText("Sort field 1"))
+        .getAllByRole("option")
+        .map((option) => option.textContent);
+    expect(sortFieldLabels).toContain("Title");
+    expect(sortFieldLabels.join(" ")).not.toMatch(/\b100\b|\b101\b/);
+    fireEvent.click(within(sortDialog).getByRole("button", { name: "Cancel" }));
+
+    expect(harness.current().sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        filters: [{ field_id: 100, operator: "equals", value: "lunch" }],
+        sort: [{ field_id: 101, direction: "desc" }],
+        projection: { kind: "fields", fields: [100, 101] },
+      },
+    });
+  });
+
   it("uses localized field ordinals while form metadata is loading", async () => {
     setLocale("ja");
     formApiListMock.mockReturnValue(new Promise(() => {}));
@@ -607,6 +667,46 @@ describe("CompositionDataWorkspace", () => {
         projection: { kind: "fields", fields: [100, 108, 109] },
       },
     });
+  });
+
+  it("uses transient Form names for referenced fields missing from the schema snapshot", async () => {
+    const form = expenseForm();
+    form.fields.tax_code = {
+      id: 108,
+      type: "string",
+      required: false,
+      query_capability: {
+        field: { kind: "property", field_id: 108 },
+        name: "Tax code",
+        field_type: "string",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals"],
+      },
+    };
+    formApiListMock.mockResolvedValue([form]);
+    let draft = createEmptyDraft("Tool");
+    draft = addEntryQuerySource(draft, {
+      ...entrySeed(),
+      query: {
+        filters: [
+          { field_id: 108, operator: "equals", value: "first" },
+          { field_id: 109, operator: "equals", value: "second" },
+        ],
+        sort: [],
+        projection: { kind: "fields", fields: [108, 109] },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+
+    await waitFor(() => expect(editor.textContent).toContain("Tax code"));
+    expect(editor.textContent).toContain("Field 3");
+    expect(within(editor).queryByText("108", { exact: true })).toBeNull();
+    expect(within(editor).queryByText("109", { exact: true })).toBeNull();
   });
 
   it("falls back to schema fields without a form definition", async () => {

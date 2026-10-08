@@ -18,9 +18,13 @@ requirements:
         kind: behavior
         statement: Steady-state Studio and saved-Tool surfaces carry no product explanation, tutorial paragraph, repeated context sentence, persistent success prose, or primary-path internal identifiers; each datum keeps one visible owner and each navigation or mutation intent keeps exactly one operative control per surface.
         governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-003#rule.governance]
+      - id: entry-query-field-labels
+        kind: behavior
+        statement: EntryQuery field labels in the Composition Data editor use transient Form field names whenever live Form metadata resolves a field; otherwise they use localized schema ordinals, including distinct deterministic ordinals for unresolved references missing from the schema snapshot. While metadata is loading, absent, or unavailable, labels use the schema ordinal fallback. Raw numeric field IDs stay in query data and never render in field, filter, sort, projection, or dialog labels.
+        governed_by: [POL-UI-005#rule.governance]
       - id: source-authoring
         kind: behavior
-        statement: A Tool pins one or more exact sources (Saved SQL at an exact revision, EntryQuery from an existing Form view or Form-scoped query control) with full-row selection, reorder controls, and a guarded remove that blocks while displays reference the source instead of cascading silently. EntryQuery editors use transient Form field names when available; unresolved fields use localized ordinals, with distinct deterministic ordinals for referenced fields absent from the schema snapshot, while raw field IDs stay in query data only.
+        statement: A Tool pins one or more exact sources (Saved SQL at an exact revision, EntryQuery from an existing Form view or Form-scoped query control) with full-row selection, reorder controls, and a guarded remove that blocks while displays reference the source instead of cascading silently. EntryQuery editors prefer transient Form field names whenever live metadata resolves a field; unresolved fields use localized ordinals, with distinct deterministic ordinals for unresolved references absent from the schema snapshot, while raw field IDs stay in query data only.
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
       - id: display-authoring
         kind: behavior
@@ -828,3 +832,62 @@ requirements:
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: renders resolve diagnostics in the strip in every mode without refetch } }
+      - id: studio-entry-query-field-label-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that EntryQuery Data editor labels prefer transient Form names when live metadata resolves a field, otherwise use localized schema ordinals and distinct deterministic ordinals for references missing from the schema snapshot, and keep raw field IDs out of visible labels while preserving the IDs in query data through exact frontend tests.
+        targets:
+          - id: entry-query-field-labels-resolved
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-070: keeps EntryQuery field IDs in query data and out of editor labels" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-field-label-identity]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "REQ-FE-070: keeps EntryQuery field IDs in query data and out of editor labels" } }
+          - id: entry-query-field-labels-loading
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: uses localized field ordinals while form metadata is loading }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-field-ordinals]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: uses localized field ordinals while form metadata is loading } }
+          - id: entry-query-field-labels-absent
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: uses field ordinals when the form is absent }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-absent-form]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: uses field ordinals when the form is absent } }
+          - id: entry-query-field-labels-live-form-missing-snapshot
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: uses transient Form names for referenced fields missing from the schema snapshot }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-stale-form-field-label]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: uses transient Form names for referenced fields missing from the schema snapshot } }
+          - id: entry-query-field-labels-failed
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: falls back to schema fields without a form definition }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-definition-fallback]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: falls back to schema fields without a form definition } }
+          - id: entry-query-field-labels-stale-fields
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-070: uses distinct localized labels for fields missing from the schema snapshot" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-stale-field-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "REQ-FE-070: uses distinct localized labels for fields missing from the schema snapshot" } }

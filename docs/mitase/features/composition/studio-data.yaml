@@ -286,6 +286,8 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
     - id: browser-data-entry-query-field-ordinals
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
@@ -295,6 +297,17 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-data-entry-query-field-label-identity
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: "REQ-FE-070: keeps EntryQuery field IDs in query data and out of editor labels"
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
     - id: browser-data-entry-query-absent-form
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
@@ -304,6 +317,17 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-data-entry-query-stale-form-field-label
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: uses transient Form names for referenced fields missing from the schema snapshot
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
     - id: browser-data-entry-query-stale-field-labels
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
@@ -315,6 +339,8 @@ features:
         anchor: REQ-COMP-004#criterion.entry-query-translation
       - kind: evidences
         anchor: REQ-FE-070#criterion.source-authoring
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
     - id: browser-data-entry-query-zero-capable
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
