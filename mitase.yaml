@@ -83,6 +83,8 @@ inventory:
         - frontend/src/lib/sql.ts
         - frontend/src/lib/sql.test.ts
         - frontend/src/lib/asset-api.ts
+        - frontend/src/components/AccessPolicyEditor.tsx
+        - frontend/src/components/AccessPolicyEditor.test.tsx
         - frontend/src/components/SpaceSettings.tsx
         - frontend/src/components/SpaceSettings.test.tsx
         - frontend/src/lib/storage-topology.ts

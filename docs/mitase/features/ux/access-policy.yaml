@@ -1,0 +1,105 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: ux
+category: Resource access identity presentation
+features:
+  - id: FEAT-UX-013
+    title: Human-Readable Resource Access Grants
+    summary: Connect the resource access editor to member identity labels while retaining principal IDs only for grant routing and explicit technical disclosure.
+    status: implemented
+    bindings:
+      - id: resource-access-editor
+        role: implementation
+        facet: frontend
+        responsibility: Present resource access grants by Space member display name and keep principal IDs inside grant values or collapsed technical details.
+        targets:
+          - id: access-policy-editor
+            adapter: typescript
+            path: frontend/src/components/AccessPolicyEditor.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ACCESS-001#criterion.member-selection
+              - kind: satisfies
+                criterion: REQ-UX-ACCESS-001#criterion.grant-identity-display
+              - kind: satisfies
+                criterion: REQ-UX-ACCESS-001#criterion.preserve-principal-routing
+              - kind: satisfies
+                criterion: REQ-UX-ACCESS-001#criterion.member-directory-recovery
+      - id: resource-access-verification
+        role: verification
+        facet: verification
+        responsibility: Verify human-readable member choices and grant rows, exact principal ID payload preservation, neutral fallback, and directory recovery through focused frontend cases.
+        targets:
+          - id: grant-identity-disclosure
+            adapter: typescript
+            path: frontend/src/components/AccessPolicyEditor.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-ACCESS-001: uses member names in grants and keeps unresolved IDs in collapsed details",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACCESS-001#criterion.grant-identity-display
+                covers: [
+                  FEAT-UX-013#binding.resource-access-editor/target.access-policy-editor,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/AccessPolicyEditor.test.tsx,
+                    test: "REQ-UX-ACCESS-001: uses member names in grants and keeps unresolved IDs in collapsed details",
+                  },
+                }
+          - id: member-choice-and-payload
+            adapter: typescript
+            path: frontend/src/components/AccessPolicyEditor.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-ACCESS-001: selects a member by name and preserves its ID in the grant payload",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACCESS-001#criterion.member-selection
+                covers: [
+                  FEAT-UX-013#binding.resource-access-editor/target.access-policy-editor,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/AccessPolicyEditor.test.tsx,
+                    test: "REQ-UX-ACCESS-001: selects a member by name and preserves its ID in the grant payload",
+                  },
+                }
+              - kind: verifies
+                criterion: REQ-UX-ACCESS-001#criterion.preserve-principal-routing
+                covers: [
+                  FEAT-UX-013#binding.resource-access-editor/target.access-policy-editor,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/AccessPolicyEditor.test.tsx,
+                    test: "REQ-UX-ACCESS-001: selects a member by name and preserves its ID in the grant payload",
+                  },
+                }
+          - id: member-directory-fallback
+            adapter: typescript
+            path: frontend/src/components/AccessPolicyEditor.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-ACCESS-001: shows a neutral label and blocks member selection when the directory fails",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACCESS-001#criterion.member-directory-recovery
+                covers: [
+                  FEAT-UX-013#binding.resource-access-editor/target.access-policy-editor,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/AccessPolicyEditor.test.tsx,
+                    test: "REQ-UX-ACCESS-001: shows a neutral label and blocks member selection when the directory fails",
+                  },
+                }

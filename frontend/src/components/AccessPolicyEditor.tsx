@@ -6,6 +6,7 @@ import {
 } from "~/lib/access-api";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
+import { spaceApi } from "~/lib/ugoite-client";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export function AccessPolicyEditor(props: {
@@ -18,7 +19,11 @@ export function AccessPolicyEditor(props: {
     async ([spaceId, kind, resourceId]) =>
       await accessApi.get(spaceId, kind, resourceId),
   );
-  const [principalId, setPrincipalId] = createSignal("");
+  const [members, { refetch: refetchMembers }] = createResource(
+    () => props.spaceId,
+    async (spaceId) => await spaceApi.listMembers(spaceId),
+  );
+  const [selectedPrincipalId, setSelectedPrincipalId] = createSignal("");
   const [actions, setActions] = createSignal("read");
   const [inherit, setInherit] = createSignal(true);
   const [grants, setGrants] = createSignal<AccessPolicy["grants"]>([]);
@@ -38,7 +43,7 @@ export function AccessPolicyEditor(props: {
       setLoadedKey(null);
       setInherit(true);
       setGrants([]);
-      setPrincipalId("");
+      setSelectedPrincipalId("");
       setActions("read");
       setMessage("");
     }
@@ -62,18 +67,39 @@ export function AccessPolicyEditor(props: {
 
   const addGrant = () => {
     if (!canEdit()) return;
-    const principal = principalId().trim();
+    const principal = selectedPrincipalId();
     const selected = actions().split(",").map((action) => action.trim())
       .filter((action) =>
         ["read", "update", "delete", "share"].includes(action)
       ) as AccessPolicy["grants"][number]["actions"];
-    if (!principal || selected.length === 0) return;
+    if (
+      !principal ||
+      !members()?.some((member) =>
+        member.principal.state === "active" &&
+        member.principal.principal_id === principal
+      ) ||
+      selected.length === 0
+    ) return;
     setGrants((current) => [
       ...current.filter((grant) => grant.principal_id !== principal),
       { principal_id: principal, actions: selected },
     ]);
-    setPrincipalId("");
+    setSelectedPrincipalId("");
   };
+
+  const eligibleMembers = () =>
+    (members() ?? []).filter((member) => member.principal.state === "active");
+
+  const principalOptionPrompt = () =>
+    members.loading
+      ? t("common.loading")
+      : eligibleMembers().length > 0
+      ? t("accessPolicy.choosePrincipal")
+      : t("accessPolicy.noAvailableMembers");
+
+  const principalLabel = (principalId: string) =>
+    members()?.find((member) => member.principal.principal_id === principalId)
+      ?.principal.display_name.trim() || t("accessPolicy.unknownPrincipal");
 
   const save = async () => {
     if (!canEdit()) return;
@@ -97,7 +123,9 @@ export function AccessPolicyEditor(props: {
       <h2 class="text-lg font-semibold">{t("accessPolicy.heading")}</h2>
       <Show when={policy.error}>
         <div class="ui-alert ui-alert-error" role="alert">
-          <p>{formatUserFacingError(policy.error, "accessPolicy.failedLoad")}</p>
+          <p>
+            {formatUserFacingError(policy.error, "accessPolicy.failedLoad")}
+          </p>
           <button
             type="button"
             class="ui-button ui-button-secondary mt-2"
@@ -119,14 +147,44 @@ export function AccessPolicyEditor(props: {
         />
         {t("accessPolicy.inherit")}
       </label>
+      <Show when={members.error}>
+        <div class="ui-alert ui-alert-error" role="alert">
+          <p>
+            {formatUserFacingError(
+              members.error,
+              "accessPolicy.failedLoadMembers",
+            )}
+          </p>
+          <button
+            type="button"
+            class="ui-button ui-button-secondary mt-2"
+            onClick={() => void refetchMembers()}
+          >
+            {t("common.retry")}
+          </button>
+        </div>
+      </Show>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-        <input
-          class="ui-input font-mono"
-          placeholder={t("accessPolicy.principalPlaceholder")}
-          value={principalId()}
-          disabled={!canEdit()}
-          onInput={(event) => setPrincipalId(event.currentTarget.value)}
-        />
+        <select
+          class="ui-input"
+          aria-label={t("accessPolicy.principal")}
+          value={selectedPrincipalId()}
+          disabled={!canEdit() || members.loading || Boolean(members.error) ||
+            eligibleMembers().length === 0}
+          aria-busy={members.loading || undefined}
+          onChange={(event) =>
+            setSelectedPrincipalId(event.currentTarget.value)}
+        >
+          <option value="">{principalOptionPrompt()}</option>
+          <For each={eligibleMembers()}>
+            {(member) => (
+              <option value={member.principal.principal_id}>
+                {member.principal.display_name.trim() ||
+                  t("accessPolicy.unknownPrincipal")}
+              </option>
+            )}
+          </For>
+        </select>
         <input
           class="ui-input"
           placeholder={t("accessPolicy.actionsPlaceholder")}
@@ -139,14 +197,27 @@ export function AccessPolicyEditor(props: {
         type="button"
         class="ui-button ui-button-secondary w-fit"
         onClick={addGrant}
-        disabled={!canEdit()}
+        disabled={!canEdit() || !selectedPrincipalId() || members.loading ||
+          Boolean(members.error)}
       >
         {t("accessPolicy.addGrant")}
       </button>
       <For each={grants()}>
         {(grant) => (
           <div class="flex items-center justify-between gap-2">
-            <code>{grant.principal_id}: {grant.actions.join(", ")}</code>
+            <div class="min-w-0">
+              <span>{principalLabel(grant.principal_id)}</span>{" "}
+              <span>{grant.actions.join(", ")}</span>
+              <details class="mt-1">
+                <summary>{t("settings.advancedDetails")}</summary>
+                <dl>
+                  <dt>{t("accessPolicy.principalId")}</dt>
+                  <dd class="break-all">
+                    <code>{grant.principal_id}</code>
+                  </dd>
+                </dl>
+              </details>
+            </div>
             <button
               type="button"
               class="ui-button ui-button-secondary"
