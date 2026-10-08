@@ -151,7 +151,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       .not.toBeInTheDocument();
   });
 
-  it("shows saved and current Form names for a bound query", async () => {
+  it("REQ-FE-062: keeps Form IDs behind technical details while showing binding status", async () => {
     seedForm("default", {
       id: "form-stable-id",
       name: "RenamedExpense",
@@ -182,7 +182,14 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         "Saved as Expense; current name is RenamedExpense",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("form-stable-id")).toBeInTheDocument();
+    const bindingStatus = screen.getByRole("region", { name: "Bound Forms" });
+    const formId = within(bindingStatus).getByText("form-stable-id");
+    expect(formId).not.toBeVisible();
+
+    fireEvent.click(
+      within(bindingStatus).getByText("Technical details"),
+    );
+    expect(formId).toBeVisible();
   });
 
   it("REQ-FE-062: saved SQL detail routes variable-free queries to stateless results", async () => {

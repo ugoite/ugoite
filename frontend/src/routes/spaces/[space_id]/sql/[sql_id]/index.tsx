@@ -262,12 +262,15 @@ export default function SpaceSqlDetailRoute() {
                               : t("sqlPage.missingBoundForm", {
                                 name: binding.name,
                               })}
-                            <code
-                              class="ml-2 text-xs"
-                              title={t("sqlPage.formId")}
-                            >
-                              {binding.formId}
-                            </code>
+                            <details class="mt-1">
+                              <summary>{t("sqlPage.technicalDetails")}</summary>
+                              <dl>
+                                <dt>{t("sqlPage.formId")}</dt>
+                                <dd class="font-mono break-all">
+                                  {binding.formId}
+                                </dd>
+                              </dl>
+                            </details>
                           </li>
                         )}
                       </For>
