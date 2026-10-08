@@ -65,6 +65,7 @@ export function KonasePanel(props: KonasePanelProps) {
   >({});
   const [forms, setForms] = createSignal<Form[]>([]);
   const [formsLoading, setFormsLoading] = createSignal(false);
+  const [formsLoaded, setFormsLoaded] = createSignal(false);
   const [entryText, setEntryText] = createSignal("");
   const [entryRows, setEntryRows] = createSignal<EntryQueryResult[]>([]);
   const [entryPage, setEntryPage] = createSignal<EntryPage>();
@@ -201,6 +202,7 @@ export function KonasePanel(props: KonasePanelProps) {
       entryLabelsWithPreview.clear();
       setForms([]);
       setFormsLoading(false);
+      setFormsLoaded(false);
       setEntryRows([]);
       setEntryPage(undefined);
       setEntryText("");
@@ -397,6 +399,7 @@ export function KonasePanel(props: KonasePanelProps) {
       const candidates = await formApi.list(spaceId);
       if (isCurrentLifetime(hostLifetime)) {
         setForms(candidates);
+        setFormsLoaded(true);
         setResourceLabels((current) => ({
           ...current,
           ...Object.fromEntries(
@@ -716,7 +719,9 @@ export function KonasePanel(props: KonasePanelProps) {
                 {t("konase.loadingCandidates")}
               </p>
             </Show>
-            <Show when={!formsLoading() && forms().length === 0}>
+            <Show
+              when={formsLoaded() && !formsLoading() && forms().length === 0}
+            >
               <p class="ui-muted">{t("konase.noFormCandidates")}</p>
             </Show>
             <For each={forms()}>

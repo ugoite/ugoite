@@ -328,6 +328,143 @@ describe("KonasePanel Space authority", () => {
     expect(screen.queryByPlaceholderText(/Ask Konase/)).not.toBeInTheDocument();
   });
 
+  it("shows connection progress while the current Space is being resolved", async () => {
+    const spaceDeferred = createDeferred<{
+      space_uid: string;
+      name: string;
+      created_at: string;
+    }>();
+    mockConnection();
+    getSpaceMock.mockReturnValue(spaceDeferred.promise);
+    render(() => <KonasePanel spaceId="space-a" />);
+
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+
+    const connectButton = screen.getByRole("button", {
+      name: "Connect Ugoite MCP",
+    });
+    expect(connectButton).toBeDisabled();
+    expect(connectButton).toHaveAttribute("aria-busy", "true");
+
+    spaceDeferred.resolve({
+      space_uid: "space-a-uid",
+      name: "Space A",
+      created_at: "",
+    });
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+  });
+
+  it("announces Form candidate loading and the empty Forms state", async () => {
+    const formsDeferred = createDeferred<unknown[]>();
+    mockConnection();
+    listFormsMock.mockReturnValue(formsDeferred.promise);
+    render(() => <KonasePanel spaceId="space-a" />);
+
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+
+    expect(await screen.findByText("Loading candidates…")).toHaveAttribute(
+      "role",
+      "status",
+    );
+    expect(
+      screen.queryByText("No Forms are available in this Space."),
+    ).not.toBeInTheDocument();
+    formsDeferred.resolve([]);
+    expect(
+      await screen.findByText("No Forms are available in this Space."),
+    ).toBeVisible();
+    expect(screen.queryByText("Loading candidates…")).not.toBeInTheDocument();
+  });
+
+  it("announces Entry candidate loading while a search is pending", async () => {
+    const entriesDeferred = createDeferred<{
+      rows: Array<{
+        id: string;
+        form_id: string;
+        revision_id: string;
+        created_at_micros: number;
+        updated_at_micros: number;
+        preview: string;
+      }>;
+      has_more: boolean;
+    }>();
+    mockConnection();
+    queryEntriesMock.mockReturnValue(entriesDeferred.promise);
+    render(() => <KonasePanel spaceId="space-a" />);
+
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await screen.findByRole("button", { name: "Search Entries" });
+    fireEvent.click(screen.getByRole("button", { name: "Search Entries" }));
+
+    expect(await screen.findByText("Loading candidates…")).toHaveAttribute(
+      "role",
+      "status",
+    );
+    entriesDeferred.resolve({
+      rows: [{
+        id: "entry-a",
+        form_id: "form-a",
+        revision_id: "rev-a",
+        created_at_micros: 1,
+        updated_at_micros: 1,
+        preview: "Quarterly plan",
+      }],
+      has_more: false,
+    });
+
+    expect(
+      await screen.findByRole("checkbox", {
+        name: "Quarterly plan",
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(screen.queryByText("Loading candidates…")).not.toBeInTheDocument();
+  });
+
+  it("shows an inline alert when Form candidates fail to load", async () => {
+    mockConnection();
+    listFormsMock.mockRejectedValue(new Error("Form service detail"));
+    render(() => <KonasePanel spaceId="space-a" />);
+
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not load current Space candidates.");
+    expect(
+      screen.queryByText("No Forms are available in this Space."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows an inline alert when Entry candidates fail to load", async () => {
+    mockConnection();
+    queryEntriesMock.mockRejectedValue(
+      new Error("Entry service detail"),
+    );
+    render(() => <KonasePanel spaceId="space-a" />);
+
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await screen.findByRole("button", { name: "Search Entries" });
+    fireEvent.click(screen.getByRole("button", { name: "Search Entries" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not load current Space candidates.");
+  });
+
   it("does not configure when the current Space has no server UID", async () => {
     getSpaceMock.mockResolvedValue({
       id: "space-a",

@@ -11,10 +11,15 @@ components:
     scope: current-space
     connection:
       setup: in-memory-model-key-and-space-approval
+      pending_feedback: busy-disabled-connect-button-with-spinner
       approval_link: external-new-tab
     candidates:
       forms: current-space
+      forms_loading: live-status
+      forms_empty: localized-no-forms-state-after-successful-empty-list
       entries: current-space-preview-query
+      entries_loading: live-status
+      load_errors: inline-alert-with-localized-error-summary
       maximum_selected: 4
       form_label: trimmed-name-unless-empty-or-id-then-localized-form
       entry_label: trimmed-preview-unless-empty-or-id-then-localized-entry
@@ -40,4 +45,18 @@ components:
       disclosed_identifiers: [space-id, entry-id-when-present, work-id-for-undo]
       change_summary: excludes-opaque-identifiers
       approval_identity: exact-space-request-and-original-arguments
-    states: [disconnected, connected, resource-selection, context-preview, sending, write-approval, result, undo]
+    states: [
+      disconnected,
+      connection-pending,
+      connected,
+      form-candidate-loading,
+      no-form-candidates,
+      entry-candidate-loading,
+      candidate-load-error,
+      resource-selection,
+      context-preview,
+      sending,
+      write-approval,
+      result,
+      undo,
+    ]
