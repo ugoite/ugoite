@@ -49,9 +49,8 @@ type AuditLogViewerProps = {
   source: "node" | "space";
   load: AuditLoader;
   /**
-   * Best-effort member directory for actor display names. Rows show the
-   * display name (or the stable short fallback) — never a raw UUID; the
-   * exact identity stays in the row disclosure.
+   * Best-effort member directory for actor display names. Unresolved actors
+   * use a localized neutral label; exact identities stay in row disclosure.
    */
   actorDirectory?: Array<{ principal_id: string; display_name: string }>;
 };
@@ -210,7 +209,41 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
   const actorLabel = (event: AuditEvent): string => {
     const raw = eventActor(event)?.trim();
     if (!raw) return "—";
-    return actorLookup()?.(raw)?.trim() || shortActorFallback(raw);
+    const displayName = actorLookup()?.(raw)?.trim();
+    if (!displayName) return t("entryHistory.unknownActor");
+
+    // A directory value can be missing or can echo an identity rather than
+    // a human-readable name. Keep both the full ID and its stable short form
+    // out of the primary row; the exact value remains in the details panel.
+    const normalizedName = displayName.toLowerCase();
+    const normalizedId = raw.toLowerCase();
+    const normalizedShortId = shortActorFallback(raw).toLowerCase();
+    const containsIdentifier = (identifier: string): boolean => {
+      const isIdentifierCharacter = (character: string | undefined) =>
+        Boolean(character && /[\p{L}\p{N}_-]/u.test(character));
+      let offset = normalizedName.indexOf(identifier);
+      while (offset >= 0) {
+        if (identifier.length >= 8) return true;
+        const before = Array.from(normalizedName.slice(0, offset)).at(-1);
+        const after = Array.from(
+          normalizedName.slice(offset + identifier.length),
+        )[0];
+        if (
+          !isIdentifierCharacter(before) && !isIdentifierCharacter(after)
+        ) {
+          return true;
+        }
+        offset = normalizedName.indexOf(identifier, offset + 1);
+      }
+      return false;
+    };
+    if (
+      containsIdentifier(normalizedId) ||
+      containsIdentifier(normalizedShortId)
+    ) {
+      return t("entryHistory.unknownActor");
+    }
+    return displayName;
   };
 
   return (
