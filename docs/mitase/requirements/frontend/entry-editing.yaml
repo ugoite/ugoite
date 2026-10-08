@@ -58,7 +58,7 @@ requirements:
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
   - id: REQ-FE-009
     title: Conflict Refresh Guidance
-    description: On a revision conflict, the frontend keeps the current draft visible, communicates the newer saved state without exposing its raw revision ID in primary feedback, and requires an explicit review before adopting the latest server revision.
+    description: On a revision conflict, the frontend keeps the current draft visible, communicates the newer saved state without exposing its raw revision ID in primary feedback, and provides explicit actions to review the latest save and adopt it as the next save base.
     priority: high
     status: implemented
     criteria:
