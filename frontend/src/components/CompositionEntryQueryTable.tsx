@@ -84,10 +84,17 @@ export function entryQueryDisplayColumns(
   const regular: EntryDisplayColumn[] = [];
   const timestamps: EntryDisplayColumn[] = [];
   let unresolvedProjectedProperties = 0;
+  const hasCreatedAt = projection.fields.some((field) =>
+    field.kind === "created_at"
+  );
+  const hasUpdatedAt = projection.fields.some((field) =>
+    field.kind === "updated_at"
+  );
   const rowPropertyKeys = rows.length > 0
     ? Object.keys(rows[0].properties ?? {}).filter((key) =>
-      key !== "form_id" && key !== "created_at_micros" &&
-      key !== "updated_at_micros"
+      key !== "form_id" &&
+      !(key === "created_at_micros" && hasCreatedAt) &&
+      !(key === "updated_at_micros" && hasUpdatedAt)
     )
     : [];
   const resolvedPropertyKeys = new Set<string>();

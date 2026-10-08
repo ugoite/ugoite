@@ -130,6 +130,24 @@ describe("entryQueryDisplayColumns", () => {
       .toBe(false);
   });
 
+  it("keeps a Form property named like a timestamp when that timestamp is not projected", () => {
+    const row = {
+      ...entryRow(),
+      properties: { created_at_micros: "Form value" },
+    };
+    const columns = entryQueryDisplayColumns(
+      source({
+        kind: "fields",
+        fields: [{ kind: "property", field_id: 7 }],
+      }),
+      [row],
+    );
+    expect(columns.map((column) => column.label)).toEqual([
+      "created_at_micros",
+    ]);
+    expect(columns[0].text(row)).toBe("Form value");
+  });
+
   it("falls back to the current row key order without field metadata", () => {
     const columns = entryQueryDisplayColumns(
       source({
