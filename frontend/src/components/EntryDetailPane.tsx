@@ -1023,11 +1023,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
             >
               <div class="text-center space-y-3">
                 <p class="ui-alert ui-alert-error text-sm">{entryError()}</p>
-                <p class="text-xs ui-muted">
-                  {t("entryDetail.spaceId")}: {props.spaceId()} / {t(
-                    "entryDetail.entryId",
-                  )}: {props.entryId?.() ?? ""}
-                </p>
                 <div class="flex justify-center gap-2">
                   <button
                     type="button"

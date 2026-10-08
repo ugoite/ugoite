@@ -136,6 +136,31 @@ describe("EntryDetailPane safety/recovery", () => {
     expect(container.querySelectorAll(".actionbar")).toHaveLength(1);
   });
 
+  it("REQ-FE-035: hides internal identifiers when Entry loading fails and keeps recovery actions", async () => {
+    const getMock = entryApi.get as ReturnType<typeof vi.fn>;
+    getMock.mockRejectedValueOnce(new Error("Temporary network failure"))
+      .mockResolvedValueOnce(storedEntry());
+
+    const { container } = render(() => (
+      <EntryDetailPane
+        spaceId={() => "space-private-opaque-id"}
+        entryId={() => "entry-private-opaque-id"}
+        forms={() => [notesForm]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    await screen.findByText(/Failed to load the entry/);
+    expect(container).not.toHaveTextContent("space-private-opaque-id");
+    expect(container).not.toHaveTextContent("entry-private-opaque-id");
+    expect(screen.getByRole("button", { name: "Back to Form" }))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByLabelText("Notes");
+    expect(getMock).toHaveBeenCalledTimes(2);
+  });
+
   it("cancelling the delete dialog sends nothing and keeps the draft", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue(
       storedEntry(),

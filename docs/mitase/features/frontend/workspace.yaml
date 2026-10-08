@@ -167,6 +167,8 @@ features:
                 criterion: REQ-FE-052#criterion.form-derived-guidance
               - kind: satisfies
                 criterion: REQ-FE-053#criterion.localized-guidance
+              - kind: satisfies
+                criterion: REQ-FE-035#criterion.failed-load-identifiers
           - id: shared-field-input
             adapter: typescript
             path: frontend/src/components/fields/FieldInput.tsx
