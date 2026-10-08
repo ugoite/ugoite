@@ -49,6 +49,8 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
+              - kind: satisfies
+                criterion: REQ-UX-DASH-001#criterion.recent-count-bound
           - id: page-space-compositions
             adapter: declared
             path: docs/spec/ui/pages/space-compositions.yaml

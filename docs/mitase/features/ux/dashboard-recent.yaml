@@ -1,0 +1,36 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: ux
+category: Space dashboard list behavior
+features:
+  - id: FEAT-UX-016
+    title: Bounded Dashboard Recent List
+    summary: Dashboard Recent suppresses repeated Form-and-label pairs before limiting visible Entries to four.
+    status: implemented
+    bindings:
+      - id: dashboard-recent-list
+        role: implementation
+        facet: frontend
+        responsibility: Keep the dashboard Recent list implementation and page contract connected to duplicate suppression and the four-Entry maximum.
+        targets:
+          - id: dashboard-recent-surface
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/dashboard.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-DASH-001#criterion.recent-count-bound
+      - id: dashboard-recent-verification
+        role: verification
+        facet: verification
+        responsibility: Verify duplicate suppression precedes the four-Entry maximum and retains the newest matching Entry.
+        targets:
+          - id: dashboard-recent-order-and-limit
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/dashboard.test.tsx"
+            selector: { kind: test, name: "REQ-UX-DASH-001: limits Recent entries after duplicate suppression" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-DASH-001#criterion.recent-count-bound
+                covers: [FEAT-UX-016#binding.dashboard-recent-list/target.dashboard-recent-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "REQ-UX-DASH-001: limits Recent entries after duplicate suppression" } }

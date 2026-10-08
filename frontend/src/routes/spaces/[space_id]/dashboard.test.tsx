@@ -166,6 +166,67 @@ describe("v5 space Home", () => {
       screen.queryByRole("link", { name: /entry-old-no-title/i }),
     ).not.toBeInTheDocument();
   });
+  it("REQ-UX-DASH-001: limits Recent entries after duplicate suppression", async () => {
+    entryStoreMock.entries.mockReturnValue([
+      {
+        id: "entry-epsilon",
+        form: "Notes",
+        updated_at: "2026-10-03T00:00:00Z",
+        properties: { title: "Epsilon" },
+        tags: [],
+      },
+      {
+        id: "entry-delta",
+        form: "Notes",
+        updated_at: "2026-10-04T00:00:00Z",
+        properties: { title: "Delta" },
+        tags: [],
+      },
+      {
+        id: "entry-gamma",
+        form: "Notes",
+        updated_at: "2026-10-05T00:00:00Z",
+        properties: { title: "Gamma" },
+        tags: [],
+      },
+      {
+        id: "entry-beta-older",
+        form: "Notes",
+        updated_at: "2026-10-06T00:00:00Z",
+        properties: { title: "Beta" },
+        tags: [],
+      },
+      {
+        id: "entry-beta-newer",
+        form: "Notes",
+        updated_at: "2026-10-07T00:00:00Z",
+        properties: { title: "Beta" },
+        tags: [],
+      },
+      {
+        id: "entry-alpha",
+        form: "Notes",
+        updated_at: "2026-10-08T00:00:00Z",
+        properties: { title: "Alpha" },
+        tags: [],
+      },
+    ]);
+    vi.mocked(formApi.list).mockResolvedValue([]);
+
+    render(() => <SpaceDashboardRoute />);
+
+    const recentSection = screen.getByRole("heading", { name: "Recent" })
+      .closest<HTMLElement>("section");
+    expect(recentSection).not.toBeNull();
+    const recentLinks = within(recentSection!).getAllByRole("link");
+    expect(recentLinks).toHaveLength(4);
+    expect(recentLinks.map((link) => link.getAttribute("href"))).toEqual([
+      "/spaces/default/entries/entry-alpha",
+      "/spaces/default/entries/entry-beta-newer",
+      "/spaces/default/entries/entry-gamma",
+      "/spaces/default/entries/entry-delta",
+    ]);
+  });
   it("rediscovers saved tools from Home and opens the listed exact revision", async () => {
     vi.mocked(formApi.list).mockResolvedValue([]);
     vi.mocked(protocolFetch).mockResolvedValue({
