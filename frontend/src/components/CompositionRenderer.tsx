@@ -21,6 +21,12 @@ export type CompositionFieldNames = (
   sourceId?: string,
 ) => string | undefined;
 
+export type CompositionFieldKeys = (
+  formId: string,
+  fieldId: number,
+  sourceId?: string,
+) => string | undefined;
+
 type RendererProps = {
   /**
    * Resolved sources with their component bindings. Saved revisions pass
@@ -37,6 +43,7 @@ type RendererProps = {
     Record<string, { text: string; style: CompositionTextStyle }>
   >;
   fieldNames?: CompositionFieldNames;
+  fieldKeys?: CompositionFieldKeys;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -407,6 +414,7 @@ export function CompositionRenderer(props: RendererProps) {
                 sourceState={sourceState()}
                 ownsSourceStatus={ownsSourceStatus}
                 fieldNames={props.fieldNames}
+                fieldKeys={props.fieldKeys}
                 onNext={() => props.onNext(binding.source_id)}
                 onPrevious={() => props.onPrevious(binding.source_id)}
                 onRetry={() => props.onRetry(binding.source_id)}

@@ -67,12 +67,30 @@ describe("entryQueryDisplayColumns", () => {
       }),
       [entryRow()],
       fieldNames,
+      (formId, fieldId, sourceId) =>
+        sourceId === "entries" ? names(formId, fieldId) : undefined,
     );
     expect(columns.map((column) => column.label)).toEqual([
       "purpose",
       "Created",
     ]);
     expect(fieldNames).toHaveBeenCalledWith("form-1", 7, "entries");
+    expect(columns[0].text(entryRow())).toBe("Travel");
+  });
+
+  it("uses the Form key for values when its display label differs", () => {
+    const columns = entryQueryDisplayColumns(
+      source({
+        kind: "fields",
+        fields: [{ kind: "property", field_id: 7 }],
+      }),
+      [entryRow()],
+      () => "Purpose of travel",
+      () => "purpose",
+    );
+    expect(columns.map((column) => column.label)).toEqual([
+      "Purpose of travel",
+    ]);
     expect(columns[0].text(entryRow())).toBe("Travel");
   });
 

@@ -9,6 +9,7 @@ import {
 import { A, useNavigate, useParams } from "@solidjs/router";
 import {
   CompositionDiagnostics,
+  type CompositionFieldKeys,
   type CompositionFieldNames,
   CompositionRenderer,
 } from "~/components/CompositionRenderer";
@@ -30,9 +31,20 @@ import {
   spaceCompositionRevisionPath,
 } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
-import type { Form } from "~/lib/types";
+import type { Form, FormField } from "~/lib/types";
 
 export const route = spaceRoute({ navigation: "home" });
+
+const findCompositionFormField = (
+  forms: readonly Form[] | undefined,
+  formId: string,
+  fieldId: number,
+): [string, FormField] | undefined => {
+  const fields = (forms ?? []).find((form) => form.id === formId)?.fields ?? {};
+  return Object.entries(fields).find(([, field]) =>
+    (field.query_capability?.field.field_id ?? field.id) === fieldId
+  );
+};
 
 /**
  * Display-only Form field-name lookup for Composition entry_query tables.
@@ -48,11 +60,7 @@ export const resolveCompositionFieldName = (
   fieldId: number,
   fieldSchema?: readonly { field_id: number }[],
 ): string | undefined => {
-  const entry = Object.entries(
-    (forms ?? []).find((form) => form.id === formId)?.fields ?? {},
-  ).find(([, definition]) =>
-    (definition.query_capability?.field.field_id ?? definition.id) === fieldId
-  );
+  const entry = findCompositionFormField(forms, formId, fieldId);
   const label = entry?.[1].label?.trim();
   if (label) return label;
   if (entry) return entry[0];
@@ -62,6 +70,13 @@ export const resolveCompositionFieldName = (
     ? undefined
     : t("composition.studioFieldIndex", { index: index + 1 });
 };
+
+export const resolveCompositionFieldKey = (
+  forms: readonly Form[] | undefined,
+  formId: string,
+  fieldId: number,
+): string | undefined =>
+  findCompositionFormField(forms, formId, fieldId)?.[0];
 
 export default function CompositionRevisionRoute() {
   const params = useParams<{
@@ -227,6 +242,8 @@ export default function CompositionRevisionRoute() {
       source?.field_schema,
     );
   };
+  const fieldKeys: CompositionFieldKeys = (formId, fieldId) =>
+    resolveCompositionFieldKey(forms(), formId, fieldId);
   const flowRows = () => {
     const rows = layoutDocument()?.spec.layout?.rows;
     return Array.isArray(rows) ? rows : undefined;
@@ -376,6 +393,7 @@ export default function CompositionRevisionRoute() {
                 sources={current().sources}
                 texts={flowTexts()}
                 fieldNames={fieldNames}
+                fieldKeys={fieldKeys}
                 onNext={handle.next}
                 onPrevious={handle.previous}
                 onRetry={handle.retry}
@@ -394,6 +412,7 @@ export default function CompositionRevisionRoute() {
                 parameterInvalid={parameterMismatch}
                 sources={current().sources}
                 fieldNames={fieldNames}
+                fieldKeys={fieldKeys}
                 onNext={handle.next}
                 onPrevious={handle.previous}
                 onRetry={handle.retry}

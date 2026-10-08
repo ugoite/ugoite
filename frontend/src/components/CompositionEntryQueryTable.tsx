@@ -56,6 +56,11 @@ export function entryQueryDisplayColumns(
     fieldId: number,
     sourceId?: string,
   ) => string | undefined,
+  fieldKeys?: (
+    formId: string,
+    fieldId: number,
+    sourceId?: string,
+  ) => string | undefined,
 ): EntryDisplayColumn[] {
   const projection: EntryProjection = source.request.projection;
   if (projection.kind === "preview") {
@@ -85,6 +90,7 @@ export function entryQueryDisplayColumns(
       formId,
       source.source_id,
       fieldNames,
+      fieldKeys,
     );
     if (column === "unresolved") {
       projectedProperties += 1;
@@ -129,6 +135,13 @@ const displayColumnForField = (
       sourceId?: string,
     ) => string | undefined)
     | undefined,
+  fieldKeys:
+    | ((
+      formId: string,
+      fieldId: number,
+      sourceId?: string,
+    ) => string | undefined)
+    | undefined,
 ): EntryDisplayColumn | null | "unresolved" => {
   if (field.kind === "created_at" || field.kind === "updated_at") {
     return {
@@ -143,14 +156,17 @@ const displayColumnForField = (
     };
   }
   if (field.kind === "property") {
-    const name = formId && fieldNames
+    const label = formId && fieldNames
       ? fieldNames(formId, field.field_id, sourceId)
       : undefined;
-    if (!name) return "unresolved";
+    const propertyKey = formId && fieldKeys
+      ? fieldKeys(formId, field.field_id, sourceId)
+      : undefined;
+    if (!propertyKey) return "unresolved";
     return {
       key: `property:${field.field_id}`,
-      label: name,
-      text: (row) => propertyText(row, name),
+      label: label ?? propertyKey,
+      text: (row) => propertyText(row, propertyKey),
     };
   }
   return null;
@@ -166,6 +182,11 @@ export function CompositionEntryQueryTable(props: {
     fieldId: number,
     sourceId?: string,
   ) => string | undefined;
+  fieldKeys?: (
+    formId: string,
+    fieldId: number,
+    sourceId?: string,
+  ) => string | undefined;
   onNext: () => void;
   onPrevious: () => void;
   onRetry: () => void;
@@ -176,7 +197,12 @@ export function CompositionEntryQueryTable(props: {
   };
   const rows = () => page()?.rows ?? [];
   const columns = (): EntryDisplayColumn[] =>
-    entryQueryDisplayColumns(props.source, rows(), props.fieldNames);
+    entryQueryDisplayColumns(
+      props.source,
+      rows(),
+      props.fieldNames,
+      props.fieldKeys,
+    );
   const sourceId = () => props.binding.source_id;
   const status = () => props.sourceState?.status;
   const loading = () =>

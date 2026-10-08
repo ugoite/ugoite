@@ -24,7 +24,7 @@ requirements:
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
       - id: display-authoring
         kind: behavior
-        statement: Displays are table or exact-scalar metric components only; a table renders through the source-native Entry or SQL presenter, a metric selects one scalar-compatible field or column with an optional label, and several displays may share one source without duplicate fetching.
+        statement: Displays are table or exact-scalar metric components only; a table renders through the source-native Entry or SQL presenter, saved EntryQuery tables use Form labels or Form field keys as headings while reading values by the stable field key, and missing Form metadata falls back to projected row keys without exposing field IDs. A metric selects one scalar-compatible field or column with an optional label, and several displays may share one source without duplicate fetching.
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
       - id: typed-parameter-binding
         kind: behavior
@@ -278,12 +278,21 @@ requirements:
           - id: studio-read-field-labels
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
-            selector: { kind: test, name: "uses the source schema ordinal when a Form field has no label" }
+            selector: { kind: test, name: "uses the Form field key when a Form field has no explicit label" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-use-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "uses the source schema ordinal when a Form field has no label" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "uses the Form field key when a Form field has no explicit label" } }
+          - id: studio-read-field-key-values
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: uses the Form key for values when its display label differs }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "uses the Form key for values when its display label differs" } }
           - id: studio-display-picker-unavailable
             adapter: typescript
             path: frontend/src/components/CompositionDisplayPicker.test.tsx

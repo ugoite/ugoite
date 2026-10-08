@@ -9,7 +9,10 @@ import type {
 } from "~/lib/composition-api";
 import { setLocale } from "~/lib/i18n";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
-import CompositionRevisionRoute, { resolveCompositionFieldName } from "./index";
+import CompositionRevisionRoute, {
+  resolveCompositionFieldKey,
+  resolveCompositionFieldName,
+} from "./index";
 import type { Form } from "~/lib/types";
 
 const navigateMock = vi.hoisted(() => vi.fn());
@@ -583,6 +586,13 @@ describe("resolveCompositionFieldName", () => {
   ];
 
   it("resolves a field label by stable form id", () => {
+    expect(resolveCompositionFieldName(forms(), "form-1", 101)).toBe(
+      "Amount spent",
+    );
+  });
+
+  it("keeps the Form field key separate from its display label", () => {
+    expect(resolveCompositionFieldKey(forms(), "form-1", 101)).toBe("amount");
     expect(resolveCompositionFieldName(forms(), "form-1", 101)).toBe(
       "Amount spent",
     );
