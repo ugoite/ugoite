@@ -1,0 +1,39 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Audit event identity presentation
+requirements:
+  - id: REQ-UX-AUDIT-001
+    title: Audit Event Identities Stay in Details
+    description: Audit event rows use human-readable actor labels and target types while raw identifiers remain available in the event details disclosure.
+    priority: high
+    status: planned
+    criteria:
+      - id: identifiers-in-details
+        kind: behavior
+        statement: Primary audit rows do not display raw actor or target IDs; the exact IDs remain available inside the event details disclosure.
+        governed_by: [POL-UI-005#rule.governance]
+    bindings:
+      - id: audit-identity-verification
+        role: verification
+        facet: verification
+        responsibility: Verify audit actor labels and target types keep exact actor and target IDs within the collapsed event details disclosure.
+        targets:
+          - id: actor-identity-disclosure
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: { kind: test, name: "REQ-UX-AUDIT-001: keeps actor IDs inside audit details" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-001#criterion.identifiers-in-details
+                covers: [FEAT-UX-003#binding.list-baseline/target.audit-log-viewer-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "REQ-UX-AUDIT-001: keeps actor IDs inside audit details" } }
+          - id: target-identity-disclosure
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: { kind: test, name: "REQ-UX-AUDIT-001: keeps target IDs out of audit rows and in details" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-001#criterion.identifiers-in-details
+                covers: [FEAT-UX-003#binding.list-baseline/target.audit-log-viewer-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "REQ-UX-AUDIT-001: keeps target IDs out of audit rows and in details" } }

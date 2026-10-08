@@ -581,15 +581,6 @@ requirements:
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "PR6: resolves actor IDs to member display names without raw UUIDs in rows" } }
-          - id: pr6-audit-actor-display
-            adapter: typescript
-            path: frontend/src/components/AuditLogViewer.test.tsx
-            selector: { kind: test, name: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only" }
-            claims:
-              - kind: verifies
-                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
-                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only" } }
           - id: pr6-asset-detail-rows
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/assets/[asset_id].test.tsx"

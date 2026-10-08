@@ -99,13 +99,13 @@ features:
                 criterion: REQ-UX-ENTRY-001#criterion.form-derived-guidance
   - id: FEAT-UX-003
     title: List interaction baseline
-    summary: Record that Spaces use names or slugs and Entry, Asset, and Browser Konase surfaces keep opaque identifiers out of primary labels, including write approval targets, alongside the shared row and action-bar constraints.
+    summary: Record that Spaces use names or slugs and Entry, Asset, Browser Konase, approval, and audit surfaces keep opaque identifiers out of primary labels, alongside the shared row and action-bar constraints.
     status: planned
     bindings:
       - id: list-baseline
         role: implementation
         facet: frontend
-        responsibility: Keep the list interaction baseline connected to live Space, dashboard, form-entry, Asset detail, and Browser Konase surfaces plus the route inventory record.
+        responsibility: Keep the list interaction baseline connected to live Space, dashboard, form-entry, Asset detail, Browser Konase, and audit surfaces plus the route inventory record.
         targets:
           - id: spaces-route-surface
             adapter: typescript
@@ -142,6 +142,15 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+          - id: audit-log-viewer-surface
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+              - kind: satisfies
+                criterion: REQ-UX-AUDIT-001#criterion.identifiers-in-details
           - id: konase-panel-specification
             adapter: declared
             path: docs/spec/ui/components/konase-panel.yaml

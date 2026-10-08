@@ -197,11 +197,12 @@ describe("AuditLogViewer", () => {
     expect(await screen.findByText("成功")).toBeInTheDocument();
   });
 
-  it("PR6: resolves space actor IDs to member display names with raw IDs advanced-only", async () => {
+  it("REQ-UX-AUDIT-001: keeps actor IDs inside audit details", async () => {
+    const actorId = "01900000-0000-7000-8000-000000000042";
     vi.mocked(spaceApi.listAudit).mockResolvedValue({
       items: [
         spaceEvent(0, {
-          actor_principal_id: "01900000-0000-7000-8000-000000000042",
+          actor_principal_id: actorId,
         }),
       ],
       total: 1,
@@ -211,7 +212,7 @@ describe("AuditLogViewer", () => {
     vi.mocked(spaceApi.listMembers).mockResolvedValue([
       {
         principal: {
-          principal_id: "01900000-0000-7000-8000-000000000042",
+          principal_id: actorId,
           display_name: "Ada Example",
           kind: "human",
           state: "active",
@@ -222,14 +223,40 @@ describe("AuditLogViewer", () => {
     render(() => <SpaceAuditLogViewer spaceId="space-1" />);
 
     expect(await screen.findByText("Ada Example")).toBeInTheDocument();
-    // The row shows the display name; the exact identity stays in the
-    // row disclosure.
-    fireEvent.click(screen.getByText("View details"));
-    expect(
-      screen.getByText("01900000-0000-7000-8000-000000000042").closest(
-        "details",
-      ),
-    ).not.toBeNull();
+    const detailsSummary = screen.getByText("View details");
+    const actorIdentity = screen.getByText(actorId);
+    expect(actorIdentity).not.toBeVisible();
+    fireEvent.click(detailsSummary);
+    expect(actorIdentity).toBeVisible();
+  });
+
+  it("REQ-UX-AUDIT-001: keeps target IDs out of audit rows and in details", async () => {
+    const targetId = "01900000-0000-7000-8000-000000000099";
+    vi.mocked(spaceApi.listAudit).mockResolvedValue({
+      items: [spaceEvent(0, { target_type: "entry", target_id: targetId })],
+      total: 1,
+      offset: 0,
+      limit: 25,
+    });
+    render(() => <SpaceAuditLogViewer spaceId="space-1" />);
+
+    const detailsSummary = await screen.findByText("View details");
+    const row = detailsSummary.closest("tr");
+    expect(row).not.toBeNull();
+    if (!row) throw new Error("Audit event row was not rendered");
+
+    const targetCell = row.querySelectorAll("td")[4];
+    expect(targetCell).toHaveTextContent("entry");
+    expect(targetCell).not.toHaveTextContent(targetId);
+
+    const targetIdentity = within(row).getByText(targetId);
+    expect(targetIdentity).not.toBeVisible();
+    fireEvent.click(detailsSummary);
+    expect(targetIdentity).toBeVisible();
+    expect(within(row).getByText("Target ID")).toBeVisible();
+
+    setLocale("ja");
+    expect(within(row).getByText("対象リソース ID")).toBeVisible();
   });
 
   it("REQ-UX-AUDIT-002: uses a localized neutral label for unresolved actors", async () => {
