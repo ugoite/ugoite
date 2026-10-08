@@ -292,6 +292,36 @@ export interface CompositionStudioDocument {
   };
 }
 
+type CompositionStudioSavedSqlDocument = Extract<
+  CompositionStudioDocument["spec"]["sources"][number],
+  { kind: "saved_sql" }
+>;
+
+type CompositionStudioEntryQueryDocument = Extract<
+  CompositionStudioDocument["spec"]["sources"][number],
+  { kind: "entry_query" }
+>;
+
+type CompositionStudioRevisionSourceDocument =
+  | Omit<CompositionStudioSavedSqlDocument, "variables"> & {
+    variables?: CompositionStudioSavedSqlDocument["variables"];
+  }
+  | CompositionStudioEntryQueryDocument;
+
+/**
+ * Composition read back from the canonical revision. The domain omits empty
+ * optional collections, so the editor accepts missing parameter and Saved SQL
+ * variable collections and restores them as empty draft state.
+ */
+export type CompositionStudioRevisionDocument =
+  & Omit<CompositionStudioDocument, "spec">
+  & {
+    spec: Omit<CompositionStudioDocument["spec"], "parameters" | "sources"> & {
+      parameters?: CompositionStudioDocument["spec"]["parameters"];
+      sources: CompositionStudioRevisionSourceDocument[];
+    };
+  };
+
 export const createEmptyDraft = (name = ""): CompositionDraft => ({
   name,
   tags: [],
@@ -1376,7 +1406,7 @@ export const toStudioDocument = (
  * (keyed by document source id) and fall back to the source id.
  */
 export const draftFromDocument = (
-  document: CompositionStudioDocument,
+  document: CompositionStudioRevisionDocument,
   sourceNames: Record<string, string>,
 ): CompositionDraft => {
   const fail = (what: string): never => {
@@ -1394,7 +1424,9 @@ export const draftFromDocument = (
         name,
         expectedResult: source.expected_result.map((column) => ({ ...column })),
         variables: Object.fromEntries(
-          Object.entries(source.variables).map(([key, binding]) => [
+          Object.entries(
+            source.variables === undefined ? {} : source.variables,
+          ).map(([key, binding]) => [
             key,
             { ...binding },
           ]),
@@ -1503,9 +1535,10 @@ export const draftFromDocument = (
       `disp-${index + 1}`,
     ]),
   );
-  const parameterIds = new Set(
-    document.spec.parameters.map((parameter) => parameter.id),
-  );
+  const parameters = document.spec.parameters === undefined
+    ? []
+    : document.spec.parameters;
+  const parameterIds = new Set(parameters.map((parameter) => parameter.id));
   const layoutRows: DraftLayoutRow[] = document.spec.layout.rows.map((row) => ({
     id: row.id,
     items: row.items.map((item) => {
@@ -1530,7 +1563,7 @@ export const draftFromDocument = (
     tags: [...document.tags],
     sources,
     displays,
-    parameters: document.spec.parameters.map((parameter) => ({
+    parameters: parameters.map((parameter) => ({
       id: parameter.id,
       ...(parameter.label ? { label: parameter.label } : {}),
       type: parameter.type,

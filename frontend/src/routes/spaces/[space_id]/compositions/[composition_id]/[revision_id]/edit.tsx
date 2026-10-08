@@ -9,7 +9,7 @@ import {
 } from "~/lib/composition-api";
 import {
   type CompositionDraft,
-  type CompositionStudioDocument,
+  type CompositionStudioRevisionDocument,
   draftFromDocument,
 } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
@@ -112,7 +112,7 @@ export default function CompositionEditRoute() {
     try {
       setDraft(
         draftFromDocument(
-          document as unknown as CompositionStudioDocument,
+          document as unknown as CompositionStudioRevisionDocument,
           sourceNames,
         ),
       );

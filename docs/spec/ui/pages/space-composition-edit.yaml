@@ -19,7 +19,7 @@ components:
         mode: shared-composition-renderer
         rows: first-page-per-source
       async_state: explicit-loading-empty-error
-      description: Unknown versions and lint failures show a concise error with one back control to the opened revision and never open the studio.
+      description: Unknown versions and lint failures show a concise error with one back control to the opened revision and never open the studio. Canonical revisions may omit empty optional parameter and Saved SQL variable collections; the editor restores those as empty state.
     - id: studio-header
       type: page-header
       title: Tool name
