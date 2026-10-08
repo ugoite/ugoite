@@ -92,6 +92,10 @@ describe("AuditLogViewer component contract", () => {
     const details = row.querySelector("details");
     if (!details) throw new Error("Audit event details were not rendered");
     expect(details).not.toHaveAttribute("open");
+    const primaryText = Array.from(row.cells)
+      .filter((cell) => !cell.contains(details))
+      .map((cell) => cell.textContent ?? "")
+      .join(" ");
     for (
       const identifier of [
         "audit-event-1",
@@ -102,6 +106,7 @@ describe("AuditLogViewer component contract", () => {
         "request-1",
       ]
     ) {
+      expect(primaryText).not.toContain(identifier);
       expect(within(details).getByText(identifier)).not.toBeVisible();
     }
 
