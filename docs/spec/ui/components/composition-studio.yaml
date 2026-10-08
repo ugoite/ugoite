@@ -98,13 +98,14 @@ components:
     title: Add display
     status: implemented
     ownership: canvas-insertion-delegate
-    kind: carried-from-palette-no-second-selection
-    sequence: [source, metric-value-field, optional-label, add]
-    entry_query_field_labels: transient-form-label-or-localized-source-schema-index
-    internal_field_ids: never-rendered
+    kind_selection: Table/Metric-tabs-inside-picker
+    sequence: [kind, source, metric-value-field-only-for-metric, optional-label, add]
+    source_selection: visibly-pressed-row-preserved-when-compatible-across-tabs
+    entry_query_field_labels: transient-form-label-or-distinct-localized-source-schema-index
+    internal_identifiers: field-source-entry-revision-ids-never-rendered
     form_metadata: authorized-form-list-transient-never-stored
     sizing:
-      width: min(560px, calc(100vw - 32px))
+      width: min(720px, calc(100vw - 32px))
       height: max-viewport-minus-32px-with-vertical-scroll
     semantics: exact-scalar-no-aggregation
   - id: studio-parameters

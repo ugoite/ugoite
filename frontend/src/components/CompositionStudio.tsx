@@ -128,12 +128,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   );
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [displayPickerOpen, setDisplayPickerOpen] = createSignal(false);
-  const [displayPickerKind, setDisplayPickerKind] = createSignal<
-    "metric" | "table"
-  >("table");
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
   // Transient canvas Work: selected block identity for the inspector and
-  // the pending palette insertion target for metric/table picks.
+  // the pending insertion target for the display picker.
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
   // Transient workspace Work: Design | Data | Split arrangement only. Draft,
   // preview, and selection state stay shared and continuous across modes;
@@ -403,8 +400,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const addDisplaySeed = (seed: CompositionDisplaySeed) => {
-    // The display picker survives only as the canvas insertion delegate:
-    // palette metric/table picks land at the recorded canvas target.
+    // The display picker survives only as the canvas insertion delegate and
+    // lands at the recorded canvas target.
     const target = pendingInsert() ?? undefined;
     const added = seed.kind === "table"
       ? addTableDisplay(draft(), seed.sourceDraftId, seed.label, target)
@@ -843,9 +840,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
           highlightedIds={highlightedBlockIds()}
           onSelect={handleSelectBlock}
           onDraftChange={setDraft}
-          onRequestDisplayPicker={(target, kind) => {
+          onRequestDisplayPicker={(target) => {
             setPendingInsert(target);
-            setDisplayPickerKind(kind);
             setDisplayPickerOpen(true);
           }}
           onParameterChange={(parameterId, value) =>
@@ -1058,7 +1054,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
       <Show when={displayPickerOpen()}>
         <CompositionDisplayPicker
-          kind={displayPickerKind()}
           sources={draft().sources}
           fieldNames={fieldNames}
           onAdd={addDisplaySeed}

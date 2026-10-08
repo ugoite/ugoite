@@ -223,8 +223,7 @@ async function addCanvasDisplay(
   label?: string,
 ): Promise<void> {
   // Canvas insertion path: a gap "+" opens the block palette, and the
-  // palette metric/table entries delegate to the display picker at the
-  // recorded target. The legacy Display section is gone.
+  // palette Display entry delegates to the picker at the recorded target.
   await page.getByRole("button", { name: "Add block", exact: true }).first()
     .click();
   const palette = page.getByRole("dialog", {
@@ -232,20 +231,25 @@ async function addCanvasDisplay(
     exact: true,
   });
   await expect(palette).toBeVisible();
-  await palette.getByRole("button", { name: kind, exact: true }).click();
+  await palette.getByRole("button", { name: "Display", exact: true }).click();
   const dialog = page.getByRole("dialog", {
     name: "Add display",
     exact: true,
   });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: kind, exact: true }).click();
-  await dialog.getByRole("button", { name: sourceName, exact: true }).click();
+  const dialogWidth = Number.parseFloat(
+    await dialog.evaluate((element) => getComputedStyle(element).width),
+  );
+  expect(dialogWidth).toBeGreaterThan(600);
+  await dialog.getByRole("tab", { name: kind, exact: true }).click();
+  const source = dialog.getByRole("button", { name: sourceName, exact: true });
+  await source.click();
+  await expect(source).toHaveAttribute("aria-pressed", "true");
   if (kind === "Metric") {
     await dialog.getByLabel("Value", { exact: true }).selectOption(value!);
     await dialog.getByLabel("Label", { exact: true }).fill(label!);
   }
-  await dialog.getByRole("button", { name: "Add display", exact: true })
-    .click();
+  await dialog.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
 
@@ -672,6 +676,47 @@ test.describe("Composition Studio Journey", () => {
       // Escape dismisses the sheet and clears the transient selection.
       await page.keyboard.press("Escape");
       await expect(page.getByRole("dialog")).toHaveCount(0);
+
+      // The unified picker stays viewport-capped at 390px and keeps a
+      // compatible source selected as the type changes.
+      await page.getByRole("button", { name: "Add block", exact: true })
+        .first().click();
+      const palette = page.getByRole("dialog", {
+        name: "Add block",
+        exact: true,
+      });
+      await palette.getByRole("button", { name: "Display", exact: true })
+        .click();
+      const picker = page.getByRole("dialog", {
+        name: "Add display",
+        exact: true,
+      });
+      await expect(picker).toBeVisible();
+      const viewportWidth = await page.evaluate(() => window.innerWidth);
+      const pickerWidth = Number.parseFloat(
+        await picker.evaluate((element) => getComputedStyle(element).width),
+      );
+      expect(pickerWidth).toBeLessThanOrEqual(viewportWidth - 32);
+      const displayTabs = picker.getByRole("tablist", {
+        name: "Display type",
+      });
+      const tableTab = displayTabs.getByRole("tab", { name: "Table" });
+      await expect(tableTab).toHaveAttribute("aria-selected", "true");
+      const source = picker.getByRole("button", {
+        name: seed.savedSqlName,
+        exact: true,
+      });
+      await source.click();
+      await expect(source).toHaveAttribute("aria-pressed", "true");
+      const metricTab = displayTabs.getByRole("tab", { name: "Metric" });
+      await metricTab.click();
+      await expect(metricTab).toHaveAttribute("aria-selected", "true");
+      await expect(source).toHaveAttribute("aria-pressed", "true");
+      await expect(picker.getByLabel("Value", { exact: true })).toBeVisible();
+      await picker.getByRole("button", { name: "Cancel", exact: true })
+        .click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+
       // Data mode shows the seeded source in the Data workspace.
       await page.getByRole("radio", { name: "Data", exact: true }).click();
       await expect(

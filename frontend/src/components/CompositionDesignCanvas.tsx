@@ -53,11 +53,8 @@ export interface CompositionDesignCanvasProps {
   highlightedIds?: ReadonlySet<string>;
   /** Single draft mutation channel: every canvas op maps onto the document. */
   onDraftChange: (draft: CompositionDraft) => void;
-  /** Metric/table insertion reuses the existing display picker at a target. */
-  onRequestDisplayPicker: (
-    target: DraftInsertTarget,
-    kind: "metric" | "table",
-  ) => void;
+  /** Display insertion opens the shared kind/source picker at a target. */
+  onRequestDisplayPicker: (target: DraftInsertTarget) => void;
   onParameterChange: (parameterId: string, value: unknown | undefined) => void;
   fieldNames?: CompositionFieldNames;
   onNext: (sourceId: string) => void;
@@ -106,8 +103,8 @@ const blockName = (
  * Block palette as a true modal dialog. The Portal lifts the palette out of
  * the canvas column so it can never visually collide with the inspector;
  * the backdrop blocks canvas selection while open, and dismissal returns
- * focus to the invoking gap control. Metric and table entries stay hidden
- * until a source exists (the display picker fail-closes on zero sources),
+ * focus to the invoking gap control. The display entry stays hidden until a
+ * source exists (the display picker fail-closes on zero sources),
  * and the parameters section stays hidden until a parameter exists, so no
  * disabled-with-reason copy is needed. Text insertion is always available.
  */
@@ -116,10 +113,7 @@ function PaletteDialog(props: {
   draft: CompositionDraft;
   onInsertText: (target: DraftInsertTarget) => void;
   onInsertParameter: (target: DraftInsertTarget, parameterId: string) => void;
-  onRequestDisplayPicker: (
-    target: DraftInsertTarget,
-    kind: "metric" | "table",
-  ) => void;
+  onRequestDisplayPicker: (target: DraftInsertTarget) => void;
   onClose: () => void;
 }) {
   let dialog: HTMLDivElement | undefined;
@@ -210,22 +204,11 @@ function PaletteDialog(props: {
                 class="designPaletteItem"
                 onClick={() => {
                   props.onClose();
-                  props.onRequestDisplayPicker(insertTarget, "metric");
+                  props.onRequestDisplayPicker(insertTarget);
                 }}
               >
-                <UiIcon name="canvas-metric" />
-                <span>{t("composition.studioMetric")}</span>
-              </button>
-              <button
-                type="button"
-                class="designPaletteItem"
-                onClick={() => {
-                  props.onClose();
-                  props.onRequestDisplayPicker(insertTarget, "table");
-                }}
-              >
-                <UiIcon name="canvas-table" />
-                <span>{t("composition.studioTable")}</span>
+                <UiIcon name="columns" />
+                <span>{t("composition.studioDisplay")}</span>
               </button>
             </Show>
           </div>

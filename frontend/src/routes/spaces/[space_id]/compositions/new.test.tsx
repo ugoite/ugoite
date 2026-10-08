@@ -168,17 +168,16 @@ describe("Composition studio shell", () => {
   };
 
   // Canvas insertion path: a gap "+" opens the block palette, and the
-  // palette metric/table choice carries into the display picker at the
-  // recorded target. The legacy Display section is gone; this is the only
-  // insertion path.
+  // palette opens one Table/Metric display picker at the recorded target.
+  // The legacy Display section is gone; this is the only insertion path.
   const addTableViaCanvas = async (sourceName: string) => {
     fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
     const palette = screen.getByRole("dialog", { name: "Add block" });
-    fireEvent.click(within(palette).getByRole("button", { name: "Table" }));
+    fireEvent.click(within(palette).getByRole("button", { name: "Display" }));
     const picker = await screen.findByRole("dialog", { name: "Add display" });
     fireEvent.click(within(picker).getByRole("button", { name: sourceName }));
     fireEvent.click(
-      within(picker).getByRole("button", { name: "Add display" }),
+      within(picker).getByRole("button", { name: "Add" }),
     );
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -192,8 +191,9 @@ describe("Composition studio shell", () => {
   ) => {
     fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
     const palette = screen.getByRole("dialog", { name: "Add block" });
-    fireEvent.click(within(palette).getByRole("button", { name: "Metric" }));
+    fireEvent.click(within(palette).getByRole("button", { name: "Display" }));
     const picker = await screen.findByRole("dialog", { name: "Add display" });
+    fireEvent.click(within(picker).getByRole("tab", { name: "Metric" }));
     fireEvent.click(within(picker).getByRole("button", { name: sourceName }));
     fireEvent.change(within(picker).getByLabelText("Value"), {
       target: { value },
@@ -202,7 +202,7 @@ describe("Composition studio shell", () => {
       target: { value: label },
     });
     fireEvent.click(
-      within(picker).getByRole("button", { name: "Add display" }),
+      within(picker).getByRole("button", { name: "Add" }),
     );
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
