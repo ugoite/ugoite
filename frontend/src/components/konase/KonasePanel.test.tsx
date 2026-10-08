@@ -248,15 +248,17 @@ const fakeTurn = (summary: string): FakeTurn => ({
   knowledge: "saved",
 });
 
-const fakeWritePreview = (): WritePreview => ({
+const fakeWritePreview = (
+  overrides: Partial<WritePreview> = {},
+): WritePreview => ({
   requestId: "job-1:mcp:1",
   workId: "work-1",
   spaceId: "space-a",
   operation: "ugoite.save",
   action: "create",
   form: "Note",
-  summary:
-    "Create in Space space-a; Form Note. Fields (new Entry values): title: text (17 chars).",
+  summary: "Fields (new Entry values): title: text (17 chars).",
+  ...overrides,
 });
 
 describe("KonasePanel Space authority", () => {
@@ -946,6 +948,11 @@ describe("KonasePanel Space authority", () => {
 
   it("shows an accessible write approval preview and does not mark MCP start as success", async () => {
     mockConnection();
+    getSpaceMock.mockResolvedValue({
+      space_uid: "space-a-uid",
+      name: "Space A",
+      created_at: "",
+    });
     render(() => <KonasePanel spaceId="space-a" />);
     fireEvent.input(screen.getByLabelText("Model API key"), {
       target: { value: "model-key" },
@@ -955,10 +962,12 @@ describe("KonasePanel Space authority", () => {
     const host = hostInstances[0];
 
     host.requestConfirmation(fakeWritePreview());
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Approve this write?" }))
       .toBeInTheDocument();
-    expect(screen.getByText("space-a / Note")).toBeInTheDocument();
+    expect(within(dialog).getByText("Space A / Note")).toBeVisible();
+    expect(within(dialog).getByText("space-a")).not.toBeVisible();
     expect(screen.getByText(/Fields \(new Entry values\)/))
       .toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Approve write" }));
@@ -973,6 +982,50 @@ describe("KonasePanel Space authority", () => {
       .toBeInTheDocument();
     expect(screen.getByText("MCP request started: ugoite.save").textContent)
       .not.toContain("✓");
+  });
+
+  it("keeps update targets readable and reveals opaque IDs only on demand", async () => {
+    mockConnection();
+    getSpaceMock.mockResolvedValue({
+      space_uid: "space-a-uid",
+      name: "space-a",
+      slug: "Project Notes",
+      created_at: "",
+    });
+    render(() => <KonasePanel spaceId="space-a" />);
+    fireEvent.input(screen.getByLabelText("Model API key"), {
+      target: { value: "model-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Ugoite MCP" }));
+    await waitFor(() => expect(hostInstances).toHaveLength(1));
+
+    const host = hostInstances[0];
+    host.requestConfirmation(fakeWritePreview({
+      requestId: "job-update:mcp:1",
+      spaceId: "space-private-opaque-id",
+      action: "update",
+      entryId: "entry-private-opaque-id",
+    }));
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("Project Notes / Note / Existing Entry"))
+      .toBeVisible();
+    expect(within(dialog).getByText("space-private-opaque-id"))
+      .not.toBeVisible();
+    expect(within(dialog).getByText("entry-private-opaque-id"))
+      .not.toBeVisible();
+
+    fireEvent.click(within(dialog).getByText("Technical details"));
+    expect(within(dialog).getByText("space-private-opaque-id")).toBeVisible();
+    expect(within(dialog).getByText("entry-private-opaque-id")).toBeVisible();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Approve write" }),
+    );
+    expect(host.resolvedConfirmations).toEqual([{
+      requestId: "job-update:mcp:1",
+      approved: true,
+    }]);
   });
 
   it("denies a pending write explicitly", async () => {
