@@ -43,6 +43,18 @@ describe("CanvasPlaceholder", () => {
     expect(screen.getByText("Active")).toBeInTheDocument();
   });
 
+  it("shows the empty property state when an entry has no properties", () => {
+    const entryWithoutProperties = {
+      ...mockEntries[0],
+      properties: null,
+    } as unknown as EntryRecord;
+
+    render(() => <CanvasPlaceholder entries={[entryWithoutProperties]} />);
+
+    expect(screen.getByText("No properties")).toBeInTheDocument();
+    expect(screen.getByText("Entry")).toBeInTheDocument();
+  });
+
   it("should call onSelect when card is clicked", () => {
     const onSelect = vi.fn();
     render(() => (

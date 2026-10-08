@@ -6,7 +6,7 @@
 #   test-type: "smoke", "late-query-response", "composition-golden", "asset-owned", "smoke-and-asset-owned",
 #     "owner-recovery", "mobile-ui", "query-measurement",
 #     "sql-export-remote-auth", "portable-space",
-#     "entries", "screenshot", or "full"
+#     "entries", "navigation", "screenshot", or "full"
 #
 # Environment variables:
 #   E2E_TEST_TIMEOUT_MS: per-test timeout passed to `playwright test --timeout`
@@ -293,6 +293,9 @@ case "$TEST_TYPE" in
   entries)
     run_e2e_task entries "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
+  navigation)
+    run_e2e_task navigation "$base_report_file" "$ENFORCE_CI_GATES"
+    ;;
   asset-owned)
     run_e2e_task asset-owned "$base_report_file" "$ENFORCE_CI_GATES"
     ;;
@@ -333,7 +336,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|late-query-response|composition-golden|composition-studio|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|late-query-response|composition-golden|composition-studio|asset-owned|smoke-and-asset-owned|owner-recovery|mobile-ui|query-measurement|sql-export-remote-auth|portable-space|entries|navigation|screenshot|full]"
     exit 1
     ;;
 esac

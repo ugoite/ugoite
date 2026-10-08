@@ -96,6 +96,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
         >
           <For each={props.entries}>
             {(entry, index) => {
+              const entryProperties = () => entry.properties ?? {};
               const pos = () => entry.canvas_position || getPosition(index());
               const isSelected = () => props.selectedEntryId === entry.id;
 
@@ -127,14 +128,14 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
                   <div class="p-3">
                     {/* Properties preview */}
                     <Show
-                      when={Object.keys(entry.properties).length > 0}
+                      when={Object.keys(entryProperties()).length > 0}
                       fallback={
                         <p class="text-sm ui-muted italic">No properties</p>
                       }
                     >
                       <div class="space-y-1 text-sm">
                         <For
-                          each={Object.entries(entry.properties).slice(0, 3)}
+                          each={Object.entries(entryProperties()).slice(0, 3)}
                         >
                           {([key, value]) => (
                             <div class="flex">
@@ -147,9 +148,9 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
                             </div>
                           )}
                         </For>
-                        <Show when={Object.keys(entry.properties).length > 3}>
+                        <Show when={Object.keys(entryProperties()).length > 3}>
                           <span class="text-xs ui-muted">
-                            +{Object.keys(entry.properties).length - 3} more
+                            +{Object.keys(entryProperties()).length - 3} more
                           </span>
                         </Show>
                       </div>

@@ -186,11 +186,15 @@ requirements:
         kind: quality
         statement: Dynamic traversal completes without uncaught browser runtime errors.
         governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+      - id: preload-recovery
+        kind: quality
+        statement: A failed dynamic route import retries through one same-URL reload, while repeated failures reach the app boundary without an automatic reload loop.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
     bindings:
       - id: navigation-verification
         role: verification
         facet: verification
-        responsibility: Verify route traversal and browser/runtime error invariants through the exact dynamic-navigation Playwright case.
+        responsibility: Verify SPA route traversal, browser/runtime error invariants, and bounded recovery from failed dynamic imports through the exact dynamic-navigation Playwright case.
         targets:
           - id: traversal-case
             adapter: typescript
@@ -210,6 +214,10 @@ requirements:
               - kind: verifies
                 criterion: REQ-E2E-004#criterion.runtime-stability
                 covers: [FEAT-E2E-001#binding.frontend/target.spaces-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' } }
+              - kind: verifies
+                criterion: REQ-E2E-004#criterion.preload-recovery
+                covers: [FEAT-E2E-001#binding.frontend/target.route-module-recovery]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' } }
 
   - id: REQ-E2E-005

@@ -8,6 +8,7 @@
     "composition-studio": "deno run --node-modules-dir=auto -A npm:@playwright/test@^1.60.0 test composition-studio-journey.test.ts",
     "late-query-response": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entry-query-late-response.test.ts",
     "entries": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entries.test.ts",
+    "navigation": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test navigation.test.ts",
     "asset-owned": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entries.test.ts --grep REQ-FE-1877",
     "smoke-and-asset-owned": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test smoke.test.ts entries.test.ts entry-query-late-response.test.ts --grep \"@smoke|@asset-owned\"",
     "owner-recovery": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test owner-space-recovery.test.ts",

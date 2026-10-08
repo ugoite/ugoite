@@ -3,7 +3,7 @@
 # Used by local `mise run e2e` and by GitHub Actions e2e-ci.yml.
 #
 # Usage: ./e2e/scripts/run-e2e-compose.sh [test-type] [--fixture-root PATH]
-#   test-type: "smoke", "composition-golden", "asset-owned", "smoke-and-asset-owned",
+#   test-type: "smoke", "composition-golden", "asset-owned", "smoke-and-asset-owned", "navigation",
 #     "owner-recovery", "portable-space", "mobile-ui", "query-measurement",
 #     "entries", "screenshot", or "full"
 #   --fixture-root: caller-owned storage root used by query-measurement
@@ -508,6 +508,9 @@ case "$TEST_TYPE" in
   smoke-and-asset-owned)
     run_e2e_task smoke-and-asset-owned "$base_report_file" true
     ;;
+  navigation)
+    run_e2e_task navigation "$base_report_file" true
+    ;;
   owner-recovery)
     run_e2e_task owner-recovery "$base_report_file" true
     ;;
@@ -547,7 +550,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./run-e2e-compose.sh [smoke|composition-golden|composition-studio|asset-owned|smoke-and-asset-owned|owner-recovery|portable-space|mobile-ui|query-measurement|entries|screenshot|full] [--fixture-root PATH]"
+    echo "Usage: ./run-e2e-compose.sh [smoke|composition-golden|composition-studio|asset-owned|smoke-and-asset-owned|navigation|owner-recovery|portable-space|mobile-ui|query-measurement|entries|screenshot|full] [--fixture-root PATH]"
     exit 1
     ;;
 esac
