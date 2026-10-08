@@ -71,8 +71,12 @@ components:
       title: Data
       scope: data-mode-and-split-pane-only
       source: draft sources with human names only
-      entry_query_field_labels: transient-form-name-then-localized-schema-ordinal-or-distinct-ordinal-for-referenced-fields-outside-snapshot
-      field_identity: raw-field-ids-stay-in-query-data-and-never-render-in-data-editor-rows
+      entry_query_field_labels:
+        form_field_present: transient-form-field-name
+        form_metadata_unavailable_or_field_missing: localized-schema-ordinal
+        referenced_fields_missing_from_schema_snapshot: distinct-deterministic-localized-ordinal
+      field_identity:
+        raw_field_id: query-data-only-never-rendered-in-field-filter-sort-projection-or-dialog-labels
       selection: full-row-activate
       reorder: keyboard-operable-move-up-down
       remove: blocked-while-displays-reference-with-reason
