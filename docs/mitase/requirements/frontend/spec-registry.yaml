@@ -75,6 +75,17 @@ requirements:
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers: [FEAT-FE-013#binding.frontend/target.page-registry]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates page links" } }
+          - id: settings-contract
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: connects Space Settings sections to implementation and test evidence" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers:
+                  - FEAT-FE-013#binding.frontend/target.page-space-settings
+                  - FEAT-FE-013#binding.frontend/target.component-space-settings
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: connects Space Settings sections to implementation and test evidence" } }
           - id: documented-routes
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
