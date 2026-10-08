@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
@@ -77,31 +83,79 @@ describe("v5 space Home", () => {
     expect(document.querySelector(".continueGrid .card")).toBeNull();
     expect(document.querySelector(".pinGrid")).toBeInTheDocument();
   });
-  it("REQ-UX-LIST-001: hides Entry IDs from dashboard labels while retaining route identity", async () => {
-    entryStoreMock.entries.mockReturnValue([{
-      id: "entry-91f6",
-      form: "Notes",
-      updated_at: "2026-10-08T00:00:00Z",
-      properties: {},
-      tags: [],
-    }]);
+  it("REQ-UX-LIST-001: gives same-Form Recent links unique ID-free labels", async () => {
+    entryStoreMock.entries.mockReturnValue([
+      {
+        id: "entry-old-no-title",
+        form: "Notes",
+        updated_at: "2026-10-05T00:00:00Z",
+        properties: {},
+        tags: [],
+      },
+      {
+        id: "entry-plan",
+        form: "Notes",
+        updated_at: "2026-10-06T00:00:00Z",
+        properties: { title: "Quarterly plan" },
+        tags: [],
+      },
+      {
+        id: "entry-travel",
+        form: "Notes",
+        updated_at: "2026-10-07T00:00:00Z",
+        properties: { name: "Travel notes" },
+        tags: [],
+      },
+      {
+        id: "entry-latest-no-title",
+        form: "Notes",
+        updated_at: "2026-10-08T00:00:00Z",
+        properties: {},
+        tags: [],
+      },
+    ]);
     vi.mocked(formApi.list).mockResolvedValue([]);
 
     render(() => <SpaceDashboardRoute />);
 
-    const links = await screen.findAllByRole("link", {
-      name: /Entry.*Notes/,
+    const recentSection = screen.getByRole("heading", { name: "Recent" })
+      .closest<HTMLElement>("section");
+    expect(recentSection).not.toBeNull();
+    const recent = within(recentSection!);
+    const recentLinks = recent.getAllByRole("link");
+    expect(recentLinks).toHaveLength(3);
+
+    const fallbackLink = recent.getByRole("link", { name: /Entry.*Notes/ });
+    expect(fallbackLink).toHaveAttribute(
+      "href",
+      "/spaces/default/entries/entry-latest-no-title",
+    );
+    const planLink = recent.getByRole("link", {
+      name: /Quarterly plan.*Notes/,
     });
-    expect(links).toHaveLength(2);
-    for (const link of links) {
-      expect(link).toHaveAttribute(
-        "href",
-        "/spaces/default/entries/entry-91f6",
+    expect(planLink).toHaveAttribute(
+      "href",
+      "/spaces/default/entries/entry-plan",
+    );
+    const travelLink = recent.getByRole("link", {
+      name: /Travel notes.*Notes/,
+    });
+    expect(travelLink).toHaveAttribute(
+      "href",
+      "/spaces/default/entries/entry-travel",
+    );
+
+    for (const link of recentLinks) {
+      expect(link).not.toHaveAccessibleName(
+        /entry-(?:old-no-title|plan|travel|latest-no-title)/,
       );
-      expect(link).toHaveAccessibleName(/Entry.*Notes/);
-      expect(link).not.toHaveAccessibleName(/entry-91f6/);
     }
-    expect(document.body.textContent).not.toContain("entry-91f6");
+    expect(document.body.textContent).not.toMatch(
+      /entry-(?:old-no-title|plan|travel|latest-no-title)/,
+    );
+    expect(
+      screen.queryByRole("link", { name: /entry-old-no-title/i }),
+    ).not.toBeInTheDocument();
   });
   it("rediscovers saved tools from Home and opens the listed exact revision", async () => {
     vi.mocked(formApi.list).mockResolvedValue([]);

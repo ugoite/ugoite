@@ -63,11 +63,19 @@ export default function SpaceDashboardRoute() {
       ? (value as () => ReturnType<typeof entryStore.entries>)()
       : (value as ReturnType<typeof entryStore.entries>);
   };
-  const recentEntries = createMemo(() =>
-    [...storeEntries()].sort((a, b) =>
+  const recentEntries = createMemo(() => {
+    const seenLabels = new Set<string>();
+    return [...storeEntries()].sort((a, b) =>
       String(b.updated_at).localeCompare(String(a.updated_at))
-    ).slice(0, 4)
-  );
+    ).filter((entry) => {
+      const label = entryDisplayLabel(entry);
+      const form = entry.form?.trim() || "—";
+      const key = `${form.toLowerCase()}\u0000${label.toLowerCase()}`;
+      if (seenLabels.has(key)) return false;
+      seenLabels.add(key);
+      return true;
+    }).slice(0, 4);
+  });
   const isFreshSpace = createMemo(() =>
     entriesLoaded() && !entryStore.error() && recentEntries().length === 0
   );
@@ -188,7 +196,7 @@ export default function SpaceDashboardRoute() {
                   <UiIcon name="entry" />
                 </span>
                 <span>
-                  <b>{entryDisplayLabel()}</b>
+                  <b>{entryDisplayLabel(entry())}</b>
                   <small>{entry().form || "—"}</small>
                 </span>
                 <span class="chev">›</span>
@@ -291,7 +299,7 @@ export default function SpaceDashboardRoute() {
                   <UiIcon name="entry" />
                 </span>
                 <span>
-                  <b>{entryDisplayLabel()}</b>
+                  <b>{entryDisplayLabel(entry)}</b>
                   <small>{entry.form || "—"}</small>
                 </span>
                 <span>›</span>
