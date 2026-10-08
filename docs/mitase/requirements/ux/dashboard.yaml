@@ -1,0 +1,15 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Space dashboard list requirements
+requirements:
+  - id: REQ-UX-DASH-001
+    title: Bounded Space Dashboard Recent List
+    description: The Space dashboard Recent list keeps the most recent Entry per Form and displayed label, then displays at most four Entries.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: recent-count-bound
+        kind: behavior
+        statement: The Space dashboard Recent list keeps the most recent Entry per Form and displayed label before displaying at most four Entries.
+        governed_by: [POL-UI-013#rule.governance]

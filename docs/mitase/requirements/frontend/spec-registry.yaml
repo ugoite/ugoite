@@ -25,7 +25,7 @@ requirements:
       - id: ui-registry-verification
         role: verification
         facet: verification
-        responsibility: Verify the declarative UI page registry, route coverage, placeholder guard, and shared Space chrome through exact frontend tests.
+        responsibility: Verify the declarative UI page registry, route coverage, dashboard Recent count contract, placeholder guard, and shared Space chrome through exact frontend tests.
         targets:
           - id: page-metadata
             adapter: typescript
@@ -57,6 +57,19 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-space-sql
                   - FEAT-FE-013#binding.frontend/target.page-space-test-connection
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: loads UI page specs" } }
+          - id: dashboard-recent-list-contract
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: declares the dashboard Recent maximum after duplicate suppression" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.page-space-dashboard]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares the dashboard Recent maximum after duplicate suppression" } }
+              - kind: verifies
+                criterion: REQ-UX-DASH-001#criterion.recent-count-bound
+                covers: [FEAT-FE-013#binding.frontend/target.page-space-dashboard]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares the dashboard Recent maximum after duplicate suppression" } }
           - id: component-types
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
