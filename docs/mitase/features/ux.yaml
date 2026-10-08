@@ -637,6 +637,20 @@ features:
                 criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation
               - kind: satisfies
                 criterion: REQ-UX-PAGINATION-001#criterion.paging-state
+          - id: composition-revision-pagination-spec
+            adapter: declared
+            path: docs/spec/ui/pages/space-composition-revision.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation
+          - id: composition-studio-pagination-spec
+            adapter: declared
+            path: docs/spec/ui/components/composition-studio.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation
           - id: pagination-layout
             adapter: typescript
             path: frontend/src/app.css

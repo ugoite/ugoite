@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-03"
+updated: "2026-10-08"
 page:
   id: space-composition-revision
   title: Saved tool revision
@@ -61,6 +61,8 @@ components:
         mode: bounded-current-page
         parameters-and-pages: transient-work
     - id: composition-pagination
-      type: button
-      title: Previous and Next
+      type: query-pagination
+      component: ResultPagination
+      reference: ../components/result-pagination.yaml
+      presentation: localized-icon-only-chevron-controls
       source: existing query continuation
