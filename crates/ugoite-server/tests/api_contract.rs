@@ -686,8 +686,7 @@ async fn req_e2e_010_allows_root_scope_only_for_the_generated_service_worker() {
         "// registration",
     )
     .unwrap();
-    let _static_dir =
-        EnvVarGuard::set("UGOITE_STATIC_DIR", static_dir.path().as_os_str());
+    let _static_dir = EnvVarGuard::set("UGOITE_STATIC_DIR", static_dir.path().as_os_str());
     let app = initialized_app_without_env_lock("pwa-worker-scope").await;
 
     let worker_response = app
