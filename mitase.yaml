@@ -207,6 +207,7 @@ inventory:
         - frontend/src/routes/spaces/join.test.tsx
         - frontend/src/app.config.test.ts
         - frontend/app.config.ts
+        - frontend/scripts/generate-static-index.ts
         - frontend/src/lib/api.test.ts
         - frontend/src/lib/frontend-origin.test.ts
         - frontend/vitest.config.ts

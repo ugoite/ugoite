@@ -675,6 +675,51 @@ async fn req_ops_045_revalidates_only_the_static_shell_html() {
 }
 
 #[tokio::test]
+async fn req_e2e_010_allows_root_scope_only_for_the_generated_service_worker() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let static_dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(static_dir.path().join("_build")).unwrap();
+    std::fs::write(static_dir.path().join("index.html"), "<!doctype html>").unwrap();
+    std::fs::write(static_dir.path().join("_build/sw.js"), "// worker").unwrap();
+    std::fs::write(
+        static_dir.path().join("_build/registerSW.js"),
+        "// registration",
+    )
+    .unwrap();
+    let _static_dir =
+        EnvVarGuard::set("UGOITE_STATIC_DIR", static_dir.path().as_os_str());
+    let app = initialized_app_without_env_lock("pwa-worker-scope").await;
+
+    let worker_response = app
+        .clone()
+        .oneshot(Request::get("/_build/sw.js").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(worker_response.status(), StatusCode::OK);
+    assert_eq!(
+        worker_response
+            .headers()
+            .get("service-worker-allowed")
+            .unwrap(),
+        "/"
+    );
+
+    let registration_response = app
+        .oneshot(
+            Request::get("/_build/registerSW.js")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(registration_response.status(), StatusCode::OK);
+    assert!(registration_response
+        .headers()
+        .get("service-worker-allowed")
+        .is_none());
+}
+
+#[tokio::test]
 async fn req_sec_002_keeps_security_headers_on_cors_preflight() {
     let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
     let _cors_origins = EnvVarGuard::set("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");

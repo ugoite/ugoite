@@ -94,9 +94,8 @@ export default defineConfig({
         // while an older client still needs to import them.
         registerType: "prompt",
         injectRegister: "auto",
-        // Serve the worker at the origin root so it can control app routes
-        // outside SolidStart's /_build client-asset base.
-        filename: "../sw.js",
+        // The server allows only this generated worker to request the origin
+        // root scope, so it can control app routes outside the /_build base.
         scope: "/",
         includeAssets: [
           "favicon.ico",
@@ -132,6 +131,10 @@ export default defineConfig({
         workbox: {
           skipWaiting: false,
           clientsClaim: false,
+          // The SPA shell is served at the origin root after the build. A
+          // worker under /_build cannot precache Workbox's default relative
+          // index.html fallback, so let navigations reach the server.
+          navigateFallback: null,
           globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
           additionalManifestEntries: brandIconPrecacheEntries,
         },

@@ -54,11 +54,13 @@ const manifestScriptPath = join(
   "_build",
   "ugoite-manifest.js",
 );
-for (const assetPath of [
-  join(dirname(outputPath), "_build", "manifest.webmanifest"),
-  join(dirname(outputPath), "_build", "registerSW.js"),
-  join(dirname(outputPath), "sw.js"),
-]) {
+for (
+  const assetPath of [
+    join(dirname(outputPath), "_build", "manifest.webmanifest"),
+    join(dirname(outputPath), "_build", "registerSW.js"),
+    join(dirname(outputPath), "_build", "sw.js"),
+  ]
+) {
   try {
     await Deno.stat(assetPath);
   } catch {

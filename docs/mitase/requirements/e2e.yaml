@@ -465,6 +465,10 @@ requirements:
         kind: behavior
         statement: The production SPA entrypoint registers the generated service worker, which waits while existing clients remain open so each client can continue traversing lazy routes with its current worker and assets.
         governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+      - id: root-scoped-worker
+        kind: behavior
+        statement: The generated worker at the client asset path can request root scope, while the registration helper does not receive wider-scope permission.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
     bindings:
       - id: production-update-verification
         role: verification
@@ -478,5 +482,28 @@ requirements:
             claims:
               - kind: verifies
                 criterion: REQ-E2E-010#criterion.active-client-safety
-                covers: [FEAT-E2E-001#binding.frontend/target.pwa-update-lifecycle]
+                covers:
+                  - FEAT-E2E-001#binding.frontend/target.pwa-update-lifecycle
+                  - FEAT-E2E-001#binding.frontend/target.static-pwa-bootstrap
                 runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-010: a new production worker waits while an open client traverses a lazy route' } }
+              - kind: verifies
+                criterion: REQ-E2E-010#criterion.root-scoped-worker
+                covers:
+                  - FEAT-E2E-001#binding.frontend/target.pwa-update-lifecycle
+                  - FEAT-E2E-001#binding.frontend/target.static-pwa-bootstrap
+                  - FEAT-E2E-001#binding.server/target.pwa-worker-scope-header
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-010: a new production worker waits while an open client traverses a lazy route' } }
+      - id: root-scope-response-header
+        role: verification
+        facet: cargo-test
+        responsibility: Verify that only the generated worker asset permits registration scope at the origin root.
+        targets:
+          - id: root-scope-worker-header
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_e2e_010_allows_root_scope_only_for_the_generated_service_worker }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-010#criterion.root-scoped-worker
+                covers: [FEAT-E2E-001#binding.server/target.pwa-worker-scope-header]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_e2e_010_allows_root_scope_only_for_the_generated_service_worker } }
