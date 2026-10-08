@@ -73,8 +73,8 @@ components:
       source: draft sources with human names only
       entry_query_field_labels:
         form_field_resolved: transient-form-field-name-first
-        schema_field_present_but_form_unresolved: localized-schema-ordinal
-        referenced_field_missing_from_schema_and_form: distinct-deterministic-localized-ordinal
+        schema_field_present_but_form_unresolved: localized-schema-ordinal-skipping-live-form-names-and-prior-fallbacks
+        referenced_field_missing_from_schema_and_form: distinct-deterministic-localized-ordinal-skipping-live-form-names-and-prior-fallbacks
       field_identity:
         raw_field_id: query-data-only-never-rendered-in-field-filter-sort-projection-or-dialog-labels
       selection: full-row-activate
