@@ -134,8 +134,9 @@ describe("ListPanel", () => {
           entries={mockEntries}
         />
       ));
-      expect(screen.getByText("entry-1")).toBeInTheDocument();
-      expect(screen.getByText("entry-2")).toBeInTheDocument();
+      expect(screen.getAllByText("Entry")).toHaveLength(2);
+      expect(screen.queryByText("entry-1")).not.toBeInTheDocument();
+      expect(screen.queryByText("entry-2")).not.toBeInTheDocument();
     });
 
     it("does not coerce structured properties into object text", () => {
@@ -159,7 +160,7 @@ describe("ListPanel", () => {
 
     it("should highlight selected entry", () => {
       const [filterForm, setFilterForm] = createSignal("");
-      render(() => (
+      const { container } = render(() => (
         <ListPanel
           mode="entries"
           forms={mockForms}
@@ -169,8 +170,7 @@ describe("ListPanel", () => {
           selectedId="entry-1"
         />
       ));
-      const selectedButton = screen.getByText("entry-1").closest("button");
-      expect(selectedButton).toHaveClass("ui-card-selected");
+      expect(container.querySelector(".ui-card-selected")).toBeInTheDocument();
     });
 
     it("should call onSelectEntry when a entry is clicked", () => {
@@ -186,7 +186,7 @@ describe("ListPanel", () => {
           onSelectEntry={onSelectEntry}
         />
       ));
-      fireEvent.click(screen.getByText("entry-1"));
+      fireEvent.click(screen.getAllByText("Entry")[0]);
       expect(onSelectEntry).toHaveBeenCalledWith("entry-1");
     });
 
@@ -225,7 +225,8 @@ describe("ListPanel", () => {
           loading={true}
         />
       ));
-      expect(screen.getByText("entry-1")).toBeInTheDocument();
+      expect(screen.getAllByText("Entry")).toHaveLength(2);
+      expect(screen.queryByText("entry-1")).not.toBeInTheDocument();
       expect(screen.getByRole("status")).toBeInTheDocument();
     });
 
@@ -297,7 +298,8 @@ describe("ListPanel", () => {
           entries={[entry, noPropsEntry]}
         />
       ));
-      expect(screen.getByText("complex-entry")).toBeInTheDocument();
+      expect(screen.getAllByText("Entry")).toHaveLength(2);
+      expect(screen.queryByText("complex-entry")).not.toBeInTheDocument();
       expect(screen.getByText("42")).toBeInTheDocument();
     });
 

@@ -18,7 +18,7 @@ components:
       type: toolbar
       component: ActionIconBar
       reference: ../components/action-icon-bar.yaml
-      description: Download is a named icon-only utility action. Delete keeps its visible label, danger styling, blocked-reference reason, and confirmation; successful deletion returns to the inventory.
+      description: Download is a named icon-only utility action. Delete keeps its visible label, danger styling, blocked-reference reason using only Form and Field names, and confirmation; successful deletion returns to the inventory.
       actions:
         - id: download
           presentation: icon-only
@@ -30,7 +30,7 @@ components:
       source: asset.read
     - id: asset-entry-references
       type: list
-      description: Lists every current Entry referencing the asset as full-row links to entry detail; the exact asset ID stays in advanced disclosure.
+      description: Lists every current Entry referencing the asset as full-row links labeled by Form and Field; Entry IDs stay in route targets and never appear in visible or accessible reference labels, while the exact asset ID stays in advanced disclosure.
       source: asset.list
       accessible_name_source: asset-references-title
 responsive:

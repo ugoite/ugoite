@@ -99,33 +99,38 @@ features:
                 criterion: REQ-UX-ENTRY-001#criterion.form-derived-guidance
   - id: FEAT-UX-003
     title: List interaction baseline
-    summary: Record the shipped list, action-bar, and search surfaces satisfying the row activation, identifier disclosure, and one-row action bar criteria without changing UI behavior.
+    summary: Record that the Spaces list uses names or slugs and live Entry and Asset rows keep raw identifiers out of primary labels, alongside the shared row and action-bar constraints.
     status: planned
     bindings:
       - id: list-baseline
         role: implementation
         facet: frontend
-        responsibility: Keep the list interaction baseline connected to the shipped list surfaces plus the route inventory record.
+        responsibility: Keep the list interaction baseline connected to live Space, dashboard, form-entry, and Asset detail surfaces plus the route inventory record.
         targets:
-          - id: entry-list-surface
-            adapter: typescript
-            path: frontend/src/components/EntryList.tsx
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-UX-LIST-001#criterion.full-row-activation
-              - kind: satisfies
-                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
-          - id: list-panel-surface
-            adapter: typescript
-            path: frontend/src/components/ListPanel.tsx
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
           - id: spaces-route-surface
             adapter: typescript
             path: frontend/src/routes/spaces/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+          - id: dashboard-entry-surface
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/dashboard.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+          - id: form-entries-route-surface
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+          - id: asset-entry-reference-surface
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/assets/[asset_id].tsx"
             selector: { kind: file }
             claims:
               - kind: satisfies
@@ -148,6 +153,20 @@ features:
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
               - kind: satisfies
                 criterion: REQ-UX-LIST-002#criterion.one-row-action-bar
+      - id: dashboard-entry-identifier-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the live dashboard uses a human-facing Entry label while retaining the exact Entry ID only in its route target.
+        targets:
+          - id: dashboard-entry-labels
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/dashboard.test.tsx"
+            selector: { kind: test, name: "REQ-UX-LIST-001: hides Entry IDs from dashboard labels while retaining route identity" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-003#binding.list-baseline/target.dashboard-entry-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "REQ-UX-LIST-001: hides Entry IDs from dashboard labels while retaining route identity" } }
   - id: FEAT-UX-004
     title: Localization baseline
     summary: Record the shared locale dictionary satisfying the dictionary-copy criteria without changing UI behavior.

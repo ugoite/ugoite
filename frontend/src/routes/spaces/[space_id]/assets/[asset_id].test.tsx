@@ -80,7 +80,7 @@ describe("/spaces/:space_id/assets/:asset_id", () => {
 
     const blockedDelete = screen.getByRole("button", {
       name:
-        "Delete is blocked: this asset is still referenced by Reports · Attachments (entry-1).",
+        "Delete is blocked: this asset is still referenced by Reports · Attachments.",
     });
     expect(blockedDelete).toBeDisabled();
     expect(blockedDelete).toHaveClass("tool-danger");
@@ -93,7 +93,7 @@ describe("/spaces/:space_id/assets/:asset_id", () => {
     expect(container.querySelectorAll(".actionbar")).toHaveLength(1);
   });
 
-  it("PR6: shows type/size meta with download/delete actions and entry references", async () => {
+  it("REQ-UX-LIST-001: keeps Entry IDs out of asset references and blocked-delete labels", async () => {
     vi.mocked(assetApi.list).mockResolvedValue([
       item(),
       item({ entry_id: "entry-2", field: "Cover" }),
@@ -108,12 +108,16 @@ describe("/spaces/:space_id/assets/:asset_id", () => {
     // references exist: disabled, naming the referencing Entry+field.
     const blockedDelete = screen.getByRole("button", {
       name:
-        "Delete is blocked: this asset is still referenced by Reports · Attachments (entry-1), Reports · Cover (entry-2).",
+        "Delete is blocked: this asset is still referenced by Reports · Attachments, Reports · Cover.",
     });
     expect(blockedDelete).toBeDisabled();
     expect(screen.getByRole("note")).toHaveTextContent(
-      "Reports · Attachments (entry-1)",
+      "Reports · Attachments",
     );
+    expect(screen.getByRole("note")).not.toHaveTextContent("entry-1");
+    expect(screen.getByRole("note")).not.toHaveTextContent("entry-2");
+    expect(blockedDelete).not.toHaveAccessibleName(/entry-[12]/);
+    expect(document.body.textContent).not.toMatch(/entry-[12]/);
     expect(
       screen.queryByRole("button", { name: "Delete Asset: report.pdf" }),
     ).toBeNull();
@@ -149,7 +153,7 @@ describe("/spaces/:space_id/assets/:asset_id", () => {
 
     const blockedDelete = await screen.findByRole("button", {
       name:
-        "Delete is blocked: this asset is still referenced by Reports · Attachments (entry-1).",
+        "Delete is blocked: this asset is still referenced by Reports · Attachments.",
     });
     expect(blockedDelete).toBeDisabled();
     // A disabled destructive action never fires, even on direct activation.

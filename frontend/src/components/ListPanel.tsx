@@ -264,7 +264,7 @@ function EntryListItem(props: EntryListItemProps) {
       >
         <div class="flex justify-between items-start mb-2">
           <h3 class="font-semibold truncate flex-1 pr-2">
-            {entryDisplayLabel(props.entry)}
+            {entryDisplayLabel()}
           </h3>
           <Show when={props.entry.form}>
             <span class="ui-pill text-xs whitespace-nowrap">

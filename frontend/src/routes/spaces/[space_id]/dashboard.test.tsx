@@ -77,6 +77,32 @@ describe("v5 space Home", () => {
     expect(document.querySelector(".continueGrid .card")).toBeNull();
     expect(document.querySelector(".pinGrid")).toBeInTheDocument();
   });
+  it("REQ-UX-LIST-001: hides Entry IDs from dashboard labels while retaining route identity", async () => {
+    entryStoreMock.entries.mockReturnValue([{
+      id: "entry-91f6",
+      form: "Notes",
+      updated_at: "2026-10-08T00:00:00Z",
+      properties: {},
+      tags: [],
+    }]);
+    vi.mocked(formApi.list).mockResolvedValue([]);
+
+    render(() => <SpaceDashboardRoute />);
+
+    const links = await screen.findAllByRole("link", {
+      name: /Entry.*Notes/,
+    });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).toHaveAttribute(
+        "href",
+        "/spaces/default/entries/entry-91f6",
+      );
+      expect(link).toHaveAccessibleName(/Entry.*Notes/);
+      expect(link).not.toHaveAccessibleName(/entry-91f6/);
+    }
+    expect(document.body.textContent).not.toContain("entry-91f6");
+  });
   it("rediscovers saved tools from Home and opens the listed exact revision", async () => {
     vi.mocked(formApi.list).mockResolvedValue([]);
     vi.mocked(protocolFetch).mockResolvedValue({

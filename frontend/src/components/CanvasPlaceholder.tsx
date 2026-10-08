@@ -116,7 +116,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
                   {/* Card Header */}
                   <div class="p-3 ui-card-header">
                     <h3 class="font-medium truncate">
-                      {entryDisplayLabel(entry)}
+                      {entryDisplayLabel()}
                     </h3>
                     <Show when={entry.form}>
                       <span class="text-xs ui-muted">{entry.form}</span>

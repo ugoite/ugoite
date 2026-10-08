@@ -31,8 +31,9 @@ describe("CanvasPlaceholder", () => {
   it("should display entries as cards", () => {
     render(() => <CanvasPlaceholder entries={mockEntries} />);
 
-    expect(screen.getByText("entry-1")).toBeInTheDocument();
-    expect(screen.getByText("entry-2")).toBeInTheDocument();
+    expect(screen.getAllByText("Entry")).toHaveLength(2);
+    expect(screen.queryByText("entry-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("entry-2")).not.toBeInTheDocument();
   });
 
   it("should show entry properties on cards", () => {
@@ -51,7 +52,7 @@ describe("CanvasPlaceholder", () => {
       />
     ));
 
-    fireEvent.click(screen.getByText("entry-1"));
+    fireEvent.click(screen.getAllByText("Entry")[0]);
 
     expect(onSelect).toHaveBeenCalledWith("entry-1");
   });
@@ -89,7 +90,7 @@ describe("CanvasPlaceholder", () => {
     expect(card.style.top).toBe("360px");
   });
 
-  it("should show the entry ID", () => {
+  it("should keep the Entry ID out of the primary card label", () => {
     const noTitleEntry: EntryRecord = {
       id: "no-title",
       updated_at: "2025-01-01T00:00:00Z",
@@ -97,7 +98,8 @@ describe("CanvasPlaceholder", () => {
       tags: [],
     };
     render(() => <CanvasPlaceholder entries={[noTitleEntry]} />);
-    expect(screen.getByText("no-title")).toBeInTheDocument();
+    expect(screen.getByText("Entry")).toBeInTheDocument();
+    expect(screen.queryByText("no-title")).not.toBeInTheDocument();
   });
 
   it("should display entry with form badge and non-string properties and >3 properties", () => {

@@ -188,8 +188,8 @@ export default function SpaceDashboardRoute() {
                   <UiIcon name="entry" />
                 </span>
                 <span>
-                  <b>{entryDisplayLabel(entry())}</b>
-                  <small>{entry().form || t("dashboard.entry")}</small>
+                  <b>{entryDisplayLabel()}</b>
+                  <small>{entry().form || "—"}</small>
                 </span>
                 <span class="chev">›</span>
               </A>
@@ -291,8 +291,8 @@ export default function SpaceDashboardRoute() {
                   <UiIcon name="entry" />
                 </span>
                 <span>
-                  <b>{entryDisplayLabel(entry)}</b>
-                  <small>{t("dashboard.entry")} · {entry.form || "—"}</small>
+                  <b>{entryDisplayLabel()}</b>
+                  <small>{entry.form || "—"}</small>
                 </span>
                 <span>›</span>
               </A>

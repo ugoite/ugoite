@@ -38,7 +38,7 @@ describe("EntryList", () => {
       expect(screen.getByText(/no entries/i)).toBeInTheDocument();
     });
 
-    it("should render list of entries with IDs", async () => {
+    it("should render generic Entry labels without exposing IDs", async () => {
       const record1: EntryRecord = {
         id: "entry-1",
         updated_at: "2025-01-01T00:00:00Z",
@@ -60,8 +60,9 @@ describe("EntryList", () => {
         <EntryList entries={entries} loading={loading} error={error} />
       ));
 
-      expect(screen.getByText("entry-1")).toBeInTheDocument();
-      expect(screen.getByText("entry-2")).toBeInTheDocument();
+      expect(screen.getAllByText("Entry")).toHaveLength(2);
+      expect(screen.queryByText("entry-1")).not.toBeInTheDocument();
+      expect(screen.queryByText("entry-2")).not.toBeInTheDocument();
     });
 
     it("should display extracted properties in entry cards", async () => {
@@ -77,7 +78,8 @@ describe("EntryList", () => {
         <EntryList entries={entries} loading={loading} error={error} />
       ));
 
-      expect(screen.getByText("prop-entry")).toBeInTheDocument();
+      expect(screen.getByText("Entry")).toBeInTheDocument();
+      expect(screen.queryByText("prop-entry")).not.toBeInTheDocument();
       // Check for the property key (Date:) and value (2025-01-15)
       expect(screen.getByText("Date:")).toBeInTheDocument();
       expect(screen.getByText("2025-01-15")).toBeInTheDocument();
@@ -108,9 +110,10 @@ describe("EntryList", () => {
         <EntryList entries={entries} loading={loading} error={error} />
       ));
 
-      expect(screen.getByText("null-prop-entry")).toBeInTheDocument();
-      expect(screen.getByText("undefined-prop-entry"))
-        .toBeInTheDocument();
+      expect(screen.getAllByText("Entry")).toHaveLength(2);
+      expect(screen.queryByText("null-prop-entry")).not.toBeInTheDocument();
+      expect(screen.queryByText("undefined-prop-entry"))
+        .not.toBeInTheDocument();
     });
 
     it("should call onSelect when a entry is clicked", async () => {
@@ -132,7 +135,7 @@ describe("EntryList", () => {
         />
       ));
 
-      fireEvent.click(screen.getByText("click-entry"));
+      fireEvent.click(screen.getByText("Entry"));
 
       expect(onSelect).toHaveBeenCalledWith("click-entry");
     });
@@ -172,7 +175,8 @@ describe("EntryList", () => {
         <EntryList entries={entries} loading={loading} error={error} />
       ));
 
-      expect(screen.getByText("kept-entry")).toBeInTheDocument();
+      expect(screen.getByText("Entry")).toBeInTheDocument();
+      expect(screen.queryByText("kept-entry")).not.toBeInTheDocument();
       expect(screen.getByRole("status")).toBeInTheDocument();
     });
 
@@ -214,7 +218,8 @@ describe("EntryList", () => {
       render(() => (
         <EntryList entries={entries} loading={loading} error={error} />
       ));
-      expect(screen.getByText("form-entry")).toBeInTheDocument();
+      expect(screen.getByText("Entry")).toBeInTheDocument();
+      expect(screen.queryByText("form-entry")).not.toBeInTheDocument();
       expect(screen.getByText("Meeting")).toBeInTheDocument();
       expect(screen.getByText("5")).toBeInTheDocument();
       expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
@@ -230,7 +235,7 @@ describe("EntryList", () => {
       });
     });
 
-    it("should render list of entries with IDs", async () => {
+    it("should render generic Entry labels without exposing IDs", async () => {
       const entry1: Entry = {
         id: "entry-1",
         content: "# First Entry",
@@ -264,8 +269,9 @@ describe("EntryList", () => {
       render(() => <EntryList spaceId="ui-test-ws" />);
 
       await waitFor(() => {
-        expect(screen.getByText("entry-1")).toBeInTheDocument();
-        expect(screen.getByText("entry-2")).toBeInTheDocument();
+        expect(screen.getAllByText("Entry")).toHaveLength(2);
+        expect(screen.queryByText("entry-1")).not.toBeInTheDocument();
+        expect(screen.queryByText("entry-2")).not.toBeInTheDocument();
       });
     });
 
@@ -290,10 +296,10 @@ describe("EntryList", () => {
       render(() => <EntryList spaceId="ui-test-ws" onSelect={onSelect} />);
 
       await waitFor(() => {
-        expect(screen.getByText("click-entry")).toBeInTheDocument();
+        expect(screen.getByText("Entry")).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByText("click-entry"));
+      fireEvent.click(screen.getByText("Entry"));
 
       expect(onSelect).toHaveBeenCalledWith("click-entry");
     });
