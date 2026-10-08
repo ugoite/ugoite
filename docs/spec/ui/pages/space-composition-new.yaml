@@ -71,6 +71,8 @@ components:
       title: Data
       scope: data-mode-and-split-pane-only
       source: draft sources with human names only
+      entry_query_field_labels: transient-human-name-then-localized-schema-ordinal
+      field_identity: raw-field-ids-stay-in-query-data-and-never-render-in-data-editor-rows
       selection: full-row-activate
       reorder: keyboard-operable-move-up-down
       remove: blocked-while-displays-reference-with-reason
