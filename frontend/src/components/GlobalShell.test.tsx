@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, within } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GlobalShell } from "./GlobalShell";
 import { authApi } from "~/lib/ugoite-client";
@@ -7,6 +13,7 @@ import { setLocale } from "~/lib/i18n";
 
 const docsHref =
   "https://ugoite.github.io/ugoite/docs/get-started";
+const navigate = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/ugoite-client", () => ({
   authApi: {
@@ -19,7 +26,7 @@ vi.mock("@solidjs/router", () => ({
     const { children, ...rest } = props;
     return <a {...(rest as never)}>{children as never}</a>;
   },
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigate,
   useParams: () => ({}),
 }));
 
@@ -27,6 +34,7 @@ describe("GlobalShell account menu", () => {
   beforeEach(() => {
     setLocale("en");
     vi.mocked(authApi.clearSession).mockReset();
+    navigate.mockReset();
   });
 
   it("does not sign out when the avatar is opened", () => {
@@ -71,7 +79,12 @@ describe("GlobalShell account menu", () => {
   });
 
   it("signs out only from the explicit menu action", async () => {
-    vi.mocked(authApi.clearSession).mockResolvedValue(undefined);
+    let resolveClearSession!: () => void;
+    vi.mocked(authApi.clearSession).mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveClearSession = resolve;
+      }),
+    );
     render(() => (
       <GlobalShell>
         <p>Content</p>
@@ -82,6 +95,12 @@ describe("GlobalShell account menu", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
 
     expect(authApi.clearSession).toHaveBeenCalledOnce();
+    expect(navigate).not.toHaveBeenCalled();
+    resolveClearSession();
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/login", { replace: true })
+    );
+    expect(navigate).toHaveBeenCalledOnce();
   });
 
   it("shows a sign-in link when used for a public route", () => {
