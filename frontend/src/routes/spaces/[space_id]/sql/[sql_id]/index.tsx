@@ -250,29 +250,45 @@ export default function SpaceSqlDetailRoute() {
                     </h2>
                     <ul class="list-disc space-y-1 pl-5 text-sm ui-muted">
                       <For each={bindingDiagnostics()}>
-                        {(binding) => (
-                          <li>
-                            {binding.currentName === binding.name
-                              ? t("sqlPage.boundForm", { name: binding.name })
-                              : binding.currentName
-                              ? t("sqlPage.renamedBoundForm", {
-                                savedName: binding.name,
-                                currentName: binding.currentName,
-                              })
-                              : t("sqlPage.missingBoundForm", {
-                                name: binding.name,
-                              })}
-                            <details class="mt-1">
-                              <summary>{t("sqlPage.technicalDetails")}</summary>
-                              <dl>
-                                <dt>{t("sqlPage.formId")}</dt>
-                                <dd class="font-mono break-all">
-                                  {binding.formId}
-                                </dd>
-                              </dl>
-                            </details>
-                          </li>
-                        )}
+                        {(binding) => {
+                          const [technicalDetailsOpen, setTechnicalDetailsOpen] =
+                            createSignal(false);
+                          return (
+                            <li>
+                              {binding.currentName === binding.name
+                                ? t("sqlPage.boundForm", {
+                                  name: binding.name,
+                                })
+                                : binding.currentName
+                                ? t("sqlPage.renamedBoundForm", {
+                                  savedName: binding.name,
+                                  currentName: binding.currentName,
+                                })
+                                : t("sqlPage.missingBoundForm", {
+                                  name: binding.name,
+                                })}
+                              <details
+                                class="mt-1"
+                                onToggle={(event) =>
+                                  setTechnicalDetailsOpen(
+                                    event.currentTarget.open,
+                                  )}
+                              >
+                                <summary>
+                                  {t("sqlPage.technicalDetails")}
+                                </summary>
+                                <Show when={technicalDetailsOpen()}>
+                                  <dl>
+                                    <dt>{t("sqlPage.formId")}</dt>
+                                    <dd class="font-mono break-all">
+                                      {binding.formId}
+                                    </dd>
+                                  </dl>
+                                </Show>
+                              </details>
+                            </li>
+                          );
+                        }}
                       </For>
                     </ul>
                   </section>

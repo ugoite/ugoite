@@ -28,7 +28,7 @@ components:
     - id: sql-detail-metadata
       type: list
       title: Query metadata
-      includes: saved and current Form names for immutable Form-ID bindings
+      includes: updated and created timestamps and variable count
     - id: sql-detail-form-bindings
       type: list
       title: Bound Forms

@@ -304,7 +304,7 @@ requirements:
       - id: form-binding-identifiers
         kind: behavior
         statement: Saved SQL Form-binding status uses the saved and current human-readable Form names. Immutable Form IDs are available only inside a closed per-binding technical-details disclosure and stay out of the default visible and accessible text.
-        governed_by: [POL-UI-005#rule.governance, POL-UI-006#rule.governance]
+        governed_by: [POL-UI-005#rule.governance]
       - id: supported-actions
         kind: behavior
         statement: A variable-free saved query uses the canonical stateless SQL query API and routes to SQL results, while a query with variables links to the existing variable-input flow.

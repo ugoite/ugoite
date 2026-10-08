@@ -183,13 +183,18 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       ),
     ).toBeInTheDocument();
     const bindingStatus = screen.getByRole("region", { name: "Bound Forms" });
-    const formId = within(bindingStatus).getByText("form-stable-id");
-    expect(formId).not.toBeVisible();
+    expect(within(bindingStatus).queryByText("form-stable-id")).toBeNull();
+    expect(within(bindingStatus).queryByRole("definition")).toBeNull();
 
     fireEvent.click(
       within(bindingStatus).getByText("Technical details"),
     );
-    expect(formId).toBeVisible();
+    await waitFor(() => {
+      expect(within(bindingStatus).getByText("form-stable-id")).toBeVisible();
+      expect(within(bindingStatus).getByRole("definition")).toHaveTextContent(
+        "form-stable-id",
+      );
+    });
   });
 
   it("REQ-FE-062: saved SQL detail routes variable-free queries to stateless results", async () => {
