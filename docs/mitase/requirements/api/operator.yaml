@@ -335,3 +335,12 @@ requirements:
                 criterion: REQ-API-017#criterion.receipt-gated-knowledge-outcome
                 covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "shows an unchanged Knowledge outcome when the model only answers" } }
+          - id: browser-write-target-identity
+            adapter: typescript
+            path: frontend/src/lib/konase/host.test.ts
+            selector: { kind: test, name: "resolves an omitted Form name before approving a complete field-map replacement" }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-017#criterion.request-scoped-write-approval
+                covers: [FEAT-API-001#binding.konase-host/target.browser-write-host]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/konase/host.test.ts, test: "resolves an omitted Form name before approving a complete field-map replacement" } }

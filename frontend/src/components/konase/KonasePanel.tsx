@@ -44,6 +44,7 @@ type PanelLifetime = {
 export function KonasePanel(props: KonasePanelProps) {
   const [configuredHost, setConfiguredHost] = createSignal<KonaseHost>();
   const [configuredSpaceId, setConfiguredSpaceId] = createSignal<string>();
+  const [connectedSpaceName, setConnectedSpaceName] = createSignal<string>();
   const activeHost = () =>
     configuredSpaceId() === props.spaceId ? configuredHost() : undefined;
   const [modelApiKey, setModelApiKey] = createSignal("");
@@ -140,6 +141,7 @@ export function KonasePanel(props: KonasePanelProps) {
       unsubscribe = undefined;
       setConfiguredHost(undefined);
       setConfiguredSpaceId(undefined);
+      setConnectedSpaceName(undefined);
       setApprovalUrl(undefined);
       setConnecting(false);
       setPrompt("");
@@ -254,6 +256,14 @@ export function KonasePanel(props: KonasePanelProps) {
       });
       setConfiguredHost(host);
       setConfiguredSpaceId(requestedSpaceId);
+      setConnectedSpaceName(
+        readableSpaceLabel(
+          space.name,
+          space.slug,
+          requestedSpaceId,
+          spaceUid,
+        ),
+      );
       subscribe(host, configureLifetime);
       void loadFormCandidates(requestedSpaceId, configureLifetime);
     } catch (cause) {
@@ -890,9 +900,11 @@ export function KonasePanel(props: KonasePanelProps) {
               <div>
                 <dt>{t("konase.approvalTarget")}</dt>
                 <dd>
-                  {preview().spaceId}
+                  {connectedSpaceName() || t("konase.currentSpace")}
                   {preview().form ? ` / ${preview().form}` : ""}
-                  {preview().entryId ? ` / ${preview().entryId}` : ""}
+                  {preview().action === "update"
+                    ? ` / ${t("konase.existingEntry")}`
+                    : ""}
                 </dd>
               </div>
               <div>
@@ -902,6 +914,35 @@ export function KonasePanel(props: KonasePanelProps) {
                 </dd>
               </div>
             </dl>
+            <details class="ui-stack-sm">
+              <summary>{t("konase.technicalDetails")}</summary>
+              <dl class="ui-stack-sm">
+                <div>
+                  <dt>{t("konase.spaceId")}</dt>
+                  <dd>
+                    <code>{preview().spaceId}</code>
+                  </dd>
+                </div>
+                <Show when={preview().action === "undo"}>
+                  <div>
+                    <dt>{t("konase.workId")}</dt>
+                    <dd>
+                      <code>{preview().workId}</code>
+                    </dd>
+                  </div>
+                </Show>
+                <Show when={preview().entryId}>
+                  {(entryId) => (
+                    <div>
+                      <dt>{t("konase.entryId")}</dt>
+                      <dd>
+                        <code>{entryId()}</code>
+                      </dd>
+                    </div>
+                  )}
+                </Show>
+              </dl>
+            </details>
             <Show when={confirmationSubmitting()}>
               <p role="status">{t("konase.saving")}</p>
             </Show>
@@ -971,6 +1012,19 @@ export function KonasePanel(props: KonasePanelProps) {
 const formCandidateLabel = (form: Form) => {
   const name = form.name.trim();
   return name && name !== form.id ? name : t("konase.formCandidate");
+};
+
+const readableSpaceLabel = (
+  name: string,
+  slug: string | undefined,
+  spaceId: string,
+  spaceUid: string,
+) => {
+  for (const candidate of [name, slug ?? ""]) {
+    const label = candidate.trim();
+    if (label && label !== spaceId && label !== spaceUid) return label;
+  }
+  return "";
 };
 
 const entryCandidateLabel = (entry: EntryQueryResult) => {
