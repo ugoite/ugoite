@@ -157,6 +157,38 @@ const collectTargets = (value: unknown, targets: string[]) => {
 };
 
 describe("UI spec YAML registry", () => {
+  it("REQ-FE-040: declares GlobalShell account entry states", () => {
+    const shellPath = path.join(componentsDir, "global-shell.yaml");
+    const shell = parse(readFileSync(shellPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    const entry = shell.components?.find(({ id }) =>
+      id === "global-account-entry"
+    );
+
+    expect(entry).toMatchObject({
+      type: "account-entry",
+      implementation: "frontend/src/components/GlobalShell.tsx",
+      tests: "frontend/src/components/GlobalShell.test.tsx",
+      position: "workspace-topbar.trailing",
+      signed_out: {
+        control: "sign-in-link",
+        label: "globalShell.signIn",
+        destination: "/login",
+        visible_when: "authenticated-is-false",
+      },
+      signed_in: {
+        control: "AccountMenu",
+        visible_when: "authenticated-is-true-or-unspecified",
+        sign_out: {
+          trigger: "explicit-menu-action",
+          session: "clear-before-navigation",
+          destination: "/login",
+        },
+      },
+    });
+  });
+
   it("REQ-FE-040: loads UI page specs", () => {
     const pages = loadPages();
     expect(pages.length).toBeGreaterThan(0);

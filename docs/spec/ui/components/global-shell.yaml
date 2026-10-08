@@ -1,0 +1,23 @@
+version: "0.1"
+updated: "2026-10-09"
+component_group:
+  id: global-shell
+  title: Global Shell
+components:
+  - id: global-account-entry
+    type: account-entry
+    implementation: frontend/src/components/GlobalShell.tsx
+    tests: frontend/src/components/GlobalShell.test.tsx
+    position: workspace-topbar.trailing
+    signed_out:
+      control: sign-in-link
+      label: globalShell.signIn
+      destination: /login
+      visible_when: authenticated-is-false
+    signed_in:
+      control: AccountMenu
+      visible_when: authenticated-is-true-or-unspecified
+      sign_out:
+        trigger: explicit-menu-action
+        session: clear-before-navigation
+        destination: /login

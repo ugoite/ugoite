@@ -211,6 +211,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.shared-chrome
+          - id: global-shell-account-entry
+            adapter: declared
+            path: docs/spec/ui/components/global-shell.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
           - id: component-space-settings
             adapter: declared
             path: docs/spec/ui/components/space-settings.yaml

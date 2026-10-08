@@ -70,6 +70,15 @@ requirements:
                 criterion: REQ-UX-DASH-001#criterion.recent-count-bound
                 covers: [FEAT-FE-013#binding.frontend/target.page-space-dashboard]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares the dashboard Recent maximum after duplicate suppression" } }
+          - id: global-shell-account-entry-contract
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: declares GlobalShell account entry states" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.global-shell-account-entry]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares GlobalShell account entry states" } }
           - id: component-types
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts

@@ -49,6 +49,20 @@ features:
                 criterion: REQ-FE-058#criterion.calm-loading
               - kind: satisfies
                 criterion: REQ-FE-001#criterion.human-readable-labels
+      - id: global-shell-contract
+        role: contract-source
+        facet: frontend
+        responsibility: Define the GlobalShell account entry shown for signed-out and signed-in visitors.
+        targets:
+          - id: global-account-entry-contract
+            adapter: declared
+            path: docs/spec/ui/components/global-shell.yaml
+            selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: REQ-FE-066#criterion.public-sign-in
+              - kind: evidences
+                anchor: REQ-FE-066#criterion.explicit-session-exit
 
   - id: FEAT-FE-010
     title: Form list navigation workspace
