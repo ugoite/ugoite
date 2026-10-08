@@ -196,7 +196,9 @@ export function CredentialSettings() {
                   <span>
                     {oidcIssuerLabel(link.issuer)} · {t("securityPage.linked")}
                     {link.last_used_at
-                      ? ` · ${t("securityPage.lastUsed")} ${formatDateTimeLabel(link.last_used_at)}`
+                      ? ` · ${t("securityPage.lastUsed")} ${
+                        formatDateTimeLabel(link.last_used_at)
+                      }`
                       : ""}
                   </span>
                   <button
@@ -250,11 +252,10 @@ export function CredentialSettings() {
             <button
               type="button"
               class="ui-button ui-button-primary"
-              onClick={() =>
-                void runAction(async () => {
-                  await authApi.addBootstrapPasskey();
-                  await refetch();
-                })}
+              onClick={() => void runAction(async () => {
+                await authApi.addBootstrapPasskey();
+                await refetch();
+              })}
             >
               {t("securityPage.bootstrapPasskey")}
             </button>
@@ -284,17 +285,22 @@ export function CredentialSettings() {
           <Show when={credentials()}>
             {(value) => (
               <For each={value().passkeys}>
-                {(credential) => (
+                {(credential, index) => (
                   <div class="flex items-center justify-between">
                     <span>
-                      {String(credential.credential_id)} ·{" "}
-                      {t("securityPage.lastUsed")} {credential.last_used_at
+                      {t("securityPage.passkeyNumberedLabel", {
+                        number: index() + 1,
+                      })} · {t("securityPage.lastUsed")}{" "}
+                      {credential.last_used_at
                         ? formatDateTimeLabel(credential.last_used_at)
                         : t("securityPage.never")}
                     </span>
                     <button
                       type="button"
                       class="ui-button ui-button-secondary"
+                      aria-label={t("securityPage.revokePasskeyNumbered", {
+                        number: index() + 1,
+                      })}
                       onClick={() =>
                         void runAction(async () => {
                           await authApi.revokePasskey(
@@ -322,11 +328,12 @@ export function CredentialSettings() {
           <Show when={credentials()}>
             {(value) => (
               <For each={value().sessions}>
-                {(session) => (
+                {(session, index) => (
                   <div class="flex items-center justify-between">
                     <span>
-                      {String(session.session_id)} ·{" "}
-                      {t("securityPage.lastSeen")} {session.last_seen_at
+                      {t("securityPage.browserSessionNumberedLabel", {
+                        number: index() + 1,
+                      })} · {t("securityPage.lastSeen")} {session.last_seen_at
                         ? formatDateTimeLabel(session.last_seen_at)
                         : t("securityPage.never")}
                       {session.revoked_at
@@ -337,6 +344,9 @@ export function CredentialSettings() {
                       <button
                         type="button"
                         class="ui-button ui-button-secondary"
+                        aria-label={t("securityPage.revokeSessionNumbered", {
+                          number: index() + 1,
+                        })}
                         onClick={() =>
                           void runAction(async () => {
                             await authApi.revokeSession(

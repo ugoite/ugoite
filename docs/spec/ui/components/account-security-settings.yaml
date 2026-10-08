@@ -1,0 +1,40 @@
+version: "0.1"
+updated: "2026-10-08"
+component_group:
+  id: account-security-settings
+  title: Account Security Settings
+components:
+  - id: account-security-settings
+    type: settings-panel
+    route: /settings/security
+    implementation: frontend/src/routes/settings/security.tsx
+    tests: frontend/src/routes/settings/security.test.tsx
+    scope: global-account
+    credential_tabs:
+      label: localized-credentials
+      items: [passkeys, sessions, audit-log]
+      selection: query-param-tab
+      unsupported_selection: passkeys
+      visible_panel: selected-only
+    passkeys:
+      row_label: localized-numbered-neutral-passkey
+      visible_activity: localized-last-used-or-never
+      revoke_action:
+        visible_label: localized-revoke
+        accessible_name: localized-revoke-numbered-passkey
+        request_target: exact-credential-id
+      identifiers_visible_in_row_or_accessible_name: false
+    sessions:
+      row_label: localized-numbered-neutral-browser-session
+      visible_activity: localized-last-seen-or-never-and-revoked-status
+      revoke_action:
+        active_sessions_only: true
+        visible_label: localized-revoke
+        accessible_name: localized-revoke-numbered-session
+        request_target: exact-session-id
+      identifiers_visible_in_row_or_accessible_name: false
+    other_sections:
+      - recovery-only-totp-enrollment
+      - oidc-sign-in-links
+      - invitation-bootstrap-first-passkey
+      - node-audit-log
