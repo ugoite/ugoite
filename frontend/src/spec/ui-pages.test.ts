@@ -368,14 +368,25 @@ describe("UI spec YAML registry", () => {
         );
         expect(component).toBeTruthy();
         expect(implementation).toContain(component?.implementation);
-        expect(component?.variants).toMatchObject({
-          general: { controls: ["space-name", "save"] },
-          storage: {
-            controls: ["storage-uri", "test-connection", "save"],
-            advanced_details: ["endpoint", "configuration-status"],
-            save_payload: "storage-configuration-only",
-          },
-        });
+        if (contract.id === "space-settings-editor") {
+          expect(component?.variants).toMatchObject({
+            general: { controls: ["space-name", "save"] },
+            storage: {
+              controls: ["storage-uri", "test-connection", "save"],
+              advanced_details: ["endpoint", "configuration-status"],
+              save_payload: "storage-configuration-only",
+            },
+          });
+        }
+        if (contract.id === "audit-log-viewer") {
+          const consumers = component?.consumers as {
+            space?: { wrapper: unknown; page: unknown };
+          };
+          expect(consumers.space).toMatchObject({
+            wrapper: section.component,
+            page: `${String(page?.spec.page?.id)}#section.${String(section.id)}`,
+          });
+        }
       }
 
       const targetPage = section.target_page;

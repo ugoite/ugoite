@@ -45,6 +45,7 @@ inventory:
         - frontend/src/routes/recover.test.tsx
         - frontend/src/components/AuditLogViewer.tsx
         - frontend/src/components/AuditLogViewer.test.tsx
+        - frontend/src/components/AuditLogViewer.contract.test.tsx
         - frontend/src/components/create-dialogs.tsx
         - frontend/src/components/create-dialogs.test.tsx
         - frontend/src/components/SearchBar.tsx
