@@ -530,7 +530,7 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       {
         path: "frontend/src/components/konase/KonasePanel.test.tsx",
         selector:
-          "reads only selected Form and Entry candidates, previews normalized Context, then waits for send",
+          "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview",
       },
     ],
     availability: "existing",
