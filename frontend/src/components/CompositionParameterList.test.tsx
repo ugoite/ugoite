@@ -98,6 +98,44 @@ describe("composition parameter list", () => {
     expect(onUpdate).toHaveBeenCalledWith({ ...month, default: "2026-10-01" });
   });
 
+  it("uses the declared label while keeping the parameter name for updates and removal", () => {
+    const labeledMonth: DraftParameter = {
+      ...month,
+      id: "month_key",
+      label: "Month",
+    };
+    const onUpdate = vi.fn();
+    const onRemove = vi.fn(() => undefined);
+    render(() => (
+      <CompositionParameterList
+        parameters={[labeledMonth]}
+        headingId="params"
+        referencedIds={new Set(["month_key"])}
+        onAdd={() => {}}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+      />
+    ));
+
+    expect(screen.getByText("Month")).toBeInTheDocument();
+    expect(screen.queryByText("month_key")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Label for Month")).toHaveValue("Month");
+    expect(screen.queryByLabelText("Label for month_key")).not
+      .toBeInTheDocument();
+    expect(screen.queryByLabelText("Default for month_key")).not
+      .toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Default for Month"), {
+      target: { value: "2026-10-01" },
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      ...labeledMonth,
+      default: "2026-10-01",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Month" }));
+    expect(onRemove).toHaveBeenCalledWith("month_key");
+  });
+
   it("surfaces guarded removal without deleting", () => {
     const onRemove = vi.fn(() => "This parameter is used by a data source.");
     render(() => (

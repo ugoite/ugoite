@@ -79,6 +79,8 @@ features:
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
           - id: composition-use-surface
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx

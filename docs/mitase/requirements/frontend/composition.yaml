@@ -28,7 +28,7 @@ requirements:
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
       - id: typed-parameter-binding
         kind: behavior
-        statement: Parameters use the existing Composition parameter grammar with labels, defaults, and date/month/timestamp inputs; Saved SQL variables and EntryQuery filter values bind to parameters by reference, and type compatibility is decided by the Rust-owned capability and diagnostics, never by Browser inference.
+        statement: Parameters use the existing Composition parameter grammar with labels, defaults, and date/month/timestamp inputs. Studio parameter rows prefer the declared human label and fall back to the user-authored parameter name that binds references; Saved SQL variables and EntryQuery filter values bind to parameters by reference, and type compatibility is decided by the Rust-owned capability and diagnostics, never by Browser inference.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: side-effect-free-preview
         kind: behavior
@@ -305,6 +305,19 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: adds typed parameters and edits defaults inline } }
+          - id: parameter-label-first-display
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: uses the declared label while keeping the parameter name for updates and removal }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: uses the declared label while keeping the parameter name for updates and removal } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: uses the declared label while keeping the parameter name for updates and removal } }
           - id: parameter-guarded-remove
             adapter: typescript
             path: frontend/src/components/CompositionParameterList.test.tsx

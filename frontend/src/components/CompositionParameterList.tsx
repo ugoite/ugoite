@@ -37,6 +37,9 @@ const parseValue = (
   return value;
 };
 
+const parameterDisplayName = (parameter: DraftParameter): string =>
+  parameter.label?.trim() || parameter.id;
+
 interface CompositionParameterListProps {
   parameters: DraftParameter[];
   headingId: string;
@@ -102,7 +105,7 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
               <RowListItem
                 main={
                   <span class="rowListName">
-                    <span>{parameter.id}</span>
+                    <span>{parameterDisplayName(parameter)}</span>
                     <span class="ui-muted">{parameter.type}</span>
                   </span>
                 }
@@ -110,7 +113,7 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
                   <IconButton
                     icon="trash"
                     label={t("composition.studioRemoveParameter", {
-                      name: parameter.label || parameter.id,
+                      name: parameterDisplayName(parameter),
                     })}
                     onClick={() => {
                       const reason = props.onRemove(parameter.id);
@@ -136,7 +139,7 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
                   class="ui-input"
                   value={parameter.label ?? ""}
                   aria-label={t("composition.studioParameterLabelName", {
-                    name: parameter.id,
+                    name: parameterDisplayName(parameter),
                   })}
                   onChange={(event) =>
                     props.onUpdate({
@@ -165,7 +168,7 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
                       step={parameter.type === "integer" ? "1" : undefined}
                       value={displayValue(parameter)}
                       aria-label={t("composition.studioParameterDefaultName", {
-                        name: parameter.id,
+                        name: parameterDisplayName(parameter),
                       })}
                       onChange={(event) =>
                         props.onUpdate({
@@ -182,7 +185,7 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
                     class="ui-input"
                     value={displayValue(parameter)}
                     aria-label={t("composition.studioParameterDefaultName", {
-                      name: parameter.id,
+                      name: parameterDisplayName(parameter),
                     })}
                     onChange={(event) =>
                       props.onUpdate({
@@ -208,7 +211,7 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
                   type="checkbox"
                   checked={parameter.required}
                   aria-label={t("composition.studioParameterRequiredName", {
-                    name: parameter.id,
+                    name: parameterDisplayName(parameter),
                   })}
                   onChange={(event) =>
                     props.onUpdate({
