@@ -94,6 +94,10 @@ export default defineConfig({
         // while an older client still needs to import them.
         registerType: "prompt",
         injectRegister: "auto",
+        // Serve the worker at the origin root so it can control app routes
+        // outside SolidStart's /_build client-asset base.
+        filename: "../sw.js",
+        scope: "/",
         includeAssets: [
           "favicon.ico",
           "brand/ugoite-icon-square.svg",

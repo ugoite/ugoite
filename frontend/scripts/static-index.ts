@@ -1,16 +1,7 @@
-export const extractPwaHeadTags = (html: string): string => {
-  const manifestTag = html.match(
-    /<link\b(?=[^>]*\srel=["']manifest["'])[^>]*>/i,
-  )?.[0];
-  const registrationTag = html.match(
-    /<script\b(?=[^>]*\sid=["']vite-plugin-pwa:register-sw["'])[^>]*>\s*<\/script>/i,
-  )?.[0];
+const buildBase = "/_build/";
 
-  if (!manifestTag || !registrationTag) {
-    throw new Error(
-      "The generated index must include the Vite PWA manifest and service worker registration tags",
-    );
-  }
-
-  return `${manifestTag}\n\t\t${registrationTag}`;
-};
+export const buildPwaHeadTags = (): string =>
+  [
+    `<link rel="manifest" href="${buildBase}manifest.webmanifest">`,
+    `<script id="vite-plugin-pwa:register-sw" src="${buildBase}registerSW.js"></script>`,
+  ].join("\n\t\t");
