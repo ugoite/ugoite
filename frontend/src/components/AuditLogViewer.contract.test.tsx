@@ -245,10 +245,12 @@ describe("AuditLogViewer component contract", () => {
     const details = row.querySelector("details");
     if (!details) throw new Error("Audit event details were not rendered");
     const eventHash = within(details).getByText("event-hash-1");
+    const metadata = within(details).getByText(/"source": "space-router"/);
     expect(eventHash).not.toBeVisible();
+    expect(metadata).not.toBeVisible();
 
     fireEvent.click(within(details).getByText("View details"));
     expect(eventHash).toBeVisible();
-    expect(details).toHaveTextContent('"source": "space-router"');
+    expect(metadata).toBeVisible();
   });
 });
