@@ -81,6 +81,7 @@ export function KonasePanel(props: KonasePanelProps) {
   const [error, setError] = createSignal<string>();
   let entrySearchGeneration = 0;
   let entrySearchController: AbortController | undefined;
+  const entryBaseLabels = new Map<string, string>();
   let unsubscribe: (() => void) | undefined;
   let pendingSpaceId: string | undefined;
   let panelHeading: HTMLHeadingElement | undefined;
@@ -119,6 +120,48 @@ export function KonasePanel(props: KonasePanelProps) {
     candidate.spaceId === lifetime.spaceId &&
     candidate.spaceId === props.spaceId;
 
+  const rememberEntryCandidateLabels = (entries: EntryQueryResult[]) => {
+    for (const entry of entries) {
+      entryBaseLabels.set(
+        `ugoite://entry/${entry.id}`,
+        entryCandidateLabel(entry),
+      );
+    }
+
+    const entriesByLabel = new Map<string, string[]>();
+    for (const [uri, label] of entryBaseLabels) {
+      const matching = entriesByLabel.get(label);
+      if (matching) matching.push(uri);
+      else entriesByLabel.set(label, [uri]);
+    }
+
+    const labels: Record<string, string> = {};
+    for (const [label, uris] of entriesByLabel) {
+      uris.forEach((uri, index) => {
+        labels[uri] = uris.length === 1
+          ? label
+          : label === t("konase.entryCandidate")
+          ? t("konase.entryOrdinalLabel", { count: index + 1 })
+          : t("konase.entryCandidateOrdinalLabel", {
+            label,
+            count: index + 1,
+          });
+      });
+    }
+
+    if (new Set(Object.values(labels)).size !== Object.keys(labels).length) {
+      Array.from(entryBaseLabels).forEach(([uri, label], index) => {
+        labels[uri] = label === t("konase.entryCandidate")
+          ? t("konase.entryOrdinalLabel", { count: index + 1 })
+          : t("konase.entryCandidateIndexedLabel", {
+            label,
+            count: index + 1,
+          });
+      });
+    }
+    return labels;
+  };
+
   createEffect(() => {
     const currentSpaceId = props.spaceId;
     if (lifetime.spaceId !== currentSpaceId) {
@@ -150,6 +193,7 @@ export function KonasePanel(props: KonasePanelProps) {
       setTurn(undefined);
       setSelectedUris([]);
       setResourceLabels({});
+      entryBaseLabels.clear();
       setForms([]);
       setFormsLoading(false);
       setEntryRows([]);
@@ -402,15 +446,13 @@ export function KonasePanel(props: KonasePanelProps) {
         generation !== entrySearchGeneration || controller.signal.aborted ||
         !isCurrentLifetime(hostLifetime)
       ) return;
-      setEntryRows(page.rows);
-      setEntryPage(page);
+      const entryLabels = rememberEntryCandidateLabels(page.rows);
       setResourceLabels((current) => ({
         ...current,
-        ...Object.fromEntries(page.rows.map((entry) => [
-          `ugoite://entry/${entry.id}`,
-          entryCandidateLabel(entry),
-        ])),
+        ...entryLabels,
       }));
+      setEntryRows(page.rows);
+      setEntryPage(page);
       if (nextPath) setEntryCursorPath(nextPath);
     } catch (cause) {
       if (
@@ -726,7 +768,7 @@ export function KonasePanel(props: KonasePanelProps) {
                         onChange={(event) =>
                           toggleResource(uri, event.currentTarget.checked)}
                       />
-                      {entryCandidateLabel(entry)}
+                      {resourceLabel(uri)}
                     </label>
                   );
                 }}

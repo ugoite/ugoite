@@ -1,0 +1,30 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Browser Konase Entry choice identity and presentation
+requirements:
+  - id: REQ-UX-LIST-003
+    title: Distinguishable Browser Konase Entry Choices
+    description: Browser Konase keeps Entries with the same preview distinguishable across loaded candidate pages and selected resources without exposing technical identifiers, while selection, removal, and Context preview retain exact resource identity.
+    priority: high
+    status: implemented
+    criteria:
+      - id: same-preview-entry-choices
+        kind: behavior
+        statement: Browser Konase gives Entries with repeated previews distinct localized visible and accessible labels across loaded pages, falls back to unique candidate ordinals if a literal preview collides with a generated label, reuses those labels in selected-resource rows and remove actions, and preserves each exact stable Entry URI for selection and Context preview without showing IDs or URIs in ordinary choices.
+        governed_by: [POL-UI-005#rule.governance]
+    bindings:
+      - id: same-preview-entry-choice-verification
+        role: verification
+        facet: verification
+        responsibility: Verify repeated Entry preview labels remain distinct across candidate pages and selected-resource rows, contain no IDs, and send the exact selected URIs to the Context host.
+        targets:
+          - id: repeated-entry-previews-across-pages
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-003: disambiguates repeated Entry previews across pages" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-003#criterion.same-preview-entry-choices
+                covers: [FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-surface, FEAT-UX-015#binding.konase-entry-choice-implementation/target.konase-panel-specification]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-003: disambiguates repeated Entry previews across pages" } }
