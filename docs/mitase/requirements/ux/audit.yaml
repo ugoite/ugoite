@@ -5,19 +5,23 @@ category: Audit event identity presentation
 requirements:
   - id: REQ-UX-AUDIT-001
     title: Audit Event Identities Stay in Details
-    description: Audit event rows use human-readable actor labels and target types while raw identifiers remain available in the event details disclosure.
+    description: Audit target identifiers stay out of primary rows, and resolved actors use their human-readable display names.
     priority: high
     status: planned
     criteria:
-      - id: identifiers-in-details
+      - id: resolved-actor-display
         kind: behavior
-        statement: Primary audit rows do not display raw actor or target IDs; the exact IDs remain available inside the event details disclosure.
+        statement: When a Space member directory resolves an actor, the primary row shows its display name and keeps the exact actor ID inside the event details disclosure.
+        governed_by: [POL-UI-005#rule.governance]
+      - id: target-id-in-details
+        kind: behavior
+        statement: Primary audit target cells show the target type without the raw target ID; the exact target ID remains inside the event details disclosure.
         governed_by: [POL-UI-005#rule.governance]
     bindings:
       - id: audit-identity-verification
         role: verification
         facet: verification
-        responsibility: Verify audit actor labels and target types keep exact actor and target IDs within the collapsed event details disclosure.
+        responsibility: Verify resolved actor labels and target types keep exact actor and target IDs within the collapsed event details disclosure.
         targets:
           - id: actor-identity-disclosure
             adapter: typescript
@@ -25,7 +29,7 @@ requirements:
             selector: { kind: test, name: "REQ-UX-AUDIT-001: keeps actor IDs inside audit details" }
             claims:
               - kind: verifies
-                criterion: REQ-UX-AUDIT-001#criterion.identifiers-in-details
+                criterion: REQ-UX-AUDIT-001#criterion.resolved-actor-display
                 covers: [FEAT-UX-003#binding.list-baseline/target.audit-log-viewer-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "REQ-UX-AUDIT-001: keeps actor IDs inside audit details" } }
           - id: target-identity-disclosure
@@ -34,6 +38,6 @@ requirements:
             selector: { kind: test, name: "REQ-UX-AUDIT-001: keeps target IDs out of audit rows and in details" }
             claims:
               - kind: verifies
-                criterion: REQ-UX-AUDIT-001#criterion.identifiers-in-details
+                criterion: REQ-UX-AUDIT-001#criterion.target-id-in-details
                 covers: [FEAT-UX-003#binding.list-baseline/target.audit-log-viewer-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "REQ-UX-AUDIT-001: keeps target IDs out of audit rows and in details" } }

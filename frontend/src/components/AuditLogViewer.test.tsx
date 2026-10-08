@@ -254,9 +254,9 @@ describe("AuditLogViewer", () => {
     fireEvent.click(detailsSummary);
     expect(targetIdentity).toBeVisible();
     expect(within(row).getByText("Target ID")).toBeVisible();
-
     setLocale("ja");
     expect(within(row).getByText("対象リソース ID")).toBeVisible();
+    expect(within(row).getByText("対象 ID")).toBeVisible();
   });
 
   it("REQ-UX-AUDIT-002: uses a localized neutral label for unresolved actors", async () => {

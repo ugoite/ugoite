@@ -2283,7 +2283,7 @@
     "auditLog.details": "詳細",
     "auditLog.viewDetails": "詳細を表示",
     "auditLog.eventId": "イベント ID",
-    "auditLog.targetId": "対象 ID",
+    "auditLog.targetId": "対象リソース ID",
     "auditLog.subject": "対象 ID",
     "auditLog.scope": "ノード / スペース ID",
     "auditLog.credentialId": "認証情報 ID",
