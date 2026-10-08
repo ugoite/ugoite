@@ -156,17 +156,17 @@ features:
       - id: dashboard-entry-identifier-verification
         role: verification
         facet: verification
-        responsibility: Verify the live dashboard uses a human-facing Entry label while retaining the exact Entry ID only in its route target.
+        responsibility: Verify same-Form dashboard Entries use distinct human-facing labels, suppress duplicate generic labels, and retain exact Entry IDs only in route targets.
         targets:
           - id: dashboard-entry-labels
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/dashboard.test.tsx"
-            selector: { kind: test, name: "REQ-UX-LIST-001: hides Entry IDs from dashboard labels while retaining route identity" }
+            selector: { kind: test, name: "REQ-UX-LIST-001: gives same-Form Recent links unique ID-free labels" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-003#binding.list-baseline/target.dashboard-entry-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "REQ-UX-LIST-001: hides Entry IDs from dashboard labels while retaining route identity" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "REQ-UX-LIST-001: gives same-Form Recent links unique ID-free labels" } }
   - id: FEAT-UX-004
     title: Localization baseline
     summary: Record the shared locale dictionary satisfying the dictionary-copy criteria without changing UI behavior.

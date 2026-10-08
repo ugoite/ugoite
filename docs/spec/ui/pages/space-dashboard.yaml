@@ -1,4 +1,4 @@
-version: "0.1"
+version: "0.2"
 updated: "2026-10-08"
 page:
   id: space-dashboard
@@ -55,7 +55,7 @@ components:
     - id: continue-entry
       type: link
       when: a-recent-entry-exists
-      label: Entry
+      label: title-or-name-field-or-Entry
       secondary: form-name-or-em-dash
       source: entry.list
       presentation: full-row
@@ -67,8 +67,9 @@ components:
       count: 4
       source: entry.list
       selection: full-row-activate
-      label: Entry
+      label: title-or-name-field-or-Entry
       secondary: form-name-or-em-dash
       target_page: space-entry-detail
       visible_identifier: none
       route_identity: entry-id
+      duplicate_label_policy: keep-most-recent-per-form-and-label
