@@ -571,7 +571,7 @@ describe("CompositionDataWorkspace", () => {
     expect(within(editor).queryByText("101", { exact: true })).toBeNull();
   });
 
-  it("uses distinct localized labels for fields missing from the schema snapshot", async () => {
+  it("REQ-FE-070: uses distinct localized labels for fields missing from the schema snapshot", async () => {
     setLocale("ja");
     formApiListMock.mockResolvedValue([]);
     let draft = createEmptyDraft("Tool");

@@ -309,7 +309,7 @@ features:
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
       selector:
         kind: test
-        name: uses distinct localized labels for fields missing from the schema snapshot
+        name: 'REQ-FE-070: uses distinct localized labels for fields missing from the schema snapshot'
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
