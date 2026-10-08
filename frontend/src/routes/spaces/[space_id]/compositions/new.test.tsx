@@ -356,18 +356,17 @@ describe("Composition studio shell", () => {
       screen.getByRole("button", { name: "Move Tasks down" }),
     ).toBeDisabled();
 
-    // Full-row activation toggles the advanced revision disclosure. The
-    // newly added source starts expanded; activating its row collapses it.
-    expect(container.querySelector("details")).not.toBeNull();
-    expect(
-      within(container.querySelector("details") as HTMLElement).getByText(
-        `Form ${FORM_ID}`,
-      ),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    // The selected source keeps its human-readable heading without exposing
+    // its internal Form ID in a nested disclosure.
+    expect(screen.getByRole("heading", { name: "Tasks" }))
+      .toBeInTheDocument();
     expect(container.querySelector("details")).toBeNull();
+    expect(container.textContent).not.toContain(FORM_ID);
     fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
-    expect(container.querySelector("details")).not.toBeNull();
+    expect(container.querySelector(".dataWorkspaceEditor")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(container.querySelector(".dataWorkspaceEditor")).not.toBeNull();
+    expect(container.textContent).not.toContain(FORM_ID);
 
     fireEvent.click(screen.getByRole("button", { name: "Add data" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();

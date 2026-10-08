@@ -61,6 +61,8 @@ components:
       capability_gating: dialog-offers-only-capable-fields-with-disabled-add-and-reason-at-zero
       projection_placement: inline-unchanged-dialog-columns-contract-not-identical
       form_definition: transient-formApi-load-cached-per-source-never-stored
+      source_identity: selected-human-source-name-owned-by-workspace-heading
+      raw_form_id: draft-data-only-never-rendered
     saved_sql_viewer:
       sql: read-only-with-edit-saved-sql-action-to-existing-editor-route
       sections: [sql, variables, result-schema, result]

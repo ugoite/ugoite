@@ -83,6 +83,13 @@ policies:
             claims:
               - kind: evidences
                 anchor: POL-UI-005#rule.governance
+          - id: composition-data-source-form-identity
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-070: keeps internal Form IDs out of Composition source details" }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-005#rule.governance
           - id: asset-detail-page-spec
             adapter: declared
             path: docs/spec/ui/pages/space-asset-detail.yaml

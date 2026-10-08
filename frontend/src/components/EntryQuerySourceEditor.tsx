@@ -507,12 +507,6 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
         )}
       </Show>
 
-      <details class="ui-stack-sm">
-        <summary>{props.source.name}</summary>
-        <p class="ui-muted">
-          {t("composition.studioFormDetail", { form: props.source.formId })}
-        </p>
-      </details>
     </div>
   );
 }

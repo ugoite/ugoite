@@ -1087,4 +1087,17 @@ describe("CompositionDataWorkspace", () => {
       /@media\s*\(max-width:\s*560px\)[\s\S]*?\.dataWorkspace\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/,
     );
   });
+
+  it("REQ-FE-070: keeps internal Form IDs out of Composition source details", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
+    const harness = renderWorkspace(twoSourceDraft());
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+    await within(editor).findByText("Occurred");
+
+    expect(editor.querySelector("details")).toBeNull();
+    expect(editor.textContent).not.toContain(entrySeed().formId);
+    expect(editor.innerHTML).not.toContain(entrySeed().formId);
+  });
 });
