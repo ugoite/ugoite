@@ -17,6 +17,10 @@ components:
       title: matching-accessible-name
       target_size: 44px
       focus: visible
+      overflow:
+        layout: single-row
+        behavior: horizontal-scroll-within-toolbar
+        preserves: [all-actions, 44px-targets, visible-focus]
     eligibility:
       candidates: [secondary-utility-with-established-page-context]
       keep_visible: [primary-mutation, domain-action, recovery-choice, history-changing-action]
