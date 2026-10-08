@@ -571,6 +571,44 @@ describe("CompositionDataWorkspace", () => {
     expect(within(editor).queryByText("101", { exact: true })).toBeNull();
   });
 
+  it("uses distinct localized labels for fields missing from the schema snapshot", async () => {
+    setLocale("ja");
+    formApiListMock.mockResolvedValue([]);
+    let draft = createEmptyDraft("Tool");
+    draft = addEntryQuerySource(draft, {
+      ...entrySeed(),
+      query: {
+        filters: [
+          { field_id: 108, operator: "equals", value: "first" },
+          { field_id: 109, operator: "equals", value: "second" },
+        ],
+        sort: [{ field_id: 109, direction: "desc" }],
+        projection: { kind: "fields", fields: [100, 108, 109] },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+
+    expect(editor.textContent).toContain("項目 3 一致する first");
+    expect(editor.textContent).toContain("項目 4 一致する second");
+    expect(editor.textContent).toContain("項目 4 · 降順");
+    expect(within(editor).queryByText("108", { exact: true })).toBeNull();
+    expect(within(editor).queryByText("109", { exact: true })).toBeNull();
+    expect(harness.current().sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        filters: [
+          { field_id: 108, operator: "equals", value: "first" },
+          { field_id: 109, operator: "equals", value: "second" },
+        ],
+        sort: [{ field_id: 109, direction: "desc" }],
+        projection: { kind: "fields", fields: [100, 108, 109] },
+      },
+    });
+  });
+
   it("falls back to schema fields without a form definition", async () => {
     formApiListMock.mockRejectedValue(new Error("denied"));
     const harness = renderWorkspace(twoSourceDraft());

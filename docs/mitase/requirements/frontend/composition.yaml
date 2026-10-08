@@ -20,7 +20,7 @@ requirements:
         governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-003#rule.governance]
       - id: source-authoring
         kind: behavior
-        statement: A Tool pins one or more exact sources (Saved SQL at an exact revision, EntryQuery from an existing Form view or Form-scoped query control) with full-row selection, reorder controls, and a guarded remove that blocks while displays reference the source instead of cascading silently.
+        statement: A Tool pins one or more exact sources (Saved SQL at an exact revision, EntryQuery from an existing Form view or Form-scoped query control) with full-row selection, reorder controls, and a guarded remove that blocks while displays reference the source instead of cascading silently. EntryQuery editors use transient Form field names when available; unresolved fields use localized ordinals, with distinct deterministic ordinals for referenced fields absent from the schema snapshot, while raw field IDs stay in query data only.
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
       - id: display-authoring
         kind: behavior

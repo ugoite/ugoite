@@ -304,6 +304,17 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-stale-field-labels
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: uses distinct localized labels for fields missing from the schema snapshot
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.source-authoring
     - id: browser-data-entry-query-zero-capable
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
