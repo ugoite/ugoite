@@ -103,6 +103,8 @@ components:
               selector: sends Space filters and server offsets to the existing endpoint
             - path: frontend/src/components/AuditLogViewer.test.tsx
               selector: shows request details and tolerates system events without an actor
+            - path: frontend/src/components/AuditLogViewer.test.tsx
+              selector: "REQ-UX-AUDIT-002: uses a localized neutral label for unresolved actors"
             - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
               selector: renders the general, language, and storage route surfaces
         - id: history

@@ -9,10 +9,7 @@ import {
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { formatDateTimeLabel } from "~/lib/date-format";
-import {
-  actorDisplayNameLookup,
-  shortActorFallback,
-} from "~/lib/entry-history";
+import { actorDisplayNameLookup } from "~/lib/entry-history";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import type {
@@ -49,9 +46,8 @@ type AuditLogViewerProps = {
   source: "node" | "space";
   load: AuditLoader;
   /**
-   * Best-effort member directory for actor display names. Rows show the
-   * display name (or the stable short fallback) — never a raw UUID; the
-   * exact identity stays in the row disclosure.
+   * Best-effort member directory for actor display names. Unresolved actors
+   * use a localized neutral label; exact identities stay in row disclosure.
    */
   actorDirectory?: Array<{ principal_id: string; display_name: string }>;
 };
@@ -210,7 +206,7 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
   const actorLabel = (event: AuditEvent): string => {
     const raw = eventActor(event)?.trim();
     if (!raw) return "—";
-    return actorLookup()?.(raw)?.trim() || shortActorFallback(raw);
+    return actorLookup()?.(raw)?.trim() || t("entryHistory.unknownActor");
   };
 
   return (

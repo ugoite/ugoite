@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AuditLogViewer,
@@ -225,7 +231,65 @@ describe("AuditLogViewer", () => {
     ).not.toBeNull();
   });
 
-  it("renders the shared viewer with a custom loader", async () => {    const load = vi.fn().mockResolvedValue({
+  it("REQ-UX-AUDIT-002: uses a localized neutral label for unresolved actors", async () => {
+    const unresolvedActorId = "01900000-0000-7000-8000-000000000042";
+    vi.mocked(spaceApi.listAudit).mockResolvedValue({
+      items: [spaceEvent(0, { actor_principal_id: unresolvedActorId })],
+      total: 1,
+      offset: 0,
+      limit: 25,
+    });
+    render(() => <SpaceAuditLogViewer spaceId="space-1" />);
+
+    const unknownActor = await screen.findByText("Unknown actor");
+    const actorCell = unknownActor.closest("td");
+    if (!actorCell) throw new Error("Audit actor cell was not rendered");
+    expect(actorCell).not.toHaveTextContent("01900000");
+
+    const details = unknownActor.closest("tr")?.querySelector("details");
+    if (!details) throw new Error("Audit details disclosure was not rendered");
+    const exactActorId = details.querySelector(
+      ".auditDetails > div:nth-child(2) dd code",
+    );
+    if (!exactActorId) throw new Error("Exact actor identity was not rendered");
+    expect(exactActorId).toHaveTextContent(unresolvedActorId);
+    expect(exactActorId).not.toBeVisible();
+
+    fireEvent.click(within(details).getByText("View details"));
+    expect(exactActorId).toBeVisible();
+
+    setLocale("ja");
+    expect(await screen.findByText("不明な実行者")).toBeInTheDocument();
+    expect(actorCell).not.toHaveTextContent("01900000");
+  });
+
+  it("REQ-UX-AUDIT-002: hides unresolved Node actor IDs from primary rows", async () => {
+    const unresolvedActorId = "01900000-0000-7000-8000-000000000043";
+    vi.mocked(authApi.listAudit).mockResolvedValue([
+      nodeEvent(0, { actor_account_id: unresolvedActorId }),
+    ]);
+    render(() => <NodeAuditLogViewer />);
+
+    const unknownActor = await screen.findByText("Unknown actor");
+    const actorCell = unknownActor.closest("td");
+    if (!actorCell) throw new Error("Audit actor cell was not rendered");
+    expect(actorCell).not.toHaveTextContent("01900000");
+
+    const details = unknownActor.closest("tr")?.querySelector("details");
+    if (!details) throw new Error("Audit details disclosure was not rendered");
+    const exactActorId = details.querySelector(
+      ".auditDetails > div:nth-child(2) dd code",
+    );
+    if (!exactActorId) throw new Error("Exact actor identity was not rendered");
+    expect(exactActorId).toHaveTextContent(unresolvedActorId);
+    expect(exactActorId).not.toBeVisible();
+
+    fireEvent.click(within(details).getByText("View details"));
+    expect(exactActorId).toBeVisible();
+  });
+
+  it("renders the shared viewer with a custom loader", async () => {
+    const load = vi.fn().mockResolvedValue({
       items: [nodeEvent(0)],
       total: 1,
       offset: 0,
