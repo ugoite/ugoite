@@ -669,6 +669,46 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
+  it("uses transient Form names for referenced fields missing from the schema snapshot", async () => {
+    const form = expenseForm();
+    form.fields.tax_code = {
+      id: 108,
+      type: "string",
+      required: false,
+      query_capability: {
+        field: { kind: "property", field_id: 108 },
+        name: "Tax code",
+        field_type: "string",
+        filterable: true,
+        sortable: true,
+        projectable: true,
+        supported_operators: ["equals"],
+      },
+    };
+    formApiListMock.mockResolvedValue([form]);
+    let draft = createEmptyDraft("Tool");
+    draft = addEntryQuerySource(draft, {
+      ...entrySeed(),
+      query: {
+        filters: [
+          { field_id: 108, operator: "equals", value: "first" },
+          { field_id: 109, operator: "equals", value: "second" },
+        ],
+        sort: [],
+        projection: { kind: "fields", fields: [108, 109] },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+
+    await waitFor(() => expect(editor.textContent).toContain("Tax code"));
+    expect(editor.textContent).toContain("Field 3");
+    expect(within(editor).queryByText("108", { exact: true })).toBeNull();
+    expect(within(editor).queryByText("109", { exact: true })).toBeNull();
+  });
+
   it("falls back to schema fields without a form definition", async () => {
     formApiListMock.mockRejectedValue(new Error("denied"));
     const harness = renderWorkspace(twoSourceDraft());

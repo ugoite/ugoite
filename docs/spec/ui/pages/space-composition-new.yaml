@@ -72,9 +72,9 @@ components:
       scope: data-mode-and-split-pane-only
       source: draft sources with human names only
       entry_query_field_labels:
-        form_field_present: transient-form-field-name
-        form_metadata_unavailable_or_field_missing: localized-schema-ordinal
-        referenced_fields_missing_from_schema_snapshot: distinct-deterministic-localized-ordinal
+        form_field_resolved: transient-form-field-name-first
+        schema_field_present_but_form_unresolved: localized-schema-ordinal
+        referenced_field_missing_from_schema_and_form: distinct-deterministic-localized-ordinal
       field_identity:
         raw_field_id: query-data-only-never-rendered-in-field-filter-sort-projection-or-dialog-labels
       selection: full-row-activate
