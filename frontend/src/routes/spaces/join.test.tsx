@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceInvitationJoinRoute from "./join";
 import { authApi } from "~/lib/auth-api";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
+import { readFileSync } from "node:fs";
+import { parse } from "yaml";
 
 const navigateMock = vi.fn();
 
@@ -28,7 +30,10 @@ vi.mock("~/lib/auth-api", () => ({
     loginWithOidc: vi.fn(),
     registerInvitation: vi.fn(),
   },
-  oidcIssuerLabel: (issuer: string) => new URL(issuer).host,
+  oidcIssuerLabel: (issuer: string) => {
+    const url = new URL(issuer);
+    return `${url.host}${url.pathname === "/" ? "" : url.pathname}`;
+  },
 }));
 
 describe("/spaces/join", () => {
@@ -54,6 +59,78 @@ describe("/spaces/join", () => {
     );
   });
 
+  it("REQ-FE-040: matches the invitation Join declaration to the rendered route", () => {
+    const contract = parse(
+      readFileSync(
+        "../docs/spec/ui/components/invitation-join.yaml",
+        "utf8",
+      ),
+    ) as {
+      component_group?: Record<string, unknown>;
+      components?: Array<Record<string, unknown>>;
+    };
+    const components = contract.components ?? [];
+    const header = components.find((component) =>
+      component.id === "join-context"
+    );
+    const form = components.find((component) =>
+      component.id === "invitation-acceptance"
+    );
+    const identityOptions = components.find((component) =>
+      component.id === "identity-options"
+    );
+    const failure = components.find((component) =>
+      component.id === "invitation-failure"
+    );
+
+    expect(contract.component_group).toMatchObject({
+      id: "invitation-join",
+      routes: ["/spaces/join"],
+    });
+    expect(header).toMatchObject({
+      type: "page-header",
+      title: "Join",
+      visible_headings: 1,
+    });
+    expect(form).toMatchObject({
+      type: "form",
+      invitation_token: {
+        type: "required-multiline-text-input",
+        label: "Invitation token",
+      },
+      accept_action: {
+        type: "submit-button",
+        label: "Accept invitation",
+      },
+    });
+
+    render(() => <SpaceInvitationJoinRoute />);
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Join" })).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Invitation token"),
+    ).toBeRequired();
+    expect(
+      screen.getByRole("button", { name: "Accept invitation" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Already registered? Sign in" }),
+    ).toHaveAttribute("href", "/login");
+    expect(identityOptions).toMatchObject({
+      oidc_providers: {
+        label: "Continue with issuer-host-and-nonroot-path",
+        accessible_name_uses_provider_id: false,
+      },
+    });
+    expect(failure).toMatchObject({
+      type: "alert",
+      role: "alert",
+      includes: ["failure-message", "resume-guidance"],
+      show_spaces_action_when:
+        "invitation-is-consumed-and-visitor-remains-unauthenticated",
+    });
+  });
+
   it("accepts an invitation for an already signed-in account", async () => {
     vi.mocked(authApi.getSession).mockResolvedValue({ authenticated: true });
     vi.mocked(authApi.acceptInvitation).mockResolvedValue();
@@ -74,7 +151,7 @@ describe("/spaces/join", () => {
   it("starts OIDC login with the invitation token", async () => {
     vi.mocked(authApi.listOidcProviders).mockResolvedValue([{
       provider_id: "provider-1",
-      issuer: "https://issuer.example",
+      issuer: "https://issuer.example/team",
       client_id: "client",
     }]);
     render(() => <SpaceInvitationJoinRoute />);
@@ -84,7 +161,7 @@ describe("/spaces/join", () => {
     });
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Continue with issuer.example",
+        name: "Continue with issuer.example/team",
       }),
     );
 

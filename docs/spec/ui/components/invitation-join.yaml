@@ -37,7 +37,7 @@ components:
     oidc_providers:
       visible_when: provider-list-is-nonempty
       separator: or
-      label: Continue with issuer-host-name
+      label: Continue with issuer-host-and-nonroot-path
       accessible_name_uses_provider_id: false
       action_uses_invitation_token: true
     sign_in_link:
