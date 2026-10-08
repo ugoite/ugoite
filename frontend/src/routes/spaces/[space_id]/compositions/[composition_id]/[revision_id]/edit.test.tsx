@@ -251,6 +251,36 @@ describe("Composition edit route", () => {
       .toHaveLength(1);
   });
 
+  it("opens canonical revisions when empty parameters and variables are omitted", async () => {
+    const { parameters: _parameters, ...specWithoutParameters } =
+      lintDocument.spec;
+    const [{ variables: _variables, ...savedSqlSource }] =
+      lintDocument.spec.sources;
+    lintMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        document: {
+          ...lintDocument,
+          spec: {
+            ...specWithoutParameters,
+            sources: [savedSqlSource],
+          },
+        },
+        canonical_yaml: storedYaml,
+        fingerprint: "fingerprint",
+      },
+    });
+
+    render(() => <CompositionEditRoute />);
+
+    expect(await screen.findByLabelText("Name")).toHaveValue(
+      "Monthly review",
+    );
+    expect(screen.queryByText("This revision cannot be edited.")).not
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+
   it("saves an update with base revision identity and a stable retry key", async () => {
     render(() => <CompositionEditRoute />);
     expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");

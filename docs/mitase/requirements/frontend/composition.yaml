@@ -36,7 +36,7 @@ requirements:
         governed_by: [POL-UI-009#rule.governance]
       - id: exact-revision-edit
         kind: behavior
-        statement: Editing opens the exact saved revision through composition.get and composition.lint normalization, saves with the exact composition and base revision identity plus idempotency, and appends a new revision on success; stale bases conflict and uncertain saves retry the identical payload and key.
+        statement: Editing opens the exact saved revision through composition.get and composition.lint normalization, treating omitted empty optional parameter and Saved SQL variable collections as empty editor state, saves with the exact composition and base revision identity plus idempotency, and appends a new revision on success; stale bases conflict and uncertain saves retry the identical payload and key.
         governed_by: [POL-UI-008#rule.governance, POL-UI-009#rule.governance]
       - id: mobile-one-column
         kind: quality
@@ -131,7 +131,7 @@ requirements:
       - id: studio-edit-verification
         role: verification
         facet: verification
-        responsibility: Verify exact-revision edit (open the exact saved revision through composition.get and composition.lint normalization, restore the shared studio draft, save with the exact composition and base revision identity plus idempotency, refuse invalid documents without opening the studio) through exact frontend unit tests.
+        responsibility: Verify exact-revision edit (open the exact saved revision through composition.get and composition.lint normalization, restore the shared studio draft while treating omitted empty optional parameter and Saved SQL variable collections as empty, save with the exact composition and base revision identity plus idempotency, refuse invalid documents without opening the studio) through exact frontend unit tests.
         targets:
           - id: studio-edit-restore
             adapter: typescript
@@ -159,6 +159,15 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "loads the exact revision through get and lint with a prefilled studio" } }
+          - id: studio-edit-empty-optional-collections
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+            selector: { kind: test, name: "opens canonical revisions when empty parameters and variables are omitted" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "opens canonical revisions when empty parameters and variables are omitted" } }
           - id: studio-edit-save
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
