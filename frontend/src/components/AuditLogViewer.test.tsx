@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -261,6 +262,54 @@ describe("AuditLogViewer", () => {
     setLocale("ja");
     expect(await screen.findByText("不明な実行者")).toBeInTheDocument();
     expect(actorCell).not.toHaveTextContent("01900000");
+  });
+
+  it("REQ-UX-AUDIT-002: hides directory values that echo an actor ID", async () => {
+    const uuid = "01900000-0000-7000-8000-000000000042";
+    const echoes = [
+      { actorId: uuid, displayName: uuid },
+      { actorId: uuid, displayName: uuid.slice(0, 8) },
+      { actorId: "actor-7", displayName: "actor-7" },
+    ];
+    for (const { actorId, displayName } of echoes) {
+      vi.mocked(spaceApi.listMembers).mockResolvedValue([
+        {
+          principal: {
+            principal_id: actorId,
+            display_name: displayName,
+            kind: "human",
+            state: "active",
+          },
+          role: "owner",
+        },
+      ]);
+      vi.mocked(spaceApi.listAudit).mockResolvedValue({
+        items: [spaceEvent(0, { actor_principal_id: actorId })],
+        total: 1,
+        offset: 0,
+        limit: 25,
+      });
+      render(() => <SpaceAuditLogViewer spaceId="space-1" />);
+
+      const unknownActor = await screen.findByText("Unknown actor");
+      const actorCell = unknownActor.closest("td");
+      if (!actorCell) throw new Error("Audit actor cell was not rendered");
+      expect(actorCell).not.toHaveTextContent(actorId.slice(0, 8));
+
+      const details = unknownActor.closest("tr")?.querySelector("details");
+      if (!details) {
+        throw new Error("Audit details disclosure was not rendered");
+      }
+      const exactActorId = details.querySelector(
+        ".auditDetails > div:nth-child(2) dd code",
+      );
+      if (!exactActorId) {
+        throw new Error("Exact actor identity was not rendered");
+      }
+      expect(exactActorId).toHaveTextContent(actorId);
+      expect(exactActorId).not.toBeVisible();
+      cleanup();
+    }
   });
 
   it("REQ-UX-AUDIT-002: hides unresolved Node actor IDs from primary rows", async () => {

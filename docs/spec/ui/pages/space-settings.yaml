@@ -105,6 +105,8 @@ components:
               selector: shows request details and tolerates system events without an actor
             - path: frontend/src/components/AuditLogViewer.test.tsx
               selector: "REQ-UX-AUDIT-002: uses a localized neutral label for unresolved actors"
+            - path: frontend/src/components/AuditLogViewer.test.tsx
+              selector: "REQ-UX-AUDIT-002: hides directory values that echo an actor ID"
             - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
               selector: renders the general, language, and storage route surfaces
         - id: history

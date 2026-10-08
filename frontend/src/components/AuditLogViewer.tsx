@@ -9,7 +9,10 @@ import {
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { formatDateTimeLabel } from "~/lib/date-format";
-import { actorDisplayNameLookup } from "~/lib/entry-history";
+import {
+  actorDisplayNameLookup,
+  shortActorFallback,
+} from "~/lib/entry-history";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import type {
@@ -206,7 +209,25 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
   const actorLabel = (event: AuditEvent): string => {
     const raw = eventActor(event)?.trim();
     if (!raw) return "—";
-    return actorLookup()?.(raw)?.trim() || t("entryHistory.unknownActor");
+    const displayName = actorLookup()?.(raw)?.trim();
+    if (!displayName) return t("entryHistory.unknownActor");
+
+    // A directory value can be missing or can echo an identity rather than
+    // a human-readable name. Keep both the full ID and its stable short form
+    // out of the primary row; the exact value remains in the details panel.
+    const normalizedName = displayName.toLowerCase();
+    const normalizedId = raw.toLowerCase();
+    const normalizedShortId = shortActorFallback(raw).toLowerCase();
+    const containsIdentifier = (identifier: string) =>
+      identifier.length >= 8 && normalizedName.includes(identifier);
+    if (
+      normalizedName === normalizedId ||
+      containsIdentifier(normalizedId) ||
+      containsIdentifier(normalizedShortId)
+    ) {
+      return t("entryHistory.unknownActor");
+    }
+    return displayName;
   };
 
   return (
