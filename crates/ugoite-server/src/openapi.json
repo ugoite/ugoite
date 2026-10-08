@@ -13612,7 +13612,8 @@
             "format": "int64"
           },
           "properties": {
-            "type": "object"
+            "type": "object",
+            "description": "Projected Form property values only. System Form identity and timestamps are returned in the dedicated form_id, created_at_micros, and updated_at_micros fields."
           },
           "preview": {
             "type": "string"

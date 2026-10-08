@@ -32,7 +32,23 @@ struct FormCapabilities {
 #[derive(Clone, Debug)]
 struct ProjectionDisplay {
     projection: EntryProjection,
-    columns: Vec<(String, String)>,
+    columns: Vec<ProjectionColumn>,
+}
+
+#[derive(Clone, Debug)]
+struct ProjectionColumn {
+    header: String,
+    key: String,
+    value: ProjectionValue,
+}
+
+#[derive(Clone, Debug)]
+enum ProjectionValue {
+    Preview,
+    Property(String),
+    FormId,
+    CreatedAt,
+    UpdatedAt,
 }
 
 pub async fn list(target: &SpaceTarget, fmt: &Format, options: EntryListOptions) -> Result<()> {
@@ -104,7 +120,7 @@ pub async fn list(target: &SpaceTarget, fmt: &Format, options: EntryListOptions)
             let columns = projection
                 .columns
                 .iter()
-                .map(|(header, key)| (header.as_str(), key.as_str()))
+                .map(|column| (column.header.as_str(), column.key.as_str()))
                 .collect::<Vec<_>>();
             print_json_table(&display_rows, &columns);
         }
@@ -185,7 +201,11 @@ fn build_projection(
     let Some(columns) = columns else {
         return Ok(ProjectionDisplay {
             projection: EntryProjection::Preview,
-            columns: vec![("PREVIEW".to_string(), "preview".to_string())],
+            columns: vec![ProjectionColumn {
+                header: "PREVIEW".to_string(),
+                key: "column_0".to_string(),
+                value: ProjectionValue::Preview,
+            }],
         });
     };
     let names = columns
@@ -208,15 +228,29 @@ fn build_projection(
         }
         return Ok(ProjectionDisplay {
             projection: EntryProjection::Preview,
-            columns: vec![("PREVIEW".to_string(), "preview".to_string())],
+            columns: vec![ProjectionColumn {
+                header: "PREVIEW".to_string(),
+                key: "column_0".to_string(),
+                value: ProjectionValue::Preview,
+            }],
         });
     }
     let mut fields = Vec::with_capacity(names.len());
     let mut display = Vec::with_capacity(names.len());
-    for name in names {
+    for (index, name) in names.into_iter().enumerate() {
         let (field, key, header) = resolve_named_field(name, scope, form, "project")?;
+        let value = match field {
+            EntryFieldRef::Property { .. } => ProjectionValue::Property(key),
+            EntryFieldRef::Form => ProjectionValue::FormId,
+            EntryFieldRef::CreatedAt => ProjectionValue::CreatedAt,
+            EntryFieldRef::UpdatedAt => ProjectionValue::UpdatedAt,
+        };
         fields.push(field);
-        display.push((header, key));
+        display.push(ProjectionColumn {
+            header,
+            key: format!("column_{index}"),
+            value,
+        });
     }
     Ok(ProjectionDisplay {
         projection: EntryProjection::Fields { fields },
@@ -409,23 +443,74 @@ fn display_row(
     row: &ugoite_core::entry_query::EntryResult,
     projection: &ProjectionDisplay,
 ) -> Value {
-    if projection.projection == EntryProjection::Preview {
-        serde_json::json!({"preview": row.preview.clone().unwrap_or_default()})
-    } else {
-        let properties = row.properties.as_ref().and_then(Value::as_object);
-        let mut display = serde_json::Map::new();
-        for (_, key) in &projection.columns {
-            let value = match key.as_str() {
-                "created_at_micros" => Value::from(row.created_at_micros),
-                "updated_at_micros" => Value::from(row.updated_at_micros),
-                "form_id" => Value::String(row.form_id.to_string()),
-                property => properties
-                    .and_then(|values| values.get(property))
-                    .cloned()
-                    .unwrap_or(Value::Null),
-            };
-            display.insert(key.clone(), value);
-        }
-        Value::Object(display)
+    let properties = row.properties.as_ref().and_then(Value::as_object);
+    let mut display = serde_json::Map::new();
+    for column in &projection.columns {
+        let value = match &column.value {
+            ProjectionValue::Preview => Value::String(row.preview.clone().unwrap_or_default()),
+            ProjectionValue::Property(property) => properties
+                .and_then(|values| values.get(property))
+                .cloned()
+                .unwrap_or(Value::Null),
+            ProjectionValue::FormId => Value::String(row.form_id.to_string()),
+            ProjectionValue::CreatedAt => Value::from(row.created_at_micros),
+            ProjectionValue::UpdatedAt => Value::from(row.updated_at_micros),
+        };
+        display.insert(column.key.clone(), value);
+    }
+    Value::Object(display)
+}
+
+#[cfg(test)]
+mod entry_query_projection_tests {
+    use super::*;
+    use serde_json::json;
+    use ugoite_core::entry_query::EntryResult;
+    use ugoite_domain::id::{FieldId, RevisionId};
+    use uuid::Uuid;
+
+    #[test]
+    fn projected_property_and_system_timestamp_keep_distinct_cli_values() {
+        let form = FormCapabilities {
+            id: FormId::from_uuid(Uuid::from_u128(1)),
+            fields: BTreeMap::from([(
+                "created_at_micros".to_string(),
+                EntryFieldCapability {
+                    field: EntryFieldRef::Property {
+                        field_id: FieldId::new(100).expect("valid field id"),
+                    },
+                    name: "created_at_micros".to_string(),
+                    field_type: "string".to_string(),
+                    filterable: true,
+                    sortable: true,
+                    projectable: true,
+                    supported_operators: Vec::new(),
+                },
+            )]),
+        };
+        let projection = build_projection(
+            &EntryQueryScope::Form { form_id: form.id },
+            Some(&form),
+            Some("created_at_micros,created"),
+        )
+        .expect("projection should resolve both columns");
+        let row = EntryResult {
+            id: "entry-1".to_string(),
+            form_id: form.id,
+            revision_id: RevisionId::from(Uuid::from_u128(2)),
+            created_at_micros: 1234,
+            updated_at_micros: 5678,
+            properties: Some(json!({"created_at_micros": "Form value"})),
+            preview: None,
+        };
+
+        let display = display_row(&row, &projection);
+        let property_column = &projection.columns[0];
+        let timestamp_column = &projection.columns[1];
+        assert_eq!(property_column.header, "created_at_micros");
+        assert_eq!(timestamp_column.header, "CREATED");
+        assert_ne!(property_column.key, timestamp_column.key);
+        assert_eq!(display[&property_column.key], "Form value");
+        assert_eq!(display[&timestamp_column.key], 1234);
     }
 }
