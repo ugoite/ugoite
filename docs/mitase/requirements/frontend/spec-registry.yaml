@@ -79,6 +79,15 @@ requirements:
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers: [FEAT-FE-013#binding.frontend/target.global-shell-account-entry]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares GlobalShell account entry states" } }
+          - id: account-security-credential-contract
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: declares account security credential identifier details" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.account-security-contract-reference]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares account security credential identifier details" } }
           - id: component-types
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts

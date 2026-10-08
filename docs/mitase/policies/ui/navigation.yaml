@@ -53,7 +53,7 @@ policies:
       - id: identifier-evidence
         role: evidence
         facet: presentation
-        responsibility: Record the live Space list, dashboard, form-entry list, editable FormTable, and Asset detail surfaces where identifiers stay out of primary labels.
+        responsibility: Record the live Space list, dashboard, form-entry list, editable FormTable, Asset detail, and account credential surfaces where identifiers stay out of primary labels.
         targets:
           - id: spaces-route-surface
             adapter: typescript
@@ -94,6 +94,13 @@ policies:
             adapter: declared
             path: docs/spec/ui/pages/space-asset-detail.yaml
             selector: { kind: file }
+            claims:
+              - kind: evidences
+                anchor: POL-UI-005#rule.governance
+          - id: account-security-identifiers
+            adapter: typescript
+            path: frontend/src/routes/settings/security.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details" }
             claims:
               - kind: evidences
                 anchor: POL-UI-005#rule.governance

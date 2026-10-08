@@ -189,6 +189,84 @@ describe("UI spec YAML registry", () => {
     });
   });
 
+  it("REQ-FE-040: declares account security credential identifier details", () => {
+    const securityPath = path.join(
+      componentsDir,
+      "account-security.yaml",
+    );
+    const security = parse(readFileSync(securityPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    const passkeys = security.components?.find(({ id }) =>
+      id === "passkey-list"
+    );
+    const sessions = security.components?.find(({ id }) =>
+      id === "session-list"
+    );
+
+    expect(passkeys).toMatchObject({
+      type: "list",
+      implementation: "frontend/src/routes/settings/security.tsx",
+      tests: "frontend/src/routes/settings/security.test.tsx",
+      primary_label: "localized-passkey-and-last-used",
+      identifier_visibility: "closed-technical-details-only",
+      technical_details: {
+        summary: "securityPage.technicalDetails",
+        values: [{
+          label: "securityPage.credentialId",
+          source: "credential.credential_id",
+        }],
+      },
+      action: {
+        trigger: "revoke-passkey",
+        visible_label: "settings.revoke",
+        accessible_name: "securityPage.revokePasskeyAction",
+        item_context: "one-based-list-position",
+      },
+    });
+    expect(sessions).toMatchObject({
+      type: "list",
+      implementation: "frontend/src/routes/settings/security.tsx",
+      tests: "frontend/src/routes/settings/security.test.tsx",
+      primary_label: "localized-session-and-last-seen",
+      identifier_visibility: "closed-technical-details-only",
+      technical_details: {
+        summary: "securityPage.technicalDetails",
+        values: [{
+          label: "securityPage.sessionId",
+          source: "session.session_id",
+        }],
+      },
+      action: {
+        trigger: "revoke-active-session",
+        visible_label: "settings.revoke",
+        accessible_name: "securityPage.revokeSessionAction",
+        item_context: "one-based-list-position",
+      },
+    });
+
+    const implementation = readFileSync(
+      path.join(repoRoot, "frontend/src/routes/settings/security.tsx"),
+      "utf8",
+    );
+    expect(implementation).toContain("securityPage.credentialId");
+    expect(implementation).toContain("securityPage.sessionId");
+    const securityTests = readFileSync(
+      path.join(repoRoot, "frontend/src/routes/settings/security.test.tsx"),
+      "utf8",
+    );
+    expect(securityTests).toContain(
+      "REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details",
+    );
+    const uiIndex = readFileSync(
+      path.join(repoRoot, "docs/spec/ui/index.md"),
+      "utf8",
+    );
+    expect(uiIndex).toContain(
+      "`components/account-security.yaml`",
+    );
+  });
+
   it("REQ-FE-040: loads UI page specs", () => {
     const pages = loadPages();
     expect(pages.length).toBeGreaterThan(0);

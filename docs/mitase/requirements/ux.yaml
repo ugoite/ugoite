@@ -454,6 +454,15 @@ requirements:
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.form-entries-route, FEAT-UX-003#binding.list-baseline/target.form-entries-route-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "REQ-UX-LIST-001: keeps Entry IDs out of form rows with compact right-meta dates" } }
+          - id: account-security-credential-identifiers
+            adapter: typescript
+            path: frontend/src/routes/settings/security.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.security-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/settings/security.test.tsx, test: "REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details" } }
       - id: history-row-verification
         role: verification
         facet: verification
