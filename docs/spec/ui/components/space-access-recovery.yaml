@@ -1,0 +1,59 @@
+version: "0.1"
+updated: "2026-10-09"
+component_group:
+  id: space-access-recovery
+  title: Owner-approved Space Access Recovery
+  routes: [/recover]
+  notes: The route owns one owner-approved recovery task. The owner token stays in a masked input, returned account identifiers stay hidden, and recovery codes are handed off once after successful Passkey registration. The form has no explanatory copy.
+components:
+  - id: owner-space-recovery-task
+    type: single-task-surface
+    implementation: frontend/src/routes/recover/index.tsx
+    tests: frontend/src/routes/recover.test.tsx
+    heading:
+      initial: ownerRecovery.title
+      code-handoff: ownerRecovery.saveCodesTitle
+      visible_headings: 1
+    recovery_token:
+      source: query.owner_approval_token-or-query.token
+      required: true
+      label: ownerRecovery.tokenLabel
+      presentation: masked-password-input
+      autocomplete: off
+      raw_value_in_visible_text: false
+    action:
+      label: ownerRecovery.continue
+      busy_label: ownerRecovery.continuing
+      disabled_while_busy: true
+      ceremony: register-passkey-after-explicit-submit
+    form_explanatory_copy: none
+    success:
+      replaces_recovery_form: true
+      recovery_codes:
+        source: response.recovery_codes
+        presentation: visible-once
+        instruction: ownerRecovery.codesInstruction
+        acknowledgment: required-before-continuing
+        persistence: route-memory-only
+      audit_status:
+        source: response.audit_status
+        values:
+          delivered: ownerRecovery.auditDelivered
+          pending: ownerRecovery.auditPending
+        presentation: localized-live-status
+        raw_value_visible: false
+      returned_identifiers:
+        account_id: hidden
+        principal_id: hidden
+        space_id: hidden
+      continuation:
+        label: ownerRecovery.savedCodes
+        destination: safe-next-path
+        history: replace
+    failure:
+      role: alert
+      summary: ownerRecovery.failure
+      api_error_details: hidden
+      preserves_recovery_form: true
+      recovery_codes_visible: false
+    states: [recovery-form, passkey-registration, recovery-code-handoff, error]

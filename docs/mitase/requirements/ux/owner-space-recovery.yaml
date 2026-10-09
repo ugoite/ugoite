@@ -1,0 +1,35 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Owner-approved Space recovery
+requirements:
+  - id: REQ-UX-RECOVERY-001
+    title: Owner-approved Space Recovery
+    description: The owner-approved recovery route presents a concise localized task, keeps credentials and internal response details out of visible text, and hands off one-time recovery codes before safe continuation.
+    priority: high
+    status: implemented
+    criteria:
+      - id: masked-owner-token
+        kind: behavior
+        statement: The owner token is presented in a labeled masked input, and an explicit action starts Passkey registration while duplicate submission is disabled.
+        governed_by: [POL-011#rule.governance, POL-UI-002#rule.governance]
+      - id: localized-copy
+        kind: behavior
+        statement: User-facing recovery labels and states resolve through the shared English and Japanese locale dictionaries; the initial form contains no explanatory paragraph.
+        governed_by: [POL-I18N-001#rule.governance, POL-UI-002#rule.governance]
+      - id: hidden-identifiers
+        kind: behavior
+        statement: Returned account, principal, and Space identifiers and raw audit enum values do not appear in the recovery handoff.
+        governed_by: [POL-UI-005#rule.governance]
+      - id: safe-errors
+        kind: behavior
+        statement: Recovery failures use a localized generic alert without exposing server error messages or internal identifiers, and the recovery form remains available.
+        governed_by: [POL-011#rule.governance, POL-I18N-001#rule.governance]
+      - id: recovery-code-handoff
+        kind: behavior
+        statement: Successful recovery replaces the form with recovery codes shown once in route memory, requires an explicit save acknowledgment, and then continues to a safe next path using history replacement.
+        governed_by: [POL-011#rule.governance]
+      - id: contract-index
+        kind: behavior
+        statement: The owner-approved recovery component contract is linked from the UI spec index and route inventory and is covered by the UI contract registry test.
+        governed_by: [POL-UI-002#rule.governance]
