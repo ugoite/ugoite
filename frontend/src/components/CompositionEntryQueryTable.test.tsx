@@ -181,38 +181,26 @@ describe("entryQueryDisplayColumns", () => {
     expect(columns[0].text(row)).toBe("projected Form value");
   });
 
-  it("does not render Form identity as an all-Forms table column", () => {
+  it("keeps the top-level Form UUID out of all-Forms headings and cells", () => {
     const allFormsSource = source({
       kind: "fields",
-      fields: [{ kind: "form" }],
+      fields: [{ kind: "form" }, { kind: "property", field_id: 7 }],
     });
     allFormsSource.request.query.scope = { kind: "all" };
     const row = {
       ...entryRow(),
-      properties: { form_id: "internal-form-uuid" },
-    };
-    const columns = entryQueryDisplayColumns(allFormsSource, [row]);
-
-    expect(columns.some((column) => column.text(row) === "internal-form-uuid"))
-      .toBe(false);
-  });
-
-  it("keeps the top-level Form UUID out of all-Forms columns and cells", () => {
-    const allFormsSource = source({
-      kind: "fields",
-      fields: [{ kind: "form" }],
-    });
-    allFormsSource.request.query.scope = { kind: "all" };
-    const row = {
-      ...entryRow(),
-      form_id: "top-level-form-uuid",
+      form_id: "11111111-1111-4111-8111-111111111111",
       properties: { name: "Travel" },
     };
     const columns = entryQueryDisplayColumns(allFormsSource, [row]);
 
-    expect(columns.some((column) => column.label === row.form_id)).toBe(false);
-    expect(columns.some((column) => column.text(row) === row.form_id)).toBe(
-      false,
+    expect(columns.length).toBeGreaterThan(0);
+    const visibleText = columns.flatMap((column) => [
+      column.label,
+      column.text(row),
+    ]);
+    expect(visibleText.every((text) => !text.includes(row.form_id))).toBe(
+      true,
     );
   });
 });

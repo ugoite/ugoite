@@ -149,6 +149,19 @@ features:
         criterion: REQ-COMP-004#criterion.exact-composition-revision
       - kind: evidences
         anchor: REQ-COMP-004#criterion.exact-composition-revision
+  - id: browser-runtime-ui-specification
+    role: documentation
+    facet: documentation
+    responsibility: Record user-visible Composition result table identity rules on the exact revision page.
+    targets:
+    - id: composition-revision-result-table-contract
+      adapter: declared
+      path: docs/spec/ui/pages/space-composition-revision.yaml
+      selector:
+        kind: file
+      claims:
+      - kind: documents
+        anchor: REQ-FE-068#criterion.composition-system-form-id-hidden
   - id: browser-query-runtime-evidence
     role: evidence
     facet: frontend-tests
