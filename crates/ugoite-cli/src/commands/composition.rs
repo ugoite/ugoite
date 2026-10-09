@@ -1494,6 +1494,7 @@ mod tests {
         let entry_source = CompositionResolvedSource::EntryQuery {
             source_id: "entries".to_string(),
             request: entry_request.clone(),
+            display_system_fields: Vec::new(),
             source_schema_fingerprint: "a".repeat(64),
         };
         let (source_id, kind, operation, request) = composition_source_dispatch(&entry_source);

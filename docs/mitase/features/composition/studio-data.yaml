@@ -111,6 +111,10 @@ features:
         criterion: REQ-FE-068#criterion.controller-owned-paging
       - kind: satisfies
         criterion: REQ-FE-068#criterion.local-horizontal-overflow
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
+      - kind: satisfies
+        criterion: REQ-FE-076#criterion.entry-query-table-columns
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
       - kind: evidences
@@ -397,6 +401,50 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-data-entry-query-timestamps
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: "REQ-FE-076: keeps timestamps optional and Form IDs out of column labels"
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-076#criterion.entry-query-table-columns
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.entry-query-display-system-fields
+    - id: browser-data-entry-query-preview-columns
+      adapter: typescript
+      path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+      selector:
+        kind: test
+        name: renders old Preview projections without timestamp columns by default
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-076#criterion.entry-query-table-columns
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.entry-query-display-system-fields
+    - id: browser-data-entry-query-preview-mode
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: lets Preview select timestamps without turning Preview into a Form field
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-076#criterion.entry-query-table-columns
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.entry-query-display-system-fields
+    - id: browser-data-entry-query-selected-timestamps
+      adapter: typescript
+      path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+      selector:
+        kind: test
+        name: renders selected timestamps alongside Preview
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-076#criterion.entry-query-table-columns
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.entry-query-display-system-fields
     - id: browser-data-entry-query-zero-capable
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx

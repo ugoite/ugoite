@@ -1,0 +1,82 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: frontend
+category: Composition EntryQuery columns
+requirements:
+  - id: REQ-FE-076
+    title: Composition EntryQuery Table Columns
+    description: Composition EntryQuery tables let users choose Form properties and optional entry timestamps while keeping Preview as its own projection mode.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: entry-query-table-columns
+        kind: behavior
+        statement: The Composition EntryQuery column picker uses transient human Form labels and localized Created and Updated labels, with timestamps hidden by default. Timestamp selections are stored separately from property projection and remain selectable at the 64-property projection limit; Preview remains a projection mode with its Preview result column, not a selectable Form field. Numeric field IDs stay in query data and do not appear in picker or table labels.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
+    bindings:
+      - id: entry-query-table-columns-verification
+        role: verification
+        facet: verification
+        responsibility: Verify timestamp defaults, Form labels without numeric IDs, and Preview projection behavior through exact frontend tests.
+        targets:
+          - id: entry-query-column-picker
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-076: keeps timestamps optional and Form IDs out of column labels" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-076#criterion.entry-query-table-columns
+                covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "REQ-FE-076: keeps timestamps optional and Form IDs out of column labels" } }
+          - id: preview-mode-remains-projection
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: lets Preview select timestamps without turning Preview into a Form field }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-076#criterion.entry-query-table-columns
+                covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: lets Preview select timestamps without turning Preview into a Form field } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
+                covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: lets Preview select timestamps without turning Preview into a Form field } }
+          - id: timestamps-ignore-property-limit
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: keeps timestamps selectable at the 64-property projection limit }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-076#criterion.entry-query-table-columns
+                covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: keeps timestamps selectable at the 64-property projection limit } }
+          - id: preview-timestamps-default
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: renders old Preview projections without timestamp columns by default }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-076#criterion.entry-query-table-columns
+                covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: renders old Preview projections without timestamp columns by default } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
+                covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: renders old Preview projections without timestamp columns by default } }
+          - id: selected-preview-timestamps
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: renders selected timestamps alongside Preview }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-076#criterion.entry-query-table-columns
+                covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: renders selected timestamps alongside Preview } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
+                covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: renders selected timestamps alongside Preview } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-composition-rendering
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: renders selected timestamps alongside Preview } }

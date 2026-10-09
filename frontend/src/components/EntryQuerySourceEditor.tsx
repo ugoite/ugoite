@@ -7,6 +7,10 @@ import {
   Show,
 } from "solid-js";
 import { EntryResultTable } from "~/components/EntryResultTable";
+import {
+  type EntryTableColumnOption,
+  EntryTableColumnPicker,
+} from "~/components/EntryTableColumnPicker";
 import { EntryBrowserDisplayDialog } from "~/components/EntryBrowserDisplayDialog";
 import type {
   EntryBrowserDisplayMode,
@@ -24,6 +28,7 @@ import type {
   EntryQueryCompositionFilter,
   EntryQueryCompositionProjection,
   EntryQueryCompositionSort,
+  EntryQueryCompositionSystemField,
 } from "~/lib/entry-query-composition";
 import {
   type DraftSource,
@@ -34,6 +39,7 @@ import type {
   EntryFilter,
   EntrySort,
 } from "~/lib/entry-query";
+import { systemEntryCapabilities } from "~/lib/entry-query";
 import {
   fetchStudioFormDefinition,
   studioBindingName,
@@ -83,6 +89,9 @@ interface EntryQuerySourceEditorProps {
   onFilters: (filters: EntryQueryCompositionFilter[]) => boolean;
   onSort: (sort: EntryQueryCompositionSort[]) => boolean;
   onProjection: (projection: EntryQueryCompositionProjection) => boolean;
+  onDisplaySystemFields: (
+    fields: EntryQueryCompositionSystemField[],
+  ) => boolean;
   planSources: readonly CompositionResolvedSource[];
   sourceStates: Record<string, CompositionSourcePageState>;
   diagnostics: readonly CompositionResolveDiagnostic[];
@@ -339,6 +348,79 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
         MAX_ENTRY_PROJECTION_FIELDS > 1;
   };
 
+  const propertyColumnKey = (fieldId: number) => `field:${fieldId}`;
+  const systemColumnKey = (field: EntryQueryCompositionSystemField) =>
+    `system:${field}`;
+  const systemFieldLabel = (field: EntryQueryCompositionSystemField) =>
+    systemEntryCapabilities({ kind: "form", form_id: props.source.formId })
+      .fields.find((capability) => capability.field.kind === field)?.name ??
+      field;
+  const columnOptions = createMemo((): EntryTableColumnOption[] => {
+    const projection = props.source.query.projection;
+    const projected = projection.kind === "fields"
+      ? new Set(projection.fields)
+      : new Set<number>();
+    const systemFields = new Set(
+      props.source.query.display_system_fields ?? [],
+    );
+    const propertyOptions = projection.kind === "fields"
+      ? schemaFieldIds().map((fieldId) => {
+        const selected = projected.has(fieldId);
+        const requiredByMetric = requiredMetricFields().includes(fieldId);
+        return {
+          key: propertyColumnKey(fieldId),
+          label: fieldName(fieldId),
+          selected,
+          disabled: projectionRecoveryBlocked() ||
+            (selected && requiredByMetric),
+          disabledReason: projectionRecoveryBlocked()
+            ? t("composition.studioProjectionRecoveryRequired")
+            : selected && requiredByMetric
+            ? t("composition.studioMetricProjectionRequired")
+            : undefined,
+        };
+      })
+      : [];
+    const systemOptions: EntryTableColumnOption[] = ([
+      "created_at",
+      "updated_at",
+    ] as const).map((field) => ({
+      key: systemColumnKey(field),
+      label: systemFieldLabel(field),
+      selected: systemFields.has(field),
+      countsTowardSelectionLimit: false,
+    }));
+    return [...propertyOptions, ...systemOptions];
+  });
+  const projectionFieldCount = (selectedKeys: readonly string[]) => {
+    const selected = new Set(
+      selectedKeys.flatMap((key) => {
+        const match = /^field:(\d+)$/.exec(key);
+        return match ? [Number(match[1])] : [];
+      }),
+    );
+    const missingMetricFields =
+      requiredMetricFields().filter((fieldId) => !selected.has(fieldId)).length;
+    return selected.size + missingMetricFields;
+  };
+  const applyColumns = (selectedKeys: string[]) => {
+    const fieldIds = selectedKeys.flatMap((key) => {
+      const match = /^field:(\d+)$/.exec(key);
+      return match ? [Number(match[1])] : [];
+    });
+    if (props.source.query.projection.kind === "fields") {
+      const nextProjection = fieldIds.length > 0
+        ? { kind: "fields" as const, fields: fieldIds }
+        : { kind: "preview" as const };
+      if (!props.onProjection(nextProjection)) return;
+    }
+    props.onDisplaySystemFields(
+      (["created_at", "updated_at"] as const).filter((field) =>
+        selectedKeys.includes(systemColumnKey(field))
+      ),
+    );
+  };
+
   const planSource = () =>
     props.planSources.find((source) =>
       source.kind === "entry_query" && source.source_id === props.source.draftId
@@ -571,76 +653,17 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
             </span>
           </Show>
         </div>
-        <Show when={props.source.query.projection.kind === "fields"}>
-          <ul class="ui-stack-sm">
-            <For each={schemaFieldIds()}>
-              {(fieldId) => {
-                const selected = () => {
-                  const projection = props.source.query.projection;
-                  return projection.kind === "fields" &&
-                    projection.fields.includes(fieldId);
-                };
-                const requiredByMetric = () =>
-                  props.requiredMetricFieldIds?.includes(fieldId) ?? false;
-                const disabledByLimit = () => {
-                  const projection = props.source.query.projection;
-                  const projected = projection.kind === "fields"
-                    ? projection.fields
-                    : [];
-                  const requiredSlots = (props.requiredMetricFieldIds ?? [])
-                    .filter((requiredId) => !projected.includes(requiredId))
-                    .length;
-                  const reservedCount = projected.length + requiredSlots;
-                  return !selected() &&
-                    (requiredByMetric()
-                      ? reservedCount > MAX_ENTRY_PROJECTION_FIELDS
-                      : reservedCount >= MAX_ENTRY_PROJECTION_FIELDS);
-                };
-                const disabled = () => projectionRecoveryBlocked() ||
-                  (selected() && requiredByMetric()) || disabledByLimit();
-                const disabledReason = () =>
-                  projectionRecoveryBlocked()
-                    ? t("composition.studioProjectionRecoveryRequired")
-                    : disabledByLimit()
-                    ? t("composition.studioProjectionLimitReached")
-                    : selected() && requiredByMetric()
-                    ? t("composition.studioMetricProjectionRequired")
-                    : undefined;
-                return (
-                  <li>
-                    <label class="pill">
-                      <input
-                        type="checkbox"
-                        checked={selected()}
-                        disabled={disabled()}
-                        aria-describedby={projectionRecoveryBlocked()
-                          ? `metric-projection-recovery-${props.source.draftId}`
-                          : undefined}
-                        title={disabledReason()}
-                        onChange={(event) => {
-                          const projection = props.source.query.projection;
-                          const fields = projection.kind === "fields"
-                            ? [...projection.fields]
-                            : [];
-                          if (event.currentTarget.checked) {
-                            if (!fields.includes(fieldId)) {
-                              fields.push(fieldId);
-                            }
-                          } else {
-                            const at = fields.indexOf(fieldId);
-                            if (at >= 0) fields.splice(at, 1);
-                          }
-                          props.onProjection({ kind: "fields", fields });
-                        }}
-                      />
-                      <span>{fieldName(fieldId)}</span>
-                    </label>
-                  </li>
-                );
-              }}
-            </For>
-          </ul>
-        </Show>
+        <EntryTableColumnPicker
+          options={columnOptions}
+          selectionLimit={{
+            maximum: MAX_ENTRY_PROJECTION_FIELDS,
+            reason: t("composition.studioProjectionLimitReached"),
+            countSelected: projectionFieldCount,
+          }}
+          canApply={(keys) => !projectionRecoveryBlocked() &&
+            projectionFieldCount(keys) <= MAX_ENTRY_PROJECTION_FIELDS}
+          onApply={applyColumns}
+        />
         <EntryQuerySourceResult
           source={props.source}
           planSource={planSource()}

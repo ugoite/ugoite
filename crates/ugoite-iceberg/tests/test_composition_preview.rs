@@ -83,6 +83,7 @@ async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocu
                     sort: Vec::new(),
                     page_limit: 100,
                     projection: EntryQueryProjectionTemplate::Preview,
+                    display_system_fields: Vec::new(),
                 },
             }],
             components: vec![CompositionComponent::Table {

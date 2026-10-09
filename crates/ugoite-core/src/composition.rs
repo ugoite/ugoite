@@ -20,7 +20,8 @@ use ugoite_domain::composition::{
     CompositionLiteral, CompositionMetricValueField, CompositionParameter,
     CompositionParameterType, CompositionQueryOperator, CompositionResultFieldType,
     CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
-    EntryQueryProjectionTemplate, EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
+    EntryQueryDisplaySystemField, EntryQueryProjectionTemplate, EntryQueryTemplate,
+    DEFAULT_COMPOSITION_PAGE_LIMIT,
 };
 use ugoite_domain::composition_metric::{
     composition_metric_result_type, evaluate_composition_metric_page,
@@ -234,6 +235,7 @@ fn parse_zoned_timestamp(value: &str) -> Option<DateTime<chrono::FixedOffset>> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompiledEntryQuery {
     pub request: EntryPageRequest,
+    pub display_system_fields: Vec<EntryQueryDisplaySystemField>,
     /// SHA-256 over the source Form ID and used field IDs/schema snapshots.
     pub source_schema_fingerprint: String,
 }
@@ -550,6 +552,7 @@ fn compile_entry_query_source_with_metric_fields(
     })?;
     Ok(CompiledEntryQuery {
         request,
+        display_system_fields: template.display_system_fields.clone(),
         source_schema_fingerprint: hex::encode(Sha256::digest(schema_bytes)),
     })
 }
@@ -774,6 +777,8 @@ pub enum ResolvedSourceRequest {
     EntryQuery {
         source_id: String,
         request: EntryPageRequest,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        display_system_fields: Vec<EntryQueryDisplaySystemField>,
         source_schema_fingerprint: String,
     },
     SavedSql {
@@ -1023,6 +1028,7 @@ fn resolve_composition_parts(
                 Ok(compiled) => resolved_sources.push(ResolvedSourceRequest::EntryQuery {
                     source_id: source_id.to_owned(),
                     request: compiled.request,
+                    display_system_fields: compiled.display_system_fields,
                     source_schema_fingerprint: compiled.source_schema_fingerprint,
                 }),
                 Err(source_diagnostics) => diagnostics.extend(source_diagnostics),
@@ -1418,8 +1424,9 @@ mod tests {
         CompositionParameterFormat, CompositionParameterReference, CompositionParameterType,
         CompositionQueryOperator, CompositionResultColumn, CompositionResultFieldType,
         CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
-        DashboardFlowLayout, EntryQueryFilterTemplate, EntryQueryProjectionTemplate,
-        EntryQuerySortTemplate, EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
+        DashboardFlowLayout, EntryQueryDisplaySystemField, EntryQueryFilterTemplate,
+        EntryQueryProjectionTemplate, EntryQuerySortTemplate, EntryQueryTemplate, FlowItem,
+        FlowLayoutKind, FlowRow, TextStyle,
     };
     use ugoite_domain::form::{
         FieldType, FormDefinition, FormField, FormVersion, ListItemDefinition,
@@ -1554,6 +1561,7 @@ mod tests {
             sort: Vec::new(),
             page_limit: 100,
             projection: EntryQueryProjectionTemplate::Preview,
+            display_system_fields: Vec::new(),
         }
     }
 
@@ -2029,6 +2037,7 @@ mod tests {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: vec![FieldId::new(100).unwrap(), FieldId::new(101).unwrap()],
             },
+            display_system_fields: vec![EntryQueryDisplaySystemField::CreatedAt],
         };
 
         let compiled =
@@ -2036,6 +2045,10 @@ mod tests {
                 .expect("EntryQuery template compiles");
 
         assert_eq!(compiled.request.limit, 25);
+        assert_eq!(
+            compiled.display_system_fields,
+            vec![EntryQueryDisplaySystemField::CreatedAt]
+        );
         assert_eq!(compiled.request.after, None);
         assert_eq!(compiled.request.query.text.as_deref(), Some("rent"));
         assert_eq!(
@@ -2233,6 +2246,7 @@ mod tests {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: vec![FieldId::new(100).unwrap()],
             },
+            display_system_fields: Vec::new(),
         };
 
         let first = compile_entry_query_source(
@@ -2306,6 +2320,7 @@ mod tests {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: vec![FieldId::new(100).unwrap()],
             },
+            display_system_fields: Vec::new(),
         };
 
         let compiled = compile_entry_query_source(
@@ -2336,6 +2351,7 @@ mod tests {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: vec![FieldId::new(100).unwrap()],
             },
+            display_system_fields: Vec::new(),
         };
 
         assert_eq!(
@@ -2371,6 +2387,7 @@ mod tests {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: vec![FieldId::new(100).unwrap()],
             },
+            display_system_fields: Vec::new(),
         };
 
         assert_eq!(
@@ -2400,6 +2417,7 @@ mod tests {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: vec![FieldId::new(100).unwrap()],
             },
+            display_system_fields: Vec::new(),
         };
 
         assert_eq!(
@@ -2424,6 +2442,7 @@ mod tests {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: vec![FieldId::new(100).unwrap()],
             },
+            display_system_fields: Vec::new(),
         };
 
         let mut string_list = form(&[(100, FieldType::List)]);
@@ -2499,6 +2518,7 @@ mod tests {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: vec![FieldId::new(100).unwrap()],
             },
+            display_system_fields: Vec::new(),
         };
 
         assert_eq!(
@@ -2550,6 +2570,7 @@ mod tests {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: vec![FieldId::new(100).unwrap()],
             },
+            display_system_fields: Vec::new(),
         };
 
         assert_eq!(
@@ -2594,6 +2615,7 @@ mod tests {
                 projection: EntryQueryProjectionTemplate::Fields {
                     fields: vec![FieldId::new(101).unwrap()],
                 },
+                display_system_fields: Vec::new(),
             };
 
             assert_eq!(
@@ -2628,6 +2650,7 @@ mod tests {
                 projection: EntryQueryProjectionTemplate::Fields {
                     fields: vec![FieldId::new(100).unwrap()],
                 },
+                display_system_fields: Vec::new(),
             };
 
             assert_eq!(
@@ -2669,6 +2692,7 @@ mod tests {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: vec![FieldId::new(100).unwrap()],
             },
+            display_system_fields: Vec::new(),
         };
 
         let compiled =
@@ -2691,6 +2715,7 @@ mod tests {
             projection: EntryQueryProjectionTemplate::Fields {
                 fields: vec![FieldId::new(100).unwrap()],
             },
+            display_system_fields: Vec::new(),
         };
         let mut over_limit = Vec::new();
 

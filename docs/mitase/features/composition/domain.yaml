@@ -42,6 +42,8 @@ features:
       - kind: documents
         anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
       - kind: documents
+        anchor: REQ-COMP-002#criterion.entry-query-display-system-fields
+      - kind: documents
         anchor: REQ-COMP-003#criterion.canonical-yaml
       - kind: documents
         anchor: REQ-COMP-003#criterion.semantic-fingerprint
@@ -168,6 +170,34 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.bounded-parser
+  - id: entry-query-display-system-fields-domain
+    role: implementation
+    facet: domain
+    responsibility: Represent optional Composition table timestamp selections in the EntryQuery template while keeping the existing Preview and property projection grammar.
+    targets:
+    - id: entry-query-template
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: EntryQueryTemplate
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
+  - id: entry-query-display-system-fields-domain-evidence
+    role: evidence
+    facet: domain-tests
+    responsibility: Verify omitted timestamp selections default empty, canonical output omits the empty field, and pre-existing Preview documents remain readable.
+    targets:
+    - id: optional-display-fields-and-preview-compatibility
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: entry_query_display_timestamps_are_optional_and_old_preview_documents_read
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.entry-query-display-system-fields
   - id: composition-tag-storage-evidence
     role: evidence
     facet: iceberg-tests
@@ -673,6 +703,18 @@ features:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout
   contracts:
+  - id: entry-query-display-system-fields
+    kind: custom
+    source: FEAT-COMP-001#binding.contract/target.composition-contract
+    participants:
+    - target: FEAT-COMP-001#binding.entry-query-display-system-fields-domain/target.entry-query-template
+      role: implementation
+    - target: FEAT-COMP-002#binding.entry-query-resolver/target.compile-entry-query-source
+      role: implementation
+    - target: FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
+      role: client
+    guarantees:
+    - REQ-COMP-002#criterion.entry-query-display-system-fields
   - id: metric-runtime-values
     kind: custom
     source: FEAT-COMP-001#binding.contract/target.composition-contract

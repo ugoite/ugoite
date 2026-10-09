@@ -394,6 +394,11 @@ pub struct EntryQueryTemplate {
     pub page_limit: usize,
     #[serde(default)]
     pub projection: EntryQueryProjectionTemplate,
+    /// Optional system columns rendered by Composition tables. Entry result
+    /// rows already carry these timestamps, so they do not change the query
+    /// projection sent to `entry.query`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub display_system_fields: Vec<EntryQueryDisplaySystemField>,
 }
 
 const fn default_composition_page_limit() -> usize {
@@ -445,6 +450,14 @@ pub enum EntryQueryProjectionTemplate {
     Fields {
         fields: Vec<FieldId>,
     },
+}
+
+/// Entry identity timestamps that a Composition table may display.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EntryQueryDisplaySystemField {
+    CreatedAt,
+    UpdatedAt,
 }
 
 /// A source value expressed directly or as a named parameter reference.
@@ -1326,6 +1339,39 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&text_component).unwrap()["kind"],
             serde_json::json!("text")
+        );
+    }
+
+    #[test]
+    fn entry_query_display_timestamps_are_optional_and_old_preview_documents_read() {
+        let old_query: EntryQueryTemplate = serde_json::from_value(serde_json::json!({
+            "filters": [],
+            "sort": [],
+            "page_limit": 100,
+            "projection": {"kind": "preview"}
+        }))
+        .unwrap();
+        assert!(old_query.display_system_fields.is_empty());
+        assert_eq!(
+            serde_json::to_value(&old_query).unwrap()["projection"],
+            serde_json::json!({"kind": "preview"})
+        );
+        assert!(serde_json::to_value(old_query)
+            .unwrap()
+            .get("display_system_fields")
+            .is_none());
+
+        let selected: EntryQueryTemplate = serde_json::from_value(serde_json::json!({
+            "filters": [],
+            "sort": [],
+            "page_limit": 100,
+            "projection": {"kind": "preview"},
+            "display_system_fields": ["created_at", "updated_at"]
+        }))
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(selected).unwrap()["display_system_fields"],
+            serde_json::json!(["created_at", "updated_at"])
         );
     }
 }

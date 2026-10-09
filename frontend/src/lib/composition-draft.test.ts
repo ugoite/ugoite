@@ -15,11 +15,11 @@ import {
   draftFromDocument,
   draftSaveReadiness,
   ensureParametersForVariables,
+  MAX_ENTRY_PROJECTION_FIELDS,
   moveDisplay,
   moveLayoutItem,
   moveLayoutRow,
   moveSource,
-  MAX_ENTRY_PROJECTION_FIELDS,
   placeParameterControl,
   removeDisplay,
   removeParameter,
@@ -27,6 +27,7 @@ import {
   retargetParameterControl,
   setDraftName,
   setDraftTags,
+  setEntryQueryDisplaySystemFields,
   setEntryQueryFilters,
   setEntryQueryProjection,
   setEntryQuerySort,
@@ -1277,6 +1278,40 @@ describe("composition draft model", () => {
     ).toEqual({ ok: false, error: "invalid-query" });
   });
 
+  it("stores selected timestamps separately from EntryQuery projection fields", () => {
+    let draft = createEmptyDraft();
+    draft = addEntryQuerySource(draft, {
+      ...entrySeed(),
+      query: {
+        ...entrySeed().query,
+        projection: { kind: "fields", fields: [1] },
+      },
+    }).draft;
+    const updated = setEntryQueryDisplaySystemFields(draft, "src-1", [
+      "updated_at",
+      "created_at",
+    ]);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) throw new Error("expected timestamp selection");
+
+    const document = toStudioDocument(updated.draft);
+    expect(document.spec.sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        projection: { kind: "fields", fields: [1] },
+        display_system_fields: ["created_at", "updated_at"],
+      },
+    });
+    const restored = draftFromDocument(document, {});
+    expect(toStudioDocument(restored).spec.sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        projection: { kind: "fields", fields: [1] },
+        display_system_fields: ["created_at", "updated_at"],
+      },
+    });
+  });
+
   it("keeps EntryQuery metric fields in the source projection", () => {
     let draft = createEmptyDraft();
     draft = addEntryQuerySource(draft, entrySeed()).draft;
@@ -1308,10 +1343,13 @@ describe("composition draft model", () => {
   });
 
   it("rejects a metric field that would exceed the EntryQuery projection limit", () => {
-    const fields = Array.from({ length: MAX_ENTRY_PROJECTION_FIELDS + 1 }, (_, index) => ({
-      field_id: index + 1,
-      field_type: "integer",
-    }));
+    const fields = Array.from(
+      { length: MAX_ENTRY_PROJECTION_FIELDS + 1 },
+      (_, index) => ({
+        field_id: index + 1,
+        field_type: "integer",
+      }),
+    );
     let draft = createEmptyDraft();
     draft = addEntryQuerySource(draft, {
       ...entrySeed(),

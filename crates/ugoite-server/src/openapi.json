@@ -14942,6 +14942,11 @@
                 "additionalProperties": true,
                 "description": "Existing bounded EntryQuery request, passed unchanged to entry.query."
               },
+              "display_system_fields": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/CompositionEntryQuerySystemField" },
+                "default": []
+              },
               "source_schema_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
             },
             "additionalProperties": false
@@ -14993,6 +14998,10 @@
           "expected_result_type": { "$ref": "#/components/schemas/CompositionResultFieldType" }
         },
         "additionalProperties": false
+      },
+      "CompositionEntryQuerySystemField": {
+        "type": "string",
+        "enum": ["created_at", "updated_at"]
       },
       "CompositionResultFieldType": {
         "type": "string",

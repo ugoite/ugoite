@@ -9,12 +9,17 @@ export interface EntryTableColumnOption {
   selected: boolean;
   disabled?: boolean;
   disabledReason?: string;
+  countsTowardSelectionLimit?: boolean;
 }
 
 export interface EntryTableColumnPickerProps {
   options: () => readonly EntryTableColumnOption[];
   canApply?: (selectedKeys: readonly string[]) => boolean;
-  selectionLimit?: { maximum: number; reason: string };
+  selectionLimit?: {
+    maximum: number;
+    reason: string;
+    countSelected?: (selectedKeys: readonly string[]) => number;
+  };
   onApply: (selectedKeys: string[]) => void;
 }
 
@@ -53,14 +58,18 @@ export function EntryTableColumnPicker(
   const disabled = (option: EntryTableColumnOption) =>
     option.disabled || (
       !draft().includes(option.key) &&
+      option.countsTowardSelectionLimit !== false &&
       props.selectionLimit !== undefined &&
-      draft().length >= props.selectionLimit.maximum
+      (props.selectionLimit.countSelected?.(draft()) ?? draft().length) >=
+        props.selectionLimit.maximum
     );
   const disabledReason = (option: EntryTableColumnOption) =>
     option.disabledReason ?? (
       !draft().includes(option.key) &&
+        option.countsTowardSelectionLimit !== false &&
         props.selectionLimit !== undefined &&
-        draft().length >= props.selectionLimit.maximum
+        (props.selectionLimit.countSelected?.(draft()) ?? draft().length) >=
+          props.selectionLimit.maximum
         ? props.selectionLimit.reason
         : undefined
     );

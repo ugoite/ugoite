@@ -56,6 +56,7 @@ import {
   type SavedSqlRevisionUpdate,
   setDraftName,
   setDraftTags,
+  setEntryQueryDisplaySystemFields,
   setEntryQueryFilters,
   setEntryQueryProjection,
   setEntryQuerySort,
@@ -71,6 +72,7 @@ import type {
   EntryQueryCompositionFilter,
   EntryQueryCompositionProjection,
   EntryQueryCompositionSort,
+  EntryQueryCompositionSystemField,
 } from "~/lib/entry-query-composition";
 import { createCompositionPreviewHandle } from "~/lib/composition-preview-handle";
 import {
@@ -555,6 +557,19 @@ export function CompositionStudio(props: CompositionStudioProps) {
     return result.ok;
   };
 
+  const updateEntryQueryDisplaySystemFields = (
+    sourceDraftId: string,
+    fields: EntryQueryCompositionSystemField[],
+  ): boolean => {
+    const result = setEntryQueryDisplaySystemFields(
+      draft(),
+      sourceDraftId,
+      fields,
+    );
+    if (result.ok) setDraft(result.draft);
+    return result.ok;
+  };
+
   // Exact-revision update after the Saved SQL editor publishes a new
   // revision. Missing parameters are provisioned from the server-declared
   // variable types, mirroring the add-source seed path; the composition
@@ -859,6 +874,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       onEntryQueryFilters={updateEntryQueryFilters}
       onEntryQuerySort={updateEntryQuerySort}
       onEntryQueryProjection={updateEntryQueryProjection}
+      onEntryQueryDisplaySystemFields={updateEntryQueryDisplaySystemFields}
       onSavedSqlRevision={updateSavedSqlRevision}
       savedSqlEditHref={savedSqlEditHref}
       planSources={readyPlan()?.sources ?? []}
