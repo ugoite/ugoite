@@ -266,6 +266,42 @@ describe("CompositionInspector", () => {
     expect(harnessCalls.jump).toHaveLength(0);
   });
 
+  it("localizes text-style labels without changing the stored style enum", () => {
+    const initial = seedDraft();
+    renderHarness("disp-3", initial);
+
+    const styleSelect = screen.getByLabelText("Style") as HTMLSelectElement;
+    const optionLabelsAndValues = () =>
+      Array.from(styleSelect.options).map((option) => ({
+        label: option.textContent,
+        value: option.value,
+      }));
+
+    expect(optionLabelsAndValues()).toEqual([
+      { label: "Title", value: "title" },
+      { label: "Heading", value: "heading" },
+      { label: "Body", value: "body" },
+      { label: "Caption", value: "caption" },
+    ]);
+
+    setLocale("ja");
+    expect(styleSelect.value).toBe("heading");
+    expect(optionLabelsAndValues()).toEqual([
+      { label: "タイトル", value: "title" },
+      { label: "見出し", value: "heading" },
+      { label: "本文", value: "body" },
+      { label: "キャプション", value: "caption" },
+    ]);
+
+    fireEvent.change(styleSelect, { target: { value: "caption" } });
+    expect(harnessCalls.draft).toHaveLength(1);
+    expect(
+      harnessCalls.draft[0].displays.find((display) =>
+        display.draftId === "disp-3"
+      ),
+    ).toMatchObject({ kind: "text", style: "caption" });
+  });
+
   it("changes parameter placement targets without a label override", () => {
     renderHarness(designBlockIdForParameter("month"));
 

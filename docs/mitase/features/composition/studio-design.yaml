@@ -232,6 +232,15 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.text-style-enum
+    - id: browser-inspector-text-style-labels
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: localizes text-style labels without changing the stored style enum
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.text-style-enum
     - id: browser-inspector-parameter-retarget
       adapter: typescript
       path: frontend/src/components/CompositionInspector.test.tsx
