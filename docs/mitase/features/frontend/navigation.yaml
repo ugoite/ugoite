@@ -49,6 +49,10 @@ features:
                 criterion: REQ-FE-058#criterion.calm-loading
               - kind: satisfies
                 criterion: REQ-FE-001#criterion.human-readable-labels
+              - kind: satisfies
+                criterion: REQ-FE-073#criterion.saved-tools-destination
+              - kind: satisfies
+                criterion: REQ-FE-073#criterion.composition-space-switch
       - id: global-shell-contract
         role: contract-source
         facet: frontend
@@ -63,6 +67,22 @@ features:
                 anchor: REQ-FE-066#criterion.public-sign-in
               - kind: evidences
                 anchor: REQ-FE-066#criterion.explicit-session-exit
+      - id: space-shell-navigation-contract
+        role: documentation
+        facet: documentation
+        responsibility: Document Space destinations, responsive navigation, and the active Composition section in the shared shell.
+        targets:
+          - id: space-shell-contract
+            adapter: declared
+            path: docs/spec/ui/components/space-shell.yaml
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-FE-073#criterion.saved-tools-destination
+              - kind: documents
+                anchor: REQ-FE-073#criterion.composition-route-context
+              - kind: documents
+                anchor: REQ-FE-073#criterion.composition-space-switch
 
   - id: FEAT-FE-010
     title: Form list navigation workspace

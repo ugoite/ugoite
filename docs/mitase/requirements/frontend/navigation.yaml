@@ -348,3 +348,61 @@ requirements:
                 criterion: REQ-FE-069#criterion.narrow-accessible-entry
                 covers: [FEAT-SEC-002#binding.client/target.login-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/login-responsive.test.ts, test: "REQ-FE-069: keeps login usable at the 320px effective width of 200% zoom" } }
+
+  - id: REQ-FE-073
+    title: Space Saved Tools Navigation
+    description: The Space shell provides a localized Saved tools destination for browsing saved Compositions, identifies Composition pages as belonging to that section, and retains the destination when switching Spaces.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: saved-tools-destination
+        kind: behavior
+        statement: Desktop Space navigation places a human-readable Saved tools destination under Knowledge, and mobile More exposes the same destination. The link opens the current Space's Composition list and does not expose internal identifiers.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance, POL-UI-005#rule.governance, POL-UI-011#rule.governance]
+      - id: composition-route-context
+        kind: behavior
+        statement: The Composition list, create, revision, edit, and history routes all mark Saved tools as the active Space navigation section.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance, POL-UI-011#rule.governance]
+      - id: composition-space-switch
+        kind: behavior
+        statement: Switching to another authorized Space while Saved tools is active opens that Space's Composition list.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance, POL-UI-011#rule.governance]
+    bindings:
+      - id: saved-tools-navigation-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the localized desktop and mobile navigation destination, the active Composition section, and Space switching through focused frontend tests.
+        targets:
+          - id: shell-destination
+            adapter: typescript
+            path: frontend/src/components/SpaceShell.test.tsx
+            selector: { kind: test, name: "REQ-FE-073: exposes Saved tools in Knowledge and mobile More navigation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-073#criterion.saved-tools-destination
+                covers: [FEAT-FE-009#binding.frontend/target.space-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/SpaceShell.test.tsx", test: "REQ-FE-073: exposes Saved tools in Knowledge and mobile More navigation" } }
+          - id: composition-route-context
+            adapter: typescript
+            path: frontend/src/lib/composition-space-navigation.test.ts
+            selector: { kind: test, name: "REQ-FE-073: assigns all Composition routes to Saved tools navigation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-073#criterion.composition-route-context
+                covers:
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-list-route
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-create-route
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-revision-layout
+                  - FEAT-COMP-004#binding.browser-query-runtime/target.browser-exact-revision-route
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-edit-route
+                  - FEAT-COMP-007#binding.composition-revision-lifecycle/target.browser-history-route
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/composition-space-navigation.test.ts", test: "REQ-FE-073: assigns all Composition routes to Saved tools navigation" } }
+          - id: composition-space-switch
+            adapter: typescript
+            path: frontend/src/components/SpaceShell.test.tsx
+            selector: { kind: test, name: "REQ-FE-073: preserves Saved tools while switching Spaces" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-073#criterion.composition-space-switch
+                covers: [FEAT-FE-009#binding.frontend/target.space-shell]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/components/SpaceShell.test.tsx", test: "REQ-FE-073: preserves Saved tools while switching Spaces" } }

@@ -140,6 +140,8 @@ features:
       claims:
       - kind: satisfies
         criterion: REQ-COMP-004#criterion.exact-composition-revision
+      - kind: satisfies
+        criterion: REQ-FE-073#criterion.composition-route-context
     - id: browser-exact-revision-route
       adapter: typescript
       path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
@@ -149,6 +151,8 @@ features:
       claims:
       - kind: satisfies
         criterion: REQ-COMP-004#criterion.exact-composition-revision
+      - kind: satisfies
+        criterion: REQ-FE-073#criterion.composition-route-context
       - kind: evidences
         anchor: REQ-COMP-004#criterion.exact-composition-revision
   - id: browser-runtime-ui-specification

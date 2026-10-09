@@ -13,6 +13,7 @@ const spaceStoreState = vi.hoisted(() => ({
     created_at: string;
   }>,
   loadSpaces: vi.fn(),
+  navigate: vi.fn(),
 }));
 
 vi.mock("@solidjs/router", () => ({
@@ -20,7 +21,7 @@ vi.mock("@solidjs/router", () => ({
     const { children, ...rest } = props;
     return <a {...(rest as never)}>{children as never}</a>;
   },
-  useNavigate: () => vi.fn(),
+  useNavigate: () => spaceStoreState.navigate,
   useParams: () => ({ space_id: "my-space-uid" }),
 }));
 
@@ -56,6 +57,7 @@ describe("v5 SpaceShell", () => {
     spaceStoreState.loadSpaces.mockResolvedValue(
       spaceStoreState.initialSpaces,
     );
+    spaceStoreState.navigate.mockReset();
   });
   it("reaches the Forms workspace from desktop and mobile primary navigation", () => {
     const { container } = render(() => (
@@ -79,6 +81,12 @@ describe("v5 SpaceShell", () => {
         expect(link).toHaveAttribute("href", href);
       }
     }
+    expect(screen.getAllByRole("link", { name: "Saved tools" })[0])
+      .toHaveAttribute("href", "/spaces/my-space-uid/compositions");
+    const savedToolsInMore = container.querySelector(
+      '.bottomNav .moreMenuItems a[href="/spaces/my-space-uid/compositions"]',
+    );
+    expect(savedToolsInMore).toHaveTextContent("Saved tools");
     // Forms is a primary destination: desktop sidebar plus the mobile
     // bottom navigation each link to the Forms workspace.
     const bottomNav = container.querySelector(".bottomNav");
@@ -104,6 +112,43 @@ describe("v5 SpaceShell", () => {
     for (const link of screen.getAllByRole("link", { name: "Forms" })) {
       expect(link).toHaveClass("active");
     }
+  });
+  it("REQ-FE-073: exposes Saved tools in Knowledge and mobile More navigation", () => {
+    const { container } = render(() => (
+      <SpaceShell spaceId="my-space-uid" activeNavigation="compositions">
+        <p>Content</p>
+      </SpaceShell>
+    ));
+
+    const savedTools = screen.getAllByRole("link", { name: "Saved tools" })[0];
+    expect(savedTools).toHaveAttribute(
+      "href",
+      "/spaces/my-space-uid/compositions",
+    );
+    expect(savedTools.closest(".navGroup")).toHaveTextContent("Knowledge");
+    expect(
+      container.querySelector(
+        '.bottomNav .moreMenuItems a[href="/spaces/my-space-uid/compositions"]',
+      ),
+    ).toHaveTextContent("Saved tools");
+    expect(savedTools).toHaveClass("active");
+  });
+  it("REQ-FE-073: preserves Saved tools while switching Spaces", () => {
+    render(() => (
+      <SpaceShell spaceId="my-space-uid" activeNavigation="compositions">
+        <p>Content</p>
+      </SpaceShell>
+    ));
+
+    expect(screen.getAllByRole("link", { name: "Saved tools" })[0])
+      .toHaveClass("active");
+    fireEvent.change(screen.getByRole("combobox", { name: "Space" }), {
+      target: { value: "other-space-uid" },
+    });
+
+    expect(spaceStoreState.navigate).toHaveBeenCalledWith(
+      "/spaces/other-space-uid/compositions",
+    );
   });
   it("encodes Space segments across desktop and mobile targets", () => {
     render(() => (
@@ -270,6 +315,8 @@ describe("v5 SpaceShell", () => {
       </SpaceShell>
     ));
     expect(screen.getAllByRole("link", { name: "ホーム" }).length)
+      .toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "保存したツール" }).length)
       .toBeGreaterThan(0);
   });
   it("keeps shell and children mounted without a global loading bar", () => {

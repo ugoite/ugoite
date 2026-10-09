@@ -17,7 +17,7 @@ import { spaceCompositionRevisionPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 import { formApi, sqlApi } from "~/lib/ugoite-client";
 
-export const route = spaceRoute({ navigation: "home" });
+export const route = spaceRoute({ navigation: "compositions" });
 
 /**
  * Display-only source-name lookup for restoring a draft from the exact

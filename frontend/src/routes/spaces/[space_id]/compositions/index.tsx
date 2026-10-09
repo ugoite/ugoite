@@ -11,7 +11,7 @@ import {
 import { spaceCompositionNewPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "home" });
+export const route = spaceRoute({ navigation: "compositions" });
 const PAGE_SIZE = 50;
 
 type LoadState =
