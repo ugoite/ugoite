@@ -404,7 +404,6 @@ inventory:
         - docs/spec/ui/pages/space-sql.yaml
         - docs/spec/ui/pages/space-sql-results.yaml
         - docs/spec/ui/pages/space-test-connection.yaml
-        - docs/spec/ui/components/account-security-settings.yaml
         - docs/spec/ui/components/space-shell.yaml
         - docs/spec/ui/components/global-shell.yaml
         - docs/spec/ui/components/konase-panel.yaml
