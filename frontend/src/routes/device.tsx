@@ -124,12 +124,15 @@ export default function DeviceApprovalRoute() {
 
   const approveSummary = () => {
     const request = pending();
-    if (!request) return "";
+    const selectedSpace = spaces().find((space) =>
+      spaceUid(space) === spaceUidValue()
+    );
+    if (!request || !selectedSpace) return "";
     return `Approve ${request.device_name} for actions: ${
       request.requested_actions.join(
         ", ",
       )
-    }?`;
+    } in the selected Space: ${selectedSpace.name}?`;
   };
 
   return (

@@ -73,7 +73,7 @@ describe("/device", () => {
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveAccessibleName("Approve CLI access?");
     expect(dialog).toHaveAccessibleDescription(
-      "Approve CLI for actions: read, create, update?",
+      "Approve CLI for actions: read, create, update in the selected Space: Docs?",
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
     fireEvent.click(
@@ -156,7 +156,10 @@ describe("/device", () => {
     );
   });
 
-  it("approves a supported MCP-scoped request", async () => {
+  it("REQ-UX-RESP-001: keeps the approval controls labeled with a single context", async () => {
+    const userCode = "ABCD";
+    const firstSpaceUid = "space-uid-1";
+    const requestedSpaceUid = "space-uid-2";
     const resource = `${location.origin}/mcp`;
     fetchMock
       .mockResolvedValueOnce({
@@ -165,7 +168,7 @@ describe("/device", () => {
           device_name: "MCP client",
           requested_actions: ["read"],
           resource,
-          requested_space_uid: "space-uid-2",
+          requested_space_uid: requestedSpaceUid,
         }),
       })
       .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
@@ -179,11 +182,31 @@ describe("/device", () => {
 
     render(() => <DeviceApprovalRoute />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Review MCP access request" }),
+    const reviewButton = await screen.findByRole("button", {
+      name: "Review MCP access request",
+    });
+    const requestSummary = screen.getByText((_, element) =>
+      element?.tagName === "P" &&
+      element.textContent?.includes("MCP client") ===
+        true
     );
+    expect(requestSummary).toHaveTextContent(
+      "MCP client requested MCP actions: read.",
+    );
+    expect(screen.getByLabelText("Space")).toHaveValue(requestedSpaceUid);
+    expect(screen.getByRole("option", { name: "Current Space" }))
+      .toBeInTheDocument();
+
+    fireEvent.click(reviewButton);
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveAccessibleName("Approve MCP access?");
+    expect(dialog).toHaveAccessibleDescription(
+      "Approve MCP client for actions: read in the selected Space: Current Space?",
+    );
+    expect(document.body.textContent).not.toContain(userCode);
+    expect(document.body.textContent).not.toContain(firstSpaceUid);
+    expect(document.body.textContent).not.toContain(requestedSpaceUid);
+    expect(document.body.textContent).not.toContain(resource);
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Approve MCP access" }),
     );

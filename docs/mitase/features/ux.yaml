@@ -620,6 +620,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+          - id: device-approval-contract
+            adapter: declared
+            path: docs/spec/ui/components/device-approval.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
           - id: join-surface
             adapter: typescript
             path: frontend/src/routes/spaces/join.tsx
