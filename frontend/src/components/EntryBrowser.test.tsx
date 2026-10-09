@@ -981,6 +981,14 @@ describe("EntryBrowser", () => {
           preview: "Row with an unrenderable timestamp",
         },
         {
+          id: "entry-negative-out-of-range-date",
+          form_id: "form-1",
+          revision_id: "revision-1",
+          created_at_micros: -9_000_000_000_000_000_000,
+          updated_at_micros: UPDATED_MICROS,
+          preview: "Row with a negative unrenderable timestamp",
+        },
+        {
           id: "entry-valid-date",
           form_id: "form-1",
           revision_id: "revision-1",
@@ -1009,12 +1017,13 @@ describe("EntryBrowser", () => {
     ));
 
     const rows = screen.getAllByRole("row");
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
     expect(within(rows[1]).getAllByRole("cell")[1]).toHaveTextContent("—");
     expect(within(rows[1]).getAllByRole("cell")[2]).toHaveTextContent(
       expectedDateLabel(UPDATED_MICROS),
     );
-    expect(within(rows[2]).getAllByRole("cell")[1]).toHaveTextContent(
+    expect(within(rows[2]).getAllByRole("cell")[1]).toHaveTextContent("—");
+    expect(within(rows[3]).getAllByRole("cell")[1]).toHaveTextContent(
       expectedDateLabel(CREATED_MICROS),
     );
   });
