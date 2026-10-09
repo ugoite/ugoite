@@ -91,7 +91,6 @@ features:
                 criterion: REQ-UX-RECOVERY-001#criterion.localized-copy
                 covers: [
                   FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-route,
-                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
                 ]
                 runner: {
                   runner: frontend-vitest-file,
@@ -133,7 +132,6 @@ features:
                 criterion: REQ-UX-RECOVERY-001#criterion.safe-errors
                 covers: [
                   FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-route,
-                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
                 ]
                 runner: {
                   runner: frontend-vitest-file,
@@ -154,7 +152,6 @@ features:
                 criterion: REQ-UX-RECOVERY-001#criterion.recovery-code-handoff
                 covers: [
                   FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-route,
-                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
                 ]
                 runner: {
                   runner: frontend-vitest-file,
