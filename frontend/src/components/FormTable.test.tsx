@@ -1325,11 +1325,11 @@ describe("FormTable", () => {
   it("traps focus in the Columns dialog and returns it to the trigger", async () => {
     const entryForm = {
       name: "Test",
-      fields: { private_field_id: { type: "string" } },
+      fields: { field_name: { id: 491, type: "string" } },
     } as any;
     mockEntryQuery([{
       id: "private-entry-id",
-      properties: { private_field_id: "Value" },
+      properties: { field_name: "Value" },
     }]);
     render(() => (
       <FormTable
@@ -1346,8 +1346,9 @@ describe("FormTable", () => {
     const dialog = screen.getByRole("dialog", { name: "Columns" });
     const close = screen.getByRole("button", { name: /close/i });
     await waitFor(() => expect(close).toHaveFocus());
-    expect(within(dialog).queryByText("private_field_id"))
+    expect(within(dialog).queryByText("field_name"))
       .not.toBeInTheDocument();
+    expect(within(dialog).queryByText("491")).not.toBeInTheDocument();
     expect(within(dialog).queryByText("private-entry-id"))
       .not.toBeInTheDocument();
 
