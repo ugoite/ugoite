@@ -52,6 +52,20 @@ requirements:
                 criterion: REQ-SRCH-001#criterion.http-search-operation
                 covers: [FEAT-SRCH-001#binding.server-implementation/target.entry-query-handler]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-server, test: authentication_regression_tests::test_search_req_sec_006_authorization_filter_before_search } }
+      - id: entry-query-typed-field-search-test
+        role: verification
+        facet: verification
+        responsibility: Verify canonical EntryQuery keyword search skips non-searchable UUID columns while matching supported scalar list values.
+        targets:
+          - id: case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry_query_traversal.rs
+            selector: { kind: test, name: text_search_ignores_uuid_and_matches_scalar_lists }
+            claims:
+              - kind: verifies
+                criterion: REQ-SRCH-001#criterion.keyword-search
+                covers: [FEAT-SRCH-001#binding.core/target.entry-query]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry_query_traversal, test: text_search_ignores_uuid_and_matches_scalar_lists } }
   - id: REQ-SRCH-002
     title: Content-scan search implementation
     description: Keyword search scans current Entry rows and the authorized AssetText projection. AssetText is an internal derived Iceberg relation; missing, stale, or corrupt derived state degrades to native Entry search. A persistent inverted index is still absent.
