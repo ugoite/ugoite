@@ -1177,6 +1177,46 @@ describe("UI spec YAML registry", () => {
     expect(compat?.spec.page?.implementation).not.toBe("implemented");
   });
 
+  it("REQ-FE-075: declares FormTable's optional timestamps and column picker", () => {
+    const formTablePath = path.join(componentsDir, "form-table.yaml");
+    const formTable = parse(readFileSync(formTablePath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    const table = formTable.components?.find(({ id }) =>
+      id === "editable-form-entry-table"
+    );
+
+    expect(table).toMatchObject({
+      columns: {
+        desktop: ["form-fields", "optional-created-at", "optional-updated-at"],
+        mobile: ["form-fields", "optional-created-at", "optional-updated-at"],
+        optional_system_columns_default: "hidden",
+        labels: {
+          form_fields: "display-label-when-set-otherwise-field-name",
+          system_fields: "localized-created-and-updated",
+        },
+      },
+      column_picker: {
+        trigger: {
+          icon: "columns",
+          visible_label: "none",
+          accessible_name: "localized-columns",
+        },
+        dialog: {
+          choices: "localized-optional-system-timestamps",
+          actions: ["localized-cancel", "localized-apply"],
+          focus: "trap-and-return-to-trigger",
+          explanatory_copy: "none",
+        },
+        labels: { field_ids: "never-visible" },
+      },
+      identity: { field_ids: "never-visible" },
+    });
+
+    expect(readFileSync(path.join(repoRoot, "docs/spec/ui/index.md"), "utf8"))
+      .toContain("`components/form-table.yaml`");
+  });
+
   it("REQ-SRCH-006: specifies Search-owned submit and saved-query toolbar slots", () => {
     const search = loadPages().find(({ spec }) =>
       spec.page?.id === "space-search"

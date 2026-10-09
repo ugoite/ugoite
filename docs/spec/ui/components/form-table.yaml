@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-08"
+updated: "2026-10-09"
 component_group:
   id: form-table
   title: Form-scoped Entry Table
@@ -10,16 +10,35 @@ components:
     tests: frontend/src/components/FormTable.test.tsx
     scope: selected-form
     columns:
-      desktop: [form-fields, updated-at]
-      mobile: [form-fields, updated-at]
+      desktop: [form-fields, optional-created-at, optional-updated-at]
+      mobile: [form-fields, optional-created-at, optional-updated-at]
+      optional_system_columns_default: hidden
+      labels:
+        form_fields: display-label-when-set-otherwise-field-name
+        system_fields: localized-created-and-updated
+    column_picker:
+      trigger:
+        icon: columns
+        visible_label: none
+        accessible_name: localized-columns
+      dialog:
+        title: localized-columns
+        choices: localized-optional-system-timestamps
+        actions: [localized-cancel, localized-apply]
+        focus: trap-and-return-to-trigger
+        explanatory_copy: none
+      labels:
+        field_ids: never-visible
+        system_fields: [localized-created, localized-updated]
     identity:
       entry_id:
         primary_rows: hidden
         accessible_names: hidden
         access: advanced-entry-info-details-with-copy
+      field_ids: never-visible
     row_open:
       control: localized-view-entry-button
       target: selected-entry
     selection:
-      cells: [form-fields, updated-at]
+      cells: currently-visible-columns
       copy: selected-visible-values-only

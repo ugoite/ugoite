@@ -36,3 +36,7 @@ features:
                 criterion: REQ-UX-FORMTABLE-001#criterion.primary-rows-id-free
               - kind: satisfies
                 criterion: REQ-UX-FORMTABLE-001#criterion.advanced-id-access
+              - kind: satisfies
+                criterion: REQ-FE-075#criterion.shared-column-picker
+              - kind: satisfies
+                criterion: REQ-FE-075#criterion.form-table-columns

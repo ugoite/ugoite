@@ -30,6 +30,10 @@ import { formatUserFacingError } from "~/lib/user-facing-error";
 import { IconButton } from "~/components/IconButton";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
+import {
+  type EntryTableColumnOption,
+  EntryTableColumnPicker,
+} from "~/components/EntryTableColumnPicker";
 import { formatDateLabel } from "~/lib/date-format";
 import {
   formatValueForDisplay,
@@ -45,6 +49,13 @@ interface FormTableProps {
 }
 
 type SortDirection = "asc" | "desc" | null;
+type FormTableSystemColumn = "created_at" | "updated_at";
+interface QueryFieldOption {
+  key: string;
+  field: EntryFieldRef;
+  label: string;
+  capability: EntryFieldCapability;
+}
 
 function SortIcon(props: { active: boolean; direction: SortDirection }) {
   /* v8 ignore start */
@@ -264,6 +275,9 @@ export function FormTable(props: FormTableProps) {
   >({});
   const [showColumnFilters, setShowColumnFilters] = createSignal(true);
   const [showSortMenu, setShowSortMenu] = createSignal(false);
+  const [visibleSystemColumns, setVisibleSystemColumns] = createSignal<
+    FormTableSystemColumn[]
+  >([]);
   const [isEditMode, setIsEditMode] = createSignal(false);
   const [editingCell, setEditingCell] = createSignal<
     { id: string; field: string } | null
@@ -285,6 +299,21 @@ export function FormTable(props: FormTableProps) {
       props.entryForm?.fields ? Object.keys(props.entryForm.fields) : [],
     /* v8 ignore stop */
   );
+
+  const systemColumnLabel = (field: FormTableSystemColumn) =>
+    field === "created_at" ? t("formTable.created") : t("formTable.updated");
+  const formFieldLabel = (field: string) =>
+    props.entryForm.fields?.[field]?.label?.trim() || field;
+  const queryFieldKey = (field: EntryFieldRef) =>
+    field.kind === "property"
+      ? "property:" + field.field_id
+      : "system:" + field.kind;
+  const systemColumnOptions = (): EntryTableColumnOption[] =>
+    (["created_at", "updated_at"] as const).map((field) => ({
+      key: field,
+      label: systemColumnLabel(field),
+      selected: visibleSystemColumns().includes(field),
+    }));
 
   const formScope = createMemo(() => ({
     kind: "form" as const,
@@ -343,47 +372,57 @@ export function FormTable(props: FormTableProps) {
   );
   const processedEntries = entries;
 
-  const capabilityForField = (
-    field: string,
-  ): EntryFieldCapability | undefined => {
-    if (field === "updated_at") {
-      return capabilities().fields.find((candidate) =>
-        candidate.field.kind === "updated_at"
-      );
-    }
-    return capabilities().fields.find((candidate) =>
-      candidate.name === field && candidate.field.kind === "property"
+  const capabilityForRef = (
+    field: EntryFieldRef,
+  ): EntryFieldCapability | undefined =>
+    capabilities().fields.find((candidate) =>
+      sameField(candidate.field, field)
     );
+
+  const capabilityForFormField = (
+    field: string,
+  ): EntryFieldCapability | undefined =>
+    capabilities().fields.find((candidate) =>
+      candidate.field.kind === "property" && candidate.name === field
+    );
+
+  const queryKeyForFormField = (field: string) => {
+    const capability = capabilityForFormField(field);
+    return capability ? queryFieldKey(capability.field) : "field:" + field;
   };
 
-  const fieldRefForName = (field: string): EntryFieldRef | undefined =>
-    capabilityForField(field)?.field;
-
-  const fieldNameForRef = (field: EntryFieldRef): string | null => {
-    if (field.kind === "updated_at") return "updated_at";
-    if (field.kind !== "property") return null;
-    return capabilities().fields.find((candidate) =>
-      sameField(candidate.field, field)
-    )?.name ?? null;
+  const queryFieldOptions = (
+    canUse: (capability: EntryFieldCapability) => boolean,
+  ): QueryFieldOption[] => {
+    const all = capabilities().fields;
+    const formFields = all.filter((capability) =>
+      capability.field.kind === "property" && canUse(capability)
+    );
+    const updatedAt = all.find((capability) =>
+      capability.field.kind === "updated_at" && canUse(capability)
+    );
+    return [...formFields, ...(updatedAt ? [updatedAt] : [])].map((
+      capability,
+    ) => ({
+      key: queryFieldKey(capability.field),
+      field: capability.field,
+      label: capability.field.kind === "property"
+        ? formFieldLabel(capability.name)
+        : systemColumnLabel("updated_at"),
+      capability,
+    }));
   };
 
   const sortableFields = createMemo(() =>
-    fields().filter((field) => capabilityForField(field)?.sortable)
-      .concat(
-        capabilityForField("updated_at")?.sortable ? ["updated_at"] : [],
-      )
+    queryFieldOptions((capability) => capability.sortable)
   );
   const filterableFields = createMemo(() =>
-    fields().filter((field) => capabilityForField(field)?.filterable)
-      .concat(
-        capabilityForField("updated_at")?.filterable ? ["updated_at"] : [],
-      )
+    queryFieldOptions((capability) => capability.filterable)
   );
-  const sortField = createMemo<string | null>(() =>
-    controller.query().sort[0]
-      ? fieldNameForRef(controller.query().sort[0].field)
-      : null
-  );
+  const sortField = createMemo<string | null>(() => {
+    const field = controller.query().sort[0]?.field;
+    return field ? queryFieldKey(field) : null;
+  });
   const sortDirection = createMemo<SortDirection>(() =>
     controller.query().sort[0]?.direction ?? null
   );
@@ -420,9 +459,10 @@ export function FormTable(props: FormTableProps) {
   const filtersForValues = (
     values: Record<string, string>,
   ): EntryFilter[] =>
-    Object.entries(values).flatMap(([field, value]) => {
+    Object.entries(values).flatMap(([fieldKey, value]) => {
       if (!value.trim()) return [];
-      const capability = capabilityForField(field);
+      const capability = filterableFields().find(({ key }) => key === fieldKey)
+        ?.capability;
       if (!capability || capability.supported_operators.length === 0) return [];
       const operator = capability.supported_operators.includes("contains")
         ? "contains"
@@ -434,10 +474,8 @@ export function FormTable(props: FormTableProps) {
       }];
     });
 
-  const handleHeaderClick = (field: string) => {
-    if (!capabilityForField(field)?.sortable) return;
-    const fieldRef = fieldRefForName(field);
-    if (!fieldRef) return;
+  const handleHeaderClick = (fieldRef: EntryFieldRef) => {
+    if (!capabilityForRef(fieldRef)?.sortable) return;
     const current = controller.query().sort;
     const index = current.findIndex((sort) => sameField(sort.field, fieldRef));
     if (index < 0) {
@@ -456,7 +494,9 @@ export function FormTable(props: FormTableProps) {
   };
 
   const handleSortFieldChange = (value: string) => {
-    const fieldRef = value ? fieldRefForName(value) : undefined;
+    const fieldRef = value
+      ? sortableFields().find(({ key }) => key === value)?.field
+      : undefined;
     const current = controller.query().sort;
     if (!value) {
       controller.setSort(current.slice(1));
@@ -626,6 +666,14 @@ export function FormTable(props: FormTableProps) {
     start: { r: number; c: number } | null;
     end: { r: number; c: number } | null;
   }>({ start: null, end: null });
+  const applySystemColumns = (selectedKeys: string[]) => {
+    setVisibleSystemColumns(
+      (["created_at", "updated_at"] as const).filter((field) =>
+        selectedKeys.includes(field)
+      ),
+    );
+    setSelection({ start: null, end: null });
+  };
   const [isSelecting, setIsSelecting] = createSignal(false);
   const handleGlobalMouseUp = () => setIsSelecting(false);
   const handleGlobalKeyDown = async (e: KeyboardEvent) => {
@@ -660,29 +708,18 @@ export function FormTable(props: FormTableProps) {
     c1: number,
     c2: number,
   ) => {
-    const rowData = [];
-    // Cols 0..N-1: Form fields
-    for (let i = 0; i < currentFields.length; i++) {
-      const colIdx = i;
-      /* v8 ignore start */
-      if (colIdx >= c1 && colIdx <= c2) {
-        rowData.push(
-          formatValueForDisplay(
-            entry.properties?.[currentFields[i]],
-            "en-US",
-            "",
-          ),
-        );
-      }
-      /* v8 ignore stop */
-    }
-
-    // Col N: Updated
-    const lastCol = currentFields.length;
-    if (c1 <= lastCol && c2 >= lastCol) {
-      rowData.push(formatDateLabel(entry.updated_at));
-    }
-    return rowData.join("\t");
+    const columns = [
+      ...currentFields.map((field) => ({ kind: "property" as const, field })),
+      ...visibleSystemColumns().map((field) => ({
+        kind: "system" as const,
+        field,
+      })),
+    ];
+    return columns.slice(c1, c2 + 1).map(({ kind, field }) =>
+      kind === "property"
+        ? formatValueForDisplay(entry.properties?.[field], "en-US", "")
+        : formatDateLabel(entry[field])
+    ).join("\t");
   };
 
   const copySelection = async () => {
@@ -935,7 +972,9 @@ export function FormTable(props: FormTableProps) {
                       >
                         <option value="">{t("formTable.none")}</option>
                         <For each={sortableFields()}>
-                          {(field) => <option value={field}>{field}</option>}
+                          {(field) => (
+                            <option value={field.key}>{field.label}</option>
+                          )}
                         </For>
                       </select>
                     </div>
@@ -967,6 +1006,10 @@ export function FormTable(props: FormTableProps) {
                   </div>
                 </Show>
               </div>
+              <EntryTableColumnPicker
+                options={systemColumnOptions}
+                onApply={applySystemColumns}
+              />
               <button
                 type="button"
                 class={`ui-button text-sm ${
@@ -992,17 +1035,15 @@ export function FormTable(props: FormTableProps) {
             <For each={filterableFields()}>
               {(field) => (
                 <label class="ui-table-mobile-filter">
-                  <span>
-                    {field === "updated_at" ? t("formTable.updated") : field}
-                  </span>
+                  <span>{field.label}</span>
                   <input
                     type="text"
                     class="ui-input ui-input-sm"
                     placeholder={t("formTable.columnFilter")}
-                    aria-label={`${field} ${t("formTable.columnFilter")}`}
-                    value={columnFilters()[field] || ""}
+                    aria-label={`${field.label} ${t("formTable.columnFilter")}`}
+                    value={columnFilters()[field.key] || ""}
                     onInput={(event) =>
-                      updateColumnFilter(field, event.currentTarget.value)}
+                      updateColumnFilter(field.key, event.currentTarget.value)}
                   />
                 </label>
               )}
@@ -1034,28 +1075,37 @@ export function FormTable(props: FormTableProps) {
                         <button
                           type="button"
                           class="ui-table-header-button select-none"
-                          onClick={() => handleHeaderClick(field)}
+                          onClick={() => {
+                            const capability = capabilityForFormField(field);
+                            if (capability) handleHeaderClick(capability.field);
+                          }}
                         >
-                          {field}
+                          {formFieldLabel(field)}
                           <SortIcon
-                            active={sortField() === field}
+                            active={sortField() === queryKeyForFormField(field)}
                             direction={sortDirection()}
                           />
                         </button>
                         <Show
                           when={showColumnFilters() &&
-                            capabilityForField(field)?.filterable}
+                            capabilityForFormField(field)?.filterable}
                         >
                           <input
                             type="text"
                             class="ui-input ui-input-sm ui-table-filter text-xs"
                             placeholder={t("formTable.columnFilter")}
-                            aria-label={`${field} ${
+                            aria-label={`${formFieldLabel(field)} ${
                               t("formTable.columnFilter")
                             }`}
-                            value={columnFilters()[field] || ""}
+                            value={columnFilters()[
+                              queryKeyForFormField(field)
+                            ] ||
+                              ""}
                             onInput={(e) =>
-                              updateColumnFilter(field, e.currentTarget.value)}
+                              updateColumnFilter(
+                                queryKeyForFormField(field),
+                                e.currentTarget.value,
+                              )}
                             onClick={(e) => e.stopPropagation()}
                           />
                         </Show>
@@ -1064,38 +1114,55 @@ export function FormTable(props: FormTableProps) {
                   )}
                 </For>
 
-                <th scope="col" class="ui-table-header-cell sticky top-0 z-10">
-                  <div class="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      class="ui-table-header-button select-none"
-                      onClick={() => handleHeaderClick("updated_at")}
+                <For each={visibleSystemColumns()}>
+                  {(field) => (
+                    <th
+                      scope="col"
+                      class="ui-table-header-cell sticky top-0 z-10"
                     >
-                      {t("formTable.updated")}
-                      <SortIcon
-                        active={sortField() === "updated_at"}
-                        direction={sortDirection()}
-                      />
-                    </button>
-                    <Show when={showColumnFilters()}>
-                      <input
-                        type="text"
-                        class="ui-input ui-input-sm ui-table-filter text-xs"
-                        placeholder={t("formTable.columnFilter")}
-                        aria-label={`${t("formTable.updated")} ${
-                          t("formTable.columnFilter")
-                        }`}
-                        value={columnFilters().updated_at || ""}
-                        onInput={(e) =>
-                          updateColumnFilter(
-                            "updated_at",
-                            e.currentTarget.value,
-                          )}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </Show>
-                  </div>
-                </th>
+                      <div class="flex flex-col gap-2">
+                        <Show
+                          when={field === "updated_at"}
+                          fallback={<span>{systemColumnLabel(field)}</span>}
+                        >
+                          <button
+                            type="button"
+                            class="ui-table-header-button select-none"
+                            onClick={() => handleHeaderClick({ kind: field })}
+                          >
+                            {systemColumnLabel(field)}
+                            <SortIcon
+                              active={sortField() ===
+                                queryFieldKey({ kind: field })}
+                              direction={sortDirection()}
+                            />
+                          </button>
+                        </Show>
+                        <Show
+                          when={field === "updated_at" && showColumnFilters()}
+                        >
+                          <input
+                            type="text"
+                            class="ui-input ui-input-sm ui-table-filter text-xs"
+                            placeholder={t("formTable.columnFilter")}
+                            aria-label={`${systemColumnLabel(field)} ${
+                              t("formTable.columnFilter")
+                            }`}
+                            value={columnFilters()[
+                              queryFieldKey({ kind: field })
+                            ] || ""}
+                            onInput={(event) =>
+                              updateColumnFilter(
+                                queryFieldKey({ kind: field }),
+                                event.currentTarget.value,
+                              )}
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                        </Show>
+                      </div>
+                    </th>
+                  )}
+                </For>
               </tr>
             </thead>
             <tbody class="ui-table-body">
@@ -1178,29 +1245,39 @@ export function FormTable(props: FormTableProps) {
                                 e.key === "Enter" && e.currentTarget.blur()}
                               class="ui-table-cell-input"
                               autofocus
+                              aria-label={formFieldLabel(field)}
                               onClick={(e) => e.stopPropagation()}
                             />
                           </Show>
                         </td>
                       )}
                     </For>
-                    <td
-                      class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
-                        isSelected(rowIndex(), fields().length)
-                          ? "ui-table-cell-selected"
-                          : ""
-                      }`}
-                      onMouseDown={() =>
-                        handleCellMouseDown(rowIndex(), fields().length)}
-                      onMouseEnter={(e) =>
-                        handleCellMouseEnter(
-                          e,
-                          rowIndex(),
-                          fields().length,
-                        )}
-                    >
-                      {formatDateLabel(entry.updated_at)}
-                    </td>
+                    <For each={visibleSystemColumns()}>
+                      {(field, systemIndex) => {
+                        const columnIndex = () =>
+                          fields().length +
+                          systemIndex();
+                        return (
+                          <td
+                            class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
+                              isSelected(rowIndex(), columnIndex())
+                                ? "ui-table-cell-selected"
+                                : ""
+                            }`}
+                            onMouseDown={() =>
+                              handleCellMouseDown(rowIndex(), columnIndex())}
+                            onMouseEnter={(event) =>
+                              handleCellMouseEnter(
+                                event,
+                                rowIndex(),
+                                columnIndex(),
+                              )}
+                          >
+                            {formatDateLabel(entry[field])}
+                          </td>
+                        );
+                      }}
+                    </For>
                   </tr>
                 )}
               </For>
@@ -1229,7 +1306,7 @@ export function FormTable(props: FormTableProps) {
                   <For each={fields().slice(0, 3)}>
                     {(field) => (
                       <div class="ui-table-mobile-field">
-                        <dt>{field}</dt>
+                        <dt>{formFieldLabel(field)}</dt>
                         <dd>
                           <Show
                             when={isCellEditing(entry.id, field)}
@@ -1267,7 +1344,7 @@ export function FormTable(props: FormTableProps) {
                               )}
                               class="ui-table-cell-input"
                               autofocus
-                              aria-label={field}
+                              aria-label={formFieldLabel(field)}
                               onBlur={(event) => {
                                 void handleCellUpdate(
                                   entry.id,
@@ -1285,10 +1362,14 @@ export function FormTable(props: FormTableProps) {
                       </div>
                     )}
                   </For>
-                  <div class="ui-table-mobile-field">
-                    <dt>{t("formTable.updated")}</dt>
-                    <dd>{formatDateLabel(entry.updated_at)}</dd>
-                  </div>
+                  <For each={visibleSystemColumns()}>
+                    {(field) => (
+                      <div class="ui-table-mobile-field">
+                        <dt>{systemColumnLabel(field)}</dt>
+                        <dd>{formatDateLabel(entry[field])}</dd>
+                      </div>
+                    )}
+                  </For>
                 </dl>
                 <Show when={fields().length > 3}>
                   <details class="ui-table-mobile-more">
@@ -1306,7 +1387,7 @@ export function FormTable(props: FormTableProps) {
                       <For each={fields().slice(3)}>
                         {(field) => (
                           <div class="ui-table-mobile-field">
-                            <dt>{field}</dt>
+                            <dt>{formFieldLabel(field)}</dt>
                             <dd>
                               <Show
                                 when={isCellEditing(entry.id, field)}
@@ -1344,7 +1425,7 @@ export function FormTable(props: FormTableProps) {
                                   )}
                                   class="ui-table-cell-input"
                                   autofocus
-                                  aria-label={field}
+                                  aria-label={formFieldLabel(field)}
                                   onBlur={(event) => {
                                     void handleCellUpdate(
                                       entry.id,

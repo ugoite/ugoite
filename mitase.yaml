@@ -56,6 +56,7 @@ inventory:
         - frontend/src/components/FormList.test.tsx
         - frontend/src/components/FormTable.tsx
         - frontend/src/components/FormTable.test.tsx
+        - frontend/src/components/EntryTableColumnPicker.tsx
         - frontend/src/components/EntryInfoIdentity.test.tsx
         - frontend/src/lib/entry-api.ts
         - frontend/src/lib/client.test.ts

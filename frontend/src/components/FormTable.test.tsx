@@ -918,7 +918,7 @@ describe("FormTable", () => {
   it("REQ-FE-031: Edit Mode toggle and inline edit", async () => {
     const entryForm = {
       name: "Test",
-      fields: { col: { type: "string" } },
+      fields: { col: { type: "string", label: "Field label" } },
     } as any;
     const entries = [
       {
@@ -956,6 +956,8 @@ describe("FormTable", () => {
     const cell = desktopTable().getByText("val");
     fireEvent.click(cell);
 
+    expect(desktopTable().getByRole("textbox", { name: "Field label" }))
+      .toBeInTheDocument();
     const input = desktopTable().getByDisplayValue("val");
     fireEvent.input(input, { target: { value: "new-val" } });
     fireEvent.blur(input);
@@ -973,6 +975,59 @@ describe("FormTable", () => {
     });
     updateSpy.mockRestore();
     getSpy.mockRestore();
+  });
+
+  it("uses the Form label for a field named created_at in query controls", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: {
+        created_at: { id: 501, label: "Submitted", type: "date" },
+        updated_at: { id: 502, label: "Form updated", type: "date" },
+      },
+    } as any;
+    mockEntryQuery([{
+      id: "entry-1",
+      properties: {
+        created_at: "2026-01-01",
+        updated_at: "2026-01-03",
+      },
+      created_at: "2026-01-02T00:00:00.000Z",
+      updated_at: "2026-01-04T00:00:00.000Z",
+    }]);
+
+    render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={canonicalForm(entryForm)}
+        onEntryClick={() => {}}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(desktopTable().getByRole("columnheader", { name: /Submitted/ }))
+        .toBeInTheDocument()
+    );
+    expect(desktopTable().getByRole("columnheader", { name: /Form updated/ }))
+      .toBeInTheDocument();
+    const mobileFilters = document.getElementById("form-table-mobile-filters");
+    expect(mobileFilters).not.toBeNull();
+    expect(within(mobileFilters!).getByLabelText("Submitted Filter..."))
+      .toBeInTheDocument();
+    expect(within(mobileFilters!).getByLabelText("Form updated Filter..."))
+      .toBeInTheDocument();
+    expect(within(mobileFilters!).getByLabelText("Updated Filter..."))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort menu" }));
+    const sortField = screen.getByLabelText("Sort field");
+    expect(within(sortField).getByRole("option", { name: "Submitted" }))
+      .toBeInTheDocument();
+    expect(within(sortField).getByRole("option", { name: "Form updated" }))
+      .toHaveAttribute("value", "property:502");
+    expect(within(sortField).getByRole("option", { name: "Updated" }))
+      .toHaveAttribute("value", "system:updated_at");
+    expect(within(sortField).queryByRole("option", { name: "Created" }))
+      .not.toBeInTheDocument();
   });
 
   it("should have a link icon for navigation and not navigate on row click", async () => {
@@ -1157,7 +1212,7 @@ describe("FormTable", () => {
     fireEvent.click(getByLabelText("Sort menu"));
     // Change sort field via dropdown
     const sortFieldSelect = getByLabelText("Sort field");
-    fireEvent.change(sortFieldSelect, { target: { value: "col" } });
+    fireEvent.change(sortFieldSelect, { target: { value: "property:1" } });
 
     await waitFor(() => {
       expect(query.mock.calls.at(-1)?.[1].query.sort).toEqual([{
@@ -1256,6 +1311,11 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() => desktopTable().getByText("val1"));
+    expect(desktopTable().queryByRole("columnheader", { name: "Updated" }))
+      .not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Updated" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     const cell1 = desktopTable().getByText("val1");
     // Actions(0), Form field(1), updated_at(2).
@@ -1273,6 +1333,106 @@ describe("FormTable", () => {
     const copied = writeTextSpy.mock.calls[0][0] as string;
     expect(copied).toContain("val1");
     expect(copied).not.toContain(entryId);
+  });
+
+  it("keeps Form fields as the default columns and lets users add timestamps", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: { col: { type: "string" } },
+    } as any;
+    mockEntryQuery([{
+      id: "entry-1",
+      properties: { col: "Value" },
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-02T00:00:00.000Z",
+    }]);
+    render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={canonicalForm(entryForm)}
+        onEntryClick={() => {}}
+      />
+    ));
+
+    await waitFor(() => desktopTable().getByText("Value"));
+    expect(desktopTable().getByRole("columnheader", { name: /col/ }))
+      .toBeInTheDocument();
+    expect(desktopTable().queryByRole("columnheader", { name: "Created" }))
+      .not.toBeInTheDocument();
+    expect(desktopTable().queryByRole("columnheader", { name: "Updated" }))
+      .not.toBeInTheDocument();
+    expect(mobileList().queryByText("Created")).not.toBeInTheDocument();
+    expect(mobileList().queryByText("Updated")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Created" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Updated" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(desktopTable().getByRole("columnheader", { name: "Created" }))
+      .toBeInTheDocument();
+    expect(desktopTable().getByRole("columnheader", { name: /Updated/ }))
+      .toBeInTheDocument();
+    expect(mobileList().getByText("Created")).toBeInTheDocument();
+    expect(mobileList().getByText("Updated")).toBeInTheDocument();
+  });
+
+  it("traps focus in the Columns dialog and returns it to the trigger", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: {
+        internal_field_491: {
+          id: 491,
+          label: "Patient name",
+          type: "string",
+        },
+      },
+    } as any;
+    mockEntryQuery([{
+      id: "private-entry-id",
+      properties: { internal_field_491: "Value" },
+    }]);
+    render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={canonicalForm(entryForm)}
+        onEntryClick={() => {}}
+      />
+    ));
+
+    const trigger = screen.getByRole("button", { name: "Columns" });
+    await waitFor(() =>
+      expect(desktopTable().getByRole("columnheader", { name: /Patient name/ }))
+        .toBeInTheDocument()
+    );
+    expect(mobileList().getByText("Patient name")).toBeInTheDocument();
+    expect(desktopTable().queryByText("internal_field_491"))
+      .not.toBeInTheDocument();
+    expect(mobileList().queryByText("internal_field_491"))
+      .not.toBeInTheDocument();
+    expect(desktopTable().queryByText("491")).not.toBeInTheDocument();
+    expect(mobileList().queryByText("491")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/491/)).not.toBeInTheDocument();
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: "Columns" });
+    const close = screen.getByRole("button", { name: /close/i });
+    await waitFor(() => expect(close).toHaveFocus());
+    expect(within(dialog).queryByText("internal_field_491"))
+      .not.toBeInTheDocument();
+    expect(within(dialog).queryByText("491")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("private-entry-id"))
+      .not.toBeInTheDocument();
+
+    const apply = screen.getByRole("button", { name: "Apply" });
+    apply.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(close).toHaveFocus();
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it("REQ-UX-FORMTABLE-001: keeps Entry IDs out of desktop rows and opens entries by action", async () => {
