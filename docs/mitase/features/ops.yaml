@@ -147,6 +147,15 @@ features:
                 criterion: REQ-OPS-007#criterion.docsite-gate
               - kind: satisfies
                 criterion: REQ-OPS-020#criterion.portable-wasm-gates
+              - kind: satisfies
+                criterion: REQ-OPS-013#criterion.base-ref-edit-required-checks
+          - id: codeql-workflow
+            adapter: declared
+            path: .github/workflows/codeql.yml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-013#criterion.base-ref-edit-required-checks
       - id: release-evidence
         role: evidence
         facet: release-gate

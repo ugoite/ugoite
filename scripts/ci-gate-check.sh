@@ -12,6 +12,22 @@ require_success() {
   [[ "$result" == "success" ]] || fail "$name result was $result"
 }
 
+if [[ "${EVENT_NAME:-}" == "pull_request" &&
+  "${EVENT_ACTION:-}" == "edited" &&
+  "${PR_BASE_CHANGED:-true}" == "false" ]]; then
+  [[ "${IMPACT_RESULT:-}" == "skipped" ]] || fail "metadata edit impact was not skipped"
+  for result_name in \
+    RUST_CHECK_RESULT RUST_TEST_RESULT S3_SHARED_AUTHORIZATION_RESULT \
+    WEB_RESULT ARTIFACT_BUILD_RESULT E2E_SMOKE_MOBILE_RESULT \
+    E2E_OWNER_RESULT E2E_PORTABLE_RESULT DOCSITE_NAV_RESULT \
+    CP1_FIXTURES_RESULT CP1_QUERY_RESULT CP1_EXPORT_RESULT PR_CONTEXT_RESULT; do
+    result="${!result_name:-missing}"
+    [[ "$result" == "skipped" ]] || fail "metadata edit unexpectedly ran $result_name ($result)"
+  done
+  printf 'ci-required: metadata edit emitted no repository validation lanes\n'
+  exit 0
+fi
+
 require_success "impact" "${IMPACT_RESULT:-missing}"
 [[ "${IMPACT_PLAN_STATUS:-}" == "ok" ]] || fail "impact plan was not validated"
 [[ "${IMPACT_PLAN_SCOPE:-}" == "all" || "${IMPACT_PLAN_SCOPE:-}" == "scoped" ]] || fail "impact scope was invalid"

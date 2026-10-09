@@ -4,6 +4,12 @@ on:
   pull_request:
     branches:
       - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - edited
   push:
     branches:
       - main
@@ -15,12 +21,16 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'metadata' || 'validation' }}
   cancel-in-progress: true
 
 jobs:
   impact:
     name: ci-impact-plan
+    if: >-
+      ${{ github.event_name != 'pull_request' ||
+      github.event.action != 'edited' ||
+      github.event.changes.base != null }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -1000,7 +1010,9 @@ jobs:
 
   pr-context-report:
     name: ci-pr-context-report
-    if: github.event_name == 'pull_request'
+    if: >-
+      ${{ github.event_name == 'pull_request' &&
+      (github.event.action != 'edited' || github.event.changes.base != null) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -1350,6 +1362,8 @@ jobs:
       - name: Validate CI lane plan and required results
         env:
           EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          PR_BASE_CHANGED: ${{ github.event.changes.base != null }}
           IMPACT_RESULT: ${{ needs.impact.result }}
           IMPACT_PLAN_STATUS: ${{ needs.impact.outputs.plan_status }}
           IMPACT_PLAN_SCOPE: ${{ needs.impact.outputs.plan_scope }}
