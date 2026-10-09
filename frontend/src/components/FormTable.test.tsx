@@ -1355,6 +1355,9 @@ describe("FormTable", () => {
       .not.toBeInTheDocument();
     expect(mobileList().queryByText("internal_field_491"))
       .not.toBeInTheDocument();
+    expect(desktopTable().queryByText("491")).not.toBeInTheDocument();
+    expect(mobileList().queryByText("491")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/491/)).not.toBeInTheDocument();
     trigger.focus();
     fireEvent.click(trigger);
 
