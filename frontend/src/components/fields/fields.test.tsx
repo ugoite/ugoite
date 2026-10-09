@@ -359,6 +359,26 @@ describe("shared RowReferenceSelect", () => {
     );
     expect(screen.queryByText("stable-entry-id")).not.toBeInTheDocument();
   });
+
+  it("REQ-FE-065: hides an unresolved target Form UUID in unavailable feedback", () => {
+    const targetFormId = "550e8400-e29b-41d4-a716-446655440000";
+    render(() => (
+      <RowReferenceSelect
+        spaceId="default"
+        targetForm={targetFormId}
+        value="stable-entry-id"
+        onChange={vi.fn()}
+        fieldId="project-unavailable-id"
+        forms={[]}
+      />
+    ));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "The target Form Unknown form is not available for entry selection.",
+    );
+    expect(screen.queryByText(targetFormId)).not.toBeInTheDocument();
+    expect(screen.queryByText("stable-entry-id")).not.toBeInTheDocument();
+  });
 });
 
 describe("RowReferenceSelect point hydration", () => {
@@ -422,6 +442,30 @@ describe("RowReferenceSelect point hydration", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText("entry-other")).not.toBeInTheDocument();
+  });
+
+  it("REQ-FE-065: hides unresolved Form UUIDs from wrong-Form feedback", async () => {
+    const unknownFormId = "550e8400-e29b-41d4-a716-446655440000";
+    vi.spyOn(entryApi, "get").mockResolvedValue(
+      projectEntry({ id: "entry-other", form: unknownFormId }),
+    );
+    render(() => (
+      <RowReferenceSelect
+        spaceId="default"
+        targetForm="Project"
+        value="entry-other"
+        onChange={vi.fn()}
+        fieldId="project-unknown-form"
+        forms={projectForms}
+      />
+    ));
+
+    expect(
+      await screen.findByText(
+        "The selected entry belongs to Unknown form, not Project.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(unknownFormId)).not.toBeInTheDocument();
   });
 });
 
