@@ -388,6 +388,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
       key: systemColumnKey(field),
       label: systemFieldLabel(field),
       selected: systemFields.has(field),
+      countsTowardSelectionLimit: false,
     }));
     return [...propertyOptions, ...systemOptions];
   });

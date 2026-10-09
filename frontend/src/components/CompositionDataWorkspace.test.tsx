@@ -1162,6 +1162,49 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
+  it("keeps timestamps selectable at the 64-property projection limit", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
+    const fields = Array.from({ length: 64 }, (_, index) => ({
+      field_id: index + 1,
+      field_type: "string",
+    }));
+    const draft = addEntryQuerySource(createEmptyDraft("Tool"), {
+      ...entrySeed(),
+      fieldSchema: fields,
+      query: {
+        filters: [],
+        sort: [],
+        projection: {
+          kind: "fields",
+          fields: fields.map((field) => field.field_id),
+        },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    const editor = harness.editor();
+    const columns = await openColumnDialog(editor);
+    const created = within(columns).getByRole("checkbox", { name: "Created" });
+    const updated = within(columns).getByRole("checkbox", { name: "Updated" });
+
+    expect(created).toBeEnabled();
+    expect(updated).toBeEnabled();
+    fireEvent.click(created);
+    expect(updated).toBeEnabled();
+    fireEvent.click(within(columns).getByRole("button", { name: "Apply" }));
+
+    expect(harness.current().sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        projection: {
+          kind: "fields",
+          fields: fields.map((field) => field.field_id),
+        },
+        display_system_fields: ["created_at"],
+      },
+    });
+  });
+
   it("lets Preview select timestamps without turning Preview into a Form field", async () => {
     formApiListMock.mockResolvedValue([expenseForm()]);
     const draft = addEntryQuerySource(createEmptyDraft("Tool"), entrySeed())

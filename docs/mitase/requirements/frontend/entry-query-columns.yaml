@@ -11,7 +11,7 @@ requirements:
     criteria:
       - id: entry-query-table-columns
         kind: behavior
-        statement: The Composition EntryQuery column picker uses transient human Form labels and localized Created and Updated labels, with timestamps hidden by default. Timestamp selections are stored separately from property projection; Preview remains a projection mode with its Preview result column, not a selectable Form field. Numeric field IDs stay in query data and do not appear in picker or table labels.
+        statement: The Composition EntryQuery column picker uses transient human Form labels and localized Created and Updated labels, with timestamps hidden by default. Timestamp selections are stored separately from property projection and remain selectable at the 64-property projection limit; Preview remains a projection mode with its Preview result column, not a selectable Form field. Numeric field IDs stay in query data and do not appear in picker or table labels.
         governed_by: [POL-UI-002#rule.governance, POL-UI-005#rule.governance]
     bindings:
       - id: entry-query-table-columns-verification
@@ -41,6 +41,15 @@ requirements:
                 criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
                 covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: lets Preview select timestamps without turning Preview into a Form field } }
+          - id: timestamps-ignore-property-limit
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: keeps timestamps selectable at the 64-property projection limit }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-076#criterion.entry-query-table-columns
+                covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: keeps timestamps selectable at the 64-property projection limit } }
           - id: preview-timestamps-default
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.test.tsx

@@ -9,6 +9,7 @@ export interface EntryTableColumnOption {
   selected: boolean;
   disabled?: boolean;
   disabledReason?: string;
+  countsTowardSelectionLimit?: boolean;
 }
 
 export interface EntryTableColumnPickerProps {
@@ -57,6 +58,7 @@ export function EntryTableColumnPicker(
   const disabled = (option: EntryTableColumnOption) =>
     option.disabled || (
       !draft().includes(option.key) &&
+      option.countsTowardSelectionLimit !== false &&
       props.selectionLimit !== undefined &&
       (props.selectionLimit.countSelected?.(draft()) ?? draft().length) >=
         props.selectionLimit.maximum
@@ -64,6 +66,7 @@ export function EntryTableColumnPicker(
   const disabledReason = (option: EntryTableColumnOption) =>
     option.disabledReason ?? (
       !draft().includes(option.key) &&
+        option.countsTowardSelectionLimit !== false &&
         props.selectionLimit !== undefined &&
         (props.selectionLimit.countSelected?.(draft()) ?? draft().length) >=
           props.selectionLimit.maximum
