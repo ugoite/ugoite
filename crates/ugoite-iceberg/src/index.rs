@@ -529,13 +529,6 @@ pub(crate) async fn query_entry_page_at_checkpoint(
     if limit == 0 || limit > ugoite_core::entry_query::MAX_ENTRY_PAGE_LIMIT {
         return Err(anyhow!("Entry query page limit is out of range"));
     }
-    let form_values = forms
-        .iter()
-        .map(|form| {
-            let value = crate::form::from_domain_form(form);
-            crate::form::enrich_form_definition(&value).map(|value| (form.id, value))
-        })
-        .collect::<Result<BTreeMap<_, _>>>()?;
     let selected_forms = selected_canonical_forms(forms, relation_scopes, &query.scope);
     if selected_forms.is_empty() {
         return Ok((Vec::new(), false));
@@ -545,7 +538,6 @@ pub(crate) async fn query_entry_page_at_checkpoint(
     let (sql, values, types) = build_canonical_entry_sql(
         query,
         &selected_forms,
-        &form_values,
         &sort_columns,
         cursor,
         Some(limit.saturating_add(1)),
@@ -802,26 +794,13 @@ pub(crate) async fn count_entries_at_checkpoint(
     relation_scopes: &BTreeMap<String, EntryScope>,
     query: &EntryQuery,
 ) -> Result<u64> {
-    let form_values = forms
-        .iter()
-        .map(|form| {
-            let value = crate::form::from_domain_form(form);
-            crate::form::enrich_form_definition(&value).map(|value| (form.id, value))
-        })
-        .collect::<Result<BTreeMap<_, _>>>()?;
     let selected_forms = selected_canonical_forms(forms, relation_scopes, &query.scope);
     if selected_forms.is_empty() {
         return Ok(0);
     }
     let sort_columns = canonical_sort_columns(query, selected_forms[0])?;
-    let (sql, values, types) = build_canonical_entry_sql(
-        query,
-        &selected_forms,
-        &form_values,
-        &sort_columns,
-        None,
-        None,
-    )?;
+    let (sql, values, types) =
+        build_canonical_entry_sql(query, &selected_forms, &sort_columns, None, None)?;
     let parameters = datafusion_parameters(&values, &types)?;
     let context = datafusion_sql_context_with_form_definitions(
         op,
@@ -970,7 +949,6 @@ type CanonicalEntrySql = (String, Map<String, Value>, BTreeMap<String, String>);
 fn build_canonical_entry_sql(
     query: &EntryQuery,
     forms: &[&FormDefinition],
-    form_values: &BTreeMap<FormId, Value>,
     sort_columns: &[CanonicalSortColumn],
     cursor: Option<&EntryCursor>,
     limit: Option<usize>,
@@ -979,9 +957,6 @@ fn build_canonical_entry_sql(
     let mut types = BTreeMap::new();
     let mut branches = Vec::new();
     for form in forms {
-        let form_value = form_values
-            .get(&form.id)
-            .with_context(|| format!("missing Form {}", form.id))?;
         let relation = sql_relation_name(form.id);
         let mut predicates = Vec::new();
         if let Some(text) = query.text.as_deref() {
@@ -1006,20 +981,18 @@ fn build_canonical_entry_sql(
                     sql_string_literal(&form.name)
                 ),
             ];
-            if let Some(fields) = form_value.get("fields").and_then(Value::as_object) {
-                for field in fields.values() {
-                    let Some(column) = field.get("sql_column").and_then(Value::as_str) else {
-                        continue;
-                    };
-                    if matches!(
-                        field.get("type").and_then(Value::as_str),
-                        Some("list" | "object_list" | "asset_reference" | "binary")
-                    ) {
-                        continue;
-                    }
+            for field in &form.fields {
+                if !searchable_form_field(field) {
+                    continue;
+                }
+                let column = quote_identifier(&sql_column_name(field.id));
+                if field.field_type == FieldType::List {
                     text_terms.push(format!(
-                        "ugoite_search_normalize(CAST({} AS VARCHAR)) LIKE ${parameter} ESCAPE '\\'",
-                        quote_identifier(column)
+                        "ugoite_search_normalize(array_to_string({column}, ' ')) LIKE ${parameter} ESCAPE '\\'"
+                    ));
+                } else {
+                    text_terms.push(format!(
+                        "ugoite_search_normalize(CAST({column} AS VARCHAR)) LIKE ${parameter} ESCAPE '\\'"
                     ));
                 }
             }

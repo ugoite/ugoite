@@ -99,6 +99,69 @@ async fn create_task(
     Ok(())
 }
 
+#[tokio::test]
+async fn text_search_ignores_uuid_and_matches_scalar_lists() -> Result<()> {
+    let (service, space_id) =
+        setup_space("memory://entry-query-text-typed-fields", "typed-search").await?;
+    service
+        .upsert_form(
+            &space_id,
+            &json!({
+                "name": "Task",
+                "fields": {
+                    "Reference": {"type": "uuid"},
+                    "Labels": {"type": "list", "items": {"type": "string"}},
+                },
+            }),
+        )
+        .await?;
+
+    service
+        .create_structured_entry_with_receipt(
+            &space_id,
+            "list-match",
+            "Task".to_string(),
+            Vec::new(),
+            BTreeMap::from([
+                (
+                    "Reference".to_string(),
+                    json!("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+                ),
+                ("Labels".to_string(), json!(["priority needle"])),
+            ]),
+            BTreeMap::new(),
+            "owner",
+        )
+        .await?;
+
+    let page = service
+        .query_entry_page(
+            &space_id,
+            page_request(
+                EntryQuery {
+                    scope: EntryQueryScope::Form {
+                        form_id: form_id(&service, &space_id, "Task").await?,
+                    },
+                    text: Some("needle".to_string()),
+                    filters: Vec::new(),
+                    sort: Vec::new(),
+                },
+                10,
+                None,
+            ),
+        )
+        .await?;
+
+    assert_eq!(
+        page.rows
+            .iter()
+            .map(|row| row.id.as_str())
+            .collect::<Vec<_>>(),
+        ["list-match"]
+    );
+    Ok(())
+}
+
 fn task_fields(
     status: Option<&str>,
     priority: Option<i64>,
