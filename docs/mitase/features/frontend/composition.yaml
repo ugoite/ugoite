@@ -54,6 +54,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.display-authoring
+          - id: composition-source-navigator
+            adapter: typescript
+            path: frontend/src/components/SourceNavigator.tsx
+            selector: { kind: symbol, name: SourceNavigator }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.source-authoring
           - id: composition-entry-query-source-editor
             adapter: typescript
             path: frontend/src/components/EntryQuerySourceEditor.tsx
@@ -228,3 +235,17 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.mobile-one-column
+      - id: source-navigator-verification
+        role: verification
+        facet: verification
+        responsibility: Verify long source names remain available as a native title and full accessible name while source, Entry, and revision identifiers stay out of the navigator row.
+        targets:
+          - id: source-navigator-human-name
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "keeps long navigator names available without exposing source identifiers" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.source-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-source-navigator]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "keeps long navigator names available without exposing source identifiers" } }

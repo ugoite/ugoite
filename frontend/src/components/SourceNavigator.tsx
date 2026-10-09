@@ -49,6 +49,7 @@ export function SourceNavigator(props: SourceNavigatorProps) {
                 main={
                   <RowListButton
                     ariaLabel={source.name}
+                    title={source.name}
                     primary={
                       <span class="rowListName">
                         <UiIcon name={sourceKindIcon(source)} />
