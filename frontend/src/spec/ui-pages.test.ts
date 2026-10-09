@@ -274,6 +274,56 @@ describe("UI spec YAML registry", () => {
     );
   });
 
+  it("REQ-FE-040: declares device approval consent and identifier boundaries", () => {
+    const deviceApprovalPath = path.join(
+      componentsDir,
+      "device-approval.yaml",
+    );
+    const deviceApproval = parse(
+      readFileSync(deviceApprovalPath, "utf8"),
+    ) as {
+      component_group?: Record<string, unknown>;
+      components?: Array<Record<string, unknown>>;
+    };
+    const consent = deviceApproval.components?.find(({ id }) =>
+      id === "approval-request"
+    );
+
+    expect(deviceApproval.component_group).toMatchObject({
+      id: "device-approval",
+      routes: ["/device"],
+    });
+    expect(consent).toMatchObject({
+      implementation: "frontend/src/routes/device.tsx",
+      tests: "frontend/src/routes/device.test.tsx",
+      supported_resources: ["resource-omitted-cli", "same-origin-mcp"],
+      unsupported_resource: "visible-unsupported-state-without-approval",
+      visible_consent: ["device-name", "requested-actions", "space-name"],
+      identifier_visibility: "not-in-visible-or-accessible-labels",
+      confirmation: {
+        explicit_action_before_grant: true,
+        accessible_description_includes: [
+          "device-name",
+          "requested-actions",
+          "selected-space-name",
+        ],
+      },
+    });
+
+    const uxTests = readFileSync(
+      path.join(repoRoot, "frontend/src/routes/device.test.tsx"),
+      "utf8",
+    );
+    expect(uxTests).toContain(
+      "REQ-UX-RESP-001: keeps the approval controls labeled with a single context",
+    );
+    const uiIndex = readFileSync(
+      path.join(repoRoot, "docs/spec/ui/index.md"),
+      "utf8",
+    );
+    expect(uiIndex).toContain("`components/device-approval.yaml`");
+  });
+
   it("REQ-FE-040: loads UI page specs", () => {
     const pages = loadPages();
     expect(pages.length).toBeGreaterThan(0);

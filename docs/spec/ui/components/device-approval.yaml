@@ -1,0 +1,37 @@
+version: "0.1"
+updated: "2026-10-09"
+component_group:
+  id: device-approval
+  title: Device approval
+  routes: [/device]
+  notes: The approval task shows consent context by client name, requested actions, and Space name. User codes, resource values, and Space UIDs stay out of visible and accessible labels.
+components:
+  - id: approval-request
+    type: device-approval
+    implementation: frontend/src/routes/device.tsx
+    tests: frontend/src/routes/device.test.tsx
+    request_loading: visible-loading-state
+    request_error: inline-alert
+    missing_user_code: unsupported-state
+    supported_resources: [resource-omitted-cli, same-origin-mcp]
+    unsupported_resource: visible-unsupported-state-without-approval
+    visible_consent: [device-name, requested-actions, space-name]
+    space_selection:
+      display: space-name
+      preselect: requested-space-when-present-in-available-spaces
+      fallback: first-available-space
+      approval_payload: space-uid
+      approval_disabled_when_no-space-is-available: true
+    identifier_visibility: not-in-visible-or-accessible-labels
+    confirmation:
+      trigger: explicit-review-request-action
+      accessible_name: cli-or-mcp-approval-title
+      accessible_description_includes:
+        - device-name
+        - requested-actions
+        - selected-space-name
+      explicit_action_before_grant: true
+    success:
+      state: approved
+      message: return-to-cli-or-mcp
+    approval_error: inline-alert-and-retryable-confirmation

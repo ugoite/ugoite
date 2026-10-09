@@ -765,10 +765,10 @@ requirements:
             path: frontend/src/routes/device.test.tsx
             selector: { kind: test, name: "REQ-UX-RESP-001: keeps the approval controls labeled with a single context" }
             claims:
-              - kind: verifies
-                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
-                covers: [FEAT-UX-009#binding.auth-form-implementation/target.device-surface]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/device.test.tsx, test: "REQ-UX-RESP-001: keeps the approval controls labeled with a single context" } }
+              - { kind: verifies, criterion: REQ-UX-RESP-001#criterion.a11y-names-focus,
+                  covers: [FEAT-UX-009#binding.auth-form-implementation/target.device-surface], runner: { runner: frontend-vitest-file, arguments: { file: src/routes/device.test.tsx, test: "REQ-UX-RESP-001: keeps the approval controls labeled with a single context" } } }
+              - { kind: verifies, criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only,
+                  covers: [FEAT-UX-009#binding.auth-form-implementation/target.device-surface, FEAT-UX-009#binding.auth-form-implementation/target.device-approval-contract], runner: { runner: frontend-vitest-file, arguments: { file: src/routes/device.test.tsx, test: "REQ-UX-RESP-001: keeps the approval controls labeled with a single context" } } }
           - id: security-tabs-named
             adapter: typescript
             path: frontend/src/routes/settings/security.test.tsx

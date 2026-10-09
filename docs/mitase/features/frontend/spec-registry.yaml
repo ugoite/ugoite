@@ -29,6 +29,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.registry-shape
+          - id: component-device-approval
+            adapter: declared
+            path: docs/spec/ui/components/device-approval.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
           - id: account-security-contract-reference
             adapter: declared
             path: docs/spec/ui/index.md
