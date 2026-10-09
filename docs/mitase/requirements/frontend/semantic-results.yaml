@@ -47,7 +47,7 @@ requirements:
         governed_by: [POL-006#rule.governance]
       - id: composition-system-form-id-hidden
         kind: behavior
-        statement: An all-Forms Composition EntryQuery table does not display the top-level system Form UUID in a column heading or cell.
+        statement: An all-Forms Composition EntryQuery table does not include the top-level system Form UUID as a substring in any column heading or cell text.
         governed_by: [POL-UI-005#rule.governance]
     bindings:
       - id: result-surface-verification
@@ -373,12 +373,12 @@ requirements:
           - id: composition-system-form-id-hidden
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.test.tsx
-            selector: { kind: test, name: "keeps the top-level Form UUID out of all-Forms columns and cells" }
+            selector: { kind: test, name: "keeps the top-level Form UUID out of all-Forms headings and cells" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-068#criterion.composition-system-form-id-hidden
                 covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "keeps the top-level Form UUID out of all-Forms columns and cells" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "keeps the top-level Form UUID out of all-Forms headings and cells" } }
           - id: composition-entry-columns-fallback
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.test.tsx
