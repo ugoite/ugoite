@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-08"
+updated: "2026-10-09"
 component_group:
   id: composition-studio
   title: Composition Studio
@@ -107,13 +107,13 @@ components:
     async_state: explicit-loading-empty-error
   - id: studio-source-picker
     type: dialog
-    title: Add data
+    title: Choose a source
     status: implemented
     ownership: design-mode-source-authoring
-    current_sources: shown-first-in-draft-order
-    current_source_selection: add-unlabelled-table-to-existing-source-without-duplicating-source
+    catalog_sources: Forms through form.list and user-query Saved SQL through sql.list
     available_sources: Forms through form.list and user-query Saved SQL through sql.list
-    new_source_selection: add-source-and-unlabelled-table-to-the-draft-together
+    new_table_source_selection: add-source-and-unlabelled-table-to-the-draft-together-without-label-step
+    new_metric_source_selection: add-source-and-auto-add-one-human-named-scalar-field; ask-for-field-only-when-multiple-candidates
     initial_form_projection: first-64-projectable-form-fields-no-created-or-updated-system-fields-preview-only-when-no-form-field-is-projectable
     initial_form_schema: every-composition-expressible-field-up-to-document-collection-limit-with-initially-projected-fields-prioritized
     preview_snapshot: preview-is-selectable-only-when-the-source-snapshot-covers-every-current-form-field
@@ -147,24 +147,21 @@ components:
     metric_semantics: exact-scalar-no-aggregation
   - id: studio-display-picker
     type: dialog
-    title: Add display
+    title: Add data component
     status: implemented
     ownership: canvas-insertion-delegate
     kind_selection: Table/Metric-tabs-inside-picker
-    sequence: [
-      kind,
-      source,
-      metric-value-field-only-for-metric,
-      optional-label,
-      add,
-    ]
-    source_selection: visibly-pressed-row-preserved-when-compatible-across-tabs
+    sequence: kind, then source; Metric adds a field choice only when needed
+    table_selection: selecting-an-existing-source-adds-it-immediately
+    metric_selection: one-scalar-candidate-adds-immediately-for-current-or-new-source; multiple-candidates-add-on-field-selection
+    source_catalog: browse-Forms-or-Saved-SQL-in-source-picker-with-kind-preserved
+    label: omitted-at-insertion-and-optional-in-Inspector-after-selection
     source_name: human-name-only
     source_name_overflow: ellipsis-with-full-name-native-title-on-selectable-and-disabled-rows
     source_accessible_name: full-human-source-name
     row_identifiers: source-draft-entry-revision-ids-never-rendered
-    entry_query_metric_candidates: rust-scalar-types-only-excludes-list-object-list-row-reference-asset-reference
-    entry_query_field_labels: transient-form-label-or-distinct-localized-source-schema-index
+    entry_query_metric_candidates: projectable-rust-scalar-types-with-resolved-human-Form-names-only
+    entry_query_field_labels: transient-Form-label-only-never-field-ID-or-generated-ordinal
     internal_identifiers: field-source-entry-revision-ids-never-rendered
     form_metadata: authorized-form-list-transient-never-stored
     sizing:
@@ -252,9 +249,9 @@ components:
     status: implemented
     ownership: shared-flow-item-presenter-with-edit-only-affordances
     source: draft-components-and-layout-rows-with-debounced-shared-preview
-    blank_state: single-add-data-action-opens-source-picker-no-prose; choosing-a-source-adds-a-table-before-canvas-appears
-    add_data_action: available-in-design-and-design-side-of-split
-    blank_scope: zero-sources-and-zero-blocks-normal-canvas-after-first-source
+    blank_state: normal-canvas-with-text-and-data-insertion-controls-no-prose
+    add_data_action: Data-opens-data-component-picker-in-design-and-design-side-of-split
+    blank_scope: text-and-data-remain-available-with-zero-sources
     rows:
       order: layout-row-array-then-item-order
       reorder: keyboard-operable-move-up-down-buttons
@@ -266,17 +263,13 @@ components:
       inspector_handoff: selected-block-identity-only
       inspector_handoff_narrow: block-tap-opens-bottom-sheet-below-560px
     insertion:
-      control: single-add-control-per-gap
+      control: one-add-control-per-layout-gap-including-one-above-and-one-below-a-single-item
       palette: modal-dialog-with-backdrop-escape-focus-trap-and-focus-return
       palette_sizing:
         width: min(560px, calc(100vw - 32px))
         height: max-viewport-minus-32px-with-vertical-scroll
-      palette_entries: [
-        text-always,
-        metric-table-only-with-sources,
-        parameters-only-with-parameters,
-      ]
-      metric_table: existing-display-picker-at-target-with-kind-carried-through
+      palette_entries: [text-always, data-always, parameters-only-with-parameters]
+      data: opens-data-component-picker-with-Table-and-Metric-tabs
       parameter: place-existing-only-no-creation
     removal:
       component: remove-declaration-and-unplace
@@ -299,7 +292,8 @@ components:
       label: optional-display-label
       data: existing-source-picker-only
       value: entry-field-or-sql-column-no-inference
-      entry_field_label: transient-form-label-or-localized-source-schema-index-never-id
+      entry_field_candidates: projectable-scalar-fields-with-resolved-human-form-names-only
+      entry_field_label: transient-form-label-for-selectable-values-never-id
     table_fields:
       label: optional-display-label
       data: existing-source-picker-only
@@ -333,7 +327,7 @@ components:
       design: finished-shape-only-canvas-plus-inspector-no-data-no-parameters-no-tags-no-preview-section
       data: fetch-definition-only-with-localized-sources-parameters-tags-tabs-no-canvas-no-preview-section
       split: design-canvas-plus-scoped-data-pane-no-parameters-no-tags-no-preview-section
-    blank_design: single-add-data-action-opens-source-picker-no-prose
+    blank_design: Text-and-Data-insertion-controls-open-without-prose
     source_creation: design-only
     split_availability: desktop-only-below-760px-design-data-only
     narrow_resize: crossing-below-760px-gate-returns-to-design-no-stuck-split
@@ -361,7 +355,7 @@ components:
     async_state: explicit-loading-empty-error
   - id: source-picker
     type: dialog
-    title: Source picker
+    title: Choose a source
     status: implemented
     ownership: single-add-data-dialog-with-forms-and-saved-sql-tabs
     tabs: [forms, saved-sql]

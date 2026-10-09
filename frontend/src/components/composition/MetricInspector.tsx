@@ -46,6 +46,7 @@ export function MetricInspector(props: {
   draft: CompositionDraft;
   display: DraftDisplay;
   fieldNames?: (formId: string, fieldId: number) => string | undefined;
+  fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
   apply: InspectorApply;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
 }) {
@@ -56,7 +57,13 @@ export function MetricInspector(props: {
     const source = props.draft.sources.find((entry) =>
       entry.draftId === sourceId()
     );
-    return source ? displayScalarCandidates(source, props.fieldNames) : [];
+    return source
+      ? displayScalarCandidates(
+        source,
+        props.fieldNames,
+        props.fieldProjectable,
+      )
+      : [];
   };
   const currentValueId = () =>
     candidateIdForValueField(
@@ -74,7 +81,11 @@ export function MetricInspector(props: {
       entry.draftId === nextSourceId
     );
     if (!next) return;
-    const nextCandidates = displayScalarCandidates(next, props.fieldNames);
+    const nextCandidates = displayScalarCandidates(
+      next,
+      props.fieldNames,
+      props.fieldProjectable,
+    );
     const kept =
       nextCandidates.some((candidate) =>
           sameValueField(candidate.valueField, current.valueField)

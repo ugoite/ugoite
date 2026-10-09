@@ -349,24 +349,27 @@ describe("CompositionStudioMobile", () => {
     setViewportWidth(390);
     renderStudio();
 
-    // The palette opens one display picker with its Table/Metric choice;
-    // the fresh block owns the inspector on add.
+    // The palette opens the direct Table/Metric source picker; the fresh
+    // block owns the inspector on add.
     fireEvent.click(
-      screen.getAllByRole("button", { name: "Add block", exact: true })[0],
+      screen.getAllByRole("button", {
+        name: "Add to design",
+        exact: true,
+      })[0],
     );
     const palette = await screen.findByRole("dialog", {
-      name: "Add block",
+      name: "Add to design",
       exact: true,
     });
     fireEvent.click(
-      within(palette).getByRole("button", { name: "Display", exact: true }),
+      within(palette).getByRole("button", { name: "Data", exact: true }),
     );
     const picker = await screen.findByRole("dialog", {
-      name: "Add display",
+      name: "Add data component",
       exact: true,
     });
     const kindGroup = within(picker).getByRole("tablist", {
-      name: "Display type",
+      name: "Data component type",
     });
     expect(
       within(kindGroup).getByRole("tab", { name: "Table" }),
@@ -377,12 +380,10 @@ describe("CompositionStudioMobile", () => {
     fireEvent.click(
       within(picker).getByRole("button", { name: "Monthly totals" }),
     );
-    fireEvent.click(
-      within(picker).getByRole("button", { name: "Add", exact: true }),
-    );
 
     await screen.findByRole("dialog", { name: "Table" });
-    expect(screen.queryByRole("dialog", { name: "Add display" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Add data component" }))
+      .toBeNull();
   });
 
   it("keeps the mode switch single-row and the sheet within the viewport at 320px and 390px widths", () => {

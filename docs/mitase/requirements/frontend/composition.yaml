@@ -20,7 +20,7 @@ requirements:
         governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-003#rule.governance]
       - id: entry-query-field-labels
         kind: behavior
-        statement: EntryQuery field labels in the Composition Data editor and metric value picker use transient Form display labels, query-capability names, or field keys whenever live Form metadata resolves a field; otherwise they use localized schema ordinals. Fallback ordinals are deterministic and distinct, skipping names used by live Form fields and earlier fallbacks, including for unresolved references missing from the schema snapshot. While metadata is loading, absent, or unavailable, labels use the schema ordinal fallback. Raw numeric field IDs stay in query data and never render in field, filter, sort, projection, metric-value, or dialog labels.
+        statement: EntryQuery field labels in the Composition Data editor use transient Form display labels, query-capability names, or field keys whenever live Form metadata resolves a field; otherwise they use localized schema ordinals. Fallback ordinals are deterministic and distinct, skipping names used by live Form fields and earlier fallbacks, including for unresolved references missing from the schema snapshot. While metadata is loading, absent, or unavailable, Data editor labels use the schema ordinal fallback. The metric value picker offers only projectable scalar fields with a resolved human Form display name and remains unavailable while names load or cannot be resolved. Raw numeric field IDs stay in query data and never render in field, filter, sort, projection, metric-value, or dialog labels.
         governed_by: [POL-UI-005#rule.governance]
       - id: source-authoring
         kind: behavior
@@ -28,7 +28,7 @@ requirements:
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
       - id: display-authoring
         kind: behavior
-        statement: Canvas insertion opens one display picker with Table and Metric tabs above source selection. A table needs a source; a metric additionally selects one scalar-compatible field or column and offers no field control while Table is active. EntryQuery fields that Rust classifies as non-scalar, including RowReference, List, ObjectList, and AssetReference, are not offered as metric values; Binary remains selectable under Rust's string result mapping. Selecting an EntryQuery metric field adds it to the source's fields projection when capacity allows; later projection edits preserve fields referenced by metrics, and Preview is unavailable while a metric uses a field. At the projection limit the metric selector offers only already projected fields, unchecked projection choices are disabled with a localized limit title, selected non-metric fields remain removable when one slot resolves a metric deficit, and metric-bound fields cannot be unchecked. When a saved draft needs several removals at once, projection controls are disabled with a localized recovery title directing the user to edit metric bindings. Compatible source selection stays visible across tabs, while a Table source without scalar values is cleared when switching to Metric. Form field choices use human labels or distinct localized fallback ordinals, never numeric IDs; opaque source, Entry, and revision IDs stay out of visible labels. A table renders through the source-native Entry or SQL presenter, saved EntryQuery tables use Form labels or Form field keys as headings while reading values by the stable field key, and missing Form metadata falls back to projected row keys without exposing field IDs. Both display kinds support an optional label, and several displays may share one source without duplicate fetching.
+        statement: Design insertion offers Text and Data even when the canvas has no sources. Data opens Table and Metric choices, listing current Composition sources first and allowing Forms or Saved SQL to be browsed. Selecting a current source in Table mode immediately adds a table; choosing a catalog source in Table mode adds that source and table together. Metric selection adds immediately when a source has one usable scalar value and otherwise asks for a named field or column; a newly browsed metric source also adds its sole usable value immediately and asks for a field only when multiple candidates exist. EntryQuery metric candidates are projectable fields with a resolved human Form display name only. EntryQuery fields that Rust classifies as non-scalar, including RowReference, List, ObjectList, and AssetReference, are not offered; Binary remains selectable under Rust's string result mapping. Selecting an EntryQuery metric field adds it to the source's fields projection when capacity allows; later projection edits preserve fields referenced by metrics, and Preview is unavailable while a metric uses a field. At the projection limit the metric selector offers only already projected fields, unchecked projection choices are disabled with a localized limit title, selected non-metric fields remain removable when one slot resolves a metric deficit, and metric-bound fields cannot be unchecked. When a saved draft needs several removals at once, projection controls are disabled with a localized recovery title directing the user to edit metric bindings. Opaque source, Entry, revision, and field IDs stay out of visible labels. A table renders through the source-native Entry or SQL presenter, saved EntryQuery tables use Form labels or Form field keys as headings while reading values by the stable field key, and missing Form metadata falls back to projected row keys without exposing field IDs. Table and Metric labels are optional Inspector edits after insertion, and several displays may share one source without duplicate fetching.
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
       - id: typed-parameter-binding
         kind: behavior
@@ -367,12 +367,16 @@ requirements:
           - id: studio-metric-inspector-field-labels
             adapter: typescript
             path: frontend/src/components/CompositionInspector.test.tsx
-            selector: { kind: test, name: "shows Form labels instead of field IDs for metric values" }
+            selector: { kind: test, name: "maps metric source changes to component source and value field" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-inspector]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "shows Form labels instead of field IDs for metric values" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "maps metric source changes to component source and value field" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-FE-014#binding.frontend/target.composition-inspector]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "maps metric source changes to component source and value field" } }
           - id: studio-read-field-labels
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
@@ -407,12 +411,12 @@ requirements:
           - id: studio-canvas-palette-modal
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
-            selector: { kind: test, name: opens the palette as a modal dialog with focus trap and focus return }
+            selector: { kind: test, name: opens a readable viewport-capped modal palette with focus trap and focus return }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: opens the palette as a modal dialog with focus trap and focus return } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: opens a readable viewport-capped modal palette with focus trap and focus return } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.accessible-icon-actions
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
@@ -420,25 +424,25 @@ requirements:
           - id: studio-canvas-palette-display-picker
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
-            selector: { kind: test, name: "opens the unified display picker from the canvas palette" }
+            selector: { kind: test, name: opens the data picker before a source exists }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "opens the unified display picker from the canvas palette" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: opens the data picker before a source exists } }
           - id: studio-canvas-palette-gating
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
-            selector: { kind: test, name: "hides display and parameter entries without sources or parameters" }
+            selector: { kind: test, name: offers data and hides parameter section without sources or parameters }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides display and parameter entries without sources or parameters" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: offers data and hides parameter section without sources or parameters } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides display and parameter entries without sources or parameters" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: offers data and hides parameter section without sources or parameters } }
           - id: studio-canvas-text-spacing
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
@@ -872,34 +876,34 @@ requirements:
       - id: studio-mode-verification
         role: verification
         facet: verification
-        responsibility: Verify true mode separation (Design shows the finished shape only, Data shows the fetch definition only with Parameters disclosed once a source exists and Tags, Split pairs the canvas with the scoped data pane), the guided blank-canvas Add-data action through the single source picker, and the every-mode diagnostics strip through exact frontend unit tests.
+        responsibility: Verify true mode separation (Design shows the finished shape only, Data shows the fetch definition only with Parameters disclosed once a source exists and Tags, Split pairs the canvas with the scoped data pane), blank-canvas Text and Data insertion through the data component picker, and the every-mode diagnostics strip through exact frontend unit tests.
         targets:
           - id: studio-true-modes-case
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: scopes Parameters Tags and the Data workspace to their owning modes only }
+            selector: { kind: test, name: "separates Data sources, Parameters, and Tags into tabs in Data mode" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: scopes Parameters Tags and the Data workspace to their owning modes only } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "separates Data sources, Parameters, and Tags into tabs in Data mode" } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: scopes Parameters Tags and the Data workspace to their owning modes only } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: "separates Data sources, Parameters, and Tags into tabs in Data mode" } }
           - id: studio-blank-guided-case
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
-            selector: { kind: test, name: guides a blank canvas with one Add-data action that opens the single picker }
+            selector: { kind: test, name: opens Text or Data insertion from a blank canvas }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: guides a blank canvas with one Add-data action that opens the single picker } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: opens Text or Data insertion from a blank canvas } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: guides a blank canvas with one Add-data action that opens the single picker } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: opens Text or Data insertion from a blank canvas } }
           - id: studio-parameters-disclosure-case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx

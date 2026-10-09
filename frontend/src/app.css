@@ -1596,6 +1596,9 @@ textarea {
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
 }
+.composition-source-browse {
+  margin-block-start: var(--ui-spacing-sm);
+}
 .history-detail-backdrop {
   z-index: 60;
   padding: 0;
@@ -5159,8 +5162,4 @@ a.tool {
   .table td {
     padding: 12px 8px;
   }
-}
-
-.studioDesignAddData {
-  margin-block-end: var(--ui-spacing-sm);
 }

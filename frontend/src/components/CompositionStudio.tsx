@@ -129,6 +129,19 @@ export function CompositionStudio(props: CompositionStudioProps) {
   );
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [displayPickerOpen, setDisplayPickerOpen] = createSignal(false);
+  const [displayPickerKind, setDisplayPickerKind] = createSignal<
+    "table" | "metric"
+  >("table");
+  const [displayPickerSourceId, setDisplayPickerSourceId] = createSignal<
+    string | null
+  >(null);
+  const [
+    displayPickerAutoAddSingleCandidate,
+    setDisplayPickerAutoAddSingleCandidate,
+  ] = createSignal(false);
+  const [sourcePickerKind, setSourcePickerKind] = createSignal<
+    "table" | "metric" | null
+  >(null);
   const [dataPanel, setDataPanel] = createSignal<
     "sources" | "parameters" | "tags"
   >("sources");
@@ -253,6 +266,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const fieldNames: CompositionFieldNames = (formId, fieldId) => {
     return compositionFormFieldName(forms(), formId, fieldId);
   };
+  const fieldProjectable = (formId: string, fieldId: number) => {
+    const form = forms()?.find((entry) => entry.id === formId);
+    if (!form) return undefined;
+    const field = Object.values(form.fields ?? {}).find((entry) =>
+      (entry.query_capability?.field.field_id ?? entry.id) === fieldId
+    );
+    return field?.query_capability?.projectable ?? true;
+  };
 
   const previewHandle = createCompositionPreviewHandle();
   onCleanup(previewHandle.dispose);
@@ -361,7 +382,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     schedulePreview(snapshot);
   });
 
-  const addSeed = (seed: CompositionSourceSeed) => {
+  const addSourceSeed = (seed: CompositionSourceSeed) => {
     const added = seed.kind === "saved_sql"
       ? addSavedSqlSource(draft(), seed.seed)
       : addEntryQuerySource(draft(), seed.seed);
@@ -371,20 +392,15 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const provisioned = seed.kind === "saved_sql" && seed.seed.variableTypes
       ? ensureParametersForVariables(added.draft, seed.seed.variableTypes)
       : added.draft;
-    const table = addTableDisplay(provisioned, added.draftId);
-    if (!table.ok || !table.draftId) return;
-    setDraft(table.draft);
-    setExpandedId(added.draftId);
-    setSelectedId(designBlockIdForComponent(table.draftId));
-    if (sheetViewport()) setSheetOpen(true);
-    setPickerOpen(false);
+    return { draft: provisioned, draftId: added.draftId };
   };
 
-  const addExistingSourceTable = (sourceDraftId: string) => {
-    const table = addTableDisplay(draft(), sourceDraftId);
+  const addSeed = (seed: CompositionSourceSeed) => {
+    const { draft: provisioned, draftId } = addSourceSeed(seed);
+    const table = addTableDisplay(provisioned, draftId);
     if (!table.ok || !table.draftId) return;
     setDraft(table.draft);
-    setExpandedId(sourceDraftId);
+    setExpandedId(draftId);
     setSelectedId(designBlockIdForComponent(table.draftId));
     if (sheetViewport()) setSheetOpen(true);
     setPickerOpen(false);
@@ -435,6 +451,52 @@ export function CompositionStudio(props: CompositionStudioProps) {
     }
     setPendingInsert(null);
     setDisplayPickerOpen(false);
+    setDisplayPickerSourceId(null);
+    setDisplayPickerAutoAddSingleCandidate(false);
+  };
+
+  const chooseSourceForDisplay = (kind: "table" | "metric") => {
+    setSourcePickerKind(kind);
+    setDisplayPickerKind(kind);
+    setDisplayPickerOpen(false);
+    setPickerOpen(true);
+  };
+
+  const addSourceForDisplay = (seed: CompositionSourceSeed) => {
+    const kind = sourcePickerKind();
+    if (!kind) {
+      addSeed(seed);
+      return;
+    }
+    const { draft: sourceDraft, draftId } = addSourceSeed(seed);
+    if (kind === "table") {
+      const table = addTableDisplay(
+        sourceDraft,
+        draftId,
+        undefined,
+        pendingInsert() ?? undefined,
+      );
+      if (!table.ok || !table.draftId) return;
+      setDraft(table.draft);
+      setExpandedId(draftId);
+      setSelectedId(designBlockIdForComponent(table.draftId));
+      if (sheetViewport()) setSheetOpen(true);
+      setPendingInsert(null);
+      setPickerOpen(false);
+      setSourcePickerKind(null);
+      setDisplayPickerAutoAddSingleCandidate(false);
+      return;
+    }
+    // A metric needs a specific scalar field. Add the selected source first,
+    // then return to the metric picker with that source selected so the next
+    // action chooses its human-named field.
+    setDraft(sourceDraft);
+    setDisplayPickerSourceId(draftId);
+    setDisplayPickerAutoAddSingleCandidate(true);
+    setPickerOpen(false);
+    setSourcePickerKind(null);
+    setDisplayPickerKind("metric");
+    setDisplayPickerOpen(true);
   };
 
   // Data workspace edits flow through narrow draft updaters into the shared
@@ -691,12 +753,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setDataPanel("sources");
     }
   });
-  // A blank draft carries no sources and no blocks: the canvas area offers
-  // the single Add-data action instead of the normal canvas, so beginners
-  // get one path forward with no prose. The first source returns the normal
-  // canvas. The picker stays the single dialog component.
-  const isBlankDraft = () =>
-    draft().sources.length === 0 && draft().displays.length === 0;
   const readySources = (): Record<string, CompositionSourcePageState> => {
     const current = previewState();
     return current.preview?.ok && hasSources() ? current.sources : {};
@@ -830,82 +886,64 @@ export function CompositionStudio(props: CompositionStudioProps) {
     </>
   );
   const renderDesignWorkspace = () => (
-    <Show
-      when={!isBlankDraft()}
-      fallback={
-        <button
-          class="ui-button"
-          type="button"
-          onClick={() => setPickerOpen(true)}
-        >
-          <UiIcon name="plus" />
-          <span>{t("composition.studioAddData")}</span>
-        </button>
-      }
-    >
-      <div class="studioDesignWorkspace">
-        <button
-          class="ui-button ui-button-secondary studioDesignAddData"
-          type="button"
-          onClick={() => setPickerOpen(true)}
-        >
-          <UiIcon name="plus" />
-          <span>{t("composition.studioAddData")}</span>
-        </button>
-        <div class="studioDesign">
-          <CompositionDesignCanvas
-            draft={draft()}
-            plan={canvasPlan()}
-            parameterValues={{
-              ...defaultParameterValues(draft()),
-              ...previewHandle.parameters(),
-            }}
-            sources={readySources()}
-            fieldNames={fieldNames}
-            selectedId={selectedId()}
-            highlightedIds={highlightedBlockIds()}
-            onSelect={handleSelectBlock}
-            onDraftChange={setDraft}
-            onRequestDisplayPicker={(target) => {
-              setPendingInsert(target);
-              setDisplayPickerOpen(true);
-            }}
-            onParameterChange={(parameterId, value) =>
-              previewHandle.setParameter(parameterId, value)}
-            onNext={(sourceId) => previewHandle.next(sourceId)}
-            onPrevious={(sourceId) => previewHandle.previous(sourceId)}
-            onRetry={(sourceId) => previewHandle.retry(sourceId)}
-            paletteTarget={paletteTarget()}
-            onPaletteTarget={setPaletteTarget}
-          />
-          {
-            /* The inspector renders exactly once: inline beside the canvas on
+    <div class="studioDesignWorkspace">
+      <div class="studioDesign">
+        <CompositionDesignCanvas
+          draft={draft()}
+          plan={canvasPlan()}
+          parameterValues={{
+            ...defaultParameterValues(draft()),
+            ...previewHandle.parameters(),
+          }}
+          sources={readySources()}
+          fieldNames={fieldNames}
+          selectedId={selectedId()}
+          highlightedIds={highlightedBlockIds()}
+          onSelect={handleSelectBlock}
+          onDraftChange={setDraft}
+          onRequestDisplayPicker={(target) => {
+            setPendingInsert(target);
+            setDisplayPickerKind("table");
+            setDisplayPickerSourceId(null);
+            setDisplayPickerOpen(true);
+          }}
+          onParameterChange={(parameterId, value) =>
+            previewHandle.setParameter(parameterId, value)}
+          onNext={(sourceId) => previewHandle.next(sourceId)}
+          onPrevious={(sourceId) => previewHandle.previous(sourceId)}
+          onRetry={(sourceId) => previewHandle.retry(sourceId)}
+          paletteTarget={paletteTarget()}
+          onPaletteTarget={setPaletteTarget}
+        />
+        {
+          /* The inspector renders exactly once: inline beside the canvas on
             wide viewports, or as a bottom sheet on narrow ones. */
-          }
-          <Show when={!sheetViewport()}>
-            <CompositionInspector
-              draft={draft()}
-              selectedId={selectedId()}
-              fieldNames={fieldNames}
-              onDraftChange={setDraft}
-              onDataJump={jumpToSource}
-            />
-          </Show>
-        </div>
-        <Show when={sheetSelection()}>
-          {(activeId) => (
-            <CompositionInspectorSheet
-              draft={draft()}
-              selectedId={activeId()}
-              fieldNames={fieldNames}
-              onDraftChange={setDraft}
-              onDataJump={jumpToSource}
-              onClose={dismissSheet}
-            />
-          )}
+        }
+        <Show when={!sheetViewport()}>
+          <CompositionInspector
+            draft={draft()}
+            selectedId={selectedId()}
+            fieldNames={fieldNames}
+            fieldProjectable={fieldProjectable}
+            onDraftChange={setDraft}
+            onDataJump={jumpToSource}
+          />
         </Show>
       </div>
-    </Show>
+      <Show when={sheetSelection()}>
+        {(activeId) => (
+          <CompositionInspectorSheet
+            draft={draft()}
+            selectedId={activeId()}
+            fieldNames={fieldNames}
+            fieldProjectable={fieldProjectable}
+            onDraftChange={setDraft}
+            onDataJump={jumpToSource}
+            onClose={dismissSheet}
+          />
+        )}
+      </Show>
+    </div>
   );
 
   return (
@@ -1108,10 +1146,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
       <Show when={pickerOpen()}>
         <CompositionSourcePicker
           spaceId={spaceId()}
-          existingSources={draft().sources}
-          onSelectExisting={addExistingSourceTable}
-          onSelect={addSeed}
-          onClose={() => setPickerOpen(false)}
+          onSelect={addSourceForDisplay}
+          onClose={() => {
+            setPickerOpen(false);
+            setSourcePickerKind(null);
+            setDisplayPickerAutoAddSingleCandidate(false);
+          }}
         />
       </Show>
 
@@ -1119,10 +1159,18 @@ export function CompositionStudio(props: CompositionStudioProps) {
         <CompositionDisplayPicker
           sources={draft().sources}
           fieldNames={fieldNames}
+          fieldProjectable={fieldProjectable}
+          fieldNamesLoading={forms.loading}
+          initialKind={displayPickerKind()}
+          initialSourceDraftId={displayPickerSourceId()}
+          autoAddSingleCandidate={displayPickerAutoAddSingleCandidate()}
           onAdd={addDisplaySeed}
+          onChooseSource={chooseSourceForDisplay}
           onClose={() => {
             setPendingInsert(null);
+            setDisplayPickerSourceId(null);
             setDisplayPickerOpen(false);
+            setDisplayPickerAutoAddSingleCandidate(false);
           }}
         />
       </Show>

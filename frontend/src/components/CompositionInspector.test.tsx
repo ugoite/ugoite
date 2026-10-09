@@ -89,13 +89,20 @@ const harnessCalls = vi.hoisted(() => ({
 }));
 
 function Harness(
-  props: { initial: CompositionDraft; selectedId: string | null },
+  props: {
+    initial: CompositionDraft;
+    selectedId: string | null;
+    fieldNames?: (formId: string, fieldId: number) => string | undefined;
+    fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
+  },
 ) {
   const [draft, setDraft] = createSignal(props.initial);
   return (
     <CompositionInspector
       draft={draft()}
       selectedId={props.selectedId}
+      fieldNames={props.fieldNames}
+      fieldProjectable={props.fieldProjectable}
       onDraftChange={(next) => {
         harnessCalls.draft.push(next);
         setDraft(next);
@@ -108,9 +115,19 @@ function Harness(
 const renderHarness = (
   selectedId: string | null,
   initial?: CompositionDraft,
+  fieldNames?: (formId: string, fieldId: number) => string | undefined,
+  fieldProjectable?: (
+    formId: string,
+    fieldId: number,
+  ) => boolean | undefined,
 ) =>
   render(() => (
-    <Harness initial={initial ?? seedDraft()} selectedId={selectedId} />
+    <Harness
+      initial={initial ?? seedDraft()}
+      selectedId={selectedId}
+      fieldNames={fieldNames}
+      fieldProjectable={fieldProjectable}
+    />
   ));
 
 const documentSources = (draft: CompositionDraft): string =>
@@ -153,7 +170,7 @@ describe("CompositionInspector", () => {
     expect(harnessCalls.jump).toHaveLength(0);
   });
 
-  it("shows Form labels instead of field IDs for metric values", () => {
+  it("shows only resolved Form labels for metric values", () => {
     const added = addMetricDisplay(seedDraft(), "src-2", { fieldId: 1 });
     if (!added.ok || !added.draftId) throw new Error("expected metric block");
 
@@ -172,12 +189,23 @@ describe("CompositionInspector", () => {
     const options = Array.from(valueSelect.querySelectorAll("option")).map(
       (option) => option.textContent,
     );
-    expect(options).toEqual(["Expense type", "Field 2"]);
+    expect(options).toEqual(["Expense type"]);
     expect(options.join(" ")).not.toContain("1");
+    expect(options.join(" ")).not.toContain("2");
   });
 
   it("maps metric source changes to component source and value field", () => {
-    renderHarness("disp-1");
+    renderHarness(
+      "disp-1",
+      undefined,
+      (_formId, fieldId) =>
+        fieldId === 1
+          ? "Expense type"
+          : fieldId === 2
+          ? "Unprojectable amount"
+          : undefined,
+      (_formId, fieldId) => fieldId !== 2,
+    );
 
     // The entry source shares no value field: first schema field wins.
     fireEvent.change(screen.getByLabelText("Source"), {
@@ -189,6 +217,10 @@ describe("CompositionInspector", () => {
       source: "src-2",
       value_field: { kind: "entry_field", field_id: 1 },
     });
+    expect(
+      Array.from(screen.getByLabelText("Value").querySelectorAll("option"))
+        .map((option) => option.textContent),
+    ).toEqual(["Expense type"]);
 
     // The backup SQL source still declares total: the value field is kept.
     fireEvent.change(screen.getByLabelText("Source"), {

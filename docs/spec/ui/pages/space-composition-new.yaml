@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-08"
+updated: "2026-10-09"
 page:
   id: space-composition-new
   title: New tool
@@ -58,7 +58,7 @@ components:
       type: segmented-control
       title: Studio mode
       ownership: single-operative-control-for-workspace-arrangement-only
-      description: True modes switch the arrangement only with shared draft, preview, and selection state. Design shows the finished shape only (canvas plus inspector, diagnostics strip); Data shows one localized Sources, Parameters, or Tags tab at a time (Parameters appears once a source exists); Split pairs the canvas with the scoped data pane. A blank draft guides with one Add-data action and no prose.
+      description: True modes switch the arrangement only with shared draft, preview, and selection state. Design shows the finished shape only (canvas plus inspector, diagnostics strip); Data shows one localized Sources, Parameters, or Tags tab at a time (Parameters appears once a source exists); Split pairs the canvas with the scoped data pane. A blank canvas offers Text and Data insertion without prose.
     - id: studio-diagnostics
       type: query-results
       title: Diagnostics
@@ -96,14 +96,14 @@ components:
       state: transient-work-never-saved
     - id: studio-add-data
       type: button
-      title: Add data
+      title: Data
       single_control: true
-      source: CompositionSourcePicker dialog over Forms and user-query Saved SQL
+      source: Design-canvas insertion palette; opens the Table/Metric data component picker
     - id: studio-add-data-dialog
       type: dialog
-      title: Add data
+      title: Choose a source
       source: Forms through form.list and Saved SQL through sql.list
-      selection: full-row-activate
+      selection: full-row-activate; table adds immediately; metric continues to named field selection when needed
       rendering: human-name-only rows with loading, empty, and error states
       row_name_overflow: ellipsis-with-full-name-native-title
       internal_identifiers: form-source-draft-entry-revision-ids-never-rendered
@@ -114,11 +114,13 @@ components:
       source: display add, remove, reorder, and label editing are owned by the Design canvas and inspector; the display picker serves only as the canvas insertion delegate
     - id: studio-display-picker
       type: dialog
-      title: Add display
+      title: Add data component
       kind_selection: Table/Metric tabs inside the picker
-      sequence: kind, source, metric value field only for Metric, optional label, add
-      source_selection: selected row remains visible across compatible kind changes
-      entry_query_field_labels: transient Form labels, query capability names, or field keys; else localized source schema ordinals
+      sequence: kind, source; Metric asks for a field only when the selected source has multiple candidates
+      selection: table adds on source selection; metric adds on its sole source candidate or field selection
+      label: omitted during insertion; optional edit in Inspector after selection
+      source_selection: catalog browse preserves selected Table or Metric kind
+      entry_query_field_labels: resolved human Form labels only; no field ID or ordinal fallback
       entry_query_metric_field: added_to_the_source_fields_projection
       entry_query_metric_candidates: rust_scalar_types_only_excludes_list_object_list_row_reference_asset_reference_binary_maps_to_string
       projection_capacity: at_limit_only_already_projected_fields_are_selectable

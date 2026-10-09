@@ -103,9 +103,9 @@ const blockName = (
  * Block palette as a true modal dialog. The Portal lifts the palette out of
  * the canvas column so it can never visually collide with the inspector;
  * the backdrop blocks canvas selection while open, and dismissal returns
- * focus to the invoking gap control. The display entry stays hidden until a
- * source exists (the display picker fail-closes on zero sources),
- * and the parameters section stays hidden until a parameter exists, so no
+ * focus to the invoking gap control. Data insertion is always available and
+ * offers direct Form and Saved SQL selection when no source exists. The
+ * parameters section stays hidden until a parameter exists, so no
  * disabled-with-reason copy is needed. Text insertion is always available.
  */
 function PaletteDialog(props: {
@@ -140,7 +140,6 @@ function PaletteDialog(props: {
     });
   });
 
-  const hasSources = () => props.draft.sources.length > 0;
   const hasParameters = () => props.draft.parameters.length > 0;
   const unplaced = () => unplacedParameters(props.draft);
 
@@ -186,7 +185,7 @@ function PaletteDialog(props: {
           class="designPalette"
           role="dialog"
           aria-modal="true"
-          aria-label={t("composition.studioAddBlock")}
+          aria-label={t("composition.studioAddToDesign")}
           onKeyDown={handleKeyDown}
         >
           <div class="designPaletteEntries">
@@ -198,19 +197,17 @@ function PaletteDialog(props: {
               <UiIcon name="canvas-text" />
               <span>{t("composition.studioText")}</span>
             </button>
-            <Show when={hasSources()}>
-              <button
-                type="button"
-                class="designPaletteItem"
-                onClick={() => {
-                  props.onClose();
-                  props.onRequestDisplayPicker(insertTarget);
-                }}
-              >
-                <UiIcon name="columns" />
-                <span>{t("composition.studioDisplay")}</span>
-              </button>
-            </Show>
+            <button
+              type="button"
+              class="designPaletteItem"
+              onClick={() => {
+                props.onClose();
+                props.onRequestDisplayPicker(insertTarget);
+              }}
+            >
+              <UiIcon name="columns" />
+              <span>{t("composition.studioData")}</span>
+            </button>
           </div>
           <Show when={hasParameters()}>
             <div class="designPaletteParams">
@@ -373,8 +370,8 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
       <button
         type="button"
         class="designAdd"
-        aria-label={t("composition.studioAddBlock")}
-        title={t("composition.studioAddBlock")}
+        aria-label={t("composition.studioAddToDesign")}
+        title={t("composition.studioAddToDesign")}
         aria-expanded={paletteKey() === gapKey(target)}
         onClick={(event) => {
           event.stopPropagation();
@@ -542,14 +539,16 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
               <For each={row.items}>
                 {(item, itemIndex) => (
                   <>
-                    {renderGap(
-                      {
-                        rowId: row.id,
-                        rowIndex: rowIndex(),
-                        itemIndex: itemIndex(),
-                      },
-                      true,
-                    )}
+                    <Show when={itemIndex() > 0}>
+                      {renderGap(
+                        {
+                          rowId: row.id,
+                          rowIndex: rowIndex(),
+                          itemIndex: itemIndex(),
+                        },
+                        true,
+                      )}
+                    </Show>
                     {renderBlock(row, item, itemIndex(), row.items.length)}
                   </>
                 )}

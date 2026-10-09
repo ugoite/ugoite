@@ -472,10 +472,10 @@ describe("CompositionStudioSync", () => {
     expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
   });
 
-  it("guides a blank canvas with one Add-data action that opens the single picker", async () => {
+  it("opens Text or Data insertion from a blank canvas", async () => {
     const { container } = renderStudio(createEmptyDraft("Blank"));
 
-    // One structural action, no prose paragraphs, no canvas gaps.
+    // One structural add control, no prose paragraphs.
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
         heading.textContent
@@ -483,28 +483,31 @@ describe("CompositionStudioSync", () => {
     ).toEqual(["Design"]);
     expect(container.querySelectorAll("p")).toHaveLength(0);
     expect(
-      screen.getAllByRole("button", { name: "Add data" }),
+      screen.getAllByRole("button", { name: "Add to design" }),
     ).toHaveLength(1);
-    expect(
-      screen.queryByRole("button", { name: "Add block" }),
-    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
+    const palette = screen.getByRole("dialog", { name: "Add to design" });
+    expect(within(palette).getByRole("button", { name: "Text" }))
+      .toBeInTheDocument();
+    fireEvent.click(within(palette).getByRole("button", { name: "Data" }));
 
-    // The action reuses the existing Add-data label and lifts the single
-    // source picker dialog; picking a source returns the normal canvas.
-    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
-    expect(
-      await screen.findByRole("dialog", { name: "Add data" }),
-    ).toBeInTheDocument();
+    const dataPicker = screen.getByRole("dialog", {
+      name: "Add data component",
+    });
+    fireEvent.click(
+      within(dataPicker).getByRole("button", {
+        name: "Choose a Form or Saved SQL",
+      }),
+    );
+    expect(await screen.findByRole("dialog", { name: "Choose a source" }))
+      .toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(
-      screen.getAllByRole("button", { name: "Add data" }),
-    ).toHaveLength(1);
-    expect(
-      screen.getAllByRole("button", { name: "Add block" }).length,
-    ).toBeGreaterThan(0);
+      screen.getAllByRole("button", { name: "Add to design" }),
+    ).toHaveLength(2);
     expect(
       await screen.findByRole("button", { name: "Select Expenses" }),
     ).toBeInTheDocument();
@@ -538,8 +541,21 @@ describe("CompositionStudioSync", () => {
       revision_id: "sql-rev-1",
     }]);
     const { container } = renderStudio(createEmptyDraft("Blank"));
-    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
-    expect(screen.getByRole("dialog", { name: "Add data" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
+    fireEvent.click(
+      screen.getByRole("dialog", { name: "Add to design" }).querySelector(
+        ".designPaletteItem:nth-child(2)",
+      )!,
+    );
+    const dataPicker = screen.getByRole("dialog", {
+      name: "Add data component",
+    });
+    fireEvent.click(
+      within(dataPicker).getByRole("button", {
+        name: "Choose a Form or Saved SQL",
+      }),
+    );
+    expect(screen.getByRole("dialog", { name: "Choose a source" }))
       .toBeInTheDocument();
     fireEvent.click(await screen.findByRole("tab", { name: "Saved SQL" }));
     fireEvent.click(
@@ -549,25 +565,27 @@ describe("CompositionStudioSync", () => {
     expect(
       await screen.findByRole("button", { name: "Select Monthly totals" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: "Add data" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Choose a source" }))
+      .toBeNull();
     expect(container.querySelectorAll(".designBlock")).toHaveLength(1);
   });
 
   it("puts current sources first and reuses one from Design", async () => {
     renderStudio();
-    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
-
-    const currentSources = await screen.findByRole("heading", {
-      name: "In this composition",
-    });
-    const currentSourceGroup = currentSources.parentElement;
-    if (!currentSourceGroup) throw new Error("expected current source group");
     fireEvent.click(
-      within(currentSourceGroup).getByRole("button", {
-        name: "Expenses, Forms",
-      }),
+      screen.getAllByRole("button", { name: "Add to design" })[0],
     );
-    expect(screen.queryByRole("dialog", { name: "Add data" })).toBeNull();
+    fireEvent.click(
+      screen.getByRole("dialog", { name: "Add to design" }).querySelector(
+        ".designPaletteItem:nth-child(2)",
+      )!,
+    );
+    const dataPicker = screen.getByRole("dialog", {
+      name: "Add data component",
+    });
+    fireEvent.click(
+      within(dataPicker).getByRole("button", { name: "Expenses" }),
+    );
     expect(
       await screen.findByRole("button", { name: "Select Expenses" }),
     ).toBeInTheDocument();
@@ -577,26 +595,27 @@ describe("CompositionStudioSync", () => {
     expect(screen.getAllByRole("button", { name: "Expenses" })).toHaveLength(1);
   });
 
-  it("keeps one source action in Design and none in Data details", () => {
+  it("keeps insertion controls in Design and none in Data details", () => {
     renderStudio();
-    expect(screen.getAllByRole("button", { name: "Add data" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Add to design" }).length)
+      .toBeGreaterThan(0);
 
     fireEvent.click(modeRadios().data);
-    expect(screen.queryByRole("button", { name: "Add data" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add to design" })).toBeNull();
 
     fireEvent.click(modeRadios().split);
-    expect(screen.getAllByRole("button", { name: "Add data" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Add to design" }).length)
+      .toBeGreaterThan(0);
   });
 
-  it("keeps a single Add-data control for a blank draft in Split", async () => {
+  it("keeps blank Split insertion in the Design canvas", async () => {
     renderStudio(createEmptyDraft("Blank"));
     fireEvent.click(
       screen.getByRole("radio", { name: "Split", exact: true }),
     );
-    // The canvas fallback owns the action; the pane button hides so the
-    // same name never appears twice.
+    // The data pane remains an overview; the canvas owns insertion.
     expect(
-      screen.getAllByRole("button", { name: "Add data" }),
+      screen.getAllByRole("button", { name: "Add to design" }),
     ).toHaveLength(1);
   });
 
