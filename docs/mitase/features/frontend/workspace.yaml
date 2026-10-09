@@ -353,6 +353,10 @@ features:
                 criterion: REQ-FE-030#criterion.form-aware-add-row
               - kind: satisfies
                 criterion: REQ-FE-031#criterion.inline-edit-selection
+              - kind: satisfies
+                criterion: REQ-FE-075#criterion.shared-column-picker
+              - kind: satisfies
+                criterion: REQ-FE-075#criterion.form-table-columns
   - id: FEAT-FE-011
     title: Fixed surface palette and system appearance
     summary: Connect the fixed v5 surface palette, shared surface-token enforcement, and operating-system color mode to exact frontend implementation and verification evidence.

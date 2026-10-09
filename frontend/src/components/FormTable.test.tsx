@@ -1256,6 +1256,11 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() => desktopTable().getByText("val1"));
+    expect(desktopTable().queryByRole("columnheader", { name: "Updated" }))
+      .not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Updated" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     const cell1 = desktopTable().getByText("val1");
     // Actions(0), Form field(1), updated_at(2).
@@ -1273,6 +1278,48 @@ describe("FormTable", () => {
     const copied = writeTextSpy.mock.calls[0][0] as string;
     expect(copied).toContain("val1");
     expect(copied).not.toContain(entryId);
+  });
+
+  it("keeps Form fields as the default columns and lets users add timestamps", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: { col: { type: "string" } },
+    } as any;
+    mockEntryQuery([{
+      id: "entry-1",
+      properties: { col: "Value" },
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-02T00:00:00.000Z",
+    }]);
+    render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={canonicalForm(entryForm)}
+        onEntryClick={() => {}}
+      />
+    ));
+
+    await waitFor(() => desktopTable().getByText("Value"));
+    expect(desktopTable().getByRole("columnheader", { name: /col/ }))
+      .toBeInTheDocument();
+    expect(desktopTable().queryByRole("columnheader", { name: "Created" }))
+      .not.toBeInTheDocument();
+    expect(desktopTable().queryByRole("columnheader", { name: "Updated" }))
+      .not.toBeInTheDocument();
+    expect(mobileList().queryByText("Created")).not.toBeInTheDocument();
+    expect(mobileList().queryByText("Updated")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Created" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Updated" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(desktopTable().getByRole("columnheader", { name: "Created" }))
+      .toBeInTheDocument();
+    expect(desktopTable().getByRole("columnheader", { name: /Updated/ }))
+      .toBeInTheDocument();
+    expect(mobileList().getByText("Created")).toBeInTheDocument();
+    expect(mobileList().getByText("Updated")).toBeInTheDocument();
   });
 
   it("REQ-UX-FORMTABLE-001: keeps Entry IDs out of desktop rows and opens entries by action", async () => {

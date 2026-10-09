@@ -30,6 +30,10 @@ import { formatUserFacingError } from "~/lib/user-facing-error";
 import { IconButton } from "~/components/IconButton";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
+import {
+  type EntryTableColumnOption,
+  EntryTableColumnPicker,
+} from "~/components/EntryTableColumnPicker";
 import { formatDateLabel } from "~/lib/date-format";
 import {
   formatValueForDisplay,
@@ -45,6 +49,7 @@ interface FormTableProps {
 }
 
 type SortDirection = "asc" | "desc" | null;
+type FormTableSystemColumn = "created_at" | "updated_at";
 
 function SortIcon(props: { active: boolean; direction: SortDirection }) {
   /* v8 ignore start */
@@ -264,6 +269,9 @@ export function FormTable(props: FormTableProps) {
   >({});
   const [showColumnFilters, setShowColumnFilters] = createSignal(true);
   const [showSortMenu, setShowSortMenu] = createSignal(false);
+  const [visibleSystemColumns, setVisibleSystemColumns] = createSignal<
+    FormTableSystemColumn[]
+  >([]);
   const [isEditMode, setIsEditMode] = createSignal(false);
   const [editingCell, setEditingCell] = createSignal<
     { id: string; field: string } | null
@@ -285,6 +293,15 @@ export function FormTable(props: FormTableProps) {
       props.entryForm?.fields ? Object.keys(props.entryForm.fields) : [],
     /* v8 ignore stop */
   );
+
+  const systemColumnLabel = (field: FormTableSystemColumn) =>
+    field === "created_at" ? t("formTable.created") : t("formTable.updated");
+  const systemColumnOptions = (): EntryTableColumnOption[] =>
+    (["created_at", "updated_at"] as const).map((field) => ({
+      key: field,
+      label: systemColumnLabel(field),
+      selected: visibleSystemColumns().includes(field),
+    }));
 
   const formScope = createMemo(() => ({
     kind: "form" as const,
@@ -360,7 +377,9 @@ export function FormTable(props: FormTableProps) {
     capabilityForField(field)?.field;
 
   const fieldNameForRef = (field: EntryFieldRef): string | null => {
-    if (field.kind === "updated_at") return "updated_at";
+    if (field.kind === "created_at" || field.kind === "updated_at") {
+      return field.kind;
+    }
     if (field.kind !== "property") return null;
     return capabilities().fields.find((candidate) =>
       sameField(candidate.field, field)
@@ -626,6 +645,14 @@ export function FormTable(props: FormTableProps) {
     start: { r: number; c: number } | null;
     end: { r: number; c: number } | null;
   }>({ start: null, end: null });
+  const applySystemColumns = (selectedKeys: string[]) => {
+    setVisibleSystemColumns(
+      (["created_at", "updated_at"] as const).filter((field) =>
+        selectedKeys.includes(field)
+      ),
+    );
+    setSelection({ start: null, end: null });
+  };
   const [isSelecting, setIsSelecting] = createSignal(false);
   const handleGlobalMouseUp = () => setIsSelecting(false);
   const handleGlobalKeyDown = async (e: KeyboardEvent) => {
@@ -660,29 +687,18 @@ export function FormTable(props: FormTableProps) {
     c1: number,
     c2: number,
   ) => {
-    const rowData = [];
-    // Cols 0..N-1: Form fields
-    for (let i = 0; i < currentFields.length; i++) {
-      const colIdx = i;
-      /* v8 ignore start */
-      if (colIdx >= c1 && colIdx <= c2) {
-        rowData.push(
-          formatValueForDisplay(
-            entry.properties?.[currentFields[i]],
-            "en-US",
-            "",
-          ),
-        );
-      }
-      /* v8 ignore stop */
-    }
-
-    // Col N: Updated
-    const lastCol = currentFields.length;
-    if (c1 <= lastCol && c2 >= lastCol) {
-      rowData.push(formatDateLabel(entry.updated_at));
-    }
-    return rowData.join("\t");
+    const columns = [
+      ...currentFields.map((field) => ({ kind: "property" as const, field })),
+      ...visibleSystemColumns().map((field) => ({
+        kind: "system" as const,
+        field,
+      })),
+    ];
+    return columns.slice(c1, c2 + 1).map(({ kind, field }) =>
+      kind === "property"
+        ? formatValueForDisplay(entry.properties?.[field], "en-US", "")
+        : formatDateLabel(entry[field])
+    ).join("\t");
   };
 
   const copySelection = async () => {
@@ -967,6 +983,10 @@ export function FormTable(props: FormTableProps) {
                   </div>
                 </Show>
               </div>
+              <EntryTableColumnPicker
+                options={systemColumnOptions}
+                onApply={applySystemColumns}
+              />
               <button
                 type="button"
                 class={`ui-button text-sm ${
@@ -993,7 +1013,9 @@ export function FormTable(props: FormTableProps) {
               {(field) => (
                 <label class="ui-table-mobile-filter">
                   <span>
-                    {field === "updated_at" ? t("formTable.updated") : field}
+                    {field === "created_at" || field === "updated_at"
+                      ? systemColumnLabel(field)
+                      : field}
                   </span>
                   <input
                     type="text"
@@ -1064,38 +1086,52 @@ export function FormTable(props: FormTableProps) {
                   )}
                 </For>
 
-                <th scope="col" class="ui-table-header-cell sticky top-0 z-10">
-                  <div class="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      class="ui-table-header-button select-none"
-                      onClick={() => handleHeaderClick("updated_at")}
+                <For each={visibleSystemColumns()}>
+                  {(field) => (
+                    <th
+                      scope="col"
+                      class="ui-table-header-cell sticky top-0 z-10"
                     >
-                      {t("formTable.updated")}
-                      <SortIcon
-                        active={sortField() === "updated_at"}
-                        direction={sortDirection()}
-                      />
-                    </button>
-                    <Show when={showColumnFilters()}>
-                      <input
-                        type="text"
-                        class="ui-input ui-input-sm ui-table-filter text-xs"
-                        placeholder={t("formTable.columnFilter")}
-                        aria-label={`${t("formTable.updated")} ${
-                          t("formTable.columnFilter")
-                        }`}
-                        value={columnFilters().updated_at || ""}
-                        onInput={(e) =>
-                          updateColumnFilter(
-                            "updated_at",
-                            e.currentTarget.value,
-                          )}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </Show>
-                  </div>
-                </th>
+                      <div class="flex flex-col gap-2">
+                        <Show
+                          when={field === "updated_at"}
+                          fallback={<span>{systemColumnLabel(field)}</span>}
+                        >
+                          <button
+                            type="button"
+                            class="ui-table-header-button select-none"
+                            onClick={() => handleHeaderClick(field)}
+                          >
+                            {systemColumnLabel(field)}
+                            <SortIcon
+                              active={sortField() === field}
+                              direction={sortDirection()}
+                            />
+                          </button>
+                        </Show>
+                        <Show
+                          when={field === "updated_at" && showColumnFilters()}
+                        >
+                          <input
+                            type="text"
+                            class="ui-input ui-input-sm ui-table-filter text-xs"
+                            placeholder={t("formTable.columnFilter")}
+                            aria-label={`${systemColumnLabel(field)} ${
+                              t("formTable.columnFilter")
+                            }`}
+                            value={columnFilters()[field] || ""}
+                            onInput={(event) =>
+                              updateColumnFilter(
+                                field,
+                                event.currentTarget.value,
+                              )}
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                        </Show>
+                      </div>
+                    </th>
+                  )}
+                </For>
               </tr>
             </thead>
             <tbody class="ui-table-body">
@@ -1184,23 +1220,31 @@ export function FormTable(props: FormTableProps) {
                         </td>
                       )}
                     </For>
-                    <td
-                      class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
-                        isSelected(rowIndex(), fields().length)
-                          ? "ui-table-cell-selected"
-                          : ""
-                      }`}
-                      onMouseDown={() =>
-                        handleCellMouseDown(rowIndex(), fields().length)}
-                      onMouseEnter={(e) =>
-                        handleCellMouseEnter(
-                          e,
-                          rowIndex(),
-                          fields().length,
-                        )}
-                    >
-                      {formatDateLabel(entry.updated_at)}
-                    </td>
+                    <For each={visibleSystemColumns()}>
+                      {(field, systemIndex) => {
+                        const columnIndex = () => fields().length +
+                          systemIndex();
+                        return (
+                          <td
+                            class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
+                              isSelected(rowIndex(), columnIndex())
+                                ? "ui-table-cell-selected"
+                                : ""
+                            }`}
+                            onMouseDown={() =>
+                              handleCellMouseDown(rowIndex(), columnIndex())}
+                            onMouseEnter={(event) =>
+                              handleCellMouseEnter(
+                                event,
+                                rowIndex(),
+                                columnIndex(),
+                              )}
+                          >
+                            {formatDateLabel(entry[field])}
+                          </td>
+                        );
+                      }}
+                    </For>
                   </tr>
                 )}
               </For>
@@ -1285,10 +1329,14 @@ export function FormTable(props: FormTableProps) {
                       </div>
                     )}
                   </For>
-                  <div class="ui-table-mobile-field">
-                    <dt>{t("formTable.updated")}</dt>
-                    <dd>{formatDateLabel(entry.updated_at)}</dd>
-                  </div>
+                  <For each={visibleSystemColumns()}>
+                    {(field) => (
+                      <div class="ui-table-mobile-field">
+                        <dt>{systemColumnLabel(field)}</dt>
+                        <dd>{formatDateLabel(entry[field])}</dd>
+                      </div>
+                    )}
+                  </For>
                 </dl>
                 <Show when={fields().length > 3}>
                   <details class="ui-table-mobile-more">

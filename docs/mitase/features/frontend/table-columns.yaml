@@ -1,0 +1,22 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: frontend
+category: Form-backed table columns
+features:
+  - id: FEAT-FE-015
+    title: Shared Form table column picker
+    summary: Give Form-backed tables one accessible column picker for field columns and optional timestamps.
+    status: implemented
+    bindings:
+      - id: frontend
+        role: implementation
+        facet: frontend
+        responsibility: Keep the accessible shared column picker and its localized labels connected to frontend tables.
+        targets:
+          - id: shared-column-picker
+            adapter: typescript
+            path: frontend/src/components/EntryTableColumnPicker.tsx
+            selector: { kind: symbol, name: EntryTableColumnPicker }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-075#criterion.shared-column-picker
