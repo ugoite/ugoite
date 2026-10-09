@@ -36,6 +36,12 @@ components:
         accessible_names: hidden
         access: advanced-entry-info-details-with-copy
       field_ids: never-visible
+    mobile_edit_mode:
+      edit_value_controls:
+        fields: [first-three-card-fields, expanded-additional-fields]
+        visible_content: formatted-current-value
+        accessible_name: localized-form-field-label-or-name-plus-formatted-current-value
+        entry_and_stable_field_ids: never
     row_open:
       control: localized-view-entry-button
       target: selected-entry

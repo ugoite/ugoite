@@ -1523,6 +1523,68 @@ describe("FormTable", () => {
     expect(onEntryClick).toHaveBeenCalledWith("entry-1");
   });
 
+  it("REQ-UX-FORMTABLE-002: names mobile edit buttons with field labels and current values", async () => {
+    const entryId = "private-entry-id";
+    const entryForm = {
+      name: "Test",
+      fields: {
+        status: { type: "string", label: "Status", id: 491 },
+        owner: { type: "string", label: "Owner", id: 492 },
+        priority: { type: "string", id: 493 },
+        details: { type: "string", label: "Details", id: 494 },
+      },
+    } as any;
+    mockEntryQuery([{
+      id: entryId,
+      properties: {
+        status: "Open",
+        owner: "Aki",
+        priority: "High",
+        details: "Needs review",
+      },
+    }]);
+
+    const { getByTitle } = render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={canonicalForm(entryForm)}
+        onEntryClick={() => {}}
+      />
+    ));
+
+    await waitFor(() =>
+      expect(mobileList().getByText("Open")).toBeInTheDocument()
+    );
+    fireEvent.click(getByTitle("Enable Editing"));
+
+    const mobile = mobileList();
+    const statusEdit = mobile.getByRole("button", {
+      name: "Edit Status: Open",
+    });
+    const ownerEdit = mobile.getByRole("button", {
+      name: "Edit Owner: Aki",
+    });
+    const priorityEdit = mobile.getByRole("button", {
+      name: "Edit priority: High",
+    });
+    expect(statusEdit).toHaveTextContent("Open");
+    expect(ownerEdit).toHaveTextContent("Aki");
+    expect(priorityEdit).toHaveTextContent("High");
+
+    fireEvent.click(mobile.getByText("Show 1 more field"));
+    const detailsEdit = mobile.getByRole("button", {
+      name: "Edit Details: Needs review",
+    });
+    expect(detailsEdit.closest(".ui-table-mobile-extra-fields"))
+      .toBeTruthy();
+    expect(detailsEdit).toHaveTextContent("Needs review");
+
+    for (const button of [statusEdit, ownerEdit, priorityEdit, detailsEdit]) {
+      expect(button.getAttribute("aria-label")).not.toContain(entryId);
+      expect(button.getAttribute("aria-label")).not.toMatch(/49[1-4]/);
+    }
+  });
+
   it("keeps additional mobile card fields inline-editable", async () => {
     const entryForm = {
       name: "Test",
@@ -1565,7 +1627,9 @@ describe("FormTable", () => {
         .toBeInTheDocument()
     );
     fireEvent.click(getByTitle("Enable Editing"));
-    fireEvent.click(mobileList().getByRole("button", { name: "Old" }));
+    fireEvent.click(
+      mobileList().getByRole("button", { name: "Edit notes: Old" }),
+    );
     const notesInput = mobileList().getByDisplayValue("Old");
     fireEvent.input(notesInput, { target: { value: "New" } });
     fireEvent.blur(notesInput);
