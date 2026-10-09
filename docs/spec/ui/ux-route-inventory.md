@@ -32,6 +32,8 @@ Current UX notes (same plan sections, no new sections):
   after authentication.
 - Navigation is Form-first: Forms is the entry point to Entries, and Entries
   is not an independent destination (§4).
+- The Space shell provides Saved tools as the navigation destination for the
+  Composition list and keeps that section active on Composition routes (§4).
 - Each Form's current Entries live in its Form Entries workspace; there is no
   unscoped all-Forms Entries list surface (§5 + §6).
 - Search owns a raw draft that commits on submit; `?q=` seeds the field and

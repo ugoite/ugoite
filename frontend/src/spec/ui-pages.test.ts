@@ -616,14 +616,23 @@ describe("UI spec YAML registry", () => {
       type: "sidebar",
       position: "left-fixed",
       width: "228px",
-      items: ["Home", "Forms", "Search", "Settings"],
+      items: [
+        "Home",
+        "Assets",
+        "Forms",
+        "Saved tools",
+        "Search",
+        "History",
+        "Settings",
+      ],
     });
     expect(topbar).toMatchObject({ type: "top-bar", height: "58px" });
     expect(mobileNavigation).toMatchObject({
       type: "bottom-navigation",
       height: "66px",
       breakpoint: "900px",
-      items: ["Home", "Forms", "Search", "Settings"],
+      items: ["Home", "Forms", "Search", "History", "More"],
+      more_items: ["Assets", "Saved tools", "Settings"],
     });
     const globalMobileNavigation = components.find((component) =>
       component.id === "global-mobile-bottom-navigation"

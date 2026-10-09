@@ -168,8 +168,12 @@ inventory:
         - frontend/src/routes/spaces/[space_id]/assets/[asset_id].tsx
         - frontend/src/routes/spaces/[space_id]/assets/[asset_id].test.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/index.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/new.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
+        - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.tsx
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.tsx
+        - frontend/src/lib/composition-space-navigation.test.ts
         - frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/history.test.tsx
         - frontend/src/routes/spaces/[space_id]/entries.tsx
         - frontend/src/routes/spaces/[space_id]/assets.tsx

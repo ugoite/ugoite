@@ -10,7 +10,7 @@ import { t } from "~/lib/i18n";
 import { spaceCompositionsPath } from "~/lib/space-path";
 import { spaceRoute } from "~/lib/space-shell-route";
 
-export const route = spaceRoute({ navigation: "home" });
+export const route = spaceRoute({ navigation: "compositions" });
 
 export default function CompositionNewRoute() {
   const params = useParams<{ space_id: string }>();

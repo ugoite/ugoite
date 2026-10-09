@@ -15,6 +15,15 @@ features:
     responsibility: Implement exact Composition revision editing, history, and append-only restore routes
       using exact base revision identity.
     targets:
+    - id: browser-create-route
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/new.tsx
+      selector:
+        kind: symbol
+        name: CompositionNewRoute
+      claims:
+      - kind: satisfies
+        criterion: REQ-FE-073#criterion.composition-route-context
     - id: browser-edit-round-trip
       adapter: typescript
       path: frontend/src/lib/composition-draft.ts
@@ -37,6 +46,8 @@ features:
       - kind: satisfies
         criterion: REQ-COMP-004#criterion.exact-composition-revision
       - kind: satisfies
+        criterion: REQ-FE-073#criterion.composition-route-context
+      - kind: satisfies
         criterion: REQ-COMP-001#criterion.one-entry-revision
     - id: browser-history-route
       adapter: typescript
@@ -48,6 +59,16 @@ features:
         criterion: REQ-COMP-005#criterion.history-available
       - kind: satisfies
         criterion: REQ-COMP-004#criterion.exact-composition-revision
+      - kind: satisfies
+        criterion: REQ-FE-073#criterion.composition-route-context
+    - id: browser-revision-layout
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id].tsx
+      selector:
+        kind: file
+      claims:
+      - kind: satisfies
+        criterion: REQ-FE-073#criterion.composition-route-context
     - id: browser-restore
       adapter: typescript
       path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx

@@ -34,7 +34,7 @@ import {
 import { spaceRoute } from "~/lib/space-shell-route";
 import type { Form, FormField } from "~/lib/types";
 
-export const route = spaceRoute({ navigation: "home" });
+export const route = spaceRoute({ navigation: "compositions" });
 
 const findCompositionFormField = (
   forms: readonly Form[] | undefined,
@@ -74,8 +74,7 @@ export const resolveCompositionFieldKey = (
   forms: readonly Form[] | undefined,
   formId: string,
   fieldId: number,
-): string | undefined =>
-  findCompositionFormField(forms, formId, fieldId)?.[0];
+): string | undefined => findCompositionFormField(forms, formId, fieldId)?.[0];
 
 export default function CompositionRevisionRoute() {
   const params = useParams<{

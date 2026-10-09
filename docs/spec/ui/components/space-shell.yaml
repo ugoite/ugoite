@@ -1,5 +1,5 @@
-version: "0.3"
-updated: "2026-10-08"
+version: "0.4"
+updated: "2026-10-09"
 component_group:
   id: space-shell-shared
   title: Space Shell Shared Components
@@ -14,8 +14,8 @@ components:
     type: sidebar
     position: left-fixed
     width: 228px
-    items: [Home, Forms, Search, Settings]
-    notes: Owns the active Space section context on Space-scoped routes. Pages must not restate the active section identity. Hidden below 900px and replaced by the Space bottom navigation, which keeps the same context ownership.
+    items: [Home, Assets, Forms, Saved tools, Search, History, Settings]
+    notes: Owns the active Space section context on Space-scoped routes. Saved tools opens the current Space's Composition list and remains active across its list, authoring, revision, and history routes. Pages must not restate the active section identity. Hidden below 900px and replaced by the Space bottom navigation.
   - id: workspace-topbar
     type: top-bar
     height: 58px
@@ -28,7 +28,8 @@ components:
     type: bottom-navigation
     height: 66px
     breakpoint: 900px
-    items: [Home, Forms, Search, Settings]
+    items: [Home, Forms, Search, History, More]
+    more_items: [Assets, Saved tools, Settings]
   - id: global-mobile-bottom-navigation
     type: bottom-navigation
     height: 66px
