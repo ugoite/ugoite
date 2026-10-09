@@ -20,6 +20,28 @@ import { protocolFetch, UgoiteApiError } from "./ugoite-client/protocol";
 
 type EntryResponse = Entry;
 
+/** Wire shape returned by the canonical `entry.list` operation. */
+type EntryListResponse = Omit<
+  EntryRecord,
+  "properties" | "created_at" | "updated_at"
+> & {
+  created_at?: string | number;
+  updated_at: string | number;
+  fields: Record<string, unknown>;
+};
+
+const normalizeEntryListRecord = (entry: EntryListResponse): EntryRecord => {
+  const { fields, created_at, updated_at, ...record } = entry;
+  return normalizeEntryRecord({
+    ...record,
+    ...(created_at === undefined
+      ? {}
+      : { created_at: normalizeTimestamp(created_at) }),
+    updated_at: normalizeTimestamp(updated_at),
+    properties: fields,
+  });
+};
+
 export type EntryRestoreReceipt = {
   revision_id: string;
   change_id?: string;
@@ -77,12 +99,12 @@ export const entryApi = {
     limit?: number,
     offset?: number,
   ): Promise<EntryRecord[]> {
-    const entries = await protocolFetch<EntryRecord[]>("entry.list", {
+    const entries = await protocolFetch<EntryListResponse[]>("entry.list", {
       space_id: spaceId,
       ...(limit === undefined ? {} : { limit }),
       ...(offset === undefined ? {} : { offset }),
     });
-    return entries.map(normalizeEntryRecord);
+    return entries.map(normalizeEntryListRecord);
   },
 
   async get(

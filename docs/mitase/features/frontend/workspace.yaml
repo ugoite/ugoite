@@ -70,7 +70,7 @@ features:
                 criterion: REQ-FE-056#criterion.contextual-auth
   - id: FEAT-FE-002
     title: Entry browsing and selection
-    summary: Connect the canonical EntryBrowser, EntryQuery-backed selection, and the Entries route to exact frontend verification evidence.
+    summary: Connect Entry browsing, selection, and human-readable Dashboard Recent labels to exact frontend verification evidence.
     status: implemented
     bindings:
       - id: frontend
@@ -98,6 +98,27 @@ features:
                 criterion: REQ-FE-008#criterion.selection
               - kind: satisfies
                 criterion: REQ-FE-044#criterion.dictionary-localization
+          - id: entry-display-label-helper
+            adapter: typescript
+            path: frontend/src/lib/entry-label.ts
+            selector: { kind: symbol, name: entryDisplayLabel }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-011#criterion.dashboard-recent-label
+          - id: dashboard-recent-labels
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/dashboard.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-011#criterion.dashboard-recent-label
+          - id: entry-list-field-projection
+            adapter: typescript
+            path: frontend/src/lib/entry-api.ts
+            selector: { kind: symbol, name: normalizeEntryListRecord }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-011#criterion.dashboard-recent-label
           - id: form-entries-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx"

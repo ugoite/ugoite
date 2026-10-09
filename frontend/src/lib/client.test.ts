@@ -12,6 +12,7 @@ import { resetMockData, seedEntry, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Entry, EntryRecord, Space } from "./types";
 import { testApiUrl } from "~/test/http-origin";
+import { entryDisplayLabel } from "./entry-label";
 
 describe("spaceApi", () => {
   beforeEach(() => {
@@ -164,7 +165,7 @@ describe("entryApi", () => {
                 id: "entry-1",
                 created_at: 1772960822.056,
                 updated_at: 1772960822.056,
-                properties: {},
+                fields: {},
                 tags: [],
               },
             ]),
@@ -178,6 +179,30 @@ describe("entryApi", () => {
       expect(entries[0].updated_at).toBe(
         new Date(1772960822.056 * 1000).toISOString(),
       );
+    });
+
+    it("maps canonical Entry.list fields to the human-readable label projection", async () => {
+      server.use(
+        http.get(
+          testApiUrl("/spaces/test-ws/entries"),
+          () =>
+            HttpResponse.json([
+              {
+                id: "entry-1",
+                form: "Notes",
+                created_at: "2025-01-01T00:00:00Z",
+                updated_at: "2025-01-02T00:00:00Z",
+                fields: { Title: "Planning notes" },
+                tags: [],
+              },
+            ]),
+        ),
+      );
+
+      const entries = await entryApi.list("test-ws");
+
+      expect(entries[0].properties).toEqual({ Title: "Planning notes" });
+      expect(entryDisplayLabel(entries[0])).toBe("Planning notes");
     });
 
     it("forwards limit and offset for durable entry list pages", async () => {

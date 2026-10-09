@@ -429,7 +429,10 @@ export const handlers = [
     const page = limitValue === null
       ? entries.slice(offset)
       : entries.slice(offset, offset + Number(limitValue));
-    return HttpResponse.json(page);
+    return HttpResponse.json(page.map(({ properties, ...entry }) => ({
+      ...entry,
+      fields: properties,
+    })));
   }),
 
   // Create entry through the structured payload contract.
