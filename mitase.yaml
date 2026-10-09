@@ -325,6 +325,7 @@ inventory:
         - docs/mitase/features/frontend
         - docs/spec/ui/components/entry-browser.yaml
         - docs/spec/ui/components/form-table.yaml
+        - docs/spec/ui/components/space-access-recovery.yaml
         - docs/spec/ui/pages/space-compositions.yaml
         - docs/spec/ui/pages/space-composition-revision.yaml
         - docs/spec/ui/pages/space-composition-history.yaml
