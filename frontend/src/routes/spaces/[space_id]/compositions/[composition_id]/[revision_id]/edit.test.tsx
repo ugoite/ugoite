@@ -251,6 +251,24 @@ describe("Composition edit route", () => {
       .toHaveLength(1);
   });
 
+  it("keeps document source IDs out of labels when names cannot be loaded", async () => {
+    sqlGetMock.mockRejectedValueOnce(new Error("Unavailable"));
+    formListMock.mockRejectedValueOnce(new Error("Unavailable"));
+    render(() => <CompositionEditRoute />);
+
+    expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");
+    fireEvent.click(
+      within(screen.getByRole("radiogroup", { name: "Studio mode" })).getByRole(
+        "radio",
+        { name: "Data" },
+      ),
+    );
+
+    expect(await screen.findByRole("button", { name: "Source 1" }))
+      .toBeInTheDocument();
+    expect(screen.queryByText("src-1")).not.toBeInTheDocument();
+  });
+
   it("opens canonical revisions when empty parameters and variables are omitted", async () => {
     const { parameters: _parameters, ...specWithoutParameters } =
       lintDocument.spec;

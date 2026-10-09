@@ -22,8 +22,8 @@ export const route = spaceRoute({ navigation: "home" });
 /**
  * Display-only source-name lookup for restoring a draft from the exact
  * revision. Matches the stable Saved SQL entry id or Form id only; names
- * never participate in semantics and missing metadata falls back to the
- * document source id.
+ * never participate in semantics and missing metadata falls back to an
+ * ordered human label instead of exposing the document source id.
  */
 const resolveSourceNames = async (
   spaceId: string,
@@ -37,13 +37,14 @@ const resolveSourceNames = async (
   } catch {
     formNames = new Map();
   }
-  for (const source of document.spec.sources) {
+  for (const [index, source] of document.spec.sources.entries()) {
+    names[source.id] = `${t("composition.studioSource")} ${index + 1}`;
     if (source.kind === "saved_sql" && source.entry_id) {
       try {
         const entry = await sqlApi.get(spaceId, source.entry_id);
         if (entry.name) names[source.id] = entry.name;
       } catch {
-        // Fall back to the document source id below.
+        // Keep the ordered human label when current source metadata is unavailable.
       }
     } else if (source.kind === "entry_query" && source.form_id) {
       const name = formNames.get(source.form_id);
