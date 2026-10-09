@@ -30,6 +30,7 @@ components:
         position: after-form-fields
         reorderable: false
         visibility: configurable
+        unrepresentable_date: render-em-dash-and-continue-list
     toolbar:
       built_in_search:
         default: visible

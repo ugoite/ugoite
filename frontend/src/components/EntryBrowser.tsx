@@ -45,8 +45,11 @@ const fieldKey = (field: EntryFieldRef): string => JSON.stringify(field);
 const filterOperatorLabel = (operator: EntryFilterOperator): string =>
   t(`entryBrowser.operator.${operator}`);
 
-const dateFromMicros = (micros: number): string =>
-  formatDateLabel(new Date(micros / 1_000).toISOString());
+const dateFromMicros = (micros: number): string => {
+  const date = new Date(micros / 1_000);
+  if (Number.isNaN(date.getTime())) return "—";
+  return formatDateLabel(date.toISOString());
+};
 
 const displayValue = (value: unknown): string => {
   if (value === null || value === undefined) return "—";
