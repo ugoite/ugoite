@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import { join } from "node:path";
 import {
 	ensureDefaultForm,
 	getBackendUrl,
 	getDefaultSpaceId,
+	getFrontendUrl,
 	waitForServers,
 } from "./lib/client.ts";
 
@@ -296,7 +298,176 @@ test.describe("PWA update lifecycle", () => {
 		expect(afterNavigation.controllerScript).toBe(activeClient.controllerScript);
 		expect(afterNavigation.timeOrigin).toBe(activeClient.timeOrigin);
 	});
+
+	test("REQ-E2E-010: a waiting update keeps a cached lazy route available to an open client", async ({ page }) => {
+		test.setTimeout(60_000);
+
+		const workerScriptPath = await findProductionWorkerScriptPath();
+		const originalWorker = await fetch(getFrontendUrl(workerScriptPath));
+		expect(originalWorker.ok).toBe(true);
+		const originalWorkerSource = await originalWorker.text();
+		await page.goto(`/spaces/${spaceId}/forms`, { waitUntil: "load" });
+		await settleUiLoading(page);
+		await page.waitForFunction(async () => {
+			const registration = await navigator.serviceWorker.getRegistration();
+			return registration?.active?.state === "activated";
+		});
+		if (!(await page.evaluate(() => !!navigator.serviceWorker.controller))) {
+			await page.reload({ waitUntil: "load" });
+		}
+		await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+
+		const initialClient = await page.evaluate(async () => {
+			const registration = await navigator.serviceWorker.ready;
+			const controller = navigator.serviceWorker.controller;
+			if (!registration.active || !controller) {
+				throw new Error("Expected an active worker to control the open client");
+			}
+			return {
+				activeScript: registration.active.scriptURL,
+				controllerScript: controller.scriptURL,
+				timeOrigin: performance.timeOrigin,
+			};
+		});
+		expect(new URL(initialClient.activeScript).pathname).toBe(workerScriptPath);
+
+		// Serve a distinct worker at the same generated production URL while the
+		// existing client stays controlled by its active production worker.
+		const restoreWorker = await replaceServedStaticAsset(
+			workerScriptPath,
+			`${originalWorkerSource}\n// E2E updated worker version`,
+			originalWorkerSource,
+		);
+		try {
+			await page.evaluate(async () => {
+				const registration = await navigator.serviceWorker.ready;
+				await registration.update();
+			});
+			await expect.poll(() => page.evaluate(async () => {
+				const registration = await navigator.serviceWorker.getRegistration();
+				return registration?.waiting?.state ?? null;
+			})).toBe("installed");
+		} finally {
+			await restoreWorker();
+		}
+
+		const routeChunkUrl = await findRouteChunkUrl(
+			page,
+			"src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx",
+		);
+		const chunkIsPrecached = await page.evaluate(async (url) =>
+			!!(await caches.match(url, { ignoreSearch: true })), routeChunkUrl);
+		expect(chunkIsPrecached).toBe(true);
+
+		const originalChunkResponse = await page.request.get(routeChunkUrl);
+		expect(originalChunkResponse.ok()).toBe(true);
+		const routeChunkPath = new URL(routeChunkUrl).pathname;
+		const unavailableChunkBody = "throw new Error('E2E route chunk unavailable');";
+		const restoreRouteChunk = await replaceServedStaticAsset(
+			routeChunkPath,
+			unavailableChunkBody,
+			await originalChunkResponse.text(),
+		);
+		try {
+			const unavailableResponse = await page.request.get(routeChunkUrl);
+			expect(await unavailableResponse.text()).toBe(unavailableChunkBody);
+			await page.getByRole("button", { name: "Entry", exact: true }).click();
+			await expect(page.locator(".entriesPage h1")).toHaveText("Entry");
+			await expectAppHealthy(page);
+
+			const afterNavigation = await page.evaluate(async () => {
+				const registration = await navigator.serviceWorker.ready;
+				return {
+					activeScript: registration.active?.scriptURL,
+					waitingState: registration.waiting?.state,
+					controllerScript: navigator.serviceWorker.controller?.scriptURL,
+					timeOrigin: performance.timeOrigin,
+				};
+			});
+			expect(afterNavigation.activeScript).toBe(initialClient.activeScript);
+			expect(afterNavigation.waitingState).toBe("installed");
+			expect(afterNavigation.controllerScript).toBe(initialClient.controllerScript);
+			expect(afterNavigation.timeOrigin).toBe(initialClient.timeOrigin);
+		} finally {
+			await restoreRouteChunk();
+		}
+	});
 });
+
+async function findProductionWorkerScriptPath(): Promise<string> {
+	const registerScript = await fetch(getFrontendUrl("/_build/registerSW.js"));
+	if (!registerScript.ok) {
+		throw new Error("Production service worker registration script is unavailable");
+	}
+	const match = (await registerScript.text()).match(
+		/serviceWorker\.register\(["']([^"']+)["']\s*,/,
+	);
+	if (!match) throw new Error("Could not find the generated production worker URL");
+	const workerUrl = new URL(match[1], getFrontendUrl("/"));
+	if (
+		workerUrl.origin !== new URL(getFrontendUrl("/")).origin ||
+		!workerUrl.pathname.startsWith("/_build/")
+	) {
+		throw new Error("Generated production worker URL is outside the expected build path");
+	}
+	return workerUrl.pathname;
+}
+
+async function replaceServedStaticAsset(
+	assetPath: string,
+	updatedSource: string,
+	originalSource: string,
+): Promise<() => Promise<void>> {
+	if (!assetPath.startsWith("/_build/") || assetPath.includes("..")) {
+		throw new Error("E2E static asset path is outside the generated build directory");
+	}
+	const localStaticDirectory = Deno.env.get("E2E_STATIC_DIR");
+	const staticContainerId = Deno.env.get("E2E_STATIC_CONTAINER_ID");
+	const containerStaticDirectory = Deno.env.get("E2E_STATIC_CONTAINER_DIR");
+	if (
+		(!localStaticDirectory && !staticContainerId) ||
+		(staticContainerId && !containerStaticDirectory)
+	) {
+		throw new Error("E2E runner did not expose a writable static asset location");
+	}
+
+	const temporaryFile = await Deno.makeTempFile({ suffix: ".js" });
+	const containerPath = staticContainerId
+		? `${staticContainerId}:${containerStaticDirectory}${assetPath}`
+		: null;
+	const writeServedAsset = async (source: string) => {
+		if (localStaticDirectory) {
+			await Deno.writeTextFile(join(localStaticDirectory, assetPath.slice(1)), source);
+			return;
+		}
+		await Deno.writeTextFile(temporaryFile, source);
+		await Deno.chmod(temporaryFile, 0o644);
+		const result = await new Deno.Command("docker", {
+			args: ["cp", temporaryFile, containerPath!],
+			stdout: "null",
+			stderr: "null",
+		}).output();
+		if (!result.success) throw new Error("Could not update the E2E static asset");
+	};
+
+	let restored = false;
+	try {
+		await writeServedAsset(updatedSource);
+	} catch (error) {
+		await writeServedAsset(originalSource).catch(() => {});
+		await Deno.remove(temporaryFile).catch(() => {});
+		throw error;
+	}
+	return async () => {
+		if (restored) return;
+		try {
+			await writeServedAsset(originalSource);
+			restored = true;
+		} finally {
+			await Deno.remove(temporaryFile).catch(() => {});
+		}
+	};
+}
 
 type InternalLink = {
 	path: string;

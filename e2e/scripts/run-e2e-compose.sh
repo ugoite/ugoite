@@ -483,6 +483,15 @@ export E2E_SETUP_SECRET
 echo "  ✓ setup secret extracted exactly once (distinct=1)"
 
 echo "Frontend URL: $FRONTEND_URL"
+if [ "$TEST_TYPE" = "navigation" ]; then
+  E2E_STATIC_CONTAINER_ID="$("${compose_cmd[@]}" ps -q ugoite)"
+  if [ -z "$E2E_STATIC_CONTAINER_ID" ]; then
+    echo "✗ ERROR: could not resolve the running E2E service container for PWA update coverage"
+    exit 1
+  fi
+  export E2E_STATIC_CONTAINER_ID
+  export E2E_STATIC_CONTAINER_DIR=/app/static
+fi
 
 echo ""
 echo "=========================================="

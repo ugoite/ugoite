@@ -180,6 +180,7 @@ if [ "$FRONTEND_MODE" = "static" ]; then
     frontend/.output/public/_build/.vite/manifest.json \
     frontend/.output/public/index.html
   STATIC_DIR="$ROOT_DIR/frontend/.output/public"
+  export E2E_STATIC_DIR="$STATIC_DIR"
 elif [ "$FRONTEND_MODE" = "dev" ]; then
   DEV_BUILD_INFO_PATH="$ROOT_DIR/frontend/public/build-info.json"
   DEV_BUILD_INFO_BACKUP=""
