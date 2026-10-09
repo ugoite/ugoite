@@ -35,6 +35,8 @@ components:
     title: Data
     status: implemented
     ownership: collapsible-source-navigator-with-per-source-editor-for-selection-only
+    source_authoring: design-mode-only
+    empty_source_list: no-add-data-prompt
     label_kind: compact-section-label
     rows:
       selection: full-row-activate
@@ -54,6 +56,8 @@ components:
       filter_operators: [equals, contains, lt, lte, gt, gte]
       sort_directions: [asc, desc]
       projection: [fields, preview]
+      projection_choices: projectable-snapshot-fields-only; already-selected-nonprojectable-fields-remain-available-for-removal
+      preview_availability: switch-to-preview-enabled-only-when-field-schema-covers-every-current-form-field
       metric_projection: selected-entry-field-is-in-fields-projection-and-projection-edits-retain-metric-fields
       projection_initialization: reserve-metric-bound-fields-then-schema-order-up-to-64
       projection_capacity: unchecked-fields-disabled-with-localized-limit-title-at-64
@@ -68,7 +72,7 @@ components:
           schema_field: localized-schema-ordinal-skipping-live-form-names-and-prior-fallbacks
           referenced_field_missing_from_schema_snapshot: distinct-deterministic-localized-ordinal-skipping-live-form-names-and-prior-fallbacks
         raw_field_id: query-data-only-never-rendered-in-field-filter-sort-projection-or-dialog-labels
-      capability_gating: dialog-offers-only-capable-fields-with-disabled-add-and-reason-at-zero
+      capability_gating: dialog-offers-only-capable-snapshot-backed-fields-with-disabled-add-and-reason-at-zero
       projection_placement: inline-unchanged-dialog-columns-contract-not-identical
       form_definition: transient-formApi-load-cached-per-source-never-stored
       source_identity: selected-human-source-name-owned-by-workspace-heading
@@ -105,7 +109,14 @@ components:
     type: dialog
     title: Add data
     status: implemented
-    source: Forms through form.list and user-query Saved SQL through sql.list
+    ownership: design-mode-source-authoring
+    current_sources: shown-first-in-draft-order
+    current_source_selection: add-unlabelled-table-to-existing-source-without-duplicating-source
+    available_sources: Forms through form.list and user-query Saved SQL through sql.list
+    new_source_selection: add-source-and-unlabelled-table-to-the-draft-together
+    initial_form_projection: first-64-projectable-form-fields-no-created-or-updated-system-fields-preview-only-when-no-form-field-is-projectable
+    initial_form_schema: every-composition-expressible-field-up-to-document-collection-limit-with-initially-projected-fields-prioritized
+    preview_snapshot: preview-is-selectable-only-when-the-source-snapshot-covers-every-current-form-field
     tabs: [Forms, Saved SQL]
     selection: full-row-activate
     row_identity: human-name-only
@@ -241,7 +252,8 @@ components:
     status: implemented
     ownership: shared-flow-item-presenter-with-edit-only-affordances
     source: draft-components-and-layout-rows-with-debounced-shared-preview
-    blank_state: single-add-data-action-opens-source-picker-no-prose
+    blank_state: single-add-data-action-opens-source-picker-no-prose; choosing-a-source-adds-a-table-before-canvas-appears
+    add_data_action: available-in-design-and-design-side-of-split
     blank_scope: zero-sources-and-zero-blocks-normal-canvas-after-first-source
     rows:
       order: layout-row-array-then-item-order
@@ -322,6 +334,7 @@ components:
       data: fetch-definition-only-with-localized-sources-parameters-tags-tabs-no-canvas-no-preview-section
       split: design-canvas-plus-scoped-data-pane-no-parameters-no-tags-no-preview-section
     blank_design: single-add-data-action-opens-source-picker-no-prose
+    source_creation: design-only
     split_availability: desktop-only-below-760px-design-data-only
     narrow_resize: crossing-below-760px-gate-returns-to-design-no-stuck-split
     persistence: transient-work-never-stored

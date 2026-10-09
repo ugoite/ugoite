@@ -395,9 +395,10 @@ describe("CompositionDataWorkspace", () => {
     expect(harness.onRemove).toHaveBeenCalledWith("src-1");
   });
 
-  it("renders an empty navigator without sources", async () => {
+  it("renders an empty navigator without add-data prose", () => {
     renderWorkspace(createEmptyDraft("Tool"));
-    expect(await screen.findByText("Add data to begin.")).toBeInTheDocument();
+    expect(screen.queryByText("Add data to begin.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add data" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Expenses" })).toBeNull();
   });
 
@@ -517,7 +518,7 @@ describe("CompositionDataWorkspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     await screen.findByRole("heading", { name: "Expenses" });
     const editor = harness.editor();
-    await within(editor).findByText("Occurred");
+    await within(editor).findAllByText("Occurred");
 
     // Sort routes through the shared dialog; Apply writes the draft.
     fireEvent.click(within(editor).getByRole("button", { name: "Add sort" }));
@@ -568,6 +569,131 @@ describe("CompositionDataWorkspace", () => {
       kind: "entry_query",
       query: { projection: { kind: "fields", fields: [100] } },
     });
+  });
+
+  it("keeps Preview unavailable when the source snapshot omits current Form fields", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
+    const draft = addEntryQuerySource(createEmptyDraft("Tool"), {
+      ...entrySeed(),
+      fieldSchema: [{ field_id: 100, field_type: "date" }],
+      query: {
+        filters: [],
+        sort: [],
+        projection: { kind: "fields", fields: [100] },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    const editor = harness.editor();
+
+    const preview = await within(editor).findByRole("radio", {
+      name: "Preview",
+    });
+    expect(preview).toBeDisabled();
+    expect(preview).toHaveAttribute(
+      "title",
+      "Preview requires a complete Form field snapshot.",
+    );
+  });
+
+  it("limits filter and sort options to fields in the source snapshot", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
+    const draft = addEntryQuerySource(createEmptyDraft("Tool"), {
+      ...entrySeed(),
+      fieldSchema: [{ field_id: 100, field_type: "date" }],
+      query: {
+        filters: [],
+        sort: [],
+        projection: { kind: "fields", fields: [100] },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    const editor = harness.editor();
+    await within(editor).findAllByText("Occurred");
+
+    fireEvent.click(within(editor).getByRole("button", { name: "Add filter" }));
+    const filterDialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(filterDialog).getByRole("button", { name: "Add filter" }),
+    );
+    const filterField = within(filterDialog).getByLabelText("Filter field 1");
+    expect(
+      within(filterField).getAllByRole("option").map((option) =>
+        option.textContent
+      ),
+    ).toEqual(["Occurred"]);
+    fireEvent.keyDown(filterDialog, { key: "Escape" });
+
+    fireEvent.click(within(editor).getByRole("button", { name: "Add sort" }));
+    const sortDialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(sortDialog).getByRole("button", { name: "Add sort" }),
+    );
+    const sortField = within(sortDialog).getByLabelText("Sort field 1");
+    expect(
+      within(sortField).getAllByRole("option").map((option) =>
+        option.textContent
+      ),
+    ).toEqual(["Occurred"]);
+  });
+
+  it("omits nonprojectable Form fields from the projection choices", async () => {
+    formApiListMock.mockResolvedValue([{
+      ...expenseForm(),
+      fields: {
+        title: {
+          id: 101,
+          type: "string",
+          required: false,
+          query_capability: {
+            field: { kind: "property", field_id: 101 },
+            name: "Title",
+            field_type: "string",
+            filterable: true,
+            sortable: true,
+            projectable: true,
+            supported_operators: ["equals"],
+          },
+        },
+        internalNote: {
+          id: 102,
+          type: "string",
+          required: false,
+          query_capability: {
+            field: { kind: "property", field_id: 102 },
+            name: "Internal note",
+            field_type: "string",
+            filterable: true,
+            sortable: true,
+            projectable: false,
+            supported_operators: ["equals"],
+          },
+        },
+      },
+    }]);
+    const draft = addEntryQuerySource(createEmptyDraft("Tool"), {
+      ...entrySeed(),
+      fieldSchema: [
+        { field_id: 101, field_type: "string" },
+        { field_id: 102, field_type: "string" },
+      ],
+      query: {
+        filters: [],
+        sort: [],
+        projection: { kind: "fields", fields: [101] },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    const editor = harness.editor();
+
+    expect(
+      await within(editor).findByRole("checkbox", { name: "Title" }),
+    ).toBeInTheDocument();
+    expect(
+      within(editor).queryByRole("checkbox", { name: "Internal note" }),
+    ).toBeNull();
   });
 
   it("caps the initial fields projection to the supported limit", async () => {

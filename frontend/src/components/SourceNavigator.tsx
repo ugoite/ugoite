@@ -34,7 +34,6 @@ export function SourceNavigator(props: SourceNavigatorProps) {
   return (
     <Show
       when={props.sources.length > 0}
-      fallback={<p class="ui-muted">{t("composition.studioEmptyData")}</p>}
     >
       <RowList
         label={t("composition.studioData")}

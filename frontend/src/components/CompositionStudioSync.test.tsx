@@ -59,6 +59,8 @@ vi.mock("@solidjs/router", () => ({
 }));
 
 vi.mock("~/lib/composition-api", () => ({
+  canCreateSavedSqlComposition: (entry: { kind: string }) =>
+    entry.kind === "user-query",
   compositionApi: {
     canonicalizeDocument: (...args: unknown[]) =>
       (canonicalizeMock as (...call: unknown[]) => unknown)(...args),
@@ -131,6 +133,15 @@ const seedDraft = (): CompositionDraft => {
   if (!placed.ok) throw new Error("expected parameter placement");
   return placed.draft;
 };
+
+const sourceOnlyDraft = (): CompositionDraft =>
+  addSavedSqlSource(createEmptyDraft("Studio"), {
+    entryId: "sql-1",
+    revisionId: "sql-rev-1",
+    name: "Monthly totals",
+    expectedResult: [{ name: "total", type: "float" as const }],
+    variables: {},
+  }).draft;
 
 const okPreview = (fingerprint: string) => ({
   ok: true,
@@ -489,11 +500,92 @@ describe("CompositionStudioSync", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(
-      screen.queryByRole("button", { name: "Add data" }),
-    ).not.toBeInTheDocument();
+      screen.getAllByRole("button", { name: "Add data" }),
+    ).toHaveLength(1);
     expect(
       screen.getAllByRole("button", { name: "Add block" }).length,
     ).toBeGreaterThan(0);
+    expect(
+      await screen.findByRole("button", { name: "Select Expenses" }),
+    ).toBeInTheDocument();
+  });
+
+  it("blocks a source-only draft before canonicalization", () => {
+    renderStudio(sourceOnlyDraft());
+
+    const saveButton = screen.getByRole("button", {
+      name: "Save, Add a block to the canvas to save.",
+    });
+    expect(saveButton).toBeDisabled();
+    expect(saveButton).toHaveAttribute(
+      "title",
+      "Save, Add a block to the canvas to save.",
+    );
+    fireEvent.click(saveButton);
+    expect(canonicalizeMock).not.toHaveBeenCalled();
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it("adds a Saved SQL source and its table directly from Design", async () => {
+    sqlListMock.mockResolvedValue([{
+      id: "sql-1",
+      name: "Monthly totals",
+      kind: "user-query",
+      sql: "SELECT SUM(amount) AS total FROM expenses",
+      variables: [],
+      created_at: "2026-10-01T00:00:00Z",
+      updated_at: "2026-10-02T00:00:00Z",
+      revision_id: "sql-rev-1",
+    }]);
+    const { container } = renderStudio(createEmptyDraft("Blank"));
+    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
+    expect(screen.getByRole("dialog", { name: "Add data" }))
+      .toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("tab", { name: "Saved SQL" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Monthly totals" }),
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "Select Monthly totals" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Add data" })).toBeNull();
+    expect(container.querySelectorAll(".designBlock")).toHaveLength(1);
+  });
+
+  it("puts current sources first and reuses one from Design", async () => {
+    renderStudio();
+    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
+
+    const currentSources = await screen.findByRole("heading", {
+      name: "In this composition",
+    });
+    const currentSourceGroup = currentSources.parentElement;
+    if (!currentSourceGroup) throw new Error("expected current source group");
+    fireEvent.click(
+      within(currentSourceGroup).getByRole("button", {
+        name: "Expenses, Forms",
+      }),
+    );
+    expect(screen.queryByRole("dialog", { name: "Add data" })).toBeNull();
+    expect(
+      await screen.findByRole("button", { name: "Select Expenses" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(modeRadios().data);
+    expect(screen.queryByRole("button", { name: "Add data" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Expenses" })).toHaveLength(1);
+  });
+
+  it("keeps one source action in Design and none in Data details", () => {
+    renderStudio();
+    expect(screen.getAllByRole("button", { name: "Add data" })).toHaveLength(1);
+
+    fireEvent.click(modeRadios().data);
+    expect(screen.queryByRole("button", { name: "Add data" })).toBeNull();
+
+    fireEvent.click(modeRadios().split);
+    expect(screen.getAllByRole("button", { name: "Add data" })).toHaveLength(1);
   });
 
   it("keeps a single Add-data control for a blank draft in Split", async () => {

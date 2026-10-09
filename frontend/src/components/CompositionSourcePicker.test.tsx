@@ -8,9 +8,11 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
+import type { DraftSource } from "~/lib/composition-draft";
 import { CompositionSourcePicker } from "./CompositionSourcePicker";
 
 const { formListMock, sqlListMock, sqlGetMock, sqlQueryMock } = vi.hoisted(
@@ -119,6 +121,170 @@ describe("CompositionSourcePicker", () => {
         query: { filters: [], sort: [], projection: { kind: "preview" } },
       },
     });
+  });
+
+  it("starts new Form sources with projectable fields selected", async () => {
+    const onSelect = vi.fn();
+    formListMock.mockResolvedValue([{
+      ...taskForm,
+      name: "Projectable tasks",
+      fields: {
+        title: {
+          id: 101,
+          type: "string",
+          required: false,
+          query_capability: {
+            field: { kind: "property", field_id: 101 },
+            name: "Title",
+            field_type: "string",
+            filterable: true,
+            sortable: true,
+            projectable: true,
+            supported_operators: ["equals"],
+          },
+        },
+        internalNote: {
+          id: 102,
+          type: "string",
+          required: false,
+          query_capability: {
+            field: { kind: "property", field_id: 102 },
+            name: "Internal note",
+            field_type: "string",
+            filterable: true,
+            sortable: true,
+            projectable: false,
+            supported_operators: ["equals"],
+          },
+        },
+      },
+    }]);
+    render(() => (
+      <CompositionSourcePicker
+        spaceId="space-1"
+        onSelect={onSelect}
+        onClose={() => {}}
+      />
+    ));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Projectable tasks" }),
+    );
+    expect(onSelect).toHaveBeenCalledWith({
+      kind: "entry_query",
+      seed: {
+        formId: FORM_ID,
+        name: "Projectable tasks",
+        fieldSchema: [
+          { field_id: 101, field_type: "string" },
+          { field_id: 102, field_type: "string" },
+        ],
+        query: {
+          filters: [],
+          sort: [],
+          projection: { kind: "fields", fields: [101] },
+        },
+      },
+    });
+  });
+
+  it("snapshots additional Form fields while limiting the initial projection", async () => {
+    const form = {
+      ...taskForm,
+      name: "Many fields",
+      fields: Object.fromEntries(
+        Array.from({ length: 65 }, (_, index) => {
+          const fieldId = index + 1;
+          return [`field-${fieldId}`, {
+            id: fieldId,
+            type: "string",
+            required: false,
+            query_capability: {
+              field: { kind: "property" as const, field_id: fieldId },
+              name: `Field ${fieldId}`,
+              field_type: "string",
+              filterable: true,
+              sortable: true,
+              projectable: true,
+              supported_operators: ["equals" as const],
+            },
+          }];
+        }),
+      ),
+    };
+    formListMock.mockResolvedValue([form]);
+    const onSelect = vi.fn();
+    render(() => (
+      <CompositionSourcePicker
+        spaceId="space-1"
+        onSelect={onSelect}
+        onClose={() => {}}
+      />
+    ));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Many fields" }));
+
+    const selected = onSelect.mock.calls[0]?.[0];
+    expect(selected).toMatchObject({
+      kind: "entry_query",
+      seed: {
+        query: {
+          projection: {
+            kind: "fields",
+            fields: Array.from({ length: 64 }, (_, index) => index + 1),
+          },
+        },
+      },
+    });
+    expect(selected.seed.fieldSchema).toHaveLength(65);
+    expect(selected.seed.fieldSchema.at(-1)).toEqual({
+      field_id: 65,
+      field_type: "string",
+    });
+  });
+
+  it("puts current Composition sources first and activates them by hidden draft identity", async () => {
+    const onSelectExisting = vi.fn();
+    const existingSources: DraftSource[] = [{
+      kind: "entry_query",
+      draftId: "source-draft-private",
+      formId: FORM_ID,
+      name: "Current tasks",
+      fieldSchema: [],
+      query: {
+        filters: [],
+        sort: [],
+        projection: { kind: "preview" },
+      },
+    }];
+    render(() => (
+      <CompositionSourcePicker
+        spaceId="space-1"
+        existingSources={existingSources}
+        onSelectExisting={onSelectExisting}
+        onSelect={() => {}}
+        onClose={() => {}}
+      />
+    ));
+
+    const currentSourcesHeading = await screen.findByRole("heading", {
+      name: "In this composition",
+    });
+    const currentSourceGroup = currentSourcesHeading.parentElement;
+    if (!currentSourceGroup) throw new Error("expected current source group");
+    const currentSource = within(currentSourceGroup).getByRole("button", {
+      name: "Current tasks, Forms",
+    });
+    const tabs = screen.getByRole("tablist");
+    expect(
+      currentSourcesHeading.compareDocumentPosition(tabs) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(currentSource).toHaveAttribute("title", "Current tasks");
+    expect(currentSource).toHaveAccessibleName("Current tasks, Forms");
+    expect(currentSource.outerHTML).not.toContain("source-draft-private");
+    fireEvent.click(currentSource);
+    expect(onSelectExisting).toHaveBeenCalledWith("source-draft-private");
   });
 
   it("keeps long source names available on picker rows without identifiers", async () => {

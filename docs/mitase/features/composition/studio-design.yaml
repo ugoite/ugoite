@@ -57,9 +57,20 @@ features:
       - kind: satisfies
         criterion: REQ-COMP-006#criterion.work-state-is-transient
       - kind: satisfies
+        criterion: REQ-FE-074#criterion.source-design-entry
+      - kind: satisfies
         criterion: REQ-FE-068#criterion.local-horizontal-overflow
       - kind: evidences
         anchor: REQ-FE-070#criterion.mobile-one-column
+    - id: browser-studio-source-picker
+      adapter: typescript
+      path: frontend/src/components/CompositionSourcePicker.tsx
+      selector:
+        kind: symbol
+        name: CompositionSourcePicker
+      claims:
+      - kind: satisfies
+        criterion: REQ-FE-074#criterion.source-design-entry
     - id: browser-inspector-sheet
       adapter: typescript
       path: frontend/src/components/CompositionInspectorSheet.tsx
@@ -559,10 +570,10 @@ features:
         anchor: REQ-COMP-002#criterion.optional-display-labels
     - id: browser-studio-source-only-blocked
       adapter: typescript
-      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+      path: frontend/src/components/CompositionStudioSync.test.tsx
       selector:
         kind: test
-        name: blocks a source-only save with an accessible reason and no save call
+        name: blocks a source-only draft before canonicalization
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.empty-layout-rejected
@@ -588,6 +599,64 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
+      - kind: evidences
+        anchor: REQ-FE-074#criterion.source-design-entry
+    - id: browser-studio-source-reuse
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: puts current sources first and reuses one from Design
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-074#criterion.source-design-entry
+    - id: browser-studio-source-saved-sql
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: adds a Saved SQL source and its table directly from Design
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-074#criterion.source-design-entry
+    - id: browser-studio-source-action-ownership
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioSync.test.tsx
+      selector:
+        kind: test
+        name: keeps one source action in Design and none in Data details
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-074#criterion.source-design-entry
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.no-persistent-explanatory-copy
+    - id: browser-studio-source-route-add
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+      selector:
+        kind: test
+        name: adds a source and its initial table together from Design
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-074#criterion.source-design-entry
+    - id: browser-studio-source-picker-current-sources
+      adapter: typescript
+      path: frontend/src/components/CompositionSourcePicker.test.tsx
+      selector:
+        kind: test
+        name: puts current Composition sources first and activates them by hidden draft identity
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-074#criterion.source-design-entry
+    - id: browser-studio-nonprojectable-fields
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: omits nonprojectable Form fields from the projection choices
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-074#criterion.source-design-entry
     - id: browser-studio-diagnostics-strip
       adapter: typescript
       path: frontend/src/components/CompositionStudioSync.test.tsx

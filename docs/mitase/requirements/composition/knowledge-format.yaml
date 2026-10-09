@@ -498,14 +498,14 @@ requirements:
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "blocks saves until the name, refs, and layout are all ready" } }
           - id: studio-source-only-route-case
             adapter: typescript
-            path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
-            selector: { kind: test, name: blocks a source-only save with an accessible reason and no save call }
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: blocks a source-only draft before canonicalization }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.empty-layout-rejected
                 covers:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-save-readiness
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "blocks a source-only save with an accessible reason and no save call" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: blocks a source-only draft before canonicalization } }
           - id: studio-canvas-operations-route-case
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"

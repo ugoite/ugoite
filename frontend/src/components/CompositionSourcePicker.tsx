@@ -5,20 +5,25 @@ import { RowList, RowListButton, RowListItem } from "~/components/RowList";
 import { FormRowLabel, SavedSqlRowLabel } from "~/components/SourceRowLabels";
 import {
   buildEntryQueryComposition,
+  buildEntryQueryCompositionFieldSchema,
   type EntryQueryCompositionFieldSchemaEntry,
+  MAX_COMPOSITION_FIELD_SCHEMA_ITEMS,
 } from "~/lib/entry-query-composition";
 import {
   canCreateSavedSqlComposition,
   type CompositionParameterType,
   type CompositionResultType,
 } from "~/lib/composition-api";
-import type {
-  DraftEntryQuerySeed,
-  DraftSavedSqlSeed,
+import {
+  type DraftEntryQuerySeed,
+  type DraftSavedSqlSeed,
+  type DraftSource,
+  MAX_ENTRY_PROJECTION_FIELDS,
 } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { normalizeSqlVariables } from "~/lib/sql";
+import { studioCapabilitiesFromForm } from "~/lib/entry-query-studio-capabilities";
 import { displaySqlName } from "~/lib/sql-metadata";
 import { formApi, sqlApi } from "~/lib/ugoite-client";
 import type { Form, SqlEntry } from "~/lib/types";
@@ -29,6 +34,9 @@ export type CompositionSourceSeed =
 
 interface CompositionSourcePickerProps {
   spaceId: string;
+  /** Sources already referenced by the current draft; shown first for reuse. */
+  existingSources?: readonly DraftSource[];
+  onSelectExisting?: (sourceDraftId: string) => void;
   onSelect: (seed: CompositionSourceSeed) => void;
   onClose: () => void;
 }
@@ -48,8 +56,9 @@ const isAbort = (error: unknown): boolean =>
  * reusing the list pages' shared row labels with full-row selection and
  * human names only. Internal registry forms stay hidden through the shared
  * `filterCreatableEntryForms` single source. Seeds reuse the existing
- * builders: EntryQuery seeds go through `buildEntryQueryComposition` with a
- * preview projection (fail-closed), Saved SQL seeds pin the exact revision
+ * builders: EntryQuery seeds go through `buildEntryQueryComposition` with
+ * projectable Form fields (Preview only when none are projectable), Saved SQL
+ * seeds pin the exact revision
  * with server-owned column types from a bounded probe page (json fallback,
  * unique columns required).
  */
@@ -168,13 +177,27 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
     setAdding(true);
     setAddError(null);
     try {
+      const projectionFields = [];
+      const selectedFields = new Set<number>();
+      for (const capability of studioCapabilitiesFromForm(form)) {
+        if (
+          !capability.projectable || capability.field.kind !== "property" ||
+          selectedFields.has(capability.field.field_id)
+        ) continue;
+        selectedFields.add(capability.field.field_id);
+        projectionFields.push(capability.field);
+        if (projectionFields.length >= MAX_ENTRY_PROJECTION_FIELDS) break;
+      }
+      const projection = projectionFields.length > 0
+        ? { kind: "fields" as const, fields: projectionFields }
+        : { kind: "preview" as const };
       const result = buildEntryQueryComposition({
         query: {
           scope: { kind: "form", form_id: form.id },
           filters: [],
           sort: [],
         },
-        projection: { kind: "preview" },
+        projection,
         form,
         knownForms: forms,
       });
@@ -182,19 +205,42 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
         setAddError(t(result.reason));
         return;
       }
-      const fieldSchema: EntryQueryCompositionFieldSchemaEntry[] =
-        result.fieldSchema;
+      const schemaEntries = buildEntryQueryCompositionFieldSchema(
+        form,
+        forms,
+      );
+      if (
+        projection.kind === "preview" &&
+        schemaEntries.length > MAX_COMPOSITION_FIELD_SCHEMA_ITEMS
+      ) {
+        setAddError("entryQueryToolSave.unsupportedQuery");
+        return;
+      }
+      const schemaById = new Map(
+        schemaEntries.map((entry) => [entry.field_id, entry]),
+      );
+      const selectedSchema = projectionFields.flatMap((field) => {
+        const entry = schemaById.get(field.field_id);
+        return entry ? [entry] : [];
+      });
+      const initialFieldIds = new Set(
+        selectedSchema.map((entry) => entry.field_id),
+      );
+      const fieldSchema: EntryQueryCompositionFieldSchemaEntry[] = [
+        ...selectedSchema,
+        ...schemaEntries.filter((entry) =>
+          !initialFieldIds.has(entry.field_id)
+        ),
+      ].slice(0, MAX_COMPOSITION_FIELD_SCHEMA_ITEMS).sort((left, right) =>
+        left.field_id - right.field_id
+      );
       props.onSelect({
         kind: "entry_query",
         seed: {
           formId: form.id,
           name: form.name,
           fieldSchema,
-          query: {
-            filters: [],
-            sort: [],
-            projection: { kind: "preview" },
-          },
+          query: result.source.query,
         },
       });
     } finally {
@@ -309,6 +355,39 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
           <Show when={ready()}>
             {(sources) => (
               <div>
+                <Show when={(props.existingSources?.length ?? 0) > 0}>
+                  <section class="ui-stack-sm">
+                    <h3 class="ui-label">
+                      {t("composition.studioCurrentSources")}
+                    </h3>
+                    <RowList label={t("composition.studioCurrentSources")}>
+                      <For each={props.existingSources ?? []}>
+                        {(source) => (
+                          <RowListItem
+                            main={
+                              <RowListButton
+                                ariaLabel={`${source.name}, ${
+                                  source.kind === "saved_sql"
+                                    ? t("spaceShell.title.savedSql")
+                                    : t("composition.studioForms")
+                                }`}
+                                title={source.name}
+                                primary={
+                                  <span class="rowListName">{source.name}</span>
+                                }
+                                secondary={source.kind === "saved_sql"
+                                  ? t("spaceShell.title.savedSql")
+                                  : t("composition.studioForms")}
+                                onActivate={() =>
+                                  props.onSelectExisting?.(source.draftId)}
+                              />
+                            }
+                          />
+                        )}
+                      </For>
+                    </RowList>
+                  </section>
+                </Show>
                 <div
                   class="tabs"
                   role="tablist"

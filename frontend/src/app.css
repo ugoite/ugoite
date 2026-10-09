@@ -5160,3 +5160,7 @@ a.tool {
     padding: 12px 8px;
   }
 }
+
+.studioDesignAddData {
+  margin-block-end: var(--ui-spacing-sm);
+}
