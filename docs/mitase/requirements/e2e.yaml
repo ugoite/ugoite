@@ -188,7 +188,7 @@ requirements:
         governed_by: [POL-006#rule.governance, POL-014#rule.governance]
       - id: preload-recovery
         kind: quality
-        statement: A failed dynamic route import retries through one same-URL reload, while repeated failures reach the app boundary without an automatic reload loop.
+        statement: A failed dynamic route import retries through one same-URL reload, repeated failures on the same route reach the app boundary without an automatic reload loop, and navigating to another route resets the retry state.
         governed_by: [POL-006#rule.governance, POL-014#rule.governance]
       - id: real-preload-recovery
         kind: quality
@@ -221,7 +221,9 @@ requirements:
                 runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' } }
               - kind: verifies
                 criterion: REQ-E2E-004#criterion.preload-recovery
-                covers: [FEAT-E2E-001#binding.frontend/target.route-module-recovery]
+                covers:
+                  - FEAT-E2E-001#binding.frontend/target.route-module-recovery
+                  - FEAT-E2E-001#binding.frontend/target.app-boundary-route-chunk-recovery
                 runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' } }
           - id: real-chunk-recovery-case
             adapter: typescript

@@ -1,4 +1,4 @@
-import { Router } from "@solidjs/router";
+import { Router, useLocation } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { type JSXElement, Suspense } from "solid-js";
 import { AppErrorBoundary } from "~/components/AppErrorBoundary";
@@ -17,20 +17,26 @@ const primeClientPreferences = () => {
   clientPreferencesPrimed = true;
 };
 
+function AppRoot(props: { children: JSXElement }) {
+  const location = useLocation();
+
+  return (
+    <>
+      <Nav />
+      <AuthGate>
+        <AppErrorBoundary pathname={location.pathname}>
+          {props.children}
+        </AppErrorBoundary>
+      </AuthGate>
+    </>
+  );
+}
+
 export default function App() {
   primeClientPreferences();
 
   return (
-    <Router
-      root={(props) => (
-        <>
-          <Nav />
-          <AuthGate>
-            <AppErrorBoundary>{props.children}</AppErrorBoundary>
-          </AuthGate>
-        </>
-      )}
-    >
+    <Router root={(props) => <AppRoot>{props.children}</AppRoot>}>
       <Suspense>
         <FileRoutes />
       </Suspense>

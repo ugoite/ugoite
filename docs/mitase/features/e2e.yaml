@@ -57,6 +57,8 @@ features:
             selector: { kind: file }
             claims:
               - kind: satisfies
+                criterion: REQ-E2E-004#criterion.preload-recovery
+              - kind: satisfies
                 criterion: REQ-E2E-004#criterion.real-preload-recovery
           - id: pwa-update-lifecycle
             adapter: typescript
