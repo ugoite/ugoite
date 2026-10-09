@@ -1389,6 +1389,51 @@ describe("CompositionDataWorkspace", () => {
     expect(edit).toHaveAttribute("href", "/spaces/space-1/sql/sql-1");
   });
 
+  it("keeps the saved sql revision in its closed disclosure", async () => {
+    const draft = twoSourceDraft();
+    const source = draft.sources[0];
+    if (!source) throw new Error("expected a source");
+    const harness = renderWorkspace(draft);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Monthly totals" }),
+    );
+    await screen.findByRole("heading", { name: "Monthly totals" });
+
+    const editor = harness.editor();
+    const disclosure = editor.querySelector("details");
+    expect(disclosure).toBeInTheDocument();
+    expect(disclosure).not.toHaveAttribute("open");
+    const summary = disclosure?.querySelector("summary");
+    expect(summary?.textContent).toBe("Monthly totals");
+
+    const primaryContent = editor.cloneNode(true) as HTMLElement;
+    primaryContent.querySelectorAll("details").forEach((details) =>
+      details.remove()
+    );
+    const primaryLabels = [
+      primaryContent.textContent ?? "",
+      ...Array.from(primaryContent.querySelectorAll("button, a, summary"))
+        .map((element) =>
+          [
+            element.textContent,
+            element.getAttribute("aria-label"),
+            element.getAttribute("title"),
+          ].join(" ")
+        ),
+    ].join(" ");
+    for (const identifier of [source.draftId, "sql-1", "sql-rev-1"]) {
+      expect(primaryLabels).not.toContain(identifier);
+    }
+
+    const revision = within(disclosure as HTMLDetailsElement).getByText(
+      "Revision sql-rev-1",
+      { exact: true },
+    );
+    fireEvent.click(summary as HTMLElement);
+    expect(disclosure).toHaveAttribute("open");
+    expect(revision).toBeInTheDocument();
+  });
+
   it("updates the composition source to the exact new revision", async () => {
     const harness = renderWorkspace(twoSourceDraft());
     sqlGetMock.mockResolvedValue({
