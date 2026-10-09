@@ -60,6 +60,15 @@ features:
                 criterion: REQ-E2E-004#criterion.preload-recovery
               - kind: satisfies
                 criterion: REQ-E2E-004#criterion.real-preload-recovery
+              - kind: satisfies
+                criterion: REQ-E2E-004#criterion.fallback-diagnostic-privacy
+          - id: client-error-diagnostic-helper
+            adapter: typescript
+            path: frontend/src/lib/client-error-diagnostics.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-E2E-004#criterion.fallback-diagnostic-privacy
           - id: pwa-update-lifecycle
             adapter: typescript
             path: frontend/app.config.ts

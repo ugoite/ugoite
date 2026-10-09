@@ -69,6 +69,8 @@ inventory:
         - frontend/src/lib/pwa-update-policy.test.ts
         - frontend/src/components/AppErrorBoundary.tsx
         - frontend/src/components/AppErrorBoundary.test.tsx
+        - frontend/src/lib/client-error-diagnostics.ts
+        - frontend/src/lib/client-error-diagnostics.test.ts
         - frontend/src/lib/form-api.ts
         - frontend/src/components/EntryBrowser.tsx
         - frontend/src/components/EntryBrowser.test.tsx

@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import {
   recoverFromVitePreloadError,
@@ -17,6 +17,12 @@ describe("AppErrorBoundary", () => {
   beforeEach(() => {
     setLocale("en");
     window.sessionStorage.clear();
+    window.history.replaceState(null, "", "/");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.history.replaceState(null, "", "/");
   });
 
   it("replaces uncaught route errors with a recoverable page", () => {
@@ -35,6 +41,55 @@ describe("AppErrorBoundary", () => {
       .toHaveAttribute("href", "/spaces");
     expect(screen.getByRole("button", { name: "Try again" }))
       .toBeInTheDocument();
+  });
+
+  it("logs one privacy-safe local diagnostic after the fallback persists", async () => {
+    const error = new TypeError(
+      "Private Form title 4546c198-284b-4f53-9a11-c51edc899004 access_token=secret",
+    );
+    error.stack = [
+      error.message,
+      "    at load (https://tenant.example/spaces/4546c198-284b-4f53-9a11-c51edc899004/forms/private-entry-name.js?access_token=secret:48:12)",
+    ].join("\n");
+    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    window.history.replaceState(
+      null,
+      "",
+      "/spaces/4546c198-284b-4f53-9a11-c51edc899004/forms/Private%20Form%20title/entries?access_token=secret",
+    );
+
+    function BrokenPrivatePage() {
+      throw error;
+    }
+
+    render(() => (
+      <AppErrorBoundary>
+        <BrokenPrivatePage />
+      </AppErrorBoundary>
+    ));
+
+    await waitFor(() => expect(report).toHaveBeenCalledTimes(1));
+
+    expect(report).toHaveBeenCalledWith(
+      "[ugoite:app-error]",
+      expect.objectContaining({
+        category: "app-error-boundary",
+        errorType: "TypeError",
+        routeFamily: "/spaces/:space/forms",
+        stackLocations: ["javascript:48:12"],
+      }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This page could not be displayed",
+    );
+    expect(JSON.stringify(report.mock.calls)).not.toContain(
+      "Private Form title",
+    );
+    expect(JSON.stringify(report.mock.calls)).not.toContain(
+      "4546c198-284b-4f53-9a11-c51edc899004",
+    );
+    expect(JSON.stringify(report.mock.calls)).not.toContain("access_token");
+    expect(JSON.stringify(report.mock.calls)).not.toContain("tenant.example");
   });
 
   it("resets the dynamic-import retry guard when the route changes", async () => {

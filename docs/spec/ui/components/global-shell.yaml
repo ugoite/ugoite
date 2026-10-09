@@ -4,6 +4,21 @@ component_group:
   id: global-shell
   title: Global Shell
 components:
+  - id: global-page-error
+    type: recoverable-page-error
+    implementation: frontend/src/components/AppErrorBoundary.tsx
+    tests: frontend/src/components/AppErrorBoundary.test.tsx
+    presentation:
+      role: alert
+      actions: [retry-current-page, back-to-spaces]
+      exception-details: never-rendered
+    diagnostics:
+      timing: after-route-chunk-recovery-check-declines-and-fallback-renders
+      destination: local-browser-console-only
+      fields: [fixed-category, allowlisted-error-type, stable-fingerprint, allowlisted-route-family, source-kind-and-position]
+      excludes: [raw-message, stack-text, file-or-route-paths, space-or-entry-identifiers, knowledge-content, credentials, origin, query]
+      network-transmission: none
+      failure-effect: none-on-fallback-or-recovery-actions
   - id: global-account-entry
     type: account-entry
     implementation: frontend/src/components/GlobalShell.tsx
