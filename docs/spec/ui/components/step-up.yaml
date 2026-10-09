@@ -40,7 +40,7 @@ components:
         recovery: restart-cli-operation
       forbidden:
         message: localized-summary
-        recovery: restart-cli-operation
+        recovery: message-specific
     identifiers:
       challenge: query-only
       api_error_detail: hidden

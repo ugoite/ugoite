@@ -1002,6 +1002,20 @@ describe("UI spec YAML registry", () => {
         ceremony: "fresh-passkey",
         disabled_while_busy: true,
       },
+      states: {
+        expired: {
+          message: "stepUpPage.expired",
+          recovery: "restart-cli-operation",
+        },
+        used_or_unknown: {
+          message: "stepUpPage.unavailable",
+          recovery: "restart-cli-operation",
+        },
+        forbidden: {
+          message: "localized-summary",
+          recovery: "message-specific",
+        },
+      },
       identifiers: {
         challenge: "query-only",
         api_error_detail: "hidden",
