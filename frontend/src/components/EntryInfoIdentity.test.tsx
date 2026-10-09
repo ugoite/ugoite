@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, within } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { entryApi } from "~/lib/ugoite-client";
@@ -47,7 +53,9 @@ describe("Entry Info identity disclosure", () => {
     });
   });
 
-  it("REQ-UX-FORMTABLE-001: keeps Entry IDs in advanced Info details", async () => {
+  it("REQ-UX-FORMTABLE-001: keeps Entry IDs in advanced Info details and copies the exact ID", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
     render(() => <SpaceEntryInfoRoute />);
 
     const advancedDetails = (await screen.findByText("Advanced details"))
@@ -60,8 +68,11 @@ describe("Entry Info identity disclosure", () => {
     expect(entryId).not.toBeVisible();
     fireEvent.click(within(advancedDetails).getByText("Advanced details"));
     expect(entryId).toBeVisible();
-    expect(
-      within(advancedDetails).getByRole("button", { name: "Copy entry-1" }),
-    ).toBeVisible();
+    const copyButton = within(advancedDetails).getByRole("button", {
+      name: "Copy entry-1",
+    });
+    expect(copyButton).toBeVisible();
+    fireEvent.click(copyButton);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("entry-1"));
   });
 });
