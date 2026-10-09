@@ -1,0 +1,68 @@
+version: "0.1"
+updated: "2026-10-09"
+component_group:
+  id: login
+  title: Login
+  routes: [/login]
+  notes: GlobalShell owns site navigation. This route owns one authentication task; Space selection follows authentication. Normal rendering has no explanatory copy, and provider identifiers stay out of visible and accessible labels.
+components:
+  - id: login-task
+    type: single-task-surface
+    implementation: frontend/src/routes/login.tsx
+    tests: frontend/src/routes/login.test.tsx
+    heading:
+      text: Ugoite
+      logo_alt: ""
+      visible_headings: 1
+    action_order: [passkey, configured-oidc, account-recovery]
+    persistent_explanatory_copy: none
+    primary_action:
+      method: passkey
+      type: button
+      label: loginPage.signInWithPasskey
+      retry_label: loginPage.tryAgain
+      configuration_retry_label: loginPage.retry
+      configuration_failure_action: reload-authentication-configuration
+      busy_state: announced-and-duplicate-action-blocked
+      cancellation: return-to-unauthenticated-without-error
+    oidc_actions:
+      visible_when: provider-list-is-nonempty
+      position: after-primary-action
+      label: loginPage.continueWithProvider
+      issuer_label: localized-host-plus-nonroot-path
+      accessible_name: same-as-visible-label
+      provider_id_in_visible_label: false
+      provider_id_in_accessible_name: false
+      failure_retry: same-provider-action
+    recovery_link:
+      label: loginPage.lostPasskey
+      destination: /recover/account
+      preserves_safe_next_path: true
+    states:
+      authentication_loading:
+        role: status
+        aria_live: polite
+        content: loginPage.loading
+      provider_loading:
+        role: status
+        aria_live: polite
+        content: loginPage.loadingOptions
+      authentication_in_progress:
+        role: status
+        aria_live: polite
+        content: loginPage.authenticating
+      configuration_failure:
+        role: alert
+        content: loginPage.optionsUnavailable
+        technical_details: closed-disclosure
+        retry: primary-action-reloads-authentication-configuration
+      provider_loading_failure:
+        role: alert
+        content: loginPage.providersUnavailable
+        technical_details: closed-disclosure
+        retry: reload-provider-list
+      authentication_failure:
+        role: alert
+        content: loginPage.authenticationFailed
+        technical_details: closed-disclosure
+        retry: failed-authentication-method

@@ -410,6 +410,7 @@ inventory:
         - docs/spec/ui/components/space-settings.yaml
         - docs/spec/ui/components/invitation-join.yaml
         - docs/spec/ui/components/device-approval.yaml
+        - docs/spec/ui/components/login.yaml
         - docs/spec/ui/components/account-security.yaml
         - docs/spec/ui/ux-route-inventory.md
         - .github/workflows/ci.yml

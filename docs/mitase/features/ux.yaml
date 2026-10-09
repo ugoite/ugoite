@@ -606,6 +606,15 @@ features:
                 criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
               - kind: satisfies
                 criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
+          - id: login-surface-contract
+            adapter: declared
+            path: docs/spec/ui/components/login.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-NAV-001#criterion.no-duplicate-context
+              - kind: satisfies
+                criterion: REQ-UX-RESP-001#criterion.a11y-names-focus
           - id: setup-surface
             adapter: typescript
             path: frontend/src/routes/setup.tsx

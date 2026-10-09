@@ -783,6 +783,73 @@ describe("UI spec YAML registry", () => {
     });
   });
 
+  it("REQ-FE-040: declares the Login task and authentication states", () => {
+    const loginPath = path.join(
+      componentsDir,
+      "login.yaml",
+    );
+    const login = parse(readFileSync(loginPath, "utf8")) as {
+      component_group?: Record<string, unknown>;
+      components?: Array<Record<string, unknown>>;
+    };
+    const task = login.components?.find(({ id }) => id === "login-task");
+
+    expect(login.component_group).toMatchObject({
+      id: "login",
+      routes: ["/login"],
+    });
+    expect(task).toMatchObject({
+      type: "single-task-surface",
+      implementation: "frontend/src/routes/login.tsx",
+      tests: "frontend/src/routes/login.test.tsx",
+      heading: {
+        text: "Ugoite",
+        logo_alt: "",
+        visible_headings: 1,
+      },
+      action_order: ["passkey", "configured-oidc", "account-recovery"],
+      persistent_explanatory_copy: "none",
+      primary_action: {
+        method: "passkey",
+        label: "loginPage.signInWithPasskey",
+        configuration_failure_action: "reload-authentication-configuration",
+        cancellation: "return-to-unauthenticated-without-error",
+      },
+      oidc_actions: {
+        visible_when: "provider-list-is-nonempty",
+        issuer_label: "localized-host-plus-nonroot-path",
+        accessible_name: "same-as-visible-label",
+        provider_id_in_visible_label: false,
+        provider_id_in_accessible_name: false,
+      },
+      recovery_link: {
+        label: "loginPage.lostPasskey",
+        destination: "/recover/account",
+        preserves_safe_next_path: true,
+      },
+      states: {
+        authentication_loading: {
+          role: "status",
+          aria_live: "polite",
+        },
+        configuration_failure: {
+          role: "alert",
+          technical_details: "closed-disclosure",
+        },
+        provider_loading_failure: {
+          role: "alert",
+          technical_details: "closed-disclosure",
+          retry: "reload-provider-list",
+        },
+        authentication_failure: {
+          role: "alert",
+          technical_details: "closed-disclosure",
+          retry: "failed-authentication-method",
+        },
+      },
+    });
+  });
+
   it("REQ-FE-067: keeps one ordinary Form and Entry workspace", () => {
     const pages = loadPages();
     const forms = pages.find(({ spec }) => spec.page?.id === "space-form-grid");
