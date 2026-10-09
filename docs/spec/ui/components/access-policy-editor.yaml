@@ -1,0 +1,50 @@
+version: "0.1"
+updated: "2026-10-09"
+component_group:
+  id: access-policy-editor
+  title: Resource Access Editor
+  consumers:
+    entry_info: /spaces/{space_id}/entries/{entry_id}/info#entry-info-sharing
+components:
+  - id: resource-access-editor
+    type: resource-access-policy-editor
+    implementation: frontend/src/components/AccessPolicyEditor.tsx
+    tests: frontend/src/components/AccessPolicyEditor.test.tsx
+    inheritance:
+      control: inherit-space-role
+      default: enabled
+    principal_selection:
+      population: active-space-members
+      option_label: display-name-or-localized-unknown-member
+      option_value: exact-principal-id
+      option_identifiers: hidden-from-visible-and-accessible-labels
+    grants:
+      primary_label: display-name-or-localized-unknown-member
+      actions: [read, update, delete, share]
+      identifier_visibility:
+        exact_principal_id: collapsed-technical-details-only
+    actions: [add-grant, remove-grant, save-policy]
+    states:
+      policy_loading: controls-disabled
+      policy_load_error: localized-error-with-retry-and-controls-disabled
+      member_directory_error:
+        existing_grants: localized-unknown-member
+        add_grant: disabled
+        recovery: localized-error-with-retry
+      editable:
+        policy_controls: [inherit-space-role, remove-grant, save-policy]
+        member_controls_when_directory_ready: [select-member, add-grant]
+      save_feedback: localized-success-or-error
+    tests:
+      - path: frontend/src/components/AccessPolicyEditor.test.tsx
+        selector: does not allow saving an empty policy after loading failed
+      - path: frontend/src/components/AccessPolicyEditor.test.tsx
+        selector: treats a successful empty policy as editable
+      - path: frontend/src/components/AccessPolicyEditor.test.tsx
+        selector: resets policy state when the reactive resource changes
+      - path: frontend/src/components/AccessPolicyEditor.test.tsx
+        selector: "REQ-UX-ACCESS-001: uses member names in grants and keeps unresolved IDs in collapsed details"
+      - path: frontend/src/components/AccessPolicyEditor.test.tsx
+        selector: "REQ-UX-ACCESS-001: selects a member by name and preserves its ID in the grant payload"
+      - path: frontend/src/components/AccessPolicyEditor.test.tsx
+        selector: "REQ-UX-ACCESS-001: shows a neutral label and blocks member selection when the directory fails"
