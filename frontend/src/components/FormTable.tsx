@@ -50,6 +50,12 @@ interface FormTableProps {
 
 type SortDirection = "asc" | "desc" | null;
 type FormTableSystemColumn = "created_at" | "updated_at";
+interface QueryFieldOption {
+  key: string;
+  field: EntryFieldRef;
+  label: string;
+  capability: EntryFieldCapability;
+}
 
 function SortIcon(props: { active: boolean; direction: SortDirection }) {
   /* v8 ignore start */
@@ -298,10 +304,10 @@ export function FormTable(props: FormTableProps) {
     field === "created_at" ? t("formTable.created") : t("formTable.updated");
   const formFieldLabel = (field: string) =>
     props.entryForm.fields?.[field]?.label?.trim() || field;
-  const columnLabel = (field: string) =>
-    field === "created_at" || field === "updated_at"
-      ? systemColumnLabel(field)
-      : formFieldLabel(field);
+  const queryFieldKey = (field: EntryFieldRef) =>
+    field.kind === "property"
+      ? "property:" + field.field_id
+      : "system:" + field.kind;
   const systemColumnOptions = (): EntryTableColumnOption[] =>
     (["created_at", "updated_at"] as const).map((field) => ({
       key: field,
@@ -366,49 +372,57 @@ export function FormTable(props: FormTableProps) {
   );
   const processedEntries = entries;
 
-  const capabilityForField = (
-    field: string,
-  ): EntryFieldCapability | undefined => {
-    if (field === "updated_at") {
-      return capabilities().fields.find((candidate) =>
-        candidate.field.kind === "updated_at"
-      );
-    }
-    return capabilities().fields.find((candidate) =>
-      candidate.name === field && candidate.field.kind === "property"
+  const capabilityForRef = (
+    field: EntryFieldRef,
+  ): EntryFieldCapability | undefined =>
+    capabilities().fields.find((candidate) =>
+      sameField(candidate.field, field)
     );
+
+  const capabilityForFormField = (
+    field: string,
+  ): EntryFieldCapability | undefined =>
+    capabilities().fields.find((candidate) =>
+      candidate.field.kind === "property" && candidate.name === field
+    );
+
+  const queryKeyForFormField = (field: string) => {
+    const capability = capabilityForFormField(field);
+    return capability ? queryFieldKey(capability.field) : "field:" + field;
   };
 
-  const fieldRefForName = (field: string): EntryFieldRef | undefined =>
-    capabilityForField(field)?.field;
-
-  const fieldNameForRef = (field: EntryFieldRef): string | null => {
-    if (field.kind === "created_at" || field.kind === "updated_at") {
-      return field.kind;
-    }
-    if (field.kind !== "property") return null;
-    return capabilities().fields.find((candidate) =>
-      sameField(candidate.field, field)
-    )?.name ?? null;
+  const queryFieldOptions = (
+    canUse: (capability: EntryFieldCapability) => boolean,
+  ): QueryFieldOption[] => {
+    const all = capabilities().fields;
+    const formFields = all.filter((capability) =>
+      capability.field.kind === "property" && canUse(capability)
+    );
+    const updatedAt = all.find((capability) =>
+      capability.field.kind === "updated_at" && canUse(capability)
+    );
+    return [...formFields, ...(updatedAt ? [updatedAt] : [])].map((
+      capability,
+    ) => ({
+      key: queryFieldKey(capability.field),
+      field: capability.field,
+      label: capability.field.kind === "property"
+        ? formFieldLabel(capability.name)
+        : systemColumnLabel("updated_at"),
+      capability,
+    }));
   };
 
   const sortableFields = createMemo(() =>
-    fields().filter((field) => capabilityForField(field)?.sortable)
-      .concat(
-        capabilityForField("updated_at")?.sortable ? ["updated_at"] : [],
-      )
+    queryFieldOptions((capability) => capability.sortable)
   );
   const filterableFields = createMemo(() =>
-    fields().filter((field) => capabilityForField(field)?.filterable)
-      .concat(
-        capabilityForField("updated_at")?.filterable ? ["updated_at"] : [],
-      )
+    queryFieldOptions((capability) => capability.filterable)
   );
-  const sortField = createMemo<string | null>(() =>
-    controller.query().sort[0]
-      ? fieldNameForRef(controller.query().sort[0].field)
-      : null
-  );
+  const sortField = createMemo<string | null>(() => {
+    const field = controller.query().sort[0]?.field;
+    return field ? queryFieldKey(field) : null;
+  });
   const sortDirection = createMemo<SortDirection>(() =>
     controller.query().sort[0]?.direction ?? null
   );
@@ -445,9 +459,10 @@ export function FormTable(props: FormTableProps) {
   const filtersForValues = (
     values: Record<string, string>,
   ): EntryFilter[] =>
-    Object.entries(values).flatMap(([field, value]) => {
+    Object.entries(values).flatMap(([fieldKey, value]) => {
       if (!value.trim()) return [];
-      const capability = capabilityForField(field);
+      const capability = filterableFields().find(({ key }) => key === fieldKey)
+        ?.capability;
       if (!capability || capability.supported_operators.length === 0) return [];
       const operator = capability.supported_operators.includes("contains")
         ? "contains"
@@ -459,10 +474,8 @@ export function FormTable(props: FormTableProps) {
       }];
     });
 
-  const handleHeaderClick = (field: string) => {
-    if (!capabilityForField(field)?.sortable) return;
-    const fieldRef = fieldRefForName(field);
-    if (!fieldRef) return;
+  const handleHeaderClick = (fieldRef: EntryFieldRef) => {
+    if (!capabilityForRef(fieldRef)?.sortable) return;
     const current = controller.query().sort;
     const index = current.findIndex((sort) => sameField(sort.field, fieldRef));
     if (index < 0) {
@@ -481,7 +494,9 @@ export function FormTable(props: FormTableProps) {
   };
 
   const handleSortFieldChange = (value: string) => {
-    const fieldRef = value ? fieldRefForName(value) : undefined;
+    const fieldRef = value
+      ? sortableFields().find(({ key }) => key === value)?.field
+      : undefined;
     const current = controller.query().sort;
     if (!value) {
       controller.setSort(current.slice(1));
@@ -958,7 +973,7 @@ export function FormTable(props: FormTableProps) {
                         <option value="">{t("formTable.none")}</option>
                         <For each={sortableFields()}>
                           {(field) => (
-                            <option value={field}>{columnLabel(field)}</option>
+                            <option value={field.key}>{field.label}</option>
                           )}
                         </For>
                       </select>
@@ -1020,19 +1035,15 @@ export function FormTable(props: FormTableProps) {
             <For each={filterableFields()}>
               {(field) => (
                 <label class="ui-table-mobile-filter">
-                  <span>
-                    {columnLabel(field)}
-                  </span>
+                  <span>{field.label}</span>
                   <input
                     type="text"
                     class="ui-input ui-input-sm"
                     placeholder={t("formTable.columnFilter")}
-                    aria-label={`${columnLabel(field)} ${
-                      t("formTable.columnFilter")
-                    }`}
-                    value={columnFilters()[field] || ""}
+                    aria-label={`${field.label} ${t("formTable.columnFilter")}`}
+                    value={columnFilters()[field.key] || ""}
                     onInput={(event) =>
-                      updateColumnFilter(field, event.currentTarget.value)}
+                      updateColumnFilter(field.key, event.currentTarget.value)}
                   />
                 </label>
               )}
@@ -1064,17 +1075,20 @@ export function FormTable(props: FormTableProps) {
                         <button
                           type="button"
                           class="ui-table-header-button select-none"
-                          onClick={() => handleHeaderClick(field)}
+                          onClick={() => {
+                            const capability = capabilityForFormField(field);
+                            if (capability) handleHeaderClick(capability.field);
+                          }}
                         >
                           {formFieldLabel(field)}
                           <SortIcon
-                            active={sortField() === field}
+                            active={sortField() === queryKeyForFormField(field)}
                             direction={sortDirection()}
                           />
                         </button>
                         <Show
                           when={showColumnFilters() &&
-                            capabilityForField(field)?.filterable}
+                            capabilityForFormField(field)?.filterable}
                         >
                           <input
                             type="text"
@@ -1083,9 +1097,15 @@ export function FormTable(props: FormTableProps) {
                             aria-label={`${formFieldLabel(field)} ${
                               t("formTable.columnFilter")
                             }`}
-                            value={columnFilters()[field] || ""}
+                            value={columnFilters()[
+                              queryKeyForFormField(field)
+                            ] ||
+                              ""}
                             onInput={(e) =>
-                              updateColumnFilter(field, e.currentTarget.value)}
+                              updateColumnFilter(
+                                queryKeyForFormField(field),
+                                e.currentTarget.value,
+                              )}
                             onClick={(e) => e.stopPropagation()}
                           />
                         </Show>
@@ -1108,11 +1128,12 @@ export function FormTable(props: FormTableProps) {
                           <button
                             type="button"
                             class="ui-table-header-button select-none"
-                            onClick={() => handleHeaderClick(field)}
+                            onClick={() => handleHeaderClick({ kind: field })}
                           >
                             {systemColumnLabel(field)}
                             <SortIcon
-                              active={sortField() === field}
+                              active={sortField() ===
+                                queryFieldKey({ kind: field })}
                               direction={sortDirection()}
                             />
                           </button>
@@ -1127,10 +1148,12 @@ export function FormTable(props: FormTableProps) {
                             aria-label={`${systemColumnLabel(field)} ${
                               t("formTable.columnFilter")
                             }`}
-                            value={columnFilters()[field] || ""}
+                            value={columnFilters()[
+                              queryFieldKey({ kind: field })
+                            ] || ""}
                             onInput={(event) =>
                               updateColumnFilter(
-                                field,
+                                queryFieldKey({ kind: field }),
                                 event.currentTarget.value,
                               )}
                             onClick={(event) => event.stopPropagation()}
@@ -1222,6 +1245,7 @@ export function FormTable(props: FormTableProps) {
                                 e.key === "Enter" && e.currentTarget.blur()}
                               class="ui-table-cell-input"
                               autofocus
+                              aria-label={formFieldLabel(field)}
                               onClick={(e) => e.stopPropagation()}
                             />
                           </Show>

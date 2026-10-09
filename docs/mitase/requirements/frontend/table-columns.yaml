@@ -64,3 +64,12 @@ requirements:
                 criterion: REQ-FE-075#criterion.form-table-columns
                 covers: [FEAT-FE-005#binding.frontend/target.form-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: traps focus in the Columns dialog and returns it to the trigger } }
+          - id: form-field-labels-in-query-controls
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: uses the Form label for a field named created_at in query controls }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-075#criterion.form-table-columns
+                covers: [FEAT-FE-005#binding.frontend/target.form-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: uses the Form label for a field named created_at in query controls } }
