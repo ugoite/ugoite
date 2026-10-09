@@ -969,6 +969,65 @@ describe("EntryBrowser", () => {
       .not.toBeInTheDocument();
   });
 
+  it("keeps the Entry list renderable when a timestamp is outside the JavaScript date range", async () => {
+    queryMock.mockResolvedValue({
+      rows: [
+        {
+          id: "entry-out-of-range-date",
+          form_id: "form-1",
+          revision_id: "revision-1",
+          created_at_micros: 9_000_000_000_000_000_000,
+          updated_at_micros: UPDATED_MICROS,
+          preview: "Row with an unrenderable timestamp",
+        },
+        {
+          id: "entry-negative-out-of-range-date",
+          form_id: "form-1",
+          revision_id: "revision-1",
+          created_at_micros: -9_000_000_000_000_000_000,
+          updated_at_micros: UPDATED_MICROS,
+          preview: "Row with a negative unrenderable timestamp",
+        },
+        {
+          id: "entry-valid-date",
+          form_id: "form-1",
+          revision_id: "revision-1",
+          created_at_micros: CREATED_MICROS,
+          updated_at_micros: UPDATED_MICROS,
+          preview: "Row with valid timestamps",
+        },
+      ],
+      has_more: false,
+    });
+    const capabilities = systemEntryCapabilities({
+      kind: "form",
+      form_id: "form-1",
+    });
+    const controller = createEntryQueryController(
+      () => "space-1",
+      { scope: capabilities.scope, filters: [], sort: [] },
+      { kind: "preview" },
+      50,
+      queryMock,
+    );
+    await controller.load();
+
+    render(() => (
+      <EntryBrowser controller={controller} capabilities={capabilities} />
+    ));
+
+    const rows = screen.getAllByRole("row");
+    expect(rows).toHaveLength(4);
+    expect(within(rows[1]).getAllByRole("cell")[1]).toHaveTextContent("—");
+    expect(within(rows[1]).getAllByRole("cell")[2]).toHaveTextContent(
+      expectedDateLabel(UPDATED_MICROS),
+    );
+    expect(within(rows[2]).getAllByRole("cell")[1]).toHaveTextContent("—");
+    expect(within(rows[3]).getAllByRole("cell")[1]).toHaveTextContent(
+      expectedDateLabel(CREATED_MICROS),
+    );
+  });
+
   it("validates numeric filter input before applying its typed value", () => {
     queryMock.mockResolvedValue({ rows: [], has_more: false });
     const base = systemEntryCapabilities({ kind: "form", form_id: "form-1" });

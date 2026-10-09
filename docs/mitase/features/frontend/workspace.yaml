@@ -120,6 +120,8 @@ features:
                 criterion: REQ-FE-067#criterion.mobile-table-overflow-and-action
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.local-horizontal-overflow
+              - kind: satisfies
+                criterion: REQ-FE-067#criterion.timestamp-range
       - id: form-entry-browser-specification
         role: contract-source
         facet: frontend
@@ -136,6 +138,8 @@ features:
                 anchor: REQ-FE-067#criterion.form-switch-results
               - kind: evidences
                 anchor: REQ-FE-067#criterion.mobile-table-overflow-and-action
+              - kind: evidences
+                anchor: REQ-FE-067#criterion.timestamp-range
               - kind: evidences
                 anchor: REQ-FE-065#criterion.confirm-action
   - id: FEAT-FE-003
