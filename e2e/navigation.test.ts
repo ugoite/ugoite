@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { join } from "node:path";
 import {
@@ -10,7 +9,7 @@ import {
 } from "./lib/client.ts";
 
 const maxVisitedPages = 16;
-const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
+const repositoryRoot = join(import.meta.dirname!, "..");
 const staticPublicDirectory = join(repositoryRoot, "frontend/.output/public");
 
 // Canonical Mitase evidence for dynamic route traversal and browser/runtime
