@@ -447,6 +447,11 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/smoke-and-asset-owned-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/smoke-and-asset-owned-results" }
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:smoke-and-asset-owned"
 
+[tasks."test:e2e:navigation"]
+description = "Run the merge-gated dynamic route and preload recovery E2E"
+env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/navigation-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/navigation-results" }
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:navigation"
+
 [tasks."test:e2e:mobile-ui"]
 description = "Run the merge-gated mobile browser visual regression suite"
 env = { PLAYWRIGHT_JUNIT_OUTPUT_FILE = "test-results/mobile-ui-junit.xml", PLAYWRIGHT_OUTPUT_DIR = "test-results/mobile-ui-results" }
@@ -606,6 +611,7 @@ description = "Run merge-gated docsite and browser E2E checks sequentially"
 run = [
   { task = "test:docsite:e2e:navigation" },
   { task = "test:e2e:smoke-and-asset-owned" },
+  { task = "test:e2e:navigation" },
   { task = "test:e2e:mobile-ui" },
   { task = "test:e2e:owner-recovery" },
   { task = "test:e2e:portable-space", env = { UGOITE_PORTABLE_CLI_BINARY = "target/rust/release/ugoite" } },
@@ -621,9 +627,10 @@ run = [
 ]
 
 [tasks."ci:lane:e2e-smoke-mobile"]
-description = "Run the smoke/Asset and mobile E2E group against the loaded CI image"
+description = "Run the smoke/Asset, navigation recovery, and mobile E2E group against the loaded CI image"
 run = [
   { task = "test:e2e:smoke-and-asset-owned" },
+  { task = "test:e2e:navigation" },
   { task = "test:e2e:mobile-ui" },
 ]
 

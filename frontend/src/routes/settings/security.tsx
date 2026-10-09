@@ -286,31 +286,44 @@ export function CredentialSettings() {
             {(value) => (
               <For each={value().passkeys}>
                 {(credential, index) => (
-                  <div class="flex items-center justify-between">
-                    <span>
-                      {t("securityPage.passkeyNumberedLabel", {
-                        number: index() + 1,
-                      })} · {t("securityPage.lastUsed")}{" "}
-                      {credential.last_used_at
-                        ? formatDateTimeLabel(credential.last_used_at)
-                        : t("securityPage.never")}
-                    </span>
-                    <button
-                      type="button"
-                      class="ui-button ui-button-secondary"
-                      aria-label={t("securityPage.revokePasskeyNumbered", {
-                        number: index() + 1,
-                      })}
-                      onClick={() =>
-                        void runAction(async () => {
-                          await authApi.revokePasskey(
-                            String(credential.credential_id),
-                          );
-                          await refetch();
+                  <div class="ui-stack-sm">
+                    <div class="flex items-center justify-between">
+                      <span>
+                        {t("securityPage.passkeyNumberedLabel", {
+                          number: index() + 1,
+                        })} · {t("securityPage.lastUsed")}{" "}
+                        {credential.last_used_at
+                          ? formatDateTimeLabel(credential.last_used_at)
+                          : t("securityPage.never")}
+                      </span>
+                      <button
+                        type="button"
+                        class="ui-button ui-button-secondary"
+                        aria-label={t("securityPage.revokePasskeyAction", {
+                          number: index() + 1,
                         })}
-                    >
-                      {t("settings.revoke")}
-                    </button>
+                        onClick={() =>
+                          void runAction(async () => {
+                            await authApi.revokePasskey(
+                              String(credential.credential_id),
+                            );
+                            await refetch();
+                          })}
+                      >
+                        {t("settings.revoke")}
+                      </button>
+                    </div>
+                    <details class="settingsAdvanced">
+                      <summary>{t("securityPage.technicalDetails")}</summary>
+                      <dl class="ui-entry-detail-list">
+                        <div>
+                          <dt>{t("securityPage.credentialId")}</dt>
+                          <dd class="font-mono break-all">
+                            {String(credential.credential_id)}
+                          </dd>
+                        </div>
+                      </dl>
+                    </details>
                   </div>
                 )}
               </For>
@@ -329,35 +342,48 @@ export function CredentialSettings() {
             {(value) => (
               <For each={value().sessions}>
                 {(session, index) => (
-                  <div class="flex items-center justify-between">
-                    <span>
-                      {t("securityPage.browserSessionNumberedLabel", {
-                        number: index() + 1,
-                      })} · {t("securityPage.lastSeen")} {session.last_seen_at
-                        ? formatDateTimeLabel(session.last_seen_at)
-                        : t("securityPage.never")}
-                      {session.revoked_at
-                        ? ` · ${t("securityPage.revoked")}`
-                        : ""}
-                    </span>
-                    <Show when={!session.revoked_at}>
-                      <button
-                        type="button"
-                        class="ui-button ui-button-secondary"
-                        aria-label={t("securityPage.revokeSessionNumbered", {
+                  <div class="ui-stack-sm">
+                    <div class="flex items-center justify-between">
+                      <span>
+                        {t("securityPage.browserSessionNumberedLabel", {
                           number: index() + 1,
-                        })}
-                        onClick={() =>
-                          void runAction(async () => {
-                            await authApi.revokeSession(
-                              String(session.session_id),
-                            );
-                            await refetch();
+                        })} · {t("securityPage.lastSeen")} {session.last_seen_at
+                          ? formatDateTimeLabel(session.last_seen_at)
+                          : t("securityPage.never")}
+                        {session.revoked_at
+                          ? ` · ${t("securityPage.revoked")}`
+                          : ""}
+                      </span>
+                      <Show when={!session.revoked_at}>
+                        <button
+                          type="button"
+                          class="ui-button ui-button-secondary"
+                          aria-label={t("securityPage.revokeSessionAction", {
+                            number: index() + 1,
                           })}
-                      >
-                        {t("settings.revoke")}
-                      </button>
-                    </Show>
+                          onClick={() =>
+                            void runAction(async () => {
+                              await authApi.revokeSession(
+                                String(session.session_id),
+                              );
+                              await refetch();
+                            })}
+                        >
+                          {t("settings.revoke")}
+                        </button>
+                      </Show>
+                    </div>
+                    <details class="settingsAdvanced">
+                      <summary>{t("securityPage.technicalDetails")}</summary>
+                      <dl class="ui-entry-detail-list">
+                        <div>
+                          <dt>{t("securityPage.sessionId")}</dt>
+                          <dd class="font-mono break-all">
+                            {String(session.session_id)}
+                          </dd>
+                        </div>
+                      </dl>
+                    </details>
                   </div>
                 )}
               </For>

@@ -79,10 +79,21 @@ describe("v5 SpaceSettings", () => {
         onTestConnection={test}
       />
     ));
+
+    fireEvent.input(screen.getByDisplayValue("s3://bucket/demo"), {
+      target: { value: "s3://bucket/edited" },
+    });
+    fireEvent.input(screen.getByDisplayValue("https://s3.example.com"), {
+      target: { value: "https://s3-edited.example.com" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Test Connection" }));
     await waitFor(() =>
-      expect(screen.getByText("Connection successful (ok)")).toBeInTheDocument()
+      expect(test).toHaveBeenCalledWith({
+        uri: "s3://bucket/edited",
+        endpoint: "https://s3-edited.example.com",
+      })
     );
+    expect(screen.getByText("Connection successful (ok)")).toBeInTheDocument();
   });
   it("clears an S3 endpoint when changing to local storage metadata", async () => {
     const save = vi.fn().mockResolvedValue(undefined);

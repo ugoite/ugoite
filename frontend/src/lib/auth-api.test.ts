@@ -2,7 +2,19 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 import { server } from "~/test/mocks/server";
 import { testApiUrl } from "~/test/http-origin";
-import { authApi } from "./auth-api";
+import { authApi, oidcIssuerLabel } from "./auth-api";
+
+describe("OIDC issuer display labels", () => {
+  it("preserves non-root issuer paths without exposing provider IDs", () => {
+    expect(oidcIssuerLabel("https://issuer.example/team")).toBe(
+      "issuer.example/team",
+    );
+  });
+
+  it("omits the root path from the issuer label", () => {
+    expect(oidcIssuerLabel("https://issuer.example/")).toBe("issuer.example");
+  });
+});
 
 describe("invitation registration finalization", () => {
   it("re-authenticates with Passkey before accepting a durable claim", async () => {

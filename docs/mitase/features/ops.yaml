@@ -603,6 +603,18 @@ features:
                 criterion: REQ-OPS-025#criterion.product-ux-authority
               - kind: satisfies
                 criterion: REQ-OPS-025#criterion.release-authority-drift-gate
+      - id: spa-shell-delivery
+        role: implementation
+        facet: static-web-delivery
+        responsibility: Apply revalidation to browser shell HTML while leaving static asset and API caching policies unchanged.
+        targets:
+          - id: html-shell-cache-header
+            adapter: rust
+            path: crates/ugoite-server/src/lib.rs
+            selector: { kind: symbol, name: app_with_static_dir }
+            claims:
+              - kind: satisfies
+                criterion: REQ-OPS-045#criterion.spa-shell-html-revalidation
     contracts:
       - id: release-note-publication
         kind: custom

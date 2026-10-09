@@ -1,0 +1,30 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: ux
+category: Space History
+features:
+  - id: FEAT-UX-014
+    title: Space History page contract
+    summary: Keep the Space History timeline, Change detail, localized recovery feedback, and collapsed technical identifiers connected to the implemented route and exact test evidence.
+    status: implemented
+    bindings:
+      - id: space-history-page
+        role: implementation
+        facet: frontend
+        responsibility: Keep the shipped Space History route connected to its timeline, detail, recovery, and technical-identifier criteria.
+        targets:
+          - id: history-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/history.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-HISTORY-001#criterion.timeline-controls
+              - kind: satisfies
+                criterion: REQ-UX-HISTORY-001#criterion.timeline-feedback
+              - kind: satisfies
+                criterion: REQ-UX-HISTORY-001#criterion.detail-feedback
+              - kind: satisfies
+                criterion: REQ-UX-HISTORY-001#criterion.recovery-feedback
+              - kind: satisfies
+                criterion: REQ-UX-HISTORY-001#criterion.technical-identifiers

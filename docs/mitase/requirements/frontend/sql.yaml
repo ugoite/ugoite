@@ -301,6 +301,10 @@ requirements:
         kind: behavior
         statement: The saved SQL detail route displays the saved query name, timestamps, variables, and query text. For user-query entries it allows the saved query name and SQL body to be edited; search-history entries remain read-only.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: form-binding-identifiers
+        kind: behavior
+        statement: Saved SQL Form-binding status uses the saved and current human-readable Form names. Immutable Form IDs are available only inside a closed per-binding technical-details disclosure and stay out of the default visible and accessible text.
+        governed_by: [POL-UI-005#rule.governance]
       - id: supported-actions
         kind: behavior
         statement: A variable-free saved query uses the canonical stateless SQL query API and routes to SQL results, while a query with variables links to the existing variable-input flow.
@@ -336,6 +340,15 @@ requirements:
                 criterion: REQ-FE-062#criterion.supported-actions
                 covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: saved SQL detail renders an editable query workspace and supported actions" } }
+          - id: form-binding-identifiers
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+            selector: { kind: test, name: "REQ-FE-062: keeps Form IDs behind technical details while showing binding status" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-062#criterion.form-binding-identifiers
+                covers: [FEAT-FE-007#binding.frontend/target.sql-detail-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/[sql_id].test.tsx", test: "REQ-FE-062: keeps Form IDs behind technical details while showing binding status" } }
           - id: revision-aware-save
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx

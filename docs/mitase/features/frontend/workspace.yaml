@@ -146,7 +146,7 @@ features:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep Entry detail loading, form-aware editing, Markdown preview, save state, conflict handling, and localized guidance connected to the shipped frontend components and routes.
+        responsibility: Keep Entry detail loading, form-aware editing, Row Reference field behavior, Markdown preview, save state, conflict handling, and localized guidance connected to the shipped frontend components and routes.
         targets:
           - id: entry-detail-pane
             adapter: typescript
@@ -167,11 +167,15 @@ features:
                 criterion: REQ-FE-052#criterion.form-derived-guidance
               - kind: satisfies
                 criterion: REQ-FE-053#criterion.localized-guidance
+              - kind: satisfies
+                criterion: REQ-FE-035#criterion.failed-load-identifiers
           - id: shared-field-input
             adapter: typescript
             path: frontend/src/components/fields/FieldInput.tsx
             selector: { kind: symbol, name: FieldInput }
             claims:
+              - kind: satisfies
+                criterion: REQ-FE-065#criterion.wrong-form-identity
               - kind: satisfies
                 criterion: REQ-FE-071#criterion.string-autogrow
               - kind: satisfies

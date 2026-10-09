@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-09-24"
+updated: "2026-10-09"
 page:
   id: space-entry-info
   title: Entry Info
@@ -33,9 +33,15 @@ components:
     - id: entry-info-advanced-details
       type: list
       title: Advanced details
+      disclosure: collapsed-by-default
       items:
         - entry_id
         - current_revision_id
+      actions:
+        - id: copy-entry-id
+          type: button
+          target: entry_id
+          label: localized-copy
     - id: entry-info-sharing
       type: settings-panel
       items:

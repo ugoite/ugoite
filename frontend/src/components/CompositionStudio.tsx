@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from "@solidjs/router";
 import {
   createEffect,
+  createResource,
   createSignal,
   For,
   onCleanup,
@@ -8,7 +9,10 @@ import {
   Show,
 } from "solid-js";
 import { BackLink } from "~/components/BackLink";
-import { CompositionDiagnostics } from "~/components/CompositionRenderer";
+import {
+  CompositionDiagnostics,
+  type CompositionFieldNames,
+} from "~/components/CompositionRenderer";
 import {
   CompositionDesignCanvas,
   designBlockIdForComponent,
@@ -88,7 +92,9 @@ import {
   stagePendingCompositionSaveAttempt,
 } from "~/lib/composition-save-attempt";
 import { t } from "~/lib/i18n";
+import { compositionFormFieldName } from "~/lib/composition-field-name";
 import { spaceCompositionRevisionPath } from "~/lib/space-path";
+import { formApi } from "~/lib/ugoite-client";
 
 export type CompositionStudioSaveMode =
   | { kind: "create" }
@@ -125,7 +131,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [displayPickerOpen, setDisplayPickerOpen] = createSignal(false);
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
   // Transient canvas Work: selected block identity for the inspector and
-  // the pending palette insertion target for metric/table picks.
+  // the pending insertion target for the display picker.
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
   // Transient workspace Work: Design | Data | Split arrangement only. Draft,
   // preview, and selection state stay shared and continuous across modes;
@@ -231,6 +237,19 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [saveRetryAvailable, setSaveRetryAvailable] = createSignal(false);
+
+  // Form labels are display metadata only. Composition fields keep their
+  // stable field IDs, while the editor shows the authorized Form labels.
+  const [forms] = createResource(
+    () =>
+      draft().sources.some((source) => source.kind === "entry_query")
+        ? props.spaceId
+        : undefined,
+    (spaceId) => formApi.list(spaceId).catch(() => []),
+  );
+  const fieldNames: CompositionFieldNames = (formId, fieldId) => {
+    return compositionFormFieldName(forms(), formId, fieldId);
+  };
 
   const previewHandle = createCompositionPreviewHandle();
   onCleanup(previewHandle.dispose);
@@ -376,8 +395,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const addDisplaySeed = (seed: CompositionDisplaySeed) => {
-    // The display picker survives only as the canvas insertion delegate:
-    // palette metric/table picks land at the recorded canvas target.
+    // The display picker survives only as the canvas insertion delegate and
+    // lands at the recorded canvas target.
     const target = pendingInsert() ?? undefined;
     const added = seed.kind === "table"
       ? addTableDisplay(draft(), seed.sourceDraftId, seed.label, target)
@@ -811,6 +830,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             ...previewHandle.parameters(),
           }}
           sources={readySources()}
+          fieldNames={fieldNames}
           selectedId={selectedId()}
           highlightedIds={highlightedBlockIds()}
           onSelect={handleSelectBlock}
@@ -835,6 +855,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           <CompositionInspector
             draft={draft()}
             selectedId={selectedId()}
+            fieldNames={fieldNames}
             onDraftChange={setDraft}
             onDataJump={jumpToSource}
           />
@@ -845,6 +866,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           <CompositionInspectorSheet
             draft={draft()}
             selectedId={activeId()}
+            fieldNames={fieldNames}
             onDraftChange={setDraft}
             onDataJump={jumpToSource}
             onClose={dismissSheet}
@@ -1028,6 +1050,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       <Show when={displayPickerOpen()}>
         <CompositionDisplayPicker
           sources={draft().sources}
+          fieldNames={fieldNames}
           onAdd={addDisplaySeed}
           onClose={() => {
             setPendingInsert(null);

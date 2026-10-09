@@ -53,7 +53,7 @@ export interface CompositionDesignCanvasProps {
   highlightedIds?: ReadonlySet<string>;
   /** Single draft mutation channel: every canvas op maps onto the document. */
   onDraftChange: (draft: CompositionDraft) => void;
-  /** Metric/table insertion reuses the existing display picker at a target. */
+  /** Display insertion opens the shared kind/source picker at a target. */
   onRequestDisplayPicker: (target: DraftInsertTarget) => void;
   onParameterChange: (parameterId: string, value: unknown | undefined) => void;
   fieldNames?: CompositionFieldNames;
@@ -83,6 +83,7 @@ const blockName = (
   draft: CompositionDraft,
   definitions: ReadonlyMap<string, CompositionParameterDefinition>,
   item: DraftLayoutItem,
+  fieldNames?: CompositionFieldNames,
 ): string => {
   if (item.kind === "parameter") {
     return definitions.get(item.parameterId)?.label ?? item.parameterId;
@@ -90,18 +91,20 @@ const blockName = (
   const display = draft.displays.find((entry) =>
     entry.draftId === item.draftId
   );
-  if (!display) return item.draftId;
+  if (!display) return t("composition.studioDisplay");
   if (display.label) return display.label;
-  if (display.kind === "text") return display.text || display.draftId;
-  return displayDefaultName(display, draft.sources);
+  if (display.kind === "text") {
+    return display.text || t("composition.studioText");
+  }
+  return displayDefaultName(display, draft.sources, fieldNames);
 };
 
 /**
  * Block palette as a true modal dialog. The Portal lifts the palette out of
  * the canvas column so it can never visually collide with the inspector;
  * the backdrop blocks canvas selection while open, and dismissal returns
- * focus to the invoking gap control. Metric and table entries stay hidden
- * until a source exists (the display picker fail-closes on zero sources),
+ * focus to the invoking gap control. The display entry stays hidden until a
+ * source exists (the display picker fail-closes on zero sources),
  * and the parameters section stays hidden until a parameter exists, so no
  * disabled-with-reason copy is needed. Text insertion is always available.
  */
@@ -204,19 +207,8 @@ function PaletteDialog(props: {
                   props.onRequestDisplayPicker(insertTarget);
                 }}
               >
-                <UiIcon name="canvas-metric" />
-                <span>{t("composition.studioMetric")}</span>
-              </button>
-              <button
-                type="button"
-                class="designPaletteItem"
-                onClick={() => {
-                  props.onClose();
-                  props.onRequestDisplayPicker(insertTarget);
-                }}
-              >
-                <UiIcon name="canvas-table" />
-                <span>{t("composition.studioTable")}</span>
+                <UiIcon name="columns" />
+                <span>{t("composition.studioDisplay")}</span>
               </button>
             </Show>
           </div>
@@ -406,7 +398,8 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
         : designBlockIdForComponent(item.draftId);
     const selected = () => props.selectedId === blockId();
     const highlighted = () => props.highlightedIds?.has(blockId()) ?? false;
-    const name = () => blockName(props.draft, definitionById(), item);
+    const name = () =>
+      blockName(props.draft, definitionById(), item, props.fieldNames);
     const binding = () =>
       item.kind === "component" ? bindingById().get(item.draftId) : undefined;
     const ownsSourceStatus = () => {

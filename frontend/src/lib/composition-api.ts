@@ -73,7 +73,7 @@ export interface CompositionLintDocument {
   name: string;
   tags: string[];
   spec: {
-    parameters: Array<{
+    parameters?: Array<{
       id: string;
       label?: string;
       type: CompositionParameterType;

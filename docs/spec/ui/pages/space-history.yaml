@@ -14,9 +14,48 @@ components:
     - id: change-timeline
       type: list
       title: Space changes
+      source: change.query with a bounded page size of 50
+      selection: open-change-detail
+      query_controls:
+        search: change text
+        filters: [resolved actor, created after, created before]
+        sort: [created at, actor, related Run]
+        columns: [target, summary, operation, actor, date]
+      primary_labels:
+        change: message-or-human-readable-target-summary
+        actor: member-display-name-or-localized-unknown-actor
+        technical_identifiers: none
+      states:
+        loading: separate localized status; timeline is marked busy
+        empty: localized no-changes message
+        error: localized alert with retry action
+      route_identity: change_id in the change query parameter
     - id: change-detail
       type: dialog
-      description: The selected Change detail uses a localized icon-only close button, retains Escape and backdrop dismissal, traps focus, and returns focus to the opener.
+      title: message-or-human-readable-target-summary
+      source: change.inspect for the selected Change
+      direct_link: /spaces/{space_id}/history?change={change_id}
+      content:
+        - confirmed field-change breakdown
+        - affected Entry selector and selected Entry diff
+        - related Changes in the same Run when present
+      states:
+        loading: localized status inside the dialog
+        inspection-error: localized alert while the dialog remains open
+        affected-entry-error: localized alert beside the selected Entry diff
+        target-page-loading: separate localized status
+      technical_identifiers:
+        presentation: native collapsed disclosure
+        label: localized Technical info
+        values: [change_id, actor_principal_id, run_id, selected_entry_id]
+        accessible_while_collapsed: false
+      dismissal: localized icon-only close button, Escape, or backdrop; focus is trapped and returns to the opener
+      recovery:
+        actions: [revert-this-change, undo-run]
+        confirmation: destructive-action dialog
+        successful-result: localized status after refreshing history
+        conflict-result: localized conflict feedback followed by a timeline refresh
+        unknown-result: reconcile against history before allowing another recovery attempt
     - id: change-detail-pagination
       type: button
       component: ResultPagination
@@ -24,3 +63,9 @@ components:
       owner: Space History detail cursor handlers
       scopes: [affected entries, related changes]
       loading: separate status indicator
+    - id: timeline-pagination
+      type: button
+      component: ResultPagination
+      reference: ../components/result-pagination.yaml
+      owner: Space History list cursor handlers
+      loading: timeline busy state

@@ -392,7 +392,7 @@ requirements:
         governed_by: [POL-UI-006#rule.governance]
       - id: uuids-advanced-only
         kind: behavior
-        statement: Primary rows show human-meaningful names while raw UUIDs and internal identifiers appear only inside explicitly advanced or diagnostic disclosure.
+        statement: Primary rows show human-meaningful names while raw UUIDs and internal identifiers appear only inside explicitly advanced or diagnostic disclosure. Dashboard Recent derives the primary Entry label only from title or name fields, with a neutral fallback; the Form name may provide context, while unrelated Entry properties never appear in visible or accessible labels. Browser Konase write approvals use a current-Space preview only when the exact updated Entry is a visible candidate or selected resource; otherwise they retain generic existing-Entry context.
         governed_by: [POL-UI-005#rule.governance]
     bindings:
       - id: row-list-verification
@@ -454,6 +454,15 @@ requirements:
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.form-entries-route, FEAT-UX-003#binding.list-baseline/target.form-entries-route-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/forms/[form_ref]/entries.test.tsx", test: "REQ-UX-LIST-001: keeps Entry IDs out of form rows with compact right-meta dates" } }
+          - id: account-security-credential-identifiers
+            adapter: typescript
+            path: frontend/src/routes/settings/security.test.tsx
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
+                covers: [FEAT-UX-009#binding.auth-form-implementation/target.security-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/settings/security.test.tsx, test: "REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details" } }
       - id: history-row-verification
         role: verification
         facet: verification
@@ -581,15 +590,6 @@ requirements:
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "PR6: resolves actor IDs to member display names without raw UUIDs in rows" } }
-          - id: pr6-audit-actor-display
-            adapter: typescript
-            path: frontend/src/components/AuditLogViewer.test.tsx
-            selector: { kind: test, name: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only" }
-            claims:
-              - kind: verifies
-                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
-                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AuditLogViewer.test.tsx, test: "PR6: resolves space actor IDs to member display names with raw IDs advanced-only" } }
           - id: pr6-asset-detail-rows
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/assets/[asset_id].test.tsx"
@@ -950,51 +950,51 @@ requirements:
             path: frontend/src/components/ResultPagination.test.tsx
             selector: { kind: test, name: "REQ-UX-PAGINATION-001: uses localized names and titles for chevron controls" }
             claims:
-              - kind: verifies
-                criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation
-                covers: [FEAT-UX-011#binding.frontend/target.shared-pagination]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/ResultPagination.test.tsx, test: "REQ-UX-PAGINATION-001: uses localized names and titles for chevron controls" } }
+              - { kind: verifies, criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation,
+                  covers: [FEAT-UX-011#binding.frontend/target.shared-pagination],
+                  runner: { runner: frontend-vitest-file, arguments: { file: src/components/ResultPagination.test.tsx, test: "REQ-UX-PAGINATION-001: uses localized names and titles for chevron controls" } } }
           - id: chevron-target-size
             adapter: typescript
             path: frontend/src/components/a11y-contract.test.tsx
             selector: { kind: test, name: "REQ-UX-PAGINATION-001: keeps page chevrons at 44px with a visible focus ring" }
             claims:
-              - kind: verifies
-                criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation
-                covers: [FEAT-UX-011#binding.frontend/target.shared-pagination, FEAT-UX-011#binding.frontend/target.pagination-layout]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/a11y-contract.test.tsx, test: "REQ-UX-PAGINATION-001: keeps page chevrons at 44px with a visible focus ring" } }
+              - { kind: verifies, criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation,
+                  covers: [FEAT-UX-011#binding.frontend/target.shared-pagination, FEAT-UX-011#binding.frontend/target.pagination-layout],
+                  runner: { runner: frontend-vitest-file, arguments: { file: src/components/a11y-contract.test.tsx, test: "REQ-UX-PAGINATION-001: keeps page chevrons at 44px with a visible focus ring" } } }
           - id: form-table-paging
             adapter: typescript
             path: frontend/src/components/FormTable.test.tsx
             selector: { kind: test, name: "REQ-UX-PAGINATION-001: preserves the FormTable controller page chain" }
             claims:
-              - kind: verifies
-                criterion: REQ-UX-PAGINATION-001#criterion.paging-state
-                covers: [FEAT-UX-011#binding.frontend/target.form-table-pagination]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-UX-PAGINATION-001: preserves the FormTable controller page chain" } }
-              - kind: verifies
-                criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior
-                covers: [FEAT-UX-011#binding.frontend/target.form-table-pagination]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-UX-PAGINATION-001: preserves the FormTable controller page chain" } }
+              - { kind: verifies, criterion: REQ-UX-PAGINATION-001#criterion.paging-state,
+                  covers: [FEAT-UX-011#binding.frontend/target.form-table-pagination],
+                  runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-UX-PAGINATION-001: preserves the FormTable controller page chain" } } }
+              - { kind: verifies, criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior,
+                  covers: [FEAT-UX-011#binding.frontend/target.form-table-pagination],
+                  runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: "REQ-UX-PAGINATION-001: preserves the FormTable controller page chain" } } }
           - id: history-affected-entry-paging
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
             selector: { kind: test, name: "REQ-UX-PAGINATION-001: uses the shared pager for affected detail pages" }
             claims:
-              - kind: verifies
-                criterion: REQ-UX-PAGINATION-001#criterion.paging-state
-                covers: [FEAT-UX-011#binding.frontend/target.history-detail-pagination]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-PAGINATION-001: uses the shared pager for affected detail pages" } }
-              - kind: verifies
-                criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior
-                covers: [FEAT-UX-011#binding.frontend/target.history-detail-pagination]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-PAGINATION-001: uses the shared pager for affected detail pages" } }
+              - { kind: verifies, criterion: REQ-UX-PAGINATION-001#criterion.paging-state,
+                  covers: [FEAT-UX-011#binding.frontend/target.history-detail-pagination],
+                  runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-PAGINATION-001: uses the shared pager for affected detail pages" } } }
+              - { kind: verifies, criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior,
+                  covers: [FEAT-UX-011#binding.frontend/target.history-detail-pagination],
+                  runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-PAGINATION-001: uses the shared pager for affected detail pages" } } }
           - id: history-related-change-paging
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/history.test.tsx"
             selector: { kind: test, name: "REQ-UX-PAGINATION-001: uses the shared pager for related history pages" }
+            claims: [{ kind: verifies, criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior,
+              covers: [FEAT-UX-011#binding.frontend/target.history-detail-pagination],
+              runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-PAGINATION-001: uses the shared pager for related history pages" } } }]
+          - id: composition-pagination-specs
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-UX-PAGINATION-001: connects Composition pagination specs to shared chevrons" }
             claims:
-              - kind: verifies
-                criterion: REQ-UX-PAGINATION-001#criterion.surface-owner-behavior
-                covers: [FEAT-UX-011#binding.frontend/target.history-detail-pagination]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/history.test.tsx", test: "REQ-UX-PAGINATION-001: uses the shared pager for related history pages" } }
+              - { kind: verifies, criterion: REQ-UX-PAGINATION-001#criterion.directional-control-presentation,
+                  covers: [FEAT-UX-011#binding.frontend/target.composition-revision-pagination-spec, FEAT-UX-011#binding.frontend/target.composition-studio-pagination-spec],
+                  runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-UX-PAGINATION-001: connects Composition pagination specs to shared chevrons" } } }

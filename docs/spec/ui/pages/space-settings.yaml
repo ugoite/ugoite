@@ -1,5 +1,5 @@
-version: "0.2"
-updated: "2026-09-24"
+version: "0.3"
+updated: "2026-10-08"
 page:
   id: space-settings
   title: Space Settings
@@ -13,6 +13,111 @@ components:
   body:
     - id: settings-panel
       type: settings-panel
+      implementation: frontend/src/routes/spaces/[space_id]/settings.tsx
+      navigation:
+        component: RowList
+        implementation: frontend/src/routes/spaces/[space_id]/settings.tsx
+        section_source: frontend/src/lib/settings-sections.ts
+        section_state: query.section
+        layout: flat-category-list
+        mobile:
+          control: menu-button-and-drawer
+          dismiss: [selection, escape, backdrop, close-button]
+          focus: close-button-on-open-then-menu-button-on-dismiss
+        tests:
+          - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+            selector: "PR6: navigates settings as flat rows with History reaching space history"
+          - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+            selector: opens the settings navigation as a drawer and closes it on selection
+          - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+            selector: closes the settings drawer on Escape
       sections:
-        - space
-        - storage
+        - id: general
+          title: General
+          implementation:
+            - frontend/src/routes/spaces/[space_id]/settings.tsx
+            - frontend/src/components/SpaceSettings.tsx
+          component_contract:
+            id: space-settings-editor
+            reference: ../components/space-settings.yaml
+          controls: [space-name, language]
+          optional_content: [space-version]
+          tests:
+            - path: frontend/src/components/SpaceSettings.test.tsx
+              selector: renders and saves General independently
+            - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+              selector: renders the general, language, and storage route surfaces
+        - id: members
+          title: Members
+          implementation:
+            - frontend/src/routes/spaces/[space_id]/settings.tsx
+          controls: [invitation-label, invitation-role, invite]
+          table_columns: [member, role, state, actions]
+          member_identity:
+            primary_label: display-name-then-localized-untitled
+            exact_principal_id: advanced-details-only
+          owner_actions: disabled
+          states: [loading, empty, error]
+          tests:
+            - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+              selector: renders members with display names while exact IDs stay advanced-only
+            - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+              selector: keeps role updates and revokes working from the members table
+            - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+              selector: localizes the Member heading in Japanese
+        - id: credentials
+          title: Credentials
+          implementation:
+            - frontend/src/routes/spaces/[space_id]/settings.tsx
+            - frontend/src/routes/settings/security.tsx
+          component: CredentialSettings
+          tests:
+            - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+              selector: renders the shared credential settings and preserves Space context when switching tabs
+            - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+              selector: renders the credential settings in Japanese
+        - id: storage
+          title: Storage
+          implementation:
+            - frontend/src/routes/spaces/[space_id]/settings.tsx
+            - frontend/src/components/SpaceSettings.tsx
+          component_contract:
+            id: space-settings-editor
+            reference: ../components/space-settings.yaml
+          tests:
+            - path: frontend/src/components/SpaceSettings.test.tsx
+              selector: renders storage values and saves only storage configuration
+            - path: frontend/src/components/SpaceSettings.test.tsx
+              selector: tests the edited storage connection
+            - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+              selector: renders the general, language, and storage route surfaces
+        - id: audit
+          title: Audit Log
+          implementation:
+            - frontend/src/routes/spaces/[space_id]/settings.tsx
+            - frontend/src/components/AuditLogViewer.tsx
+          component: SpaceAuditLogViewer
+          component_contract:
+            id: audit-log-viewer
+            reference: ../components/audit-log-viewer.yaml
+          interaction: read-only-filtered-event-list-with-details
+          tests:
+            - path: frontend/src/components/AuditLogViewer.test.tsx
+              selector: sends Space filters and server offsets to the existing endpoint
+            - path: frontend/src/components/AuditLogViewer.test.tsx
+              selector: shows request details and tolerates system events without an actor
+            - path: frontend/src/components/AuditLogViewer.test.tsx
+              selector: "REQ-UX-AUDIT-002: uses a localized neutral label for unresolved actors"
+            - path: frontend/src/components/AuditLogViewer.test.tsx
+              selector: "REQ-UX-AUDIT-002: hides directory values that echo an actor ID"
+            - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+              selector: renders the general, language, and storage route surfaces
+        - id: history
+          title: History
+          implementation:
+            - frontend/src/routes/spaces/[space_id]/settings.tsx
+          content: link-to-space-history
+          target_page: space-history
+          tests:
+            - path: frontend/src/routes/spaces/[space_id]/settings.route.test.tsx
+              selector: "PR6: navigates settings as flat rows with History reaching space history"

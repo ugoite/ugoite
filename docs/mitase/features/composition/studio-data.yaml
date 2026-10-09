@@ -257,6 +257,24 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-metric-projection
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: keeps EntryQuery metric fields in the source projection
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.display-authoring
+    - id: browser-data-entry-query-metric-projection-locked
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: keeps the preview projection unavailable while an EntryQuery metric uses a field
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.display-authoring
     - id: browser-data-entry-query-dialog-bindings
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
@@ -286,6 +304,70 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-data-entry-query-field-ordinals
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: uses localized field ordinals while form metadata is loading
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-data-entry-query-field-label-identity
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: "REQ-FE-070: keeps EntryQuery field IDs in query data and out of editor labels"
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-data-entry-query-absent-form
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: uses field ordinals when the form is absent
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-data-entry-query-stale-form-field-label
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: uses transient Form names for referenced fields missing from the schema snapshot
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-data-entry-query-stale-field-labels
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: 'REQ-FE-070: uses distinct localized labels for fields missing from the schema snapshot'
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.entry-query-translation
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.source-authoring
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-data-entry-query-field-label-collision
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: "REQ-FE-070: skips localized fallback labels used by live Form fields"
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.entry-query-field-labels
     - id: browser-data-entry-query-zero-capable
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx

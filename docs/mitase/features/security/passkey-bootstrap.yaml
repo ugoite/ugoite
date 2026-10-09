@@ -139,6 +139,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-SEC-005#criterion.bootstrap-recovery-material
+              - kind: satisfies
+                criterion: REQ-SEC-005#criterion.bootstrap-recovery-account-identity
       - id: contract
         role: contract-source
         facet: api
@@ -219,4 +221,5 @@ features:
           - REQ-SEC-005#criterion.setup-secret-hash-once
           - REQ-SEC-005#criterion.initial-owner-passkey
           - REQ-SEC-005#criterion.bootstrap-recovery-material
+          - REQ-SEC-005#criterion.bootstrap-recovery-account-identity
           - REQ-SEC-005#criterion.opaque-bootstrap-session

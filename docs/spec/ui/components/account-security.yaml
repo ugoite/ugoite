@@ -1,0 +1,51 @@
+version: "0.1"
+updated: "2026-10-09"
+component_group:
+  id: account-security
+  title: Account Security
+  routes: [/settings/security]
+  notes: GlobalShell owns navigation; credential identifiers are available only on demand in closed technical details.
+components:
+  - id: credential-tabs
+    type: tab-bar
+    implementation: frontend/src/routes/settings/security.tsx
+    tests: frontend/src/routes/settings/security.test.tsx
+    heading: Credentials
+    selection: query.tab
+    default: passkeys
+    items: [passkeys, sessions, audit-log]
+  - id: passkey-list
+    type: list
+    implementation: frontend/src/routes/settings/security.tsx
+    tests: frontend/src/routes/settings/security.test.tsx
+    primary_label: localized-numbered-passkey-and-last-used
+    missing_activity: localized-never
+    identifier_visibility: closed-technical-details-only
+    technical_details:
+      summary: securityPage.technicalDetails
+      values:
+        - label: securityPage.credentialId
+          source: credential.credential_id
+    action:
+      trigger: revoke-passkey
+      visible_label: settings.revoke
+      accessible_name: securityPage.revokePasskeyAction
+      item_context: one-based-list-position
+  - id: session-list
+    type: list
+    implementation: frontend/src/routes/settings/security.tsx
+    tests: frontend/src/routes/settings/security.test.tsx
+    primary_label: localized-numbered-browser-session-and-last-seen
+    missing_activity: localized-never
+    revoked_status: localized-revoked
+    identifier_visibility: closed-technical-details-only
+    technical_details:
+      summary: securityPage.technicalDetails
+      values:
+        - label: securityPage.sessionId
+          source: session.session_id
+    action:
+      trigger: revoke-active-session
+      visible_label: settings.revoke
+      accessible_name: securityPage.revokeSessionAction
+      item_context: one-based-list-position

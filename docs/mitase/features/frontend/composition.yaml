@@ -36,6 +36,8 @@ features:
                 criterion: REQ-FE-070#criterion.mobile-one-column
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.accessible-icon-actions
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
           - id: composition-draft-model
             adapter: typescript
             path: frontend/src/lib/composition-draft.ts
@@ -45,6 +47,27 @@ features:
                 criterion: REQ-FE-070#criterion.source-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.display-authoring
+          - id: composition-data-workspace
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.tsx
+            selector: { kind: symbol, name: CompositionDataWorkspace }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
+          - id: composition-entry-query-source-editor
+            adapter: typescript
+            path: frontend/src/components/EntryQuerySourceEditor.tsx
+            selector: { kind: symbol, name: EntryQuerySourceEditor }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
+          - id: composition-form-field-name
+            adapter: typescript
+            path: frontend/src/lib/composition-field-name.ts
+            selector: { kind: symbol, name: compositionFormFieldName }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
           - id: composition-preview-handle
             adapter: typescript
             path: frontend/src/lib/composition-preview-handle.ts
@@ -55,6 +78,15 @@ features:
           - id: composition-display-picker
             adapter: typescript
             path: frontend/src/components/CompositionDisplayPicker.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+          - id: composition-inspector
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.tsx
             selector: { kind: file }
             claims:
               - kind: satisfies
@@ -79,6 +111,8 @@ features:
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
           - id: composition-use-surface
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
@@ -86,6 +120,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.accessible-icon-actions
           - id: composition-studio-shell

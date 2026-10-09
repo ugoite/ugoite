@@ -41,6 +41,14 @@ requirements:
         kind: behavior
         statement: Composition table components delegate presentation to the source-native Entry or SQL result presenter and never define a third generic table grammar; source query semantics remain unchanged and metrics use the shared evaluator without Browser aggregation.
         governed_by: [POL-006#rule.governance]
+      - id: composition-property-timestamp-separation
+        kind: behavior
+        statement: A Composition EntryQuery table renders a projected Form property from properties and Created or Updated from its dedicated row field, preserving both when their names collide.
+        governed_by: [POL-006#rule.governance]
+      - id: composition-system-form-id-hidden
+        kind: behavior
+        statement: An all-Forms Composition EntryQuery table does not include the top-level system Form UUID as a substring in any column heading or cell text.
+        governed_by: [POL-UI-005#rule.governance]
     bindings:
       - id: result-surface-verification
         role: verification
@@ -353,6 +361,24 @@ requirements:
                 criterion: REQ-FE-068#criterion.source-native-composition-rendering
                 covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "renders fields projections in projection order with timestamps last" } }
+          - id: composition-property-timestamp-separation
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: "keeps colliding Form properties and dedicated timestamps separate" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.composition-property-timestamp-separation
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "keeps colliding Form properties and dedicated timestamps separate" } }
+          - id: composition-system-form-id-hidden
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: "keeps the top-level Form UUID out of all-Forms headings and cells" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.composition-system-form-id-hidden
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "keeps the top-level Form UUID out of all-Forms headings and cells" } }
           - id: composition-entry-columns-fallback
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.test.tsx

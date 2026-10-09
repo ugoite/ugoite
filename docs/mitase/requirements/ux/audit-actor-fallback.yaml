@@ -1,0 +1,81 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Audit event identity presentation
+requirements:
+  - id: REQ-UX-AUDIT-002
+    title: Neutral Labels for Unresolved Audit Actors
+    description: Audit rows use a human-readable fallback when an actor cannot be resolved, while exact identity remains available in event details.
+    priority: high
+    status: implemented
+    criteria:
+      - id: unresolved-actor-neutral-label
+        kind: behavior
+        statement: When an audit actor cannot be resolved to a display name, the primary row uses a localized neutral label without any part of the actor identifier; the exact actor ID remains available only in the event details disclosure.
+        governed_by: [POL-UI-005#rule.governance]
+    bindings:
+      - id: actor-fallback-verification
+        role: verification
+        facet: verification
+        responsibility: Verify localized unresolved-actor labels, omission of actor ID fragments from the primary row, and exact ID availability after opening the event details.
+        targets:
+          - id: space-actor-fallback
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-AUDIT-002: uses a localized neutral label for unresolved actors",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-002#criterion.unresolved-actor-neutral-label
+                covers: [
+                  FEAT-AUTH-001#binding.actor-label-presentation/target.audit-viewer-actor-label,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/AuditLogViewer.test.tsx,
+                    test: "REQ-UX-AUDIT-002: uses a localized neutral label for unresolved actors",
+                  },
+                }
+          - id: node-actor-fallback
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-AUDIT-002: hides unresolved Node actor IDs from primary rows",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-002#criterion.unresolved-actor-neutral-label
+                covers: [
+                  FEAT-AUTH-001#binding.actor-label-presentation/target.audit-viewer-actor-label,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/AuditLogViewer.test.tsx,
+                    test: "REQ-UX-AUDIT-002: hides unresolved Node actor IDs from primary rows",
+                  },
+                }
+          - id: directory-identity-echo
+            adapter: typescript
+            path: frontend/src/components/AuditLogViewer.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-AUDIT-002: hides directory values that echo an actor ID",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-AUDIT-002#criterion.unresolved-actor-neutral-label
+                covers: [
+                  FEAT-AUTH-001#binding.actor-label-presentation/target.audit-viewer-actor-label,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/AuditLogViewer.test.tsx,
+                    test: "REQ-UX-AUDIT-002: hides directory values that echo an actor ID",
+                  },
+                }

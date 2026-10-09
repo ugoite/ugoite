@@ -4,6 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { settingsSections } from "../lib/settings-sections";
 
 type PageSpec = {
   page?: {
@@ -57,6 +58,7 @@ const allowedComponentTypes = new Set([
   "searchable-master-list",
   "redirect",
   "query-results",
+  "query-pagination",
   "select",
 ]);
 
@@ -155,6 +157,123 @@ const collectTargets = (value: unknown, targets: string[]) => {
 };
 
 describe("UI spec YAML registry", () => {
+  it("REQ-FE-040: declares GlobalShell account entry states", () => {
+    const shellPath = path.join(componentsDir, "global-shell.yaml");
+    const shell = parse(readFileSync(shellPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    const entry = shell.components?.find(({ id }) =>
+      id === "global-account-entry"
+    );
+
+    expect(entry).toMatchObject({
+      type: "account-entry",
+      implementation: "frontend/src/components/GlobalShell.tsx",
+      tests: "frontend/src/components/GlobalShell.test.tsx",
+      position: "workspace-topbar.trailing",
+      signed_out: {
+        control: "sign-in-link",
+        label: "globalShell.signIn",
+        destination: "/login",
+        visible_when: "authenticated-is-false",
+      },
+      signed_in: {
+        control: "AccountMenu",
+        visible_when: "authenticated-is-true-or-unspecified",
+        sign_out: {
+          trigger: "explicit-menu-action",
+          session: "clear-before-navigation",
+          destination: "/login",
+        },
+      },
+    });
+  });
+
+  it("REQ-FE-040: declares account security credential identifier details", () => {
+    const securityPath = path.join(
+      componentsDir,
+      "account-security.yaml",
+    );
+    const security = parse(readFileSync(securityPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    const passkeys = security.components?.find(({ id }) =>
+      id === "passkey-list"
+    );
+    const sessions = security.components?.find(({ id }) =>
+      id === "session-list"
+    );
+
+    expect(passkeys).toMatchObject({
+      type: "list",
+      implementation: "frontend/src/routes/settings/security.tsx",
+      tests: "frontend/src/routes/settings/security.test.tsx",
+      primary_label: "localized-numbered-passkey-and-last-used",
+      missing_activity: "localized-never",
+      identifier_visibility: "closed-technical-details-only",
+      technical_details: {
+        summary: "securityPage.technicalDetails",
+        values: [{
+          label: "securityPage.credentialId",
+          source: "credential.credential_id",
+        }],
+      },
+      action: {
+        trigger: "revoke-passkey",
+        visible_label: "settings.revoke",
+        accessible_name: "securityPage.revokePasskeyAction",
+        item_context: "one-based-list-position",
+      },
+    });
+    expect(sessions).toMatchObject({
+      type: "list",
+      implementation: "frontend/src/routes/settings/security.tsx",
+      tests: "frontend/src/routes/settings/security.test.tsx",
+      primary_label: "localized-numbered-browser-session-and-last-seen",
+      missing_activity: "localized-never",
+      revoked_status: "localized-revoked",
+      identifier_visibility: "closed-technical-details-only",
+      technical_details: {
+        summary: "securityPage.technicalDetails",
+        values: [{
+          label: "securityPage.sessionId",
+          source: "session.session_id",
+        }],
+      },
+      action: {
+        trigger: "revoke-active-session",
+        visible_label: "settings.revoke",
+        accessible_name: "securityPage.revokeSessionAction",
+        item_context: "one-based-list-position",
+      },
+    });
+
+    const implementation = readFileSync(
+      path.join(repoRoot, "frontend/src/routes/settings/security.tsx"),
+      "utf8",
+    );
+    expect(implementation).toContain("securityPage.credentialId");
+    expect(implementation).toContain("securityPage.sessionId");
+    expect(implementation).toContain("securityPage.passkeyNumberedLabel");
+    expect(implementation).toContain(
+      "securityPage.browserSessionNumberedLabel",
+    );
+    const securityTests = readFileSync(
+      path.join(repoRoot, "frontend/src/routes/settings/security.test.tsx"),
+      "utf8",
+    );
+    expect(securityTests).toContain(
+      "REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details",
+    );
+    const uiIndex = readFileSync(
+      path.join(repoRoot, "docs/spec/ui/index.md"),
+      "utf8",
+    );
+    expect(uiIndex).toContain(
+      "`components/account-security.yaml`",
+    );
+  });
+
   it("REQ-FE-040: loads UI page specs", () => {
     const pages = loadPages();
     expect(pages.length).toBeGreaterThan(0);
@@ -168,6 +287,20 @@ describe("UI spec YAML registry", () => {
         spec.page?.implementation,
       );
     }
+  });
+
+  it("REQ-FE-040: declares the dashboard Recent maximum after duplicate suppression", () => {
+    const dashboard = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-dashboard"
+    );
+    const recentEntries = dashboard?.spec.components?.body?.find(({ id }) =>
+      id === "recent-entries"
+    );
+
+    expect(recentEntries).toMatchObject({
+      count: { maximum: 4, after: "duplicate-label-suppression" },
+      duplicate_label_policy: "keep-most-recent-per-form-and-label",
+    });
   });
 
   it("REQ-FE-040: validates component types", () => {
@@ -204,6 +337,184 @@ describe("UI spec YAML registry", () => {
           pageIds.has(target),
           `${filePath} references missing page: ${target}`,
         ).toBe(true);
+      }
+    }
+  });
+
+  it("REQ-UX-PAGINATION-001: connects Composition pagination specs to shared chevrons", () => {
+    const revision = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-composition-revision"
+    );
+    const pagePagination = revision?.spec.components?.body?.find(({ id }) =>
+      id === "composition-pagination"
+    );
+    expect(pagePagination).toMatchObject({
+      type: "query-pagination",
+      component: "ResultPagination",
+      reference: "../components/result-pagination.yaml",
+      presentation: "localized-icon-only-chevron-controls",
+      source: "existing query continuation",
+    });
+
+    const studioPath = path.join(componentsDir, "composition-studio.yaml");
+    const studio = parse(readFileSync(studioPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    const studioData = studio.components?.find(({ id }) =>
+      id === "studio-data"
+    );
+    expect(studioData?.pagination).toMatchObject({
+      component: "ResultPagination",
+      reference: "result-pagination.yaml",
+      presentation: "localized-icon-only-chevron-controls",
+    });
+    expect(studioData?.result_pages).toBe(
+      "bounded-shared-page-with-controller-owned-paging",
+    );
+
+    const pageContractPath = path.resolve(
+      path.dirname(revision!.filePath),
+      String(pagePagination?.reference),
+    );
+    const studioContractPath = path.resolve(
+      path.dirname(studioPath),
+      String((studioData?.pagination as Record<string, unknown>).reference),
+    );
+    const expectedContractPath = path.join(
+      componentsDir,
+      "result-pagination.yaml",
+    );
+    expect(pageContractPath).toBe(expectedContractPath);
+    expect(studioContractPath).toBe(expectedContractPath);
+
+    const shared = parse(readFileSync(expectedContractPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    expect(shared.components?.find(({ id }) => id === "result-pagination"))
+      .toMatchObject({
+        type: "query-pagination",
+        controls: {
+          previous: {
+            visible_content: "chevron-left",
+            accessible_name: "localized-previous-label",
+            title: "localized-previous-label",
+          },
+          next: {
+            visible_content: "chevron-right",
+            accessible_name: "localized-next-label",
+            title: "localized-next-label",
+          },
+        },
+        target_size: "44px",
+      });
+  });
+
+  it("REQ-FE-040: connects Space Settings sections to implementation and test evidence", () => {
+    const page = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-settings"
+    );
+    const panel = page?.spec.components?.body?.find(({ id }) =>
+      id === "settings-panel"
+    );
+    expect(panel).toBeTruthy();
+    expect(
+      statSync(path.join(repoRoot, String(panel?.implementation))).isFile(),
+    ).toBe(true);
+    expect(panel?.navigation).toMatchObject({
+      component: "RowList",
+      section_source: "frontend/src/lib/settings-sections.ts",
+      section_state: "query.section",
+      layout: "flat-category-list",
+    });
+    const navigation = panel?.navigation as {
+      implementation: string;
+      tests: Array<{ path: string; selector: string }>;
+    };
+    expect(
+      statSync(path.join(repoRoot, navigation.implementation)).isFile(),
+    ).toBe(true);
+    for (const test of navigation.tests) {
+      const testSource = readFileSync(path.join(repoRoot, test.path), "utf8");
+      expect(testSource, `navigation test selector: ${test.path}`).toContain(
+        test.selector,
+      );
+    }
+
+    const sections = panel?.sections as Array<Record<string, unknown>>;
+    expect(sections.map(({ id }) => id)).toEqual(
+      settingsSections.map(({ id }) => id),
+    );
+
+    for (const section of sections) {
+      expect(typeof section.title).toBe("string");
+      const implementation = section.implementation as string[];
+      expect(implementation.length, `${String(section.id)} implementation`)
+        .toBeGreaterThan(0);
+      for (const sourcePath of implementation) {
+        expect(
+          statSync(path.join(repoRoot, sourcePath)).isFile(),
+          `${String(section.id)} implementation is missing: ${sourcePath}`,
+        ).toBe(true);
+      }
+
+      const tests = section.tests as Array<{
+        path: string;
+        selector: string;
+      }>;
+      expect(tests.length, `${String(section.id)} tests`).toBeGreaterThan(0);
+      for (const test of tests) {
+        const testSource = readFileSync(path.join(repoRoot, test.path), "utf8");
+        expect(testSource, `${String(section.id)} test selector: ${test.path}`)
+          .toContain(test.selector);
+      }
+
+      const contract = section.component_contract as
+        | { id: string; reference: string }
+        | undefined;
+      if (contract) {
+        const contractPath = path.resolve(
+          path.dirname(page!.filePath),
+          contract.reference,
+        );
+        expect(statSync(contractPath).isFile()).toBe(true);
+        const componentSpec = parse(readFileSync(contractPath, "utf8")) as {
+          components?: Array<Record<string, unknown>>;
+        };
+        const component = componentSpec.components?.find(({ id }) =>
+          id === contract.id
+        );
+        expect(component).toBeTruthy();
+        expect(implementation).toContain(component?.implementation);
+        if (contract.id === "space-settings-editor") {
+          expect(component?.variants).toMatchObject({
+            general: { controls: ["space-name", "save"] },
+            storage: {
+              controls: ["storage-uri", "test-connection", "save"],
+              advanced_details: ["endpoint", "configuration-status"],
+              save_payload: "storage-configuration-only",
+            },
+          });
+        }
+        if (contract.id === "audit-log-viewer") {
+          const consumers = component?.consumers as {
+            space?: { wrapper: unknown; page: unknown };
+          };
+          expect(consumers.space).toMatchObject({
+            wrapper: section.component,
+            page: `${String(page?.spec.page?.id)}#section.${
+              String(section.id)
+            }`,
+          });
+        }
+      }
+
+      const targetPage = section.target_page;
+      if (targetPage) {
+        const target = loadPages().find(({ spec }) =>
+          spec.page?.id === targetPage
+        );
+        expect(target, `${String(section.id)} target page: ${targetPage}`)
+          .toBeTruthy();
       }
     }
   });
@@ -330,6 +641,85 @@ describe("UI spec YAML registry", () => {
       unresolved_current_space_label: "localized-loading-text",
       unavailable_current_space_label: "localized-neutral-label",
       displays_space_uid: false,
+    });
+  });
+
+  it("REQ-FE-040: declares the invitation Join surface and its visible identity boundaries", () => {
+    const joinPath = path.join(
+      repoRoot,
+      "docs/spec/ui/components/invitation-join.yaml",
+    );
+    const join = parse(readFileSync(joinPath, "utf8")) as {
+      component_group?: Record<string, unknown>;
+      components?: Array<Record<string, unknown>>;
+    };
+    const components = join.components ?? [];
+    const header = components.find((component) =>
+      component.id === "join-context"
+    );
+    const guidance = components.find((component) =>
+      component.id === "authentication-guidance"
+    );
+    const form = components.find((component) =>
+      component.id === "invitation-acceptance"
+    );
+    const identityOptions = components.find((component) =>
+      component.id === "identity-options"
+    );
+    const failure = components.find((component) =>
+      component.id === "invitation-failure"
+    );
+
+    expect(join.component_group).toMatchObject({
+      id: "invitation-join",
+      routes: ["/spaces/join"],
+    });
+    expect(header).toMatchObject({
+      type: "page-header",
+      title: "Join",
+      visible_headings: 1,
+    });
+    expect(guidance).toMatchObject({
+      type: "inline-guidance",
+      placement: "below-heading",
+      purpose: "distinguish-signed-in-acceptance-from-passkey-registration",
+    });
+    expect(form).toMatchObject({
+      type: "form",
+      order: ["invitation-token", "accept-invitation"],
+      invitation_token: {
+        type: "required-multiline-text-input",
+        label: "Invitation token",
+        value_kind: "user-provided-invitation-credential",
+      },
+      accept_action: {
+        type: "submit-button",
+        label: "Accept invitation",
+        busy_label: "Joining…",
+        single_flight: true,
+      },
+      success: {
+        clears_invitation_token_from_url_hash: true,
+        replaces_route_with: "/spaces",
+      },
+    });
+    expect(identityOptions).toMatchObject({
+      type: "alternate-authentication-actions",
+      oidc_providers: {
+        visible_when: "provider-list-is-nonempty",
+        separator: "or",
+        accessible_name_uses_provider_id: false,
+      },
+      sign_in_link: {
+        destination: "/login",
+      },
+    });
+    expect(failure).toMatchObject({
+      type: "alert",
+      role: "alert",
+      includes: ["failure-message", "resume-guidance"],
+      show_spaces_action_when:
+        "invitation-is-consumed-and-visitor-remains-unauthenticated",
     });
   });
 

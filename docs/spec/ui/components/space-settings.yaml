@@ -1,0 +1,19 @@
+version: "0.1"
+updated: "2026-10-08"
+component_group:
+  id: space-settings-editor
+  title: Space Settings Editor
+components:
+  - id: space-settings-editor
+    type: settings-panel
+    implementation: frontend/src/components/SpaceSettings.tsx
+    variants:
+      general:
+        controls: [space-name, save]
+        save_payload: space-name-only
+      storage:
+        summary: current-storage-configuration
+        controls: [storage-uri, test-connection, save]
+        advanced_details: [endpoint, configuration-status]
+        save_payload: storage-configuration-only
+        warning: configuration-does-not-move-existing-data

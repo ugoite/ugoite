@@ -64,7 +64,9 @@ components:
       route_identity: entry-id
     - id: recent-entries
       type: list
-      count: 4
+      count:
+        maximum: 4
+        after: duplicate-label-suppression
       source: entry.list
       selection: full-row-activate
       label: title-or-name-field-or-Entry

@@ -5,10 +5,10 @@ import { ResultPagination } from "./ResultPagination";
 import { formatDateLabel } from "~/lib/date-format";
 import { formatValueForDisplay } from "~/lib/display-value";
 import {
-  systemEntryCapabilities,
   type EntryFieldRef,
   type EntryProjection,
   type EntryQueryResult,
+  systemEntryCapabilities,
 } from "~/lib/entry-query";
 import type {
   CompositionResolvedComponentBinding,
@@ -45,13 +45,22 @@ const timestampLabel = (kind: "created_at" | "updated_at"): string =>
  * same presentation vocabulary as EntryBrowser. Preview projections render
  * Preview/Created/Updated; fields projections render projected properties
  * in projection order with timestamps last. Property names resolve through
- * authorized Form metadata supplied by the route; when no property name
- * resolves, the current row key order is a temporary fallback only.
+ * authorized Form metadata supplied by the route; unresolved properties use
+ * their own projected row keys without guessing a field-to-key position.
  */
 export function entryQueryDisplayColumns(
   source: Extract<CompositionResolvedSource, { kind: "entry_query" }>,
   rows: readonly EntryQueryResult[],
-  fieldNames?: (formId: string, fieldId: number) => string | undefined,
+  fieldNames?: (
+    formId: string,
+    fieldId: number,
+    sourceId?: string,
+  ) => string | undefined,
+  fieldKeys?: (
+    formId: string,
+    fieldId: number,
+    sourceId?: string,
+  ) => string | undefined,
 ): EntryDisplayColumn[] {
   const projection: EntryProjection = source.request.projection;
   if (projection.kind === "preview") {
@@ -74,11 +83,32 @@ export function entryQueryDisplayColumns(
     : undefined;
   const regular: EntryDisplayColumn[] = [];
   const timestamps: EntryDisplayColumn[] = [];
-  let projectedProperties = 0;
+  let unresolvedProjectedProperties = 0;
+  const rowPropertyKeys = rows.length > 0
+    ? Object.keys(rows[0].properties ?? {}).filter((key) =>
+      // `form_id` is a system identifier only in an all-Forms query. In a
+      // Form-scoped query it can be an ordinary projected property.
+      key !== "form_id" || formId !== undefined
+    )
+    : [];
+  const resolvedPropertyKeys = new Set<string>();
   for (const field of projection.fields) {
-    const column = displayColumnForField(field, formId, fieldNames);
+    const label = field.kind === "property" && formId && fieldNames
+      ? fieldNames(formId, field.field_id, source.source_id)
+      : undefined;
+    const resolvedPropertyKey = field.kind === "property" && formId && fieldKeys
+      ? fieldKeys(formId, field.field_id, source.source_id)
+      : undefined;
+    const propertyKey = resolvedPropertyKey ?? (
+      label && rowPropertyKeys.includes(label) ? label : undefined
+    );
+    const column = displayColumnForField(
+      field,
+      label,
+      propertyKey,
+    );
     if (column === "unresolved") {
-      projectedProperties += 1;
+      unresolvedProjectedProperties += 1;
       continue;
     }
     if (!column) continue;
@@ -89,30 +119,31 @@ export function entryQueryDisplayColumns(
     } else {
       regular.push(column);
     }
-    if (field.kind === "property") projectedProperties += 1;
+    if (field.kind === "property" && propertyKey) {
+      resolvedPropertyKeys.add(propertyKey);
+    }
   }
   // Timestamps keep the canonical Created-then-Updated order, matching
   // EntryBrowser regardless of projection encounter order.
   timestamps.sort((left, right) =>
     left.key === right.key ? 0 : left.key === "created_at" ? -1 : 1
   );
-  if (projectedProperties > 0 && regular.length === 0) {
-    const fallback = rows.length > 0
-      ? Object.keys(rows[0].properties ?? {})
-      : [];
-    return fallback.map((name) => ({
-      key: name,
-      label: name,
-      text: (row) => propertyText(row, name),
-    }));
-  }
-  return [...regular, ...timestamps];
+  const fallback = unresolvedProjectedProperties > 0
+    ? rowPropertyKeys.filter((key) => !resolvedPropertyKeys.has(key)).map(
+      (name) => ({
+        key: name,
+        label: name,
+        text: (row) => propertyText(row, name),
+      }),
+    )
+    : [];
+  return [...regular, ...fallback, ...timestamps];
 }
 
 const displayColumnForField = (
   field: EntryFieldRef,
-  formId: string | undefined,
-  fieldNames: ((formId: string, fieldId: number) => string | undefined) | undefined,
+  label: string | undefined,
+  propertyKey: string | undefined,
 ): EntryDisplayColumn | null | "unresolved" => {
   if (field.kind === "created_at" || field.kind === "updated_at") {
     return {
@@ -127,14 +158,11 @@ const displayColumnForField = (
     };
   }
   if (field.kind === "property") {
-    const name = formId && fieldNames
-      ? fieldNames(formId, field.field_id)
-      : undefined;
-    if (!name) return "unresolved";
+    if (!propertyKey) return "unresolved";
     return {
       key: `property:${field.field_id}`,
-      label: name,
-      text: (row) => propertyText(row, name),
+      label: label === propertyKey ? label : label ?? propertyKey,
+      text: (row) => propertyText(row, propertyKey),
     };
   }
   return null;
@@ -145,7 +173,16 @@ export function CompositionEntryQueryTable(props: {
   source: Extract<CompositionResolvedSource, { kind: "entry_query" }>;
   sourceState?: CompositionSourcePageState;
   ownsSourceStatus: boolean;
-  fieldNames?: (formId: string, fieldId: number) => string | undefined;
+  fieldNames?: (
+    formId: string,
+    fieldId: number,
+    sourceId?: string,
+  ) => string | undefined;
+  fieldKeys?: (
+    formId: string,
+    fieldId: number,
+    sourceId?: string,
+  ) => string | undefined;
   onNext: () => void;
   onPrevious: () => void;
   onRetry: () => void;
@@ -156,14 +193,18 @@ export function CompositionEntryQueryTable(props: {
   };
   const rows = () => page()?.rows ?? [];
   const columns = (): EntryDisplayColumn[] =>
-    entryQueryDisplayColumns(props.source, rows(), props.fieldNames);
+    entryQueryDisplayColumns(
+      props.source,
+      rows(),
+      props.fieldNames,
+      props.fieldKeys,
+    );
   const sourceId = () => props.binding.source_id;
   const status = () => props.sourceState?.status;
   const loading = () =>
     props.ownsSourceStatus &&
     (!props.sourceState || status() === "loading");
-  const failed = () =>
-    props.ownsSourceStatus && status() === "error";
+  const failed = () => props.ownsSourceStatus && status() === "error";
 
   return (
     <section class="section">
@@ -201,7 +242,9 @@ export function CompositionEntryQueryTable(props: {
               ),
             }))}
             rows={rows()}
-            pageIdentity={`${sourceId()}:${props.sourceState?.cursor ?? "first"}`}
+            pageIdentity={`${sourceId()}:${
+              props.sourceState?.cursor ?? "first"
+            }`}
             tableLabel={props.binding.label ?? t("composition.resultPages")}
           />
         </Show>

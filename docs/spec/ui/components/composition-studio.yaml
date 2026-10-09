@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-05"
+updated: "2026-10-08"
 component_group:
   id: composition-studio
   title: Composition Studio
@@ -49,13 +49,25 @@ components:
       filter_operators: [equals, contains, lt, lte, gt, gte]
       sort_directions: [asc, desc]
       projection: [fields, preview]
+      metric_projection: selected-entry-field-is-in-fields-projection-and-projection-edits-retain-metric-fields
+      projection_initialization: reserve-metric-bound-fields-then-schema-order-up-to-64
+      projection_capacity: unchecked-fields-disabled-with-localized-limit-title-at-64
+      projection_removal: selected-non-metric-fields-enabled-metric-bound-fields-disabled
+      projection_recovery: overbooked-saved-drafts-disable-controls-with-metric-binding-title
       edits: draft-source-query-through-narrow-updaters
       unknown_operators: rejected-fail-closed
       filter_sort_editing: shared-entry-browser-display-dialog-only
-      field_identity: human-names-from-transient-form-definition-with-schema-id-fallback
+      field_identity:
+        display_name: transient-form-field-name-first-when-form-resolves-the-field
+        fallback:
+          schema_field: localized-schema-ordinal-skipping-live-form-names-and-prior-fallbacks
+          referenced_field_missing_from_schema_snapshot: distinct-deterministic-localized-ordinal-skipping-live-form-names-and-prior-fallbacks
+        raw_field_id: query-data-only-never-rendered-in-field-filter-sort-projection-or-dialog-labels
       capability_gating: dialog-offers-only-capable-fields-with-disabled-add-and-reason-at-zero
       projection_placement: inline-unchanged-dialog-columns-contract-not-identical
       form_definition: transient-formApi-load-cached-per-source-never-stored
+      source_identity: selected-human-source-name-owned-by-workspace-heading
+      raw_form_id: draft-data-only-never-rendered
     saved_sql_viewer:
       sql: read-only-with-edit-saved-sql-action-to-existing-editor-route
       sections: [sql, variables, result-schema, result]
@@ -65,6 +77,10 @@ components:
     concealment: denied-or-missing-renders-source-unavailable-no-identifiers
     preview_discipline: existing-debounced-handle-only-no-second-path
     result_pages: bounded-shared-page-with-controller-owned-paging
+    pagination:
+      component: ResultPagination
+      reference: result-pagination.yaml
+      presentation: localized-icon-only-chevron-controls
     responsive:
       narrow: navigator-and-editor-stack
       narrow_width: 390px
@@ -82,6 +98,21 @@ components:
       entry_query: EntryResultTable
       saved_sql: SqlResultTable
     metric_semantics: exact-scalar-no-aggregation
+  - id: studio-display-picker
+    type: dialog
+    title: Add display
+    status: implemented
+    ownership: canvas-insertion-delegate
+    kind_selection: Table/Metric-tabs-inside-picker
+    sequence: [kind, source, metric-value-field-only-for-metric, optional-label, add]
+    source_selection: visibly-pressed-row-preserved-when-compatible-across-tabs
+    entry_query_field_labels: transient-form-label-or-distinct-localized-source-schema-index
+    internal_identifiers: field-source-entry-revision-ids-never-rendered
+    form_metadata: authorized-form-list-transient-never-stored
+    sizing:
+      width: min(720px, calc(100vw - 32px))
+      height: max-viewport-minus-32px-with-vertical-scroll
+    semantics: exact-scalar-no-aggregation
   - id: studio-parameters
     type: form
     title: Parameters
@@ -178,7 +209,7 @@ components:
         metric-table-only-with-sources,
         parameters-only-with-parameters,
       ]
-      metric_table: existing-display-picker-at-target
+      metric_table: existing-display-picker-at-target-with-kind-carried-through
       parameter: place-existing-only-no-creation
     removal:
       component: remove-declaration-and-unplace
@@ -201,6 +232,7 @@ components:
       label: optional-display-label
       data: existing-source-picker-only
       value: entry-field-or-sql-column-no-inference
+      entry_field_label: transient-form-label-or-localized-source-schema-index-never-id
     table_fields:
       label: optional-display-label
       data: existing-source-picker-only

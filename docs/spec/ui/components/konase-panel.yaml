@@ -11,25 +11,54 @@ components:
     scope: current-space
     connection:
       setup: in-memory-model-key-and-space-approval
+      pending_feedback: busy-disabled-connect-button-with-spinner
       approval_link: external-new-tab
     candidates:
       forms: current-space
+      forms_loading: live-status
+      forms_empty: localized-no-forms-state-after-successful-empty-list
       entries: current-space-preview-query
+      entries_loading: live-status
+      load_errors: inline-alert-with-localized-error-summary
       maximum_selected: 4
       form_label: trimmed-name-unless-empty-or-id-then-localized-form
       entry_label: trimmed-preview-unless-empty-or-id-then-localized-entry
+      entry_disambiguator: localized-entry-ordinal-for-repeated-preview-labels-across-loaded-pages-with-collision-safe-numbered-fallback
       identifiers_in_visible_or_accessible_names: false
     selected_resources:
-      label: remembered-candidate-label-then-localized-kind
+      label: remembered-disambiguated-candidate-label-then-localized-kind
       remove_action: localized-label-without-resource-uri
       identifiers_in_visible_or_accessible_names: false
       selection_identity: stable-resource-uri
     context_preview:
       review_before_send: true
-      resource_identity: full-resource-uri
+      resource_identity: stable-resource-uri-internal-to-selection-and-host
+      resource_label: selected-human-readable-label-without-uri
+      identifiers_in_visible_or_accessible_names: false
       content: normalized-projection
       admission: status-and-optional-reason
       trust_notice: selected-context-is-untrusted-data
       send: explicit-confirmation
       write_approval: separate-explicit-confirmation
-    states: [disconnected, connected, resource-selection, context-preview, sending, write-approval, result, undo]
+    write_approval:
+      target_label: current-space-name-form-name-and-exact-entry-preview-from-visible-candidate-or-selection
+      target_label_fallback: existing-entry-context
+      identifiers: collapsed-technical-details
+      disclosed_identifiers: [space-id, entry-id-when-present, work-id-for-undo]
+      change_summary: excludes-opaque-identifiers
+      approval_identity: exact-space-request-and-original-arguments
+    states: [
+      disconnected,
+      connection-pending,
+      connected,
+      form-candidate-loading,
+      no-form-candidates,
+      entry-candidate-loading,
+      candidate-load-error,
+      resource-selection,
+      context-preview,
+      sending,
+      write-approval,
+      result,
+      undo,
+    ]

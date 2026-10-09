@@ -10,6 +10,7 @@ import {
 } from "@solidjs/testing-library";
 import { EntryDetailPane } from "./EntryDetailPane";
 import { entryApi, RevisionConflictError } from "~/lib/ugoite-client";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
 
@@ -136,6 +137,31 @@ describe("EntryDetailPane safety/recovery", () => {
     expect(container.querySelectorAll(".actionbar")).toHaveLength(1);
   });
 
+  it("REQ-FE-035: hides internal identifiers when Entry loading fails and keeps recovery actions", async () => {
+    const getMock = entryApi.get as ReturnType<typeof vi.fn>;
+    getMock.mockRejectedValueOnce(new Error("Temporary network failure"))
+      .mockResolvedValueOnce(storedEntry());
+
+    const { container } = render(() => (
+      <EntryDetailPane
+        spaceId={() => "space-private-opaque-id"}
+        entryId={() => "entry-private-opaque-id"}
+        forms={() => [notesForm]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    await screen.findByText(/Failed to load the entry/);
+    expect(container).not.toHaveTextContent("space-private-opaque-id");
+    expect(container).not.toHaveTextContent("entry-private-opaque-id");
+    expect(screen.getByRole("button", { name: "Back to Form" }))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByLabelText("Notes");
+    expect(getMock).toHaveBeenCalledTimes(2);
+  });
+
   it("cancelling the delete dialog sends nothing and keeps the draft", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue(
       storedEntry(),
@@ -178,7 +204,7 @@ describe("EntryDetailPane safety/recovery", () => {
     expect(screen.getByLabelText("Notes")).toHaveValue("local edit");
   });
 
-  it("keeps the user draft on 409, shows the server revision, and re-saves on the adopted base", async () => {
+  it("keeps the user draft on 409, gives ID-free conflict guidance, and re-saves on the adopted base", async () => {
     const getMock = entryApi.get as ReturnType<typeof vi.fn>;
     getMock.mockResolvedValueOnce(storedEntry()).mockResolvedValueOnce(
       storedEntry({
@@ -188,7 +214,18 @@ describe("EntryDetailPane safety/recovery", () => {
     );
     const updateMock = entryApi.update as ReturnType<typeof vi.fn>;
     updateMock.mockRejectedValueOnce(
-      new RevisionConflictError("Revision conflict", "server-rev"),
+      new RevisionConflictError(
+        "Revision conflict",
+        "server-rev",
+        new UgoiteApiError({
+          kind: "conflict",
+          code: "REVISION_CONFLICT",
+          operation: "entry.update",
+          status: 409,
+          message: "Revision conflict",
+          detail: { current_revision_id: "server-rev" },
+        }),
+      ),
     );
     updateMock.mockResolvedValue({ id: "entry-1", revision_id: "rev-3" });
 
@@ -205,15 +242,16 @@ describe("EntryDetailPane safety/recovery", () => {
     fireEvent.input(notes, { target: { value: "my draft edit" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    // No Reload-destroys-draft: the heading, server revision, and the exact
-    // typed draft all stay visible.
+    // No Reload-destroys-draft: the conflict guidance and exact typed draft
+    // stay visible without exposing the raw server revision ID.
     const conflict = await screen.findByText(
       "Someone else saved first — your draft is kept",
     );
     expect(conflict).toBeInTheDocument();
-    expect(
-      screen.getByText("Current server revision: server-rev"),
-    ).toBeInTheDocument();
+    const conflictAlert = conflict.closest('[role="alert"]')!;
+    expect(conflictAlert).toHaveTextContent("The server has a newer revision.");
+    expect(conflictAlert).not.toHaveTextContent("server-rev");
+    expect(document.body).not.toHaveTextContent("server-rev");
     expect(screen.getByLabelText("Notes")).toHaveValue("my draft edit");
 
     // Side-by-side review: latest is read-only text, local stays editable.

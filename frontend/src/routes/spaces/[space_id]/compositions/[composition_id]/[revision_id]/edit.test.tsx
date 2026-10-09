@@ -251,6 +251,102 @@ describe("Composition edit route", () => {
       .toHaveLength(1);
   });
 
+  it("keeps document source IDs out of labels when names cannot be loaded", async () => {
+    sqlGetMock.mockRejectedValueOnce(new Error("Unavailable"));
+    formListMock.mockRejectedValueOnce(new Error("Unavailable"));
+    render(() => <CompositionEditRoute />);
+
+    expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");
+    fireEvent.click(
+      within(screen.getByRole("radiogroup", { name: "Studio mode" })).getByRole(
+        "radio",
+        { name: "Data" },
+      ),
+    );
+
+    expect(await screen.findByRole("button", { name: "Source 1" }))
+      .toBeInTheDocument();
+    expect(screen.queryByText("src-1")).not.toBeInTheDocument();
+  });
+
+  it("opens canonical revisions when empty parameters and variables are omitted", async () => {
+    const { parameters: _parameters, ...specWithoutParameters } =
+      lintDocument.spec;
+    const [{ variables: _variables, ...savedSqlSource }] =
+      lintDocument.spec.sources;
+    lintMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        document: {
+          ...lintDocument,
+          spec: {
+            ...specWithoutParameters,
+            sources: [savedSqlSource],
+          },
+        },
+        canonical_yaml: storedYaml,
+        fingerprint: "fingerprint",
+      },
+    });
+
+    render(() => <CompositionEditRoute />);
+
+    expect(await screen.findByLabelText("Name")).toHaveValue(
+      "Monthly review",
+    );
+    expect(screen.queryByText("This revision cannot be edited.")).not
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+
+  it("refuses explicit null parameters as malformed", async () => {
+    lintMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        document: {
+          ...lintDocument,
+          spec: {
+            ...lintDocument.spec,
+            parameters: null,
+          },
+        },
+        canonical_yaml: storedYaml,
+        fingerprint: "fingerprint",
+      },
+    });
+
+    render(() => <CompositionEditRoute />);
+
+    expect(await screen.findByText("This revision cannot be edited."))
+      .toBeInTheDocument();
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+  });
+
+  it("refuses explicit null Saved SQL variables as malformed", async () => {
+    const { parameters: _parameters, ...specWithoutParameters } =
+      lintDocument.spec;
+    lintMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        document: {
+          ...lintDocument,
+          spec: {
+            ...specWithoutParameters,
+            sources: [{ ...lintDocument.spec.sources[0], variables: null }],
+          },
+        },
+        canonical_yaml: storedYaml,
+        fingerprint: "fingerprint",
+      },
+    });
+
+    render(() => <CompositionEditRoute />);
+
+    expect(await screen.findByText("This revision cannot be edited."))
+      .toBeInTheDocument();
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+  });
+
   it("saves an update with base revision identity and a stable retry key", async () => {
     render(() => <CompositionEditRoute />);
     expect(await screen.findByLabelText("Name")).toHaveValue("Monthly review");

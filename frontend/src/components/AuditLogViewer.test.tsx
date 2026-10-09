@@ -1,5 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AuditLogViewer,
@@ -190,11 +197,12 @@ describe("AuditLogViewer", () => {
     expect(await screen.findByText("成功")).toBeInTheDocument();
   });
 
-  it("PR6: resolves space actor IDs to member display names with raw IDs advanced-only", async () => {
+  it("REQ-UX-AUDIT-001: keeps actor IDs inside audit details", async () => {
+    const actorId = "01900000-0000-7000-8000-000000000042";
     vi.mocked(spaceApi.listAudit).mockResolvedValue({
       items: [
         spaceEvent(0, {
-          actor_principal_id: "01900000-0000-7000-8000-000000000042",
+          actor_principal_id: actorId,
         }),
       ],
       total: 1,
@@ -204,7 +212,7 @@ describe("AuditLogViewer", () => {
     vi.mocked(spaceApi.listMembers).mockResolvedValue([
       {
         principal: {
-          principal_id: "01900000-0000-7000-8000-000000000042",
+          principal_id: actorId,
           display_name: "Ada Example",
           kind: "human",
           state: "active",
@@ -215,17 +223,150 @@ describe("AuditLogViewer", () => {
     render(() => <SpaceAuditLogViewer spaceId="space-1" />);
 
     expect(await screen.findByText("Ada Example")).toBeInTheDocument();
-    // The row shows the display name; the exact identity stays in the
-    // row disclosure.
-    fireEvent.click(screen.getByText("View details"));
-    expect(
-      screen.getByText("01900000-0000-7000-8000-000000000042").closest(
-        "details",
-      ),
-    ).not.toBeNull();
+    const detailsSummary = screen.getByText("View details");
+    const actorIdentity = screen.getByText(actorId);
+    expect(actorIdentity).not.toBeVisible();
+    fireEvent.click(detailsSummary);
+    expect(actorIdentity).toBeVisible();
   });
 
-  it("renders the shared viewer with a custom loader", async () => {    const load = vi.fn().mockResolvedValue({
+  it("REQ-UX-AUDIT-001: keeps target IDs out of audit rows and in details", async () => {
+    const targetId = "01900000-0000-7000-8000-000000000099";
+    vi.mocked(spaceApi.listAudit).mockResolvedValue({
+      items: [spaceEvent(0, { target_type: "entry", target_id: targetId })],
+      total: 1,
+      offset: 0,
+      limit: 25,
+    });
+    render(() => <SpaceAuditLogViewer spaceId="space-1" />);
+
+    const detailsSummary = await screen.findByText("View details");
+    const row = detailsSummary.closest("tr");
+    expect(row).not.toBeNull();
+    if (!row) throw new Error("Audit event row was not rendered");
+
+    const targetCell = row.querySelectorAll("td")[4];
+    expect(targetCell).toHaveTextContent("entry");
+    expect(targetCell).not.toHaveTextContent(targetId);
+
+    const targetIdentity = within(row).getByText(targetId);
+    expect(targetIdentity).not.toBeVisible();
+    fireEvent.click(detailsSummary);
+    expect(targetIdentity).toBeVisible();
+    expect(within(row).getByText("Target ID")).toBeVisible();
+    setLocale("ja");
+    expect(within(row).getByText("対象リソース ID")).toBeVisible();
+    expect(within(row).getByText("対象 ID")).toBeVisible();
+  });
+
+  it("REQ-UX-AUDIT-002: uses a localized neutral label for unresolved actors", async () => {
+    const unresolvedActorId = "01900000-0000-7000-8000-000000000042";
+    vi.mocked(spaceApi.listAudit).mockResolvedValue({
+      items: [spaceEvent(0, { actor_principal_id: unresolvedActorId })],
+      total: 1,
+      offset: 0,
+      limit: 25,
+    });
+    render(() => <SpaceAuditLogViewer spaceId="space-1" />);
+
+    const unknownActor = await screen.findByText("Unknown actor");
+    const actorCell = unknownActor.closest("td");
+    if (!actorCell) throw new Error("Audit actor cell was not rendered");
+    expect(actorCell).not.toHaveTextContent("01900000");
+
+    const details = unknownActor.closest("tr")?.querySelector("details");
+    if (!details) throw new Error("Audit details disclosure was not rendered");
+    const exactActorId = details.querySelector(
+      ".auditDetails > div:nth-child(2) dd code",
+    );
+    if (!exactActorId) throw new Error("Exact actor identity was not rendered");
+    expect(exactActorId).toHaveTextContent(unresolvedActorId);
+    expect(exactActorId).not.toBeVisible();
+
+    fireEvent.click(within(details).getByText("View details"));
+    expect(exactActorId).toBeVisible();
+
+    setLocale("ja");
+    expect(await screen.findByText("不明な実行者")).toBeInTheDocument();
+    expect(actorCell).not.toHaveTextContent("01900000");
+  });
+
+  it("REQ-UX-AUDIT-002: hides directory values that echo an actor ID", async () => {
+    const uuid = "01900000-0000-7000-8000-000000000042";
+    const echoes = [
+      { actorId: uuid, displayName: uuid },
+      { actorId: uuid, displayName: uuid.slice(0, 8) },
+      { actorId: "actor-7", displayName: "actor-7" },
+      { actorId: "actor-7", displayName: "Member actor-7" },
+    ];
+    for (const { actorId, displayName } of echoes) {
+      vi.mocked(spaceApi.listMembers).mockResolvedValue([
+        {
+          principal: {
+            principal_id: actorId,
+            display_name: displayName,
+            kind: "human",
+            state: "active",
+          },
+          role: "owner",
+        },
+      ]);
+      vi.mocked(spaceApi.listAudit).mockResolvedValue({
+        items: [spaceEvent(0, { actor_principal_id: actorId })],
+        total: 1,
+        offset: 0,
+        limit: 25,
+      });
+      render(() => <SpaceAuditLogViewer spaceId="space-1" />);
+
+      const unknownActor = await screen.findByText("Unknown actor");
+      const actorCell = unknownActor.closest("td");
+      if (!actorCell) throw new Error("Audit actor cell was not rendered");
+      expect(actorCell).not.toHaveTextContent(actorId.slice(0, 8));
+
+      const details = unknownActor.closest("tr")?.querySelector("details");
+      if (!details) {
+        throw new Error("Audit details disclosure was not rendered");
+      }
+      const exactActorId = details.querySelector(
+        ".auditDetails > div:nth-child(2) dd code",
+      );
+      if (!exactActorId) {
+        throw new Error("Exact actor identity was not rendered");
+      }
+      expect(exactActorId).toHaveTextContent(actorId);
+      expect(exactActorId).not.toBeVisible();
+      cleanup();
+    }
+  });
+
+  it("REQ-UX-AUDIT-002: hides unresolved Node actor IDs from primary rows", async () => {
+    const unresolvedActorId = "01900000-0000-7000-8000-000000000043";
+    vi.mocked(authApi.listAudit).mockResolvedValue([
+      nodeEvent(0, { actor_account_id: unresolvedActorId }),
+    ]);
+    render(() => <NodeAuditLogViewer />);
+
+    const unknownActor = await screen.findByText("Unknown actor");
+    const actorCell = unknownActor.closest("td");
+    if (!actorCell) throw new Error("Audit actor cell was not rendered");
+    expect(actorCell).not.toHaveTextContent("01900000");
+
+    const details = unknownActor.closest("tr")?.querySelector("details");
+    if (!details) throw new Error("Audit details disclosure was not rendered");
+    const exactActorId = details.querySelector(
+      ".auditDetails > div:nth-child(2) dd code",
+    );
+    if (!exactActorId) throw new Error("Exact actor identity was not rendered");
+    expect(exactActorId).toHaveTextContent(unresolvedActorId);
+    expect(exactActorId).not.toBeVisible();
+
+    fireEvent.click(within(details).getByText("View details"));
+    expect(exactActorId).toBeVisible();
+  });
+
+  it("renders the shared viewer with a custom loader", async () => {
+    const load = vi.fn().mockResolvedValue({
       items: [nodeEvent(0)],
       total: 1,
       offset: 0,

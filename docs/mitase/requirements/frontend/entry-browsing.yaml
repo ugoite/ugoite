@@ -171,6 +171,10 @@ requirements:
         kind: behavior
         statement: Entry navigation does not remain in an unresolved loading state and provides a recoverable path when navigation cannot complete normally.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+      - id: failed-load-identifiers
+        kind: quality
+        statement: A failed Entry load keeps retry and return actions available without exposing the Space ID or Entry ID in the visible error state.
+        governed_by: [POL-UI-005#rule.governance]
     bindings:
       - id: navigation-recovery-verification
         role: verification
@@ -186,6 +190,15 @@ requirements:
                 criterion: REQ-FE-035#criterion.navigation-recovery
                 covers: [FEAT-FE-003#binding.frontend/target.entry-detail-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/entries.test.ts, test: "REQ-FE-035: Navigation timeout handling and recovery" } }
+          - id: failed-load-identifiers
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.safety.test.tsx
+            selector: { kind: test, name: "REQ-FE-035: hides internal identifiers when Entry loading fails and keeps recovery actions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-035#criterion.failed-load-identifiers
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "REQ-FE-035: hides internal identifiers when Entry loading fails and keeps recovery actions" } }
   - id: REQ-FE-043
     title: Sample data error formatting
     description: Frontend API and creation dialogs present structured validation failures as human-readable messages without exposing object placeholders.

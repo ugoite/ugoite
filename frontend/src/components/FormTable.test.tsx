@@ -244,7 +244,7 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() =>
-      expect(desktopTable().getByText("entry-1"))
+      expect(desktopTable().getByText("open"))
         .toBeInTheDocument()
     );
     const pagination = screen.getByRole("navigation", {
@@ -270,7 +270,7 @@ describe("FormTable", () => {
 
     fireEvent.click(getByRole("button", { name: "Next" }));
     await waitFor(() =>
-      expect(desktopTable().getByText("entry-2"))
+      expect(desktopTable().getByText("closed"))
         .toBeInTheDocument()
     );
     expect(query.mock.calls.at(-1)?.[1].after).toBe("cursor-1");
@@ -279,7 +279,7 @@ describe("FormTable", () => {
 
     fireEvent.click(getByRole("button", { name: "Previous" }));
     await waitFor(() =>
-      expect(desktopTable().getByText("entry-1"))
+      expect(desktopTable().getByText("open"))
         .toBeInTheDocument()
     );
     expect(query.mock.calls.at(-1)?.[1].after).toBeUndefined();
@@ -369,7 +369,7 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() =>
-      expect(desktopTable().getByText("entry-a")).toBeInTheDocument()
+      expect(desktopTable().getByText("10")).toBeInTheDocument()
     );
 
     const priceHeader = desktopTable().getByText("price");
@@ -381,7 +381,7 @@ describe("FormTable", () => {
         field: { kind: "property", field_id: 1 },
         direction: "asc",
       }]);
-      expect(desktopTable().getByText("entry-a")).toBeInTheDocument();
+      expect(desktopTable().getByText("10")).toBeInTheDocument();
     });
 
     fireEvent.click(desktopTable().getByText("status"));
@@ -463,7 +463,7 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() =>
-      expect(desktopTable().getByText("entry-apple")).toBeInTheDocument()
+      expect(desktopTable().getByText("fruit")).toBeInTheDocument()
     );
 
     const searchInput = getByPlaceholderText("Global Search...");
@@ -471,8 +471,8 @@ describe("FormTable", () => {
 
     await waitFor(() => {
       expect(query.mock.calls.at(-1)?.[1].query.text).toBe("veggie");
-      expect(desktopTable().getByText("entry-carrot")).toBeInTheDocument();
-      expect(desktopTable().queryByText("entry-apple")).not.toBeInTheDocument();
+      expect(desktopTable().getByText("veggie")).toBeInTheDocument();
+      expect(desktopTable().queryByText("fruit")).not.toBeInTheDocument();
     });
   });
 
@@ -623,7 +623,6 @@ describe("FormTable", () => {
       });
       const rows = document.querySelectorAll("tbody tr");
       expect(rows.length).toBe(1);
-      expect(rows[0]).toHaveTextContent("apple-1");
       expect(rows[0]).toHaveTextContent("fruit");
     });
   });
@@ -693,7 +692,7 @@ describe("FormTable", () => {
     await waitFor(() => {
       const rows = document.querySelectorAll("tbody tr");
       expect(rows.length).toBe(1);
-      expect(rows[0]).toHaveTextContent("keep-entry");
+      expect(rows[0]).toHaveTextContent("100");
     });
 
     fireEvent.click(getByText("Export CSV"));
@@ -768,9 +767,10 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() =>
-      expect(desktopTable().getByText("plain")).toBeInTheDocument()
-    );
+    await waitFor(() => {
+      expect(document.querySelectorAll("tbody tr").length).toBe(3);
+      expect(desktopTable().getByText("\u0001=CMD")).toBeInTheDocument();
+    });
     fireEvent.click(screen.getByText("Export CSV"));
 
     await waitFor(() => {
@@ -786,8 +786,6 @@ describe("FormTable", () => {
     );
     // The export is a derived representation: durable Entry values are unchanged.
     expect(entries).toEqual(snapshot);
-    expect(desktopTable().getByText("=SUM(A1:A2)")).toBeInTheDocument();
-    expect(desktopTable().getByText("-discount")).toBeInTheDocument();
     vi.mocked(document.createElement).mockRestore();
   });
 
@@ -948,7 +946,7 @@ describe("FormTable", () => {
     ));
 
     // Wait for render
-    await waitFor(() => desktopTable().getByText("1"));
+    await waitFor(() => desktopTable().getByText("val"));
 
     // Click Edit Toggle (Lock icon)
     const toggleButton = getByTitle("Enable Editing");
@@ -1002,11 +1000,11 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() =>
-      expect(desktopTable().getByText("1")).toBeInTheDocument()
+      expect(desktopTable().getByText("val")).toBeInTheDocument()
     );
 
     // Find the row
-    const row = desktopTable().getByText("1").closest("tr");
+    const row = desktopTable().getByText("val").closest("tr");
     if (!row) throw new Error("Row not found");
 
     // Click the row itself (but not the link icon)
@@ -1075,11 +1073,10 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => desktopTable().getByText("1"));
+    await waitFor(() => desktopTable().getByText("val1"));
 
-    // Simulate drag selection from (0,0) to (1,1)
-    // Col 0: ID, Col 1: col
-    const cell1 = desktopTable().getByText("1");
+    // Simulate drag selection across the first Form field in two rows.
+    const cell1 = desktopTable().getByText("val1");
     const cell2 = desktopTable().getByText("val2");
 
     fireEvent.mouseDown(cell1);
@@ -1089,7 +1086,7 @@ describe("FormTable", () => {
     // Trigger Ctrl+C
     fireEvent.keyDown(document, { key: "c", ctrlKey: true });
 
-    expect(writeTextSpy).toHaveBeenCalledWith("1\tval1\n2\tval2");
+    expect(writeTextSpy).toHaveBeenCalledWith("val1\nval2");
   });
 
   it("should not trigger custom copy when input is focused", async () => {
@@ -1154,7 +1151,7 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => desktopTable().getByText("entry-a"));
+    await waitFor(() => desktopTable().getByText("v2"));
 
     // Open sort menu
     fireEvent.click(getByLabelText("Sort menu"));
@@ -1237,9 +1234,10 @@ describe("FormTable", () => {
       name: "Test",
       fields: { col: { type: "string" } },
     } as any;
+    const entryId = "internal-entry-id";
     const entries = [
       {
-        id: "1",
+        id: entryId,
         properties: { col: "val1" },
         updated_at: new Date("2026-01-01").toISOString(),
       },
@@ -1248,7 +1246,7 @@ describe("FormTable", () => {
     const writeTextSpy = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
 
-    const { getByText } = render(() => (
+    render(() => (
       <FormTable
         spaceId="ws"
         entryForm={canonicalForm(entryForm)}
@@ -1257,12 +1255,11 @@ describe("FormTable", () => {
       />
     ));
 
-    await waitFor(() => desktopTable().getByText("1"));
+    await waitFor(() => desktopTable().getByText("val1"));
 
-    // Select ID cell (col 0)
-    const cell1 = desktopTable().getByText("1");
-    // Get a cell with a date (updated_at column, col 2)
-    const updatedCell = document.querySelectorAll("tbody td")[3]; // Actions(0), ID(1), col(2), updated(3)
+    const cell1 = desktopTable().getByText("val1");
+    // Actions(0), Form field(1), updated_at(2).
+    const updatedCell = document.querySelectorAll("tbody td")[2];
 
     fireEvent.mouseDown(cell1);
     fireEvent.mouseEnter(updatedCell, { buttons: 1 });
@@ -1273,59 +1270,50 @@ describe("FormTable", () => {
     await waitFor(() => {
       expect(writeTextSpy).toHaveBeenCalled();
     });
+    const copied = writeTextSpy.mock.calls[0][0] as string;
+    expect(copied).toContain("val1");
+    expect(copied).not.toContain(entryId);
   });
 
-  it("id cell is read-only via handleCellUpdate", async () => {
+  it("REQ-UX-FORMTABLE-001: keeps Entry IDs out of desktop rows and opens entries by action", async () => {
     const entryForm = {
       name: "Test",
       fields: { col: { type: "string" } },
     } as any;
-    const entries = [
-      {
-        id: "entry-1",
-        properties: { col: "val" },
-        updated_at: "2026-01-01",
-      },
-    ];
-    mockEntryQuery(entries);
-    const getSpy = vi.spyOn(entryApi, "get").mockResolvedValue({
-      id: "entry-1",
-      fields: { col: "val" },
-      revision_id: "rev1",
-    } as any);
-    const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
+    const entryId = "internal-entry-id";
+    mockEntryQuery([{
+      id: entryId,
+      properties: { col: "Quarterly plan" },
+      updated_at: "2026-01-01",
+    }]);
+    const onEntryClick = vi.fn();
 
-    const { getByText, getByTitle } = render(() => (
+    render(() => (
       <FormTable
         spaceId="ws"
         entryForm={canonicalForm(entryForm)}
-        onEntryClick={() => {}}
+        onEntryClick={onEntryClick}
         onAddRow={() => {}}
       />
     ));
 
-    await waitFor(() => desktopTable().getByText("entry-1"));
-
-    // Enable edit mode
-    fireEvent.click(getByTitle("Enable Editing"));
-
-    // Click on the ID cell td: the stable entry id is identity and never
-    // becomes an inline editor.
-    const idText = desktopTable().getByText("entry-1");
-    const idTd = idText.closest("td") ?? idText;
-    fireEvent.click(idTd);
-
-    // No inline editor opens for the ID cell.
+    const row = await waitFor(() => {
+      const rendered = desktopTable().getByText("Quarterly plan").closest("tr");
+      if (!rendered) throw new Error("FormTable row was not rendered");
+      return rendered;
+    });
+    expect(within(row).queryByText(entryId)).not.toBeInTheDocument();
     expect(
-      document.querySelector("input.ui-table-cell-input"),
+      within(row).queryByRole("button", { name: new RegExp(entryId) }),
     ).not.toBeInTheDocument();
-    expect(updateSpy).not.toHaveBeenCalled();
 
-    updateSpy.mockRestore();
-    getSpy.mockRestore();
+    fireEvent.click(row);
+    expect(onEntryClick).not.toHaveBeenCalled();
+    fireEvent.click(within(row).getByRole("button", { name: /view entry/i }));
+    expect(onEntryClick).toHaveBeenCalledWith(entryId);
   });
 
-  it("renders a mobile card with primary fields and progressively discloses the rest", async () => {
+  it("REQ-UX-FORMTABLE-001: keeps Entry IDs out of mobile rows and opens entries by action", async () => {
     const entryForm = {
       name: "Test",
       fields: {
@@ -1357,17 +1345,21 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() =>
-      expect(mobileList().getByText("entry-1"))
+      expect(mobileList().getByText("Open"))
         .toBeInTheDocument()
     );
+    expect(mobileList().queryByText("entry-1")).not.toBeInTheDocument();
+    expect(
+      mobileList().queryByRole("button", { name: /entry-1/i }),
+    ).not.toBeInTheDocument();
     expect(mobileList().getByText("status")).toBeInTheDocument();
     expect(mobileList().getByText("priority")).toBeInTheDocument();
     const extraField = mobileList().getByText("notes");
     expect(extraField.closest(".ui-table-mobile-extra-fields"))
       .toBeTruthy();
     expect(mobileList().getByText("Show 1 more field")).toBeInTheDocument();
-    // The mobile card header shows the stable entry ID and navigates.
-    fireEvent.click(mobileList().getByText("entry-1"));
+    // The mobile card keeps an ID-free open action.
+    fireEvent.click(mobileList().getByRole("button", { name: /view entry/i }));
     expect(onEntryClick).toHaveBeenCalledWith("entry-1");
   });
 
@@ -1409,7 +1401,7 @@ describe("FormTable", () => {
     ));
 
     await waitFor(() =>
-      expect(mobileList().getByText("1"))
+      expect(mobileList().getByText("Open"))
         .toBeInTheDocument()
     );
     fireEvent.click(getByTitle("Enable Editing"));

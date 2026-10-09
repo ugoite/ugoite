@@ -100,16 +100,21 @@ export const studioCapabilitiesFromForm = (
 };
 
 /**
- * Fallback capabilities from the draft schema snapshot. Names fall back to
- * the current field-ID rendering; every schema field stays offered so a
- * missing definition never blocks editing.
+ * Fallback capabilities from the draft schema snapshot. The caller supplies
+ * localized labels because this helper stays independent of the active UI
+ * locale; every schema field stays offered so a missing definition never
+ * blocks editing.
  */
 export const studioFallbackCapabilities = (
   schema: readonly EntryQueryCompositionFieldSchemaEntry[],
+  fallbackName: (
+    entry: EntryQueryCompositionFieldSchemaEntry,
+    index: number,
+  ) => string,
 ): EntryFieldCapability[] =>
-  schema.map((entry) => ({
+  schema.map((entry, index) => ({
     field: { kind: "property", field_id: entry.field_id },
-    name: String(entry.field_id),
+    name: fallbackName(entry, index),
     field_type: entry.field_type,
     filterable: true,
     sortable: true,

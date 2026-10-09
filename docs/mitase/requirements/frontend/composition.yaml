@@ -18,17 +18,21 @@ requirements:
         kind: behavior
         statement: Steady-state Studio and saved-Tool surfaces carry no product explanation, tutorial paragraph, repeated context sentence, persistent success prose, or primary-path internal identifiers; each datum keeps one visible owner and each navigation or mutation intent keeps exactly one operative control per surface.
         governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-003#rule.governance]
+      - id: entry-query-field-labels
+        kind: behavior
+        statement: EntryQuery field labels in the Composition Data editor and metric value picker use transient Form display labels, query-capability names, or field keys whenever live Form metadata resolves a field; otherwise they use localized schema ordinals. Fallback ordinals are deterministic and distinct, skipping names used by live Form fields and earlier fallbacks, including for unresolved references missing from the schema snapshot. While metadata is loading, absent, or unavailable, labels use the schema ordinal fallback. Raw numeric field IDs stay in query data and never render in field, filter, sort, projection, metric-value, or dialog labels.
+        governed_by: [POL-UI-005#rule.governance]
       - id: source-authoring
         kind: behavior
-        statement: A Tool pins one or more exact sources (Saved SQL at an exact revision, EntryQuery from an existing Form view or Form-scoped query control) with full-row selection, reorder controls, and a guarded remove that blocks while displays reference the source instead of cascading silently.
+        statement: A Tool pins one or more exact sources (Saved SQL at an exact revision, EntryQuery from an existing Form view or Form-scoped query control) with full-row selection, reorder controls, and a guarded remove that blocks while displays reference the source instead of cascading silently. EntryQuery editors prefer transient Form field names whenever live metadata resolves a field; unresolved fields use localized ordinals, with distinct deterministic ordinals for unresolved references absent from the schema snapshot, while raw field IDs stay in query data only.
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance, POL-UI-007#rule.governance]
       - id: display-authoring
         kind: behavior
-        statement: Displays are table or exact-scalar metric components only; a table renders through the source-native Entry or SQL presenter, a metric selects one scalar-compatible field or column with an optional label, and several displays may share one source without duplicate fetching.
+        statement: Canvas insertion opens one display picker with Table and Metric tabs above source selection. A table needs a source; a metric additionally selects one scalar-compatible field or column and offers no field control while Table is active. Selecting an EntryQuery metric field adds it to the source's fields projection when capacity allows; later projection edits preserve fields referenced by metrics, and Preview is unavailable while a metric uses a field. At the projection limit the metric selector offers only already projected fields, unchecked projection choices are disabled with a localized limit title, selected non-metric fields remain removable when one slot resolves a metric deficit, and metric-bound fields cannot be unchecked. When a saved draft needs several removals at once, projection controls are disabled with a localized recovery title directing the user to edit metric bindings. Compatible source selection stays visible across tabs, while a Table source without scalar values is cleared when switching to Metric. Form field choices use human labels or distinct localized fallback ordinals, never numeric IDs; opaque source, Entry, and revision IDs stay out of visible labels. A table renders through the source-native Entry or SQL presenter, saved EntryQuery tables use Form labels or Form field keys as headings while reading values by the stable field key, and missing Form metadata falls back to projected row keys without exposing field IDs. Both display kinds support an optional label, and several displays may share one source without duplicate fetching.
         governed_by: [POL-UI-002#rule.governance, POL-UI-006#rule.governance]
       - id: typed-parameter-binding
         kind: behavior
-        statement: Parameters use the existing Composition parameter grammar with labels, defaults, and date/month/timestamp inputs; Saved SQL variables and EntryQuery filter values bind to parameters by reference, and type compatibility is decided by the Rust-owned capability and diagnostics, never by Browser inference.
+        statement: Parameters use the existing Composition parameter grammar with labels, defaults, and date/month/timestamp inputs. Studio parameter rows prefer the declared human label and fall back to the user-authored parameter name that binds references; Saved SQL variables and EntryQuery filter values bind to parameters by reference, and type compatibility is decided by the Rust-owned capability and diagnostics, never by Browser inference.
         governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance]
       - id: side-effect-free-preview
         kind: behavior
@@ -36,7 +40,7 @@ requirements:
         governed_by: [POL-UI-009#rule.governance]
       - id: exact-revision-edit
         kind: behavior
-        statement: Editing opens the exact saved revision through composition.get and composition.lint normalization, saves with the exact composition and base revision identity plus idempotency, and appends a new revision on success; stale bases conflict and uncertain saves retry the identical payload and key.
+        statement: Editing opens the exact saved revision through composition.get and composition.lint normalization, treating omitted empty optional parameter and Saved SQL variable collections as empty editor state while refusing malformed explicit-null collections, saves with the exact composition and base revision identity plus idempotency, and appends a new revision on success; stale bases conflict and uncertain saves retry the identical payload and key.
         governed_by: [POL-UI-008#rule.governance, POL-UI-009#rule.governance]
       - id: mobile-one-column
         kind: quality
@@ -131,7 +135,7 @@ requirements:
       - id: studio-edit-verification
         role: verification
         facet: verification
-        responsibility: Verify exact-revision edit (open the exact saved revision through composition.get and composition.lint normalization, restore the shared studio draft, save with the exact composition and base revision identity plus idempotency, refuse invalid documents without opening the studio) through exact frontend unit tests.
+        responsibility: Verify exact-revision edit (open the exact saved revision through composition.get and composition.lint normalization, restore the shared studio draft while treating omitted empty optional parameter and Saved SQL variable collections as empty, save with the exact composition and base revision identity plus idempotency, and refuse malformed explicit-null collections or other invalid documents without opening the studio) through exact frontend unit tests.
         targets:
           - id: studio-edit-restore
             adapter: typescript
@@ -159,6 +163,33 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "loads the exact revision through get and lint with a prefilled studio" } }
+          - id: studio-edit-empty-optional-collections
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+            selector: { kind: test, name: "opens canonical revisions when empty parameters and variables are omitted" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "opens canonical revisions when empty parameters and variables are omitted" } }
+          - id: studio-edit-null-parameters
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+            selector: { kind: test, name: "refuses explicit null parameters as malformed" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "refuses explicit null parameters as malformed" } }
+          - id: studio-edit-null-saved-sql-variables
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
+            selector: { kind: test, name: "refuses explicit null Saved SQL variables as malformed" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.exact-revision-edit
+                covers: [FEAT-FE-014#binding.frontend/target.composition-edit-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx", test: "refuses explicit null Saved SQL variables as malformed" } }
           - id: studio-edit-save
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/edit.test.tsx
@@ -202,7 +233,7 @@ requirements:
       - id: studio-display-verification
         role: verification
         facet: verification
-        responsibility: Verify the Studio display authoring (table or exact-scalar metric choice, scalar-only value candidates with disabled unavailable sources, inline label editing, keyboard-operable reorder, remove) through exact frontend unit tests.
+        responsibility: Verify the unified Table/Metric display picker, human field labels and hidden field IDs in EntryQuery choices, scalar-only value candidates with disabled unavailable sources, inline label editing, keyboard-operable reorder, and remove through exact frontend unit tests.
         targets:
           - id: studio-display-picker-table
             adapter: typescript
@@ -230,6 +261,136 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a metric display with scalar-only candidates" } }
+          - id: studio-display-picker-kind-and-labels
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "selects Metric in the picker and uses Form labels" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "selects Metric in the picker and uses Form labels" } }
+          - id: studio-display-picker-kind-switch
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "keeps compatible sources across kind tabs and clears metric values for Table" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "keeps compatible sources across kind tabs and clears metric values for Table" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.structure-first-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "keeps compatible sources across kind tabs and clears metric values for Table" } }
+          - id: studio-display-picker-field-id-hidden
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "uses a localized field ordinal without exposing a Form field ID" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "uses a localized field ordinal without exposing a Form field ID" } }
+          - id: studio-display-picker-distinct-field-labels
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "keeps metric field labels distinct when a Form name looks like a fallback" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "keeps metric field labels distinct when a Form name looks like a fallback" } }
+          - id: studio-composition-form-field-name-resolution
+            adapter: typescript
+            path: frontend/src/lib/composition-field-name.test.ts
+            selector: { kind: test, name: "uses the query capability name when the label is absent" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-FE-014#binding.frontend/target.composition-form-field-name]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-field-name.test.ts, test: "uses the query capability name when the label is absent" } }
+          - id: studio-entry-query-metric-projection
+            adapter: typescript
+            path: frontend/src/lib/composition-draft.test.ts
+            selector: { kind: test, name: "keeps EntryQuery metric fields in the source projection" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: "keeps EntryQuery metric fields in the source projection" } }
+          - id: studio-entry-query-metric-projection-locked
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "keeps the preview projection unavailable while an EntryQuery metric uses a field" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-entry-query-source-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "keeps the preview projection unavailable while an EntryQuery metric uses a field" } }
+          - id: studio-entry-query-projection-recovers-required-field
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "requires a free slot before adding an unprojected metric field at capacity" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-entry-query-source-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "requires a free slot before adding an unprojected metric field at capacity" } }
+          - id: studio-entry-query-projection-overbooked-recovery
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "disables projection edits when several missing metric fields exceed capacity" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-entry-query-source-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "disables projection edits when several missing metric fields exceed capacity" } }
+          - id: studio-entry-query-projection-metric-over-limit
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "disables projection controls when metric bindings require more than 64 fields" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-entry-query-source-editor]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "disables projection controls when metric bindings require more than 64 fields" } }
+          - id: studio-display-picker-source-identifiers-hidden
+            adapter: typescript
+            path: frontend/src/components/CompositionDisplayPicker.test.tsx
+            selector: { kind: test, name: "adds a table display from a draft source" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDisplayPicker.test.tsx, test: "adds a table display from a draft source" } }
+          - id: studio-metric-inspector-field-labels
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: "shows Form labels instead of field IDs for metric values" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-inspector]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "shows Form labels instead of field IDs for metric values" } }
+          - id: studio-read-field-labels
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: "uses the Form field key when a Form field has no explicit label" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-use-surface]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "uses the Form field key when a Form field has no explicit label" } }
+          - id: studio-read-field-key-values
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: uses the Form key for values when its display label differs }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "uses the Form key for values when its display label differs" } }
           - id: studio-display-picker-unavailable
             adapter: typescript
             path: frontend/src/components/CompositionDisplayPicker.test.tsx
@@ -256,19 +417,28 @@ requirements:
                 criterion: REQ-FE-070#criterion.accessible-icon-actions
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: opens the palette as a modal dialog with focus trap and focus return } }
-          - id: studio-canvas-palette-gating
+          - id: studio-canvas-palette-display-picker
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
-            selector: { kind: test, name: "hides metric, table, and parameter entries without sources or parameters" }
+            selector: { kind: test, name: "opens the unified display picker from the canvas palette" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides metric, table, and parameter entries without sources or parameters" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "opens the unified display picker from the canvas palette" } }
+          - id: studio-canvas-palette-gating
+            adapter: typescript
+            path: frontend/src/components/CompositionDesignCanvas.test.tsx
+            selector: { kind: test, name: "hides display and parameter entries without sources or parameters" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides display and parameter entries without sources or parameters" } }
               - kind: verifies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides metric, table, and parameter entries without sources or parameters" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides display and parameter entries without sources or parameters" } }
           - id: studio-canvas-text-spacing
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
@@ -305,6 +475,19 @@ requirements:
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: adds typed parameters and edits defaults inline } }
+          - id: parameter-label-first-display
+            adapter: typescript
+            path: frontend/src/components/CompositionParameterList.test.tsx
+            selector: { kind: test, name: uses the declared label while keeping the parameter name for updates and removal }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: uses the declared label while keeping the parameter name for updates and removal } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+                covers: [FEAT-FE-014#binding.frontend/target.composition-parameter-list]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionParameterList.test.tsx, test: uses the declared label while keeping the parameter name for updates and removal } }
           - id: parameter-guarded-remove
             adapter: typescript
             path: frontend/src/components/CompositionParameterList.test.tsx
@@ -743,3 +926,71 @@ requirements:
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: renders resolve diagnostics in the strip in every mode without refetch } }
+      - id: studio-entry-query-field-label-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that EntryQuery Data editor labels prefer transient Form names when live metadata resolves a field, otherwise use localized schema ordinals that deterministically skip live Form names and prior fallbacks, including for references missing from the schema snapshot, and keep raw field IDs out of visible labels while preserving the IDs in query data through exact frontend tests.
+        targets:
+          - id: entry-query-field-labels-resolved
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-070: keeps EntryQuery field IDs in query data and out of editor labels" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-field-label-identity]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "REQ-FE-070: keeps EntryQuery field IDs in query data and out of editor labels" } }
+          - id: entry-query-field-labels-loading
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: uses localized field ordinals while form metadata is loading }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-field-ordinals]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: uses localized field ordinals while form metadata is loading } }
+          - id: entry-query-field-labels-absent
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: uses field ordinals when the form is absent }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-absent-form]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: uses field ordinals when the form is absent } }
+          - id: entry-query-field-labels-live-form-missing-snapshot
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: uses transient Form names for referenced fields missing from the schema snapshot }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-stale-form-field-label]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: uses transient Form names for referenced fields missing from the schema snapshot } }
+          - id: entry-query-field-labels-failed
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: falls back to schema fields without a form definition }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-definition-fallback]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: falls back to schema fields without a form definition } }
+          - id: entry-query-field-labels-stale-fields
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-070: uses distinct localized labels for fields missing from the schema snapshot" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-stale-field-labels]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "REQ-FE-070: uses distinct localized labels for fields missing from the schema snapshot" } }
+          - id: entry-query-field-labels-collision
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: "REQ-FE-070: skips localized fallback labels used by live Form fields" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-field-label-collision]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "REQ-FE-070: skips localized fallback labels used by live Form fields" } }

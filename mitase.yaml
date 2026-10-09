@@ -45,6 +45,7 @@ inventory:
         - frontend/src/routes/recover.test.tsx
         - frontend/src/components/AuditLogViewer.tsx
         - frontend/src/components/AuditLogViewer.test.tsx
+        - frontend/src/components/AuditLogViewer.contract.test.tsx
         - frontend/src/components/create-dialogs.tsx
         - frontend/src/components/create-dialogs.test.tsx
         - frontend/src/components/SearchBar.tsx
@@ -53,12 +54,21 @@ inventory:
         - frontend/src/components/FormList.test.tsx
         - frontend/src/components/FormTable.tsx
         - frontend/src/components/FormTable.test.tsx
+        - frontend/src/components/EntryInfoIdentity.test.tsx
         - frontend/src/lib/entry-api.ts
         - frontend/src/lib/client.test.ts
         - frontend/src/lib/i18n.ts
         - frontend/src/lib/i18n.test.ts
         - frontend/src/lib/entry-query.ts
         - frontend/src/lib/entry-query.test.ts
+        - frontend/src/lib/entry-label.ts
+        - frontend/src/lib/entry-label.test.ts
+        - frontend/src/lib/vite-preload-recovery.ts
+        - frontend/src/lib/vite-preload-recovery.test.ts
+        - frontend/src/lib/pwa-update-policy.ts
+        - frontend/src/lib/pwa-update-policy.test.ts
+        - frontend/src/components/AppErrorBoundary.tsx
+        - frontend/src/components/AppErrorBoundary.test.tsx
         - frontend/src/lib/form-api.ts
         - frontend/src/components/EntryBrowser.tsx
         - frontend/src/components/EntryBrowser.test.tsx
@@ -83,6 +93,8 @@ inventory:
         - frontend/src/lib/sql.ts
         - frontend/src/lib/sql.test.ts
         - frontend/src/lib/asset-api.ts
+        - frontend/src/components/AccessPolicyEditor.tsx
+        - frontend/src/components/AccessPolicyEditor.test.tsx
         - frontend/src/components/SpaceSettings.tsx
         - frontend/src/components/SpaceSettings.test.tsx
         - frontend/src/lib/storage-topology.ts
@@ -132,6 +144,8 @@ inventory:
         - frontend/src/lib/markdown.test.ts
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.test.tsx
+        - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.tsx
+        - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.test.tsx
         - frontend/src/routes/spaces/[space_id]/entries/new.tsx
         - frontend/src/routes/spaces/[space_id]/entries/new.test.tsx
         - e2e/entries.test.ts
@@ -197,6 +211,7 @@ inventory:
         - frontend/src/routes/spaces/join.test.tsx
         - frontend/src/app.config.test.ts
         - frontend/app.config.ts
+        - frontend/scripts/generate-static-index.ts
         - frontend/src/lib/api.test.ts
         - frontend/src/lib/frontend-origin.test.ts
         - frontend/vitest.config.ts
@@ -301,6 +316,7 @@ inventory:
         - docs/mitase/requirements/frontend
         - docs/mitase/features/frontend
         - docs/spec/ui/components/entry-browser.yaml
+        - docs/spec/ui/components/form-table.yaml
         - docs/spec/ui/pages/space-compositions.yaml
         - docs/spec/ui/pages/space-composition-revision.yaml
         - docs/spec/ui/pages/space-composition-history.yaml
@@ -386,7 +402,11 @@ inventory:
         - docs/spec/ui/pages/space-test-connection.yaml
         - docs/spec/ui/components/account-security-settings.yaml
         - docs/spec/ui/components/space-shell.yaml
+        - docs/spec/ui/components/global-shell.yaml
         - docs/spec/ui/components/konase-panel.yaml
+        - docs/spec/ui/components/space-settings.yaml
+        - docs/spec/ui/components/invitation-join.yaml
+        - docs/spec/ui/components/account-security.yaml
         - docs/spec/ui/ux-route-inventory.md
         - .github/workflows/ci.yml
         - .github/workflows/codeql.yml

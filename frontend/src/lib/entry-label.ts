@@ -7,7 +7,7 @@ export const entryDisplayLabel = (
 ): string => {
   if (entry) {
     for (const fieldName of ["title", "name"]) {
-      const value = Object.entries(entry.properties).find(([key]) =>
+      const value = Object.entries(entry.properties ?? {}).find(([key]) =>
         key.trim().toLowerCase() === fieldName
       )?.[1];
       if (typeof value !== "string") continue;

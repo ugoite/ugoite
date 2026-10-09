@@ -1,10 +1,21 @@
-version: "0.4"
-updated: "2026-10-08"
+version: "0.5"
+updated: "2026-10-09"
 page:
   id: space-entry-detail
   title: Entry Detail
   route: /spaces/{space_id}/entries/{entry_id}
   implementation: implemented
+  states:
+    load_failure:
+      content: localized-error-summary
+      recovery_actions: [retry, back-to-form]
+      visible_identifiers: none
+    revision_conflict:
+      content: localized-conflict-summary
+      preserves: current-user-draft
+      recovery_actions: [review-latest-saved-version, adopt-latest-revision, save-again]
+      primary_feedback: human-readable-newer-revision-state
+      raw_revision_id: advanced-entry-info-only
 components:
   shared:
     - id: space-shell
@@ -60,7 +71,7 @@ components:
       visibility: form-defined-entry
       items:
         - typed-form-fields
-      description: Form fields only. A Form-defined Title or Name renders as a normal field with no Entry-level semantics; a Markdown field stays multiline and adds an icon-only preview dialog.
+      description: Form fields only. A Form-defined Title or Name renders as a normal field with no Entry-level semantics; a Markdown field stays multiline and adds an icon-only preview dialog. Row Reference feedback uses a resolved Form name or localized unknown-Form label for wrong-Form and unavailable-target states; it never renders an unresolved stable Form UUID.
       field_controls:
         boolean: free-form-text-input
         date: native-date-input

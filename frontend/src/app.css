@@ -1591,6 +1591,11 @@ textarea {
 .ui-dialog.composition-source-picker {
   width: min(560px, calc(100vw - 32px));
 }
+.ui-dialog.composition-display-picker {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
 .history-detail-backdrop {
   z-index: 60;
   padding: 0;
@@ -2997,7 +3002,12 @@ a.pill.iconpill {
   overflow-x: hidden;
 }
 .actionbar.compact-actions.actionbar--icon-only {
-  grid-template-columns: repeat(auto-fit, 44px);
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
 }
 .tool {
   min-width: 44px;
@@ -3035,6 +3045,7 @@ a.tool {
 .tool--icon-only {
   width: 44px;
   height: 44px;
+  flex: 0 0 44px;
   justify-self: center;
   gap: 0;
   padding: 0;
@@ -3989,6 +4000,18 @@ a.tool {
   padding: var(--ui-spacing-xs);
   margin-top: var(--ui-spacing-md);
 }
+.compositionDisplayKind {
+  margin: 0;
+  overflow-x: hidden;
+}
+.compositionDisplayKind .tab {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ui-spacing-xs);
+  min-height: 44px;
+}
 .studioModeOption {
   display: inline-flex;
   align-items: center;
@@ -4412,6 +4435,12 @@ a.tool {
 .rowListIconButton:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+.rowListMain--selected {
+  padding-inline: 8px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--soft);
 }
 
 .rowListText {

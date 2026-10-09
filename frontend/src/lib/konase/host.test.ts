@@ -798,10 +798,12 @@ describe("Konase browser host", () => {
     expect(previews[0]).toMatchObject({
       workId: turn.workId,
       action: "update",
+      spaceId: "space-a",
       form: "Note",
       entryId: "entry-7",
     });
-    expect(previews[0].summary).toContain("Form Note");
+    expect(previews[0].summary).not.toContain("space-a");
+    expect(previews[0].summary).not.toContain("entry-7");
     expect(previews[0].summary).toContain(
       "replace the complete structured field map",
     );
@@ -1157,7 +1159,7 @@ describe("Konase browser host", () => {
       "ugoite.undo",
     ]);
     expect(previews[1].workId).toBe(turn.workId);
-    expect(previews[1].summary).toContain(turn.workId);
+    expect(previews[1].summary).not.toContain(turn.workId);
     expect(turn.knowledge).toBe("unchanged");
     expect(turn.undoAvailable).toBe(false);
     expect(mcp.calls.map((call) => call.operation)).toEqual([

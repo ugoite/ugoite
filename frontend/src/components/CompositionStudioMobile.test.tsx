@@ -349,8 +349,8 @@ describe("CompositionStudioMobile", () => {
     setViewportWidth(390);
     renderStudio();
 
-    // Canvas insertion through the palette delegates metric/table picks to
-    // the display picker; the fresh block owns the inspector on add.
+    // The palette opens one display picker with its Table/Metric choice;
+    // the fresh block owns the inspector on add.
     fireEvent.click(
       screen.getAllByRole("button", { name: "Add block", exact: true })[0],
     );
@@ -359,20 +359,26 @@ describe("CompositionStudioMobile", () => {
       exact: true,
     });
     fireEvent.click(
-      within(palette).getByRole("button", { name: "Table", exact: true }),
+      within(palette).getByRole("button", { name: "Display", exact: true }),
     );
     const picker = await screen.findByRole("dialog", {
       name: "Add display",
       exact: true,
     });
-    fireEvent.click(
-      within(picker).getByRole("button", { name: "Table", exact: true }),
-    );
+    const kindGroup = within(picker).getByRole("tablist", {
+      name: "Display type",
+    });
+    expect(
+      within(kindGroup).getByRole("tab", { name: "Table" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(kindGroup).getByRole("tab", { name: "Metric" }),
+    ).toHaveAttribute("aria-selected", "false");
     fireEvent.click(
       within(picker).getByRole("button", { name: "Monthly totals" }),
     );
     fireEvent.click(
-      within(picker).getByRole("button", { name: "Add display", exact: true }),
+      within(picker).getByRole("button", { name: "Add", exact: true }),
     );
 
     await screen.findByRole("dialog", { name: "Table" });

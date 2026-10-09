@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SecuritySettingsRoute from "./security";
 import { authApi } from "~/lib/auth-api";
@@ -96,7 +102,7 @@ describe("SecuritySettingsRoute", () => {
     expect(screen.queryByRole("tab", { name: "CLI / MCP" })).toBeNull();
   });
 
-  it("REQ-UX-LIST-001: keeps passkey rows ID-free and revokes by exact credential identity", async () => {
+  it("REQ-UX-LIST-001: keeps passkey IDs out of ordinary rows and revokes by exact credential identity", async () => {
     setLocale("ja");
     const credentialIds = ["credential-private-1", "credential-private-2"];
     vi.mocked(authApi.listPasskeys).mockResolvedValue([{
@@ -123,13 +129,15 @@ describe("SecuritySettingsRoute", () => {
       exact: true,
     })).toBeInTheDocument();
     for (const credentialId of credentialIds) {
-      expect(screen.queryByText(credentialId)).not.toBeInTheDocument();
+      const identifier = screen.getByText(credentialId);
+      expect(identifier.closest("details")).not.toHaveAttribute("open");
+      expect(identifier).not.toBeVisible();
     }
     const revokes = screen.getAllByRole("button", {
-      name: /パスキー \dを取り消す/,
+      name: /取り消し: パスキー \d/,
     });
     expect(revokes).toHaveLength(2);
-    expect(revokes[1]).toHaveAccessibleName("パスキー 2を取り消す");
+    expect(revokes[1]).toHaveAccessibleName("取り消し: パスキー 2");
     expect(revokes[1]).toHaveTextContent("取り消し");
     fireEvent.click(revokes[1]);
     await waitFor(() =>
@@ -137,7 +145,7 @@ describe("SecuritySettingsRoute", () => {
     );
   });
 
-  it("REQ-UX-LIST-001: keeps session rows ID-free and revokes by exact session identity", async () => {
+  it("REQ-UX-LIST-001: keeps session IDs out of ordinary rows and revokes by exact session identity", async () => {
     setLocale("ja");
     searchParams.tab = "sessions";
     const sessionIds = ["session-private-1", "session-private-2"];
@@ -168,14 +176,16 @@ describe("SecuritySettingsRoute", () => {
       exact: true,
     })).toBeInTheDocument();
     for (const sessionId of sessionIds) {
-      expect(screen.queryByText(sessionId)).not.toBeInTheDocument();
+      const identifier = screen.getByText(sessionId);
+      expect(identifier.closest("details")).not.toHaveAttribute("open");
+      expect(identifier).not.toBeVisible();
     }
     expect(screen.queryByText(credentialId)).not.toBeInTheDocument();
     const revokes = screen.getAllByRole("button", {
-      name: /セッション \dを取り消す/,
+      name: /取り消し: セッション \d/,
     });
     expect(revokes).toHaveLength(2);
-    expect(revokes[1]).toHaveAccessibleName("セッション 2を取り消す");
+    expect(revokes[1]).toHaveAccessibleName("取り消し: セッション 2");
     expect(revokes[1]).toHaveTextContent("取り消し");
     fireEvent.click(revokes[1]);
     await waitFor(() =>
@@ -191,6 +201,62 @@ describe("SecuritySettingsRoute", () => {
       .toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Sessions" }))
       .toHaveAttribute("aria-selected", "true");
+  });
+
+  it("REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details", async () => {
+    const credentialId = "passkey-internal-id";
+    const secondCredentialId = "passkey-second-internal-id";
+    const sessionId = "session-internal-id";
+    const secondSessionId = "session-second-internal-id";
+    vi.mocked(authApi.listPasskeys).mockResolvedValue([{
+      credential_id: credentialId,
+      last_used_at: null,
+    }, {
+      credential_id: secondCredentialId,
+      last_used_at: null,
+    }]);
+    vi.mocked(authApi.listSessions).mockResolvedValue([{
+      session_id: sessionId,
+      last_seen_at: null,
+    }, {
+      session_id: secondSessionId,
+      last_seen_at: null,
+    }]);
+
+    render(() => <SecuritySettingsRoute />);
+
+    const credentialValue = await screen.findByText(credentialId);
+    const credentialDetails = credentialValue.closest("details");
+    expect(credentialDetails).not.toHaveAttribute("open");
+    expect(credentialValue).not.toBeVisible();
+    expect(screen.getByText("Passkey 1 · last used never")).toBeVisible();
+    expect(screen.getByText("Passkey 2 · last used never")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Revoke passkey 1" }))
+      .toBeVisible();
+    expect(screen.getByRole("button", { name: "Revoke passkey 2" }))
+      .toBeVisible();
+    fireEvent.click(
+      within(credentialDetails!).getByText("Technical details"),
+    );
+    expect(credentialValue).toBeVisible();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Sessions" }));
+    const sessionValue = await screen.findByText(sessionId);
+    const sessionDetails = sessionValue.closest("details");
+    expect(sessionDetails).not.toHaveAttribute("open");
+    expect(sessionValue).not.toBeVisible();
+    expect(screen.getByText("Browser session 1 · last seen never"))
+      .toBeVisible();
+    expect(screen.getByText("Browser session 2 · last seen never"))
+      .toBeVisible();
+    expect(screen.getByRole("button", { name: "Revoke session 1" }))
+      .toBeVisible();
+    expect(screen.getByRole("button", { name: "Revoke session 2" }))
+      .toBeVisible();
+    fireEvent.click(
+      within(sessionDetails!).getByText("Technical details"),
+    );
+    expect(sessionValue).toBeVisible();
   });
 
   it("exposes the node audit viewer from account security settings", async () => {
@@ -298,7 +364,7 @@ describe("SecuritySettingsRoute", () => {
     vi.mocked(authApi.revokeSession).mockRejectedValue(failure);
     render(() => <SecuritySettingsRoute />);
     fireEvent.click(
-      await screen.findByRole("button", { name: "セッション 1を取り消す" }),
+      await screen.findByRole("button", { name: "取り消し: セッション 1" }),
     );
     await screen.findByRole("alert");
     expect(screen.getByRole("alert")).toHaveTextContent(

@@ -1,0 +1,49 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: ux
+category: Browser Konase Entry candidate labels
+features:
+  - id: FEAT-UX-015
+    title: Browser Konase Choice Labels and Panel States
+    summary: Keep Entry previews distinguishable and Browser Konase connection and candidate states explicit without exposing resource identifiers.
+    status: implemented
+    bindings:
+      - id: konase-entry-choice-implementation
+        role: implementation
+        facet: frontend
+        responsibility: Keep Browser Konase choice labels and connection or candidate state behavior connected to the panel surface and component contract.
+        targets:
+          - id: konase-panel-surface
+            adapter: typescript
+            path: frontend/src/components/konase/KonasePanel.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-003#criterion.same-preview-entry-choices
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.connection-progress
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.form-candidate-loading
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.no-form-candidates
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.entry-candidate-loading
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.candidate-load-error
+          - id: konase-panel-specification
+            adapter: declared
+            path: docs/spec/ui/components/konase-panel.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-LIST-003#criterion.same-preview-entry-choices
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.connection-progress
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.form-candidate-loading
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.no-form-candidates
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.entry-candidate-loading
+              - kind: satisfies
+                criterion: REQ-UX-KONASE-001#criterion.candidate-load-error

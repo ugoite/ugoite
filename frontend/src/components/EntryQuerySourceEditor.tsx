@@ -25,7 +25,10 @@ import type {
   EntryQueryCompositionProjection,
   EntryQueryCompositionSort,
 } from "~/lib/entry-query-composition";
-import type { DraftSource } from "~/lib/composition-draft";
+import {
+  MAX_ENTRY_PROJECTION_FIELDS,
+  type DraftSource,
+} from "~/lib/composition-draft";
 import type {
   EntryFieldCapability,
   EntryFilter,
@@ -75,6 +78,7 @@ type EditorDefinitionLoad =
 interface EntryQuerySourceEditorProps {
   spaceId: string;
   source: EntryQuerySource;
+  requiredMetricFieldIds?: readonly number[];
   /** Narrow draft updaters; each returns false when the edit is rejected. */
   onFilters: (filters: EntryQueryCompositionFilter[]) => boolean;
   onSort: (sort: EntryQueryCompositionSort[]) => boolean;
@@ -148,14 +152,61 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
     return load.status === "ready" ? load.form : undefined;
   };
   const names = createMemo(() => studioFieldNames(definitionForm()));
+  const fallbackFieldName = (index: number): string =>
+    t("entryBrowser.fieldOrdinal", { number: index + 1 });
+  const fallbackFieldLabels = createMemo(() => {
+    const labels = new Map<number, string>();
+    const usedLabels = new Set(names().values());
+    const assignFallback = (fieldId: number, startIndex: number) => {
+      if (labels.has(fieldId) || names().has(fieldId)) return;
+      let index = startIndex;
+      let label = fallbackFieldName(index);
+      while (usedLabels.has(label)) {
+        index += 1;
+        label = fallbackFieldName(index);
+      }
+      labels.set(fieldId, label);
+      usedLabels.add(label);
+    };
+
+    props.source.fieldSchema.forEach((entry, index) => {
+      assignFallback(entry.field_id, index);
+    });
+
+    const schemaFieldIds = new Set(
+      props.source.fieldSchema.map((entry) => entry.field_id),
+    );
+    const referencedFieldIds = new Set([
+      ...props.source.query.filters.map((filter) => filter.field_id),
+      ...props.source.query.sort.map((clause) => clause.field_id),
+      ...(props.source.query.projection.kind === "fields"
+        ? props.source.query.projection.fields
+        : []),
+    ]);
+    const staleFieldIds = [...referencedFieldIds].filter((fieldId) =>
+      !schemaFieldIds.has(fieldId) && !names().has(fieldId)
+    ).sort((left, right) => left - right);
+    staleFieldIds.forEach((fieldId, index) => {
+      assignFallback(fieldId, props.source.fieldSchema.length + index);
+    });
+    return labels;
+  });
+  const fieldName = (fieldId: number): string => {
+    const knownName = names().get(fieldId);
+    if (knownName) return knownName;
+    // Allocate fallbacks around live Form names and earlier fallbacks so
+    // unknown fields remain distinguishable even when a Form uses an
+    // ordinal-looking name such as "Field 3".
+    return fallbackFieldLabels().get(fieldId) ??
+      fallbackFieldName(props.source.fieldSchema.length);
+  };
   const capabilities = createMemo((): EntryFieldCapability[] => {
     const form = definitionForm();
-    return form
-      ? studioCapabilitiesFromForm(form)
-      : studioFallbackCapabilities(props.source.fieldSchema);
+    return form ? studioCapabilitiesFromForm(form) : studioFallbackCapabilities(
+      props.source.fieldSchema,
+      (_entry, index) => fallbackFieldName(index),
+    );
   });
-  const fieldName = (fieldId: number): string | undefined =>
-    names().get(fieldId);
 
   const [dialogMode, setDialogMode] = createSignal<
     EntryBrowserDisplayMode | null
@@ -214,6 +265,35 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
 
   const schemaFieldIds = () =>
     props.source.fieldSchema.map((entry) => entry.field_id);
+  const requiredMetricFields = () =>
+    [...new Set(props.requiredMetricFieldIds ?? [])];
+  const initialProjectionFieldIds = () => {
+    const required = requiredMetricFields();
+    const remaining = schemaFieldIds().filter((fieldId) =>
+      !required.includes(fieldId)
+    );
+    return [
+      ...required,
+      ...remaining.slice(
+        0,
+        Math.max(0, MAX_ENTRY_PROJECTION_FIELDS - required.length),
+      ),
+    ];
+  };
+  const projectionRecoveryBlocked = () => {
+    if (requiredMetricFields().length > MAX_ENTRY_PROJECTION_FIELDS) {
+      return true;
+    }
+    const projection = props.source.query.projection;
+    const projected = projection.kind === "fields" ? projection.fields : [];
+    const missingMetricFields = requiredMetricFields().filter((fieldId) =>
+      !projected.includes(fieldId)
+    ).length;
+    // Individual removals can only recover the draft when at most one slot
+    // is missing. Larger deficits require the metric bindings to be edited.
+    return projected.length + missingMetricFields -
+        MAX_ENTRY_PROJECTION_FIELDS > 1;
+  };
 
   const planSource = () =>
     props.planSources.find((source) =>
@@ -254,7 +334,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               {(entry) => (
                 <li>
                   <span class="pill">
-                    <span>{fieldName(entry.field_id) ?? entry.field_id}</span>
+                    <span>{fieldName(entry.field_id)}</span>
                     <span class="ui-muted">{entry.field_type}</span>
                   </span>
                 </li>
@@ -284,7 +364,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               {(filter, index) => (
                 <li class="flex flex-wrap items-center gap-2">
                   <span>
-                    {fieldName(filter.field_id) ?? filter.field_id}{" "}
+                    {fieldName(filter.field_id)}{" "}
                     {operatorLabel(filter.operator)}{" "}
                     {filterValueText(filter.value)}
                   </span>
@@ -337,8 +417,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               {(clause, index) => (
                 <li class="flex flex-wrap items-center gap-2">
                   <span>
-                    {fieldName(clause.field_id) ?? clause.field_id} ·{" "}
-                    {clause.direction ===
+                    {fieldName(clause.field_id)} · {clause.direction ===
                         "asc"
                       ? t("entryBrowser.ascending")
                       : t("entryBrowser.descending")}
@@ -379,26 +458,62 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               type="radio"
               name={`projection-${props.source.draftId}`}
               checked={props.source.query.projection.kind === "preview"}
+              disabled={(props.requiredMetricFieldIds?.length ?? 0) > 0}
+              aria-describedby={(props.requiredMetricFieldIds?.length ?? 0) > 0
+                ? `metric-projection-lock-${props.source.draftId}`
+                : undefined}
+              title={(props.requiredMetricFieldIds?.length ?? 0) > 0
+                ? t("composition.studioMetricProjectionRequired")
+                : undefined}
               onChange={() => props.onProjection({ kind: "preview" })}
             />
             {t("entryBrowser.preview")}
           </label>
+          <Show when={(props.requiredMetricFieldIds?.length ?? 0) > 0}>
+            <span
+              class="ui-sr-only"
+              id={`metric-projection-lock-${props.source.draftId}`}
+            >
+              {t("composition.studioMetricProjectionRequired")}
+            </span>
+          </Show>
           <label>
             <input
               type="radio"
               name={`projection-${props.source.draftId}`}
               checked={props.source.query.projection.kind === "fields"}
+              disabled={requiredMetricFields().length >
+                MAX_ENTRY_PROJECTION_FIELDS}
+              aria-describedby={requiredMetricFields().length >
+                  MAX_ENTRY_PROJECTION_FIELDS
+                ? `metric-projection-recovery-${props.source.draftId}`
+                : undefined}
+              title={requiredMetricFields().length >
+                  MAX_ENTRY_PROJECTION_FIELDS
+                ? t("composition.studioProjectionRecoveryRequired")
+                : undefined}
               onChange={() => {
                 const current = props.source.query.projection;
                 props.onProjection(
                   current.kind === "fields"
                     ? current
-                    : { kind: "fields", fields: [...schemaFieldIds()] },
+                    : {
+                      kind: "fields",
+                      fields: initialProjectionFieldIds(),
+                    },
                 );
               }}
             />
             {t("entryBrowser.selectedFields")}
           </label>
+          <Show when={projectionRecoveryBlocked()}>
+            <span
+              class="ui-sr-only"
+              id={`metric-projection-recovery-${props.source.draftId}`}
+            >
+              {t("composition.studioProjectionRecoveryRequired")}
+            </span>
+          </Show>
         </div>
         <Show when={props.source.query.projection.kind === "fields"}>
           <ul class="ui-stack-sm">
@@ -409,12 +524,44 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
                   return projection.kind === "fields" &&
                     projection.fields.includes(fieldId);
                 };
+                const requiredByMetric = () =>
+                  props.requiredMetricFieldIds?.includes(fieldId) ?? false;
+                const disabledByLimit = () => {
+                  const projection = props.source.query.projection;
+                  const projected = projection.kind === "fields"
+                    ? projection.fields
+                    : [];
+                  const requiredSlots = (props.requiredMetricFieldIds ?? [])
+                    .filter((requiredId) => !projected.includes(requiredId))
+                    .length;
+                  const reservedCount = projected.length + requiredSlots;
+                  return !selected() &&
+                    (requiredByMetric()
+                      ? reservedCount > MAX_ENTRY_PROJECTION_FIELDS
+                      : reservedCount >= MAX_ENTRY_PROJECTION_FIELDS);
+                };
+                const disabled = () =>
+                  projectionRecoveryBlocked() ||
+                  (selected() && requiredByMetric()) || disabledByLimit();
+                const disabledReason = () =>
+                  projectionRecoveryBlocked()
+                    ? t("composition.studioProjectionRecoveryRequired")
+                    : disabledByLimit()
+                    ? t("composition.studioProjectionLimitReached")
+                    : selected() && requiredByMetric()
+                    ? t("composition.studioMetricProjectionRequired")
+                    : undefined;
                 return (
                   <li>
                     <label class="pill">
                       <input
                         type="checkbox"
                         checked={selected()}
+                        disabled={disabled()}
+                        aria-describedby={projectionRecoveryBlocked()
+                          ? `metric-projection-recovery-${props.source.draftId}`
+                          : undefined}
+                        title={disabledReason()}
                         onChange={(event) => {
                           const projection = props.source.query.projection;
                           const fields = projection.kind === "fields"
@@ -431,7 +578,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
                           props.onProjection({ kind: "fields", fields });
                         }}
                       />
-                      <span>{fieldName(fieldId) ?? fieldId}</span>
+                      <span>{fieldName(fieldId)}</span>
                     </label>
                   </li>
                 );
@@ -473,12 +620,6 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
         )}
       </Show>
 
-      <details class="ui-stack-sm">
-        <summary>{props.source.name}</summary>
-        <p class="ui-muted">
-          {t("composition.studioFormDetail", { form: props.source.formId })}
-        </p>
-      </details>
     </div>
   );
 }

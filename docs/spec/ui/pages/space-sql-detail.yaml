@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-09-28"
+updated: "2026-10-09"
 page:
   id: space-sql-detail
   title: Saved query
@@ -28,7 +28,14 @@ components:
     - id: sql-detail-metadata
       type: list
       title: Query metadata
-      includes: saved and current Form names for immutable Form-ID bindings
+      includes: updated and created timestamps and variable count
+    - id: sql-detail-form-bindings
+      type: list
+      title: Bound Forms
+      visibility: only-when-form-bindings-exist-and-form-list-is-ready
+      status: saved-and-current-human-readable-form-names
+      identifiers:
+        form_id: per-binding-closed-technical-details-disclosure
     - id: sql-detail-editor
       type: sql-editor
       title: SQL

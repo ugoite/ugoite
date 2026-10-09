@@ -168,18 +168,16 @@ describe("Composition studio shell", () => {
   };
 
   // Canvas insertion path: a gap "+" opens the block palette, and the
-  // palette metric/table entries delegate to the display picker at the
-  // recorded target. The legacy Display section is gone; this is the only
-  // insertion path.
+  // palette opens one Table/Metric display picker at the recorded target.
+  // The legacy Display section is gone; this is the only insertion path.
   const addTableViaCanvas = async (sourceName: string) => {
     fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
     const palette = screen.getByRole("dialog", { name: "Add block" });
-    fireEvent.click(within(palette).getByRole("button", { name: "Table" }));
+    fireEvent.click(within(palette).getByRole("button", { name: "Display" }));
     const picker = await screen.findByRole("dialog", { name: "Add display" });
-    fireEvent.click(within(picker).getByRole("button", { name: "Table" }));
     fireEvent.click(within(picker).getByRole("button", { name: sourceName }));
     fireEvent.click(
-      within(picker).getByRole("button", { name: "Add display" }),
+      within(picker).getByRole("button", { name: "Add" }),
     );
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -193,9 +191,9 @@ describe("Composition studio shell", () => {
   ) => {
     fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
     const palette = screen.getByRole("dialog", { name: "Add block" });
-    fireEvent.click(within(palette).getByRole("button", { name: "Metric" }));
+    fireEvent.click(within(palette).getByRole("button", { name: "Display" }));
     const picker = await screen.findByRole("dialog", { name: "Add display" });
-    fireEvent.click(within(picker).getByRole("button", { name: "Metric" }));
+    fireEvent.click(within(picker).getByRole("tab", { name: "Metric" }));
     fireEvent.click(within(picker).getByRole("button", { name: sourceName }));
     fireEvent.change(within(picker).getByLabelText("Value"), {
       target: { value },
@@ -204,7 +202,7 @@ describe("Composition studio shell", () => {
       target: { value: label },
     });
     fireEvent.click(
-      within(picker).getByRole("button", { name: "Add display" }),
+      within(picker).getByRole("button", { name: "Add" }),
     );
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -358,18 +356,17 @@ describe("Composition studio shell", () => {
       screen.getByRole("button", { name: "Move Tasks down" }),
     ).toBeDisabled();
 
-    // Full-row activation toggles the advanced revision disclosure. The
-    // newly added source starts expanded; activating its row collapses it.
-    expect(container.querySelector("details")).not.toBeNull();
-    expect(
-      within(container.querySelector("details") as HTMLElement).getByText(
-        `Form ${FORM_ID}`,
-      ),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    // The selected source keeps its human-readable heading without exposing
+    // its internal Form ID in a nested disclosure.
+    expect(screen.getByRole("heading", { name: "Tasks" }))
+      .toBeInTheDocument();
     expect(container.querySelector("details")).toBeNull();
+    expect(container.textContent).not.toContain(FORM_ID);
     fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
-    expect(container.querySelector("details")).not.toBeNull();
+    expect(container.querySelector(".dataWorkspaceEditor")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(container.querySelector(".dataWorkspaceEditor")).not.toBeNull();
+    expect(container.textContent).not.toContain(FORM_ID);
 
     fireEvent.click(screen.getByRole("button", { name: "Add data" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();

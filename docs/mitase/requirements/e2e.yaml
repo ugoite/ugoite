@@ -186,11 +186,19 @@ requirements:
         kind: quality
         statement: Dynamic traversal completes without uncaught browser runtime errors.
         governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+      - id: preload-recovery
+        kind: quality
+        statement: A failed dynamic route import retries through one same-URL reload, while repeated failures reach the app boundary without an automatic reload loop.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+      - id: real-preload-recovery
+        kind: quality
+        statement: A manifest-discovered route chunk request that fails once can recover through one same-URL reload, and a repeated real request failure reaches the app boundary without an automatic reload loop.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
     bindings:
       - id: navigation-verification
         role: verification
         facet: verification
-        responsibility: Verify route traversal and browser/runtime error invariants through the exact dynamic-navigation Playwright case.
+        responsibility: Verify SPA route traversal, browser/runtime error invariants, and bounded recovery from failed dynamic imports through the exact dynamic-navigation Playwright case.
         targets:
           - id: traversal-case
             adapter: typescript
@@ -211,6 +219,32 @@ requirements:
                 criterion: REQ-E2E-004#criterion.runtime-stability
                 covers: [FEAT-E2E-001#binding.frontend/target.spaces-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' } }
+              - kind: verifies
+                criterion: REQ-E2E-004#criterion.preload-recovery
+                covers: [FEAT-E2E-001#binding.frontend/target.route-module-recovery]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors' } }
+          - id: real-chunk-recovery-case
+            adapter: typescript
+            path: e2e/navigation.test.ts
+            selector: { kind: test, name: 'REQ-E2E-004: recovers after a failed route chunk request' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-004#criterion.real-preload-recovery
+                covers:
+                  - FEAT-E2E-001#binding.frontend/target.route-module-recovery
+                  - FEAT-E2E-001#binding.frontend/target.app-boundary-route-chunk-recovery
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: recovers after a failed route chunk request' } }
+          - id: repeated-real-chunk-failure-case
+            adapter: typescript
+            path: e2e/navigation.test.ts
+            selector: { kind: test, name: 'REQ-E2E-004: bounds retries when the real route chunk keeps failing' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-004#criterion.real-preload-recovery
+                covers:
+                  - FEAT-E2E-001#binding.frontend/target.route-module-recovery
+                  - FEAT-E2E-001#binding.frontend/target.app-boundary-route-chunk-recovery
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: bounds retries when the real route chunk keeps failing' } }
 
   - id: REQ-E2E-005
     title: Canonical docsite navigation
@@ -420,3 +454,65 @@ requirements:
         kind: quality
         statement: A small documentation viewport renders the same canonical Ugoite navigation paths without requiring framework-specific selectors.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance]
+
+  - id: REQ-E2E-010
+    title: Safe service worker updates for open clients
+    description: The production SPA entrypoint registers its service worker, and an update does not replace the worker controlling an open client while that client may still need to load lazy route modules from its current build.
+    priority: high
+    status: implemented
+    criteria:
+      - id: active-client-safety
+        kind: behavior
+        statement: The production SPA entrypoint registers the generated service worker, which waits while existing clients remain open so each client can continue traversing lazy routes with its current worker and assets.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+      - id: root-scoped-worker
+        kind: behavior
+        statement: The generated worker at the client asset path can request root scope, while the registration helper does not receive wider-scope permission.
+        governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+    bindings:
+      - id: production-update-verification
+        role: verification
+        facet: verification
+        responsibility: Verify that the production worker policy defers activation for open clients and that the root-scoped worker keeps an open page on its current controller while it loads a previously unvisited lazy route.
+        targets:
+          - id: deferred-update-policy
+            adapter: typescript
+            path: frontend/src/lib/pwa-update-policy.test.ts
+            selector: { kind: test, name: 'REQ-E2E-010: update policy waits for existing clients' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-010#criterion.active-client-safety
+                covers: [FEAT-E2E-001#binding.frontend/target.pwa-update-policy]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/pwa-update-policy.test.ts, test: 'REQ-E2E-010: update policy waits for existing clients' } }
+          - id: open-client-lazy-navigation
+            adapter: typescript
+            path: e2e/navigation.test.ts
+            selector: { kind: test, name: 'REQ-E2E-010: a root-scoped production worker keeps lazy navigation on the current client' }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-010#criterion.active-client-safety
+                covers:
+                  - FEAT-E2E-001#binding.frontend/target.pwa-update-lifecycle
+                  - FEAT-E2E-001#binding.frontend/target.static-pwa-bootstrap
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-010: a root-scoped production worker keeps lazy navigation on the current client' } }
+              - kind: verifies
+                criterion: REQ-E2E-010#criterion.root-scoped-worker
+                covers:
+                  - FEAT-E2E-001#binding.frontend/target.pwa-update-lifecycle
+                  - FEAT-E2E-001#binding.frontend/target.static-pwa-bootstrap
+                  - FEAT-E2E-001#binding.server/target.pwa-worker-scope-header
+                runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-010: a root-scoped production worker keeps lazy navigation on the current client' } }
+      - id: root-scope-response-header
+        role: verification
+        facet: cargo-test
+        responsibility: Verify that only the generated worker asset permits registration scope at the origin root.
+        targets:
+          - id: root-scope-worker-header
+            adapter: rust
+            path: crates/ugoite-server/tests/api_contract.rs
+            selector: { kind: test, name: req_e2e_010_allows_root_scope_only_for_the_generated_service_worker }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-010#criterion.root-scoped-worker
+                covers: [FEAT-E2E-001#binding.server/target.pwa-worker-scope-header]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-server, harness: api_contract, test: req_e2e_010_allows_root_scope_only_for_the_generated_service_worker } }

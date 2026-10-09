@@ -58,14 +58,14 @@ requirements:
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
   - id: REQ-FE-009
     title: Conflict Refresh Guidance
-    description: On a revision conflict, the frontend informs the user, keeps the current draft visible, and requires an explicit refresh before loading the latest server revision.
+    description: On a revision conflict, the frontend keeps the current draft visible, communicates the newer saved state without exposing its raw revision ID in primary feedback, and provides explicit actions to review the latest save and adopt it as the next save base.
     priority: high
     status: implemented
     criteria:
       - id: conflict-guidance
         kind: behavior
-        statement: A revision conflict is surfaced in the editor without replacing the current draft, and refreshing is an explicit user action.
-        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance]
+        statement: A revision conflict is surfaced in the editor without replacing the current draft; primary feedback omits the raw server revision ID, which remains an internal mutation base and is available in advanced Entry Info details.
+        governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-013#rule.governance, POL-014#rule.governance, POL-UI-005#rule.governance]
     bindings:
       - id: conflict-verification
         role: verification
@@ -75,16 +75,16 @@ requirements:
           - id: structured-entry-conflict
             adapter: typescript
             path: frontend/src/components/EntryDetailPane.safety.test.tsx
-            selector: { kind: test, name: "keeps the user draft on 409, shows the server revision, and re-saves on the adopted base" }
+            selector: { kind: test, name: "keeps the user draft on 409, gives ID-free conflict guidance, and re-saves on the adopted base" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-009#criterion.conflict-guidance
                 covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "keeps the user draft on 409, shows the server revision, and re-saves on the adopted base" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "keeps the user draft on 409, gives ID-free conflict guidance, and re-saves on the adopted base" } }
               - kind: verifies
                 criterion: REQ-JOURNEY-003#criterion.conflict-recovery-guidance
                 covers: [FEAT-JOURNEY-002#binding.frontend/target.entry-detail-pane]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "keeps the user draft on 409, shows the server revision, and re-saves on the adopted base" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "keeps the user draft on 409, gives ID-free conflict guidance, and re-saves on the adopted base" } }
   - id: REQ-FE-010
     title: Editor Content Persistence During Save
     description: Saving an Entry sends the edited Markdown without reloading or overwriting the current editor draft.

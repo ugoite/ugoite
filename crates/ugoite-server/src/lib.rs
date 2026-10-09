@@ -41,6 +41,7 @@ use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestId, PropagateRequestIdLayer, RequestId, SetRequestIdLayer},
     services::{ServeDir, ServeFile},
+    set_header::SetResponseHeader,
     trace::TraceLayer,
 };
 use ugoite_api_client::{
@@ -1990,6 +1991,15 @@ fn app_layers(router: Router<AppState>, state: AppState) -> Router {
     router.with_state(state)
 }
 
+fn add_service_worker_scope_header(headers: &mut HeaderMap, is_service_worker_script: bool) {
+    if is_service_worker_script {
+        headers.insert(
+            HeaderName::from_static("service-worker-allowed"),
+            HeaderValue::from_static("/"),
+        );
+    }
+}
+
 async fn add_security_headers(
     State(state): State<AppState>,
     request: Request,
@@ -2007,9 +2017,11 @@ async fn add_security_headers(
         .map(|OriginalUri(uri)| uri.clone())
         .unwrap_or_else(|| request.uri().clone());
     let is_head = request.method() == Method::HEAD;
+    let is_service_worker_script = request.uri().path() == "/_build/sw.js";
     let scope = response_signing_scope(&uri);
     let mut response = next.run(request).await;
     state.security_headers.apply(response.headers_mut());
+    add_service_worker_scope_header(response.headers_mut(), is_service_worker_script);
     if no_store {
         response.headers_mut().insert(
             HeaderName::from_static("cache-control"),
@@ -2114,12 +2126,22 @@ fn app_with_static_dir(state: AppState, static_dir: Option<String>) -> Router {
             .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
             .route("/openapi.json", get(|| async { OPENAPI_JSON }))
             .route("/mcp", any(mcp::handle))
-            .route_service("/", ServeFile::new(format!("{static_dir}/index.html")))
-            .nest("/api", api_routes(state.clone()))
-            .fallback_service(
-                ServeDir::new(&static_dir)
-                    .fallback(ServeFile::new(format!("{static_dir}/index.html"))),
+            .route_service(
+                "/",
+                SetResponseHeader::if_not_present(
+                    ServeFile::new(format!("{static_dir}/index.html")),
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static("no-cache"),
+                ),
             )
+            .nest("/api", api_routes(state.clone()))
+            .fallback_service(ServeDir::new(&static_dir).fallback(
+                SetResponseHeader::if_not_present(
+                    ServeFile::new(format!("{static_dir}/index.html")),
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static("no-cache"),
+                ),
+            ))
     } else {
         metadata
             .merge(api_routes(state.clone()))
@@ -13841,7 +13863,9 @@ mod canonical_entry_query_tests {
                     "version": 1,
                     "fields": {
                         "title": {"id": 100, "type": "string"},
-                        "done": {"id": 101, "type": "boolean"}
+                        "done": {"id": 101, "type": "boolean"},
+                        "created_at_micros": {"id": 102, "type": "string"},
+                        "updated_at_micros": {"id": 103, "type": "string"}
                     },
                     "allow_extra_attributes": "deny"
                 }),
@@ -13857,6 +13881,8 @@ mod canonical_entry_query_tests {
                 BTreeMap::from([
                     ("title".to_string(), json!("Canonical row")),
                     ("done".to_string(), json!(false)),
+                    ("created_at_micros".to_string(), json!("Form created value")),
+                    ("updated_at_micros".to_string(), json!("Form updated value")),
                 ]),
                 BTreeMap::new(),
                 &owner.to_string(),
@@ -13881,7 +13907,13 @@ mod canonical_entry_query_tests {
             },
             "projection": {
                 "kind": "fields",
-                "fields": [{"kind": "property", "field_id": 100}]
+                "fields": [
+                    {"kind": "property", "field_id": 100},
+                    {"kind": "property", "field_id": 102},
+                    {"kind": "property", "field_id": 103},
+                    {"kind": "created_at"},
+                    {"kind": "updated_at"}
+                ]
             },
             "limit": 10
         });
@@ -13900,7 +13932,52 @@ mod canonical_entry_query_tests {
         assert_eq!(page["rows"].as_array().map(Vec::len), Some(1));
         assert_eq!(page["rows"][0]["form_id"], json!(form_id));
         assert_eq!(page["rows"][0]["properties"]["title"], "Canonical row");
+        assert_eq!(
+            page["rows"][0]["properties"]["created_at_micros"],
+            "Form created value"
+        );
+        assert_eq!(
+            page["rows"][0]["properties"]["updated_at_micros"],
+            "Form updated value"
+        );
+        assert!(page["rows"][0]["created_at_micros"].is_number());
+        assert!(page["rows"][0]["updated_at_micros"].is_number());
+        assert_ne!(
+            page["rows"][0]["created_at_micros"],
+            page["rows"][0]["properties"]["created_at_micros"]
+        );
+        assert_ne!(
+            page["rows"][0]["updated_at_micros"],
+            page["rows"][0]["properties"]["updated_at_micros"]
+        );
         assert_eq!(page["rows"][0]["preview"], Value::Null);
+
+        let form_identity_request = json!({
+            "query": {
+                "scope": {"kind": "all"},
+                "filters": [],
+                "sort": []
+            },
+            "projection": {
+                "kind": "fields",
+                "fields": [{"kind": "form"}]
+            },
+            "limit": 10
+        });
+        let response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/entries/query"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(form_identity_request.to_string()))?,
+            )
+            .await?;
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+        let all_forms_page: Value = serde_json::from_slice(&body)?;
+        assert_eq!(all_forms_page["rows"][0]["form_id"], json!(form_id));
+        assert_eq!(all_forms_page["rows"][0]["properties"], json!({}));
 
         let response = route
             .oneshot(

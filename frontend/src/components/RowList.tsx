@@ -117,6 +117,7 @@ export function RowListLink(props: RowListLinkProps) {
 
 interface RowListButtonProps extends RowListMainProps {
   onActivate: () => void;
+  selected?: boolean;
 }
 
 /** Full-row button activation for caller-driven navigation/selection. */
@@ -127,6 +128,8 @@ export function RowListButton(props: RowListButtonProps) {
       class="rowListMain"
       onClick={() => props.onActivate()}
       aria-label={props.ariaLabel}
+      aria-pressed={props.selected}
+      classList={{ "rowListMain--selected": props.selected }}
       title={props.title}
     >
       <RowListMainContent

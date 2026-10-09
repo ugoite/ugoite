@@ -17,6 +17,10 @@ requirements:
         kind: behavior
         statement: Icon-only actions keep the localized label screen-reader-only, expose the matching accessible name and title on the interactive control, preserve a visible keyboard focus indicator, and retain a 44px target.
         governed_by: [POL-UI-007#rule.governance]
+      - id: icon-only-overflow
+        kind: behavior
+        statement: An all-icon-only action bar stays on one row at narrow widths; excess actions remain available by horizontally scrolling within the toolbar, preserving every 44px target and revealing keyboard-focused actions.
+        governed_by: [POL-UI-007#rule.governance]
       - id: eligible-action-boundaries
         kind: behavior
         statement: Only selected secondary utilities with established page context collapse visible labels; primary and domain actions remain labeled, and destructive actions remain labeled unless their specific surface is individually accepted with danger styling and confirmation.
@@ -79,6 +83,15 @@ requirements:
                 criterion: REQ-UX-ACTION-001#criterion.icon-only-accessibility
                 covers: [FEAT-UX-012#binding.frontend/target.action-bar-layout]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/a11y-contract.test.tsx, test: "REQ-UX-ACTION-001: keeps icon-only utilities at 44px with visible focus" } }
+          - id: action-bar-narrow-overflow
+            adapter: typescript
+            path: e2e/compact-controls-evidence.test.ts
+            selector: { kind: test, name: "REQ-UX-ACTION-001: keeps over-capacity icon-only action bars on one row" }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACTION-001#criterion.icon-only-overflow
+                covers: [FEAT-UX-012#binding.frontend/target.action-bar-layout]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/compact-controls-evidence.test.ts, test: "REQ-UX-ACTION-001: keeps over-capacity icon-only action bars on one row" } }
           - id: entry-utility-actions
             adapter: typescript
             path: frontend/src/components/EntryDetailPane.safety.test.tsx

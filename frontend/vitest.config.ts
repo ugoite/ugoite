@@ -40,7 +40,7 @@ export default defineConfig({
     env: {
       FRONTEND_TEST_ORIGIN: frontendTestOrigin,
     },
-    include: ["src/**/*.{test,spec}.{js,ts,tsx}"],
+    include: ["src/**/*.{test,spec}.{js,ts,tsx}", "scripts/**/*.test.ts"],
     // The UI owns shared browser-global state (locale, document attributes,
     // and localStorage). Running files concurrently makes that state leak
     // across otherwise isolated tests.

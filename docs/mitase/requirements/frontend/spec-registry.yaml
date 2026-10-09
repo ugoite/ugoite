@@ -25,7 +25,7 @@ requirements:
       - id: ui-registry-verification
         role: verification
         facet: verification
-        responsibility: Verify the declarative UI page registry, route coverage, placeholder guard, and shared Space chrome through exact frontend tests.
+        responsibility: Verify the declarative UI page registry, route coverage, dashboard Recent count contract, placeholder guard, and shared Space chrome through exact frontend tests.
         targets:
           - id: page-metadata
             adapter: typescript
@@ -57,6 +57,37 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-space-sql
                   - FEAT-FE-013#binding.frontend/target.page-space-test-connection
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: loads UI page specs" } }
+          - id: dashboard-recent-list-contract
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: declares the dashboard Recent maximum after duplicate suppression" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.page-space-dashboard]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares the dashboard Recent maximum after duplicate suppression" } }
+              - kind: verifies
+                criterion: REQ-UX-DASH-001#criterion.recent-count-bound
+                covers: [FEAT-FE-013#binding.frontend/target.page-space-dashboard]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares the dashboard Recent maximum after duplicate suppression" } }
+          - id: global-shell-account-entry-contract
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: declares GlobalShell account entry states" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.global-shell-account-entry]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares GlobalShell account entry states" } }
+          - id: account-security-credential-contract
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: declares account security credential identifier details" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.account-security-contract-reference]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares account security credential identifier details" } }
           - id: component-types
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
@@ -75,6 +106,26 @@ requirements:
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers: [FEAT-FE-013#binding.frontend/target.page-registry]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: validates page links" } }
+          - id: settings-contract
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: connects Space Settings sections to implementation and test evidence" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers:
+                  - FEAT-FE-013#binding.frontend/target.page-space-settings
+                  - FEAT-FE-013#binding.frontend/target.component-space-settings
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: connects Space Settings sections to implementation and test evidence" } }
+          - id: invitation-join-contract
+            adapter: typescript
+            path: frontend/src/routes/spaces/join.test.tsx
+            selector: { kind: test, name: "REQ-FE-040: matches the invitation Join declaration to the rendered route" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.component-invitation-join]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/join.test.tsx, test: "REQ-FE-040: matches the invitation Join declaration to the rendered route" } }
           - id: documented-routes
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts

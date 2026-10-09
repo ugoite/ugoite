@@ -166,6 +166,7 @@ export type WritePreview = {
   action: "create" | "update" | "undo";
   form?: string;
   entryId?: string;
+  entryIdLabel?: string;
   summary: string;
 };
 
@@ -1223,9 +1224,7 @@ function createWritePreview(
       spaceId: safePreviewLabel(spaceId),
       operation: "ugoite.undo",
       action: "undo",
-      summary: `Undo changes from Work ${safePreviewLabel(workId)} in Space ${
-        safePreviewLabel(spaceId)
-      }.`,
+      summary: "Undo the changes saved during this work.",
     };
   }
   const id = request.arguments.id;
@@ -1249,11 +1248,6 @@ function createWritePreview(
     }`
   ).join(", ");
   const summaryParts = [
-    `${entryId ? "Update" : "Create"} in Space ${
-      safePreviewLabel(spaceId)
-    }; Form ${safePreviewLabel(formName ?? "from existing Entry")}${
-      entryId ? `; Entry ${safePreviewLabel(entryId)}` : ""
-    }.`,
     `Fields (${
       entryId ? "replace the complete structured field map" : "new Entry values"
     }): ${fieldSummary}.`,
@@ -1279,7 +1273,8 @@ function createWritePreview(
     operation: "ugoite.save",
     action: entryId ? "update" : "create",
     form: formName ? safePreviewLabel(formName) : undefined,
-    entryId: entryId ? safePreviewLabel(entryId) : undefined,
+    entryId,
+    entryIdLabel: entryId ? safePreviewLabel(entryId) : undefined,
     summary,
   };
 }
