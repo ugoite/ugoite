@@ -36,6 +36,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.registry-shape
+          - id: component-account-recovery
+            adapter: declared
+            path: docs/spec/ui/components/account-recovery.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
           - id: component-login
             adapter: declared
             path: docs/spec/ui/components/login.yaml

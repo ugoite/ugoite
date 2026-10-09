@@ -18,7 +18,10 @@ vi.mock("~/lib/auth-api", () => ({
 describe("/recover/account", () => {
   it("replaces the Passkey and displays the rotated codes once", async () => {
     vi.mocked(authApi.recoverPasskey).mockResolvedValue({
-      account: { account_id: "account-1", display_name: "Recovered" },
+      account: {
+        account_id: "server-returned-account-id",
+        display_name: "Recovered",
+      },
       recovery_codes: ["NEW-CODE-1", "NEW-CODE-2"],
     });
     render(() => <AccountRecoveryRoute />);
@@ -46,6 +49,9 @@ describe("/recover/account", () => {
     expect(await screen.findByText("Save your new recovery codes"))
       .toBeInTheDocument();
     expect(screen.getByText("NEW-CODE-1")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Account ID")).not.toBeInTheDocument();
+    expect(screen.queryByText("server-returned-account-id"))
+      .not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "I saved the codes" }));
     expect(navigateMock).toHaveBeenCalledWith("/spaces/demo", {
       replace: true,

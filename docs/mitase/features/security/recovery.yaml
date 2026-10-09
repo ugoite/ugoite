@@ -110,6 +110,8 @@ features:
             selector: { kind: file }
             claims:
               - kind: satisfies
+                criterion: REQ-SEC-014#criterion.dual-factor-recovery
+              - kind: satisfies
                 criterion: REQ-SEC-014#criterion.credential-replacement
           - id: browser-recovery-journey
             adapter: typescript

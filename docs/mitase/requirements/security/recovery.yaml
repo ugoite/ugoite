@@ -117,6 +117,10 @@ requirements:
             selector: { kind: test, name: replaces the Passkey and displays the rotated codes once }
             claims:
               - kind: verifies
+                criterion: REQ-SEC-014#criterion.dual-factor-recovery
+                covers: [FEAT-SEC-003#binding.client/target.account-recovery-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/recover/account.test.tsx, test: replaces the Passkey and displays the rotated codes once } }
+              - kind: verifies
                 criterion: REQ-SEC-014#criterion.credential-replacement
                 covers: [FEAT-SEC-003#binding.client/target.account-recovery-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/recover/account.test.tsx, test: replaces the Passkey and displays the rotated codes once } }

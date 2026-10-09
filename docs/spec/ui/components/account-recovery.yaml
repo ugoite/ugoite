@@ -1,0 +1,62 @@
+version: "0.1"
+updated: "2026-10-09"
+component_group:
+  id: account-recovery
+  title: Account Self-Recovery
+  routes: [/recover/account]
+  notes: The Account ID identifies the account; the Recovery Code and authenticator code are the two recovery factors. The successful response replaces the form with rotated Recovery Codes and one required offline-save acknowledgment.
+components:
+  - id: account-recovery-task
+    type: single-task-surface
+    implementation: frontend/src/routes/recover/account.tsx
+    tests: frontend/src/routes/recover/account.test.tsx
+    heading:
+      initial: Recover your account
+      code-handoff: Save your new recovery codes
+      visible_headings: 1
+    required_inputs:
+      order: [account-id, recovery-code, authenticator-code]
+      identifier:
+        id: account-id
+        label: Account ID
+        value: user-provided
+        required: true
+        input_presentation: monospace
+      factors:
+        order: [recovery-code, authenticator-code]
+        fields:
+          recovery-code:
+            label: Recovery Code
+            required: true
+            input_presentation: monospace
+          authenticator-code:
+            label: Authenticator code
+            required: true
+            inputmode: numeric
+            autocomplete: one-time-code
+            pattern: "[0-9]{6}"
+      submit:
+        label: Register new Passkey
+        busy_label: Waiting for new Passkey…
+        disabled_while_busy: true
+    result:
+      visible_when: successful-recovery-with-rotated-recovery-codes
+      replaces_factor_form: true
+      recovery_codes:
+        presentation: visible-once
+        purpose: offline-backup
+        login_method: false
+        persistence: route-memory-only
+        instruction: Store the codes offline before continuing.
+      continuation:
+        label: I saved the codes
+        destination: safe-next-path
+        history: replace
+    failure:
+      role: alert
+      preserves_factor_form: true
+      recovery_codes_visible: false
+    identifier_visibility:
+      account_id: user-entered-required-identifier-only
+      returned_account_id: hidden
+      unrelated_internal_ids: hidden
