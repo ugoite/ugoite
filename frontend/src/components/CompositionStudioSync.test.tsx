@@ -375,7 +375,7 @@ describe("CompositionStudioSync", () => {
     expect(previewMock).toHaveBeenCalledTimes(2);
   });
 
-  it("scopes Parameters Tags and the Data workspace to their owning modes only", () => {
+  it("separates Data sources, Parameters, and Tags into tabs in Data mode", () => {
     const { container } = renderStudio();
     const modes = modeRadios();
     // Top-level studio sections only: canvas block content carries its own
@@ -401,14 +401,39 @@ describe("CompositionStudioSync", () => {
     expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Preview" })).toBeNull();
 
-    // Data renders the fetch definition only: workspace, Parameters, Tags.
-    // No canvas, no Preview section.
+    // Data renders only the active fetch-definition panel. Parameters and
+    // Tags are separate tabs so the source editor stays the initial focus.
     fireEvent.click(modes.data);
     expect(screen.getByRole("heading", { name: "Data" })).toBeInTheDocument();
+    const dataTabs = screen.getByRole("tablist", { name: "Data" });
+    expect(within(dataTabs).getAllByRole("tab").map((tab) => tab.textContent))
+      .toEqual(["Sources", "Parameters", "Tags"]);
+    expect(
+      within(dataTabs).getAllByRole("tab").every((tab) =>
+        (tab as HTMLButtonElement).tabIndex === 0
+      ),
+    ).toBe(true);
+    expect(within(dataTabs).getByRole("tab", { name: "Sources" }))
+      .toHaveAttribute("aria-selected", "true");
+    expect(topSectionCount()).toBe(1);
+    expect(
+      screen.getByRole("button", { name: "Monthly totals" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Parameters" }),
+    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
+    fireEvent.click(within(dataTabs).getByRole("tab", { name: "Parameters" }));
     expect(screen.getByRole("heading", { name: "Parameters" }))
       .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Tags" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Monthly totals" }),
+    ).toBeNull();
+    fireEvent.click(within(dataTabs).getByRole("tab", { name: "Tags" }));
     expect(screen.getByRole("heading", { name: "Tags" })).toBeInTheDocument();
-    expect(topSectionCount()).toBe(3);
+    expect(screen.queryByRole("heading", { name: "Parameters" })).toBeNull();
+    fireEvent.click(within(dataTabs).getByRole("tab", { name: "Sources" }));
     expect(
       screen.getByRole("button", { name: "Monthly totals" }),
     ).toBeInTheDocument();

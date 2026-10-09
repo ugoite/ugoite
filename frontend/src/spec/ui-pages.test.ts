@@ -27,6 +27,7 @@ const componentsDir = path.join(repoRoot, "docs/spec/ui/components");
 const routesDir = path.join(repoRoot, "frontend/src/routes/spaces/[space_id]");
 
 const allowedComponentTypes = new Set([
+  "tab-list",
   "tab-bar",
   "floating-icon-button",
   "heading",

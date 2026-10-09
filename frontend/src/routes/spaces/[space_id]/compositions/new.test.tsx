@@ -294,15 +294,17 @@ describe("Composition studio shell", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
-    // Data mode brings the fetch definition only: Data workspace, then
-    // Tags. Parameters disclose progressively only once a source exists,
-    // and the canvas and Preview section never render here.
+    // Data mode opens its Sources tab. Parameters disclose progressively
+    // only once a source exists; Tags remain on their own tab.
     fireEvent.click(within(modes).getByRole("radio", { name: "Data" }));
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
         heading.textContent
       ),
-    ).toEqual(["Data", "Tags"]);
+    ).toEqual(["Data"]);
+    expect(screen.getByRole("tab", { name: "Sources" }))
+      .toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Tags" })).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Parameters" }),
     ).not.toBeInTheDocument();
@@ -323,9 +325,15 @@ describe("Composition studio shell", () => {
     ).not.toBeInTheDocument();
     await addSourceViaPicker("Tasks");
 
+    expect(screen.getByRole("tab", { name: "Parameters" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Parameters" }))
+      .not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Parameters" }));
     expect(screen.getByRole("heading", { name: "Parameters" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Tags" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Tags" })).not
+      .toBeInTheDocument();
     // Data mode never renders the canvas or the removed Preview section.
     expect(screen.queryByRole("heading", { name: "Preview" })).not
       .toBeInTheDocument();
@@ -695,8 +703,9 @@ describe("Composition studio shell", () => {
     });
 
     // The month parameter is provisioned from the server-declared type.
-    // Scoped to the Parameters section: the Data workspace viewer also
+    // Open its Data tab. Scoped to the Parameters section: the source viewer also
     // surfaces the Saved SQL variable name in its own Variables section.
+    fireEvent.click(screen.getByRole("tab", { name: "Parameters" }));
     const parameters = screen
       .getByRole("heading", { name: "Parameters" })
       .closest("section")!;

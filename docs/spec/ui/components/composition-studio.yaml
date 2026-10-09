@@ -92,6 +92,16 @@ components:
       narrow_width: 390px
     surface_tokens: fixed-only-no-raw-color
     async_state: explicit-loading-empty-error
+  - id: studio-data-mode-tabs
+    type: tab-list
+    title: Sources, Parameters, Tags
+    status: implemented
+    scope: data-mode-only
+    labels: localized-sources-parameters-tags
+    tab_pattern: settings-tablist-with-tab-and-tabpanel-roles-no-arrow-key-nav
+    initial_selection: sources
+    parameter_disclosure: only-when-a-source-exists
+    state: transient-work-never-saved
   - id: studio-display
     type: list
     title: Display
@@ -124,8 +134,8 @@ components:
     type: form
     title: Parameters
     status: implemented
-    scope: data-mode-only
-    disclosure: renders-only-with-at-least-one-source
+    scope: data-mode-parameters-tab-only
+    disclosure: renders-only-with-at-least-one-source-and-when-tab-is-selected
     label_kind: compact-section-label
     binding: existing-composition-parameter-grammar-by-reference
     type_compatibility: rust-owned-diagnostics
@@ -133,7 +143,7 @@ components:
     type: form
     title: Tags
     status: implemented
-    scope: data-mode-only
+    scope: data-mode-tags-tab-only
     label_kind: compact-section-label
     semantics: entry-metadata-tags
   - id: studio-preview
@@ -211,6 +221,9 @@ components:
     insertion:
       control: single-add-control-per-gap
       palette: modal-dialog-with-backdrop-escape-focus-trap-and-focus-return
+      palette_sizing:
+        width: min(560px, calc(100vw - 32px))
+        height: max-viewport-minus-32px-with-vertical-scroll
       palette_entries: [
         text-always,
         metric-table-only-with-sources,
@@ -271,7 +284,7 @@ components:
     arrangement_only: draft-preview-selection-shared-continuous-no-refetch
     true_modes:
       design: finished-shape-only-canvas-plus-inspector-no-data-no-parameters-no-tags-no-preview-section
-      data: fetch-definition-only-workspace-plus-parameters-plus-tags-no-canvas-no-preview-section
+      data: fetch-definition-only-with-localized-sources-parameters-tags-tabs-no-canvas-no-preview-section
       split: design-canvas-plus-scoped-data-pane-no-parameters-no-tags-no-preview-section
     blank_design: single-add-data-action-opens-source-picker-no-prose
     split_availability: desktop-only-below-760px-design-data-only

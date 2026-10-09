@@ -482,7 +482,7 @@ features:
       path: frontend/src/components/CompositionDesignCanvas.test.tsx
       selector:
         kind: test
-        name: opens the palette as a modal dialog with focus trap and focus return
+        name: opens a readable viewport-capped modal palette with focus trap and focus return
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout
@@ -562,10 +562,14 @@ features:
       path: frontend/src/components/CompositionStudioSync.test.tsx
       selector:
         kind: test
-        name: scopes Parameters Tags and the Data workspace to their owning modes only
+        name: separates Data sources, Parameters, and Tags into tabs in Data mode
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.structure-first-authoring
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.no-persistent-explanatory-copy
     - id: browser-studio-blank-guided
       adapter: typescript
       path: frontend/src/components/CompositionStudioSync.test.tsx
