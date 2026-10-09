@@ -92,6 +92,7 @@ import {
   stagePendingCompositionSaveAttempt,
 } from "~/lib/composition-save-attempt";
 import { t } from "~/lib/i18n";
+import { compositionFormFieldName } from "~/lib/composition-field-name";
 import { spaceCompositionRevisionPath } from "~/lib/space-path";
 import { formApi } from "~/lib/ugoite-client";
 
@@ -247,13 +248,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     (spaceId) => formApi.list(spaceId).catch(() => []),
   );
   const fieldNames: CompositionFieldNames = (formId, fieldId) => {
-    const form = forms()?.find((entry) => entry.id === formId);
-    const field = Object.entries(form?.fields ?? {}).find(([, definition]) =>
-      (definition.query_capability?.field.field_id ?? definition.id) ===
-        fieldId
-    );
-    if (!field) return undefined;
-    return field[1].label?.trim() || undefined;
+    return compositionFormFieldName(forms(), formId, fieldId);
   };
 
   const previewHandle = createCompositionPreviewHandle();

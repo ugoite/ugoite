@@ -7,6 +7,7 @@ import type {
   DraftMetricValueField,
   DraftSource,
 } from "~/lib/composition-draft";
+import { MAX_ENTRY_PROJECTION_FIELDS } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 
 export type CompositionDisplaySeed =
@@ -102,10 +103,25 @@ export const entryQueryScalarCandidates = (
 export const displayScalarCandidates = (
   source: DraftSource,
   fieldNames?: (formId: string, fieldId: number) => string | undefined,
-): DisplayScalarCandidate[] =>
-  source.kind === "saved_sql"
-    ? savedSqlScalarCandidates(source.expectedResult)
-    : entryQueryScalarCandidates(source.fieldSchema, source.formId, fieldNames);
+): DisplayScalarCandidate[] => {
+  if (source.kind === "saved_sql") {
+    return savedSqlScalarCandidates(source.expectedResult);
+  }
+  const candidates = entryQueryScalarCandidates(
+    source.fieldSchema,
+    source.formId,
+    fieldNames,
+  );
+  if (
+    source.query.projection.kind !== "fields" ||
+    source.query.projection.fields.length < MAX_ENTRY_PROJECTION_FIELDS
+  ) return candidates;
+  const projectedFields = new Set(source.query.projection.fields);
+  return candidates.filter((candidate) =>
+    "fieldId" in candidate.valueField &&
+    projectedFields.has(candidate.valueField.fieldId)
+  );
+};
 
 const sourceKindLabel = (source: DraftSource): string =>
   source.kind === "saved_sql"

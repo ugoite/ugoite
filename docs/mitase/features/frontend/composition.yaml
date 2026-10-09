@@ -47,6 +47,27 @@ features:
                 criterion: REQ-FE-070#criterion.source-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.display-authoring
+          - id: composition-data-workspace
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.tsx
+            selector: { kind: symbol, name: CompositionDataWorkspace }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
+          - id: composition-entry-query-source-editor
+            adapter: typescript
+            path: frontend/src/components/EntryQuerySourceEditor.tsx
+            selector: { kind: symbol, name: EntryQuerySourceEditor }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.display-authoring
+          - id: composition-form-field-name
+            adapter: typescript
+            path: frontend/src/lib/composition-field-name.ts
+            selector: { kind: symbol, name: compositionFormFieldName }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
           - id: composition-preview-handle
             adapter: typescript
             path: frontend/src/lib/composition-preview-handle.ts

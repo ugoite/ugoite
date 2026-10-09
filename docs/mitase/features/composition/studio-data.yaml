@@ -257,6 +257,24 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.entry-query-translation
+    - id: browser-data-entry-query-metric-projection
+      adapter: typescript
+      path: frontend/src/lib/composition-draft.test.ts
+      selector:
+        kind: test
+        name: keeps EntryQuery metric fields in the source projection
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.display-authoring
+    - id: browser-data-entry-query-metric-projection-locked
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: keeps the preview projection unavailable while an EntryQuery metric uses a field
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.display-authoring
     - id: browser-data-entry-query-dialog-bindings
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx

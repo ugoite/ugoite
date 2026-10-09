@@ -49,6 +49,11 @@ components:
       filter_operators: [equals, contains, lt, lte, gt, gte]
       sort_directions: [asc, desc]
       projection: [fields, preview]
+      metric_projection: selected-entry-field-is-in-fields-projection-and-projection-edits-retain-metric-fields
+      projection_initialization: reserve-metric-bound-fields-then-schema-order-up-to-64
+      projection_capacity: unchecked-fields-disabled-with-localized-limit-title-at-64
+      projection_removal: selected-non-metric-fields-enabled-metric-bound-fields-disabled
+      projection_recovery: overbooked-saved-drafts-disable-controls-with-metric-binding-title
       edits: draft-source-query-through-narrow-updaters
       unknown_operators: rejected-fail-closed
       filter_sort_editing: shared-entry-browser-display-dialog-only

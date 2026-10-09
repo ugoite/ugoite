@@ -215,6 +215,9 @@ export type DraftErrorCode =
   | "parameter-already-placed"
   | "source-referenced";
 
+/** Mirrors the canonical EntryQuery projection limit. */
+export const MAX_ENTRY_PROJECTION_FIELDS = 64;
+
 export type DraftResult =
   | { ok: true; draft: CompositionDraft }
   | { ok: false; error: DraftErrorCode };
@@ -594,6 +597,40 @@ const findEntryQuerySource = (
   return draft.sources[index].kind === "entry_query" ? index : -1;
 };
 
+/** Ensure an EntryQuery metric's stable property is part of its projection. */
+const ensureMetricFieldProjected = (
+  draft: CompositionDraft,
+  sourceDraftId: string,
+  valueField: DraftMetricValueField,
+): DraftResult => {
+  if (!("fieldId" in valueField) || !isIntegerFieldId(valueField.fieldId)) {
+    return { ok: true, draft };
+  }
+  const index = findEntryQuerySource(draft, sourceDraftId);
+  if (index < 0) return { ok: true, draft };
+  const source = draft.sources[index];
+  if (source.kind !== "entry_query") return { ok: true, draft };
+  const currentFields = source.query.projection.kind === "fields"
+    ? source.query.projection.fields
+    : [];
+  if (currentFields.includes(valueField.fieldId)) return { ok: true, draft };
+  if (currentFields.length >= MAX_ENTRY_PROJECTION_FIELDS) {
+    return { ok: false, error: "invalid-query" };
+  }
+  const sources = [...draft.sources];
+  sources[index] = {
+    ...source,
+    query: {
+      ...source.query,
+      projection: {
+        kind: "fields",
+        fields: [...currentFields, valueField.fieldId],
+      },
+    },
+  };
+  return { ok: true, draft: { ...draft, sources } };
+};
+
 /** Replace an EntryQuery source's filters; unknown operators fail closed. */
 export const setEntryQueryFilters = (
   draft: CompositionDraft,
@@ -667,7 +704,8 @@ export const setEntryQueryProjection = (
   if (projection.kind === "fields") {
     if (
       !Array.isArray(projection.fields) ||
-      !projection.fields.every(isIntegerFieldId)
+      !projection.fields.every(isIntegerFieldId) ||
+      projection.fields.length > MAX_ENTRY_PROJECTION_FIELDS
     ) {
       return { ok: false, error: "invalid-query" };
     }
@@ -678,14 +716,27 @@ export const setEntryQueryProjection = (
   if (current.kind !== "entry_query") {
     return { ok: false, error: "unknown-source" };
   }
+  const metricFieldIds = draft.displays.flatMap((display) =>
+    display.kind === "metric" && display.sourceDraftId === sourceDraftId &&
+      "fieldId" in display.valueField
+      ? [display.valueField.fieldId]
+      : []
+  );
+  const requestedFields = projection.kind === "fields"
+    ? projection.fields
+    : [];
+  const fields = [...new Set([...requestedFields, ...metricFieldIds])];
+  if (fields.length > MAX_ENTRY_PROJECTION_FIELDS) {
+    return { ok: false, error: "invalid-query" };
+  }
   const sources = [...draft.sources];
   sources[index] = {
     ...current,
     query: {
       ...current.query,
-      projection: projection.kind === "preview"
+      projection: fields.length === 0
         ? { kind: "preview" }
-        : { kind: "fields", fields: [...projection.fields] },
+        : { kind: "fields", fields },
     },
   };
   return { ok: true, draft: { ...draft, sources } };
@@ -778,6 +829,13 @@ export const addMetricDisplay = (
   if (!draft.sources.some((source) => source.draftId === sourceDraftId)) {
     return { ok: false, error: "unknown-source" };
   }
+  const projected = ensureMetricFieldProjected(
+    draft,
+    sourceDraftId,
+    valueField,
+  );
+  if (!projected.ok) return projected;
+  const projectedDraft = projected.draft;
   const draftId = `disp-${draft.nextDisplaySeq}`;
   const display: DraftDisplay = {
     kind: "metric",
@@ -788,9 +846,9 @@ export const addMetricDisplay = (
   };
   const placed = insertLayoutItem(
     {
-      ...draft,
-      nextDisplaySeq: draft.nextDisplaySeq + 1,
-      displays: [...draft.displays, display],
+      ...projectedDraft,
+      nextDisplaySeq: projectedDraft.nextDisplaySeq + 1,
+      displays: [...projectedDraft.displays, display],
     },
     { kind: "component", draftId },
     target,
@@ -1045,9 +1103,16 @@ export const setMetricSource = (
   if (!draft.sources.some((source) => source.draftId === sourceDraftId)) {
     return { ok: false, error: "unknown-source" };
   }
-  const displays = [...draft.displays];
+  const projected = ensureMetricFieldProjected(
+    draft,
+    sourceDraftId,
+    valueField,
+  );
+  if (!projected.ok) return projected;
+  const projectedDraft = projected.draft;
+  const displays = [...projectedDraft.displays];
   displays[index] = { ...current, sourceDraftId, valueField };
-  return { ok: true, draft: { ...draft, displays } };
+  return { ok: true, draft: { ...projectedDraft, displays } };
 };
 
 /** Retarget a table to another existing source; the label is untouched. */
@@ -1082,9 +1147,16 @@ export const setMetricValueField = (
   if (index < 0) return { ok: false, error: "unknown-display" };
   const current = draft.displays[index];
   if (current.kind !== "metric") return { ok: false, error: "unknown-display" };
-  const displays = [...draft.displays];
+  const projected = ensureMetricFieldProjected(
+    draft,
+    current.sourceDraftId,
+    valueField,
+  );
+  if (!projected.ok) return projected;
+  const projectedDraft = projected.draft;
+  const displays = [...projectedDraft.displays];
   displays[index] = { ...current, valueField };
-  return { ok: true, draft: { ...draft, displays } };
+  return { ok: true, draft: { ...projectedDraft, displays } };
 };
 
 /** Edit text content; style, sources, and layout stay untouched. */
