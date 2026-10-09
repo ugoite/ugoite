@@ -1,0 +1,44 @@
+version: "0.1"
+updated: "2026-10-09"
+page:
+  id: initial-setup
+  title: Initial Setup
+  route: /setup
+  implementation: implemented
+components:
+  body:
+    - id: bootstrap-setup-task
+      type: one-time-node-bootstrap
+      implementation: frontend/src/routes/setup.tsx
+      tests: frontend/src/routes/setup.test.tsx
+      initial_form:
+        fields: [setup-secret, display-name]
+        submit: create-administrator-passkey
+      recovery_handoff:
+        visible_when: successful-initial-setup-with-recovery-codes
+        account_id:
+          source: result.account.account_id
+          presentation: visible-with-recovery-codes
+          purpose: required-for-account-self-recovery
+          visible_before_handoff: false
+          accessible_text: account-id-value
+        recovery_codes:
+          source: result.recovery_codes
+          presentation: one-time-offline-backup
+          offered_as_login_method: false
+          persistence: route-memory-only
+      passkey_strengthening:
+        action: register-second-passkey
+        completion: continue-to-safe-next-path
+      states: [
+        initial-form,
+        recovery-handoff,
+        passkey-strengthening,
+        complete,
+        error,
+      ]
+      tests:
+        - path: frontend/src/routes/setup.test.tsx
+          selector: keeps the protected route after setup strengthening
+        - path: frontend/src/routes/setup.test.tsx
+          selector: "REQ-SEC-005: presents the bootstrap account ID with recovery codes"
