@@ -672,7 +672,7 @@ features:
       path: frontend/src/components/CompositionStudioSync.test.tsx
       selector:
         kind: test
-        name: keeps insertion controls in Design and none in Data details
+        name: keeps display insertion in Design and source management in Data
       claims:
       - kind: evidences
         anchor: REQ-FE-074#criterion.source-design-entry

@@ -401,15 +401,15 @@ requirements:
                 criterion: REQ-FE-068#criterion.controller-owned-paging
                 covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "renders explicit loading, empty, and error result states" } }
-          - id: composition-data-narrow-stacking
+          - id: composition-data-narrow-overlay
             adapter: typescript
             path: frontend/src/components/CompositionDataWorkspace.test.tsx
-            selector: { kind: test, name: stacks the navigator and editor at narrow widths }
+            selector: { kind: test, name: uses a compact overlay navigator at narrow widths }
             claims:
               - kind: verifies
                 criterion: REQ-FE-068#criterion.local-horizontal-overflow
                 covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: stacks the navigator and editor at narrow widths } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: uses a compact overlay navigator at narrow widths } }
           - id: studio-split-narrow-stacking
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx

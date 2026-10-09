@@ -132,6 +132,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     props.initialDraft ?? createEmptyDraft(),
   );
   const [pickerOpen, setPickerOpen] = createSignal(false);
+  const [dataSourcePickerOpen, setDataSourcePickerOpen] = createSignal(false);
   const [displayPickerOpen, setDisplayPickerOpen] = createSignal(false);
   const [displayPickerKind, setDisplayPickerKind] = createSignal<
     "table" | "metric"
@@ -434,6 +435,21 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setPickerOpen(false);
   };
 
+  const openDataSourcePicker = () => {
+    setSourcePickerKind(null);
+    setDataSourcePickerOpen(true);
+    setPickerOpen(true);
+  };
+
+  const addDataSource = (seed: CompositionSourceSeed) => {
+    const { draft: sourceDraft, draftId } = addSourceSeed(seed);
+    setDraft(sourceDraft);
+    setExpandedId(draftId);
+    previewHandle.ensureSource(draftId);
+    setDataSourcePickerOpen(false);
+    setPickerOpen(false);
+  };
+
   const toggleExpanded = (sourceDraftId: string) => {
     const selecting = expandedId() !== sourceDraftId;
     setExpandedId(selecting ? sourceDraftId : null);
@@ -484,6 +500,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
   };
 
   const chooseSourceForDisplay = (kind: "table" | "metric") => {
+    setDataSourcePickerOpen(false);
     setSourcePickerKind(kind);
     setDisplayPickerKind(kind);
     setDisplayPickerOpen(false);
@@ -862,13 +879,18 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // clearing the selection (or leaving the sheet viewport) dismisses it.
   const sheetSelection = (): string | null =>
     sheetViewport() && sheetOpen() ? selectedId() : null;
-  const renderDataWorkspace = (headingId = dataHeadingId) => (
+  const renderDataWorkspace = (
+    headingId = dataHeadingId,
+    collapsible = false,
+  ) => (
     <CompositionDataWorkspace
       spaceId={spaceId()}
       draft={draft()}
       headingId={headingId}
       selectedSourceId={expandedId()}
+      collapsible={collapsible}
       onSelectSource={toggleExpanded}
+      onAddSource={openDataSourcePicker}
       onMoveSource={moveDraftSource}
       onRemoveSource={removeDraftSource}
       onEntryQueryFilters={updateEntryQueryFilters}
@@ -1171,7 +1193,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             </div>
             <div class="studioSplitPane" aria-labelledby={dataHeadingId}>
               <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
-              {renderDataWorkspace()}
+              {renderDataWorkspace(dataHeadingId, true)}
             </div>
           </div>
         </section>
@@ -1190,9 +1212,12 @@ export function CompositionStudio(props: CompositionStudioProps) {
       <Show when={pickerOpen()}>
         <CompositionSourcePicker
           spaceId={spaceId()}
-          onSelect={addSourceForDisplay}
+          onSelect={(seed) =>
+            dataSourcePickerOpen() ? addDataSource(seed) : addSourceForDisplay(seed)
+          }
           onClose={() => {
             setPickerOpen(false);
+            setDataSourcePickerOpen(false);
             setSourcePickerKind(null);
             setDisplayPickerAutoAddSingleCandidate(false);
           }}

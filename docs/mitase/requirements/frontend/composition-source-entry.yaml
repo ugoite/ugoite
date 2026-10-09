@@ -11,7 +11,7 @@ requirements:
     criteria:
       - id: source-design-entry
         kind: behavior
-        statement: "Design insertion always offers Text and Data, including on an empty canvas. Data opens Table and Metric choices and lists sources already referenced by the Composition before catalog sources. Selecting an existing source in Table mode immediately inserts a table without a label step. Browsing a Form or exact Saved SQL revision in Table mode adds that source and its table together. Metric mode adds immediately when there is one usable scalar value; otherwise it asks for a human-named value field. For a new metric source, its sole usable value is added immediately, and a field is requested only when multiple candidates exist. EntryQuery metric choices include only projectable scalar fields with a resolved human Form name; they never show field IDs or generated ordinals. Component labels are omitted during insertion and remain optional Inspector edits after selection. New Form sources initially project up to 64 projectable Form fields and omit Created and Updated system fields, while their snapshot includes every Composition-expressible Form field up to the document collection limit so later projection, filter, and sort edits stay resolvable. Filter and sort choices are limited to fields present in the source snapshot. Projection choices include only projectable snapshot fields, while already-selected nonprojectable fields remain available for removal. Preview remains the fallback when no Form field is projectable, and can be selected only when the source snapshot covers every current Form field. The Data Sources view lists and edits only sources already referenced by the Composition, without a competing source-add action in Data or the Split data pane."
+        statement: "Design insertion always offers Text and Data, including on an empty canvas. Data opens Table and Metric choices and lists sources already referenced by the Composition before catalog sources. Selecting an existing source in Table mode immediately inserts a table without a label step. Browsing a Form or exact Saved SQL revision in Table mode adds that source and its table together. Metric mode adds immediately when there is one usable scalar value; otherwise it asks for a human-named value field. For a new metric source, its sole usable value is added immediately, and a field is requested only when multiple candidates exist. EntryQuery metric choices include only projectable scalar fields with a resolved human Form name; they never show field IDs or generated ordinals. Component labels are omitted during insertion and remain optional Inspector edits after selection. New Form sources initially project up to 64 projectable Form fields and omit Created and Updated system fields, while their snapshot includes every Composition-expressible Form field up to the document collection limit so later projection, filter, and sort edits stay resolvable. Filter and sort choices are limited to fields present in the source snapshot. Projection choices include only projectable snapshot fields, while already-selected nonprojectable fields remain available for removal. Preview remains the fallback when no Form field is projectable, and can be selected only when the source snapshot covers every current Form field. The Data Sources sidebar lists only Composition-referenced sources; one footer action opens the Form or Saved SQL picker to add a source without creating a display, and the selected source can be removed only while no display references it."
         governed_by: [
           POL-UI-002#rule.governance,
           POL-UI-006#rule.governance,
@@ -180,7 +180,7 @@ requirements:
             path: frontend/src/components/CompositionStudioSync.test.tsx
             selector:
               kind: test
-              name: keeps insertion controls in Design and none in Data details
+              name: keeps display insertion in Design and source management in Data
             claims:
               - kind: verifies
                 criterion: REQ-FE-074#criterion.source-design-entry
@@ -191,7 +191,37 @@ requirements:
                   runner: frontend-vitest-file,
                   arguments: {
                     file: src/components/CompositionStudioSync.test.tsx,
-                    test: keeps insertion controls in Design and none in Data details,
+                    test: keeps display insertion in Design and source management in Data,
+                  },
+                }
+          - id: data-sidebar-source-add
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector:
+              kind: test
+              name: adds a source from the Data navigator without creating a design block
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode,
+                  FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: "src/routes/spaces/[space_id]/compositions/new.test.tsx",
+                    test: adds a source from the Data navigator without creating a design block,
+                  },
+                }
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.source-actions-are-navigator-owned
+                covers: [FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: "src/routes/spaces/[space_id]/compositions/new.test.tsx",
+                    test: adds a source from the Data navigator without creating a design block,
                   },
                 }
           - id: route-source-first-table

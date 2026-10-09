@@ -67,7 +67,7 @@ requirements:
       - id: data-workspace-transient-verification
         role: verification
         facet: verification
-        responsibility: Verify Data workspace source selection, reorder, and navigator collapse stay transient Work without entering the Composition document.
+        responsibility: Verify source selection and navigator visibility remain transient Work while source-management controls operate on the current draft.
         targets:
           - id: data-navigator-selection-case
             adapter: typescript
@@ -86,21 +86,60 @@ requirements:
             selector: { kind: test, name: reorders sources with keyboard-operable move buttons }
             claims:
               - kind: verifies
-                criterion: REQ-COMP-006#criterion.work-state-is-transient
+                criterion: REQ-COMP-006#criterion.source-actions-are-navigator-owned
                 covers:
                   - FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
-                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-source-navigator
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: reorders sources with keyboard-operable move buttons } }
           - id: data-navigator-collapse-case
             adapter: typescript
             path: frontend/src/components/CompositionDataWorkspace.test.tsx
-            selector: { kind: test, name: collapses the source navigator and restores it without losing the selected detail }
+            selector: { kind: test, name: preserves selected detail when closing and restoring the mobile navigator }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-006#criterion.navigator-collapse-is-transient
                 covers:
                   - FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: collapses the source navigator and restores it without losing the selected detail } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: preserves selected detail when closing and restoring the mobile navigator } }
+          - id: data-navigator-mobile-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: uses a closable mobile navigator and keeps its detail selection }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.navigator-collapse-is-transient
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: uses a closable mobile navigator and keeps its detail selection } }
+          - id: data-navigator-footer-actions-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: keeps source actions in the navigator footer }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.source-actions-are-navigator-owned
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: keeps source actions in the navigator footer } }
+          - id: data-source-guarded-removal-case
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector: { kind: test, name: adds data sources with full-row selection and keyboard-operable reorder }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.source-actions-are-navigator-owned
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: adds data sources with full-row selection and keyboard-operable reorder } }
+          - id: data-split-navigator-controls-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: keeps source detail controls available in the Split pane }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.navigator-collapse-is-transient
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: keeps source detail controls available in the Split pane } }
       - id: studio-sync-verification
         role: verification
         facet: verification
@@ -277,5 +316,9 @@ requirements:
         governed_by: [POL-000#rule.foundation-precedence, POL-002#rule.governance]
       - id: navigator-collapse-is-transient
         kind: behavior
-        statement: The Data source navigator can be collapsed to give the selected source detail the available width and restored without losing selection; collapse state is transient Work and is not persisted in the Composition document.
+        statement: The Data workspace keeps a persistent left source rail beside the selected detail on desktop and a closable overlay navigator on narrow viewports. Selecting a source on narrow viewports closes the navigator while preserving the detail selection. The Split pane can collapse and restore its source list without losing selection. Navigator visibility and source selection are transient Work and are not persisted in the Composition document.
+        governed_by: [POL-000#rule.foundation-precedence, POL-002#rule.governance]
+      - id: source-actions-are-navigator-owned
+        kind: behavior
+        statement: The Data source navigator footer owns source addition, selected-source reordering, and source removal. Adding a Form or Saved SQL source there does not create a design display, and removal is unavailable while any display references the selected source.
         governed_by: [POL-000#rule.foundation-precedence, POL-002#rule.governance]

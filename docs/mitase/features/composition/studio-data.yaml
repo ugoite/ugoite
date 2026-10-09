@@ -108,6 +108,10 @@ features:
       - kind: satisfies
         criterion: REQ-COMP-006#criterion.navigator-collapse-is-transient
       - kind: satisfies
+        criterion: REQ-COMP-006#criterion.source-actions-are-navigator-owned
+      - kind: satisfies
+        criterion: REQ-FE-074#criterion.source-design-entry
+      - kind: satisfies
         criterion: REQ-FE-068#criterion.controller-owned-paging
       - kind: satisfies
         criterion: REQ-FE-068#criterion.local-horizontal-overflow
@@ -205,10 +209,46 @@ features:
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
       selector:
         kind: test
-        name: collapses the source navigator and restores it without losing the selected detail
+        name: preserves selected detail when closing and restoring the mobile navigator
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.navigator-collapse-is-transient
+    - id: browser-data-navigator-mobile
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: uses a closable mobile navigator and keeps its detail selection
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.navigator-collapse-is-transient
+    - id: browser-data-navigator-footer-actions
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: keeps source actions in the navigator footer
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.source-actions-are-navigator-owned
+    - id: browser-data-source-add
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+      selector:
+        kind: test
+        name: adds a source from the Data navigator without creating a design block
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.source-actions-are-navigator-owned
+    - id: browser-data-source-guarded-removal
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+      selector:
+        kind: test
+        name: adds data sources with full-row selection and keyboard-operable reorder
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.source-actions-are-navigator-owned
     - id: browser-data-navigator-reorder
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
@@ -217,7 +257,16 @@ features:
         name: reorders sources with keyboard-operable move buttons
       claims:
       - kind: evidences
-        anchor: REQ-COMP-006#criterion.work-state-is-transient
+        anchor: REQ-COMP-006#criterion.source-actions-are-navigator-owned
+    - id: browser-data-split-navigator-controls
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: keeps source detail controls available in the Split pane
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.navigator-collapse-is-transient
     - id: browser-data-entry-query-edits
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
@@ -579,12 +628,12 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-FE-068#criterion.controller-owned-paging
-    - id: browser-data-narrow-stacking
+    - id: browser-data-narrow-overlay
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
       selector:
         kind: test
-        name: stacks the navigator and editor at narrow widths
+        name: uses a compact overlay navigator at narrow widths
       claims:
       - kind: evidences
         anchor: REQ-FE-068#criterion.local-horizontal-overflow

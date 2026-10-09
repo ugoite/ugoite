@@ -595,17 +595,27 @@ describe("CompositionStudioSync", () => {
     expect(screen.getAllByRole("button", { name: "Expenses" })).toHaveLength(1);
   });
 
-  it("keeps insertion controls in Design and none in Data details", () => {
+  it("keeps display insertion in Design and source management in Data", () => {
     renderStudio();
     expect(screen.getAllByRole("button", { name: "Add to design" }).length)
       .toBeGreaterThan(0);
 
     fireEvent.click(modeRadios().data);
     expect(screen.queryByRole("button", { name: "Add to design" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Add source" }))
+      .toBeInTheDocument();
 
     fireEvent.click(modeRadios().split);
     expect(screen.getAllByRole("button", { name: "Add to design" }).length)
       .toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Add source" }))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hide data sources" }));
+    expect(screen.getByRole("button", { name: "Show data sources" }))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show data sources" }));
+    expect(screen.getByRole("button", { name: "Hide data sources" }))
+      .toBeInTheDocument();
   });
 
   it("keeps blank Split insertion in the Design canvas", async () => {

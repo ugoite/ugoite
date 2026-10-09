@@ -362,6 +362,25 @@ describe("Composition studio shell", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("adds a source from the Data navigator without creating a design block", async () => {
+    render(() => <CompositionNewRoute />);
+    showDataMode();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add source" }));
+    const picker = await screen.findByRole("dialog", { name: "Choose a source" });
+    fireEvent.click(await within(picker).findByRole("button", { name: "Tasks" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    expect(await screen.findByRole("heading", { name: "Tasks" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Select Tasks" }))
+      .not.toBeInTheDocument();
+
+    showDesignMode();
+    expect(screen.queryByRole("button", { name: "Select Tasks" }))
+      .not.toBeInTheDocument();
+  });
+
   it("adds data sources with full-row selection and keyboard-operable reorder", async () => {
     const { container } = render(() => <CompositionNewRoute />);
     showDataMode();
@@ -407,13 +426,19 @@ describe("Composition studio shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Move Monthly up" }));
     expect(order()[0]).toMatch(/Monthly/);
 
-    // Source removal is blocked while its table still uses it. Remove that
-    // design block through the Inspector first, then remove the unreferenced
-    // source in Data.
+    // Source removal is blocked while its table still uses it. Select the
+    // source, then remove its design block through the Inspector before
+    // removing the unreferenced source in Data.
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(screen.getByRole("button", { name: "Remove Tasks" })).toBeDisabled();
     showDesignMode();
     fireEvent.click(screen.getByRole("button", { name: "Select Tasks" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove Tasks" }));
     showDataMode();
+    const tasksRow = screen.getByRole("button", { name: "Tasks" });
+    if (tasksRow.getAttribute("aria-pressed") !== "true") {
+      fireEvent.click(tasksRow);
+    }
     fireEvent.click(screen.getByRole("button", { name: "Remove Tasks" }));
     expect(
       screen.queryByRole("button", { name: "Tasks" }),

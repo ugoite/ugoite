@@ -1,4 +1,5 @@
-import { createSignal, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { IconButton } from "~/components/IconButton";
 import { UiIcon } from "~/components/UiIcon";
 import { SourceNavigator } from "~/components/SourceNavigator";
 import {
@@ -33,7 +34,10 @@ export interface CompositionDataWorkspaceProps {
   headingId: string;
   /** Selected source draft ID; the editor area renders its detail. */
   selectedSourceId: string | null;
+  /** Split mode's narrow side pane can collapse its source list on desktop. */
+  collapsible?: boolean;
   onSelectSource: (sourceDraftId: string) => void;
+  onAddSource: () => void;
   onMoveSource: (sourceDraftId: string, direction: "up" | "down") => void;
   onRemoveSource: (sourceDraftId: string) => void;
   onEntryQueryFilters: (
@@ -80,6 +84,7 @@ export interface CompositionDataWorkspaceProps {
  */
 export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
   const [navigatorOpen, setNavigatorOpen] = createSignal(true);
+  const [narrowViewport, setNarrowViewport] = createSignal(false);
   const navigatorId = `${props.headingId}-source-navigator`;
   let hideNavigatorButton: HTMLButtonElement | undefined;
   let showNavigatorButton: HTMLButtonElement | undefined;
@@ -99,15 +104,66 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
       ),
     ),
   ];
+  const selectedSourceIndex = () =>
+    props.draft.sources.findIndex((source) =>
+      source.draftId === props.selectedSourceId
+    );
+  const selectedSourceUsedByDisplay = () =>
+    props.draft.displays.some((display) =>
+      display.kind !== "text" && display.sourceDraftId === props.selectedSourceId
+    );
+
+  const closeNavigator = () => {
+    setNavigatorOpen(false);
+    queueMicrotask(() => showNavigatorButton?.focus());
+  };
+
+  let previousSelectedSourceId: string | null | undefined;
+
+  createEffect(() => {
+    const sourceId = props.selectedSourceId;
+    const narrow = narrowViewport();
+    const previous = previousSelectedSourceId;
+    previousSelectedSourceId = sourceId;
+    if (narrow && sourceId && previous !== undefined && sourceId !== previous) {
+      closeNavigator();
+    }
+  });
+
+  onMount(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+    const media = window.matchMedia("(max-width: 560px)");
+    const syncViewport = () => {
+      setNarrowViewport(media.matches);
+      setNavigatorOpen(!media.matches || props.selectedSourceId === null);
+    };
+    syncViewport();
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", syncViewport);
+      onCleanup(() => media.removeEventListener("change", syncViewport));
+    } else {
+      media.addListener(syncViewport);
+      onCleanup(() => media.removeListener(syncViewport));
+    }
+  });
 
   return (
     <div
       class="dataWorkspace"
-      classList={{ "dataWorkspace--navigator-collapsed": !navigatorOpen() }}
+      classList={{
+        "dataWorkspace--navigator-collapsed": !navigatorOpen(),
+        "dataWorkspace--mobile": narrowViewport(),
+        "dataWorkspace--collapsible": props.collapsible,
+        "dataWorkspace--mobile-navigator-open":
+          narrowViewport() && navigatorOpen(),
+      }}
     >
       <aside
         id={navigatorId}
         class="dataWorkspaceNavigator"
+        aria-labelledby={props.headingId}
         hidden={!navigatorOpen()}
       >
         <div class="dataWorkspaceNavigatorActions">
@@ -120,8 +176,7 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
             aria-controls={navigatorId}
             title={t("composition.studioHideDataSources")}
             onClick={() => {
-              setNavigatorOpen(false);
-              queueMicrotask(() => showNavigatorButton?.focus());
+              closeNavigator();
             }}
           >
             <UiIcon name="chevron-left" />
@@ -135,10 +190,70 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
           headingId={props.headingId}
           selectedId={props.selectedSourceId}
           onSelect={props.onSelectSource}
-          onMove={props.onMoveSource}
-          onRemove={props.onRemoveSource}
           registerRow={props.registerSourceRow}
         />
+        <div class="dataWorkspaceNavigatorFooter">
+          <IconButton
+            icon="plus"
+            label={t("composition.studioAddSource")}
+            onClick={props.onAddSource}
+          />
+          <button
+            type="button"
+            class="pill iconpill icononly"
+            disabled={selectedSourceIndex() <= 0}
+            aria-label={t("composition.studioMoveUp", {
+              name: selectedSource()?.name ?? t("composition.studioSource"),
+            })}
+            title={t("composition.studioMoveUp", {
+              name: selectedSource()?.name ?? t("composition.studioSource"),
+            })}
+            onClick={() => {
+              const source = selectedSource();
+              if (source) props.onMoveSource(source.draftId, "up");
+            }}
+          >
+            <span aria-hidden="true">↑</span>
+          </button>
+          <button
+            type="button"
+            class="pill iconpill icononly"
+            disabled={
+              selectedSourceIndex() < 0 ||
+              selectedSourceIndex() === props.draft.sources.length - 1
+            }
+            aria-label={t("composition.studioMoveDown", {
+              name: selectedSource()?.name ?? t("composition.studioSource"),
+            })}
+            title={t("composition.studioMoveDown", {
+              name: selectedSource()?.name ?? t("composition.studioSource"),
+            })}
+            onClick={() => {
+              const source = selectedSource();
+              if (source) props.onMoveSource(source.draftId, "down");
+            }}
+          >
+            <span aria-hidden="true">↓</span>
+          </button>
+          <IconButton
+            icon="trash"
+            label={selectedSource()
+              ? t("composition.studioRemoveSource", {
+                name: selectedSource()!.name,
+              })
+              : t("composition.studioRemoveSelectedSource")}
+            title={selectedSourceUsedByDisplay()
+              ? t("composition.studioSourceUsedByDisplay")
+              : undefined}
+            disabled={!selectedSource() || selectedSourceUsedByDisplay()}
+            onClick={() => {
+              const source = selectedSource();
+              if (source && !selectedSourceUsedByDisplay()) {
+                props.onRemoveSource(source.draftId);
+              }
+            }}
+          />
+        </div>
       </aside>
       <div class="dataWorkspaceMain">
         <Show when={!navigatorOpen()}>

@@ -34,14 +34,14 @@ components:
     type: list
     title: Data
     status: implemented
-    ownership: collapsible-source-navigator-with-per-source-editor-for-selection-only
-    source_authoring: design-mode-only
-    empty_source_list: no-add-data-prompt
+    ownership: persistent-desktop-source-sidebar-with-single-selected-source-editor
+    source_authoring: design-picker-and-sidebar-footer-source-picker
+    empty_source_list: add-source-icon-action-without-prose
     label_kind: compact-section-label
     rows:
       selection: full-row-activate
-      reorder: keyboard-operable-move-up-down
-      remove: blocked-while-displays-reference-with-reason
+      reorder: selected-source-keyboard-operable-move-up-down-in-sidebar-footer
+      remove: selected-source-in-sidebar-footer-disabled-while-displays-reference
       source_kinds: [saved-sql-exact-revision, entry-query]
       identity_display: human-name-only
       revision_identity: advanced-disclosure-only
@@ -78,11 +78,14 @@ components:
       source_identity: selected-human-source-name-owned-by-workspace-heading
       raw_form_id: draft-data-only-never-rendered
     source_navigator:
-      disclosure: icon-only-44px-control-with-localized-accessible-name
-      initial_state: expanded
+      disclosure: mobile-drawer-control-or-split-pane-toggle-icon-only-44px-with-localized-accessible-name
+      initial_state: desktop-persistent;mobile-open-without-selection-and-closed-with-selection;split-pane-open-with-toggle
       collapsed: editor-uses-full-available-width
       selection: retained-while-collapsed
       state: transient-work-only-never-saved
+      footer_actions: [add-source, move-selected-up, move-selected-down, remove-selected]
+      row_actions: selection-only-no-chevron
+      mobile: overlay-drawer-selection-closes-drawer
       row_name: human-source-name-only
       row_name_overflow: ellipsis-with-full-name-native-title
       row_accessible_name: full-human-source-name
@@ -101,7 +104,9 @@ components:
       reference: result-pagination.yaml
       presentation: localized-icon-only-chevron-controls
     responsive:
-      narrow: navigator-and-editor-stack-with-same-collapse-control
+      desktop: persistent-sticky-left-sidebar-beside-detail
+      narrow: closable-overlay-drawer-with-detail-full-width-when-closed
+      split: single-column-data-pane-with-closable-source-list
       narrow_width: 390px
     surface_tokens: fixed-only-no-raw-color
     async_state: explicit-loading-empty-error
@@ -109,7 +114,8 @@ components:
     type: dialog
     title: Choose a source
     status: implemented
-    ownership: design-mode-source-authoring
+    ownership: design-canvas-display-source-or-data-sidebar-source-authoring
+    source_only_selection: adds-source-and-selects-detail-without-creating-display
     catalog_sources: Forms through form.list and user-query Saved SQL through sql.list
     available_sources: Forms through form.list and user-query Saved SQL through sql.list
     new_table_source_selection: add-source-and-unlabelled-table-to-the-draft-together-without-label-step
@@ -333,7 +339,7 @@ components:
       data: fetch-definition-only-with-localized-sources-parameters-tags-tabs-no-canvas-no-preview-section
       split: design-canvas-plus-scoped-data-pane-no-parameters-no-tags-no-preview-section
     blank_design: Text-and-Data-insertion-controls-open-without-prose
-    source_creation: design-only
+    source_creation: design-display-picker-or-data-sidebar-footer
     split_availability: desktop-only-below-760px-design-data-only
     narrow_resize: crossing-below-760px-gate-returns-to-design-no-stuck-split
     persistence: transient-work-never-stored
