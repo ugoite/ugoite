@@ -400,7 +400,11 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                               main={
                                 <RowListButton
                                   title={displaySqlName(entry)}
-                                  primary={<SavedSqlRowLabel entry={entry} />}
+                                  primary={
+                                    <span class="rowListName">
+                                      <SavedSqlRowLabel entry={entry} />
+                                    </span>
+                                  }
                                   onActivate={() => void addSavedSql(entry)}
                                 />
                               }

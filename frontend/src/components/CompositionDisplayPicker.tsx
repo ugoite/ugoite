@@ -371,7 +371,9 @@ export function CompositionDisplayPicker(
                               >
                                 <span class="rowListText">
                                   <span class="rowListPrimary">
-                                    <span>{source.name}</span>
+                                    <span class="rowListName">
+                                      {source.name}
+                                    </span>
                                   </span>
                                   <span class="rowListSecondary">
                                     {t("composition.studioNoCandidates")}
@@ -382,9 +384,11 @@ export function CompositionDisplayPicker(
                           >
                             <RowListButton
                               ariaLabel={source.name}
-                              selected={sourceDraftId() === source.draftId}
                               title={source.name}
-                              primary={<span>{source.name}</span>}
+                              selected={sourceDraftId() === source.draftId}
+                              primary={
+                                <span class="rowListName">{source.name}</span>
+                              }
                               secondary={sourceKindLabel(source)}
                               onActivate={() => selectSource(source)}
                             />

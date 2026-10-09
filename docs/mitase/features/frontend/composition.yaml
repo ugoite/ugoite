@@ -266,7 +266,7 @@ features:
       - id: composition-picker-name-verification
         role: verification
         facet: verification
-        responsibility: Verify full human source names remain available on long Form, Saved SQL, selectable, and unavailable Composition picker rows while stable identifiers stay out of their labels.
+        responsibility: Verify long human source names visibly ellipsize while remaining available to assistive technology and native titles, with stable identifiers kept out of labels.
         targets:
           - id: source-picker-long-names
             adapter: typescript

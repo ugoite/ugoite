@@ -139,15 +139,27 @@ describe("CompositionSourcePicker", () => {
       name: longFormName,
     });
     expect(formRow).toHaveAttribute("title", longFormName);
-    expect(formRow.textContent).toContain(longFormName);
+    expect(formRow.querySelector(".formRowName")).toHaveTextContent(
+      longFormName,
+    );
     expect(formRow.outerHTML).not.toContain(FORM_ID);
 
     fireEvent.click(screen.getByRole("tab", { name: "Saved SQL" }));
     const sqlRow = await screen.findByRole("button", { name: longSqlName });
     expect(sqlRow).toHaveAttribute("title", longSqlName);
-    expect(sqlRow.textContent).toContain(longSqlName);
+    expect(sqlRow.querySelector(".rowListName")).toHaveTextContent(
+      longSqlName,
+    );
     expect(sqlRow.outerHTML).not.toContain("sql-1");
     expect(sqlRow.outerHTML).not.toContain("sql-rev-1");
+
+    const css = stylesheet();
+    expect(css).toMatch(
+      /\.formRowName\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1 1 auto;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/,
+    );
+    expect(css).toMatch(
+      /\.rowListName\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/,
+    );
   });
 
   it("pins the exact saved sql revision with server-owned column types", async () => {
