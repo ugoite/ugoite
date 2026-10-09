@@ -15,10 +15,12 @@ the Browser Konase panel reference are described in
 signed-in account entry are described in `components/global-shell.yaml`; the
 Konase panel interaction contract is in `components/konase-panel.yaml`. Login
 actions, recovery, and transient authentication states are described in
-`components/login.yaml`; first-run administrator setup and its recovery handoff
-are described in `components/setup.yaml`. The `/device` consent context and
-hidden identifier boundaries are described in `components/device-approval.yaml`.
-Account security credential tabs and identifier disclosure are described in
+`components/login.yaml`; the `/recover/account` factor form and one-time
+Recovery Code handoff are described in `components/account-recovery.yaml`;
+first-run administrator setup and its recovery handoff are described in
+`components/setup.yaml`. The `/device` consent context and hidden identifier
+boundaries are described in `components/device-approval.yaml`. Account security
+credential tabs and identifier disclosure are described in
 `components/account-security.yaml`. The shared compact utility toolbar is
 described in `components/action-icon-bar.yaml`; the EntryBrowser result-table
 contract is in `components/entry-browser.yaml`, and the editable Form-scoped

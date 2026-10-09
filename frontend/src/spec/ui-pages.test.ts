@@ -889,6 +889,83 @@ describe("UI spec YAML registry", () => {
     });
   });
 
+  it("REQ-FE-040: declares Account Self-Recovery factors and code handoff", () => {
+    const recoveryPath = path.join(componentsDir, "account-recovery.yaml");
+    const recovery = parse(readFileSync(recoveryPath, "utf8")) as {
+      component_group?: Record<string, unknown>;
+      components?: Array<Record<string, unknown>>;
+    };
+    const task = recovery.components?.find(({ id }) =>
+      id === "account-recovery-task"
+    );
+
+    expect(recovery.component_group).toMatchObject({
+      id: "account-recovery",
+      routes: ["/recover/account"],
+    });
+    expect(task).toMatchObject({
+      implementation: "frontend/src/routes/recover/account.tsx",
+      tests: "frontend/src/routes/recover/account.test.tsx",
+      heading: {
+        initial: "Recover your account",
+        "code-handoff": "Save your new recovery codes",
+        visible_headings: 1,
+      },
+      required_inputs: {
+        order: ["account-id", "recovery-code", "authenticator-code"],
+        identifier: {
+          id: "account-id",
+          label: "Account ID",
+          value: "user-provided",
+          required: true,
+          input_presentation: "monospace",
+        },
+        factors: {
+          order: ["recovery-code", "authenticator-code"],
+          fields: {
+            "recovery-code": { label: "Recovery Code", required: true },
+            "authenticator-code": {
+              label: "Authenticator code",
+              autocomplete: "one-time-code",
+              pattern: "[0-9]{6}",
+            },
+          },
+        },
+        submit: {
+          label: "Register new Passkey",
+          busy_label: "Waiting for new Passkey…",
+          disabled_while_busy: true,
+        },
+      },
+      result: {
+        visible_when: "successful-recovery-with-rotated-recovery-codes",
+        replaces_factor_form: true,
+        recovery_codes: {
+          presentation: "visible-once",
+          purpose: "offline-backup",
+          login_method: false,
+          persistence: "route-memory-only",
+          instruction: "Store the codes offline before continuing.",
+        },
+        continuation: {
+          label: "I saved the codes",
+          destination: "safe-next-path",
+          history: "replace",
+        },
+      },
+      failure: {
+        role: "alert",
+        preserves_factor_form: true,
+        recovery_codes_visible: false,
+      },
+      identifier_visibility: {
+        account_id: "user-entered-required-identifier-only",
+        returned_account_id: "hidden",
+        unrelated_internal_ids: "hidden",
+      },
+    });
+  });
+
   it("REQ-FE-067: keeps one ordinary Form and Entry workspace", () => {
     const pages = loadPages();
     const forms = pages.find(({ spec }) => spec.page?.id === "space-form-grid");
