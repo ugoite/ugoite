@@ -36,6 +36,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.registry-shape
+          - id: component-login
+            adapter: declared
+            path: docs/spec/ui/components/login.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
           - id: account-security-contract-reference
             adapter: declared
             path: docs/spec/ui/index.md

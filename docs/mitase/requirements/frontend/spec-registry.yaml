@@ -135,6 +135,15 @@ requirements:
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers: [FEAT-FE-013#binding.frontend/target.component-invitation-join]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/routes/spaces/join.test.tsx, test: "REQ-FE-040: matches the invitation Join declaration to the rendered route" } }
+          - id: login-surface-contract
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: declares the Login task and authentication states" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.component-login]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares the Login task and authentication states" } }
           - id: documented-routes
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
