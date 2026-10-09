@@ -19,6 +19,19 @@ const textStyles: readonly CompositionTextStyle[] = [
   "caption",
 ];
 
+const textStyleLabel = (style: CompositionTextStyle): string => {
+  switch (style) {
+    case "title":
+      return t("composition.textStyle.title");
+    case "heading":
+      return t("composition.textStyle.heading");
+    case "body":
+      return t("composition.textStyle.body");
+    case "caption":
+      return t("composition.textStyle.caption");
+  }
+};
+
 /**
  * Text inspector: content input and a fixed style selector. Text carries no
  * source binding, so edits never touch sources and never refetch.
@@ -76,7 +89,9 @@ export function TextInspector(props: {
                   )}
               >
                 <For each={textStyles}>
-                  {(style) => <option value={style}>{style}</option>}
+                  {(style) => (
+                    <option value={style}>{textStyleLabel(style)}</option>
+                  )}
                 </For>
               </select>
             </div>

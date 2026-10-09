@@ -175,6 +175,11 @@ components:
     text:
       styles: [title, heading, body, caption]
       semantics: fixed-typography-no-markdown-no-source-fetch
+      style_selector:
+        option_values: [title, heading, body, caption]
+        labels:
+          en: [Title, Heading, Body, Caption]
+          ja: [タイトル, 見出し, 本文, キャプション]
     parameter_controls:
       order: layout-placement-first
       labels: declared-human-label
