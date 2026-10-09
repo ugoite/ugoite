@@ -144,6 +144,8 @@ inventory:
         - frontend/src/lib/markdown.test.ts
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.test.tsx
+        - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.tsx
+        - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.test.tsx
         - frontend/src/routes/spaces/[space_id]/entries/new.tsx
         - frontend/src/routes/spaces/[space_id]/entries/new.test.tsx
         - e2e/entries.test.ts

@@ -5,7 +5,7 @@ category: FormTable Entry identity presentation
 requirements:
   - id: REQ-UX-FORMTABLE-001
     title: FormTable Entry IDs Stay Out of Primary Rows
-    description: FormTable primary rows use form-defined values while stable Entry IDs remain available through advanced Entry Info details.
+    description: FormTable primary rows use form-defined values while stable Entry IDs remain available and copyable through advanced Entry Info details.
     priority: high
     status: implemented
     criteria:
@@ -21,7 +21,7 @@ requirements:
       - id: formtable-entry-identity-verification
         role: verification
         facet: verification
-        responsibility: Verify FormTable hides stable Entry IDs from primary rows while Entry Info retains exact IDs inside advanced details.
+        responsibility: Verify FormTable hides stable Entry IDs from primary rows while Entry Info retains and copies the exact ID inside advanced details.
         targets:
           - id: desktop-id-free-rows
             adapter: typescript
@@ -68,17 +68,18 @@ requirements:
             path: frontend/src/components/EntryInfoIdentity.test.tsx
             selector: {
               kind: test,
-              name: "REQ-UX-FORMTABLE-001: keeps Entry IDs in advanced Info details",
+              name: "REQ-UX-FORMTABLE-001: keeps Entry IDs in advanced Info details and copies the exact ID",
             }
             claims:
               - kind: verifies
                 criterion: REQ-UX-FORMTABLE-001#criterion.advanced-id-access
                 covers:
                   - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.entry-info-route
                 runner: {
                   runner: frontend-vitest-file,
                   arguments: {
                     file: src/components/EntryInfoIdentity.test.tsx,
-                    test: "REQ-UX-FORMTABLE-001: keeps Entry IDs in advanced Info details",
+                    test: "REQ-UX-FORMTABLE-001: keeps Entry IDs in advanced Info details and copies the exact ID",
                   },
                 }
