@@ -129,7 +129,9 @@ describe("CompositionDisplayPicker", () => {
       name: longSourceName,
     });
     expect(selectable).toHaveAttribute("title", longSourceName);
-    expect(selectable.textContent).toContain(longSourceName);
+    expect(selectable.querySelector(".rowListName")).toHaveTextContent(
+      longSourceName,
+    );
     expect(selectable.outerHTML).not.toContain("src-1");
     expect(selectable.outerHTML).not.toContain("sql-1");
     expect(selectable.outerHTML).not.toContain("sql-rev-1");
@@ -140,9 +142,16 @@ describe("CompositionDisplayPicker", () => {
     });
     expect(unavailable).toBeDisabled();
     expect(unavailable).toHaveAttribute("title", longUnavailableName);
+    expect(unavailable.querySelector(".rowListName")).toHaveTextContent(
+      longUnavailableName,
+    );
     expect(unavailable.outerHTML).not.toContain("src-3");
     expect(unavailable.outerHTML).not.toContain("sql-2");
     expect(unavailable.outerHTML).not.toContain("sql-rev-2");
+
+    expect(stylesheet()).toMatch(
+      /\.rowListName\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/,
+    );
   });
 
   it("adds a metric display with scalar-only candidates", () => {
