@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompositionDataWorkspace } from "./CompositionDataWorkspace";
 import {
   addEntryQuerySource,
+  addMetricDisplay,
   addSavedSqlSource,
   type CompositionDraft,
   createEmptyDraft,
@@ -479,6 +480,311 @@ describe("CompositionDataWorkspace", () => {
       kind: "entry_query",
       query: { projection: { kind: "fields", fields: [100, 101] } },
     });
+  });
+
+  it("keeps the preview projection unavailable while an EntryQuery metric uses a field", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
+    const base = twoSourceDraft();
+    const metric = addMetricDisplay(base, "src-2", { fieldId: 100 });
+    if (!metric.ok) throw new Error("expected metric");
+    const harness = renderWorkspace(metric.draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    const editor = harness.editor();
+    await within(editor).findByRole("radio", { name: "Selected fields" });
+
+    expect(
+      within(editor).getByRole("radio", { name: "Preview" }),
+    ).toBeDisabled();
+    expect(
+      within(editor).getByRole("radio", { name: "Selected fields" }),
+    ).toBeChecked();
+    expect(harness.current().sources[1]).toMatchObject({
+      kind: "entry_query",
+      query: { projection: { kind: "fields", fields: [100] } },
+    });
+  });
+
+  it("caps the initial fields projection to the supported limit", async () => {
+    const fields = Array.from({ length: 65 }, (_, index) => ({
+      field_id: index + 1,
+      field_type: "string",
+    }));
+    const draft = addEntryQuerySource(createEmptyDraft("Tool"), {
+      ...entrySeed(),
+      fieldSchema: fields,
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    const editor = harness.editor();
+
+    fireEvent.click(
+      await within(editor).findByRole("radio", { name: "Selected fields" }),
+    );
+    const projection = harness.current().sources[0];
+    expect(projection).toMatchObject({
+      kind: "entry_query",
+      query: {
+        projection: { kind: "fields", fields: Array.from({ length: 64 }, (_, index) => index + 1) },
+      },
+    });
+    expect(
+      within(editor).getByRole("checkbox", { name: "Field 65" }),
+    ).toBeDisabled();
+  });
+
+  it("reserves metric fields when initializing a capped projection", async () => {
+    const fields = Array.from({ length: 65 }, (_, index) => ({
+      field_id: index + 1,
+      field_type: "string",
+    }));
+    const added = addEntryQuerySource(createEmptyDraft("Tool"), {
+      ...entrySeed(),
+      fieldSchema: fields,
+    });
+    const metric = addMetricDisplay(added.draft, added.draftId, {
+      fieldId: 65,
+    });
+    if (!metric.ok) throw new Error("expected metric");
+    const previewDraft = {
+      ...metric.draft,
+      sources: metric.draft.sources.map((source) =>
+        source.draftId === added.draftId && source.kind === "entry_query"
+          ? {
+            ...source,
+            query: { ...source.query, projection: { kind: "preview" as const } },
+          }
+          : source
+      ),
+    };
+    const harness = renderWorkspace(previewDraft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    const editor = harness.editor();
+
+    fireEvent.click(
+      await within(editor).findByRole("radio", { name: "Selected fields" }),
+    );
+    expect(harness.current().sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        projection: {
+          kind: "fields",
+          fields: [65, ...Array.from({ length: 63 }, (_, index) => index + 1)],
+        },
+      },
+    });
+    expect(
+      within(editor).getByRole("checkbox", { name: "Field 65" }),
+    ).toBeChecked();
+    expect(
+      within(editor).getByRole("checkbox", { name: "Field 65" }),
+    ).toBeDisabled();
+    expect(
+      within(editor).getByRole("checkbox", { name: "Field 64" }),
+    ).toBeDisabled();
+  });
+
+  it("requires a free slot before adding an unprojected metric field at capacity", async () => {
+    const fields = Array.from({ length: 65 }, (_, index) => ({
+      field_id: index + 1,
+      field_type: "string",
+    }));
+    const added = addEntryQuerySource(createEmptyDraft("Tool"), {
+      ...entrySeed(),
+      fieldSchema: fields,
+    });
+    const metric = addMetricDisplay(added.draft, added.draftId, {
+      fieldId: 65,
+    });
+    if (!metric.ok) throw new Error("expected metric");
+    const fullProjectionDraft = {
+      ...metric.draft,
+      sources: metric.draft.sources.map((source) =>
+        source.draftId === added.draftId && source.kind === "entry_query"
+          ? {
+            ...source,
+            query: {
+              ...source.query,
+              projection: {
+                kind: "fields" as const,
+                fields: fields.slice(0, 64).map((field) => field.field_id),
+              },
+            },
+          }
+          : source
+      ),
+    };
+    const harness = renderWorkspace(fullProjectionDraft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    const editor = harness.editor();
+    const requiredField = await within(editor).findByRole("checkbox", {
+      name: "Field 65",
+    });
+
+    expect(requiredField).toBeDisabled();
+    expect(requiredField).toHaveAttribute(
+      "title",
+      "The maximum of 64 fields is selected.",
+    );
+    fireEvent.click(within(editor).getByRole("checkbox", { name: "Field 64" }));
+    expect(harness.current().sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        projection: {
+          kind: "fields",
+          fields: [...Array.from({ length: 63 }, (_, index) => index + 1), 65],
+        },
+      },
+    });
+    expect(requiredField).toBeChecked();
+    expect(requiredField).toBeDisabled();
+  });
+
+  it("disables projection edits when several missing metric fields exceed capacity", async () => {
+    const fields = Array.from({ length: 66 }, (_, index) => ({
+      field_id: index + 1,
+      field_type: "string",
+    }));
+    const added = addEntryQuerySource(createEmptyDraft("Tool"), {
+      ...entrySeed(),
+      fieldSchema: fields,
+    });
+    const firstMetric = addMetricDisplay(added.draft, added.draftId, {
+      fieldId: 65,
+    });
+    if (!firstMetric.ok) throw new Error("expected first metric");
+    const secondMetric = addMetricDisplay(
+      firstMetric.draft,
+      added.draftId,
+      { fieldId: 66 },
+    );
+    if (!secondMetric.ok) throw new Error("expected second metric");
+    const overbookedDraft = {
+      ...secondMetric.draft,
+      sources: secondMetric.draft.sources.map((source) =>
+        source.draftId === added.draftId && source.kind === "entry_query"
+          ? {
+            ...source,
+            query: {
+              ...source.query,
+              projection: {
+                kind: "fields" as const,
+                fields: fields.slice(0, 64).map((field) => field.field_id),
+              },
+            },
+          }
+          : source
+      ),
+    };
+    const harness = renderWorkspace(overbookedDraft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    const editor = harness.editor();
+
+    for (const field of ["Field 1", "Field 64", "Field 65", "Field 66"]) {
+      const checkbox = await within(editor).findByRole("checkbox", {
+        name: field,
+      });
+      expect(checkbox).toBeDisabled();
+      expect(checkbox).toHaveAttribute(
+        "title",
+        "Edit metric bindings to fit within the 64-field limit.",
+      );
+    }
+  });
+
+  it("disables projection controls when metric bindings require more than 64 fields", async () => {
+    const fields = Array.from({ length: 65 }, (_, index) => ({
+      field_id: index + 1,
+      field_type: "string",
+    }));
+    const added = addEntryQuerySource(createEmptyDraft("Tool"), {
+      ...entrySeed(),
+      fieldSchema: fields,
+      query: {
+        filters: [],
+        sort: [],
+        projection: {
+          kind: "fields",
+          fields: fields.slice(0, 64).map((field) => field.field_id),
+        },
+      },
+    });
+    const draft = {
+      ...added.draft,
+      displays: fields.map((field, index) => ({
+        kind: "metric" as const,
+        draftId: `disp-${index + 1}`,
+        sourceDraftId: added.draftId,
+        valueField: { fieldId: field.field_id },
+      })),
+    };
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    const editor = harness.editor();
+    const selectedFields = await within(editor).findByRole("radio", {
+      name: "Selected fields",
+    });
+    expect(selectedFields).toBeDisabled();
+    expect(selectedFields).toHaveAttribute(
+      "title",
+      "Edit metric bindings to fit within the 64-field limit.",
+    );
+    const field64 = within(editor).getByRole("checkbox", {
+      name: "Field 64",
+    });
+    expect(field64).toBeDisabled();
+    expect(field64).toHaveAttribute(
+      "title",
+      "Edit metric bindings to fit within the 64-field limit.",
+    );
+  });
+
+  it("disables unselected projection fields at the limit and re-enables them after freeing a slot", async () => {
+    const fields = Array.from({ length: 65 }, (_, index) => ({
+      field_id: index + 1,
+      field_type: "string",
+    }));
+    const added = addEntryQuerySource(createEmptyDraft("Tool"), {
+      ...entrySeed(),
+      fieldSchema: fields,
+      query: {
+        filters: [],
+        sort: [],
+        projection: {
+          kind: "fields",
+          fields: fields.slice(0, 64).map((field) => field.field_id),
+        },
+      },
+    });
+    const metric = addMetricDisplay(added.draft, added.draftId, {
+      fieldId: 1,
+    });
+    if (!metric.ok) throw new Error("expected metric");
+    const harness = renderWorkspace(metric.draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    const editor = harness.editor();
+
+    const checkbox65 = await within(editor).findByRole("checkbox", {
+      name: "Field 65",
+    });
+    expect(checkbox65).toBeDisabled();
+    expect(checkbox65).toHaveAttribute(
+      "title",
+      "The maximum of 64 fields is selected.",
+    );
+    expect(
+      within(editor).getByRole("checkbox", { name: "Field 1" }),
+    ).toBeDisabled();
+    const checkbox64 = within(editor).getByRole("checkbox", {
+      name: "Field 64",
+    });
+    expect(checkbox64).toBeEnabled();
+
+    fireEvent.click(checkbox64);
+    expect(harness.current().sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: { projection: { kind: "fields", fields: expect.not.arrayContaining([64]) } },
+    });
+    expect(checkbox65).toBeEnabled();
   });
 
   it("hides incapable fields behind the shared dialog gating", async () => {

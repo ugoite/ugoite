@@ -76,6 +76,13 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
     props.draft.sources.find((source) =>
       source.draftId === props.selectedSourceId
     );
+  const metricFieldIds = (sourceDraftId: string): number[] =>
+    [...new Set(props.draft.displays.flatMap((display) =>
+      display.kind === "metric" && display.sourceDraftId === sourceDraftId &&
+          "fieldId" in display.valueField
+        ? [display.valueField.fieldId]
+        : []
+    ))];
 
   return (
     <div class="dataWorkspace">
@@ -125,6 +132,9 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
               <EntryQuerySourceEditor
                 spaceId={props.spaceId}
                 source={source() as EntryQuerySource}
+                requiredMetricFieldIds={metricFieldIds(
+                  (source() as EntryQuerySource).draftId,
+                )}
                 onFilters={(filters) =>
                   props.onEntryQueryFilters(
                     (source() as EntryQuerySource).draftId,

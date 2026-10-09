@@ -19,6 +19,7 @@ import {
   moveLayoutItem,
   moveLayoutRow,
   moveSource,
+  MAX_ENTRY_PROJECTION_FIELDS,
   placeParameterControl,
   removeDisplay,
   removeParameter,
@@ -1274,6 +1275,83 @@ describe("composition draft model", () => {
         kind: "everything" as "preview",
       }),
     ).toEqual({ ok: false, error: "invalid-query" });
+  });
+
+  it("keeps EntryQuery metric fields in the source projection", () => {
+    let draft = createEmptyDraft();
+    draft = addEntryQuerySource(draft, entrySeed()).draft;
+    const metric = addMetricDisplay(draft, "src-1", { fieldId: 1 });
+    expect(metric.ok).toBe(true);
+    if (!metric.ok) throw new Error("expected metric");
+    draft = metric.draft;
+    expect(toStudioDocument(draft).spec.sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: { projection: { kind: "fields", fields: [1] } },
+    });
+
+    const rebound = setMetricValueField(draft, metric.draftId!, { fieldId: 2 });
+    expect(rebound.ok).toBe(true);
+    if (!rebound.ok) throw new Error("expected value field change");
+    draft = rebound.draft;
+    expect(toStudioDocument(draft).spec.sources[0]).toMatchObject({
+      query: { projection: { kind: "fields", fields: [1, 2] } },
+    });
+
+    const preview = setEntryQueryProjection(draft, "src-1", {
+      kind: "preview",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) throw new Error("expected projection change");
+    expect(toStudioDocument(preview.draft).spec.sources[0]).toMatchObject({
+      query: { projection: { kind: "fields", fields: [2] } },
+    });
+  });
+
+  it("rejects a metric field that would exceed the EntryQuery projection limit", () => {
+    const fields = Array.from({ length: MAX_ENTRY_PROJECTION_FIELDS + 1 }, (_, index) => ({
+      field_id: index + 1,
+      field_type: "integer",
+    }));
+    let draft = createEmptyDraft();
+    draft = addEntryQuerySource(draft, {
+      ...entrySeed(),
+      fieldSchema: fields,
+      query: {
+        ...entrySeed().query,
+        projection: {
+          kind: "fields",
+          fields: fields.slice(0, MAX_ENTRY_PROJECTION_FIELDS).map((entry) =>
+            entry.field_id
+          ),
+        },
+      },
+    }).draft;
+
+    expect(
+      addMetricDisplay(draft, "src-1", {
+        fieldId: MAX_ENTRY_PROJECTION_FIELDS + 1,
+      }),
+    ).toEqual({ ok: false, error: "invalid-query" });
+  });
+
+  it("adds a metric field when retargeting to an EntryQuery source", () => {
+    let draft = createEmptyDraft();
+    draft = addSavedSqlSource(draft, sqlSeed()).draft;
+    draft = addEntryQuerySource(draft, entrySeed()).draft;
+    const metric = addMetricDisplay(draft, "src-1", { column: "total" });
+    if (!metric.ok || !metric.draftId) throw new Error("expected metric");
+    const moved = setMetricSource(
+      metric.draft,
+      metric.draftId,
+      "src-2",
+      { fieldId: 2 },
+    );
+    expect(moved.ok).toBe(true);
+    if (!moved.ok) throw new Error("expected source change");
+    expect(toStudioDocument(moved.draft).spec.sources[1]).toMatchObject({
+      kind: "entry_query",
+      query: { projection: { kind: "fields", fields: [2] } },
+    });
   });
 
   it("points saved sql sources at an exact revision preserving bindings", () => {

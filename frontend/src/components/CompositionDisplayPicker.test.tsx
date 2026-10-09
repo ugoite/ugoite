@@ -194,6 +194,42 @@ describe("CompositionDisplayPicker", () => {
     expect(onAdd).not.toHaveBeenCalled();
   });
 
+  it("offers only already projected EntryQuery fields at the projection limit", () => {
+    const fullProjection: DraftSource = {
+      ...entrySource,
+      fieldSchema: Array.from({ length: 65 }, (_, index) => ({
+        field_id: index + 1,
+        field_type: "integer",
+      })),
+      query: {
+        filters: [],
+        sort: [],
+        projection: {
+          kind: "fields",
+          fields: Array.from({ length: 64 }, (_, index) => index + 1),
+        },
+      },
+    };
+    render(() => (
+      <CompositionDisplayPicker
+        sources={[fullProjection]}
+        onAdd={() => {}}
+        onClose={() => {}}
+      />
+    ));
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Tasks" }));
+    const options = within(within(dialog).getByLabelText("Value"))
+      .getAllByRole("option");
+
+    expect(options).toHaveLength(64);
+    expect(options.at(-1)).toHaveTextContent("Field 64");
+    expect(options.map((option) => option.textContent)).not.toContain("Field 65");
+    expect(dialog).not.toHaveTextContent("65");
+  });
+
   it("keeps the display kind selected while metric sources are filtered", async () => {
     render(() => (
       <CompositionDisplayPicker

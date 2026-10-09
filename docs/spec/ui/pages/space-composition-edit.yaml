@@ -79,7 +79,11 @@ components:
       kind_selection: Table/Metric tabs inside the picker
       sequence: kind, source, metric value field only for Metric, optional label, add
       source_selection: selected row remains visible across compatible kind changes
-      entry_query_field_labels: transient Form labels or localized source schema ordinals
+      entry_query_field_labels: transient Form labels, query capability names, or field keys; else localized source schema ordinals
+      entry_query_metric_field: added_to_the_source_fields_projection
+      projection_initialization: reserve_metric_bound_fields_then_schema_order_up_to_64
+      projection_capacity: at_limit_only_already_projected_fields_are_selectable
+      overbooked_projection_recovery: disable_projection_controls_with_metric_binding_title
       internal_field_ids: never rendered
       sizing: 720px maximum width and viewport-capped vertical scrolling
     - id: studio-tags

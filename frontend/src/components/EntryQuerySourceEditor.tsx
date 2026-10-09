@@ -25,7 +25,10 @@ import type {
   EntryQueryCompositionProjection,
   EntryQueryCompositionSort,
 } from "~/lib/entry-query-composition";
-import type { DraftSource } from "~/lib/composition-draft";
+import {
+  MAX_ENTRY_PROJECTION_FIELDS,
+  type DraftSource,
+} from "~/lib/composition-draft";
 import type {
   EntryFieldCapability,
   EntryFilter,
@@ -75,6 +78,7 @@ type EditorDefinitionLoad =
 interface EntryQuerySourceEditorProps {
   spaceId: string;
   source: EntryQuerySource;
+  requiredMetricFieldIds?: readonly number[];
   /** Narrow draft updaters; each returns false when the edit is rejected. */
   onFilters: (filters: EntryQueryCompositionFilter[]) => boolean;
   onSort: (sort: EntryQueryCompositionSort[]) => boolean;
@@ -261,6 +265,35 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
 
   const schemaFieldIds = () =>
     props.source.fieldSchema.map((entry) => entry.field_id);
+  const requiredMetricFields = () =>
+    [...new Set(props.requiredMetricFieldIds ?? [])];
+  const initialProjectionFieldIds = () => {
+    const required = requiredMetricFields();
+    const remaining = schemaFieldIds().filter((fieldId) =>
+      !required.includes(fieldId)
+    );
+    return [
+      ...required,
+      ...remaining.slice(
+        0,
+        Math.max(0, MAX_ENTRY_PROJECTION_FIELDS - required.length),
+      ),
+    ];
+  };
+  const projectionRecoveryBlocked = () => {
+    if (requiredMetricFields().length > MAX_ENTRY_PROJECTION_FIELDS) {
+      return true;
+    }
+    const projection = props.source.query.projection;
+    const projected = projection.kind === "fields" ? projection.fields : [];
+    const missingMetricFields = requiredMetricFields().filter((fieldId) =>
+      !projected.includes(fieldId)
+    ).length;
+    // Individual removals can only recover the draft when at most one slot
+    // is missing. Larger deficits require the metric bindings to be edited.
+    return projected.length + missingMetricFields -
+        MAX_ENTRY_PROJECTION_FIELDS > 1;
+  };
 
   const planSource = () =>
     props.planSources.find((source) =>
@@ -425,26 +458,62 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               type="radio"
               name={`projection-${props.source.draftId}`}
               checked={props.source.query.projection.kind === "preview"}
+              disabled={(props.requiredMetricFieldIds?.length ?? 0) > 0}
+              aria-describedby={(props.requiredMetricFieldIds?.length ?? 0) > 0
+                ? `metric-projection-lock-${props.source.draftId}`
+                : undefined}
+              title={(props.requiredMetricFieldIds?.length ?? 0) > 0
+                ? t("composition.studioMetricProjectionRequired")
+                : undefined}
               onChange={() => props.onProjection({ kind: "preview" })}
             />
             {t("entryBrowser.preview")}
           </label>
+          <Show when={(props.requiredMetricFieldIds?.length ?? 0) > 0}>
+            <span
+              class="ui-sr-only"
+              id={`metric-projection-lock-${props.source.draftId}`}
+            >
+              {t("composition.studioMetricProjectionRequired")}
+            </span>
+          </Show>
           <label>
             <input
               type="radio"
               name={`projection-${props.source.draftId}`}
               checked={props.source.query.projection.kind === "fields"}
+              disabled={requiredMetricFields().length >
+                MAX_ENTRY_PROJECTION_FIELDS}
+              aria-describedby={requiredMetricFields().length >
+                  MAX_ENTRY_PROJECTION_FIELDS
+                ? `metric-projection-recovery-${props.source.draftId}`
+                : undefined}
+              title={requiredMetricFields().length >
+                  MAX_ENTRY_PROJECTION_FIELDS
+                ? t("composition.studioProjectionRecoveryRequired")
+                : undefined}
               onChange={() => {
                 const current = props.source.query.projection;
                 props.onProjection(
                   current.kind === "fields"
                     ? current
-                    : { kind: "fields", fields: [...schemaFieldIds()] },
+                    : {
+                      kind: "fields",
+                      fields: initialProjectionFieldIds(),
+                    },
                 );
               }}
             />
             {t("entryBrowser.selectedFields")}
           </label>
+          <Show when={projectionRecoveryBlocked()}>
+            <span
+              class="ui-sr-only"
+              id={`metric-projection-recovery-${props.source.draftId}`}
+            >
+              {t("composition.studioProjectionRecoveryRequired")}
+            </span>
+          </Show>
         </div>
         <Show when={props.source.query.projection.kind === "fields"}>
           <ul class="ui-stack-sm">
@@ -455,12 +524,44 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
                   return projection.kind === "fields" &&
                     projection.fields.includes(fieldId);
                 };
+                const requiredByMetric = () =>
+                  props.requiredMetricFieldIds?.includes(fieldId) ?? false;
+                const disabledByLimit = () => {
+                  const projection = props.source.query.projection;
+                  const projected = projection.kind === "fields"
+                    ? projection.fields
+                    : [];
+                  const requiredSlots = (props.requiredMetricFieldIds ?? [])
+                    .filter((requiredId) => !projected.includes(requiredId))
+                    .length;
+                  const reservedCount = projected.length + requiredSlots;
+                  return !selected() &&
+                    (requiredByMetric()
+                      ? reservedCount > MAX_ENTRY_PROJECTION_FIELDS
+                      : reservedCount >= MAX_ENTRY_PROJECTION_FIELDS);
+                };
+                const disabled = () =>
+                  projectionRecoveryBlocked() ||
+                  (selected() && requiredByMetric()) || disabledByLimit();
+                const disabledReason = () =>
+                  projectionRecoveryBlocked()
+                    ? t("composition.studioProjectionRecoveryRequired")
+                    : disabledByLimit()
+                    ? t("composition.studioProjectionLimitReached")
+                    : selected() && requiredByMetric()
+                    ? t("composition.studioMetricProjectionRequired")
+                    : undefined;
                 return (
                   <li>
                     <label class="pill">
                       <input
                         type="checkbox"
                         checked={selected()}
+                        disabled={disabled()}
+                        aria-describedby={projectionRecoveryBlocked()
+                          ? `metric-projection-recovery-${props.source.draftId}`
+                          : undefined}
+                        title={disabledReason()}
                         onChange={(event) => {
                           const projection = props.source.query.projection;
                           const fields = projection.kind === "fields"

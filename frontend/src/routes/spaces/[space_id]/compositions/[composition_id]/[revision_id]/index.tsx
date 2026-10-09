@@ -20,6 +20,7 @@ import { IconButton } from "~/components/IconButton";
 import { IconLink } from "~/components/IconLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { t } from "~/lib/i18n";
+import { compositionFormFieldName } from "~/lib/composition-field-name";
 import { compositionApi, compositionDisplayName } from "~/lib/composition-api";
 import { createCompositionQueryHandle } from "~/lib/composition-query-handle";
 import { formApi } from "~/lib/ugoite-client";
@@ -60,10 +61,8 @@ export const resolveCompositionFieldName = (
   fieldId: number,
   fieldSchema?: readonly { field_id: number }[],
 ): string | undefined => {
-  const entry = findCompositionFormField(forms, formId, fieldId);
-  const label = entry?.[1].label?.trim();
-  if (label) return label;
-  if (entry) return entry[0];
+  const name = compositionFormFieldName(forms, formId, fieldId);
+  if (name) return name;
   const index = fieldSchema?.findIndex((entry) => entry.field_id === fieldId) ??
     -1;
   return index < 0

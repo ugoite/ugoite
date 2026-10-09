@@ -72,11 +72,17 @@ components:
       scope: data-mode-and-split-pane-only
       source: draft sources with human names only
       entry_query_field_labels:
-        form_field_resolved: transient-form-field-name-first
+        form_field_resolved: transient-form-label-query-capability-name-or-field-key
         schema_field_present_but_form_unresolved: localized-schema-ordinal-skipping-live-form-names-and-prior-fallbacks
         referenced_field_missing_from_schema_and_form: distinct-deterministic-localized-ordinal-skipping-live-form-names-and-prior-fallbacks
       field_identity:
         raw_field_id: query-data-only-never-rendered-in-field-filter-sort-projection-or-dialog-labels
+      metric_projection:
+        selected_metric_field: added_to_fields_projection
+        projection_edit: retain_fields_used_by_metrics
+        preview_option: unavailable_while_metric_uses_a_field
+        initial_fields: reserve_metric_bound_fields_then_schema_order_up_to_64
+        capacity: at_limit_only_already_projected_fields_are_selectable
       selection: full-row-activate
       reorder: keyboard-operable-move-up-down
       remove: blocked-while-displays-reference-with-reason
@@ -103,7 +109,9 @@ components:
       kind_selection: Table/Metric tabs inside the picker
       sequence: kind, source, metric value field only for Metric, optional label, add
       source_selection: selected row remains visible across compatible kind changes
-      entry_query_field_labels: transient Form labels or localized source schema ordinals
+      entry_query_field_labels: transient Form labels, query capability names, or field keys; else localized source schema ordinals
+      entry_query_metric_field: added_to_the_source_fields_projection
+      projection_capacity: at_limit_only_already_projected_fields_are_selectable
       internal_field_ids: never rendered
       sizing: 720px maximum width and viewport-capped vertical scrolling
     - id: studio-parameters
