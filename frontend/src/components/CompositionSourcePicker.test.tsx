@@ -121,6 +121,35 @@ describe("CompositionSourcePicker", () => {
     });
   });
 
+  it("keeps long source names available on picker rows without identifiers", async () => {
+    const longFormName = "Project forms with a long name".repeat(4);
+    const longSqlName = "Quarterly totals with a long name".repeat(4);
+    formListMock.mockResolvedValue([{ ...taskForm, name: longFormName }]);
+    sqlListMock.mockResolvedValue([{ ...monthlyEntry, name: longSqlName }]);
+
+    render(() => (
+      <CompositionSourcePicker
+        spaceId="space-1"
+        onSelect={() => {}}
+        onClose={() => {}}
+      />
+    ));
+
+    const formRow = await screen.findByRole("button", {
+      name: longFormName,
+    });
+    expect(formRow).toHaveAttribute("title", longFormName);
+    expect(formRow.textContent).toContain(longFormName);
+    expect(formRow.outerHTML).not.toContain(FORM_ID);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Saved SQL" }));
+    const sqlRow = await screen.findByRole("button", { name: longSqlName });
+    expect(sqlRow).toHaveAttribute("title", longSqlName);
+    expect(sqlRow.textContent).toContain(longSqlName);
+    expect(sqlRow.outerHTML).not.toContain("sql-1");
+    expect(sqlRow.outerHTML).not.toContain("sql-rev-1");
+  });
+
   it("pins the exact saved sql revision with server-owned column types", async () => {
     const onSelect = vi.fn();
     render(() => (

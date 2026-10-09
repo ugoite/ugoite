@@ -363,6 +363,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                             <RowListItem
                               main={
                                 <RowListButton
+                                  title={form.name}
                                   primary={<FormRowLabel name={form.name} />}
                                   onActivate={() => addEntryQuery(form)}
                                 />
@@ -398,6 +399,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
                             <RowListItem
                               main={
                                 <RowListButton
+                                  title={displaySqlName(entry)}
                                   primary={<SavedSqlRowLabel entry={entry} />}
                                   onActivate={() => void addSavedSql(entry)}
                                 />
