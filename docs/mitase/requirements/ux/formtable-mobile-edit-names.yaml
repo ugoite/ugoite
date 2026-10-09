@@ -1,0 +1,38 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Mobile FormTable edit names
+requirements:
+  - id: REQ-UX-FORMTABLE-002
+    title: Mobile FormTable Edit Buttons Name Their Fields
+    description: Mobile FormTable Edit Mode keeps compact current-value content while giving each editable value control an accessible name that identifies its Form field and current value.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: field-context-in-edit-name
+        kind: behavior
+        statement: In mobile Edit Mode, editable value buttons in the first three card fields and expanded additional fields expose a localized accessible name containing the Form display label or field-name fallback and the formatted current value, without Entry IDs or stable field IDs.
+        governed_by: [POL-UI-005#rule.governance]
+    bindings:
+      - id: mobile-edit-name-verification
+        role: verification
+        facet: verification
+        responsibility: Verify FormTable mobile Edit Mode distinguishes editable values by Form field label and current value in both the initial card fields and expanded additional fields.
+        targets:
+          - id: mobile-edit-field-value-names
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector:
+              kind: test
+              name: "REQ-UX-FORMTABLE-002: names mobile edit buttons with field labels and current values"
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-FORMTABLE-002#criterion.field-context-in-edit-name
+                covers:
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-surface
+                  - FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/FormTable.test.tsx
+                    test: "REQ-UX-FORMTABLE-002: names mobile edit buttons with field labels and current values"

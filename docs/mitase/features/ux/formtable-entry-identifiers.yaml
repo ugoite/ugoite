@@ -5,13 +5,13 @@ category: FormTable Entry identity presentation
 features:
   - id: FEAT-UX-017
     title: FormTable Entry IDs stay out of primary rows
-    summary: Keep stable Entry IDs out of primary desktop and mobile FormTable content while retaining access and copy through advanced Entry Info details.
+    summary: Keep stable Entry IDs out of primary desktop and mobile FormTable content while retaining access and copy through advanced Entry Info details; mobile edit controls also carry Form field context.
     status: implemented
     bindings:
       - id: formtable-entry-identity-implementation
         role: implementation
         facet: frontend
-        responsibility: Keep FormTable primary rows ID-free, preserve row navigation, and expose and copy stable Entry IDs only through advanced Entry Info details.
+        responsibility: Keep FormTable primary rows ID-free, preserve row navigation, and expose and copy stable Entry IDs only through advanced Entry Info details; give mobile edit controls Form field and current-value context.
         targets:
           - id: form-table-surface
             adapter: typescript
@@ -20,6 +20,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-UX-FORMTABLE-001#criterion.primary-rows-id-free
+              - kind: satisfies
+                criterion: REQ-UX-FORMTABLE-002#criterion.field-context-in-edit-name
           - id: entry-info-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/info.tsx"
@@ -36,6 +38,8 @@ features:
                 criterion: REQ-UX-FORMTABLE-001#criterion.primary-rows-id-free
               - kind: satisfies
                 criterion: REQ-UX-FORMTABLE-001#criterion.advanced-id-access
+              - kind: satisfies
+                criterion: REQ-UX-FORMTABLE-002#criterion.field-context-in-edit-name
               - kind: satisfies
                 criterion: REQ-FE-075#criterion.shared-column-picker
               - kind: satisfies

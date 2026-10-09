@@ -304,6 +304,11 @@ export function FormTable(props: FormTableProps) {
     field === "created_at" ? t("formTable.created") : t("formTable.updated");
   const formFieldLabel = (field: string) =>
     props.entryForm.fields?.[field]?.label?.trim() || field;
+  const mobileEditValueLabel = (field: string, value: unknown) =>
+    t("formTable.editFieldValue", {
+      field: formFieldLabel(field),
+      value: formatValueForDisplay(value),
+    });
   const queryFieldKey = (field: EntryFieldRef) =>
     field.kind === "property"
       ? "property:" + field.field_id
@@ -1328,6 +1333,10 @@ export function FormTable(props: FormTableProps) {
                                 <button
                                   type="button"
                                   class="ui-table-mobile-value"
+                                  aria-label={mobileEditValueLabel(
+                                    field,
+                                    entry.properties?.[field],
+                                  )}
                                   onClick={() =>
                                     setEditingCell({ id: entry.id, field })}
                                 >
@@ -1409,6 +1418,10 @@ export function FormTable(props: FormTableProps) {
                                     <button
                                       type="button"
                                       class="ui-table-mobile-value"
+                                      aria-label={mobileEditValueLabel(
+                                        field,
+                                        entry.properties?.[field],
+                                      )}
                                       onClick={() =>
                                         setEditingCell({ id: entry.id, field })}
                                     >
