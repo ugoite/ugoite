@@ -850,6 +850,45 @@ describe("UI spec YAML registry", () => {
     });
   });
 
+  it("REQ-FE-040: declares setup recovery handoff and Account ID visibility", () => {
+    const setupPath = path.join(componentsDir, "setup.yaml");
+    const setup = parse(readFileSync(setupPath, "utf8")) as {
+      component_group?: Record<string, unknown>;
+      components?: Array<Record<string, unknown>>;
+    };
+    const task = setup.components?.find(({ id }) =>
+      id === "bootstrap-setup-task"
+    );
+
+    expect(setup.component_group).toMatchObject({
+      id: "initial-setup",
+      routes: ["/setup"],
+    });
+    expect(task).toMatchObject({
+      implementation: "frontend/src/routes/setup.tsx",
+      tests: "frontend/src/routes/setup.test.tsx",
+      recovery_handoff: {
+        visible_when: "successful-initial-setup-with-recovery-codes",
+        account_id: {
+          source: "result.account.account_id",
+          presentation: "visible-with-recovery-codes",
+          purpose: "required-for-account-self-recovery",
+          visible_before_handoff: false,
+          accessible_text: "account-id-value",
+        },
+        recovery_codes: {
+          source: "result.recovery_codes",
+          offered_as_login_method: false,
+          persistence: "route-memory-only",
+        },
+      },
+      passkey_strengthening: {
+        action: "register-second-passkey",
+        completion: "continue-to-safe-next-path",
+      },
+    });
+  });
+
   it("REQ-FE-067: keeps one ordinary Form and Entry workspace", () => {
     const pages = loadPages();
     const forms = pages.find(({ spec }) => spec.page?.id === "space-form-grid");
