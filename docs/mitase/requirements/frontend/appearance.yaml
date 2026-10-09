@@ -86,6 +86,15 @@ requirements:
                 criterion: REQ-FE-044#criterion.dictionary-localization
                 covers: [FEAT-FE-004#binding.frontend/target.entry-dialog]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/create-dialogs.test.tsx, test: "REQ-FE-044: localizes create-entry dialog copy in Japanese" } }
+          - id: localized-step-up
+            adapter: typescript
+            path: frontend/src/routes/step-up.test.tsx
+            selector: { kind: test, name: "REQ-FE-044: localizes the step-up approval task in Japanese" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+                covers: [FEAT-FE-004#binding.frontend/target.step-up-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/step-up.test.tsx, test: "REQ-FE-044: localizes the step-up approval task in Japanese" } }
 
   - id: REQ-FE-041
     title: Fixed Surface Palette

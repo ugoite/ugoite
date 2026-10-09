@@ -1,0 +1,49 @@
+version: "0.1"
+updated: "2026-10-09"
+component_group:
+  id: step-up
+  title: CLI operation approval
+  routes: [/step-up]
+  notes: The query challenge is an opaque link value. It stays out of visible content, accessible names, and server-error summaries. The only persistent prompt is the security instruction to review the operation in the terminal.
+components:
+  - id: cli-operation-approval
+    type: single-task-surface
+    implementation: frontend/src/routes/step-up.tsx
+    tests: frontend/src/routes/step-up.test.tsx
+    heading: stepUpPage.title
+    challenge:
+      source: query.challenge
+      missing: show-incomplete-link-action-without-session-or-status-request
+      visible_or_accessible_identifier: none
+    sign_in:
+      visible_when: session-is-unauthenticated
+      action: sign-in-with-passkey
+      return_to: same-step-up-link
+      status_request_before_sign_in: false
+    pending:
+      visible_when: authenticated-and-challenge-pending
+      prompt: stepUpPage.reviewPrompt
+      primary_action: stepUpPage.approve
+      ceremony: fresh-passkey
+      busy_action: stepUpPage.approving
+      disabled_while_busy: true
+    states:
+      loading: localized-status
+      approved:
+        message: stepUpPage.approved
+        next_action: return-to-cli
+      expired:
+        message: stepUpPage.expired
+        recovery: restart-cli-operation
+      used_or_unknown:
+        message: stepUpPage.unavailable
+        recovery: restart-cli-operation
+      forbidden:
+        message: localized-summary
+        recovery: message-specific
+    identifiers:
+      challenge: query-only
+      api_error_detail: hidden
+      visible_content: none
+      accessible_names: none
+    persistent_explanatory_copy: none

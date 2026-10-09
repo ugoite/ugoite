@@ -230,7 +230,7 @@ features:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep shared frontend error feedback and locale behavior connected to the shipped dialogs, list surfaces, API client, dictionary, and portable preference store.
+        responsibility: Keep shared frontend error feedback and locale behavior connected to shipped dialogs, list and authentication surfaces, the API client, dictionary, and portable preference store.
         targets:
           - id: create-dialogs
             adapter: typescript
@@ -286,6 +286,13 @@ features:
             adapter: typescript
             path: frontend/src/lib/i18n.ts
             selector: { kind: symbol, name: t }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-044#criterion.dictionary-localization
+          - id: step-up-route
+            adapter: typescript
+            path: frontend/src/routes/step-up.tsx
+            selector: { kind: file }
             claims:
               - kind: satisfies
                 criterion: REQ-FE-044#criterion.dictionary-localization

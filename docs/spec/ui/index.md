@@ -21,7 +21,9 @@ first-run administrator setup and its recovery handoff are described in
 `components/setup.yaml`. The `/device` consent context and hidden identifier
 boundaries are described in `components/device-approval.yaml`. Account security
 credential tabs and identifier disclosure are described in
-`components/account-security.yaml`. The shared compact utility toolbar is
+`components/account-security.yaml`; the `/step-up` CLI approval task and its
+opaque challenge boundary are described in `components/step-up.yaml`. The
+shared compact utility toolbar is
 described in `components/action-icon-bar.yaml`; the EntryBrowser result-table
 contract is in `components/entry-browser.yaml`, and the editable Form-scoped
 table contract is in `components/form-table.yaml`. The invitation Join surface

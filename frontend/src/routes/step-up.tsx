@@ -1,10 +1,8 @@
 import { createSignal, onMount, Show } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { authApi } from "~/lib/auth-api";
-import {
-  protocolFetch,
-  UgoiteApiError,
-} from "~/lib/ugoite-client/protocol";
+import { t } from "~/lib/i18n";
+import { protocolFetch, UgoiteApiError } from "~/lib/ugoite-client/protocol";
 
 type StepUpView =
   | "loading"
@@ -19,10 +17,20 @@ type StepUpView =
 const errorCode = (cause: unknown): string | undefined =>
   cause instanceof UgoiteApiError ? cause.code : undefined;
 
-const errorMessage = (cause: unknown): string =>
-  cause instanceof Error && cause.message
-    ? cause.message
-    : "The step-up request could not be completed.";
+const failureMessage = (cause: unknown): string => {
+  switch (errorCode(cause)) {
+    case "STEP_UP_INVALID":
+      return t("stepUpPage.unavailable");
+    case "STEP_UP_NOT_APPROVED":
+      return t("stepUpPage.notApproved");
+    case "STEP_UP_ACCOUNT_INACTIVE":
+      return t("stepUpPage.accountInactive");
+    case "PASSKEY_CANCELLED":
+      return t("securityPage.passkeyCancelled");
+    default:
+      return t("stepUpPage.approvalFailed");
+  }
+};
 
 const viewForFailure = (cause: unknown): StepUpView => {
   switch (errorCode(cause)) {
@@ -78,13 +86,15 @@ export default function StepUpApprovalRoute() {
       }
     } catch (cause) {
       setView(viewForFailure(cause));
-      setError(errorMessage(cause));
+      setError(failureMessage(cause));
     }
   });
 
   const signIn = () => {
     navigate(
-      `/login?next=${encodeURIComponent(`/step-up?challenge=${challengeId()}`)}`,
+      `/login?next=${
+        encodeURIComponent(`/step-up?challenge=${challengeId()}`)
+      }`,
       { replace: true },
     );
   };
@@ -105,7 +115,7 @@ export default function StepUpApprovalRoute() {
       setView("approved");
     } catch (cause) {
       setView(viewForFailure(cause));
-      setError(errorMessage(cause));
+      setError(failureMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -114,83 +124,58 @@ export default function StepUpApprovalRoute() {
   return (
     <main class="publicShell">
       <section class="publicCard ui-stack">
-        <h1 class="ui-page-title">Review CLI operation</h1>
+        <h1 class="ui-page-title">{t("stepUpPage.title")}</h1>
         <Show
           when={view() !== "missing"}
-          fallback={
-            <p class="ui-muted">
-              This step-up link is incomplete. Open the full verification link
-              from the CLI prompt and try again.
-            </p>
-          }
+          fallback={<p class="ui-muted">{t("stepUpPage.missing")}</p>}
         >
           <Show
             when={view() !== "login-required"}
             fallback={
-              <>
-                <p class="ui-muted">
-                  Sign in with a passkey on this device, then return here to
-                  approve the pending CLI mutation.
-                </p>
-                <button
-                  type="button"
-                  class="ui-button ui-button-primary"
-                  onClick={signIn}
-                >
-                  Sign in with a passkey
-                </button>
-              </>
+              <button
+                type="button"
+                class="ui-button ui-button-primary"
+                onClick={signIn}
+              >
+                {t("stepUpPage.signIn")}
+              </button>
             }
           >
             <Show
               when={view() !== "approved"}
-              fallback={
-                <p class="ui-alert">
-                  Step-up approved. Return to the CLI: it retries the identical
-                  mutation once automatically.
-                </p>
-              }
+              fallback={<p class="ui-alert">{t("stepUpPage.approved")}</p>}
             >
               <Show
-                when={view() === "ready" || view() === "loading"}
+                when={view() === "ready"}
                 fallback={
-                  <p class="ui-alert ui-alert-error" role="alert">
-                    {view() === "expired" &&
-                      "This step-up request has expired. Start the CLI mutation again to open a fresh request."}
-                    {view() === "used" &&
-                      "This step-up request was already used or is unknown. If you signed in with a different account, switch accounts and reopen the link; otherwise start the CLI mutation again."}
-                    {view() === "forbidden" &&
-                      (error() ||
-                        "This step-up request belongs to a different account or is not approved yet. Sign in with the account that started the CLI mutation.")}
-                  </p>
+                  <Show when={view() !== "loading"}>
+                    <p class="ui-alert ui-alert-error" role="alert">
+                      {view() === "expired" && t("stepUpPage.expired")}
+                      {view() === "used" && t("stepUpPage.unavailable")}
+                      {view() === "forbidden" &&
+                        (error() || t("stepUpPage.approvalFailed"))}
+                    </p>
+                  </Show>
                 }
               >
                 <form class="ui-stack-sm" onSubmit={approve}>
-                  <p>
-                    A CLI mutation is waiting for a fresh passkey ceremony.
-                    Approving binds one single-use approval to that exact
-                    mutation; authorization is re-checked when the CLI retries.
-                  </p>
-                  <p class="ui-muted">
-                    Verify the operation in the terminal that opened this link
-                    before approving.
-                  </p>
+                  <p class="ui-muted">{t("stepUpPage.reviewPrompt")}</p>
                   <button
                     type="submit"
                     class="ui-button ui-button-primary"
-                    disabled={busy() || view() === "loading"}
+                    disabled={busy()}
                   >
                     {busy()
-                      ? "Waiting for passkey…"
-                      : "Approve with a passkey"}
+                      ? t("stepUpPage.approving")
+                      : t("stepUpPage.approve")}
                   </button>
                 </form>
               </Show>
             </Show>
           </Show>
         </Show>
-        <Show when={error() && (view() === "ready" || view() === "loading")}>
-          <p class="ui-alert ui-alert-error" role="alert">{error()}</p>
+        <Show when={view() === "loading"}>
+          <p class="ui-muted" role="status">{t("stepUpPage.loading")}</p>
         </Show>
       </section>
     </main>
