@@ -2,6 +2,7 @@ import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, For, Show } from "solid-js";
 import { authApi } from "~/lib/auth-api";
 import { getSafeNextPath } from "~/lib/auth-route";
+import { t } from "~/lib/i18n";
 
 export default function RecoverRoute() {
   const navigate = useNavigate();
@@ -24,29 +25,35 @@ export default function RecoverRoute() {
     setError("");
     try {
       setResult(await authApi.recoverSpaceAccess(token().trim()));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Recovery failed.");
+    } catch {
+      setError(t("ownerRecovery.failure"));
     } finally {
       setBusy(false);
     }
   };
 
+  const auditStatus = () =>
+    result()?.audit_status === "delivered"
+      ? t("ownerRecovery.auditDelivered")
+      : t("ownerRecovery.auditPending");
+
   return (
     <main class="publicShell">
       <section class="publicCard ui-stack">
         <h1 id="recovery-title" class="ui-page-title">
-          {result() ? "Save your new recovery codes" : "Recover Space access"}
+          {result()
+            ? t("ownerRecovery.saveCodesTitle")
+            : t("ownerRecovery.title")}
         </h1>
         <Show when={!result()}>
-          <p class="ui-muted">
-            Paste the one-time recovery token provided by the Space Owner. You
-            will register a new Passkey for this Space Principal.
-          </p>
           <form class="ui-stack-sm" onSubmit={submit}>
             <label class="ui-stack-sm">
-              <span>Owner recovery token</span>
+              <span>{t("ownerRecovery.tokenLabel")}</span>
               <input
                 class="ui-input font-mono"
+                type="password"
+                autocomplete="off"
+                spellcheck={false}
                 value={token()}
                 onInput={(event) => setToken(event.currentTarget.value)}
                 required
@@ -57,16 +64,18 @@ export default function RecoverRoute() {
               class="ui-button ui-button-primary"
               disabled={busy()}
             >
-              {busy() ? "Preparing Passkey registration…" : "Continue"}
+              {busy()
+                ? t("ownerRecovery.continuing")
+                : t("ownerRecovery.continue")}
             </button>
           </form>
         </Show>
         <Show when={result()}>
           {(completed) => (
             <section class="ui-stack-sm" aria-labelledby="recovery-title">
-              <p class="ui-muted">
-                These codes belong to the newly created HumanAccount and are
-                shown only once. Audit delivery is {completed().audit_status}.
+              <p class="ui-muted">{t("ownerRecovery.codesInstruction")}</p>
+              <p class="ui-muted" role="status" aria-live="polite">
+                {auditStatus()}
               </p>
               <ul class="font-mono">
                 <For each={completed().recovery_codes}>
@@ -79,7 +88,7 @@ export default function RecoverRoute() {
                 onClick={() =>
                   navigate(nextPath(), { replace: true })}
               >
-                I saved the codes
+                {t("ownerRecovery.savedCodes")}
               </button>
             </section>
           )}

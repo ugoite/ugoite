@@ -275,6 +275,89 @@ describe("UI spec YAML registry", () => {
     );
   });
 
+  it("REQ-FE-040: declares owner-approved Space recovery and identifier boundaries", () => {
+    const recoveryPath = path.join(
+      componentsDir,
+      "space-access-recovery.yaml",
+    );
+    const recovery = parse(readFileSync(recoveryPath, "utf8")) as {
+      component_group?: Record<string, unknown>;
+      components?: Array<Record<string, unknown>>;
+    };
+    const task = recovery.components?.find(({ id }) =>
+      id === "owner-space-recovery-task"
+    );
+
+    expect(recovery.component_group).toMatchObject({
+      id: "space-access-recovery",
+      routes: ["/recover"],
+    });
+    expect(task).toMatchObject({
+      implementation: "frontend/src/routes/recover/index.tsx",
+      tests: "frontend/src/routes/recover.test.tsx",
+      form_explanatory_copy: "none",
+      recovery_token: {
+        source: "query.owner_approval_token-or-query.token",
+        presentation: "masked-password-input",
+        raw_value_in_visible_text: false,
+      },
+      success: {
+        recovery_codes: {
+          presentation: "visible-once",
+          persistence: "route-memory-only",
+        },
+        audit_status: {
+          raw_value_visible: false,
+        },
+        returned_identifiers: {
+          account_id: "hidden",
+          principal_id: "hidden",
+          space_id: "hidden",
+        },
+      },
+      failure: {
+        api_error_details: "hidden",
+        recovery_codes_visible: false,
+      },
+    });
+
+    const implementation = readFileSync(
+      path.join(repoRoot, "frontend/src/routes/recover/index.tsx"),
+      "utf8",
+    );
+    expect(implementation).toContain('type="password"');
+    expect(implementation).toContain('t("ownerRecovery.failure")');
+    expect(implementation).toContain('aria-live="polite"');
+    expect(implementation).not.toContain("cause.message");
+
+    const routeTests = readFileSync(
+      path.join(repoRoot, "frontend/src/routes/recover.test.tsx"),
+      "utf8",
+    );
+    for (
+      const selector of [
+        "REQ-UX-RECOVERY-001: localizes labels and recovery states",
+        "REQ-UX-RECOVERY-001: hides returned internal identifiers",
+        "REQ-UX-RECOVERY-001: hides server error details",
+      ]
+    ) {
+      expect(routeTests).toContain(selector);
+    }
+
+    const uiIndex = readFileSync(
+      path.join(repoRoot, "docs/spec/ui/index.md"),
+      "utf8",
+    );
+    expect(uiIndex).toContain("`components/space-access-recovery.yaml`");
+    const routeInventory = readFileSync(
+      path.join(repoRoot, "docs/spec/ui/ux-route-inventory.md"),
+      "utf8",
+    );
+    expect(routeInventory).toContain(
+      "Owner-approved Space recovery (see `components/space-access-recovery.yaml`)",
+    );
+  });
+
   it("REQ-FE-040: declares device approval consent and identifier boundaries", () => {
     const deviceApprovalPath = path.join(
       componentsDir,

@@ -1,0 +1,211 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: ux
+category: Owner-approved Space recovery
+features:
+  - id: FEAT-UX-018
+    title: Owner-approved Space Recovery Surface
+    summary: Recover Space access through a masked owner token, explicit Passkey registration, localized state, and a one-time recovery-code handoff without exposing internal identifiers or API errors.
+    status: implemented
+    bindings:
+      - id: owner-space-recovery-surface
+        role: implementation
+        facet: frontend
+        responsibility: Keep the owner recovery route and its UI contract connected to token handling, localization, identifier boundaries, and safe recovery-code handoff.
+        targets:
+          - id: recovery-route
+            adapter: typescript
+            path: frontend/src/routes/recover/index.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-RECOVERY-001#criterion.masked-owner-token
+              - kind: satisfies
+                criterion: REQ-UX-RECOVERY-001#criterion.localized-copy
+              - kind: satisfies
+                criterion: REQ-UX-RECOVERY-001#criterion.hidden-identifiers
+              - kind: satisfies
+                criterion: REQ-UX-RECOVERY-001#criterion.safe-errors
+              - kind: satisfies
+                criterion: REQ-UX-RECOVERY-001#criterion.recovery-code-handoff
+          - id: recovery-ui-contract
+            adapter: declared
+            path: docs/spec/ui/components/space-access-recovery.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-RECOVERY-001#criterion.contract-index
+              - kind: satisfies
+                criterion: REQ-UX-RECOVERY-001#criterion.masked-owner-token
+              - kind: satisfies
+                criterion: REQ-UX-RECOVERY-001#criterion.hidden-identifiers
+          - id: recovery-ui-index
+            adapter: declared
+            path: docs/spec/ui/index.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-RECOVERY-001#criterion.contract-index
+          - id: recovery-route-inventory
+            adapter: declared
+            path: docs/spec/ui/ux-route-inventory.md
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-RECOVERY-001#criterion.contract-index
+      - id: owner-space-recovery-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the masked token, localized states, hidden internal identifiers and API errors, one-time code acknowledgment, safe continuation, and registered UI contract.
+        targets:
+          - id: recovery-token-presentation
+            adapter: typescript
+            path: frontend/src/routes/recover.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-RECOVERY-001: masks the owner token and names the action",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RECOVERY-001#criterion.masked-owner-token
+                covers: [
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-route,
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/routes/recover.test.tsx,
+                    test: "REQ-UX-RECOVERY-001: masks the owner token and names the action",
+                  },
+                }
+          - id: recovery-localized-states
+            adapter: typescript
+            path: frontend/src/routes/recover.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-RECOVERY-001: localizes labels and recovery states",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RECOVERY-001#criterion.localized-copy
+                covers: [
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-route,
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/routes/recover.test.tsx,
+                    test: "REQ-UX-RECOVERY-001: localizes labels and recovery states",
+                  },
+                }
+          - id: recovery-hidden-identifiers
+            adapter: typescript
+            path: frontend/src/routes/recover.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-RECOVERY-001: hides returned internal identifiers",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RECOVERY-001#criterion.hidden-identifiers
+                covers: [
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-route,
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/routes/recover.test.tsx,
+                    test: "REQ-UX-RECOVERY-001: hides returned internal identifiers",
+                  },
+                }
+          - id: recovery-safe-errors
+            adapter: typescript
+            path: frontend/src/routes/recover.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-RECOVERY-001: hides server error details",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RECOVERY-001#criterion.safe-errors
+                covers: [
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-route,
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/routes/recover.test.tsx,
+                    test: "REQ-UX-RECOVERY-001: hides server error details",
+                  },
+                }
+          - id: recovery-code-handoff
+            adapter: typescript
+            path: frontend/src/routes/recover.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-RECOVERY-001: acknowledges one-time codes before safe continuation",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RECOVERY-001#criterion.recovery-code-handoff
+                covers: [
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-route,
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/routes/recover.test.tsx,
+                    test: "REQ-UX-RECOVERY-001: acknowledges one-time codes before safe continuation",
+                  },
+                }
+          - id: recovery-contract-registration
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: {
+              kind: test,
+              name: "REQ-FE-040: declares owner-approved Space recovery and identifier boundaries",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-RECOVERY-001#criterion.contract-index
+                covers: [
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-index,
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-route-inventory,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/spec/ui-pages.test.ts,
+                    test: "REQ-FE-040: declares owner-approved Space recovery and identifier boundaries",
+                  },
+                }
+              - kind: verifies
+                criterion: REQ-UX-RECOVERY-001#criterion.masked-owner-token
+                covers: [
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/spec/ui-pages.test.ts,
+                    test: "REQ-FE-040: declares owner-approved Space recovery and identifier boundaries",
+                  },
+                }
+              - kind: verifies
+                criterion: REQ-UX-RECOVERY-001#criterion.hidden-identifiers
+                covers: [
+                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/spec/ui-pages.test.ts,
+                    test: "REQ-FE-040: declares owner-approved Space recovery and identifier boundaries",
+                  },
+                }
