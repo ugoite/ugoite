@@ -1,6 +1,9 @@
-import { ErrorBoundary, onMount, type JSX } from "solid-js";
+import { createEffect, ErrorBoundary, onMount, type JSX } from "solid-js";
 import { locale } from "~/lib/i18n";
-import { recoverFromRouteChunkFailure } from "~/lib/vite-preload-recovery";
+import {
+  clearVitePreloadRecoveryAttempts,
+  recoverFromRouteChunkFailure,
+} from "~/lib/vite-preload-recovery";
 
 const copy = {
   en: {
@@ -18,6 +21,10 @@ const copy = {
 } as const;
 
 type ErrorCopy = typeof copy.en;
+
+// AppErrorBoundary can be remounted as Solid Router swaps route trees. Keep the
+// last browser route at module scope so a remount still clears stale retry state.
+let lastObservedPathname: string | undefined;
 
 function AppErrorFallback(props: {
   error: unknown;
@@ -54,13 +61,36 @@ function AppErrorFallback(props: {
   );
 }
 
-export function AppErrorBoundary(props: { children: JSX.Element }) {
+export function AppErrorBoundary(
+  props: { children: JSX.Element; pathname?: string },
+) {
   const labels = () => copy[locale() === "ja" ? "ja" : "en"];
+  let resetBoundary: (() => void) | undefined;
+
+  createEffect(() => {
+    const path = props.pathname;
+    if (path === undefined) return;
+    if (lastObservedPathname === undefined) {
+      lastObservedPathname = path;
+      return;
+    }
+    if (path === lastObservedPathname) return;
+    lastObservedPathname = path;
+    if (typeof window === "undefined") return;
+    try {
+      clearVitePreloadRecoveryAttempts(window.sessionStorage);
+    } catch {
+      // Recovery markers are best-effort when browser storage is unavailable.
+    }
+    resetBoundary?.();
+  });
+
   return (
     <ErrorBoundary
-      fallback={(error, reset) => (
-        <AppErrorFallback error={error} reset={reset} labels={labels()} />
-      )}
+      fallback={(error, reset) => {
+        resetBoundary = reset;
+        return <AppErrorFallback error={error} reset={reset} labels={labels()} />;
+      }}
     >
       {props.children}
     </ErrorBoundary>

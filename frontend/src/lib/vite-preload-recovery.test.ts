@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  clearVitePreloadRecoveryAttempts,
   recoverFromRouteChunkFailure,
   recoverFromVitePreloadError,
   type VitePreloadErrorEvent,
@@ -16,8 +17,13 @@ const createEvent = (
 const createSession = () => {
   const values = new Map<string, string>();
   return {
+    get length() {
+      return values.size;
+    },
+    key: vi.fn((index: number) => [...values.keys()][index] ?? null),
     getItem: vi.fn((key: string) => values.get(key) ?? null),
     setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+    removeItem: vi.fn((key: string) => values.delete(key)),
   };
 };
 
@@ -119,6 +125,46 @@ describe("Vite dynamic import recovery", () => {
       ),
     ).toBe(true);
     expect(otherRouteEvent.defaultPrevented).toBe(true);
+    expect(reload).toHaveBeenCalledTimes(2);
+  });
+
+  it("resets the retry guard after another route attempt", () => {
+    const session = createSession();
+    const reload = vi.fn();
+    const genericMessage = "Importing a module script failed.";
+
+    expect(
+      recoverFromVitePreloadError(
+        createEvent(genericMessage),
+        session,
+        reload,
+        "/spaces/one/forms",
+        1_000,
+      ),
+    ).toBe(true);
+    expect(
+      recoverFromVitePreloadError(
+        createEvent(genericMessage),
+        session,
+        reload,
+        "/spaces/one/forms",
+        1_001,
+      ),
+    ).toBe(false);
+
+    session.setItem("unrelated-session-state", "keep");
+    clearVitePreloadRecoveryAttempts(session);
+
+    expect(session.getItem("unrelated-session-state")).toBe("keep");
+    expect(
+      recoverFromVitePreloadError(
+        createEvent(genericMessage),
+        session,
+        reload,
+        "/spaces/one/forms",
+        1_002,
+      ),
+    ).toBe(true);
     expect(reload).toHaveBeenCalledTimes(2);
   });
 

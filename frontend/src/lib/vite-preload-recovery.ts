@@ -9,7 +9,10 @@ const dynamicImportFailurePatterns = [
 
 export type VitePreloadErrorEvent = Event & { payload?: Error };
 
-type SessionStore = Pick<Storage, "getItem" | "setItem">;
+type SessionStore = Pick<
+  Storage,
+  "getItem" | "setItem" | "removeItem" | "key" | "length"
+>;
 
 const recoveryKeyFor = (
   message: string,
@@ -61,6 +64,20 @@ const recoverWithMessage = (
   reload();
   return true;
 };
+
+/**
+ * A route change is a fresh navigation attempt. Drop markers left by earlier
+ * transient chunk failures so identical browser error messages on a later
+ * route visit do not inherit the previous retry budget. Same-path reloads do
+ * not call this, so a persistently missing chunk still reaches the boundary
+ * instead of creating a reload loop.
+ */
+export function clearVitePreloadRecoveryAttempts(session: SessionStore): void {
+  for (let index = session.length - 1; index >= 0; index -= 1) {
+    const key = session.key(index);
+    if (key?.startsWith(`${recoveryKeyPrefix}:`)) session.removeItem(key);
+  }
+}
 
 /**
  * Vite cannot retry a failed dynamic import in the current document. Retry it

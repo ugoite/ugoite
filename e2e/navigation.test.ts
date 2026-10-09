@@ -154,6 +154,31 @@ test.describe("Dynamic navigation traversal", () => {
 			});
 			expect(repeatedRecoveryPrevented).toBe(false);
 
+			// A completed same-URL recovery must not suppress an unrelated retry
+			// after the user leaves and returns to the route. Browser error messages
+			// can omit the failed chunk URL, so route identity is the safe boundary.
+			await page.locator(`nav a[href="/spaces/${spaceId}/forms"]`).first().click();
+			await expect(page).toHaveURL(new RegExp(`${escapeRegExp(`/spaces/${spaceId}/forms`)}$`));
+			await page.getByRole("button", { name: "Entry", exact: true }).click();
+			const formEntryRow = page.locator(`[data-entry-id="${created.id}"]`);
+			await formEntryRow.getByRole("button", { name: "Open entry" }).click();
+			await expect(page).toHaveURL(routeBeforeRecovery);
+			await expectAppHealthy(page, consoleErrors);
+
+			const routeRetryReload = page.waitForNavigation({
+				waitUntil: "domcontentloaded",
+			});
+			const routeRetryPrevented = await page.evaluate(() => {
+				const event = new Event("vite:preloadError", { cancelable: true });
+				Object.assign(event, { payload: new Error("temporary route chunk failure") });
+				window.dispatchEvent(event);
+				return event.defaultPrevented;
+			});
+			expect(routeRetryPrevented).toBe(true);
+			await routeRetryReload;
+			await expect(page).toHaveURL(routeBeforeRecovery);
+			await expectAppHealthy(page, consoleErrors);
+
 			expect(consoleErrors, `console errors: ${consoleErrors.join("\n")}`).toEqual([]);
 			expect(runtimeErrors, `runtime errors: ${runtimeErrors.join("\n")}`).toEqual([]);
 		} finally {
