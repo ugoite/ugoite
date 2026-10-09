@@ -443,6 +443,36 @@ test.describe("Composition Studio Journey", () => {
         page.getByRole("button", { name: seed.formName, exact: true }),
       ).toHaveCount(1);
 
+      // EntryQuery metric choices show the Form's human field names without
+      // leaking backend field IDs or schema ordinals.
+      await page.getByRole("button", { name: "Add block", exact: true })
+        .first().click();
+      const palette = page.getByRole("dialog", {
+        name: "Add block",
+        exact: true,
+      });
+      await palette.getByRole("button", { name: "Display", exact: true })
+        .click();
+      const metricPicker = page.getByRole("dialog", {
+        name: "Add display",
+        exact: true,
+      });
+      await metricPicker.getByRole("tab", { name: "Metric", exact: true })
+        .click();
+      await metricPicker.getByRole("button", {
+        name: seed.formName,
+        exact: true,
+      }).click();
+      const valueOptions = metricPicker.getByLabel("Value", { exact: true })
+        .locator("option");
+      await expect.poll(() => valueOptions.allTextContents()).toEqual(
+        expect.arrayContaining(["Amount", "Quantity"]),
+      );
+      const optionLabels = await valueOptions.allTextContents();
+      expect(optionLabels.join(" ")).not.toMatch(/(?:Field \d+|#\d+)/);
+      await metricPicker.getByRole("button", { name: "Cancel", exact: true })
+        .click();
+
       // Table display on the EntryQuery source through the canvas.
       await addCanvasDisplay(page, "Table", seed.formName);
       await expect(
@@ -478,7 +508,9 @@ test.describe("Composition Studio Journey", () => {
       await page.getByLabel("Default for month_start").fill(seed.monthStart);
       await page.getByLabel("Default for month_end").fill(seed.monthEnd);
       await dataTabs.getByRole("tab", { name: "Tags", exact: true }).click();
-      await expect(page.getByLabel("Tags", { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("textbox", { name: "Tags", exact: true }),
+      ).toBeVisible();
       await expect(
         page.getByRole("button", { name: seed.savedSqlName, exact: true }),
       ).toBeHidden();
