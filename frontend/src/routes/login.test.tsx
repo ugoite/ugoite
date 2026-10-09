@@ -13,22 +13,19 @@ vi.mock("@solidjs/router", () => ({
   useSearchParams: () => [{ next: "/spaces/demo/dashboard?tab=recent" }],
 }));
 
-vi.mock("~/lib/auth-api", () => ({
-  authApi: {
-    getConfig: vi.fn(),
-    listOidcProviders: vi.fn(),
-    loginWithPasskey: vi.fn(),
-    loginWithOidc: vi.fn(),
-  },
-  oidcIssuerLabel: (issuer: string) => new URL(issuer).host,
-}));
+const authApiSpies = {
+  getConfig: vi.spyOn(authApi, "getConfig"),
+  listOidcProviders: vi.spyOn(authApi, "listOidcProviders"),
+  loginWithPasskey: vi.spyOn(authApi, "loginWithPasskey"),
+  loginWithOidc: vi.spyOn(authApi, "loginWithOidc"),
+};
 
 describe("/login continuation", () => {
   beforeEach(() => {
     navigateMock.mockReset();
     setLocale("en");
-    vi.mocked(authApi.getConfig).mockReset();
-    vi.mocked(authApi.getConfig).mockResolvedValue({
+    authApiSpies.getConfig.mockReset();
+    authApiSpies.getConfig.mockResolvedValue({
       status: "active",
       nodeId: "node",
       issuer: "http://localhost:3000",
@@ -36,11 +33,11 @@ describe("/login continuation", () => {
       passkey: true,
       oidc: false,
     });
-    vi.mocked(authApi.listOidcProviders).mockReset();
-    vi.mocked(authApi.listOidcProviders).mockResolvedValue([]);
-    vi.mocked(authApi.loginWithPasskey).mockReset();
-    vi.mocked(authApi.loginWithPasskey).mockResolvedValue();
-    vi.mocked(authApi.loginWithOidc).mockReset();
+    authApiSpies.listOidcProviders.mockReset();
+    authApiSpies.listOidcProviders.mockResolvedValue([]);
+    authApiSpies.loginWithPasskey.mockReset();
+    authApiSpies.loginWithPasskey.mockResolvedValue();
+    authApiSpies.loginWithOidc.mockReset();
   });
 
   it("keeps the requested route after Passkey login", async () => {
@@ -99,9 +96,11 @@ describe("/login continuation", () => {
 
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Continue with issuer.example",
+        name: "Continue with issuer.example/tenant-a",
       }),
     );
+
+    expect(document.body.textContent).not.toContain("provider-1");
 
     expect(authApi.loginWithOidc).toHaveBeenCalledWith(
       "provider-1",
@@ -120,10 +119,30 @@ describe("/login continuation", () => {
   });
 
   it("REQ-UX-RESP-001: exposes a single sign-in task with one inline error", async () => {
+    vi.mocked(authApi.getConfig).mockResolvedValue({
+      status: "active",
+      nodeId: "node",
+      issuer: "http://localhost:3000",
+      rpId: "localhost",
+      passkey: true,
+      oidc: true,
+    });
+    vi.mocked(authApi.listOidcProviders).mockResolvedValue([{
+      provider_id: "provider-1",
+      issuer: "https://issuer.example/tenant-a",
+      client_id: "client",
+    }]);
     vi.mocked(authApi.loginWithPasskey).mockRejectedValue(
       new Error("No passkey found"),
     );
     render(() => <LoginRoute />);
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Continue with issuer.example/tenant-a",
+      }),
+    ).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("provider-1");
 
     fireEvent.click(
       await screen.findByRole("button", { name: "Sign in with a passkey" }),
