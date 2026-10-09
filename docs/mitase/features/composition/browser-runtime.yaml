@@ -118,6 +118,8 @@ features:
       - kind: satisfies
         criterion: REQ-FE-068#criterion.composition-property-timestamp-separation
       - kind: satisfies
+        criterion: REQ-FE-068#criterion.composition-form-scoped-form-id-property
+      - kind: satisfies
         criterion: REQ-FE-068#criterion.composition-system-form-id-hidden
       - kind: satisfies
         criterion: REQ-FE-068#criterion.local-horizontal-overflow
@@ -162,6 +164,8 @@ features:
       claims:
       - kind: documents
         anchor: REQ-FE-068#criterion.composition-system-form-id-hidden
+      - kind: documents
+        anchor: REQ-FE-068#criterion.composition-form-scoped-form-id-property
   - id: browser-query-runtime-evidence
     role: evidence
     facet: frontend-tests
