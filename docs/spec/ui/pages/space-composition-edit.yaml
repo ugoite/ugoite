@@ -88,6 +88,8 @@ components:
       source: Forms through form.list and Saved SQL through sql.list
       selection: full-row-activate
       rendering: human-name-only rows with loading, empty, and error states
+      row_name_overflow: ellipsis-with-full-name-native-title
+      internal_identifiers: form-source-draft-entry-revision-ids-never-rendered
     - id: studio-display
       type: list
       title: Display

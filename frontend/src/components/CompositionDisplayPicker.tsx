@@ -367,6 +367,7 @@ export function CompositionDisplayPicker(
                                 class="rowListMain"
                                 disabled
                                 aria-label={source.name}
+                                title={source.name}
                               >
                                 <span class="rowListText">
                                   <span class="rowListPrimary">
@@ -382,6 +383,7 @@ export function CompositionDisplayPicker(
                             <RowListButton
                               ariaLabel={source.name}
                               selected={sourceDraftId() === source.draftId}
+                              title={source.name}
                               primary={<span>{source.name}</span>}
                               secondary={sourceKindLabel(source)}
                               onActivate={() => selectSource(source)}

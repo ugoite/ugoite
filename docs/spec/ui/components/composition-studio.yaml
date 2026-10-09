@@ -96,6 +96,17 @@ components:
       narrow_width: 390px
     surface_tokens: fixed-only-no-raw-color
     async_state: explicit-loading-empty-error
+  - id: studio-source-picker
+    type: dialog
+    title: Add data
+    status: implemented
+    source: Forms through form.list and user-query Saved SQL through sql.list
+    tabs: [Forms, Saved SQL]
+    selection: full-row-activate
+    row_identity: human-name-only
+    row_name_overflow: ellipsis-with-full-name-native-title
+    row_accessible_name: full-human-name-from-row-content
+    internal_identifiers: form-source-draft-entry-revision-ids-never-rendered
   - id: studio-data-mode-tabs
     type: tab-list
     title: Sources, Parameters, Tags
@@ -124,8 +135,17 @@ components:
     status: implemented
     ownership: canvas-insertion-delegate
     kind_selection: Table/Metric-tabs-inside-picker
-    sequence: [kind, source, metric-value-field-only-for-metric, optional-label, add]
+    sequence: [
+      kind,
+      source,
+      metric-value-field-only-for-metric,
+      optional-label,
+      add,
+    ]
     source_selection: visibly-pressed-row-preserved-when-compatible-across-tabs
+    source_name: human-name-only
+    source_name_overflow: ellipsis-with-full-name-native-title-on-selectable-and-disabled-rows
+    source_accessible_name: full-human-source-name
     entry_query_metric_candidates: rust-scalar-types-only-excludes-list-object-list-row-reference-asset-reference
     entry_query_field_labels: transient-form-label-or-distinct-localized-source-schema-index
     internal_identifiers: field-source-entry-revision-ids-never-rendered

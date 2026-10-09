@@ -108,6 +108,43 @@ describe("CompositionDisplayPicker", () => {
     });
   });
 
+  it("keeps full source names available for selectable and unavailable rows", () => {
+    const longSourceName = "Monthly source with a long human name".repeat(4);
+    const longUnavailableName = "Archive source with a long human name".repeat(
+      4,
+    );
+    render(() => (
+      <CompositionDisplayPicker
+        sources={[
+          { ...sqlSource, name: longSourceName },
+          { ...jsonOnlySource, name: longUnavailableName },
+        ]}
+        onAdd={() => {}}
+        onClose={() => {}}
+      />
+    ));
+
+    const dialog = screen.getByRole("dialog");
+    const selectable = within(dialog).getByRole("button", {
+      name: longSourceName,
+    });
+    expect(selectable).toHaveAttribute("title", longSourceName);
+    expect(selectable.textContent).toContain(longSourceName);
+    expect(selectable.outerHTML).not.toContain("src-1");
+    expect(selectable.outerHTML).not.toContain("sql-1");
+    expect(selectable.outerHTML).not.toContain("sql-rev-1");
+
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Metric" }));
+    const unavailable = within(dialog).getByRole("button", {
+      name: longUnavailableName,
+    });
+    expect(unavailable).toBeDisabled();
+    expect(unavailable).toHaveAttribute("title", longUnavailableName);
+    expect(unavailable.outerHTML).not.toContain("src-3");
+    expect(unavailable.outerHTML).not.toContain("sql-2");
+    expect(unavailable.outerHTML).not.toContain("sql-rev-2");
+  });
+
   it("adds a metric display with scalar-only candidates", () => {
     const onAdd = vi.fn();
     render(() => (
