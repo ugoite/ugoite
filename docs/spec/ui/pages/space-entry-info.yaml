@@ -44,5 +44,8 @@ components:
           label: localized-copy
     - id: entry-info-sharing
       type: settings-panel
+      component_contract:
+        id: resource-access-editor
+        reference: ../components/access-policy-editor.yaml
       items:
         - access-policy-editor
