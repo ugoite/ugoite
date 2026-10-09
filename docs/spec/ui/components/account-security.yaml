@@ -18,7 +18,8 @@ components:
     type: list
     implementation: frontend/src/routes/settings/security.tsx
     tests: frontend/src/routes/settings/security.test.tsx
-    primary_label: localized-passkey-and-last-used
+    primary_label: localized-numbered-passkey-and-last-used
+    missing_activity: localized-never
     identifier_visibility: closed-technical-details-only
     technical_details:
       summary: securityPage.technicalDetails
@@ -34,7 +35,9 @@ components:
     type: list
     implementation: frontend/src/routes/settings/security.tsx
     tests: frontend/src/routes/settings/security.test.tsx
-    primary_label: localized-session-and-last-seen
+    primary_label: localized-numbered-browser-session-and-last-seen
+    missing_activity: localized-never
+    revoked_status: localized-revoked
     identifier_visibility: closed-technical-details-only
     technical_details:
       summary: securityPage.technicalDetails

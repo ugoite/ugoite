@@ -208,7 +208,8 @@ describe("UI spec YAML registry", () => {
       type: "list",
       implementation: "frontend/src/routes/settings/security.tsx",
       tests: "frontend/src/routes/settings/security.test.tsx",
-      primary_label: "localized-passkey-and-last-used",
+      primary_label: "localized-numbered-passkey-and-last-used",
+      missing_activity: "localized-never",
       identifier_visibility: "closed-technical-details-only",
       technical_details: {
         summary: "securityPage.technicalDetails",
@@ -228,7 +229,9 @@ describe("UI spec YAML registry", () => {
       type: "list",
       implementation: "frontend/src/routes/settings/security.tsx",
       tests: "frontend/src/routes/settings/security.test.tsx",
-      primary_label: "localized-session-and-last-seen",
+      primary_label: "localized-numbered-browser-session-and-last-seen",
+      missing_activity: "localized-never",
+      revoked_status: "localized-revoked",
       identifier_visibility: "closed-technical-details-only",
       technical_details: {
         summary: "securityPage.technicalDetails",
@@ -251,6 +254,10 @@ describe("UI spec YAML registry", () => {
     );
     expect(implementation).toContain("securityPage.credentialId");
     expect(implementation).toContain("securityPage.sessionId");
+    expect(implementation).toContain("securityPage.passkeyNumberedLabel");
+    expect(implementation).toContain(
+      "securityPage.browserSessionNumberedLabel",
+    );
     const securityTests = readFileSync(
       path.join(repoRoot, "frontend/src/routes/settings/security.test.tsx"),
       "utf8",
@@ -494,7 +501,9 @@ describe("UI spec YAML registry", () => {
           };
           expect(consumers.space).toMatchObject({
             wrapper: section.component,
-            page: `${String(page?.spec.page?.id)}#section.${String(section.id)}`,
+            page: `${String(page?.spec.page?.id)}#section.${
+              String(section.id)
+            }`,
           });
         }
       }

@@ -102,6 +102,97 @@ describe("SecuritySettingsRoute", () => {
     expect(screen.queryByRole("tab", { name: "CLI / MCP" })).toBeNull();
   });
 
+  it("REQ-UX-LIST-001: keeps passkey IDs out of ordinary rows and revokes by exact credential identity", async () => {
+    setLocale("ja");
+    const credentialIds = ["credential-private-1", "credential-private-2"];
+    vi.mocked(authApi.listPasskeys).mockResolvedValue([{
+      credential_id: credentialIds[0],
+      created_at: "2026-01-01T00:00:00Z",
+      last_used_at: null,
+      rp_id: "localhost",
+    }, {
+      credential_id: credentialIds[1],
+      created_at: "2026-01-01T00:00:00Z",
+      last_used_at: null,
+      rp_id: "localhost",
+    }]);
+
+    render(() => <SecuritySettingsRoute />);
+
+    expect(
+      await screen.findByText("パスキー 1 · 最終使用 未使用", {
+        exact: true,
+      }),
+    )
+      .toBeInTheDocument();
+    expect(screen.getByText("パスキー 2 · 最終使用 未使用", {
+      exact: true,
+    })).toBeInTheDocument();
+    for (const credentialId of credentialIds) {
+      const identifier = screen.getByText(credentialId);
+      expect(identifier.closest("details")).not.toHaveAttribute("open");
+      expect(identifier).not.toBeVisible();
+    }
+    const revokes = screen.getAllByRole("button", {
+      name: /取り消し: パスキー \d/,
+    });
+    expect(revokes).toHaveLength(2);
+    expect(revokes[1]).toHaveAccessibleName("取り消し: パスキー 2");
+    expect(revokes[1]).toHaveTextContent("取り消し");
+    fireEvent.click(revokes[1]);
+    await waitFor(() =>
+      expect(authApi.revokePasskey).toHaveBeenCalledWith(credentialIds[1])
+    );
+  });
+
+  it("REQ-UX-LIST-001: keeps session IDs out of ordinary rows and revokes by exact session identity", async () => {
+    setLocale("ja");
+    searchParams.tab = "sessions";
+    const sessionIds = ["session-private-1", "session-private-2"];
+    const credentialId = "credential-private-2";
+    vi.mocked(authApi.listSessions).mockResolvedValue([{
+      session_id: sessionIds[0],
+      credential_id: credentialId,
+      created_at: "2026-01-01T00:00:00Z",
+      last_seen_at: null,
+      revoked_at: null,
+    }, {
+      session_id: sessionIds[1],
+      credential_id: credentialId,
+      created_at: "2026-01-01T00:00:00Z",
+      last_seen_at: null,
+      revoked_at: null,
+    }]);
+
+    render(() => <SecuritySettingsRoute />);
+
+    expect(
+      await screen.findByText("ブラウザーセッション 1 · 最終確認 未使用", {
+        exact: true,
+      }),
+    )
+      .toBeInTheDocument();
+    expect(screen.getByText("ブラウザーセッション 2 · 最終確認 未使用", {
+      exact: true,
+    })).toBeInTheDocument();
+    for (const sessionId of sessionIds) {
+      const identifier = screen.getByText(sessionId);
+      expect(identifier.closest("details")).not.toHaveAttribute("open");
+      expect(identifier).not.toBeVisible();
+    }
+    expect(screen.queryByText(credentialId)).not.toBeInTheDocument();
+    const revokes = screen.getAllByRole("button", {
+      name: /取り消し: セッション \d/,
+    });
+    expect(revokes).toHaveLength(2);
+    expect(revokes[1]).toHaveAccessibleName("取り消し: セッション 2");
+    expect(revokes[1]).toHaveTextContent("取り消し");
+    fireEvent.click(revokes[1]);
+    await waitFor(() =>
+      expect(authApi.revokeSession).toHaveBeenCalledWith(sessionIds[1])
+    );
+  });
+
   it("opens the credential panel selected by the URL", () => {
     searchParams.tab = "sessions";
     render(() => <SecuritySettingsRoute />);
@@ -138,7 +229,8 @@ describe("SecuritySettingsRoute", () => {
     const credentialDetails = credentialValue.closest("details");
     expect(credentialDetails).not.toHaveAttribute("open");
     expect(credentialValue).not.toBeVisible();
-    expect(screen.getAllByText("Passkey · last used never")).toHaveLength(2);
+    expect(screen.getByText("Passkey 1 · last used never")).toBeVisible();
+    expect(screen.getByText("Passkey 2 · last used never")).toBeVisible();
     expect(screen.getByRole("button", { name: "Revoke passkey 1" }))
       .toBeVisible();
     expect(screen.getByRole("button", { name: "Revoke passkey 2" }))
@@ -153,7 +245,10 @@ describe("SecuritySettingsRoute", () => {
     const sessionDetails = sessionValue.closest("details");
     expect(sessionDetails).not.toHaveAttribute("open");
     expect(sessionValue).not.toBeVisible();
-    expect(screen.getAllByText("Session · last seen never")).toHaveLength(2);
+    expect(screen.getByText("Browser session 1 · last seen never"))
+      .toBeVisible();
+    expect(screen.getByText("Browser session 2 · last seen never"))
+      .toBeVisible();
     expect(screen.getByRole("button", { name: "Revoke session 1" }))
       .toBeVisible();
     expect(screen.getByRole("button", { name: "Revoke session 2" }))
@@ -315,8 +410,9 @@ describe("SecuritySettingsRoute", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 10));
     (
-      screen.getByRole("button", { name: "Register first Passkey" }) as
-        HTMLButtonElement
+      screen.getByRole("button", {
+        name: "Register first Passkey",
+      }) as HTMLButtonElement
     ).click();
     await waitFor(() =>
       expect(authApi.addBootstrapPasskey).toHaveBeenCalledTimes(1)

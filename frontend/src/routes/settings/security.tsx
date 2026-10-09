@@ -196,7 +196,9 @@ export function CredentialSettings() {
                   <span>
                     {oidcIssuerLabel(link.issuer)} · {t("securityPage.linked")}
                     {link.last_used_at
-                      ? ` · ${t("securityPage.lastUsed")} ${formatDateTimeLabel(link.last_used_at)}`
+                      ? ` · ${t("securityPage.lastUsed")} ${
+                        formatDateTimeLabel(link.last_used_at)
+                      }`
                       : ""}
                   </span>
                   <button
@@ -250,11 +252,10 @@ export function CredentialSettings() {
             <button
               type="button"
               class="ui-button ui-button-primary"
-              onClick={() =>
-                void runAction(async () => {
-                  await authApi.addBootstrapPasskey();
-                  await refetch();
-                })}
+              onClick={() => void runAction(async () => {
+                await authApi.addBootstrapPasskey();
+                await refetch();
+              })}
             >
               {t("securityPage.bootstrapPasskey")}
             </button>
@@ -288,8 +289,10 @@ export function CredentialSettings() {
                   <div class="ui-stack-sm">
                     <div class="flex items-center justify-between">
                       <span>
-                        {t("securityPage.passkey")} ·{" "}
-                        {t("securityPage.lastUsed")} {credential.last_used_at
+                        {t("securityPage.passkeyNumberedLabel", {
+                          number: index() + 1,
+                        })} · {t("securityPage.lastUsed")}{" "}
+                        {credential.last_used_at
                           ? formatDateTimeLabel(credential.last_used_at)
                           : t("securityPage.never")}
                       </span>
@@ -342,8 +345,9 @@ export function CredentialSettings() {
                   <div class="ui-stack-sm">
                     <div class="flex items-center justify-between">
                       <span>
-                        {t("securityPage.session")} ·{" "}
-                        {t("securityPage.lastSeen")} {session.last_seen_at
+                        {t("securityPage.browserSessionNumberedLabel", {
+                          number: index() + 1,
+                        })} · {t("securityPage.lastSeen")} {session.last_seen_at
                           ? formatDateTimeLabel(session.last_seen_at)
                           : t("securityPage.never")}
                         {session.revoked_at
