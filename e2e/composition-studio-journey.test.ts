@@ -188,6 +188,32 @@ async function seedStudioKnowledge(
   };
 }
 
+async function seedSingleEntryMetricForm(
+  request: APIRequestContext,
+  spaceId: string,
+): Promise<{ formName: string; value: string }> {
+  const formName = `StudioMetric${crypto.randomUUID().slice(0, 8)}`;
+  const formResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/forms`),
+    {
+      data: {
+        name: formName,
+        version: 1,
+        template: `# ${formName}\n\n## Amount\n`,
+        fields: { Amount: { type: "integer", required: true } },
+      },
+    },
+  );
+  expect([200, 201]).toContain(formResponse.status());
+
+  const entryResponse = await request.post(
+    getBackendUrl(`/spaces/${spaceId}/entries`),
+    { data: { form: formName, fields: { Amount: 42 } } },
+  );
+  expect(entryResponse.status()).toBe(201);
+  return { formName, value: "42" };
+}
+
 async function expectHistoryTotal(
   request: APIRequestContext,
   spaceId: string,
@@ -219,7 +245,7 @@ async function addCanvasDisplay(
   page: Page,
   kind: "Metric" | "Table",
   sourceName: string,
-  value?: string,
+  value?: string | { label: string },
   label?: string,
 ): Promise<void> {
   // Canvas insertion path: a gap "+" opens the block palette, and the
@@ -256,7 +282,7 @@ async function addCanvasDisplay(
 async function addMetricDisplay(
   page: Page,
   sourceName: string,
-  value: string,
+  value: string | { label: string },
   label: string,
 ): Promise<void> {
   await addCanvasDisplay(page, "Metric", sourceName, value, label);
@@ -366,6 +392,10 @@ test.describe("Composition Studio Journey", () => {
 
   test("Composition Studio builds a reusable tool from existing knowledge", async ({ browser, context, request }) => {
     test.setTimeout(120_000);
+    const entryMetricForm = await seedSingleEntryMetricForm(
+      request,
+      seed.spaceId,
+    );
     const storageState = await context.storageState();
     let compositionId = "";
     let firstRevisionId = "";
@@ -472,6 +502,33 @@ test.describe("Composition Studio Journey", () => {
       expect(optionLabels.join(" ")).not.toMatch(/(?:Field \d+|#\d+)/);
       await metricPicker.getByRole("button", { name: "Cancel", exact: true })
         .click();
+
+      // Add an EntryQuery metric through the real picker path and verify the
+      // single-row Form value reaches the canvas instead of the unavailable
+      // projection diagnostic.
+      await page.getByRole("button", { name: "Add data", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", {
+        name: entryMetricForm.formName,
+        exact: true,
+      }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await addMetricDisplay(
+        page,
+        entryMetricForm.formName,
+        { label: "Amount" },
+        "Entry amount",
+      );
+      await expect(
+        page.getByRole("heading", { name: "Entry amount", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.locator("output.compositionMetric").filter({
+          hasText: new RegExp(`^${entryMetricForm.value}$`),
+        }),
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(
+        page.getByText("The metric field is unavailable.", { exact: true }),
+      ).toHaveCount(0);
 
       // Table display on the EntryQuery source through the canvas.
       await addCanvasDisplay(page, "Table", seed.formName);

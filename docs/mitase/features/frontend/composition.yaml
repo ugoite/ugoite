@@ -249,3 +249,17 @@ features:
                 criterion: REQ-FE-070#criterion.source-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-source-navigator]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "keeps long navigator names available without exposing source identifiers" } }
+      - id: entry-query-metric-preview-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Studio EntryQuery metric journey adds a scalar Form field through the display picker and renders the live Entry value in the canvas preview.
+        targets:
+          - id: entry-query-metric-preview
+            adapter: typescript
+            path: e2e/composition-studio-journey.test.ts
+            selector: { kind: test, name: Composition Studio builds a reusable tool from existing knowledge }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.display-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio builds a reusable tool from existing knowledge } }
