@@ -106,6 +106,8 @@ features:
       - kind: satisfies
         criterion: REQ-COMP-006#criterion.work-state-is-transient
       - kind: satisfies
+        criterion: REQ-COMP-006#criterion.navigator-collapse-is-transient
+      - kind: satisfies
         criterion: REQ-FE-068#criterion.controller-owned-paging
       - kind: satisfies
         criterion: REQ-FE-068#criterion.local-horizontal-overflow
@@ -194,6 +196,15 @@ features:
         anchor: REQ-FE-068#criterion.semantic-row-ownership
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
+    - id: browser-data-navigator-collapse
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: collapses the source navigator and restores it without losing the selected detail
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.navigator-collapse-is-transient
     - id: browser-data-navigator-reorder
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx

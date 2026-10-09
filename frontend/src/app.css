@@ -4100,13 +4100,36 @@ a.tool {
   }
 }
 
-/* Data workspace: source navigator beside the per-source editor. The
- * navigator and editor stack to one column at narrow viewports. */
+/* Data workspace: a collapsible source navigator beside the selected source
+ * editor. Collapsing keeps the detail pane at the full available width. */
 .dataWorkspace {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   gap: var(--ui-spacing-lg);
   align-items: start;
+  min-width: 0;
+}
+.dataWorkspace--navigator-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+.dataWorkspaceNavigator {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+}
+.dataWorkspaceNavigator[hidden] {
+  display: none;
+}
+.dataWorkspaceNavigatorActions,
+.dataWorkspaceMainActions {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 44px;
+}
+.dataWorkspaceMain {
+  display: grid;
+  align-content: start;
+  gap: var(--ui-spacing-md);
   min-width: 0;
 }
 .dataWorkspaceEditor {
