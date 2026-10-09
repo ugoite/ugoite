@@ -50,6 +50,7 @@ import {
   draftSaveReadiness,
   ensureParametersForVariables,
   moveSource,
+  removeDisplay,
   removeParameter,
   removeSource,
   type SavedSqlRevisionUpdate,
@@ -59,6 +60,7 @@ import {
   setEntryQueryProjection,
   setEntryQuerySort,
   setSavedSqlRevision,
+  unplaceParameterControl,
   upsertParameter,
 } from "~/lib/composition-draft";
 import {
@@ -237,6 +239,30 @@ export function CompositionStudio(props: CompositionStudioProps) {
     setSheetOpen(false);
     setSelectedId(null);
     queueMicrotask(() => focusBlockSelect(invoking));
+  };
+
+  const removeSelectedBlock = () => {
+    const blockId = selectedId();
+    if (!blockId) return;
+    const result = blockId.startsWith("param:")
+      ? unplaceParameterControl(draft(), blockId.slice("param:".length))
+      : removeDisplay(draft(), blockId);
+    if (!result.ok) return;
+
+    setDraft(result.draft);
+    setSelectedId(null);
+    setSheetOpen(false);
+    queueMicrotask(() => {
+      const canvas = document.querySelector(".designCanvas");
+      const firstBlock = canvas?.querySelector<HTMLElement>(
+        "[data-block-id] button",
+      );
+      if (firstBlock) {
+        firstBlock.focus();
+        return;
+      }
+      canvas?.querySelector<HTMLElement>(".designAdd")?.focus();
+    });
   };
 
   // Leaving the sheet viewport unmounts the sheet; an orphaned open sheet
@@ -926,6 +952,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             fieldNames={fieldNames}
             fieldProjectable={fieldProjectable}
             onDraftChange={setDraft}
+            onRemove={removeSelectedBlock}
             onDataJump={jumpToSource}
           />
         </Show>
@@ -938,6 +965,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             fieldNames={fieldNames}
             fieldProjectable={fieldProjectable}
             onDraftChange={setDraft}
+            onRemove={removeSelectedBlock}
             onDataJump={jumpToSource}
             onClose={dismissSheet}
           />

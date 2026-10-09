@@ -86,6 +86,7 @@ const seedDraft = (): CompositionDraft => {
 const harnessCalls = vi.hoisted(() => ({
   draft: [] as CompositionDraft[],
   jump: [] as CompositionInspectorDataJump[],
+  remove: [] as (string | null)[],
 }));
 
 function Harness(
@@ -107,6 +108,7 @@ function Harness(
         harnessCalls.draft.push(next);
         setDraft(next);
       }}
+      onRemove={() => harnessCalls.remove.push(props.selectedId)}
       onDataJump={(jump) => harnessCalls.jump.push(jump)}
     />
   );
@@ -144,6 +146,7 @@ describe("CompositionInspector", () => {
     vi.clearAllMocks();
     harnessCalls.draft.length = 0;
     harnessCalls.jump.length = 0;
+    harnessCalls.remove.length = 0;
   });
 
   afterEach(() => {
@@ -170,6 +173,26 @@ describe("CompositionInspector", () => {
     expect(harnessCalls.jump).toHaveLength(0);
   });
 
+  it("exposes removal from the selected block Inspector with a human name", () => {
+    renderHarness("disp-3");
+
+    const remove = screen.getByRole("button", { name: "Remove Summary" });
+    expect(remove).toHaveAttribute("title", "Remove Summary");
+    fireEvent.click(remove);
+
+    expect(harnessCalls.remove).toEqual(["disp-3"]);
+  });
+
+  it("labels parameter removal as unplacing its canvas control", () => {
+    renderHarness(designBlockIdForParameter("month"));
+
+    const unplace = screen.getByRole("button", { name: "Unplace Month" });
+    expect(unplace).toHaveAttribute("title", "Unplace Month");
+    fireEvent.click(unplace);
+
+    expect(harnessCalls.remove).toEqual(["param:month"]);
+  });
+
   it("shows only resolved Form labels for metric values", () => {
     const added = addMetricDisplay(seedDraft(), "src-2", { fieldId: 1 });
     if (!added.ok || !added.draftId) throw new Error("expected metric block");
@@ -181,6 +204,7 @@ describe("CompositionInspector", () => {
         fieldNames={(_formId, fieldId) =>
           fieldId === 1 ? "Expense type" : undefined}
         onDraftChange={() => {}}
+        onRemove={() => {}}
         onDataJump={() => {}}
       />
     ));

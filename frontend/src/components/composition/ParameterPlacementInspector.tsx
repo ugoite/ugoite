@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import type { JSX } from "solid-js";
 import {
   type InspectorApply,
   InspectorShell,
@@ -19,6 +20,7 @@ export function ParameterPlacementInspector(props: {
   draft: CompositionDraft;
   parameterId: string;
   apply: InspectorApply;
+  actions?: JSX.Element;
 }) {
   const definition = () =>
     props.draft.parameters.find((parameter) =>
@@ -28,6 +30,7 @@ export function ParameterPlacementInspector(props: {
     <InspectorShell
       icon="canvas-input"
       title={definition()?.label ?? props.parameterId}
+      actions={props.actions}
     >
       <Show when={definition()}>
         {(entry) => (

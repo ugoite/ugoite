@@ -304,6 +304,65 @@ describe("CompositionStudioMobile", () => {
     expect(
       screen.getByRole("heading", { name: "Metric" }),
     ).toBeInTheDocument();
+    expect(
+      container.querySelector(
+        '[data-block-id="disp-1"] .designBlockActions [aria-label^="Remove "]',
+      ),
+    ).toBeNull();
+    expect(
+      container.querySelector(".studioDesign aside")?.querySelector(
+        '[aria-label="Remove Total"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it("removes a selected display from the narrow Inspector sheet and returns focus to the canvas", async () => {
+    setViewportWidth(390);
+    const { container } = renderStudio();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
+    const dialog = await screen.findByRole("dialog", { name: "Metric" });
+    expect(
+      within(dialog).getByRole("button", { name: "Remove Total" }),
+    ).toBeEnabled();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Remove Total" }),
+    );
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Select Total" }),
+    ).toBeNull();
+    await waitFor(() => {
+      expect(
+        container.querySelector(".designCanvas [data-block-id] button"),
+      ).toHaveFocus();
+    });
+
+    // Removing a display leaves its source available in the Data workspace.
+    fireEvent.click(modeRadios().data);
+    await screen.findByRole("heading", { name: "Monthly totals" });
+  });
+
+  it("unplaces a parameter from the narrow Inspector sheet but keeps its declaration", async () => {
+    setViewportWidth(390);
+    renderStudio();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select Month" }));
+    const dialog = await screen.findByRole("dialog", { name: "Month" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Unplace Month" }),
+    );
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Select Month" }),
+    ).toBeNull();
+    fireEvent.click(modeRadios().data);
+    fireEvent.click(screen.getByRole("tab", { name: "Parameters" }));
+    expect(
+      screen.getByRole("button", { name: "Remove Month" }),
+    ).toBeInTheDocument();
   });
 
   it("forces Design when crossing below the Split gate", () => {
@@ -409,6 +468,12 @@ describe("CompositionStudioMobile", () => {
     );
     expect(css).toMatch(
       /\.ui-backdrop\.studioSheetBackdrop\s*\{[^}]*align-items:\s*end/,
+    );
+    expect(css).toMatch(
+      /\.studioInspectorTitleBar\s*\{[^}]*justify-content:\s*space-between/,
+    );
+    expect(css).toMatch(
+      /\.studioInspectorTitleBar \.studioInspectorTitle\s*\{[^}]*min-width:\s*0/,
     );
   });
 });
