@@ -93,6 +93,7 @@ function Harness(
     initial: CompositionDraft;
     selectedId: string | null;
     fieldNames?: (formId: string, fieldId: number) => string | undefined;
+    fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
   },
 ) {
   const [draft, setDraft] = createSignal(props.initial);
@@ -101,6 +102,7 @@ function Harness(
       draft={draft()}
       selectedId={props.selectedId}
       fieldNames={props.fieldNames}
+      fieldProjectable={props.fieldProjectable}
       onDraftChange={(next) => {
         harnessCalls.draft.push(next);
         setDraft(next);
@@ -114,12 +116,17 @@ const renderHarness = (
   selectedId: string | null,
   initial?: CompositionDraft,
   fieldNames?: (formId: string, fieldId: number) => string | undefined,
+  fieldProjectable?: (
+    formId: string,
+    fieldId: number,
+  ) => boolean | undefined,
 ) =>
   render(() => (
     <Harness
       initial={initial ?? seedDraft()}
       selectedId={selectedId}
       fieldNames={fieldNames}
+      fieldProjectable={fieldProjectable}
     />
   ));
 
@@ -191,7 +198,13 @@ describe("CompositionInspector", () => {
     renderHarness(
       "disp-1",
       undefined,
-      (_formId, fieldId) => fieldId === 1 ? "Expense type" : undefined,
+      (_formId, fieldId) =>
+        fieldId === 1
+          ? "Expense type"
+          : fieldId === 2
+          ? "Unprojectable amount"
+          : undefined,
+      (_formId, fieldId) => fieldId !== 2,
     );
 
     // The entry source shares no value field: first schema field wins.
@@ -204,6 +217,10 @@ describe("CompositionInspector", () => {
       source: "src-2",
       value_field: { kind: "entry_field", field_id: 1 },
     });
+    expect(
+      Array.from(screen.getByLabelText("Value").querySelectorAll("option"))
+        .map((option) => option.textContent),
+    ).toEqual(["Expense type"]);
 
     // The backup SQL source still declares total: the value field is kept.
     fireEvent.change(screen.getByLabelText("Source"), {

@@ -22,6 +22,7 @@ export interface CompositionInspectorProps {
   /** Transient canvas selection; the inspector renders one block only. */
   selectedId: string | null;
   fieldNames?: CompositionFieldNames;
+  fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
   /** Single draft mutation channel shared with the canvas. */
   onDraftChange: (draft: CompositionDraft) => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
@@ -78,6 +79,7 @@ export function CompositionInspector(props: CompositionInspectorProps) {
               draft={props.draft}
               display={(entry() as { display: DraftDisplay }).display}
               fieldNames={props.fieldNames}
+              fieldProjectable={props.fieldProjectable}
               onDraftChange={props.onDraftChange}
               onDataJump={props.onDataJump}
             />
@@ -98,6 +100,7 @@ function ComponentInspector(props: {
   draft: CompositionDraft;
   display: DraftDisplay;
   fieldNames?: CompositionFieldNames;
+  fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
   onDraftChange: (draft: CompositionDraft) => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
 }) {
@@ -125,6 +128,7 @@ function ComponentInspector(props: {
             draft={props.draft}
             display={display()}
             fieldNames={props.fieldNames}
+            fieldProjectable={props.fieldProjectable}
             apply={apply}
             onDataJump={props.onDataJump}
           />

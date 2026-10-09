@@ -924,6 +924,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             draft={draft()}
             selectedId={selectedId()}
             fieldNames={fieldNames}
+            fieldProjectable={fieldProjectable}
             onDraftChange={setDraft}
             onDataJump={jumpToSource}
           />
@@ -935,6 +936,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
             draft={draft()}
             selectedId={activeId()}
             fieldNames={fieldNames}
+            fieldProjectable={fieldProjectable}
             onDraftChange={setDraft}
             onDataJump={jumpToSource}
             onClose={dismissSheet}

@@ -292,7 +292,8 @@ components:
       label: optional-display-label
       data: existing-source-picker-only
       value: entry-field-or-sql-column-no-inference
-      entry_field_label: transient-form-label-or-localized-source-schema-index-never-id
+      entry_field_candidates: projectable-scalar-fields-with-resolved-human-form-names-only
+      entry_field_label: transient-form-label-for-selectable-values-never-id
     table_fields:
       label: optional-display-label
       data: existing-source-picker-only

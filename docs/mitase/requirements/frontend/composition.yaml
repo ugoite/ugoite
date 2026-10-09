@@ -367,12 +367,16 @@ requirements:
           - id: studio-metric-inspector-field-labels
             adapter: typescript
             path: frontend/src/components/CompositionInspector.test.tsx
-            selector: { kind: test, name: "shows Form labels instead of field IDs for metric values" }
+            selector: { kind: test, name: "maps metric source changes to component source and value field" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-inspector]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "shows Form labels instead of field IDs for metric values" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "maps metric source changes to component source and value field" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.entry-query-field-labels
+                covers: [FEAT-FE-014#binding.frontend/target.composition-inspector]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "maps metric source changes to component source and value field" } }
           - id: studio-read-field-labels
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
