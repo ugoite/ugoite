@@ -316,7 +316,7 @@ requirements:
         governed_by: [POL-000#rule.foundation-precedence, POL-002#rule.governance]
       - id: navigator-collapse-is-transient
         kind: behavior
-        statement: The Data workspace keeps a persistent left source rail beside the selected detail on desktop and a closable overlay navigator on narrow viewports. Selecting a source on narrow viewports closes the navigator while preserving the detail selection. The Split pane can collapse and restore its source list without losing selection. Navigator visibility and source selection are transient Work and are not persisted in the Composition document.
+        statement: The Data workspace keeps a persistent left source rail beside the selected detail on desktop and a closable overlay navigator on narrow viewports. Selecting a source on narrow viewports closes the navigator while preserving the detail selection and focusing the visible control that reopens the source list. A Design-to-Data jump on narrow viewports shows the selected detail and focuses that reopen control instead of a row in the closed navigator. The Split pane can collapse and restore its source list without losing selection. Navigator visibility and source selection are transient Work and are not persisted in the Composition document.
         governed_by: [POL-000#rule.foundation-precedence, POL-002#rule.governance]
       - id: source-actions-are-navigator-owned
         kind: behavior

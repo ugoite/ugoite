@@ -140,6 +140,12 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
       setNavigatorOpen(!media.matches || props.selectedSourceId === null);
     };
     syncViewport();
+    if (media.matches && props.selectedSourceId !== null) {
+      // A data jump can mount the workspace with its target already selected.
+      // The mobile source drawer starts closed, so focus its visible reopen
+      // control instead of a source row inside the hidden drawer.
+      queueMicrotask(() => showNavigatorButton?.focus());
+    }
     if (typeof media.addEventListener === "function") {
       media.addEventListener("change", syncViewport);
       onCleanup(() => media.removeEventListener("change", syncViewport));

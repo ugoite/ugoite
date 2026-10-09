@@ -609,8 +609,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
   // Inspector data jump: select the block's source in the Data workspace
   // navigator, scroll it into view, and focus its activation control. The
-  // navigator row stays the jump target behind the workspace editors; RA7
-  // split sync reuses the same typed jump payload.
+  // navigator row is the jump target on desktop; on mobile the selected
+  // source detail is shown after the navigator closes, so focus its toggle.
+  // RA7 split sync reuses the same typed jump payload.
   const sourceRowEls = new Map<string, HTMLDivElement>();
   const registerSourceRow = (
     sourceDraftId: string,
@@ -634,14 +635,13 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const jumpToSource = (jump: CompositionInspectorDataJump) => {
     setExpandedId(jump.sourceDraftId);
     previewHandle.ensureSource(jump.sourceDraftId);
-    // From the narrow bottom sheet the jump target is not rendered behind
-    // the sheet: dismiss the sheet and show the Data workspace, then focus
-    // the jumped row once it mounts.
+    // From the narrow bottom sheet dismiss the sheet and show the Data
+    // workspace. Its mobile navigator closes around the selected detail and
+    // moves focus to the control that can reopen the source list.
     if (sheetViewport() && sheetOpen()) {
       setSheetOpen(false);
       setSelectedId(null);
       setMode("data");
-      queueMicrotask(() => focusSourceRow(jump.sourceDraftId));
       return;
     }
     focusSourceRow(jump.sourceDraftId);

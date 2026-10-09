@@ -387,7 +387,7 @@ describe("CompositionStudioMobile", () => {
 
   it("moves the sheet data jump to the Data workspace on narrow viewports", async () => {
     setViewportWidth(390);
-    renderStudio();
+    const { container } = renderStudio();
 
     fireEvent.click(screen.getByRole("button", { name: "Select Total" }));
     const dialog = await screen.findByRole("dialog", { name: "Metric" });
@@ -399,9 +399,11 @@ describe("CompositionStudioMobile", () => {
     await screen.findByRole("heading", { name: "Monthly totals" });
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Monthly totals" }),
+        screen.getByRole("button", { name: "Show data sources" }),
       ).toHaveFocus();
     });
+    expect(container.querySelector(".dataWorkspaceNavigator"))
+      .toHaveAttribute("hidden");
   });
 
   it("opens the sheet for a freshly inserted block on narrow viewports", async () => {
