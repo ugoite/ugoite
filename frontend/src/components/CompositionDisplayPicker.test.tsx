@@ -49,6 +49,13 @@ const jsonOnlySource: DraftSource = {
   variables: {},
 };
 
+const rowReferenceOnlySource: DraftSource = {
+  ...entrySource,
+  draftId: "src-row-reference",
+  name: "Relations",
+  fieldSchema: [{ field_id: 102, field_type: "row_reference" }],
+};
+
 const stylesheet = () => readFileSync(join(__dirname, "..", "app.css"), "utf8");
 
 describe("CompositionDisplayPicker", () => {
@@ -175,7 +182,7 @@ describe("CompositionDisplayPicker", () => {
     const onAdd = vi.fn();
     render(() => (
       <CompositionDisplayPicker
-        sources={[jsonOnlySource]}
+        sources={[jsonOnlySource, rowReferenceOnlySource]}
         onAdd={onAdd}
         onClose={() => {}}
       />
@@ -186,12 +193,29 @@ describe("CompositionDisplayPicker", () => {
     const disabledRow = within(dialog).getByRole("button", {
       name: "Blobs",
     });
+    const disabledRowReference = within(dialog).getByRole("button", {
+      name: "Relations",
+    });
     expect(disabledRow).toBeDisabled();
     expect(disabledRow.textContent).toMatch(/No scalar values/);
+    expect(disabledRowReference).toBeDisabled();
+    expect(disabledRowReference.textContent).toMatch(/No scalar values/);
     expect(
       within(dialog).queryByRole("button", { name: "Add" }),
     ).toBeNull();
     expect(onAdd).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Table" }));
+    const tableSource = within(dialog).getByRole("button", {
+      name: "Relations",
+    });
+    expect(tableSource).toBeEnabled();
+    fireEvent.click(tableSource);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    expect(onAdd).toHaveBeenCalledWith({
+      kind: "table",
+      sourceDraftId: rowReferenceOnlySource.draftId,
+    });
   });
 
   it("offers only already projected EntryQuery fields at the projection limit", () => {
@@ -226,7 +250,9 @@ describe("CompositionDisplayPicker", () => {
 
     expect(options).toHaveLength(64);
     expect(options.at(-1)).toHaveTextContent("Field 64");
-    expect(options.map((option) => option.textContent)).not.toContain("Field 65");
+    expect(options.map((option) => option.textContent)).not.toContain(
+      "Field 65",
+    );
     expect(dialog).not.toHaveTextContent("65");
   });
 

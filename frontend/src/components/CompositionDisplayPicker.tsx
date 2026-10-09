@@ -58,6 +58,7 @@ const nonScalarFieldTypes = new Set([
   "binary",
   "list",
   "object_list",
+  "row_reference",
   "asset_reference",
 ]);
 

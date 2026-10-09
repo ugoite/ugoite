@@ -112,6 +112,7 @@ components:
     kind_selection: Table/Metric-tabs-inside-picker
     sequence: [kind, source, metric-value-field-only-for-metric, optional-label, add]
     source_selection: visibly-pressed-row-preserved-when-compatible-across-tabs
+    entry_query_metric_candidates: scalar-types-only-excludes-binary-list-object-list-row-reference-asset-reference
     entry_query_field_labels: transient-form-label-or-distinct-localized-source-schema-index
     internal_identifiers: field-source-entry-revision-ids-never-rendered
     form_metadata: authorized-form-list-transient-never-stored
