@@ -58,7 +58,7 @@ components:
       type: segmented-control
       title: Studio mode
       ownership: single-operative-control-for-workspace-arrangement-only
-      description: True modes switch the arrangement only with shared draft, preview, and selection state. Design shows the finished shape only (canvas plus inspector, diagnostics strip); Data shows the fetch definition only (workspace, Parameters once a source exists, Tags); Split pairs the canvas with the scoped data pane. A blank draft guides with one Add-data action and no prose.
+      description: True modes switch the arrangement only with shared draft, preview, and selection state. Design shows the finished shape only (canvas plus inspector, diagnostics strip); Data shows one localized Sources, Parameters, or Tags tab at a time (Parameters appears once a source exists); Split pairs the canvas with the scoped data pane. A blank draft guides with one Add-data action and no prose.
     - id: studio-diagnostics
       type: query-results
       title: Diagnostics
@@ -87,6 +87,13 @@ components:
       reorder: keyboard-operable-move-up-down
       remove: blocked-while-displays-reference-with-reason
       revision_identity: advanced-disclosure-only
+    - id: studio-data-mode-tabs
+      type: tab-list
+      title: Sources, Parameters, Tags
+      scope: data-mode-only
+      initial_selection: Sources
+      parameter_disclosure: only-after-a-source-exists
+      state: transient-work-never-saved
     - id: studio-add-data
       type: button
       title: Add data
@@ -118,7 +125,7 @@ components:
     - id: studio-parameters
       type: list
       title: Parameters
-      scope: data-mode-only-renders-only-with-at-least-one-source
+      scope: data-mode-parameters-tab-renders-only-with-at-least-one-source
       source: draft parameters provisioned from Saved SQL variable types
       selection: rows-with-inline-editors
       row_label: declared-human-label-then-user-authored-parameter-name
@@ -134,7 +141,7 @@ components:
     - id: studio-tags
       type: form
       title: Tags
-      scope: data-mode-only
+      scope: data-mode-tags-tab-only
       semantics: entry-metadata-tags
       source: comma-or-space-separated text parsed into draft tags
     - id: studio-preview

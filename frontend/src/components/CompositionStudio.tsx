@@ -129,6 +129,9 @@ export function CompositionStudio(props: CompositionStudioProps) {
   );
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [displayPickerOpen, setDisplayPickerOpen] = createSignal(false);
+  const [dataPanel, setDataPanel] = createSignal<
+    "sources" | "parameters" | "tags"
+  >("sources");
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
   // Transient canvas Work: selected block identity for the inspector and
   // the pending insertion target for the display picker.
@@ -669,6 +672,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // Preview selectors stay empty while the draft has no sources, so a
   // removed last source never leaves a stale preview on screen.
   const hasSources = () => draft().sources.length > 0;
+  createEffect(() => {
+    if (!hasSources() && dataPanel() === "parameters") {
+      setDataPanel("sources");
+    }
+  });
   // A blank draft carries no sources and no blocks: the canvas area offers
   // the single Add-data action instead of the normal canvas, so beginners
   // get one path forward with no prose. The first source returns the normal
@@ -743,11 +751,11 @@ export function CompositionStudio(props: CompositionStudioProps) {
   // clearing the selection (or leaving the sheet viewport) dismisses it.
   const sheetSelection = (): string | null =>
     sheetViewport() && sheetOpen() ? selectedId() : null;
-  const renderDataWorkspace = () => (
+  const renderDataWorkspace = (headingId = dataHeadingId) => (
     <CompositionDataWorkspace
       spaceId={spaceId()}
       draft={draft()}
-      headingId={dataHeadingId}
+      headingId={headingId}
       selectedSourceId={expandedId()}
       onSelectSource={toggleExpanded}
       onMoveSource={moveDraftSource}
@@ -957,38 +965,96 @@ export function CompositionStudio(props: CompositionStudioProps) {
               {t("composition.studioAddData")}
             </button>
           </div>
-          {renderDataWorkspace()}
-        </section>
-        {
-          /* Parameters disclose progressively: the section renders only once
-          a source exists, and only in Data mode, so an empty draft opens
-          with one path forward instead of every section at once. */
-        }
-        <Show when={hasSources()}>
-          <section class="section" aria-labelledby={parametersHeadingId}>
-            <h2 id={parametersHeadingId}>
-              {t("composition.studioParameters")}
-            </h2>
-            <CompositionParameterList
-              parameters={draft().parameters}
-              headingId={parametersHeadingId}
-              onAdd={addDraftParameter}
-              onUpdate={updateDraftParameter}
-              onRemove={removeDraftParameter}
+          <div
+            class="tabs studioDataTabs"
+            role="tablist"
+            aria-labelledby={dataHeadingId}
+          >
+            <button
+              type="button"
+              id="studio-data-sources-tab"
+              role="tab"
+              aria-selected={dataPanel() === "sources"}
+              aria-controls="studio-data-sources-panel"
+              class="tab"
+              classList={{ active: dataPanel() === "sources" }}
+              onClick={() => setDataPanel("sources")}
+            >
+              {t("composition.studioSources")}
+            </button>
+            <Show when={hasSources()}>
+              <button
+                type="button"
+                id="studio-data-parameters-tab"
+                role="tab"
+                aria-selected={dataPanel() === "parameters"}
+                aria-controls="studio-data-parameters-panel"
+                class="tab"
+                classList={{ active: dataPanel() === "parameters" }}
+                onClick={() => setDataPanel("parameters")}
+              >
+                {t("composition.studioParameters")}
+              </button>
+            </Show>
+            <button
+              type="button"
+              id="studio-data-tags-tab"
+              role="tab"
+              aria-selected={dataPanel() === "tags"}
+              aria-controls="studio-data-tags-panel"
+              class="tab"
+              classList={{ active: dataPanel() === "tags" }}
+              onClick={() => setDataPanel("tags")}
+            >
+              {t("composition.studioTags")}
+            </button>
+          </div>
+          <div
+            id="studio-data-sources-panel"
+            role="tabpanel"
+            aria-labelledby="studio-data-sources-tab"
+            hidden={dataPanel() !== "sources"}
+          >
+            {renderDataWorkspace("studio-data-sources-tab")}
+          </div>
+          <Show when={hasSources()}>
+            <section
+              id="studio-data-parameters-panel"
+              role="tabpanel"
+              aria-labelledby="studio-data-parameters-tab"
+              hidden={dataPanel() !== "parameters"}
+              class="section"
+            >
+              <h2 id={parametersHeadingId}>
+                {t("composition.studioParameters")}
+              </h2>
+              <CompositionParameterList
+                parameters={draft().parameters}
+                headingId={parametersHeadingId}
+                onAdd={addDraftParameter}
+                onUpdate={updateDraftParameter}
+                onRemove={removeDraftParameter}
+              />
+            </section>
+          </Show>
+          <section
+            id="studio-data-tags-panel"
+            role="tabpanel"
+            aria-labelledby="studio-data-tags-tab"
+            hidden={dataPanel() !== "tags"}
+            class="section"
+          >
+            <h2 id={tagsHeadingId}>{t("composition.studioTags")}</h2>
+            <input
+              class="ui-input"
+              aria-label={t("composition.studioTags")}
+              value={draft().tags.join(", ")}
+              onInput={(event) =>
+                setDraft(
+                  setDraftTags(draft(), parseTags(event.currentTarget.value)),
+                )}
             />
           </section>
-        </Show>
-        <section class="section" aria-labelledby={tagsHeadingId}>
-          <h2 id={tagsHeadingId}>{t("composition.studioTags")}</h2>
-          <input
-            class="ui-input"
-            aria-label={t("composition.studioTags")}
-            value={draft().tags.join(", ")}
-            onInput={(event) =>
-              setDraft(
-                setDraftTags(draft(), parseTags(event.currentTarget.value)),
-              )}
-          />
         </section>
       </Show>
 

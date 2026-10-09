@@ -12,7 +12,7 @@ requirements:
     criteria:
       - id: structure-first-authoring
         kind: behavior
-        statement: The Studio steady state shows the operative structure (tool name, Data, Display, Parameters, Tags, Preview, Save) without explanatory paragraphs; prose appears only to instruct the next ambiguous operation, recover from errors, warn, disambiguate unavailability, or show one empty-state next action.
+        statement: The Studio steady state shows the operative structure (tool name, Data, Display, Parameters, Tags, Preview, Save) without explanatory paragraphs; Data mode separates Sources, Parameters, and Tags into localized tabs, with Parameters shown only when a source exists; prose appears only to instruct the next ambiguous operation, recover from errors, warn, disambiguate unavailability, or show one empty-state next action.
         governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance]
       - id: no-persistent-explanatory-copy
         kind: behavior

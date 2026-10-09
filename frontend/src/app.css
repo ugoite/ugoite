@@ -3899,6 +3899,7 @@ a.tool {
 }
 .designPalette {
   position: relative;
+  box-sizing: border-box;
   border: var(--ui-border-width) solid var(--ui-border);
   border-radius: var(--ui-radius-lg);
   background: var(--ui-surface-2);
@@ -3906,8 +3907,9 @@ a.tool {
   padding: var(--ui-spacing-md);
   display: grid;
   gap: var(--ui-spacing-sm);
-  width: max-content;
-  max-width: min(320px, 100%);
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   z-index: 1;
 }
 .designPaletteEntries {

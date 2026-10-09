@@ -455,11 +455,33 @@ test.describe("Composition Studio Journey", () => {
         }),
       ).toBeVisible();
 
-      // Parameter defaults edit in Data mode, where Parameters live, then
-      // the Design canvas carries the display assertions.
+      // Data mode opens on Sources and keeps Parameters and Tags in their own
+      // tabs. Capture the novice path before editing parameter defaults.
       await page.getByRole("radio", { name: "Data", exact: true }).click();
+      const dataTabs = page.getByRole("tablist", { name: "Data" });
+      await expect(
+        dataTabs.getByRole("tab", { name: "Sources", exact: true }),
+      ).toHaveAttribute("aria-selected", "true");
+      await expect(
+        page.getByRole("button", { name: seed.savedSqlName, exact: true }),
+      ).toBeVisible();
+      await test.info().attach("composition-studio-data-sources", {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: "image/png",
+      });
+      await dataTabs.getByRole("tab", { name: "Parameters", exact: true })
+        .click();
+      await test.info().attach("composition-studio-data-parameters", {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: "image/png",
+      });
       await page.getByLabel("Default for month_start").fill(seed.monthStart);
       await page.getByLabel("Default for month_end").fill(seed.monthEnd);
+      await dataTabs.getByRole("tab", { name: "Tags", exact: true }).click();
+      await expect(page.getByLabel("Tags", { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: seed.savedSqlName, exact: true }),
+      ).toBeHidden();
       await page.getByRole("radio", { name: "Design", exact: true }).click();
       await expect(
         page.getByRole("heading", { name: "Total", exact: true }),
@@ -722,9 +744,12 @@ test.describe("Composition Studio Journey", () => {
       await expect(
         page.getByRole("heading", { name: "Data", exact: true }),
       ).toBeVisible();
+      const dataTabs = page.getByRole("tablist", { name: "Data" });
       await expect(
         page.getByRole("button", { name: seed.savedSqlName, exact: true }),
       ).toBeVisible();
+      await dataTabs.getByRole("tab", { name: "Parameters", exact: true })
+        .click();
       await expect(page.getByLabel("Default for month_start")).toHaveValue(
         seed.monthStart,
       );

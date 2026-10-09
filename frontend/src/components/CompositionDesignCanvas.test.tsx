@@ -238,7 +238,7 @@ describe("CompositionDesignCanvas", () => {
     });
   });
 
-  it("opens the palette as a modal dialog with focus trap and focus return", async () => {
+  it("opens a readable viewport-capped modal palette with focus trap and focus return", async () => {
     renderHarness();
 
     const gap = screen.getAllByRole("button", { name: "Add block" })[0];
@@ -249,6 +249,13 @@ describe("CompositionDesignCanvas", () => {
     const dialog = screen.getByRole("dialog", { name: "Add block" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(dialog.parentElement).toHaveClass("ui-backdrop");
+    const css = stylesheet();
+    expect(css).toMatch(
+      /\.designPalette\s*\{[^}]*width:\s*min\(560px,\s*calc\(100vw - 32px\)\)/,
+    );
+    expect(css).toMatch(
+      /\.designPalette\s*\{[^}]*max-height:\s*calc\(100dvh - 32px\);[^}]*overflow-y:\s*auto/,
+    );
 
     // Focus moves into the dialog on open.
     await waitFor(() => {

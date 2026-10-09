@@ -60,6 +60,23 @@ components:
       reorder: keyboard-operable-move-up-down
       remove: blocked-while-displays-reference-with-reason
       revision_identity: advanced-disclosure-only
+    - id: studio-data-mode-tabs
+      type: tab-list
+      title: Sources, Parameters, Tags
+      scope: data-mode-only
+      initial_selection: Sources
+      parameter_disclosure: only-after-a-source-exists
+      state: transient-work-never-saved
+    - id: studio-parameters
+      type: list
+      title: Parameters
+      scope: data-mode-parameters-tab-renders-only-with-at-least-one-source
+      source: draft parameters provisioned from Saved SQL variable types and restored from the lint-normalized document
+      selection: rows-with-inline-editors
+      row_label: declared-human-label-then-user-authored-parameter-name
+      row_metadata: parameter-type
+      remove: guarded-remove-with-short-referenced-reason
+      binding: existing-composition-parameter-grammar-by-reference
     - id: studio-add-data
       type: button
       title: Add data
@@ -93,6 +110,7 @@ components:
     - id: studio-tags
       type: form
       title: Tags
+      scope: data-mode-tags-tab-only
       semantics: entry-metadata-tags
       source: comma-or-space-separated text parsed into draft tags, prefilled from the lint-normalized document
     - id: studio-preview
