@@ -118,6 +118,8 @@ features:
       - kind: satisfies
         criterion: REQ-FE-068#criterion.composition-property-timestamp-separation
       - kind: satisfies
+        criterion: REQ-FE-068#criterion.composition-system-form-id-hidden
+      - kind: satisfies
         criterion: REQ-FE-068#criterion.local-horizontal-overflow
     - id: browser-home-route
       adapter: typescript

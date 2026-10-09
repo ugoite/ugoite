@@ -196,4 +196,23 @@ describe("entryQueryDisplayColumns", () => {
     expect(columns.some((column) => column.text(row) === "internal-form-uuid"))
       .toBe(false);
   });
+
+  it("keeps the top-level Form UUID out of all-Forms columns and cells", () => {
+    const allFormsSource = source({
+      kind: "fields",
+      fields: [{ kind: "form" }],
+    });
+    allFormsSource.request.query.scope = { kind: "all" };
+    const row = {
+      ...entryRow(),
+      form_id: "top-level-form-uuid",
+      properties: { name: "Travel" },
+    };
+    const columns = entryQueryDisplayColumns(allFormsSource, [row]);
+
+    expect(columns.some((column) => column.label === row.form_id)).toBe(false);
+    expect(columns.some((column) => column.text(row) === row.form_id)).toBe(
+      false,
+    );
+  });
 });
