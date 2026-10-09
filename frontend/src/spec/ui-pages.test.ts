@@ -267,6 +267,101 @@ describe("UI spec YAML registry", () => {
     );
   });
 
+  it("REQ-FE-040: declares the Login route contract", () => {
+    const loginPath = path.join(componentsDir, "login.yaml");
+    const login = parse(readFileSync(loginPath, "utf8")) as {
+      component_group?: Record<string, unknown>;
+      components?: Array<Record<string, unknown>>;
+    };
+    const components = login.components ?? [];
+    const task = components.find(({ id }) => id === "login-task");
+    const passkey = components.find(({ id }) =>
+      id === "passkey-primary-action"
+    );
+    const providers = components.find(({ id }) =>
+      id === "configured-provider-actions"
+    );
+    const details = components.find(({ id }) => id === "login-failure-details");
+    const recovery = components.find(({ id }) =>
+      id === "account-recovery-link"
+    );
+    const setup = components.find(({ id }) => id === "setup-continuation");
+
+    expect(login.component_group).toMatchObject({
+      id: "login",
+      routes: ["/login"],
+    });
+    expect(task).toMatchObject({
+      type: "authentication-page",
+      implementation: "frontend/src/routes/login.tsx",
+      tests: "frontend/src/routes/login.test.tsx",
+      visible_identity: "Ugoite-brand-only",
+      order: [
+        "passkey-primary-action",
+        "configured-provider-actions",
+        "account-recovery-link",
+      ],
+      states: {
+        initial: "localized-loading-status",
+        authenticating: "localized-status",
+        "configuration-failure": "one-inline-alert-with-retry",
+        "provider-list-failure": "one-inline-alert-with-retry",
+        "authentication-failure": "one-inline-alert-with-retry",
+        "passkey-cancellation": "return-to-ready-state-without-error",
+      },
+    });
+    expect(passkey).toMatchObject({
+      type: "button",
+      label: "loginPage.signInWithPasskey",
+      primary: true,
+    });
+    expect(providers).toMatchObject({
+      type: "alternate-authentication-actions",
+      visible_when: "configured-provider-list-is-nonempty",
+      label: "loginPage.continueWithProvider",
+      issuer_presentation: "localized-host-and-nonroot-path",
+      provider_identifier_visibility: "hidden",
+    });
+    expect(details).toMatchObject({
+      type: "technical-details",
+      visible_when: "configuration-provider-list-or-authentication-fails",
+      disclosure: "collapsed-by-default",
+    });
+    expect(recovery).toMatchObject({
+      type: "link",
+      label: "loginPage.lostPasskey",
+      destination: "/recover/account",
+      preserves: "safe-next-path",
+    });
+    expect(setup).toMatchObject({
+      type: "navigation",
+      trigger: "successful-authentication-with-uninitialized-service",
+      destination: "/setup",
+      preserves: "safe-next-path",
+    });
+
+    expect(
+      statSync(path.join(repoRoot, String(task?.implementation))).isFile(),
+    ).toBe(true);
+    const loginTests = readFileSync(
+      path.join(repoRoot, String(task?.tests)),
+      "utf8",
+    );
+    for (
+      const selector of [
+        "REQ-FE-069: renders only the logo and authentication actions",
+        "shows configured OIDC login after the Passkey primary action",
+        "lets users retry when OIDC provider options fail to load",
+        "REQ-UX-RESP-001: exposes a single sign-in task with one inline error",
+        "REQ-FE-069: sends first-run authentication to setup",
+      ]
+    ) {
+      expect(loginTests, `login route test selector: ${selector}`).toContain(
+        selector,
+      );
+    }
+  });
+
   it("REQ-FE-040: loads UI page specs", () => {
     const pages = loadPages();
     expect(pages.length).toBeGreaterThan(0);
@@ -494,7 +589,9 @@ describe("UI spec YAML registry", () => {
           };
           expect(consumers.space).toMatchObject({
             wrapper: section.component,
-            page: `${String(page?.spec.page?.id)}#section.${String(section.id)}`,
+            page: `${String(page?.spec.page?.id)}#section.${
+              String(section.id)
+            }`,
           });
         }
       }

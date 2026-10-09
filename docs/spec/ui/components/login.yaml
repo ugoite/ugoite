@@ -1,0 +1,47 @@
+version: "0.1"
+updated: "2026-10-09"
+component_group:
+  id: login
+  title: Login
+  routes: [/login]
+  notes: Keep the page to one sign-in task; add supporting copy only when it helps recover or explain a failure.
+components:
+  - id: login-task
+    type: authentication-page
+    implementation: frontend/src/routes/login.tsx
+    tests: frontend/src/routes/login.test.tsx
+    visible_identity: Ugoite-brand-only
+    order: [passkey-primary-action, configured-provider-actions, account-recovery-link]
+    states:
+      initial: localized-loading-status
+      authenticating: localized-status
+      configuration-failure: one-inline-alert-with-retry
+      provider-list-failure: one-inline-alert-with-retry
+      authentication-failure: one-inline-alert-with-retry
+      passkey-cancellation: return-to-ready-state-without-error
+  - id: passkey-primary-action
+    type: button
+    label: loginPage.signInWithPasskey
+    primary: true
+    unavailable_configuration_action: retry-options-load
+  - id: configured-provider-actions
+    type: alternate-authentication-actions
+    visible_when: configured-provider-list-is-nonempty
+    label: loginPage.continueWithProvider
+    issuer_presentation: localized-host-and-nonroot-path
+    provider_identifier_visibility: hidden
+  - id: login-failure-details
+    type: technical-details
+    visible_when: configuration-provider-list-or-authentication-fails
+    disclosure: collapsed-by-default
+    content: technical-failure-detail
+  - id: account-recovery-link
+    type: link
+    label: loginPage.lostPasskey
+    destination: /recover/account
+    preserves: safe-next-path
+  - id: setup-continuation
+    type: navigation
+    trigger: successful-authentication-with-uninitialized-service
+    destination: /setup
+    preserves: safe-next-path

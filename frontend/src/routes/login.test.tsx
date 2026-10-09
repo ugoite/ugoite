@@ -97,10 +97,13 @@ describe("/login continuation", () => {
     }]);
     render(() => <LoginRoute />);
 
+    const providerAction = await screen.findByRole("button", {
+      name: "Continue with issuer.example",
+    });
+    expect(providerAction).toBeInTheDocument();
+    expect(screen.queryByText("provider-1")).not.toBeInTheDocument();
     fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Continue with issuer.example",
-      }),
+      providerAction,
     );
 
     expect(authApi.loginWithOidc).toHaveBeenCalledWith(
@@ -108,6 +111,40 @@ describe("/login continuation", () => {
       undefined,
       "/spaces/demo/dashboard?tab=recent",
     );
+  });
+
+  it("lets users retry when OIDC provider options fail to load", async () => {
+    vi.mocked(authApi.getConfig).mockResolvedValue({
+      status: "active",
+      nodeId: "node",
+      issuer: "http://localhost:3000",
+      rpId: "localhost",
+      passkey: true,
+      oidc: true,
+    });
+    vi.mocked(authApi.listOidcProviders)
+      .mockRejectedValueOnce(new Error("provider service unavailable"))
+      .mockResolvedValueOnce([{
+        provider_id: "provider-1",
+        issuer: "https://issuer.example/tenant-a",
+        client_id: "client",
+      }]);
+    render(() => <LoginRoute />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Additional sign-in options are unavailable.",
+    );
+    expect(
+      screen.getByText("provider service unavailable", { selector: "pre" }),
+    )
+      .not.toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(
+      await screen.findByRole("button", {
+        name: "Continue with issuer.example",
+      }),
+    ).toBeInTheDocument();
+    expect(authApi.listOidcProviders).toHaveBeenCalledTimes(2);
   });
 
   it("does not expose OIDC when no provider is configured", async () => {

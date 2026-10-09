@@ -232,6 +232,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.registry-shape
+          - id: login-page-contract
+            adapter: declared
+            path: docs/spec/ui/components/login.yaml
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-040#criterion.registry-shape
           - id: component-space-settings
             adapter: declared
             path: docs/spec/ui/components/space-settings.yaml
