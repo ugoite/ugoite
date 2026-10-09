@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-09"
+updated: "2026-10-10"
 component_group:
   id: access-policy-editor
   title: Resource Access Editor
@@ -18,6 +18,10 @@ components:
       option_label: display-name-or-localized-unknown-member
       option_value: exact-principal-id
       option_identifiers: hidden-from-visible-and-accessible-labels
+    grant_label_resolution:
+      directory: current-space-members-only
+      match: exact-principal-id
+      stale-or-unavailable-directory: localized-unknown-member
     grants:
       primary_label: display-name-or-localized-unknown-member
       actions: [read, update, delete, share]
@@ -48,3 +52,5 @@ components:
         selector: "REQ-UX-ACCESS-001: selects a member by name and preserves its ID in the grant payload"
       - path: frontend/src/components/AccessPolicyEditor.test.tsx
         selector: "REQ-UX-ACCESS-001: shows a neutral label and blocks member selection when the directory fails"
+      - path: frontend/src/components/AccessPolicyEditor.test.tsx
+        selector: "REQ-UX-ACCESS-001: resolves grant names only from the current Space directory"
