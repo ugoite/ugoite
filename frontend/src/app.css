@@ -3981,6 +3981,16 @@ a.tool {
   font-weight: 700;
   letter-spacing: -0.01em;
 }
+.studioInspectorTitleBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-spacing-sm);
+  min-width: 0;
+}
+.studioInspectorTitleBar .studioInspectorTitle {
+  min-width: 0;
+}
 .studioInspectorActions {
   display: flex;
   flex-wrap: wrap;

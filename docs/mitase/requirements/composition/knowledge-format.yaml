@@ -324,7 +324,7 @@ requirements:
       - id: design-canvas-verification
         role: verification
         facet: verification
-        responsibility: Verify the Design canvas maps every block operation onto the draft document through the single draft channel — transient selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder without cross-row moves, declaration removal with parameter unplacement, and query-stable layout edits without extra queries.
+        responsibility: Verify the Design canvas maps block operations onto the draft document through the single draft channel — transient selection, text insertion with exact-once placement, existing-parameter placement, keyboard-operable row and item reorder without cross-row moves, Inspector-owned display removal and parameter unplacement, and query-stable layout edits without extra queries.
         targets:
           - id: design-canvas-selection-case
             adapter: typescript
@@ -374,18 +374,56 @@ requirements:
           - id: design-canvas-remove-case
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
-            selector: { kind: test, name: removes component declarations and unplaces parameter controls }
+            selector: { kind: test, name: keeps deletion in the selected block Inspector }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "removes component declarations and unplaces parameter controls" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "keeps deletion in the selected block Inspector" } }
+          - id: inspector-remove-action-case
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: exposes removal from the selected block Inspector with a human name }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "exposes removal from the selected block Inspector with a human name" } }
+          - id: inspector-unplace-parameter-case
+            adapter: typescript
+            path: frontend/src/components/CompositionInspector.test.tsx
+            selector: { kind: test, name: labels parameter removal as unplacing its canvas control }
+            claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.parameter-placement
                 covers:
-                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "removes component declarations and unplaces parameter controls" } }
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionInspector.test.tsx, test: "labels parameter removal as unplacing its canvas control" } }
+          - id: narrow-inspector-remove-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: removes a selected display from the narrow Inspector sheet and returns focus to the canvas }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.ordered-component-layout
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-composition-inspector
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-inspector-sheet
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "removes a selected display from the narrow Inspector sheet and returns focus to the canvas" } }
+          - id: narrow-inspector-unplace-case
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioMobile.test.tsx
+            selector: { kind: test, name: unplaces a parameter from the narrow Inspector sheet but keeps its declaration }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.parameter-placement
+                covers:
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
+                  - FEAT-COMP-005#binding.studio-design-runtime/target.browser-inspector-sheet
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: "unplaces a parameter from the narrow Inspector sheet but keeps its declaration" } }
           - id: design-canvas-no-refetch-case
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
@@ -509,13 +547,13 @@ requirements:
           - id: studio-canvas-operations-route-case
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx"
-            selector: { kind: test, name: "adds canvas blocks with label, reorder, and remove through canvas and inspector" }
+            selector: { kind: test, name: "adds canvas blocks with label, reorder, and remove through the Inspector" }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.ordered-component-layout
                 covers:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-design-canvas
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "adds canvas blocks with label, reorder, and remove through canvas and inspector" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/new.test.tsx", test: "adds canvas blocks with label, reorder, and remove through the Inspector" } }
       - id: inspector-verification
         role: verification
         facet: verification

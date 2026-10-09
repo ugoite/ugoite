@@ -272,8 +272,11 @@ components:
       data: opens-data-component-picker-with-Table-and-Metric-tabs
       parameter: place-existing-only-no-creation
     removal:
+      owner: selected-block-inspector
+      action: localized-icon-button-in-inspector-title-bar
       component: remove-declaration-and-unplace
       parameter_control: unplace-only-semantics-kept
+      after_remove: clear-selection-prune-empty-layout-rows-and-focus-first-remaining-block-or-add-gap
       guards: blocked-while-referenced-preserved
     preview_discipline: existing-debounced-handle-only-no-second-path
     responsive:
@@ -287,6 +290,8 @@ components:
     status: implemented
     ownership: selected-block-only-no-creation
     source: canvas-selection-identity-only
+    actions: [remove-display, unplace-parameter-control]
+    removal: available-inline-and-in-narrow-bottom-sheet
     empty_state: no-panel-no-prose
     metric_fields:
       label: optional-display-label

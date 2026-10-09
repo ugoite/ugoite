@@ -13,7 +13,8 @@ features:
     role: implementation
     facet: frontend
     responsibility: Implement the Composition Studio Design workspace, including canvas and inspector
-      editing, mode coordination, responsive inspector presentation, selection, and save readiness.
+      editing, selected-block removal and parameter unplacement, mode coordination, responsive inspector
+      presentation, selection, and save readiness.
     targets:
     - id: browser-design-canvas
       adapter: typescript
@@ -43,6 +44,8 @@ features:
         criterion: REQ-COMP-002#criterion.text-style-enum
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.parameter-placement
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
       - kind: evidences
         anchor: REQ-COMP-002#criterion.optional-display-labels
       - kind: evidences
@@ -60,6 +63,10 @@ features:
         criterion: REQ-FE-074#criterion.source-design-entry
       - kind: satisfies
         criterion: REQ-FE-068#criterion.local-horizontal-overflow
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
       - kind: evidences
         anchor: REQ-FE-070#criterion.mobile-one-column
     - id: browser-studio-source-picker
@@ -82,6 +89,10 @@ features:
         criterion: REQ-COMP-006#criterion.work-state-is-transient
       - kind: satisfies
         criterion: REQ-FE-068#criterion.local-horizontal-overflow
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.parameter-placement
       - kind: evidences
         anchor: REQ-FE-070#criterion.mobile-one-column
     - id: browser-studio-sync
@@ -110,8 +121,9 @@ features:
   - id: studio-design-evidence
     role: evidence
     facet: frontend-tests
-    responsibility: Verify the Composition Studio Design workspace, canvas and inspector editing, mode
-      coordination, responsive inspector, selection, and save readiness.
+    responsibility: Verify selected-block removal in the inline and narrow inspectors, parameter-only
+      unplacement, canvas action ownership, workspace editing, mode coordination, selection, and save
+      readiness.
     targets:
     - id: browser-design-canvas-selection
       adapter: typescript
@@ -151,15 +163,51 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout
-    - id: browser-design-canvas-remove
+    - id: browser-design-canvas-removal-ownership
       adapter: typescript
       path: frontend/src/components/CompositionDesignCanvas.test.tsx
       selector:
         kind: test
-        name: removes component declarations and unplaces parameter controls
+        name: keeps deletion in the selected block Inspector
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: browser-inspector-remove-display
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: exposes removal from the selected block Inspector with a human name
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+    - id: browser-inspector-unplace-parameter
+      adapter: typescript
+      path: frontend/src/components/CompositionInspector.test.tsx
+      selector:
+        kind: test
+        name: labels parameter removal as unplacing its canvas control
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-studio-narrow-inspector-remove
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioMobile.test.tsx
+      selector:
+        kind: test
+        name: removes a selected display from the narrow Inspector sheet and returns focus to the canvas
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.ordered-component-layout
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.mobile-one-column
+    - id: browser-studio-narrow-inspector-unplace
+      adapter: typescript
+      path: frontend/src/components/CompositionStudioMobile.test.tsx
+      selector:
+        kind: test
+        name: unplaces a parameter from the narrow Inspector sheet but keeps its declaration
+      claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
     - id: browser-design-canvas-no-refetch
@@ -562,7 +610,7 @@ features:
       path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
       selector:
         kind: test
-        name: adds canvas blocks with label, reorder, and remove through canvas and inspector
+        name: adds canvas blocks with label, reorder, and remove through the Inspector
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout

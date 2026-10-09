@@ -26,6 +26,7 @@ export function InspectorShell(props: {
     "canvas-text" | "canvas-metric" | "canvas-table" | "canvas-input"
   >;
   title: string;
+  actions?: JSX.Element;
   children: JSX.Element;
 }) {
   return (
@@ -33,10 +34,13 @@ export function InspectorShell(props: {
       class="studioInspector"
       aria-labelledby="studio-inspector-heading"
     >
-      <h3 id="studio-inspector-heading" class="studioInspectorTitle">
-        <UiIcon name={props.icon} />
-        <span>{props.title}</span>
-      </h3>
+      <div class="studioInspectorTitleBar">
+        <h3 id="studio-inspector-heading" class="studioInspectorTitle">
+          <UiIcon name={props.icon} />
+          <span>{props.title}</span>
+        </h3>
+        {props.actions}
+      </div>
       {props.children}
     </aside>
   );

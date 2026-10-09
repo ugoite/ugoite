@@ -1,4 +1,5 @@
 import { Show } from "solid-js";
+import type { JSX } from "solid-js";
 import {
   type CompositionInspectorDataJump,
   type InspectorApply,
@@ -24,11 +25,16 @@ export function TableInspector(props: {
   display: DraftDisplay;
   apply: InspectorApply;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
+  actions?: JSX.Element;
 }) {
   const table = () =>
     props.display.kind === "table" ? props.display : undefined;
   return (
-    <InspectorShell icon="canvas-table" title={t("composition.studioTable")}>
+    <InspectorShell
+      icon="canvas-table"
+      title={t("composition.studioTable")}
+      actions={props.actions}
+    >
       <Show when={table()}>
         {(entry) => (
           <>

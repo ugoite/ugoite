@@ -17,6 +17,7 @@ export interface CompositionInspectorSheetProps {
   fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
   /** Single draft mutation channel shared with the canvas. */
   onDraftChange: (draft: CompositionDraft) => void;
+  onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
   onClose: () => void;
 }
@@ -105,6 +106,7 @@ export function CompositionInspectorSheet(
               fieldNames={props.fieldNames}
               fieldProjectable={props.fieldProjectable}
               onDraftChange={props.onDraftChange}
+              onRemove={props.onRemove}
               onDataJump={props.onDataJump}
             />
           </Show>

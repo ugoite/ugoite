@@ -408,7 +408,8 @@ describe("Composition studio shell", () => {
     expect(order()[0]).toMatch(/Monthly/);
 
     // Source removal is blocked while its table still uses it. Remove that
-    // design block first, then remove the unreferenced source in Data.
+    // design block through the Inspector first, then remove the unreferenced
+    // source in Data.
     showDesignMode();
     fireEvent.click(screen.getByRole("button", { name: "Select Tasks" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove Tasks" }));
@@ -419,7 +420,7 @@ describe("Composition studio shell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("adds canvas blocks with label, reorder, and remove through canvas and inspector", async () => {
+  it("adds canvas blocks with label, reorder, and remove through the Inspector", async () => {
     const { container } = render(() => <CompositionNewRoute />);
     fireEvent.input(screen.getByLabelText("Name"), {
       target: { value: "Weekly review" },
@@ -462,9 +463,8 @@ describe("Composition studio shell", () => {
       beforeReorder[2],
     ]);
 
-    // Remove through the canvas clears the block and blocks saving again.
-    // Removing the selected metric clears the selection, so the table
-    // block needs selecting before its own remove renders.
+    // The selected-block Inspector owns removal; each removal clears the
+    // selection before the next block can be selected.
     fireEvent.click(screen.getByRole("button", { name: "Remove Total" }));
     expect(
       screen.queryByRole("button", { name: "Select Total" }),
@@ -479,6 +479,23 @@ describe("Composition studio shell", () => {
     expect(
       screen.queryByRole("button", { name: "Select Monthly" }),
     ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add to design" })[0],
+    );
+    const palette = screen.getByRole("dialog", { name: "Add to design" });
+    fireEvent.click(within(palette).getByRole("button", { name: "Text" }));
+    fireEvent.input(screen.getByRole("textbox", { name: "Text" }), {
+      target: { value: "Summary" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove Summary" }));
+    expect(
+      screen.queryByRole("button", { name: "Select Summary" }),
+    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelector(".designCanvas .designAdd"))
+        .toHaveFocus();
+    });
     expect(
       screen.getByRole("button", {
         name: "Save, Add a block to the canvas to save.",

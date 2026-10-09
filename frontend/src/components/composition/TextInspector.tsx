@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import type { JSX } from "solid-js";
 import {
   type InspectorApply,
   InspectorShell,
@@ -40,10 +41,15 @@ export function TextInspector(props: {
   draft: CompositionDraft;
   display: DraftDisplay;
   apply: InspectorApply;
+  actions?: JSX.Element;
 }) {
   const text = () => props.display.kind === "text" ? props.display : undefined;
   return (
-    <InspectorShell icon="canvas-text" title={t("composition.studioText")}>
+    <InspectorShell
+      icon="canvas-text"
+      title={t("composition.studioText")}
+      actions={props.actions}
+    >
       <Show when={text()}>
         {(entry) => (
           <>

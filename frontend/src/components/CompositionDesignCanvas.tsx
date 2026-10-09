@@ -17,9 +17,7 @@ import {
   moveLayoutItem,
   moveLayoutRow,
   placeParameterControl,
-  removeDisplay,
   unplacedParameters,
-  unplaceParameterControl,
 } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
 import type {
@@ -249,7 +247,8 @@ function PaletteDialog(props: {
  * Design canvas over the current draft. Blocks render through the shared
  * flow item presenter (saved-Tool look); edit affordances only add
  * selection, insertion gaps with one component palette, and the same
- * keyboard-operable up/down reorder buttons the Display list uses.
+ * keyboard-operable up/down reorder buttons the Display list uses. Removal
+ * stays with the selected block Inspector, including its narrow sheet.
  * Selection is transient Work exposed for the RA5 inspector.
  */
 export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
@@ -338,26 +337,6 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
   ) => {
     const moved = moveLayoutItem(props.draft, rowId, itemIndex, direction);
     if (moved.ok) props.onDraftChange(moved.draft);
-  };
-
-  const removeBlock = (item: DraftLayoutItem) => {
-    if (item.kind === "parameter") {
-      const unplaced = unplaceParameterControl(props.draft, item.parameterId);
-      if (unplaced.ok) {
-        props.onDraftChange(unplaced.draft);
-        if (props.selectedId === designBlockIdForParameter(item.parameterId)) {
-          props.onSelect(null);
-        }
-      }
-      return;
-    }
-    const removed = removeDisplay(props.draft, item.draftId);
-    if (removed.ok) {
-      props.onDraftChange(removed.draft);
-      if (props.selectedId === designBlockIdForComponent(item.draftId)) {
-        props.onSelect(null);
-      }
-    }
   };
 
   const flowItem = (item: DraftLayoutItem): CompositionFlowLayoutItem =>
@@ -455,14 +434,6 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
               >
                 <span aria-hidden="true">↓</span>
               </button>
-              <IconButton
-                icon="trash"
-                label={t("composition.studioRemoveDisplay", { name: name() })}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  removeBlock(item);
-                }}
-              />
             </span>
           </Show>
         </div>

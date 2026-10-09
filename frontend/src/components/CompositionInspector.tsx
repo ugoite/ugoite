@@ -7,11 +7,14 @@ import { MetricInspector } from "~/components/composition/MetricInspector";
 import { ParameterPlacementInspector } from "~/components/composition/ParameterPlacementInspector";
 import { TableInspector } from "~/components/composition/TableInspector";
 import { TextInspector } from "~/components/composition/TextInspector";
+import { IconButton } from "~/components/IconButton";
 import {
   type CompositionDraft,
   type DraftDisplay,
 } from "~/lib/composition-draft";
 import type { CompositionFieldNames } from "~/components/CompositionRenderer";
+import { displayDefaultName } from "~/lib/composition-display-name";
+import { t } from "~/lib/i18n";
 
 const PARAMETER_BLOCK_PREFIX = "param:";
 
@@ -25,6 +28,8 @@ export interface CompositionInspectorProps {
   fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
   /** Single draft mutation channel shared with the canvas. */
   onDraftChange: (draft: CompositionDraft) => void;
+  /** Remove the selected display or unplace the selected parameter control. */
+  onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
 }
 
@@ -61,6 +66,8 @@ const resolveSelection = (
  * through draft updaters into the shared debounced preview; text, label,
  * and style edits never reshape sources, so they never refetch. Without a
  * resolvable selection the inspector renders nothing: no panel, no prose.
+ * Selected displays are removed here; selected parameter controls are only
+ * unplaced, leaving their declarations in Parameters.
  */
 export function CompositionInspector(props: CompositionInspectorProps) {
   const selection = () => resolveSelection(props.draft, props.selectedId);
@@ -81,6 +88,7 @@ export function CompositionInspector(props: CompositionInspectorProps) {
               fieldNames={props.fieldNames}
               fieldProjectable={props.fieldProjectable}
               onDraftChange={props.onDraftChange}
+              onRemove={props.onRemove}
               onDataJump={props.onDataJump}
             />
           }
@@ -89,6 +97,24 @@ export function CompositionInspector(props: CompositionInspectorProps) {
             draft={props.draft}
             parameterId={(entry() as { parameterId: string }).parameterId}
             apply={apply}
+            actions={(() => {
+              const parameterId = (entry() as {
+                parameterId: string;
+              }).parameterId;
+              const name =
+                props.draft.parameters.find((parameter) =>
+                  parameter.id === parameterId
+                )?.label ?? t("composition.studioParameters");
+              const label = t("composition.studioUnplaceParameter", { name });
+              return (
+                <IconButton
+                  icon="trash"
+                  label={label}
+                  title={label}
+                  onClick={() => props.onRemove()}
+                />
+              );
+            })()}
           />
         </Show>
       )}
@@ -102,6 +128,7 @@ function ComponentInspector(props: {
   fieldNames?: CompositionFieldNames;
   fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
   onDraftChange: (draft: CompositionDraft) => void;
+  onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
 }) {
   const display = () => props.display;
@@ -109,6 +136,22 @@ function ComponentInspector(props: {
     if (result.ok) props.onDraftChange(result.draft);
   };
   const kind = () => display().kind;
+  const removeLabel = () =>
+    t("composition.studioRemoveDisplay", {
+      name: displayDefaultName(
+        display(),
+        props.draft.sources,
+        props.fieldNames,
+      ),
+    });
+  const removeAction = () => (
+    <IconButton
+      icon="trash"
+      label={removeLabel()}
+      title={removeLabel()}
+      onClick={() => props.onRemove()}
+    />
+  );
   return (
     <Show
       when={kind() === "text"}
@@ -120,6 +163,7 @@ function ComponentInspector(props: {
               draft={props.draft}
               display={display()}
               apply={apply}
+              actions={removeAction()}
               onDataJump={props.onDataJump}
             />
           }
@@ -130,12 +174,18 @@ function ComponentInspector(props: {
             fieldNames={props.fieldNames}
             fieldProjectable={props.fieldProjectable}
             apply={apply}
+            actions={removeAction()}
             onDataJump={props.onDataJump}
           />
         </Show>
       }
     >
-      <TextInspector draft={props.draft} display={display()} apply={apply} />
+      <TextInspector
+        draft={props.draft}
+        display={display()}
+        apply={apply}
+        actions={removeAction()}
+      />
     </Show>
   );
 }

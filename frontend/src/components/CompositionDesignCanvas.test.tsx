@@ -447,32 +447,15 @@ describe("CompositionDesignCanvas", () => {
     );
   });
 
-  it("removes component declarations and unplaces parameter controls", () => {
-    renderHarness();
-
+  it("keeps deletion in the selected block Inspector", () => {
+    const { container } = renderHarness();
     fireEvent.click(screen.getByRole("button", { name: "Select Details" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove Details" }));
-    expect(harnessCalls.draft).toHaveLength(1);
-    const afterTable = harnessCalls.draft[0];
-    expect(afterTable.displays.map((display) => display.draftId)).toEqual([
-      "disp-1",
-    ]);
-    expect(
-      toStudioDocument(afterTable).spec.layout.rows.flatMap((row) => row.items),
-    ).not.toContainEqual({ kind: "component", component: "disp-2" });
-    expect(harnessCalls.selected.slice(-1)).toEqual([null]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Month" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove Month" }));
-    expect(harnessCalls.draft).toHaveLength(2);
-    const afterParam = harnessCalls.draft[1];
-    // Unplacing keeps the semantic parameter declared for the Data section.
-    expect(afterParam.parameters.map((parameter) => parameter.id)).toEqual([
-      "month",
-    ]);
-    expect(
-      toStudioDocument(afterParam).spec.layout.rows.flatMap((row) => row.items),
-    ).not.toContainEqual({ kind: "parameter", parameter: "month" });
+    const blockActions = container.querySelector(
+      '[data-block-id="disp-2"] .designBlockActions',
+    );
+    expect(blockActions?.querySelectorAll("button")).toHaveLength(2);
+    expect(blockActions?.querySelector('[aria-label^="Remove "]')).toBeNull();
   });
 
   it("routes block operations through the draft channel without extra queries", () => {

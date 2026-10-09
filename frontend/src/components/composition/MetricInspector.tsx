@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import type { JSX } from "solid-js";
 import {
   type CompositionInspectorDataJump,
   type InspectorApply,
@@ -49,6 +50,7 @@ export function MetricInspector(props: {
   fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
   apply: InspectorApply;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
+  actions?: JSX.Element;
 }) {
   const metric = () =>
     props.display.kind === "metric" ? props.display : undefined;
@@ -108,7 +110,11 @@ export function MetricInspector(props: {
   };
 
   return (
-    <InspectorShell icon="canvas-metric" title={t("composition.studioMetric")}>
+    <InspectorShell
+      icon="canvas-metric"
+      title={t("composition.studioMetric")}
+      actions={props.actions}
+    >
       <Show when={metric()}>
         {(entry) => (
           <>
