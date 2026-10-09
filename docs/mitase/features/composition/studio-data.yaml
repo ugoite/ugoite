@@ -437,6 +437,15 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
+    - id: browser-data-saved-sql-revision-disclosure
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: keeps the saved sql revision in its closed disclosure
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.no-persistent-explanatory-copy
     - id: browser-data-saved-sql-exact-revision
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
