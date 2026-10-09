@@ -639,6 +639,15 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-FE-074#criterion.source-design-entry
+    - id: browser-studio-new-source-single-metric
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+      selector:
+        kind: test
+        name: adds a new one-column Saved SQL metric without a field-pick step
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-074#criterion.source-design-entry
     - id: browser-studio-source-picker-current-sources
       adapter: typescript
       path: frontend/src/components/CompositionSourcePicker.test.tsx

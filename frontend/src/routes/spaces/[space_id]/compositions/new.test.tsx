@@ -587,6 +587,42 @@ describe("Composition studio shell", () => {
     expect(saveMock).not.toHaveBeenCalled();
   });
 
+  it("adds a new one-column Saved SQL metric without a field-pick step", async () => {
+    const { container } = render(() => <CompositionNewRoute />);
+
+    fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "Monthly review" },
+    });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add to design" })[0],
+    );
+    const palette = screen.getByRole("dialog", { name: "Add to design" });
+    fireEvent.click(within(palette).getByRole("button", { name: "Data" }));
+
+    const dataPicker = await screen.findByRole("dialog", {
+      name: "Add data component",
+    });
+    fireEvent.click(within(dataPicker).getByRole("tab", { name: "Metric" }));
+    fireEvent.click(
+      within(dataPicker).getByRole("button", {
+        name: "Choose a Form or Saved SQL",
+      }),
+    );
+    const sourcePicker = await screen.findByRole("dialog", {
+      name: "Choose a source",
+    });
+    fireEvent.click(
+      await within(sourcePicker).findByRole("tab", { name: "Saved SQL" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Select Monthly / total" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container.querySelectorAll(".designBlock")).toHaveLength(1);
+  });
+
   it("surfaces the allowlisted diagnostic when canonicalization rejects the draft", async () => {
     render(() => <CompositionNewRoute />);
 

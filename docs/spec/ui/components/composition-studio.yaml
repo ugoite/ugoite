@@ -113,7 +113,7 @@ components:
     catalog_sources: Forms through form.list and user-query Saved SQL through sql.list
     available_sources: Forms through form.list and user-query Saved SQL through sql.list
     new_table_source_selection: add-source-and-unlabelled-table-to-the-draft-together-without-label-step
-    new_metric_source_selection: add-source-then-select-a-human-named-scalar-field
+    new_metric_source_selection: add-source-and-auto-add-one-human-named-scalar-field; ask-for-field-only-when-multiple-candidates
     initial_form_projection: first-64-projectable-form-fields-no-created-or-updated-system-fields-preview-only-when-no-form-field-is-projectable
     initial_form_schema: every-composition-expressible-field-up-to-document-collection-limit-with-initially-projected-fields-prioritized
     preview_snapshot: preview-is-selectable-only-when-the-source-snapshot-covers-every-current-form-field
@@ -153,7 +153,7 @@ components:
     kind_selection: Table/Metric-tabs-inside-picker
     sequence: kind, then source; Metric adds a field choice only when needed
     table_selection: selecting-an-existing-source-adds-it-immediately
-    metric_selection: one-scalar-candidate-adds-immediately; multiple-candidates-add-on-field-selection
+    metric_selection: one-scalar-candidate-adds-immediately-for-current-or-new-source; multiple-candidates-add-on-field-selection
     source_catalog: browse-Forms-or-Saved-SQL-in-source-picker-with-kind-preserved
     label: omitted-at-insertion-and-optional-in-Inspector-after-selection
     source_name: human-name-only

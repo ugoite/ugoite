@@ -1,4 +1,11 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import { Portal } from "solid-js/web";
 import { RowList, RowListButton, RowListItem } from "~/components/RowList";
 import { UiIcon } from "~/components/UiIcon";
@@ -26,6 +33,7 @@ interface CompositionDisplayPickerProps {
   fieldNamesLoading?: boolean;
   initialKind?: "table" | "metric";
   initialSourceDraftId?: string | null;
+  autoAddSingleCandidate?: boolean;
   onAdd: (seed: CompositionDisplaySeed) => void;
   onChooseSource?: (kind: "table" | "metric") => void;
   onClose: () => void;
@@ -213,6 +221,19 @@ export function CompositionDisplayPicker(
       valueField: candidate.valueField,
     });
   };
+
+  let addedInitialMetric = false;
+  createEffect(() => {
+    if (
+      !props.autoAddSingleCandidate || addedInitialMetric ||
+      kind() !== "metric" || props.fieldNamesLoading
+    ) return;
+    const source = selectedSource();
+    const scalar = candidates();
+    if (!source || scalar.length !== 1) return;
+    addedInitialMetric = true;
+    addMetric(source, scalar[0]);
+  });
 
   const selectKind = (nextKind: "table" | "metric") => {
     if (kind() === nextKind) return;

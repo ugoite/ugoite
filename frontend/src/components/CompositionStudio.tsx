@@ -135,6 +135,10 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const [displayPickerSourceId, setDisplayPickerSourceId] = createSignal<
     string | null
   >(null);
+  const [
+    displayPickerAutoAddSingleCandidate,
+    setDisplayPickerAutoAddSingleCandidate,
+  ] = createSignal(false);
   const [sourcePickerKind, setSourcePickerKind] = createSignal<
     "table" | "metric" | null
   >(null);
@@ -447,6 +451,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
     }
     setPendingInsert(null);
     setDisplayPickerOpen(false);
+    setDisplayPickerSourceId(null);
+    setDisplayPickerAutoAddSingleCandidate(false);
   };
 
   const chooseSourceForDisplay = (kind: "table" | "metric") => {
@@ -478,6 +484,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
       setPendingInsert(null);
       setPickerOpen(false);
       setSourcePickerKind(null);
+      setDisplayPickerAutoAddSingleCandidate(false);
       return;
     }
     // A metric needs a specific scalar field. Add the selected source first,
@@ -485,6 +492,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
     // action chooses its human-named field.
     setDraft(sourceDraft);
     setDisplayPickerSourceId(draftId);
+    setDisplayPickerAutoAddSingleCandidate(true);
     setPickerOpen(false);
     setSourcePickerKind(null);
     setDisplayPickerKind("metric");
@@ -1140,6 +1148,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
           onClose={() => {
             setPickerOpen(false);
             setSourcePickerKind(null);
+            setDisplayPickerAutoAddSingleCandidate(false);
           }}
         />
       </Show>
@@ -1152,12 +1161,14 @@ export function CompositionStudio(props: CompositionStudioProps) {
           fieldNamesLoading={forms.loading}
           initialKind={displayPickerKind()}
           initialSourceDraftId={displayPickerSourceId()}
+          autoAddSingleCandidate={displayPickerAutoAddSingleCandidate()}
           onAdd={addDisplaySeed}
           onChooseSource={chooseSourceForDisplay}
           onClose={() => {
             setPendingInsert(null);
             setDisplayPickerSourceId(null);
             setDisplayPickerOpen(false);
+            setDisplayPickerAutoAddSingleCandidate(false);
           }}
         />
       </Show>

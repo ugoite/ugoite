@@ -116,6 +116,27 @@ describe("CompositionDisplayPicker", () => {
     expect(dialog).not.toHaveTextContent("payload");
   });
 
+  it("auto-adds one preselected metric candidate after catalog selection", () => {
+    const onAdd = vi.fn();
+    render(() => (
+      <CompositionDisplayPicker
+        sources={[sqlSource]}
+        initialKind="metric"
+        initialSourceDraftId={sqlSource.draftId}
+        autoAddSingleCandidate
+        onAdd={onAdd}
+        onClose={() => {}}
+      />
+    ));
+
+    expect(onAdd).toHaveBeenCalledOnce();
+    expect(onAdd).toHaveBeenCalledWith({
+      kind: "metric",
+      sourceDraftId: sqlSource.draftId,
+      valueField: { column: "total" },
+    });
+  });
+
   it("selects EntryQuery metrics by their human Form field names", () => {
     const onAdd = vi.fn();
     render(() => (
