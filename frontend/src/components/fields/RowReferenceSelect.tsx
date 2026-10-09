@@ -116,8 +116,9 @@ function CanonicalRowReferenceSelect(props: RowReferenceSelectProps) {
     if (!rowReferenceTargetMatches(entry.form, target)) {
       // Human Form name, never a stable id: resolve through the catalog.
       const actual = typeof entry.form === "string" && entry.form.trim() !== ""
-        ? humanRowReferenceFormName(entry.form, props.forms)
-        : target.name;
+        ? humanRowReferenceFormName(entry.form, props.forms) ??
+          t("entryBrowser.unknownForm")
+        : t("entryBrowser.unknownForm");
       return { kind: "wrong-form", actual };
     }
     return {
@@ -340,7 +341,8 @@ function UnavailableRowReferenceSelect(props: RowReferenceSelectProps) {
       </span>
       <p class="text-xs ui-text-danger" role="alert">
         {t("createDialog.entry.rowReference.targetUnavailable", {
-          form: props.targetForm.trim(),
+          form: humanRowReferenceFormName(props.targetForm, props.forms) ??
+            t("entryBrowser.unknownForm"),
         })}
       </p>
     </div>

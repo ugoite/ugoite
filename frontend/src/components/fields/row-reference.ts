@@ -33,6 +33,9 @@ export const hasRowReferencePicker = (
 /** Backend `entry_preview` budget (crates/ugoite-iceberg/src/service.rs). */
 export const rowReferencePreviewCharLimit = 512;
 
+const isFormId = (value: string): boolean =>
+  /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value.trim());
+
 export interface RowReferencePreviewForm {
   id?: string;
   name: string;
@@ -110,17 +113,17 @@ export const rowReferenceTargetMatches = (
 
 /**
  * Resolve a stored Entry Form reference to its human Form name through the
- * loaded catalog. A stable id never surfaces as display text; unknown
- * references fall back to the verbatim value only when the catalog cannot
- * resolve them.
+ * loaded catalog. Preserve an unresolved human name, but return no label for
+ * an unresolved stable Form ID so callers can show a localized neutral label.
  */
 export const humanRowReferenceFormName = (
   entryForm: string,
   forms?: readonly { id?: string; name: string }[],
-): string => {
+): string | undefined => {
   const actual = entryForm.trim();
   const known = forms?.find((form) =>
     form.id === actual || form.name === actual
   );
-  return known?.name ?? actual;
+  if (known) return known.name;
+  return isFormId(actual) ? undefined : actual;
 };

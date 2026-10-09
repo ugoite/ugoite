@@ -141,16 +141,19 @@ describe("humanRowReferenceFormName", () => {
     { id: "form-project", name: "Project" },
     { id: "form-task", name: "Task" },
   ];
+  const unresolvedFormId = "550e8400-e29b-41d4-a716-446655440000";
 
   it("resolves stable ids to human Form names", () => {
     expect(humanRowReferenceFormName("form-task", forms)).toBe("Task");
     expect(humanRowReferenceFormName("Task", forms)).toBe("Task");
   });
 
-  it("leaves unknown references verbatim only when the catalog cannot resolve them", () => {
+  it("preserves unknown Form names but omits unresolved stable Form IDs", () => {
     expect(humanRowReferenceFormName("form-missing", forms)).toBe(
       "form-missing",
     );
     expect(humanRowReferenceFormName("form-missing")).toBe("form-missing");
+    expect(humanRowReferenceFormName(unresolvedFormId, forms)).toBeUndefined();
+    expect(humanRowReferenceFormName(unresolvedFormId)).toBeUndefined();
   });
 });

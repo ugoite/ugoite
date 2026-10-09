@@ -235,6 +235,10 @@ requirements:
         kind: behavior
         statement: In row_reference selection mode, each result row uses the shared compact chevron action with a localized accessible confirmation name and 44px target; activating it preserves the existing confirm-only selection flow.
         governed_by: [POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: wrong-form-identity
+        kind: behavior
+        statement: Row Reference feedback uses a Form's human name when known or the localized unknown-Form label when its stable UUID cannot be resolved, including wrong-Form and unavailable-target feedback; an unresolved UUID is never rendered.
+        governed_by: [POL-UI-005#rule.governance]
     bindings:
       - id: row-reference-verification
         role: verification
@@ -263,3 +267,21 @@ requirements:
                 criterion: REQ-FE-065#criterion.confirm-action
                 covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/components/EntryResultTable.test.tsx", test: "REQ-FE-065: confirms with a compact, accessibly named chevron in select mode" } }
+          - id: row-reference-unknown-form-identity
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "REQ-FE-065: hides unresolved Form UUIDs from wrong-Form feedback" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.wrong-form-identity
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "REQ-FE-065: hides unresolved Form UUIDs from wrong-Form feedback" } }
+          - id: row-reference-unavailable-target-identity
+            adapter: typescript
+            path: frontend/src/components/fields/fields.test.tsx
+            selector: { kind: test, name: "REQ-FE-065: hides an unresolved target Form UUID in unavailable feedback" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-065#criterion.wrong-form-identity
+                covers: [FEAT-FE-003#binding.frontend/target.shared-field-input]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/fields/fields.test.tsx, test: "REQ-FE-065: hides an unresolved target Form UUID in unavailable feedback" } }
