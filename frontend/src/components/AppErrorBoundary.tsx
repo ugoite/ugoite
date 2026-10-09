@@ -1,5 +1,6 @@
 import { createEffect, ErrorBoundary, onMount, type JSX } from "solid-js";
 import { locale } from "~/lib/i18n";
+import { reportClientErrorBoundary } from "~/lib/client-error-diagnostics";
 import {
   clearVitePreloadRecoveryAttempts,
   recoverFromRouteChunkFailure,
@@ -33,8 +34,9 @@ function AppErrorFallback(props: {
 }) {
   onMount(() => {
     if (typeof window === "undefined") return;
+    let recovered = false;
     try {
-      recoverFromRouteChunkFailure(
+      recovered = recoverFromRouteChunkFailure(
         props.error,
         window.sessionStorage,
         () => window.location.reload(),
@@ -42,6 +44,9 @@ function AppErrorFallback(props: {
       );
     } catch {
       // Keep the normal fallback when browser storage is unavailable.
+    }
+    if (!recovered) {
+      reportClientErrorBoundary(props.error, window.location.pathname);
     }
   });
 

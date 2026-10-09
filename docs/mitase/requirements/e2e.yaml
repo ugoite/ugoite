@@ -194,6 +194,10 @@ requirements:
         kind: quality
         statement: A manifest-discovered route chunk request that fails once can recover through one same-URL reload, and a repeated real request failure reaches the app boundary without an automatic reload loop.
         governed_by: [POL-006#rule.governance, POL-014#rule.governance]
+      - id: fallback-diagnostic-privacy
+        kind: quality
+        statement: When the app error fallback mounts after the route-chunk recovery check declines recovery, including for ordinary uncaught route errors, the client writes a local console diagnostic containing a fixed category, an allowlisted error type, a stable fingerprint over normalized source kinds and positions, an allowlisted route family, and normalized source positions. The diagnostic excludes raw messages, stack text, source filenames and paths, Space and Entry identifiers, Knowledge content, credentials, origin, and query data, and is never sent over the network.
+        governed_by: [POL-006#rule.governance]
     bindings:
       - id: navigation-verification
         role: verification
@@ -247,6 +251,24 @@ requirements:
                   - FEAT-E2E-001#binding.frontend/target.route-module-recovery
                   - FEAT-E2E-001#binding.frontend/target.app-boundary-route-chunk-recovery
                 runner: { runner: e2e-playwright, arguments: { file: e2e/navigation.test.ts, test: 'REQ-E2E-004: bounds retries when the real route chunk keeps failing' } }
+          - id: client-error-diagnostic-case
+            adapter: typescript
+            path: frontend/src/components/AppErrorBoundary.test.tsx
+            selector: { kind: test, name: logs one privacy-safe local diagnostic after the fallback persists }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-004#criterion.fallback-diagnostic-privacy
+                covers: [FEAT-E2E-001#binding.frontend/target.app-boundary-route-chunk-recovery]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/AppErrorBoundary.test.tsx, test: logs one privacy-safe local diagnostic after the fallback persists } }
+          - id: client-error-diagnostic-sanitization
+            adapter: typescript
+            path: frontend/src/lib/client-error-diagnostics.test.ts
+            selector: { kind: test, name: "keeps only an allowlisted type, route family, and source positions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-E2E-004#criterion.fallback-diagnostic-privacy
+                covers: [FEAT-E2E-001#binding.frontend/target.client-error-diagnostic-helper]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client-error-diagnostics.test.ts, test: "keeps only an allowlisted type, route family, and source positions" } }
 
   - id: REQ-E2E-005
     title: Canonical docsite navigation
