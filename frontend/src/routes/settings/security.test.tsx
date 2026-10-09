@@ -203,6 +203,25 @@ describe("SecuritySettingsRoute", () => {
       .toHaveAttribute("aria-selected", "true");
   });
 
+  it("shows a localized revoked session without a revoke action", async () => {
+    setLocale("ja");
+    searchParams.tab = "sessions";
+    vi.mocked(authApi.listSessions).mockResolvedValue([{
+      session_id: "revoked-session-1",
+      credential_id: "credential-1",
+      created_at: "2026-01-01T00:00:00Z",
+      last_seen_at: null,
+      revoked_at: "2026-01-02T00:00:00Z",
+    }]);
+
+    render(() => <SecuritySettingsRoute />);
+
+    expect(await screen.findByText(/取り消し済み/)).toBeVisible();
+    const sessionPanel = screen.getByRole("tabpanel", { name: "セッション" });
+    expect(within(sessionPanel).queryByRole("button"))
+      .not.toBeInTheDocument();
+  });
+
   it("REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details", async () => {
     const credentialId = "passkey-internal-id";
     const secondCredentialId = "passkey-second-internal-id";
