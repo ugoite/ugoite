@@ -296,6 +296,12 @@ export function FormTable(props: FormTableProps) {
 
   const systemColumnLabel = (field: FormTableSystemColumn) =>
     field === "created_at" ? t("formTable.created") : t("formTable.updated");
+  const formFieldLabel = (field: string) =>
+    props.entryForm.fields?.[field]?.label?.trim() || field;
+  const columnLabel = (field: string) =>
+    field === "created_at" || field === "updated_at"
+      ? systemColumnLabel(field)
+      : formFieldLabel(field);
   const systemColumnOptions = (): EntryTableColumnOption[] =>
     (["created_at", "updated_at"] as const).map((field) => ({
       key: field,
@@ -951,7 +957,9 @@ export function FormTable(props: FormTableProps) {
                       >
                         <option value="">{t("formTable.none")}</option>
                         <For each={sortableFields()}>
-                          {(field) => <option value={field}>{field}</option>}
+                          {(field) => (
+                            <option value={field}>{columnLabel(field)}</option>
+                          )}
                         </For>
                       </select>
                     </div>
@@ -1013,15 +1021,15 @@ export function FormTable(props: FormTableProps) {
               {(field) => (
                 <label class="ui-table-mobile-filter">
                   <span>
-                    {field === "created_at" || field === "updated_at"
-                      ? systemColumnLabel(field)
-                      : field}
+                    {columnLabel(field)}
                   </span>
                   <input
                     type="text"
                     class="ui-input ui-input-sm"
                     placeholder={t("formTable.columnFilter")}
-                    aria-label={`${field} ${t("formTable.columnFilter")}`}
+                    aria-label={`${columnLabel(field)} ${
+                      t("formTable.columnFilter")
+                    }`}
                     value={columnFilters()[field] || ""}
                     onInput={(event) =>
                       updateColumnFilter(field, event.currentTarget.value)}
@@ -1058,7 +1066,7 @@ export function FormTable(props: FormTableProps) {
                           class="ui-table-header-button select-none"
                           onClick={() => handleHeaderClick(field)}
                         >
-                          {field}
+                          {formFieldLabel(field)}
                           <SortIcon
                             active={sortField() === field}
                             direction={sortDirection()}
@@ -1072,7 +1080,7 @@ export function FormTable(props: FormTableProps) {
                             type="text"
                             class="ui-input ui-input-sm ui-table-filter text-xs"
                             placeholder={t("formTable.columnFilter")}
-                            aria-label={`${field} ${
+                            aria-label={`${formFieldLabel(field)} ${
                               t("formTable.columnFilter")
                             }`}
                             value={columnFilters()[field] || ""}
@@ -1222,7 +1230,8 @@ export function FormTable(props: FormTableProps) {
                     </For>
                     <For each={visibleSystemColumns()}>
                       {(field, systemIndex) => {
-                        const columnIndex = () => fields().length +
+                        const columnIndex = () =>
+                          fields().length +
                           systemIndex();
                         return (
                           <td
@@ -1273,7 +1282,7 @@ export function FormTable(props: FormTableProps) {
                   <For each={fields().slice(0, 3)}>
                     {(field) => (
                       <div class="ui-table-mobile-field">
-                        <dt>{field}</dt>
+                        <dt>{formFieldLabel(field)}</dt>
                         <dd>
                           <Show
                             when={isCellEditing(entry.id, field)}
@@ -1311,7 +1320,7 @@ export function FormTable(props: FormTableProps) {
                               )}
                               class="ui-table-cell-input"
                               autofocus
-                              aria-label={field}
+                              aria-label={formFieldLabel(field)}
                               onBlur={(event) => {
                                 void handleCellUpdate(
                                   entry.id,
@@ -1354,7 +1363,7 @@ export function FormTable(props: FormTableProps) {
                       <For each={fields().slice(3)}>
                         {(field) => (
                           <div class="ui-table-mobile-field">
-                            <dt>{field}</dt>
+                            <dt>{formFieldLabel(field)}</dt>
                             <dd>
                               <Show
                                 when={isCellEditing(entry.id, field)}
@@ -1392,7 +1401,7 @@ export function FormTable(props: FormTableProps) {
                                   )}
                                   class="ui-table-cell-input"
                                   autofocus
-                                  aria-label={field}
+                                  aria-label={formFieldLabel(field)}
                                   onBlur={(event) => {
                                     void handleCellUpdate(
                                       entry.id,

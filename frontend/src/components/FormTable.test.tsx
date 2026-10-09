@@ -1325,11 +1325,17 @@ describe("FormTable", () => {
   it("traps focus in the Columns dialog and returns it to the trigger", async () => {
     const entryForm = {
       name: "Test",
-      fields: { field_name: { id: 491, type: "string" } },
+      fields: {
+        internal_field_491: {
+          id: 491,
+          label: "Patient name",
+          type: "string",
+        },
+      },
     } as any;
     mockEntryQuery([{
       id: "private-entry-id",
-      properties: { field_name: "Value" },
+      properties: { internal_field_491: "Value" },
     }]);
     render(() => (
       <FormTable
@@ -1340,13 +1346,22 @@ describe("FormTable", () => {
     ));
 
     const trigger = screen.getByRole("button", { name: "Columns" });
+    await waitFor(() =>
+      expect(desktopTable().getByRole("columnheader", { name: /Patient name/ }))
+        .toBeInTheDocument()
+    );
+    expect(mobileList().getByText("Patient name")).toBeInTheDocument();
+    expect(desktopTable().queryByText("internal_field_491"))
+      .not.toBeInTheDocument();
+    expect(mobileList().queryByText("internal_field_491"))
+      .not.toBeInTheDocument();
     trigger.focus();
     fireEvent.click(trigger);
 
     const dialog = screen.getByRole("dialog", { name: "Columns" });
     const close = screen.getByRole("button", { name: /close/i });
     await waitFor(() => expect(close).toHaveFocus());
-    expect(within(dialog).queryByText("field_name"))
+    expect(within(dialog).queryByText("internal_field_491"))
       .not.toBeInTheDocument();
     expect(within(dialog).queryByText("491")).not.toBeInTheDocument();
     expect(within(dialog).queryByText("private-entry-id"))

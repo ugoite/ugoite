@@ -15,7 +15,7 @@ requirements:
         governed_by: [POL-UI-001#rule.governance, POL-UI-002#rule.governance, POL-UI-007#rule.governance, POL-UI-012#rule.governance]
       - id: form-table-columns
         kind: behavior
-        statement: FormTable keeps Form fields as its default columns on desktop and mobile. Created and Updated are optional and hidden by default. Copying a selection follows the currently visible columns.
+        statement: FormTable keeps Form fields as its default columns on desktop and mobile. Visible Form fields use their display label when set and the field name otherwise; field IDs stay hidden. Created and Updated are optional and hidden by default. Copying a selection follows the currently visible columns.
         governed_by: [POL-UI-002#rule.governance, POL-UI-003#rule.governance, POL-UI-007#rule.governance]
     bindings:
       - id: column-picker-verification
@@ -59,4 +59,8 @@ requirements:
               - kind: verifies
                 criterion: REQ-FE-075#criterion.shared-column-picker
                 covers: [FEAT-FE-015#binding.frontend/target.shared-column-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: traps focus in the Columns dialog and returns it to the trigger } }
+              - kind: verifies
+                criterion: REQ-FE-075#criterion.form-table-columns
+                covers: [FEAT-FE-005#binding.frontend/target.form-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: traps focus in the Columns dialog and returns it to the trigger } }

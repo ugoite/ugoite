@@ -13,7 +13,9 @@ components:
       desktop: [form-fields, optional-created-at, optional-updated-at]
       mobile: [form-fields, optional-created-at, optional-updated-at]
       optional_system_columns_default: hidden
-      labels: localized-form-field-names
+      labels:
+        form_fields: display-label-when-set-otherwise-field-name
+        system_fields: localized-created-and-updated
     column_picker:
       trigger:
         icon: columns
