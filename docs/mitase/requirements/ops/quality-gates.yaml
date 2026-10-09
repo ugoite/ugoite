@@ -307,6 +307,10 @@ requirements:
         kind: quality
         statement: The repository records the required status contexts and their workflow summary jobs as one versioned contract for pull-request and merge-group validation.
         governed_by: [POL-008#rule.governance]
+      - id: base-ref-edit-required-checks
+        kind: quality
+        statement: A pull request base-ref change to main produces the required CI and CodeQL contexts, while metadata-only edits keep successful aggregate contexts without scheduling content-validation lanes.
+        governed_by: [POL-008#rule.governance]
     bindings:
       - id: required-status-evidence
         role: evidence
@@ -341,6 +345,21 @@ requirements:
             claims:
               - kind: evidences
                 anchor: REQ-OPS-013#criterion.required-status-contract
+
+      - id: base-ref-edit-verification
+        role: verification
+        facet: repository-test
+        responsibility: Verify that base-ref edits schedule the required workflows and metadata-only edits keep successful aggregate checks without running content-validation lanes. These source tests inspect event guards and aggregate behavior; hosted CI remains responsible for executing the workflows.
+        targets:
+          - id: workflow-event-contract-test
+            adapter: typescript
+            path: tools/coverage_gates_test.ts
+            selector: { kind: test, name: "required CI workflows cover base-ref edits without cancelling content validation" }
+            claims:
+              - kind: verifies
+                criterion: REQ-OPS-013#criterion.base-ref-edit-required-checks
+                covers: [FEAT-OPS-001#binding.automation/target.ci-workflow, FEAT-OPS-001#binding.automation/target.codeql-workflow]
+                runner: { runner: deno-test-file, arguments: { file: tools/coverage_gates_test.ts, test: "required CI workflows cover base-ref edits without cancelling content validation" } }
 
   - id: REQ-OPS-020
     title: Portable Rust WASM Gates

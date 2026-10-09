@@ -6,6 +6,7 @@ const frontendTasks = JSON.parse(
 const docsiteTasks = JSON.parse(
   await Deno.readTextFile("docsite/deno.json"),
 );
+const ciGateScript = new URL("../scripts/ci-gate-check.sh", import.meta.url);
 
 function taskBlock(source: string, task: string): string {
   const header = [`[tasks."${task}"]`, `[tasks.${task}]`].find((candidate) =>
@@ -29,6 +30,47 @@ function assertContainsAll(
       `${subject} is missing ${JSON.stringify(snippet)}`,
     );
   }
+}
+
+async function ciGatePasses(
+  overrides: Record<string, string>,
+): Promise<boolean> {
+  const environment: Record<string, string> = {
+    EVENT_NAME: "pull_request",
+    EVENT_ACTION: "edited",
+    PR_BASE_CHANGED: "true",
+    IMPACT_RESULT: "success",
+    IMPACT_PLAN_STATUS: "ok",
+    IMPACT_PLAN_SCOPE: "all",
+    IMPACT_JOBS_SKIPPED: "false",
+    RUST_CHECK_RESULT: "success",
+    RUST_TEST_RESULT: "success",
+    S3_SHARED_AUTHORIZATION_RESULT: "success",
+    WEB_RESULT: "success",
+    ARTIFACT_BUILD_RESULT: "success",
+    E2E_SMOKE_MOBILE_RESULT: "success",
+    E2E_OWNER_RESULT: "success",
+    E2E_PORTABLE_RESULT: "success",
+    DOCSITE_NAV_RESULT: "success",
+    CP1_FIXTURES_RESULT: "success",
+    CP1_QUERY_RESULT: "success",
+    CP1_EXPORT_RESULT: "success",
+    PLAN_RUST_CHECK: "true",
+    PLAN_RUST_TEST: "true",
+    PLAN_WEB: "true",
+    PLAN_ARTIFACTS: "true",
+    PLAN_DOCSITE_NAV: "true",
+    PLAN_CP1_ACCEPTANCE: "true",
+    PR_CONTEXT_RESULT: "success",
+    ...overrides,
+  };
+  const result = await new Deno.Command("bash", {
+    args: [ciGateScript.pathname],
+    env: environment,
+    stdout: "null",
+    stderr: "null",
+  }).output();
+  return result.success;
 }
 
 function workflowJobBlock(source: string, job: string): string {
@@ -934,6 +976,99 @@ Deno.test("CI aggregate tasks own test coverage and lane scheduling", async () =
   const workflow = await Deno.readTextFile(".github/workflows/ci.yml");
 
   await assertAggregateWorkflow(workflow, mise);
+});
+
+Deno.test("required CI workflows cover base-ref edits without cancelling content validation", async () => {
+  const ci = await Deno.readTextFile(".github/workflows/ci.yml");
+  const codeql = await Deno.readTextFile(".github/workflows/codeql.yml");
+  const impactJob = workflowJobBlock(ci, "impact");
+  const prContextJob = workflowJobBlock(ci, "pr-context-report");
+  const codeqlAnalyzeJob = workflowJobBlock(codeql, "analyze");
+  const codeqlRequiredJob = workflowJobBlock(codeql, "required-check");
+  const pullRequestActivities = [
+    "pull_request:\n    branches:\n      - main\n    types:\n      - opened\n      - synchronize\n      - reopened\n      - ready_for_review\n      - edited",
+  ];
+
+  assertContainsAll(ci, pullRequestActivities, "CI pull request trigger");
+  assertContainsAll(
+    codeql,
+    pullRequestActivities,
+    "CodeQL pull request trigger",
+  );
+  assertContainsAll(
+    ci,
+    [
+      "github.event.action == 'edited' && github.event.changes.base == null && 'metadata' || 'validation'",
+      "EVENT_ACTION: ${{ github.event.action }}",
+      "PR_BASE_CHANGED: ${{ github.event.changes.base != null }}",
+    ],
+    "CI event isolation and gate context",
+  );
+  assertContainsAll(
+    impactJob,
+    [
+      "github.event_name != 'pull_request' ||\n      github.event.action != 'edited' ||\n      github.event.changes.base != null",
+    ],
+    "CI impact planner event guard",
+  );
+  assertContainsAll(
+    prContextJob,
+    [
+      "github.event_name == 'pull_request' &&\n      (github.event.action != 'edited' || github.event.changes.base != null)",
+    ],
+    "CI context report event guard",
+  );
+  assertContainsAll(
+    codeqlAnalyzeJob,
+    [
+      "github.event_name != 'pull_request' ||\n      github.event.action != 'edited' ||\n      github.event.changes.base != null",
+    ],
+    "CodeQL analysis event guard",
+  );
+  assertContainsAll(
+    codeqlRequiredJob,
+    [
+      "if: ${{ always() }}",
+      "needs:\n      - analyze",
+      'select(.value.result != "success" and .value.result != "skipped")',
+    ],
+    "CodeQL required summary for skipped metadata analysis",
+  );
+
+  assertEquals(
+    await ciGatePasses({
+      PR_BASE_CHANGED: "false",
+      IMPACT_RESULT: "skipped",
+      IMPACT_PLAN_STATUS: "",
+      IMPACT_PLAN_SCOPE: "",
+      IMPACT_JOBS_SKIPPED: "",
+      RUST_CHECK_RESULT: "skipped",
+      RUST_TEST_RESULT: "skipped",
+      S3_SHARED_AUTHORIZATION_RESULT: "skipped",
+      WEB_RESULT: "skipped",
+      ARTIFACT_BUILD_RESULT: "skipped",
+      E2E_SMOKE_MOBILE_RESULT: "skipped",
+      E2E_OWNER_RESULT: "skipped",
+      E2E_PORTABLE_RESULT: "skipped",
+      DOCSITE_NAV_RESULT: "skipped",
+      CP1_FIXTURES_RESULT: "skipped",
+      CP1_QUERY_RESULT: "skipped",
+      CP1_EXPORT_RESULT: "skipped",
+      PR_CONTEXT_RESULT: "skipped",
+    }),
+    true,
+    "metadata-only edits should pass with successful aggregate checks",
+  );
+  assertEquals(
+    await ciGatePasses({ PR_BASE_CHANGED: "true" }),
+    true,
+    "base-ref edits should use the ordinary validation results",
+  );
+  assertEquals(
+    await ciGatePasses({ PR_BASE_CHANGED: "false", WEB_RESULT: "success" }),
+    false,
+    "metadata-only edits should reject a content lane that unexpectedly ran",
+  );
 });
 
 Deno.test("REQ-OPS-021: frontend coverage remains a canonical test contract", async () => {

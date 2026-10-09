@@ -80,6 +80,66 @@ Deno.test("required gate accepts only the lanes planned for a docs-only pull req
   );
 });
 
+Deno.test("required gate accepts metadata-only pull request edits without validation lanes", async () => {
+  const metadataEdit = environment({
+    EVENT_NAME: "pull_request",
+    EVENT_ACTION: "edited",
+    PR_BASE_CHANGED: "false",
+    IMPACT_RESULT: "skipped",
+    IMPACT_PLAN_STATUS: "",
+    IMPACT_PLAN_SCOPE: "",
+    IMPACT_JOBS_SKIPPED: "",
+    RUST_CHECK_RESULT: "skipped",
+    RUST_TEST_RESULT: "skipped",
+    S3_SHARED_AUTHORIZATION_RESULT: "skipped",
+    WEB_RESULT: "skipped",
+    ARTIFACT_BUILD_RESULT: "skipped",
+    E2E_SMOKE_MOBILE_RESULT: "skipped",
+    E2E_OWNER_RESULT: "skipped",
+    E2E_PORTABLE_RESULT: "skipped",
+    DOCSITE_NAV_RESULT: "skipped",
+    CP1_FIXTURES_RESULT: "skipped",
+    CP1_QUERY_RESULT: "skipped",
+    CP1_EXPORT_RESULT: "skipped",
+    PR_CONTEXT_RESULT: "skipped",
+  });
+  assertEquals(await check(metadataEdit), true);
+
+  const unexpectedResults: Record<string, string>[] = [
+    { IMPACT_RESULT: "success" },
+    { WEB_RESULT: "success" },
+    { PR_CONTEXT_RESULT: "success" },
+  ];
+  for (const overrides of unexpectedResults) {
+    assertEquals(
+      await check(environment({ ...metadataEdit, ...overrides })),
+      false,
+      JSON.stringify(overrides),
+    );
+  }
+});
+
+Deno.test("required gate validates base-ref edits through the ordinary PR lanes", async () => {
+  assertEquals(
+    await check(environment({
+      EVENT_NAME: "pull_request",
+      EVENT_ACTION: "edited",
+      PR_BASE_CHANGED: "true",
+      PR_CONTEXT_RESULT: "success",
+    })),
+    true,
+  );
+  assertEquals(
+    await check(environment({
+      EVENT_NAME: "pull_request",
+      EVENT_ACTION: "edited",
+      PR_BASE_CHANGED: "true",
+      PR_CONTEXT_RESULT: "skipped",
+    })),
+    false,
+  );
+});
+
 Deno.test("required gate rejects a contradictory all-scope pull request plan", async () => {
   // Truth table: scope=all on a pull request must plan every lane.
   assertEquals(
