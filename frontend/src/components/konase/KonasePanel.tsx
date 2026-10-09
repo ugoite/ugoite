@@ -896,7 +896,7 @@ export function KonasePanel(props: KonasePanelProps) {
                     return (
                       <li>
                         <p>
-                          <strong>{admission.uri}</strong>:{" "}
+                          <strong>{resourceLabel(admission.uri)}</strong>:{" "}
                           {resourceStatusLabel(admission.status)}
                           {admission.reason
                             ? ` — ${resourceReasonLabel(admission.reason)}`

@@ -516,7 +516,7 @@ describe("KonasePanel Space authority", () => {
       .toBeInTheDocument();
   });
 
-  it("REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview", async () => {
+  it("REQ-UX-LIST-001: keeps resource URIs internal and shows human-readable Context preview labels", async () => {
     mockConnection();
     listFormsMock.mockResolvedValue([
       { id: "form-a", name: "Note", version: 1, template: "", fields: {} },
@@ -693,9 +693,17 @@ describe("KonasePanel Space authority", () => {
     await waitFor(() =>
       expect(screen.getByText("normalized Form projection")).toBeInTheDocument()
     );
-    expect(screen.getByText("ugoite://form/form-a")).toBeInTheDocument();
-    expect(screen.getByText("ugoite://entry/entry-a")).toBeInTheDocument();
-    expect(screen.getByText("ugoite://entry/entry-b")).toBeInTheDocument();
+    expect(screen.getByText("Note", { selector: "strong" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Selected entry", { selector: "strong" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Second page entry", { selector: "strong" }))
+      .toBeInTheDocument();
+    expect(screen.queryByText("ugoite://form/form-a")).not.toBeInTheDocument();
+    expect(screen.queryByText("ugoite://entry/entry-a")).not
+      .toBeInTheDocument();
+    expect(screen.queryByText("ugoite://entry/entry-b")).not
+      .toBeInTheDocument();
     const previewHeading = screen.getByRole("heading", {
       name: "Review Context before sending",
     });

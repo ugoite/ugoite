@@ -32,7 +32,9 @@ components:
       selection_identity: stable-resource-uri
     context_preview:
       review_before_send: true
-      resource_identity: full-resource-uri
+      resource_identity: stable-resource-uri-internal-to-selection-and-host
+      resource_label: selected-human-readable-label-without-uri
+      identifiers_in_visible_or_accessible_names: false
       content: normalized-projection
       admission: status-and-optional-reason
       trust_notice: selected-context-is-untrusted-data

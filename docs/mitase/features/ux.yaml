@@ -193,17 +193,17 @@ features:
       - id: konase-resource-label-verification
         role: verification
         facet: verification
-        responsibility: Verify Browser Konase uses human-readable candidate and selected-resource labels while keeping stable URIs in the selected Context preview.
+        responsibility: Verify Browser Konase uses human-readable candidate, selected-resource, and Context-preview labels while preserving stable URIs as internal resource identity.
         targets:
           - id: konase-resource-labels-and-preview
             adapter: typescript
             path: frontend/src/components/konase/KonasePanel.test.tsx
-            selector: { kind: test, name: "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview" }
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps resource URIs internal and shows human-readable Context preview labels" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-003#binding.list-baseline/target.konase-panel-surface, FEAT-UX-003#binding.list-baseline/target.konase-panel-specification]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-001: keeps resource URIs internal and shows human-readable Context preview labels" } }
       - id: konase-write-approval-target-verification
         role: verification
         facet: verification
