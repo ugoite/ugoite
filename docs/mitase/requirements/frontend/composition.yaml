@@ -438,7 +438,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-design-canvas]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: "hides display and parameter entries without sources or parameters" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDesignCanvas.test.tsx, test: offers data and hides parameter section without sources or parameters } }
           - id: studio-canvas-text-spacing
             adapter: typescript
             path: frontend/src/components/CompositionDesignCanvas.test.tsx
@@ -872,7 +872,7 @@ requirements:
       - id: studio-mode-verification
         role: verification
         facet: verification
-        responsibility: Verify true mode separation (Design shows the finished shape only, Data shows the fetch definition only with Parameters disclosed once a source exists and Tags, Split pairs the canvas with the scoped data pane), the guided blank-canvas Add-data action through the single source picker, and the every-mode diagnostics strip through exact frontend unit tests.
+        responsibility: Verify true mode separation (Design shows the finished shape only, Data shows the fetch definition only with Parameters disclosed once a source exists and Tags, Split pairs the canvas with the scoped data pane), blank-canvas Text and Data insertion through the data component picker, and the every-mode diagnostics strip through exact frontend unit tests.
         targets:
           - id: studio-true-modes-case
             adapter: typescript
@@ -899,7 +899,7 @@ requirements:
               - kind: verifies
                 criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: guides a blank canvas with one Add-data action that opens the single picker } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: opens Text or Data insertion from a blank canvas } }
           - id: studio-parameters-disclosure-case
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx

@@ -326,7 +326,7 @@ components:
       design: finished-shape-only-canvas-plus-inspector-no-data-no-parameters-no-tags-no-preview-section
       data: fetch-definition-only-with-localized-sources-parameters-tags-tabs-no-canvas-no-preview-section
       split: design-canvas-plus-scoped-data-pane-no-parameters-no-tags-no-preview-section
-    blank_design: single-add-data-action-opens-source-picker-no-prose
+    blank_design: Text-and-Data-insertion-controls-open-without-prose
     source_creation: design-only
     split_availability: desktop-only-below-760px-design-data-only
     narrow_resize: crossing-below-760px-gate-returns-to-design-no-stuck-split
@@ -354,7 +354,7 @@ components:
     async_state: explicit-loading-empty-error
   - id: source-picker
     type: dialog
-    title: Source picker
+    title: Choose a source
     status: implemented
     ownership: single-add-data-dialog-with-forms-and-saved-sql-tabs
     tabs: [forms, saved-sql]
