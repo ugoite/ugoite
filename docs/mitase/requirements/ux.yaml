@@ -466,7 +466,7 @@ requirements:
       - id: history-row-verification
         role: verification
         facet: verification
-        responsibility: Verify PR-4 entry-history rows render through RowList with full-row activation and actor display names (raw UUIDs only in advanced disclosure) through exact Vitest cases.
+        responsibility: Verify PR-4 entry-history rows render through RowList with full-row activation and resolve actor labels to member names or a neutral fallback through exact Vitest cases.
         targets:
           - id: history-rows-rowlist
             adapter: typescript
@@ -480,66 +480,57 @@ requirements:
           - id: history-actor-display
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx"
-            selector: { kind: test, name: "REQ-UX-ENTRY-002: resolves actor UUIDs to member display names and never shows raw UUIDs in rows" }
+            selector: { kind: test, name: "REQ-UX-ENTRY-HISTORY-001: resolves actor IDs to member names without showing IDs in rows" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx", test: "REQ-UX-ENTRY-002: resolves actor UUIDs to member display names and never shows raw UUIDs in rows" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx", test: "REQ-UX-ENTRY-HISTORY-001: resolves actor IDs to member names without showing IDs in rows" } }
           - id: history-actor-fallback
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx"
-            selector: { kind: test, name: "REQ-UX-ENTRY-002: falls back to a stable short actor form when the directory cannot resolve" }
+            selector: { kind: test, name: "REQ-UX-ENTRY-HISTORY-001: uses a neutral label when the directory cannot resolve an actor" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx", test: "REQ-UX-ENTRY-002: falls back to a stable short actor form when the directory cannot resolve" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx", test: "REQ-UX-ENTRY-HISTORY-001: uses a neutral label when the directory cannot resolve an actor" } }
           - id: actor-view-model-display
             adapter: typescript
             path: frontend/src/lib/entry-history.test.ts
-            selector: { kind: test, name: "REQ-UX-ENTRY-002: resolves an actor UUID fixture to the member display name" }
+            selector: { kind: test, name: "REQ-UX-ENTRY-HISTORY-001: resolves an actor ID to the member display name" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-002: resolves an actor UUID fixture to the member display name" } }
-          - id: actor-view-model-short
-            adapter: typescript
-            path: frontend/src/lib/entry-history.test.ts
-            selector: { kind: test, name: "REQ-UX-ENTRY-002: keeps short human-meaningful actor values as-is" }
-            claims:
-              - kind: verifies
-                criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
-                covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-002: keeps short human-meaningful actor values as-is" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-HISTORY-001: resolves an actor ID to the member display name" } }
           - id: actor-view-model-fallback
             adapter: typescript
             path: frontend/src/lib/entry-history.test.ts
-            selector: { kind: test, name: "REQ-UX-ENTRY-002: falls back to a stable short form for unresolvable UUIDs" }
+            selector: { kind: test, name: "REQ-UX-ENTRY-HISTORY-001: uses a neutral label for unresolved actor IDs" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-002: falls back to a stable short form for unresolvable UUIDs" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-HISTORY-001: uses a neutral label for unresolved actor IDs" } }
           - id: actor-view-model-unknown
             adapter: typescript
             path: frontend/src/lib/entry-history.test.ts
-            selector: { kind: test, name: "REQ-UX-ENTRY-002: reports unknown actors without inventing identity" }
+            selector: { kind: test, name: "REQ-UX-ENTRY-HISTORY-001: reports missing actors without inventing identity" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-002: reports unknown actors without inventing identity" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-HISTORY-001: reports missing actors without inventing identity" } }
           - id: actor-view-model-raw
             adapter: typescript
             path: frontend/src/lib/entry-history.test.ts
-            selector: { kind: test, name: "REQ-UX-ENTRY-002: keeps the raw actor identity available for event detail" }
+            selector: { kind: test, name: "REQ-UX-ENTRY-HISTORY-001: keeps the raw actor identity available for details" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-008#binding.row-list-implementation/target.row-list-primitive]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-002: keeps the raw actor identity available for event detail" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/entry-history.test.ts, test: "REQ-UX-ENTRY-HISTORY-001: keeps the raw actor identity available for details" } }
       - id: pr6-row-migration-verification
         role: verification
         facet: verification

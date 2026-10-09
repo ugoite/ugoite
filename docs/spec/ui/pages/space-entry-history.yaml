@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-09-24"
+updated: "2026-10-09"
 page:
   id: space-entry-history
   title: Space Entry History
@@ -28,3 +28,5 @@ components:
       type: list
       title: Entry history
       accessible_name_source: entry-history-title
+      actor_label: member-display-name-or-localized-unknown-actor
+      actor_identifier_visibility: never-in-primary-content-or-accessible-labels

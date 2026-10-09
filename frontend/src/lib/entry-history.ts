@@ -18,7 +18,7 @@ export type ActorDirectoryEntry = {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const SHORT_ACTOR_MAX_LENGTH = 16;
+const SHORT_ACTOR_IDENTIFIER_MAX_LENGTH = 16;
 
 const operationLabels: Record<string, TranslationKey> = {
   upsert: "entryHistory.operation.updated",
@@ -48,27 +48,50 @@ export const revisionActorId = (
   return raw ? raw : null;
 };
 
-/**
- * Stable short fallback for rows when an actor ID cannot be resolved to a
- * display name. UUIDs collapse to their first 8 characters; short
- * human-meaningful values pass through unchanged; anything else truncates
- * deterministically. Empty stays the shared unknown-actor copy.
- */
-export const shortActorFallback = (actorId: string): string => {
+/** A short identity fragment used only to reject identifier-like display names. */
+export const shortActorIdentifierForComparison = (actorId: string): string => {
   const raw = actorId.trim();
-  if (!raw) return t("entryHistory.unknownActor");
   if (UUID_PATTERN.test(raw)) return raw.slice(0, 8);
-  return raw.length > SHORT_ACTOR_MAX_LENGTH
-    ? `${raw.slice(0, SHORT_ACTOR_MAX_LENGTH - 1)}…`
+  return raw.length > SHORT_ACTOR_IDENTIFIER_MAX_LENGTH
+    ? `${raw.slice(0, SHORT_ACTOR_IDENTIFIER_MAX_LENGTH - 1)}…`
     : raw;
 };
 
+const displayNameIncludesActorIdentifier = (
+  actorId: string,
+  displayName: string,
+): boolean => {
+  const normalizedName = displayName.toLowerCase();
+  const containsIdentifier = (identifier: string): boolean => {
+    let offset = normalizedName.indexOf(identifier);
+    while (offset >= 0) {
+      if (identifier.length >= 8) return true;
+      const before = Array.from(normalizedName.slice(0, offset)).at(-1);
+      const after = Array.from(
+        normalizedName.slice(offset + identifier.length),
+      )[0];
+      const isIdentifierCharacter = (character: string | undefined) =>
+        Boolean(character && /[\p{L}\p{N}_-]/u.test(character));
+      if (!isIdentifierCharacter(before) && !isIdentifierCharacter(after)) {
+        return true;
+      }
+      offset = normalizedName.indexOf(identifier, offset + 1);
+    }
+    return false;
+  };
+  return [
+    actorId.toLowerCase(),
+    shortActorIdentifierForComparison(actorId)
+      .toLowerCase(),
+  ].some(containsIdentifier);
+};
+
 /**
- * Actor display name for history rows. The history API carries only opaque
- * actor identity strings (actor/updated_by/author principal IDs); display
- * names resolve through the Space member directory when available. Rows show
- * the display name, the stable short fallback, or the unknown-actor copy —
- * never a raw UUID (UX-HIST actor UUID=0 in normal rows).
+ * Actor label for ordinary history content. The history API carries only
+ * opaque actor identity strings (actor/updated_by/author principal IDs), so
+ * unresolved identities use a localized neutral label instead of showing
+ * any part of the identifier. Exact IDs remain available through advanced
+ * technical details where the route provides them.
  */
 export const resolveActorDisplayName = (
   revision: RevisionMetadata,
@@ -76,13 +99,17 @@ export const resolveActorDisplayName = (
 ): string => {
   const raw = revisionActorId(revision);
   if (!raw) return t("entryHistory.unknownActor");
-  return lookup?.(raw)?.trim() || shortActorFallback(raw);
+  const displayName = lookup?.(raw)?.trim();
+  if (!displayName || displayNameIncludesActorIdentifier(raw, displayName)) {
+    return t("entryHistory.unknownActor");
+  }
+  return displayName;
 };
 
 /** Build the member-directory lookup for `resolveActorDisplayName`. */
 export const actorDisplayNameLookup = (
   members: ActorDirectoryEntry[],
-): ((actorId: string) => string | undefined) => {
+): (actorId: string) => string | undefined => {
   const names = new Map<string, string>();
   for (const member of members) {
     const id = member.principal_id?.trim();

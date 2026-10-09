@@ -116,17 +116,17 @@ describe("entry history route", () => {
     const list = await screen.findByRole("list", { name: "Entry history" });
     expect(list).toHaveClass("rowList");
 
-    // One row link (operation primary, actor secondary, timestamp meta)
+    // One row link (operation primary, neutral actor label, timestamp meta)
     // routes to the revision; revision id, title, and form stay out of rows.
     const rowLink = await screen.findByRole("link", {
-      name: /Updated · alice ·/,
+      name: /Updated · Unknown actor ·/,
     });
     expect(rowLink).toHaveAttribute(
       "href",
       "/spaces/default/entries/entry-1/history/rev-1",
     );
     expect(rowLink).toHaveClass("rowListMain");
-    expect(screen.getByText("alice")).toBeInTheDocument();
+    expect(screen.getByText("Unknown actor")).toBeInTheDocument();
     expect(
       await screen.findByText(formatDateTimeLabel(1767225600)),
     ).toBeInTheDocument();
@@ -140,7 +140,7 @@ describe("entry history route", () => {
     expect(rowLink.tagName).toBe("A");
   });
 
-  it("REQ-UX-ENTRY-002: resolves actor UUIDs to member display names and never shows raw UUIDs in rows", async () => {
+  it("REQ-UX-ENTRY-HISTORY-001: resolves actor IDs to member names without showing IDs in rows", async () => {
     const actorId = "123e4567-e89b-12d3-a456-426614174000";
     vi.mocked(spaceApi.listMembers).mockResolvedValue([
       {
@@ -175,7 +175,42 @@ describe("entry history route", () => {
     expect(container.textContent).not.toContain("123e4567-e89b");
   });
 
-  it("REQ-UX-ENTRY-002: falls back to a stable short actor form when the directory cannot resolve", async () => {
+  it("REQ-UX-ENTRY-HISTORY-001: hides member names that echo actor IDs in rows", async () => {
+    const actorId = "actor-7";
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([
+      {
+        principal: {
+          principal_id: actorId,
+          kind: "human",
+          display_name: "Member actor-7",
+          state: "active",
+          created_at: "2026-01-01T00:00:00Z",
+        },
+        role: "editor",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    vi.mocked(entryApi.history).mockResolvedValue({
+      revisions: [{
+        revision_id: "rev-9",
+        timestamp: 1767225600,
+        checksum: "checksum",
+        operation: "upsert",
+        entry_version: 2,
+        actor: actorId,
+      }],
+    });
+
+    const { container } = render(() => <SpaceEntryHistoryRoute />);
+
+    expect(
+      await screen.findByRole("link", { name: /Updated · Unknown actor ·/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Member actor-7")).not.toBeInTheDocument();
+    expect(container.textContent).not.toContain(actorId);
+  });
+
+  it("REQ-UX-ENTRY-HISTORY-001: uses a neutral label when the directory cannot resolve an actor", async () => {
     const actorId = "123e4567-e89b-12d3-a456-426614174000";
     vi.mocked(spaceApi.listMembers).mockRejectedValue(new Error("denied"));
     vi.mocked(entryApi.history).mockResolvedValue({
@@ -191,9 +226,9 @@ describe("entry history route", () => {
 
     const { container } = render(() => <SpaceEntryHistoryRoute />);
 
-    // Deterministic short fallback, still no raw UUID in rows.
-    expect(await screen.findByText("123e4567")).toBeInTheDocument();
+    expect(await screen.findByText("Unknown actor")).toBeInTheDocument();
     expect(container.textContent).not.toContain(actorId);
+    expect(container.textContent).not.toContain("123e4567");
   });
 
   it("PR3: pagination keeps rows with a footer spinner while loading more", async () => {

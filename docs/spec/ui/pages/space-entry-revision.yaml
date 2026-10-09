@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-09-24"
+updated: "2026-10-09"
 page:
   id: space-entry-revision
   title: Space Entry Revision
@@ -31,5 +31,9 @@ components:
       metadata:
         - read-only state
         - timestamp
-      technical-identifiers: advanced-details
+      actor_label: member-display-name-or-localized-unknown-actor
+      technical-identifiers:
+        visibility: collapsed-localized-details-only
+        values: [revision ID, actor ID]
+        copy: exact-value
       restore: confirmed append-only action

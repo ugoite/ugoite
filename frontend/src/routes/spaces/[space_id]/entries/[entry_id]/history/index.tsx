@@ -39,8 +39,7 @@ export default function SpaceEntryHistoryRoute() {
   );
   // Best-effort member directory for actor display names. The API carries
   // only opaque actor identity strings on revisions; when the directory is
-  // unavailable (or the actor left), rows fall back to the stable short
-  // form — never a raw UUID.
+  // unavailable (or the actor left), rows use a localized neutral label.
   const [members] = createResource(
     () => spaceId(),
     async (id): Promise<SpaceMember[]> => {

@@ -1275,4 +1275,33 @@ describe("UI spec YAML registry", () => {
         },
       });
   });
+
+  it("REQ-UX-ENTRY-HISTORY-001: documents actor labels and collapsed revision identifiers", () => {
+    const history = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-entry-history"
+    );
+    const revision = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-entry-revision"
+    );
+    const historyRows = history?.spec.components?.body?.find(({ id }) =>
+      id === "revision-list"
+    );
+    const revisionContent = revision?.spec.components?.body?.find(({ id }) =>
+      id === "revision-content"
+    );
+
+    expect(historyRows).toMatchObject({
+      actor_label: "member-display-name-or-localized-unknown-actor",
+      actor_identifier_visibility:
+        "never-in-primary-content-or-accessible-labels",
+    });
+    expect(revisionContent).toMatchObject({
+      actor_label: "member-display-name-or-localized-unknown-actor",
+      "technical-identifiers": {
+        visibility: "collapsed-localized-details-only",
+        values: ["revision ID", "actor ID"],
+        copy: "exact-value",
+      },
+    });
+  });
 });
