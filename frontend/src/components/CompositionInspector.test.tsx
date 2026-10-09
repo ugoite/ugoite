@@ -89,13 +89,18 @@ const harnessCalls = vi.hoisted(() => ({
 }));
 
 function Harness(
-  props: { initial: CompositionDraft; selectedId: string | null },
+  props: {
+    initial: CompositionDraft;
+    selectedId: string | null;
+    fieldNames?: (formId: string, fieldId: number) => string | undefined;
+  },
 ) {
   const [draft, setDraft] = createSignal(props.initial);
   return (
     <CompositionInspector
       draft={draft()}
       selectedId={props.selectedId}
+      fieldNames={props.fieldNames}
       onDraftChange={(next) => {
         harnessCalls.draft.push(next);
         setDraft(next);
@@ -108,9 +113,14 @@ function Harness(
 const renderHarness = (
   selectedId: string | null,
   initial?: CompositionDraft,
+  fieldNames?: (formId: string, fieldId: number) => string | undefined,
 ) =>
   render(() => (
-    <Harness initial={initial ?? seedDraft()} selectedId={selectedId} />
+    <Harness
+      initial={initial ?? seedDraft()}
+      selectedId={selectedId}
+      fieldNames={fieldNames}
+    />
   ));
 
 const documentSources = (draft: CompositionDraft): string =>
@@ -153,7 +163,7 @@ describe("CompositionInspector", () => {
     expect(harnessCalls.jump).toHaveLength(0);
   });
 
-  it("shows Form labels instead of field IDs for metric values", () => {
+  it("shows only resolved Form labels for metric values", () => {
     const added = addMetricDisplay(seedDraft(), "src-2", { fieldId: 1 });
     if (!added.ok || !added.draftId) throw new Error("expected metric block");
 
@@ -172,12 +182,17 @@ describe("CompositionInspector", () => {
     const options = Array.from(valueSelect.querySelectorAll("option")).map(
       (option) => option.textContent,
     );
-    expect(options).toEqual(["Expense type", "Field 2"]);
+    expect(options).toEqual(["Expense type"]);
     expect(options.join(" ")).not.toContain("1");
+    expect(options.join(" ")).not.toContain("2");
   });
 
   it("maps metric source changes to component source and value field", () => {
-    renderHarness("disp-1");
+    renderHarness(
+      "disp-1",
+      undefined,
+      (_formId, fieldId) => fieldId === 1 ? "Expense type" : undefined,
+    );
 
     // The entry source shares no value field: first schema field wins.
     fireEvent.change(screen.getByLabelText("Source"), {
