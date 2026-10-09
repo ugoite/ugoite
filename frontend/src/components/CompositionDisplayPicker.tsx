@@ -55,7 +55,6 @@ export const savedSqlScalarCandidates = (
  * rest through resolve diagnostics.
  */
 const nonScalarFieldTypes = new Set([
-  "binary",
   "list",
   "object_list",
   "row_reference",

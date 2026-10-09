@@ -35,6 +35,7 @@ const entrySource: DraftSource = {
   fieldSchema: [
     { field_id: 100, field_type: "string" },
     { field_id: 101, field_type: "asset_reference" },
+    { field_id: 102, field_type: "binary" },
   ],
   query: { filters: [], sort: [], projection: { kind: "preview" } },
 };
@@ -146,7 +147,8 @@ describe("CompositionDisplayPicker", () => {
     render(() => (
       <CompositionDisplayPicker
         sources={[entrySource]}
-        fieldNames={(_formId, fieldId) => fieldId === 100 ? "Title" : undefined}
+        fieldNames={(_formId, fieldId) =>
+          fieldId === 100 ? "Title" : fieldId === 102 ? "Payload" : undefined}
         onAdd={entryAdd}
         onClose={() => {}}
       />
@@ -165,16 +167,18 @@ describe("CompositionDisplayPicker", () => {
       within(entrySelect).getAllByRole("option").map((option) =>
         option.textContent
       ),
-    ).toEqual(["Title"]);
+    ).toEqual(["Title", "Payload"]);
     expect(entryDialog).not.toHaveTextContent(entrySource.formId);
     expect(entryDialog).not.toHaveTextContent("100");
+    expect(entryDialog).not.toHaveTextContent("102");
+    fireEvent.change(entrySelect, { target: { value: "102" } });
     fireEvent.click(
       within(entryDialog).getByRole("button", { name: "Add" }),
     );
     expect(entryAdd).toHaveBeenCalledWith({
       kind: "metric",
       sourceDraftId: "src-2",
-      valueField: { fieldId: 100 },
+      valueField: { fieldId: 102 },
     });
   });
 
