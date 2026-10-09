@@ -1322,6 +1322,45 @@ describe("FormTable", () => {
     expect(mobileList().getByText("Updated")).toBeInTheDocument();
   });
 
+  it("traps focus in the Columns dialog and returns it to the trigger", async () => {
+    const entryForm = {
+      name: "Test",
+      fields: { private_field_id: { type: "string" } },
+    } as any;
+    mockEntryQuery([{
+      id: "private-entry-id",
+      properties: { private_field_id: "Value" },
+    }]);
+    render(() => (
+      <FormTable
+        spaceId="ws"
+        entryForm={canonicalForm(entryForm)}
+        onEntryClick={() => {}}
+      />
+    ));
+
+    const trigger = screen.getByRole("button", { name: "Columns" });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: "Columns" });
+    const close = screen.getByRole("button", { name: /close/i });
+    await waitFor(() => expect(close).toHaveFocus());
+    expect(within(dialog).queryByText("private_field_id"))
+      .not.toBeInTheDocument();
+    expect(within(dialog).queryByText("private-entry-id"))
+      .not.toBeInTheDocument();
+
+    const apply = screen.getByRole("button", { name: "Apply" });
+    apply.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(close).toHaveFocus();
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
   it("REQ-UX-FORMTABLE-001: keeps Entry IDs out of desktop rows and opens entries by action", async () => {
     const entryForm = {
       name: "Test",

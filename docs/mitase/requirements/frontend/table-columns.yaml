@@ -51,3 +51,12 @@ requirements:
                 criterion: REQ-FE-075#criterion.shared-column-picker
                 covers: [FEAT-UX-017#binding.formtable-entry-identity-implementation/target.form-table-component-contract]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-075: declares FormTable's optional timestamps and column picker" } }
+          - id: column-picker-focus-and-identifiers
+            adapter: typescript
+            path: frontend/src/components/FormTable.test.tsx
+            selector: { kind: test, name: traps focus in the Columns dialog and returns it to the trigger }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-075#criterion.shared-column-picker
+                covers: [FEAT-FE-015#binding.frontend/target.shared-column-picker]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/FormTable.test.tsx, test: traps focus in the Columns dialog and returns it to the trigger } }
