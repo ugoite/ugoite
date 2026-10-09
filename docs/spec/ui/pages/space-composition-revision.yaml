@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-08"
+updated: "2026-10-09"
 page:
   id: space-composition-revision
   title: Saved tool revision
@@ -57,6 +57,7 @@ components:
       metric_presentation: shared WASM metric evaluator
       pagination_owner: composition query handle
       description: Composition table components delegate presentation to the source-native Entry or SQL result presenter. Composition does not implement a third generic table grammar, and source query semantics remain unchanged.
+      entry_query_form_scoped_property_identity: A Form-scoped EntryQuery projection of property key form_id reads its value from row properties; the row's top-level system Form identity remains separate.
       entry_query_system_form_identity: All-Forms EntryQuery table headings and cells omit the row's system Form UUID.
       rendering:
         mode: bounded-current-page

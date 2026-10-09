@@ -176,6 +176,9 @@ describe("entryQueryDisplayColumns", () => {
         fields: [{ kind: "property", field_id: 8 }],
       }),
       [row],
+      undefined,
+      (formId, fieldId) =>
+        formId === "form-1" && fieldId === 8 ? "form_id" : undefined,
     );
     expect(columns.map((column) => column.label)).toEqual(["form_id"]);
     expect(columns[0].text(row)).toBe("projected Form value");

@@ -45,6 +45,10 @@ requirements:
         kind: behavior
         statement: A Composition EntryQuery table renders a projected Form property from properties and Created or Updated from its dedicated row field, preserving both when their names collide.
         governed_by: [POL-006#rule.governance]
+      - id: composition-form-scoped-form-id-property
+        kind: behavior
+        statement: A Form-scoped Composition EntryQuery table renders a projected Form property whose key is `form_id` from row properties, not from the top-level system Form ID.
+        governed_by: [POL-006#rule.governance]
       - id: composition-system-form-id-hidden
         kind: behavior
         statement: An all-Forms Composition EntryQuery table does not include the top-level system Form UUID as a substring in any column heading or cell text.
@@ -370,6 +374,15 @@ requirements:
                 criterion: REQ-FE-068#criterion.composition-property-timestamp-separation
                 covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "keeps colliding Form properties and dedicated timestamps separate" } }
+          - id: composition-form-scoped-form-id-property
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: "keeps a Form property named form_id in Form scope" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.composition-form-scoped-form-id-property
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "keeps a Form property named form_id in Form scope" } }
           - id: composition-system-form-id-hidden
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.test.tsx

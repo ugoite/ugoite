@@ -67,7 +67,7 @@ requirements:
       - id: data-workspace-transient-verification
         role: verification
         facet: verification
-        responsibility: Verify Data workspace source selection and reorder stay transient Work through the navigator without entering the Composition document.
+        responsibility: Verify Data workspace source selection, reorder, and navigator collapse stay transient Work without entering the Composition document.
         targets:
           - id: data-navigator-selection-case
             adapter: typescript
@@ -91,6 +91,16 @@ requirements:
                   - FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
                   - FEAT-COMP-006#binding.studio-data-runtime/target.browser-source-navigator
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: reorders sources with keyboard-operable move buttons } }
+          - id: data-navigator-collapse-case
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector: { kind: test, name: collapses the source navigator and restores it without losing the selected detail }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.navigator-collapse-is-transient
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: collapses the source navigator and restores it without losing the selected detail } }
       - id: studio-sync-verification
         role: verification
         facet: verification
@@ -264,4 +274,8 @@ requirements:
       - id: work-state-is-transient
         kind: behavior
         statement: Browser page, scroll, result, and cache state is not saved into a Composition document.
+        governed_by: [POL-000#rule.foundation-precedence, POL-002#rule.governance]
+      - id: navigator-collapse-is-transient
+        kind: behavior
+        statement: The Data source navigator can be collapsed to give the selected source detail the available width and restored without losing selection; collapse state is transient Work and is not persisted in the Composition document.
         governed_by: [POL-000#rule.foundation-precedence, POL-002#rule.governance]
