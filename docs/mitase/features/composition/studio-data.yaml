@@ -337,6 +337,24 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-FE-070#criterion.entry-query-field-labels
+    - id: browser-data-source-navigator-identifiers
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: keeps long navigator names available without exposing source identifiers
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.no-persistent-explanatory-copy
+    - id: browser-data-source-form-identifiers
+      adapter: typescript
+      path: frontend/src/components/CompositionDataWorkspace.test.tsx
+      selector:
+        kind: test
+        name: "REQ-FE-070: keeps internal Form IDs out of Composition source details"
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.no-persistent-explanatory-copy
     - id: browser-data-entry-query-absent-form
       adapter: typescript
       path: frontend/src/components/CompositionDataWorkspace.test.tsx
