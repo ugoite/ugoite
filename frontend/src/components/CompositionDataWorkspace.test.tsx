@@ -303,6 +303,40 @@ describe("CompositionDataWorkspace", () => {
     await screen.findByRole("heading", { name: "Expenses" });
   });
 
+  it("collapses the source navigator and restores it without losing the selected detail", async () => {
+    const { container } = renderWorkspace(twoSourceDraft());
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+
+    const navigator = container.querySelector(".dataWorkspaceNavigator");
+    expect(navigator).toBeInTheDocument();
+    const hide = screen.getByRole("button", { name: "Hide data sources" });
+    expect(hide).toHaveAttribute("aria-expanded", "true");
+    expect(hide).toHaveAttribute("aria-controls", navigator?.id);
+    fireEvent.click(hide);
+    await Promise.resolve();
+
+    expect(navigator).toHaveAttribute("hidden");
+    expect(screen.getByRole("button", { name: "Show data sources" }))
+      .toHaveFocus();
+    expect(container.querySelector(".dataWorkspace")).toHaveClass(
+      "dataWorkspace--navigator-collapsed",
+    );
+    expect(screen.getByRole("heading", { name: "Expenses" })).toBeVisible();
+
+    const show = screen.getByRole("button", { name: "Show data sources" });
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    expect(show).toHaveAttribute("aria-controls", navigator?.id);
+    fireEvent.click(show);
+    await Promise.resolve();
+
+    expect(navigator).not.toHaveAttribute("hidden");
+    expect(screen.getByRole("button", { name: "Hide data sources" }))
+      .toHaveFocus();
+    expect(screen.getByRole("button", { name: "Expenses" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Expenses" })).toBeVisible();
+  });
+
   it("reorders sources with keyboard-operable move buttons", async () => {
     const harness = renderWorkspace(twoSourceDraft());
 
@@ -524,7 +558,10 @@ describe("CompositionDataWorkspace", () => {
     expect(projection).toMatchObject({
       kind: "entry_query",
       query: {
-        projection: { kind: "fields", fields: Array.from({ length: 64 }, (_, index) => index + 1) },
+        projection: {
+          kind: "fields",
+          fields: Array.from({ length: 64 }, (_, index) => index + 1),
+        },
       },
     });
     expect(
@@ -551,7 +588,10 @@ describe("CompositionDataWorkspace", () => {
         source.draftId === added.draftId && source.kind === "entry_query"
           ? {
             ...source,
-            query: { ...source.query, projection: { kind: "preview" as const } },
+            query: {
+              ...source.query,
+              projection: { kind: "preview" as const },
+            },
           }
           : source
       ),
@@ -782,7 +822,12 @@ describe("CompositionDataWorkspace", () => {
     fireEvent.click(checkbox64);
     expect(harness.current().sources[0]).toMatchObject({
       kind: "entry_query",
-      query: { projection: { kind: "fields", fields: expect.not.arrayContaining([64]) } },
+      query: {
+        projection: {
+          kind: "fields",
+          fields: expect.not.arrayContaining([64]),
+        },
+      },
     });
     expect(checkbox65).toBeEnabled();
   });
@@ -857,10 +902,11 @@ describe("CompositionDataWorkspace", () => {
     fireEvent.click(
       within(filterDialog).getByRole("button", { name: "Add filter" }),
     );
-    const filterFieldLabels =
-      within(within(filterDialog).getByLabelText("Filter field 1"))
-        .getAllByRole("option")
-        .map((option) => option.textContent);
+    const filterFieldLabels = within(
+      within(filterDialog).getByLabelText("Filter field 1"),
+    )
+      .getAllByRole("option")
+      .map((option) => option.textContent);
     expect(filterFieldLabels).toContain("Title");
     expect(filterFieldLabels.join(" ")).not.toMatch(/\b100\b|\b101\b/);
     fireEvent.click(
@@ -872,10 +918,11 @@ describe("CompositionDataWorkspace", () => {
     fireEvent.click(
       within(sortDialog).getByRole("button", { name: "Add sort" }),
     );
-    const sortFieldLabels =
-      within(within(sortDialog).getByLabelText("Sort field 1"))
-        .getAllByRole("option")
-        .map((option) => option.textContent);
+    const sortFieldLabels = within(
+      within(sortDialog).getByLabelText("Sort field 1"),
+    )
+      .getAllByRole("option")
+      .map((option) => option.textContent);
     expect(sortFieldLabels).toContain("Title");
     expect(sortFieldLabels.join(" ")).not.toMatch(/\b100\b|\b101\b/);
     fireEvent.click(within(sortDialog).getByRole("button", { name: "Cancel" }));
@@ -1449,6 +1496,9 @@ describe("CompositionDataWorkspace", () => {
   it("stacks the navigator and editor at narrow widths", () => {
     const css = stylesheet();
     expect(css).toMatch(/\.dataWorkspace\s*\{[^}]*display:\s*grid/);
+    expect(css).toMatch(
+      /\.dataWorkspace--navigator-collapsed\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+    );
     // 390px sits inside the stacked rule: one column, no document scroll.
     expect(css).toMatch(
       /@media\s*\(max-width:\s*560px\)[\s\S]*?\.dataWorkspace\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/,
