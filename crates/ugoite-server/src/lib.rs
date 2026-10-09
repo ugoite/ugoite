@@ -11650,11 +11650,23 @@ fn api_composition_sources_and_bindings(
             ugoite_core::composition::ResolvedSourceRequest::EntryQuery {
                 source_id,
                 request,
+                display_system_fields,
                 source_schema_fingerprint,
             } => Ok(CompositionResolvedSource::EntryQuery {
                 source_id,
                 request: serde_json::to_value(request)
                     .map_err(|error| ApiError::from_core(anyhow!(error)))?,
+                display_system_fields: display_system_fields
+                    .into_iter()
+                    .map(|field| match field {
+                        ugoite_domain::composition::EntryQueryDisplaySystemField::CreatedAt => {
+                            ugoite_api_client::composition::CompositionEntryQuerySystemField::CreatedAt
+                        }
+                        ugoite_domain::composition::EntryQueryDisplaySystemField::UpdatedAt => {
+                            ugoite_api_client::composition::CompositionEntryQuerySystemField::UpdatedAt
+                        }
+                    })
+                    .collect(),
                 source_schema_fingerprint,
             }),
             ugoite_core::composition::ResolvedSourceRequest::SavedSql {
@@ -15595,6 +15607,7 @@ mod authentication_regression_tests {
                         projection: EntryQueryProjectionTemplate::Fields {
                             fields: vec![source_field_id],
                         },
+                        display_system_fields: Vec::new(),
                     },
                 }],
                 components: vec![CompositionComponent::Text {
@@ -16063,6 +16076,7 @@ mod authentication_regression_tests {
                 projection: EntryQueryProjectionTemplate::Fields {
                     fields: vec![source_field_id, value_field_id],
                 },
+                display_system_fields: Vec::new(),
             },
         };
         let mut older_document = document(

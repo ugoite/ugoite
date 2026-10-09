@@ -411,6 +411,8 @@ pub enum CompositionResolvedSource {
     EntryQuery {
         source_id: String,
         request: Value,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        display_system_fields: Vec<CompositionEntryQuerySystemField>,
         source_schema_fingerprint: String,
     },
     SavedSql {
@@ -418,6 +420,14 @@ pub enum CompositionResolvedSource {
         request: Value,
         source_schema_fingerprint: String,
     },
+}
+
+/// Entry identity timestamps selected for a Composition EntryQuery table.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionEntryQuerySystemField {
+    CreatedAt,
+    UpdatedAt,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

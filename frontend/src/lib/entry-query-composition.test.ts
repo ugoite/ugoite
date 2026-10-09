@@ -142,7 +142,7 @@ describe("buildEntryQueryComposition", () => {
     ]);
   });
 
-  it("drops system refs from a fields projection instead of failing", () => {
+  it("keeps selected timestamps separate from the property projection", () => {
     const result = buildEntryQueryComposition({
       query: {
         scope: { kind: "form", form_id: formId },
@@ -166,6 +166,10 @@ describe("buildEntryQueryComposition", () => {
       kind: "fields",
       fields: [101],
     });
+    expect(result.source.query.display_system_fields).toEqual([
+      "created_at",
+      "updated_at",
+    ]);
     expect(result.fieldSchema).toEqual([
       { field_id: 101, field_type: "string" },
     ]);

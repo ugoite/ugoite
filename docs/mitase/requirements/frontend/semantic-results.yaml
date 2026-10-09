@@ -347,15 +347,6 @@ requirements:
                 criterion: REQ-FE-068#criterion.local-horizontal-overflow
                 covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-dashboard-flow-renderer]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "keeps flow rows inline with tables scrolling in their own viewport" } }
-          - id: composition-entry-columns-preview
-            adapter: typescript
-            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
-            selector: { kind: test, name: "renders preview projections as Preview, Created, Updated" }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-068#criterion.source-native-composition-rendering
-                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "renders preview projections as Preview, Created, Updated" } }
           - id: composition-entry-columns-fields
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.test.tsx

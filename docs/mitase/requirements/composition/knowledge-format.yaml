@@ -127,6 +127,29 @@ requirements:
                   - FEAT-COMP-001#binding.portable-envelope-domain/target.saved-sql-result-column-type
                   - FEAT-COMP-001#binding.portable-envelope-domain/target.saved-sql-result-field-types
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_schema_fingerprint_tracks_ordered_result_descriptors } }
+      - id: entry-query-display-system-fields-verification
+        role: verification
+        facet: verification
+        responsibility: Verify omitted display timestamps remain empty and readable in old documents, and selected timestamps pass through resolution without widening the EntryQuery projection.
+        targets:
+          - id: optional-display-fields-and-preview-compatibility
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::entry_query_display_timestamps_are_optional_and_old_preview_documents_read }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
+                covers: [FEAT-COMP-001#binding.entry-query-display-system-fields-domain/target.entry-query-template]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::entry_query_display_timestamps_are_optional_and_old_preview_documents_read } }
+          - id: resolution-keeps-display-fields-separate
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::entry_query_template_compiles_to_the_existing_bounded_request }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
+                covers: [FEAT-COMP-002#binding.entry-query-resolver/target.compile-entry-query-source]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::entry_query_template_compiles_to_the_existing_bounded_request } }
       - id: layout-verification
         role: verification
         facet: verification
@@ -769,6 +792,10 @@ requirements:
           every text-searchable property field under existing EntryQuery
           semantics, excluding binary, list, object_list, and asset_reference
           fields from the text-search expansion.
+        governed_by: [POL-007#rule.governance]
+      - id: entry-query-display-system-fields
+        kind: behavior
+        statement: An EntryQuery template may select Created and Updated as Composition table columns independently of its Preview or property projection. Omitted selections mean no system timestamp columns; older documents without the field remain readable with that empty selection.
         governed_by: [POL-007#rule.governance]
   - id: REQ-COMP-003
     title: Canonical Composition representation

@@ -1680,6 +1680,26 @@ fn openapi_documents_composition_resolve_metric_result_type() {
 }
 
 #[test]
+fn openapi_documents_optional_composition_entry_query_display_system_fields() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let entry_query = &snapshot["components"]["schemas"]["CompositionResolvedSource"]["oneOf"][0];
+    let field = &entry_query["properties"]["display_system_fields"];
+    assert_eq!(field["type"], "array");
+    assert_eq!(
+        field["items"]["$ref"],
+        "#/components/schemas/CompositionEntryQuerySystemField"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["CompositionEntryQuerySystemField"]["enum"],
+        serde_json::json!(["created_at", "updated_at"])
+    );
+    assert!(!entry_query["required"]
+        .as_array()
+        .expect("required EntryQuery source fields")
+        .contains(&serde_json::json!("display_system_fields")));
+}
+
+#[test]
 fn openapi_documents_the_form_extra_attributes_policy() {
     let snapshot = ugoite_server::openapi_snapshot();
     assert_eq!(

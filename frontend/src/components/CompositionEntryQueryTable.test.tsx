@@ -8,6 +8,7 @@ const source = (
     CompositionResolvedSource,
     { kind: "entry_query" }
   >["request"]["projection"],
+  displaySystemFields?: Array<"created_at" | "updated_at">,
 ): Extract<CompositionResolvedSource, { kind: "entry_query" }> => ({
   kind: "entry_query",
   source_id: "entries",
@@ -20,6 +21,9 @@ const source = (
     projection,
     limit: 100,
   },
+  ...(displaySystemFields
+    ? { display_system_fields: displaySystemFields }
+    : {}),
   source_schema_fingerprint: "fingerprint",
 });
 
@@ -37,9 +41,19 @@ const names = (formId: string, fieldId: number): string | undefined =>
   formId === "form-1" && fieldId === 7 ? "purpose" : undefined;
 
 describe("entryQueryDisplayColumns", () => {
-  it("renders preview projections as Preview, Created, Updated", () => {
+  it("renders old Preview projections without timestamp columns by default", () => {
     const columns = entryQueryDisplayColumns(
       source({ kind: "preview" }),
+      [entryRow()],
+      names,
+    );
+    expect(columns.map((column) => column.label)).toEqual(["Preview"]);
+    expect(columns[0].text(entryRow())).toBe("Travel entry");
+  });
+
+  it("renders selected timestamps alongside Preview", () => {
+    const columns = entryQueryDisplayColumns(
+      source({ kind: "preview" }, ["created_at", "updated_at"]),
       [entryRow()],
       names,
     );
@@ -48,7 +62,7 @@ describe("entryQueryDisplayColumns", () => {
       "Created",
       "Updated",
     ]);
-    expect(columns[0].text(entryRow())).toBe("Travel entry");
+    expect(columns[1].text(entryRow())).toContain("2026");
   });
 
   it("renders fields projections in projection order with timestamps last", () => {

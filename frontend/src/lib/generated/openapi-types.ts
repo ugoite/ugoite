@@ -17,6 +17,7 @@ export const OPENAPI_SCHEMA_NAMES = [
   "CompositionDiagnosticCode",
   "CompositionEntryIntegrity",
   "CompositionEntryMetadata",
+  "CompositionEntryQuerySystemField",
   "CompositionHistoryPage",
   "CompositionLintError",
   "CompositionLintRequest",

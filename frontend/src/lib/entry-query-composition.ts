@@ -83,6 +83,8 @@ export interface EntryQueryCompositionSort {
   direction: EntrySortDirection;
 }
 
+export type EntryQueryCompositionSystemField = "created_at" | "updated_at";
+
 export type EntryQueryCompositionProjection =
   | { kind: "preview" }
   | { kind: "fields"; fields: number[] };
@@ -96,6 +98,7 @@ export interface EntryQueryCompositionSource {
     filters: EntryQueryCompositionFilter[];
     sort: EntryQueryCompositionSort[];
     projection: EntryQueryCompositionProjection;
+    display_system_fields?: EntryQueryCompositionSystemField[];
   };
 }
 
@@ -311,15 +314,23 @@ export const buildEntryQueryComposition = (
     });
   }
 
-  // System refs in a projection are row identity (always returned outside
-  // the projection payload), so they are dropped rather than snapshotted.
-  // Dropping a filter or sort would change the result and stays fatal above.
+  // System refs in a projection are row identity, already returned outside
+  // the projection payload. Preserve their display selection separately;
+  // filters and sort still stay property-only because dropping them changes
+  // the result.
   const projectedFieldIds: number[] = [];
+  const displaySystemFields: EntryQueryCompositionSystemField[] = [];
   let projection: EntryQueryCompositionProjection = { kind: "preview" };
   if (input.projection.kind === "fields") {
     for (const field of input.projection.fields) {
-      if (field.kind !== "property") continue;
-      projectedFieldIds.push(field.field_id);
+      if (field.kind === "property") {
+        projectedFieldIds.push(field.field_id);
+      } else if (
+        (field.kind === "created_at" || field.kind === "updated_at") &&
+        !displaySystemFields.includes(field.kind)
+      ) {
+        displaySystemFields.push(field.kind);
+      }
     }
     // An empty fields list is rejected by EntryQuery validation, so a
     // system-ref-only projection has no exact Composition grammar.
@@ -373,6 +384,9 @@ export const buildEntryQueryComposition = (
         filters,
         sort,
         projection,
+        ...(displaySystemFields.length > 0
+          ? { display_system_fields: displaySystemFields }
+          : {}),
       },
     },
     fieldSchema,

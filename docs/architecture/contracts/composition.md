@@ -26,7 +26,7 @@ Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
 | Envelope | `format: ugoite.composition`, `format_version: 1`, `kind: dashboard` only |
 | Parser limits | 64 KiB YAML bytes, nesting depth 64, 256 collection items |
 | Tags | document tags are the sole semantic value and equal stored Entry tags |
-| Source grammar | `entry_query` (Form scope, six filter operators, two sort directions, fields/preview projection) and exact `saved_sql` (EntryId + RevisionId, ordered unique `expected_result`, seven logical types) |
+| Source grammar | `entry_query` (Form scope, six filter operators, two sort directions, fields/preview projection, optional Created/Updated display columns) and exact `saved_sql` (EntryId + RevisionId, ordered unique `expected_result`, seven logical types) |
 | Metric identity | stable FieldId (`entry_field`) versus exact column name (`sql_column`); exact-scalar consumer, no aggregation |
 | Components | `text` / `metric` / `table`; `flow` layout rows/items, unique row and component IDs, exactly-once component placement, parameter controls for required parameters without defaults, empty layouts and empty rows invalid; text styles `title` / `heading` / `body` / `caption` |
 | Fingerprints | document SHA-256 over normalized value; per-source schema fingerprints over FormId + used-field snapshot |
@@ -35,6 +35,14 @@ Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
 | Idempotency | `Idempotency-Key` required on save/restore; same key + same payload replays, differing payload conflicts |
 | Raw recovery | unsupported versions and broken references keep raw inspect, export, and history |
 | Save-as-tool scope | Form-scoped EntryQuery views and exact Saved SQL revisions save as tools; All-Forms Search (`/search`, All scope, no `form_id`) is inexpressible in v1 and stays disabled fail-closed rather than approximated |
+
+### Compatibility ruling: optional EntryQuery display timestamps
+
+This pre-release extension adds the optional `display_system_fields` selection
+to EntryQuery sources and keeps `format_version` at `1`. Missing selections
+default to empty and empty selections are omitted from canonical documents, so
+existing saved Composition documents remain readable without migration. The
+selection does not change query projection, filtering, sorting, or authorization.
 
 ## Portable document
 
@@ -88,9 +96,11 @@ existing query filters, sort, text, projection, and page-size semantics. Text ma
 or parameter reference; a parameter used for text is bound as a string. Its
 projection is either preview or an ordered list of property `FieldId`s. The
 optional `page_limit` defaults to 100 and is still bounded by the existing
-EntryQuery maximum. A `saved_sql` source carries an `EntryId`, an exact
-`RevisionId`, literal-or-parameter variables, and an ordered `expected_result`
-descriptor. Each expected result field has a unique non-empty output name and
+EntryQuery maximum. Optional `display_system_fields` independently selects
+Created and Updated table columns and defaults to empty when omitted; these
+columns do not widen the EntryQuery projection. A `saved_sql` source carries an
+`EntryId`, an exact `RevisionId`, literal-or-parameter variables, and an ordered
+`expected_result` descriptor. Each expected result field has a unique non-empty output name and
 one portable logical type: `string`, `boolean`, `integer`, `float`, `date`,
 `timestamp`, or `json`. The descriptor describes the exact revision's expected
 result shape; it does not claim that a SQL backend can statically infer the

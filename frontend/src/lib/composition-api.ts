@@ -258,6 +258,7 @@ export type CompositionResolvedSource =
     kind: "entry_query";
     source_id: string;
     request: EntryPageRequest;
+    display_system_fields?: Array<"created_at" | "updated_at">;
     source_schema_fingerprint: string;
   }
   | {

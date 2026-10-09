@@ -18,6 +18,7 @@ import {
   addSavedSqlSource,
   type CompositionDraft,
   createEmptyDraft,
+  setEntryQueryDisplaySystemFields,
   setEntryQueryFilters,
   setEntryQueryProjection,
   setEntryQuerySort,
@@ -238,6 +239,11 @@ const renderWorkspace = (
         if (result.ok) setCurrent(result.draft);
         return result.ok;
       }}
+      onEntryQueryDisplaySystemFields={(id, fields) => {
+        const result = setEntryQueryDisplaySystemFields(current(), id, fields);
+        if (result.ok) setCurrent(result.draft);
+        return result.ok;
+      }}
       onSavedSqlRevision={(id, revision, variableTypes) => {
         const result = setSavedSqlRevision(current(), id, revision);
         if (result.ok) setCurrent(result.draft);
@@ -268,6 +274,11 @@ const renderWorkspace = (
       return root;
     },
   };
+};
+
+const openColumnDialog = async (editor: HTMLElement) => {
+  fireEvent.click(within(editor).getByRole("button", { name: "Columns" }));
+  return await within(editor).findByRole("dialog");
 };
 
 describe("CompositionDataWorkspace", () => {
@@ -688,11 +699,12 @@ describe("CompositionDataWorkspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     const editor = harness.editor();
 
+    const columns = await openColumnDialog(editor);
     expect(
-      await within(editor).findByRole("checkbox", { name: "Title" }),
+      await within(columns).findByRole("checkbox", { name: "Title" }),
     ).toBeInTheDocument();
     expect(
-      within(editor).queryByRole("checkbox", { name: "Internal note" }),
+      within(columns).queryByRole("checkbox", { name: "Internal note" }),
     ).toBeNull();
   });
 
@@ -722,8 +734,9 @@ describe("CompositionDataWorkspace", () => {
         },
       },
     });
+    const columns = await openColumnDialog(editor);
     expect(
-      within(editor).getByRole("checkbox", { name: "Field 65" }),
+      within(columns).getByRole("checkbox", { name: "Field 65" }),
     ).toBeDisabled();
   });
 
@@ -761,6 +774,7 @@ describe("CompositionDataWorkspace", () => {
     fireEvent.click(
       await within(editor).findByRole("radio", { name: "Selected fields" }),
     );
+    const columns = await openColumnDialog(editor);
     expect(harness.current().sources[0]).toMatchObject({
       kind: "entry_query",
       query: {
@@ -771,13 +785,13 @@ describe("CompositionDataWorkspace", () => {
       },
     });
     expect(
-      within(editor).getByRole("checkbox", { name: "Field 65" }),
+      within(columns).getByRole("checkbox", { name: "Field 65" }),
     ).toBeChecked();
     expect(
-      within(editor).getByRole("checkbox", { name: "Field 65" }),
+      within(columns).getByRole("checkbox", { name: "Field 65" }),
     ).toBeDisabled();
     expect(
-      within(editor).getByRole("checkbox", { name: "Field 64" }),
+      within(columns).getByRole("checkbox", { name: "Field 64" }),
     ).toBeDisabled();
   });
 
@@ -814,7 +828,8 @@ describe("CompositionDataWorkspace", () => {
     const harness = renderWorkspace(fullProjectionDraft);
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     const editor = harness.editor();
-    const requiredField = await within(editor).findByRole("checkbox", {
+    const columns = await openColumnDialog(editor);
+    const requiredField = await within(columns).findByRole("checkbox", {
       name: "Field 65",
     });
 
@@ -823,7 +838,10 @@ describe("CompositionDataWorkspace", () => {
       "title",
       "The maximum of 64 fields is selected.",
     );
-    fireEvent.click(within(editor).getByRole("checkbox", { name: "Field 64" }));
+    fireEvent.click(
+      within(columns).getByRole("checkbox", { name: "Field 64" }),
+    );
+    fireEvent.click(within(columns).getByRole("button", { name: "Apply" }));
     expect(harness.current().sources[0]).toMatchObject({
       kind: "entry_query",
       query: {
@@ -833,8 +851,12 @@ describe("CompositionDataWorkspace", () => {
         },
       },
     });
-    expect(requiredField).toBeChecked();
-    expect(requiredField).toBeDisabled();
+    const updatedColumns = await openColumnDialog(editor);
+    const updatedRequiredField = within(updatedColumns).getByRole("checkbox", {
+      name: "Field 65",
+    });
+    expect(updatedRequiredField).toBeChecked();
+    expect(updatedRequiredField).toBeDisabled();
   });
 
   it("disables projection edits when several missing metric fields exceed capacity", async () => {
@@ -876,9 +898,10 @@ describe("CompositionDataWorkspace", () => {
     const harness = renderWorkspace(overbookedDraft);
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     const editor = harness.editor();
+    const columns = await openColumnDialog(editor);
 
     for (const field of ["Field 1", "Field 64", "Field 65", "Field 66"]) {
-      const checkbox = await within(editor).findByRole("checkbox", {
+      const checkbox = await within(columns).findByRole("checkbox", {
         name: field,
       });
       expect(checkbox).toBeDisabled();
@@ -926,7 +949,8 @@ describe("CompositionDataWorkspace", () => {
       "title",
       "Edit metric bindings to fit within the 64-field limit.",
     );
-    const field64 = within(editor).getByRole("checkbox", {
+    const columns = await openColumnDialog(editor);
+    const field64 = within(columns).getByRole("checkbox", {
       name: "Field 64",
     });
     expect(field64).toBeDisabled();
@@ -960,8 +984,9 @@ describe("CompositionDataWorkspace", () => {
     const harness = renderWorkspace(metric.draft);
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     const editor = harness.editor();
+    const columns = await openColumnDialog(editor);
 
-    const checkbox65 = await within(editor).findByRole("checkbox", {
+    const checkbox65 = await within(columns).findByRole("checkbox", {
       name: "Field 65",
     });
     expect(checkbox65).toBeDisabled();
@@ -970,14 +995,15 @@ describe("CompositionDataWorkspace", () => {
       "The maximum of 64 fields is selected.",
     );
     expect(
-      within(editor).getByRole("checkbox", { name: "Field 1" }),
+      within(columns).getByRole("checkbox", { name: "Field 1" }),
     ).toBeDisabled();
-    const checkbox64 = within(editor).getByRole("checkbox", {
+    const checkbox64 = within(columns).getByRole("checkbox", {
       name: "Field 64",
     });
     expect(checkbox64).toBeEnabled();
 
     fireEvent.click(checkbox64);
+    fireEvent.click(within(columns).getByRole("button", { name: "Apply" }));
     expect(harness.current().sources[0]).toMatchObject({
       kind: "entry_query",
       query: {
@@ -987,7 +1013,10 @@ describe("CompositionDataWorkspace", () => {
         },
       },
     });
-    expect(checkbox65).toBeEnabled();
+    const updatedColumns = await openColumnDialog(editor);
+    expect(
+      within(updatedColumns).getByRole("checkbox", { name: "Field 65" }),
+    ).toBeEnabled();
   });
 
   it("hides incapable fields behind the shared dialog gating", async () => {
@@ -1091,6 +1120,73 @@ describe("CompositionDataWorkspace", () => {
         filters: [{ field_id: 100, operator: "equals", value: "lunch" }],
         sort: [{ field_id: 101, direction: "desc" }],
         projection: { kind: "fields", fields: [100, 101] },
+      },
+    });
+  });
+
+  it("REQ-FE-076: keeps timestamps optional and Form IDs out of column labels", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
+    const draft = addEntryQuerySource(createEmptyDraft("Tool"), {
+      ...entrySeed(),
+      query: {
+        filters: [],
+        sort: [],
+        projection: { kind: "fields", fields: [100, 101] },
+      },
+    }).draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+    await within(editor).findByText("Occurred");
+    const columns = await openColumnDialog(editor);
+
+    expect(within(columns).getByRole("checkbox", { name: "Occurred" }))
+      .toBeChecked();
+    expect(within(columns).getByRole("checkbox", { name: "Title" }))
+      .toBeChecked();
+    const created = within(columns).getByRole("checkbox", { name: "Created" });
+    const updated = within(columns).getByRole("checkbox", { name: "Updated" });
+    expect(created).not.toBeChecked();
+    expect(updated).not.toBeChecked();
+    expect(columns.textContent).not.toMatch(/\b100\b|\b101\b/);
+
+    fireEvent.click(created);
+    fireEvent.click(within(columns).getByRole("button", { name: "Apply" }));
+    expect(harness.current().sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        projection: { kind: "fields", fields: [100, 101] },
+        display_system_fields: ["created_at"],
+      },
+    });
+  });
+
+  it("lets Preview select timestamps without turning Preview into a Form field", async () => {
+    formApiListMock.mockResolvedValue([expenseForm()]);
+    const draft = addEntryQuerySource(createEmptyDraft("Tool"), entrySeed())
+      .draft;
+    const harness = renderWorkspace(draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    const editor = harness.editor();
+    await within(editor).findByText("Occurred");
+    const columns = await openColumnDialog(editor);
+
+    expect(within(columns).queryByRole("checkbox", { name: "Occurred" }))
+      .toBeNull();
+    const updated = within(columns).getByRole("checkbox", { name: "Updated" });
+    expect(updated).not.toBeChecked();
+    fireEvent.click(updated);
+    fireEvent.click(within(columns).getByRole("button", { name: "Apply" }));
+
+    expect(within(editor).getByRole("radio", { name: "Preview" }))
+      .toBeChecked();
+    expect(harness.current().sources[0]).toMatchObject({
+      kind: "entry_query",
+      query: {
+        projection: { kind: "preview" },
+        display_system_fields: ["updated_at"],
       },
     });
   });

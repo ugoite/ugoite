@@ -22,6 +22,7 @@ import type {
   EntryQueryCompositionFilter,
   EntryQueryCompositionProjection,
   EntryQueryCompositionSort,
+  EntryQueryCompositionSystemField,
 } from "~/lib/entry-query-composition";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
 import { t } from "~/lib/i18n";
@@ -46,6 +47,10 @@ export interface CompositionDataWorkspaceProps {
   onEntryQueryProjection: (
     sourceDraftId: string,
     projection: EntryQueryCompositionProjection,
+  ) => boolean;
+  onEntryQueryDisplaySystemFields: (
+    sourceDraftId: string,
+    fields: EntryQueryCompositionSystemField[],
   ) => boolean;
   onSavedSqlRevision: (
     sourceDraftId: string,
@@ -212,6 +217,11 @@ export function CompositionDataWorkspace(props: CompositionDataWorkspaceProps) {
                     props.onEntryQueryProjection(
                       (source() as EntryQuerySource).draftId,
                       projection,
+                    )}
+                  onDisplaySystemFields={(fields) =>
+                    props.onEntryQueryDisplaySystemFields(
+                      (source() as EntryQuerySource).draftId,
+                      fields,
                     )}
                   planSources={props.planSources}
                   sourceStates={props.sourceStates}

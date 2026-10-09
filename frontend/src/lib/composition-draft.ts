@@ -8,6 +8,7 @@ import type {
   EntryQueryCompositionFilter,
   EntryQueryCompositionProjection,
   EntryQueryCompositionSort,
+  EntryQueryCompositionSystemField,
 } from "./entry-query-composition";
 import { compositionApi } from "./composition-api";
 import type { CompositionDocumentCanonicalization } from "./ugoite-client";
@@ -46,6 +47,7 @@ export interface DraftEntryQuerySeed {
     filters: EntryQueryCompositionFilter[];
     sort: EntryQueryCompositionSort[];
     projection: EntryQueryCompositionProjection;
+    display_system_fields?: EntryQueryCompositionSystemField[];
     pageLimit?: number;
   };
 }
@@ -260,6 +262,7 @@ export interface CompositionStudioDocument {
           sort?: EntryQueryCompositionSort[];
           page_limit?: number;
           projection: EntryQueryCompositionProjection;
+          display_system_fields?: EntryQueryCompositionSystemField[];
         };
       }
     >;
@@ -722,9 +725,7 @@ export const setEntryQueryProjection = (
       ? [display.valueField.fieldId]
       : []
   );
-  const requestedFields = projection.kind === "fields"
-    ? projection.fields
-    : [];
+  const requestedFields = projection.kind === "fields" ? projection.fields : [];
   const fields = [...new Set([...requestedFields, ...metricFieldIds])];
   if (fields.length > MAX_ENTRY_PROJECTION_FIELDS) {
     return { ok: false, error: "invalid-query" };
@@ -737,6 +738,45 @@ export const setEntryQueryProjection = (
       projection: fields.length === 0
         ? { kind: "preview" }
         : { kind: "fields", fields },
+    },
+  };
+  return { ok: true, draft: { ...draft, sources } };
+};
+
+const entryQuerySystemFields: readonly EntryQueryCompositionSystemField[] = [
+  "created_at",
+  "updated_at",
+];
+
+/** Replace the optional identity timestamp columns rendered by EntryQuery tables. */
+export const setEntryQueryDisplaySystemFields = (
+  draft: CompositionDraft,
+  sourceDraftId: string,
+  displaySystemFields: EntryQueryCompositionSystemField[],
+): DraftResult => {
+  const index = findEntryQuerySource(draft, sourceDraftId);
+  if (index < 0) return { ok: false, error: "unknown-source" };
+  if (
+    !Array.isArray(displaySystemFields) ||
+    !displaySystemFields.every((field) =>
+      entryQuerySystemFields.includes(field)
+    )
+  ) {
+    return { ok: false, error: "invalid-query" };
+  }
+  const current = draft.sources[index];
+  if (current.kind !== "entry_query") {
+    return { ok: false, error: "unknown-source" };
+  }
+  const selected = new Set(displaySystemFields);
+  const sources = [...draft.sources];
+  sources[index] = {
+    ...current,
+    query: {
+      ...current.query,
+      display_system_fields: entryQuerySystemFields.filter((field) =>
+        selected.has(field)
+      ),
     },
   };
   return { ok: true, draft: { ...draft, sources } };
@@ -1412,6 +1452,9 @@ export const toStudioDocument = (
             ? {}
             : { page_limit: source.query.pageLimit }),
           projection: source.query.projection,
+          ...(source.query.display_system_fields?.length
+            ? { display_system_fields: [...source.query.display_system_fields] }
+            : {}),
         },
       };
     }),
@@ -1526,6 +1569,9 @@ export const draftFromDocument = (
             ? {}
             : { pageLimit: source.query.page_limit }),
           projection: source.query.projection,
+          ...(source.query.display_system_fields?.length
+            ? { display_system_fields: [...source.query.display_system_fields] }
+            : {}),
         },
       };
     }

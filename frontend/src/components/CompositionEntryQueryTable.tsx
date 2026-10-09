@@ -43,8 +43,8 @@ const timestampLabel = (kind: "created_at" | "updated_at"): string =>
 /**
  * Entry display columns for a Composition entry_query source, using the
  * same presentation vocabulary as EntryBrowser. Preview projections render
- * Preview/Created/Updated; fields projections render projected properties
- * in projection order with timestamps last. Property names resolve through
+ * Preview and selected timestamps; fields projections render projected
+ * properties in projection order with selected timestamps last. Property names resolve through
  * authorized Form metadata supplied by the route; unresolved properties use
  * their own projected row keys without guessing a field-to-key position.
  */
@@ -63,19 +63,30 @@ export function entryQueryDisplayColumns(
   ) => string | undefined,
 ): EntryDisplayColumn[] {
   const projection: EntryProjection = source.request.projection;
+  const selectedSystemFields = source.display_system_fields ??
+    (projection.kind === "fields"
+      ? projection.fields.flatMap((field) =>
+        field.kind === "created_at" || field.kind === "updated_at"
+          ? [field.kind]
+          : []
+      )
+      : []);
+  const orderedSystemFields = (["created_at", "updated_at"] as const).filter(
+    (field) => selectedSystemFields.includes(field),
+  );
   if (projection.kind === "preview") {
     return [
       { key: "preview", label: t("entryBrowser.preview"), text: previewText },
-      {
-        key: "created_at",
-        label: timestampLabel("created_at"),
-        text: (row) => instantText(row.created_at_micros),
-      },
-      {
-        key: "updated_at",
-        label: timestampLabel("updated_at"),
-        text: (row) => instantText(row.updated_at_micros),
-      },
+      ...orderedSystemFields.map((field) => ({
+        key: field,
+        label: timestampLabel(field),
+        text: (row: EntryQueryResult) =>
+          instantText(
+            field === "created_at"
+              ? row.created_at_micros
+              : row.updated_at_micros,
+          ),
+      })),
     ];
   }
   const formId = source.request.query.scope.kind === "form"
@@ -93,10 +104,11 @@ export function entryQueryDisplayColumns(
     : [];
   const resolvedPropertyKeys = new Set<string>();
   for (const field of projection.fields) {
-    const label = field.kind === "property" && formId && fieldNames
+    if (field.kind !== "property") continue;
+    const label = formId && fieldNames
       ? fieldNames(formId, field.field_id, source.source_id)
       : undefined;
-    const resolvedPropertyKey = field.kind === "property" && formId && fieldKeys
+    const resolvedPropertyKey = formId && fieldKeys
       ? fieldKeys(formId, field.field_id, source.source_id)
       : undefined;
     const propertyKey = resolvedPropertyKey ?? (
@@ -112,16 +124,20 @@ export function entryQueryDisplayColumns(
       continue;
     }
     if (!column) continue;
-    if (field.kind === "created_at" || field.kind === "updated_at") {
-      if (!timestamps.some((existing) => existing.key === column.key)) {
-        timestamps.push(column);
-      }
-    } else {
-      regular.push(column);
-    }
-    if (field.kind === "property" && propertyKey) {
-      resolvedPropertyKeys.add(propertyKey);
-    }
+    regular.push(column);
+    if (propertyKey) resolvedPropertyKeys.add(propertyKey);
+  }
+  for (const field of orderedSystemFields) {
+    timestamps.push({
+      key: field,
+      label: timestampLabel(field),
+      text: (row) =>
+        instantText(
+          field === "created_at"
+            ? row.created_at_micros
+            : row.updated_at_micros,
+        ),
+    });
   }
   // Timestamps keep the canonical Created-then-Updated order, matching
   // EntryBrowser regardless of projection encounter order.

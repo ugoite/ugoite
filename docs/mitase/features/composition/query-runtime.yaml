@@ -26,6 +26,8 @@ features:
         criterion: REQ-COMP-004#criterion.entry-query-translation
       - kind: satisfies
         criterion: REQ-COMP-004#criterion.used-field-fingerprint
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.entry-query-display-system-fields
   - id: entry-query-fingerprint-evidence
     role: evidence
     facet: core-tests
@@ -59,6 +61,20 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.used-field-fingerprint
+  - id: entry-query-display-system-fields-evidence
+    role: evidence
+    facet: core-tests
+    responsibility: Verify selected table timestamps pass through Composition resolution metadata without widening the EntryQuery request projection.
+    targets:
+    - id: selected-system-fields-stay-outside-request-projection
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: entry_query_template_compiles_to_the_existing_bounded_request
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.entry-query-display-system-fields
   - id: entry-query-current-authorization-evidence
     role: evidence
     facet: iceberg-tests
