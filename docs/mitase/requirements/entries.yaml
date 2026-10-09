@@ -399,6 +399,15 @@ requirements:
                 criterion: REQ-ENTRY-011#criterion.dashboard-recent-label
                 covers: [FEAT-FE-002#binding.frontend/target.dashboard-recent-labels]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/dashboard.test.tsx", test: "REQ-UX-LIST-001: gives same-Form Recent links unique ID-free labels" } }
+          - id: entry-list-fields-label-projection
+            adapter: typescript
+            path: frontend/src/lib/client.test.ts
+            selector: { kind: test, name: maps canonical Entry.list fields to the human-readable label projection }
+            claims:
+              - kind: verifies
+                criterion: REQ-ENTRY-011#criterion.dashboard-recent-label
+                covers: [FEAT-FE-002#binding.frontend/target.entry-list-field-projection]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/lib/client.test.ts, test: "maps canonical Entry.list fields to the human-readable label projection" } }
   - id: REQ-ENTRY-012
     title: CLI canonical EntryQuery list
     description: The CLI Entry list command uses the canonical EntryQuery capability for local and remote Spaces, including Form scope, text, typed filters, ordered sorts, projection, and cursor traversal goals.

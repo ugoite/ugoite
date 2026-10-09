@@ -112,6 +112,13 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-ENTRY-011#criterion.dashboard-recent-label
+          - id: entry-list-field-projection
+            adapter: typescript
+            path: frontend/src/lib/entry-api.ts
+            selector: { kind: symbol, name: normalizeEntryListRecord }
+            claims:
+              - kind: satisfies
+                criterion: REQ-ENTRY-011#criterion.dashboard-recent-label
           - id: form-entries-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/forms/[form_ref]/entries.tsx"
