@@ -1,26 +1,26 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #F6F8FC;
-  --panel: #FFFFFF;
-  --ink: #10243C;
-  --muted: #5D6F86;
-  --faint: #5D6F86;
-  --line: #D7E0EA;
-  --line2: #C4D0DE;
-  --soft: #EEF2FB;
-  --soft2: #FCFDFE;
+  --bg: #f6f8fc;
+  --panel: #ffffff;
+  --ink: #10243c;
+  --muted: #5d6f86;
+  --faint: #5d6f86;
+  --line: #d7e0ea;
+  --line2: #c4d0de;
+  --soft: #eef2fb;
+  --soft2: #fcfdfe;
   --black: #111;
   --white: #fff;
-  --focus: #5069B5;
-  --danger: #D53939;
-  --success: #2F817E;
-  --brand: #5069B5;
+  --focus: #5069b5;
+  --danger: #d53939;
+  --success: #2f817e;
+  --brand: #5069b5;
   --brand-ink: #355095;
-  --brand-soft: #EEF2FB;
-  --teal: #4DA7A6;
-  --teal-soft: #E9F7F6;
-  --iris: #7C76C7;
+  --brand-soft: #eef2fb;
+  --teal: #4da7a6;
+  --teal-soft: #e9f7f6;
+  --iris: #7c76c7;
   --shadow: 0 14px 38px rgba(16, 36, 60, 0.12);
 
   /* Data-heavy feature components consume the same v5 tokens. */
@@ -284,7 +284,7 @@ code {
   appearance: none;
   border: 0;
   border-radius: 10px;
-  background: linear-gradient(90deg, var(--brand-soft), #FBFCFE);
+  background: linear-gradient(90deg, var(--brand-soft), #fbfcfe);
   color: var(--ink);
   padding: 0 28px;
   font: inherit;
@@ -342,7 +342,7 @@ code {
   color: var(--ink);
 }
 .navItem.active {
-  background: #F8FAFE;
+  background: #f8fafe;
   color: var(--brand-ink);
 }
 .navItem.active::before {
@@ -646,7 +646,7 @@ code {
   transition: background 120ms ease, border-color 120ms ease;
 }
 .ui-card-interactive:hover, .ui-card-hover:hover {
-  background: #FAFBFD;
+  background: #fafbfd;
   border-color: var(--line2);
 }
 .ui-card-dashed {
@@ -671,8 +671,8 @@ code {
   padding: 0;
 }
 .btn:hover, .ui-button:hover {
-  border-color: #ADB9C8;
-  background: #FBFCFE;
+  border-color: #adb9c8;
+  background: #fbfcfe;
 }
 /* Visible keyboard focus for button chrome (POL-UI-007). */
 .btn:focus-visible, .ui-button:focus-visible {
@@ -721,7 +721,7 @@ code {
 .glyph {
   width: 34px;
   height: 34px;
-  border: 1px solid #D4DCF0;
+  border: 1px solid #d4dcf0;
   border-radius: 10px;
   background: linear-gradient(135deg, var(--brand-soft), #fff);
   display: grid;
@@ -761,8 +761,11 @@ code {
   min-width: 0;
   outline: 0;
 }
-.ui-input:focus, .ui-select:focus, textarea:focus,
-.settingsMain input:focus, .settingsMain textarea:focus,
+.ui-input:focus,
+.ui-select:focus,
+textarea:focus,
+.settingsMain input:focus,
+.settingsMain textarea:focus,
 .settingsMain select:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px rgba(80, 105, 181, 0.10);
@@ -973,7 +976,7 @@ code {
   text-align: left;
 }
 .formItem:hover, .formItem.active {
-  background: linear-gradient(90deg, var(--brand-soft), #FBFCFF);
+  background: linear-gradient(90deg, var(--brand-soft), #fbfcff);
   border-color: transparent;
 }
 .miniFields {
@@ -1406,7 +1409,7 @@ textarea {
 }
 .searchModeNav button.active,
 .searchModeNav a[aria-current="page"] {
-  background: linear-gradient(90deg, var(--brand-soft), #FBFCFF);
+  background: linear-gradient(90deg, var(--brand-soft), #fbfcff);
   color: var(--brand-ink);
 }
 .searchModeNavEditor {
@@ -1471,7 +1474,7 @@ textarea {
 .searchBox {
   height: 50px;
   border: 1px solid var(--line2);
-  background: linear-gradient(90deg, #fff, #FBFCFE);
+  background: linear-gradient(90deg, #fff, #fbfcfe);
   border-radius: 14px;
   display: flex;
   align-items: center;
@@ -1596,6 +1599,9 @@ textarea {
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
 }
+.composition-source-browse {
+  margin-block-start: var(--ui-spacing-sm);
+}
 .history-detail-backdrop {
   z-index: 60;
   padding: 0;
@@ -1619,35 +1625,104 @@ textarea {
   gap: 16px;
   flex: 0 0 auto;
 }
-.history-detail-header h2 { margin: 0; }
-.history-detail-header p { margin: 6px 0 0; color: var(--muted); }
-.history-detail-content { flex: 1 1 auto; min-height: 0; overflow: auto; }
-.history-detail-content h3 { margin: 0 0 10px; font-size: 16px; }
-.history-detail-content section { margin-bottom: 22px; }
-.history-summary-list, .history-affected-list, .history-related-list { list-style: none; padding: 0; margin: 0; }
-.history-summary-list li, .history-affected-list li, .history-related-list li { border-bottom: 1px solid var(--line); padding: 10px 0; }
-.history-affected-layout { display: grid; grid-template-columns: minmax(200px, .85fr) minmax(0, 1.15fr); gap: 20px; }
-.history-affected-list button, .history-related-list button { width: 100%; display: flex; justify-content: space-between; text-align: left; border: 0; background: transparent; padding: 6px 4px; color: inherit; cursor: pointer; }
-.history-affected-list button.selected { border-radius: 8px; background: var(--surface-soft, #f3f4f6); }
-.history-entry-diff { min-width: 0; }
-.history-entry-diff dl, .history-technical-info dl { margin: 0; }
-.history-entry-diff dt, .history-technical-info dt { font-weight: 600; margin-top: 10px; }
-.history-entry-diff dd, .history-technical-info dd { margin: 4px 0 0; overflow-wrap: anywhere; }
-.history-detail-actions { flex: 0 0 auto; border-top: 1px solid var(--line); padding-top: 14px; }
-.history-detail-pagination { display: flex; gap: 8px; margin-top: 10px; }
-.history-technical-info { margin: 16px 0; color: var(--muted); }
-.history-technical-info summary { cursor: pointer; }
+.history-detail-header h2 {
+  margin: 0;
+}
+.history-detail-header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+.history-detail-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.history-detail-content h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+.history-detail-content section {
+  margin-bottom: 22px;
+}
+.history-summary-list, .history-affected-list, .history-related-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.history-summary-list li, .history-affected-list li, .history-related-list li {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+}
+.history-affected-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 0.85fr) minmax(0, 1.15fr);
+  gap: 20px;
+}
+.history-affected-list button, .history-related-list button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 6px 4px;
+  color: inherit;
+  cursor: pointer;
+}
+.history-affected-list button.selected {
+  border-radius: 8px;
+  background: var(--surface-soft, #f3f4f6);
+}
+.history-entry-diff {
+  min-width: 0;
+}
+.history-entry-diff dl, .history-technical-info dl {
+  margin: 0;
+}
+.history-entry-diff dt, .history-technical-info dt {
+  font-weight: 600;
+  margin-top: 10px;
+}
+.history-entry-diff dd, .history-technical-info dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.history-detail-actions {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.history-detail-pagination {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.history-technical-info {
+  margin: 16px 0;
+  color: var(--muted);
+}
+.history-technical-info summary {
+  cursor: pointer;
+}
 @media (max-width: 640px) {
   .ui-dialog.history-detail {
     width: 100vw;
     height: 100dvh;
     max-height: 100dvh;
     border-radius: 0;
-    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    padding: max(16px, env(safe-area-inset-top)) 16px
+      max(16px, env(safe-area-inset-bottom));
   }
-  .history-affected-layout { grid-template-columns: 1fr; gap: 16px; }
-  .history-detail-actions { flex-wrap: wrap; }
-  .history-detail-actions .ui-button { flex: 1 1 auto; }
+  .history-affected-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .history-detail-actions {
+    flex-wrap: wrap;
+  }
+  .history-detail-actions .ui-button {
+    flex: 1 1 auto;
+  }
 }
 .ui-row-reference-dialog {
   width: min(760px, calc(100vw - 32px));
@@ -2922,8 +2997,8 @@ textarea {
   gap: 7px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: linear-gradient(90deg, #F8FAFE, #FBFCFF);
-  color: #44546A;
+  background: linear-gradient(90deg, #f8fafe, #fbfcff);
+  color: #44546a;
   padding: 0 10px;
   font: inherit;
   font-size: 12px;
@@ -3186,8 +3261,8 @@ a.tool {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #FCFDFE;
-  color: #54667C;
+  background: #fcfdfe;
+  color: #54667c;
   font-size: 12px;
 }
 
@@ -3197,25 +3272,25 @@ a.tool {
   flex: 0 0 auto;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--teal), var(--iris));
-  box-shadow: 0 0 0 4px #F1F8F8;
+  box-shadow: 0 0 0 4px #f1f8f8;
 }
 
 .cardBtn:hover,
 .tile:hover,
 .rowBtn:hover {
-  background: #FAFBFD;
+  background: #fafbfd;
 }
 
 .tonal {
   background: var(--brand-soft);
-  border-color: #D7E0F8;
+  border-color: #d7e0f8;
   color: var(--brand-ink);
 }
 
 .quiet {
   border-color: transparent;
   background: transparent;
-  color: #4E5E72;
+  color: #4e5e72;
 }
 
 .emptyState {
@@ -3462,10 +3537,10 @@ a.tool {
   display: grid;
   place-items: center;
   padding: 0 4px;
-  border: 2px solid #FFFFFF;
+  border: 2px solid #ffffff;
   border-radius: 999px;
   background: var(--brand);
-  color: #FFFFFF;
+  color: #ffffff;
   font-size: 10px;
   line-height: 1;
 }
@@ -4166,8 +4241,7 @@ a.tool {
 }
 
 .result-table--entry
-  tbody
-  tr[aria-selected="true"]
+  tbody tr[aria-selected="true"]
   > .entry-browser-trailing-cell {
   background: var(--soft2);
 }
@@ -4239,8 +4313,7 @@ a.tool {
 }
 
 .result-table--history
-  tbody
-  tr[aria-selected="true"]
+  tbody tr[aria-selected="true"]
   > .history-change-trailing-cell {
   background: var(--soft2);
 }
@@ -4980,7 +5053,11 @@ a.tool {
    * Single base rule covers every text input/select/textarea (login,
    * setup, settings, search, forms, entries); component rules keep only
    * density/padding. Non-text inputs never trigger auto-zoom. */
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):not([hidden]),
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+    [type="color"]
+  ):not([type="file"]):not([type="submit"]):not([type="button"]):not(
+    [type="reset"]
+  ):not([type="image"]):not([hidden]),
   select,
   textarea {
     font-size: 16px;
@@ -5159,8 +5236,4 @@ a.tool {
   .table td {
     padding: 12px 8px;
   }
-}
-
-.studioDesignAddData {
-  margin-block-end: var(--ui-spacing-sm);
 }

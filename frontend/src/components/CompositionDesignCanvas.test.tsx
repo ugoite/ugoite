@@ -205,10 +205,12 @@ describe("CompositionDesignCanvas", () => {
   it("shows one palette entry per block kind with icon and short label", () => {
     renderHarness();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
-    const dialog = screen.getByRole("dialog", { name: "Add block" });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add to design" })[0],
+    );
+    const dialog = screen.getByRole("dialog", { name: "Add to design" });
 
-    // Text and display entries each pair an icon with a short label.
+    // Text and data entries each pair an icon with a short label.
     expect(dialog.querySelectorAll(".designPaletteItem svg")).not.toHaveLength(
       0,
     );
@@ -216,7 +218,7 @@ describe("CompositionDesignCanvas", () => {
       dialog.querySelectorAll(".designPaletteItem"),
     ).map((entry) => entry.textContent);
     expect(entries.join(" ")).toContain("Text");
-    expect(entries.join(" ")).toContain("Display");
+    expect(entries.join(" ")).toContain("Data");
     expect(entries.join(" ")).not.toContain("Metric");
     expect(entries.join(" ")).not.toContain("Table");
 
@@ -226,11 +228,13 @@ describe("CompositionDesignCanvas", () => {
     );
   });
 
-  it("opens the unified display picker from the canvas palette", () => {
+  it("opens the data picker before a source exists", () => {
     renderHarness();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
-    fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add to design" })[0],
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Data" }));
 
     expect(harnessCalls.picker).toHaveLength(1);
     expect(harnessCalls.picker[0]).toEqual({
@@ -241,12 +245,12 @@ describe("CompositionDesignCanvas", () => {
   it("opens a readable viewport-capped modal palette with focus trap and focus return", async () => {
     renderHarness();
 
-    const gap = screen.getAllByRole("button", { name: "Add block" })[0];
+    const gap = screen.getAllByRole("button", { name: "Add to design" })[0];
     // A real pointer tap focuses the gap control before the dialog mounts,
     // so the opener capture sees the invoking control.
     (gap as HTMLElement).focus();
     fireEvent.click(gap);
-    const dialog = screen.getByRole("dialog", { name: "Add block" });
+    const dialog = screen.getByRole("dialog", { name: "Add to design" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(dialog.parentElement).toHaveClass("ui-backdrop");
     const css = stylesheet();
@@ -272,7 +276,7 @@ describe("CompositionDesignCanvas", () => {
     // Escape dismisses and returns focus to the invoking gap control
     // without touching the draft.
     fireEvent.keyDown(dialog, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "Add block" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Add to design" })).toBeNull();
     await waitFor(() => {
       expect(gap).toHaveFocus();
     });
@@ -283,27 +287,29 @@ describe("CompositionDesignCanvas", () => {
   it("dismisses the palette on backdrop click without touching the draft", () => {
     renderHarness();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
-    const dialog = screen.getByRole("dialog", { name: "Add block" });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add to design" })[0],
+    );
+    const dialog = screen.getByRole("dialog", { name: "Add to design" });
     fireEvent.click(dialog.parentElement!);
 
-    expect(screen.queryByRole("dialog", { name: "Add block" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Add to design" })).toBeNull();
     expect(harnessCalls.draft).toHaveLength(0);
     expect(harnessCalls.picker).toHaveLength(0);
   });
 
-  it("hides display and parameter entries without sources or parameters", () => {
+  it("offers data and hides parameter section without sources or parameters", () => {
     renderHarness(createEmptyDraft("Studio"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Add block" }));
-    const dialog = screen.getByRole("dialog", { name: "Add block" });
+    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
+    const dialog = screen.getByRole("dialog", { name: "Add to design" });
     const entries = Array.from(
       dialog.querySelectorAll(".designPaletteItem"),
     ).map((entry) => entry.textContent);
 
-    // Text insertion is always available; displays need a source.
+    // Text and data insertion are always available.
     expect(entries.join(" ")).toContain("Text");
-    expect(entries.join(" ")).not.toContain("Display");
+    expect(entries.join(" ")).toContain("Data");
     // The parameters section needs a declared parameter, not an empty state.
     expect(dialog.querySelector(".designPaletteParams")).toBeNull();
   });
@@ -318,9 +324,11 @@ describe("CompositionDesignCanvas", () => {
   it("inserts text blocks declared and placed exactly once", () => {
     renderHarness();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
     fireEvent.click(
-      screen.getByRole("dialog", { name: "Add block" }).querySelector(
+      screen.getAllByRole("button", { name: "Add to design" })[0],
+    );
+    fireEvent.click(
+      screen.getByRole("dialog", { name: "Add to design" }).querySelector(
         ".designPaletteEntries",
       )!.querySelectorAll("button")[0],
     );
@@ -342,6 +350,21 @@ describe("CompositionDesignCanvas", () => {
     ]);
   });
 
+  it("shows one add control above and below a single component", () => {
+    renderHarness(createEmptyDraft("Studio"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
+    fireEvent.click(
+      screen.getByRole("dialog", { name: "Add to design" }).querySelector(
+        ".designPaletteItem",
+      )!,
+    );
+
+    expect(
+      screen.getAllByRole("button", { name: "Add to design" }),
+    ).toHaveLength(2);
+  });
+
   it("places existing parameter controls without creating parameters", () => {
     let draft = createEmptyDraft("Studio");
     draft = addSavedSqlSource(draft, sqlSeed()).draft;
@@ -354,8 +377,10 @@ describe("CompositionDesignCanvas", () => {
     draft = region.draft;
     renderHarness(draft);
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
-    const dialog = screen.getByRole("dialog", { name: "Add block" });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add to design" })[0],
+    );
+    const dialog = screen.getByRole("dialog", { name: "Add to design" });
     fireEvent.click(
       Array.from(dialog.querySelectorAll(".designPaletteItem")).find((entry) =>
         entry.textContent === "region"
@@ -454,9 +479,11 @@ describe("CompositionDesignCanvas", () => {
     renderHarness();
 
     // Text insert, row move, and selection touch only the draft channel.
-    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
     fireEvent.click(
-      screen.getByRole("dialog", { name: "Add block" }).querySelector(
+      screen.getAllByRole("button", { name: "Add to design" })[0],
+    );
+    fireEvent.click(
+      screen.getByRole("dialog", { name: "Add to design" }).querySelector(
         ".designPaletteEntries",
       )!.querySelectorAll("button")[0],
     );

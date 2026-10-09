@@ -511,7 +511,7 @@ features:
       path: frontend/src/components/CompositionDesignCanvas.test.tsx
       selector:
         kind: test
-        name: hides display and parameter entries without sources or parameters
+        name: offers data and hides parameter section without sources or parameters
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout
@@ -595,7 +595,7 @@ features:
       path: frontend/src/components/CompositionStudioSync.test.tsx
       selector:
         kind: test
-        name: guides a blank canvas with one Add-data action that opens the single picker
+        name: opens Text or Data insertion from a blank canvas
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
@@ -624,7 +624,7 @@ features:
       path: frontend/src/components/CompositionStudioSync.test.tsx
       selector:
         kind: test
-        name: keeps one source action in Design and none in Data details
+        name: keeps insertion controls in Design and none in Data details
       claims:
       - kind: evidences
         anchor: REQ-FE-074#criterion.source-design-entry

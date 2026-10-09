@@ -22,7 +22,12 @@ export type CompositionDisplaySeed =
 interface CompositionDisplayPickerProps {
   sources: readonly DraftSource[];
   fieldNames?: (formId: string, fieldId: number) => string | undefined;
+  fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined;
+  fieldNamesLoading?: boolean;
+  initialKind?: "table" | "metric";
+  initialSourceDraftId?: string | null;
   onAdd: (seed: CompositionDisplaySeed) => void;
+  onChooseSource?: (kind: "table" | "metric") => void;
   onClose: () => void;
 }
 
@@ -65,6 +70,7 @@ export const entryQueryScalarCandidates = (
   fieldSchema: readonly { field_id: number; field_type: string }[],
   formId: string,
   fieldNames?: (formId: string, fieldId: number) => string | undefined,
+  fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined,
 ): DisplayScalarCandidate[] => {
   const resolvedNames = new Map(
     fieldSchema.map((entry) => [
@@ -72,27 +78,19 @@ export const entryQueryScalarCandidates = (
       fieldNames?.(formId, entry.field_id),
     ]),
   );
-  const usedNames = new Set(
-    [...resolvedNames.values()].filter((name): name is string => !!name),
-  );
   const candidates: DisplayScalarCandidate[] = [];
 
-  fieldSchema.forEach((entry, index) => {
+  fieldSchema.forEach((entry) => {
     if (nonScalarFieldTypes.has(entry.field_type)) return;
+    if (fieldProjectable?.(formId, entry.field_id) === false) return;
     const formName = resolvedNames.get(entry.field_id);
-    let name = formName ??
-      t("composition.studioFieldIndex", { index: index + 1 });
-    if (!formName) {
-      let fallbackIndex = index + 1;
-      while (usedNames.has(name)) {
-        fallbackIndex += 1;
-        name = t("composition.studioFieldIndex", { index: fallbackIndex });
-      }
-      usedNames.add(name);
-    }
+    // A schema ordinal is stable but not a human name. If the live Form
+    // definition cannot name a field, keep it out of the picker rather than
+    // teaching users an index they cannot identify later.
+    if (!formName) return;
     candidates.push({
       id: String(entry.field_id),
-      name,
+      name: formName,
       valueField: { fieldId: entry.field_id },
     });
   });
@@ -103,6 +101,7 @@ export const entryQueryScalarCandidates = (
 export const displayScalarCandidates = (
   source: DraftSource,
   fieldNames?: (formId: string, fieldId: number) => string | undefined,
+  fieldProjectable?: (formId: string, fieldId: number) => boolean | undefined,
 ): DisplayScalarCandidate[] => {
   if (source.kind === "saved_sql") {
     return savedSqlScalarCandidates(source.expectedResult);
@@ -111,16 +110,21 @@ export const displayScalarCandidates = (
     source.fieldSchema,
     source.formId,
     fieldNames,
+    fieldProjectable,
   );
-  if (
-    source.query.projection.kind !== "fields" ||
-    source.query.projection.fields.length < MAX_ENTRY_PROJECTION_FIELDS
-  ) return candidates;
+  if (source.query.projection.kind !== "fields") return candidates;
   const projectedFields = new Set(source.query.projection.fields);
-  return candidates.filter((candidate) =>
-    "fieldId" in candidate.valueField &&
-    projectedFields.has(candidate.valueField.fieldId)
+  let additionalCapacity = Math.max(
+    0,
+    MAX_ENTRY_PROJECTION_FIELDS - projectedFields.size,
   );
+  return candidates.filter((candidate) => {
+    if (!("fieldId" in candidate.valueField)) return false;
+    if (projectedFields.has(candidate.valueField.fieldId)) return true;
+    if (additionalCapacity === 0) return false;
+    additionalCapacity -= 1;
+    return true;
+  });
 };
 
 const sourceKindLabel = (source: DraftSource): string =>
@@ -139,12 +143,12 @@ export function CompositionDisplayPicker(
   props: CompositionDisplayPickerProps,
 ) {
   const titleId = "composition-display-picker-title";
-  const valueSelectId = "composition-display-value";
-  const labelInputId = "composition-display-label";
-  const [kind, setKind] = createSignal<"table" | "metric">("table");
-  const [sourceDraftId, setSourceDraftId] = createSignal<string | null>(null);
-  const [valueId, setValueId] = createSignal<string | null>(null);
-  const [label, setLabel] = createSignal("");
+  const [kind, setKind] = createSignal<"table" | "metric">(
+    props.initialKind ?? "table",
+  );
+  const [sourceDraftId, setSourceDraftId] = createSignal<string | null>(
+    props.initialSourceDraftId ?? null,
+  );
   let dialog: HTMLDivElement | undefined;
   let opener: HTMLElement | null = null;
 
@@ -155,9 +159,7 @@ export function CompositionDisplayPicker(
     const appRoot = document.getElementById("app");
     appRoot?.setAttribute("inert", "");
     queueMicrotask(() =>
-      dialog?.querySelector<HTMLElement>(
-        "button:not([disabled]), input:not([disabled]), select:not([disabled])",
-      )?.focus()
+      dialog?.querySelector<HTMLElement>("button:not([disabled])")?.focus()
     );
     onCleanup(() => {
       appRoot?.removeAttribute("inert");
@@ -174,22 +176,48 @@ export function CompositionDisplayPicker(
 
   const candidates = (): DisplayScalarCandidate[] => {
     const source = selectedSource();
-    return source ? displayScalarCandidates(source, props.fieldNames) : [];
+    return source
+      ? displayScalarCandidates(
+        source,
+        props.fieldNames,
+        props.fieldProjectable,
+      )
+      : [];
+  };
+
+  const hasScalarSchemaFields = (source: DraftSource): boolean =>
+    source.kind === "saved_sql"
+      ? source.expectedResult.some((column) => column.type !== "json")
+      : source.fieldSchema.some((field) =>
+        !nonScalarFieldTypes.has(field.field_type)
+      );
+
+  const hasNamedScalarFields = (source: DraftSource): boolean =>
+    source.kind === "entry_query" &&
+    source.fieldSchema.some((field) =>
+      !nonScalarFieldTypes.has(field.field_type) &&
+      Boolean(props.fieldNames?.(source.formId, field.field_id))
+    );
+
+  const addTable = (source: DraftSource) => {
+    props.onAdd({ kind: "table", sourceDraftId: source.draftId });
+  };
+
+  const addMetric = (
+    source: DraftSource,
+    candidate: DisplayScalarCandidate,
+  ) => {
+    props.onAdd({
+      kind: "metric",
+      sourceDraftId: source.draftId,
+      valueField: candidate.valueField,
+    });
   };
 
   const selectKind = (nextKind: "table" | "metric") => {
     if (kind() === nextKind) return;
     setKind(nextKind);
-    setValueId(null);
-    const source = selectedSource();
-    if (nextKind === "metric" && source) {
-      const scalar = displayScalarCandidates(source, props.fieldNames);
-      if (scalar.length === 0) {
-        setSourceDraftId(null);
-      } else {
-        setValueId(scalar[0].id);
-      }
-    }
+    setSourceDraftId(null);
   };
 
   const handleKindTabKeyDown = (event: KeyboardEvent) => {
@@ -215,44 +243,20 @@ export function CompositionDisplayPicker(
   };
 
   const selectSource = (source: DraftSource) => {
-    setSourceDraftId(source.draftId);
-    const scalar = kind() === "metric"
-      ? displayScalarCandidates(source, props.fieldNames)
-      : [];
-    setValueId(scalar[0]?.id ?? null);
-  };
-
-  const canAdd = (): boolean => {
-    const selectedKind = kind();
-    const source = selectedSource();
-    if (!source) return false;
-    if (selectedKind === "table") return true;
-    return valueId() !== null &&
-      candidates().some((candidate) => candidate.id === valueId());
-  };
-
-  const handleAdd = () => {
-    const selectedKind = kind();
-    const source = selectedSource();
-    if (!source || !canAdd()) return;
-    const trimmed = label().trim();
-    const maybeLabel = trimmed ? { label: trimmed } : {};
-    if (selectedKind === "table") {
-      props.onAdd({
-        kind: "table",
-        sourceDraftId: source.draftId,
-        ...maybeLabel,
-      });
+    if (kind() === "table") {
+      addTable(source);
       return;
     }
-    const candidate = candidates().find((entry) => entry.id === valueId());
-    if (!candidate) return;
-    props.onAdd({
-      kind: "metric",
-      sourceDraftId: source.draftId,
-      valueField: candidate.valueField,
-      ...maybeLabel,
-    });
+    const scalar = displayScalarCandidates(
+      source,
+      props.fieldNames,
+      props.fieldProjectable,
+    );
+    if (scalar.length === 1) {
+      addMetric(source, scalar[0]);
+      return;
+    }
+    setSourceDraftId(source.draftId);
   };
 
   const handleKeyDown = (event: KeyboardEvent) => {
@@ -302,13 +306,13 @@ export function CompositionDisplayPicker(
           onKeyDown={handleKeyDown}
         >
           <h2 id={titleId} class="ui-dialog-title">
-            {t("composition.studioAddDisplay")}
+            {t("composition.studioAddDataComponent")}
           </h2>
           <div class="ui-stack-sm">
             <div
               class="tabs compositionDisplayKind"
               role="tablist"
-              aria-label={t("composition.studioDisplayType")}
+              aria-label={t("composition.studioDataComponentType")}
               onKeyDown={handleKindTabKeyDown}
             >
               <button
@@ -349,13 +353,21 @@ export function CompositionDisplayPicker(
                 ? "composition-display-table-tab"
                 : "composition-display-metric-tab"}
             >
-              <RowList label={t("composition.studioSource")}>
+              <RowList label={t("composition.studioSources")}>
                 <For each={props.sources}>
                   {(source) => {
                     const scalar = () =>
-                      displayScalarCandidates(source, props.fieldNames);
+                      displayScalarCandidates(
+                        source,
+                        props.fieldNames,
+                        props.fieldProjectable,
+                      );
+                    const waitingForNames = () =>
+                      kind() === "metric" && source.kind === "entry_query" &&
+                      props.fieldNamesLoading;
                     const unavailable = () =>
-                      kind() === "metric" && scalar().length === 0;
+                      kind() === "metric" && scalar().length === 0 &&
+                      !waitingForNames();
                     return (
                       <RowListItem
                         main={
@@ -376,7 +388,16 @@ export function CompositionDisplayPicker(
                                     </span>
                                   </span>
                                   <span class="rowListSecondary">
-                                    {t("composition.studioNoCandidates")}
+                                    {waitingForNames()
+                                      ? t("composition.studioSourcesLoading")
+                                      : hasScalarSchemaFields(source) &&
+                                          !hasNamedScalarFields(source)
+                                      ? t(
+                                        "composition.studioMetricFieldsUnavailable",
+                                      )
+                                      : source.kind === "entry_query"
+                                      ? t("composition.studioNoMetricFields")
+                                      : t("composition.studioNoCandidates")}
                                   </span>
                                 </span>
                               </button>
@@ -400,42 +421,48 @@ export function CompositionDisplayPicker(
                 </For>
               </RowList>
               <Show when={kind() === "metric" && selectedSource()}>
-                <label class="ui-label" for={valueSelectId}>
-                  {t("composition.studioValue")}
-                </label>
-                <select
-                  id={valueSelectId}
-                  class="ui-input"
-                  value={valueId() ?? ""}
-                  onChange={(event) =>
-                    setValueId(event.currentTarget.value || null)}
-                >
-                  <For each={candidates()}>
-                    {(candidate) => (
-                      <option value={candidate.id}>{candidate.name}</option>
-                    )}
-                  </For>
-                </select>
+                {(source) => (
+                  <Show
+                    when={!props.fieldNamesLoading}
+                    fallback={
+                      <p class="ui-muted">
+                        {t("composition.studioSourcesLoading")}
+                      </p>
+                    }
+                  >
+                    <RowList label={source().name}>
+                      <For each={candidates()}>
+                        {(candidate) => (
+                          <RowListItem
+                            main={
+                              <RowListButton
+                                ariaLabel={`${candidate.name}, ${source().name}`}
+                                title={candidate.name}
+                                primary={
+                                  <span class="rowListName">
+                                    {candidate.name}
+                                  </span>
+                                }
+                                secondary={source().name}
+                                onActivate={() =>
+                                  addMetric(source(), candidate)}
+                              />
+                            }
+                          />
+                        )}
+                      </For>
+                    </RowList>
+                  </Show>
+                )}
               </Show>
-              <Show when={selectedSource()}>
-                <label class="ui-label" for={labelInputId}>
-                  {t("composition.studioLabel")}
-                </label>
-                <input
-                  id={labelInputId}
-                  class="ui-input"
-                  value={label()}
-                  onInput={(event) => setLabel(event.currentTarget.value)}
-                />
-                <button
-                  class="ui-button ui-button-secondary"
-                  type="button"
-                  disabled={!canAdd()}
-                  onClick={handleAdd}
-                >
-                  {t("common.add")}
-                </button>
-              </Show>
+              <button
+                class="ui-button ui-button-secondary composition-source-browse"
+                type="button"
+                onClick={() => props.onChooseSource?.(kind())}
+              >
+                <UiIcon name="plus" />
+                <span>{t("composition.studioChooseFormOrSql")}</span>
+              </button>
             </section>
           </div>
           <div class="ui-dialog-actions">

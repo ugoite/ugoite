@@ -159,8 +159,23 @@ describe("Composition studio shell", () => {
     const wasDataMode = screen.getByRole("radio", { name: "Data" })
       .getAttribute("aria-checked") === "true";
     showDesignMode();
-    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
-    await screen.findByRole("dialog");
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add to design" })[0],
+    );
+    fireEvent.click(
+      screen.getByRole("dialog", { name: "Add to design" }).querySelector(
+        ".designPaletteItem:nth-child(2)",
+      )!,
+    );
+    const dataPicker = await screen.findByRole("dialog", {
+      name: "Add data component",
+    });
+    fireEvent.click(
+      within(dataPicker).getByRole("button", {
+        name: "Choose a Form or Saved SQL",
+      }),
+    );
+    await screen.findByRole("dialog", { name: "Choose a source" });
     if (tab !== "Forms") {
       fireEvent.click(await screen.findByRole("tab", { name: tab }));
     }
@@ -173,27 +188,26 @@ describe("Composition studio shell", () => {
 
   const addMetricViaCanvas = async (
     sourceName: string,
-    value: string,
-    label: string,
+    label?: string,
   ) => {
-    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
-    const palette = screen.getByRole("dialog", { name: "Add block" });
-    fireEvent.click(within(palette).getByRole("button", { name: "Display" }));
-    const picker = await screen.findByRole("dialog", { name: "Add display" });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add to design" })[0],
+    );
+    const palette = screen.getByRole("dialog", { name: "Add to design" });
+    fireEvent.click(within(palette).getByRole("button", { name: "Data" }));
+    const picker = await screen.findByRole("dialog", {
+      name: "Add data component",
+    });
     fireEvent.click(within(picker).getByRole("tab", { name: "Metric" }));
     fireEvent.click(within(picker).getByRole("button", { name: sourceName }));
-    fireEvent.change(within(picker).getByLabelText("Value"), {
-      target: { value },
-    });
-    fireEvent.input(within(picker).getByLabelText("Label"), {
-      target: { value: label },
-    });
-    fireEvent.click(
-      within(picker).getByRole("button", { name: "Add" }),
-    );
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
+    if (label) {
+      fireEvent.input(screen.getByLabelText("Label"), {
+        target: { value: label },
+      });
+    }
   };
 
   beforeEach(() => {
@@ -268,14 +282,32 @@ describe("Composition studio shell", () => {
       screen.getByRole("button", { name: "Save, Add data to save." }),
     ).toBeDisabled();
 
-    // The blank canvas guides with one structural Add-data action and no
-    // prose paragraphs; it opens the single source picker dialog.
+    // The blank canvas opens the ordinary insertion palette without prose.
     expect(container.querySelectorAll("p")).toHaveLength(0);
     expect(
-      screen.getAllByRole("button", { name: "Add data" }),
+      screen.getAllByRole("button", { name: "Add to design" }),
     ).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add to design" }));
+    fireEvent.click(
+      screen.getByRole("dialog", { name: "Add to design" }).querySelector(
+        ".designPaletteItem:nth-child(2)",
+      )!,
+    );
+    const dataPicker = await screen.findByRole("dialog", {
+      name: "Add data component",
+    });
+    expect(
+      within(dataPicker).getByRole("button", {
+        name: "Choose a Form or Saved SQL",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(dataPicker).getByRole("button", {
+        name: "Choose a Form or Saved SQL",
+      }),
+    );
+    expect(await screen.findByRole("dialog", { name: "Choose a source" }))
+      .toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -300,7 +332,7 @@ describe("Composition studio shell", () => {
       screen.queryByRole("button", { name: "Select Tasks" }),
     ).not.toBeInTheDocument();
     expect(container.querySelectorAll("p")).toHaveLength(0);
-    expect(screen.queryByRole("button", { name: "Add data" }))
+    expect(screen.queryByRole("button", { name: "Add to design" }))
       .not.toBeInTheDocument();
   });
 
@@ -334,10 +366,7 @@ describe("Composition studio shell", () => {
     const { container } = render(() => <CompositionNewRoute />);
     showDataMode();
 
-    showDesignMode();
-    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "Tasks" }));
+    await addSourceViaPicker("Tasks");
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
@@ -366,14 +395,7 @@ describe("Composition studio shell", () => {
     expect(container.querySelector(".dataWorkspaceEditor")).not.toBeNull();
     expect(container.textContent).not.toContain(FORM_ID);
 
-    showDesignMode();
-    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("tab", { name: "Saved SQL" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
+    await addSourceViaPicker("Monthly", "Saved SQL");
     showDataMode();
     expect(sqlGetMock).toHaveBeenCalledWith("space-1", "sql-1");
 
@@ -421,7 +443,7 @@ describe("Composition studio shell", () => {
     showDataMode();
     await addSourceViaPicker("Monthly", "Saved SQL");
     showDesignMode();
-    await addMetricViaCanvas("Monthly", "total", "Total");
+    await addMetricViaCanvas("Monthly", "Total");
     expect(
       screen.getByRole("button", { name: "Select Total" }),
     ).toBeInTheDocument();
@@ -431,9 +453,14 @@ describe("Composition studio shell", () => {
       Array.from(container.querySelectorAll(".designRow")).map((row) =>
         row.getAttribute("data-row-id")
       );
-    expect(rowOrder()).toEqual(["row-1", "main"]);
+    const beforeReorder = rowOrder();
+    expect(beforeReorder).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: "Move row 1 down" }));
-    expect(rowOrder()).toEqual(["main", "row-1"]);
+    expect(rowOrder()).toEqual([
+      beforeReorder[1],
+      beforeReorder[0],
+      beforeReorder[2],
+    ]);
 
     // Remove through the canvas clears the block and blocks saving again.
     // Removing the selected metric clears the selection, so the table

@@ -332,7 +332,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
           onKeyDown={handleKeyDown}
         >
           <h2 id={titleId} class="ui-dialog-title">
-            {t("composition.studioAddData")}
+            {t("composition.studioChooseSource")}
           </h2>
           <Show when={adding()}>
             <LocalBusyIndicator label={t("composition.studioSourcesLoading")} />
