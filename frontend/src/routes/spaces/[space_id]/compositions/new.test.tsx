@@ -156,6 +156,9 @@ describe("Composition studio shell", () => {
     name: string,
     tab: "Forms" | "Saved SQL" = "Forms",
   ) => {
+    const wasDataMode = screen.getByRole("radio", { name: "Data" })
+      .getAttribute("aria-checked") === "true";
+    showDesignMode();
     fireEvent.click(screen.getByRole("button", { name: "Add data" }));
     await screen.findByRole("dialog");
     if (tab !== "Forms") {
@@ -165,23 +168,7 @@ describe("Composition studio shell", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
-  };
-
-  // Canvas insertion path: a gap "+" opens the block palette, and the
-  // palette opens one Table/Metric display picker at the recorded target.
-  // The legacy Display section is gone; this is the only insertion path.
-  const addTableViaCanvas = async (sourceName: string) => {
-    fireEvent.click(screen.getAllByRole("button", { name: "Add block" })[0]);
-    const palette = screen.getByRole("dialog", { name: "Add block" });
-    fireEvent.click(within(palette).getByRole("button", { name: "Display" }));
-    const picker = await screen.findByRole("dialog", { name: "Add display" });
-    fireEvent.click(within(picker).getByRole("button", { name: sourceName }));
-    fireEvent.click(
-      within(picker).getByRole("button", { name: "Add" }),
-    );
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
+    if (wasDataMode) showDataMode();
   };
 
   const addMetricViaCanvas = async (
@@ -294,8 +281,9 @@ describe("Composition studio shell", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
-    // Data mode opens its Sources tab. Parameters disclose progressively
-    // only once a source exists; Tags remain on their own tab.
+    // Data mode lists existing sources without a competing source action.
+    // Parameters disclose progressively only once a source exists; Tags
+    // remain on their own tab.
     fireEvent.click(within(modes).getByRole("radio", { name: "Data" }));
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((heading) =>
@@ -311,9 +299,9 @@ describe("Composition studio shell", () => {
     expect(
       screen.queryByRole("button", { name: "Select Tasks" }),
     ).not.toBeInTheDocument();
-    const paragraphs = container.querySelectorAll("p");
-    expect(paragraphs).toHaveLength(1);
-    expect(paragraphs[0]).toHaveTextContent("Add data to begin.");
+    expect(container.querySelectorAll("p")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Add data" }))
+      .not.toBeInTheDocument();
   });
 
   it("discloses Parameters in Data mode only once a source exists", async () => {
@@ -346,12 +334,14 @@ describe("Composition studio shell", () => {
     const { container } = render(() => <CompositionNewRoute />);
     showDataMode();
 
+    showDesignMode();
     fireEvent.click(screen.getByRole("button", { name: "Add data" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Tasks" }));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
+    showDataMode();
 
     expect(screen.getByRole("button", { name: "Tasks" }))
       .toBeInTheDocument();
@@ -376,6 +366,7 @@ describe("Composition studio shell", () => {
     expect(container.querySelector(".dataWorkspaceEditor")).not.toBeNull();
     expect(container.textContent).not.toContain(FORM_ID);
 
+    showDesignMode();
     fireEvent.click(screen.getByRole("button", { name: "Add data" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("tab", { name: "Saved SQL" }));
@@ -383,6 +374,7 @@ describe("Composition studio shell", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
+    showDataMode();
     expect(sqlGetMock).toHaveBeenCalledWith("space-1", "sql-1");
 
     const order = () =>
@@ -393,6 +385,12 @@ describe("Composition studio shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Move Monthly up" }));
     expect(order()[0]).toMatch(/Monthly/);
 
+    // Source removal is blocked while its table still uses it. Remove that
+    // design block first, then remove the unreferenced source in Data.
+    showDesignMode();
+    fireEvent.click(screen.getByRole("button", { name: "Select Tasks" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Tasks" }));
+    showDataMode();
     fireEvent.click(screen.getByRole("button", { name: "Remove Tasks" }));
     expect(
       screen.queryByRole("button", { name: "Tasks" }),
@@ -406,18 +404,10 @@ describe("Composition studio shell", () => {
     });
     showDataMode();
     await addSourceViaPicker("Tasks");
-    // A source-only draft cannot save: the disabled Save carries the
-    // layout reason instead of a prose paragraph.
-    expect(
-      screen.getByRole("button", {
-        name: "Save, Add a block to the canvas to save.",
-      }),
-    ).toBeDisabled();
     showDesignMode();
 
-    await addTableViaCanvas("Tasks");
-    // The new block is selected: the canvas owns the block, the inspector
-    // owns its label.
+    // A newly chosen source immediately provides its first table; the canvas
+    // selects it, and the inspector owns its optional label.
     expect(
       screen.getByRole("button", { name: "Select Tasks" }),
     ).toBeInTheDocument();
@@ -436,14 +426,14 @@ describe("Composition studio shell", () => {
       screen.getByRole("button", { name: "Select Total" }),
     ).toBeInTheDocument();
 
-    // Row reorder through the canvas; each insertion opened its own row.
+    // Row reorder through the canvas; adding the metric opens its own row.
     const rowOrder = () =>
       Array.from(container.querySelectorAll(".designRow")).map((row) =>
         row.getAttribute("data-row-id")
       );
-    expect(rowOrder()).toEqual(["row-2", "row-1"]);
+    expect(rowOrder()).toEqual(["row-1", "main"]);
     fireEvent.click(screen.getByRole("button", { name: "Move row 1 down" }));
-    expect(rowOrder()).toEqual(["row-1", "row-2"]);
+    expect(rowOrder()).toEqual(["main", "row-1"]);
 
     // Remove through the canvas clears the block and blocks saving again.
     // Removing the selected metric clears the selection, so the table
@@ -456,6 +446,11 @@ describe("Composition studio shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove Details" }));
     expect(
       screen.queryByRole("button", { name: "Select Details" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Select Monthly" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Monthly" }));
+    expect(
+      screen.queryByRole("button", { name: "Select Monthly" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", {
@@ -474,7 +469,6 @@ describe("Composition studio shell", () => {
     showDataMode();
     await addSourceViaPicker("Tasks");
     showDesignMode();
-    await addTableViaCanvas("Tasks");
 
     const saveButton = screen.getByRole("button", { name: "Save" });
     expect(saveButton).toBeEnabled();
@@ -515,7 +509,6 @@ describe("Composition studio shell", () => {
     showDataMode();
     await addSourceViaPicker("Tasks");
     showDesignMode();
-    await addTableViaCanvas("Tasks");
 
     saveMock.mockRejectedValueOnce(new Error("transport closed"));
     saveMock.mockResolvedValueOnce({
@@ -550,7 +543,7 @@ describe("Composition studio shell", () => {
     );
   });
 
-  it("blocks a source-only save with an accessible reason and no save call", async () => {
+  it("adds a source and its initial table together from Design", async () => {
     render(() => <CompositionNewRoute />);
 
     fireEvent.input(screen.getByLabelText("Name"), {
@@ -558,21 +551,12 @@ describe("Composition studio shell", () => {
     });
     showDataMode();
     await addSourceViaPicker("Tasks");
+    showDesignMode();
 
-    // The gate blocks the attempt before canonicalization: the disabled
-    // Save carries the layout reason, and no save call is ever made.
-    const saveButton = screen.getByRole("button", {
-      name: "Save, Add a block to the canvas to save.",
-    });
-    expect(saveButton).toBeDisabled();
-    expect(saveButton).toHaveAttribute(
-      "title",
-      "Save, Add a block to the canvas to save.",
-    );
-    fireEvent.click(saveButton);
-    await waitFor(() => {
-      expect(canonicalizeMock).not.toHaveBeenCalled();
-    });
+    expect(screen.getByRole("button", { name: "Select Tasks" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(canonicalizeMock).not.toHaveBeenCalled();
     expect(saveMock).not.toHaveBeenCalled();
   });
 
@@ -585,7 +569,6 @@ describe("Composition studio shell", () => {
     showDataMode();
     await addSourceViaPicker("Tasks");
     showDesignMode();
-    await addTableViaCanvas("Tasks");
 
     canonicalizeMock.mockRejectedValueOnce(
       new UgoiteApiError({
@@ -609,7 +592,6 @@ describe("Composition studio shell", () => {
     showDataMode();
     await addSourceViaPicker("Tasks");
     showDesignMode();
-    await addTableViaCanvas("Tasks");
 
     canonicalizeMock.mockRejectedValueOnce(new Error("transport closed"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -694,13 +676,7 @@ describe("Composition studio shell", () => {
     });
     render(() => <CompositionNewRoute />);
     showDataMode();
-
-    fireEvent.click(screen.getByRole("button", { name: "Add data" }));
-    fireEvent.click(await screen.findByRole("tab", { name: "Saved SQL" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
+    await addSourceViaPicker("Monthly", "Saved SQL");
 
     // The month parameter is provisioned from the server-declared type.
     // Open its Data tab. Scoped to the Parameters section: the source viewer also

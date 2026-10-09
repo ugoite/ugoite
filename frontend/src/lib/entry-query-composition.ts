@@ -69,6 +69,9 @@ export interface EntryQueryCompositionFieldSchemaEntry {
   items?: EntryQueryCompositionListItem;
 }
 
+/** Mirrors `MAX_COMPOSITION_COLLECTION_ITEMS` in `ugoite-domain`. */
+export const MAX_COMPOSITION_FIELD_SCHEMA_ITEMS = 256;
+
 export interface EntryQueryCompositionFilter {
   field_id: number;
   operator: EntryFilterOperator;
@@ -218,6 +221,30 @@ const schemaEntryForField = (
   }
   if (targetForm || field.items) return undefined;
   return { field_id: fieldId, field_type: fieldType };
+};
+
+/**
+ * Snapshot every current Form field that has an exact Composition schema.
+ * Query projections still have their independent 64-field limit; keeping the
+ * broader schema lets the editor choose other supported fields for projection,
+ * filtering, or sorting without creating references the resolver cannot use.
+ */
+export const buildEntryQueryCompositionFieldSchema = (
+  form: Form,
+  knownForms: readonly Form[] = [],
+): EntryQueryCompositionFieldSchemaEntry[] => {
+  const fieldIds = [
+    ...new Set(
+      Object.values(form.fields ?? {}).flatMap((field) => {
+        const fieldId = formFieldId(field);
+        return fieldId === undefined ? [] : [fieldId];
+      }),
+    ),
+  ].sort((left, right) => left - right);
+  return fieldIds.flatMap((fieldId) => {
+    const entry = schemaEntryForField(form, knownForms, fieldId);
+    return entry ? [entry] : [];
+  });
 };
 
 /**

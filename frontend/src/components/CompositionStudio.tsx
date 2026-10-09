@@ -371,8 +371,22 @@ export function CompositionStudio(props: CompositionStudioProps) {
     const provisioned = seed.kind === "saved_sql" && seed.seed.variableTypes
       ? ensureParametersForVariables(added.draft, seed.seed.variableTypes)
       : added.draft;
-    setDraft(provisioned);
+    const table = addTableDisplay(provisioned, added.draftId);
+    if (!table.ok || !table.draftId) return;
+    setDraft(table.draft);
     setExpandedId(added.draftId);
+    setSelectedId(designBlockIdForComponent(table.draftId));
+    if (sheetViewport()) setSheetOpen(true);
+    setPickerOpen(false);
+  };
+
+  const addExistingSourceTable = (sourceDraftId: string) => {
+    const table = addTableDisplay(draft(), sourceDraftId);
+    if (!table.ok || !table.draftId) return;
+    setDraft(table.draft);
+    setExpandedId(sourceDraftId);
+    setSelectedId(designBlockIdForComponent(table.draftId));
+    if (sheetViewport()) setSheetOpen(true);
     setPickerOpen(false);
   };
 
@@ -829,58 +843,68 @@ export function CompositionStudio(props: CompositionStudioProps) {
         </button>
       }
     >
-      <div class="studioDesign">
-        <CompositionDesignCanvas
-          draft={draft()}
-          plan={canvasPlan()}
-          parameterValues={{
-            ...defaultParameterValues(draft()),
-            ...previewHandle.parameters(),
-          }}
-          sources={readySources()}
-          fieldNames={fieldNames}
-          selectedId={selectedId()}
-          highlightedIds={highlightedBlockIds()}
-          onSelect={handleSelectBlock}
-          onDraftChange={setDraft}
-          onRequestDisplayPicker={(target) => {
-            setPendingInsert(target);
-            setDisplayPickerOpen(true);
-          }}
-          onParameterChange={(parameterId, value) =>
-            previewHandle.setParameter(parameterId, value)}
-          onNext={(sourceId) => previewHandle.next(sourceId)}
-          onPrevious={(sourceId) => previewHandle.previous(sourceId)}
-          onRetry={(sourceId) => previewHandle.retry(sourceId)}
-          paletteTarget={paletteTarget()}
-          onPaletteTarget={setPaletteTarget}
-        />
-        {
-          /* The inspector renders exactly once: inline beside the canvas on
-          wide viewports, or as a bottom sheet on narrow ones. */
-        }
-        <Show when={!sheetViewport()}>
-          <CompositionInspector
+      <div class="studioDesignWorkspace">
+        <button
+          class="ui-button ui-button-secondary studioDesignAddData"
+          type="button"
+          onClick={() => setPickerOpen(true)}
+        >
+          <UiIcon name="plus" />
+          <span>{t("composition.studioAddData")}</span>
+        </button>
+        <div class="studioDesign">
+          <CompositionDesignCanvas
             draft={draft()}
-            selectedId={selectedId()}
+            plan={canvasPlan()}
+            parameterValues={{
+              ...defaultParameterValues(draft()),
+              ...previewHandle.parameters(),
+            }}
+            sources={readySources()}
             fieldNames={fieldNames}
+            selectedId={selectedId()}
+            highlightedIds={highlightedBlockIds()}
+            onSelect={handleSelectBlock}
             onDraftChange={setDraft}
-            onDataJump={jumpToSource}
+            onRequestDisplayPicker={(target) => {
+              setPendingInsert(target);
+              setDisplayPickerOpen(true);
+            }}
+            onParameterChange={(parameterId, value) =>
+              previewHandle.setParameter(parameterId, value)}
+            onNext={(sourceId) => previewHandle.next(sourceId)}
+            onPrevious={(sourceId) => previewHandle.previous(sourceId)}
+            onRetry={(sourceId) => previewHandle.retry(sourceId)}
+            paletteTarget={paletteTarget()}
+            onPaletteTarget={setPaletteTarget}
           />
+          {
+            /* The inspector renders exactly once: inline beside the canvas on
+            wide viewports, or as a bottom sheet on narrow ones. */
+          }
+          <Show when={!sheetViewport()}>
+            <CompositionInspector
+              draft={draft()}
+              selectedId={selectedId()}
+              fieldNames={fieldNames}
+              onDraftChange={setDraft}
+              onDataJump={jumpToSource}
+            />
+          </Show>
+        </div>
+        <Show when={sheetSelection()}>
+          {(activeId) => (
+            <CompositionInspectorSheet
+              draft={draft()}
+              selectedId={activeId()}
+              fieldNames={fieldNames}
+              onDraftChange={setDraft}
+              onDataJump={jumpToSource}
+              onClose={dismissSheet}
+            />
+          )}
         </Show>
       </div>
-      <Show when={sheetSelection()}>
-        {(activeId) => (
-          <CompositionInspectorSheet
-            draft={draft()}
-            selectedId={activeId()}
-            fieldNames={fieldNames}
-            onDraftChange={setDraft}
-            onDataJump={jumpToSource}
-            onClose={dismissSheet}
-          />
-        )}
-      </Show>
     </Show>
   );
 
@@ -955,16 +979,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
 
       <Show when={mode() === "data"}>
         <section class="section" aria-labelledby={dataHeadingId}>
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
-            <button
-              class="ui-button ui-button-secondary"
-              type="button"
-              onClick={() => setPickerOpen(true)}
-            >
-              {t("composition.studioAddData")}
-            </button>
-          </div>
+          <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
           <div
             class="tabs studioDataTabs"
             role="tablist"
@@ -1073,22 +1088,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
               {renderDesignWorkspace()}
             </div>
             <div class="studioSplitPane" aria-labelledby={dataHeadingId}>
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
-                {
-                  /* Blank drafts expose a single Add-data control on the
-                    canvas; the pane button would duplicate it. */
-                }
-                <Show when={!isBlankDraft()}>
-                  <button
-                    class="ui-button ui-button-secondary"
-                    type="button"
-                    onClick={() => setPickerOpen(true)}
-                  >
-                    {t("composition.studioAddData")}
-                  </button>
-                </Show>
-              </div>
+              <h2 id={dataHeadingId}>{t("composition.studioData")}</h2>
               {renderDataWorkspace()}
             </div>
           </div>
@@ -1108,6 +1108,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
       <Show when={pickerOpen()}>
         <CompositionSourcePicker
           spaceId={spaceId()}
+          existingSources={draft().sources}
+          onSelectExisting={addExistingSourceTable}
           onSelect={addSeed}
           onClose={() => setPickerOpen(false)}
         />

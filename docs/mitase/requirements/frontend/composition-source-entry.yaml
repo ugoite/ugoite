@@ -1,0 +1,215 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: frontend
+category: Frontend route, component, and interaction requirements
+requirements:
+  - id: REQ-FE-074
+    title: Composition Design Source Entry
+    description: Design is the source-authoring entry point for adding or reusing Composition data sources.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: source-design-entry
+        kind: behavior
+        statement: "Design is the source-authoring entry point: its picker presents sources already referenced by the current Composition before available Space Forms and user Saved SQL. Choosing an existing source adds a table bound to that source; choosing a new Form or exact Saved SQL revision adds the source and an initial table to the draft together. New Form sources initially project up to 64 projectable Form fields and omit Created and Updated system fields, while their snapshot includes every Composition-expressible Form field up to the document collection limit so later projection, filter, and sort edits stay resolvable. Filter and sort choices are limited to fields present in the source snapshot. Projection choices include only projectable snapshot fields, while already-selected nonprojectable fields remain available for removal. Preview remains the fallback when no Form field is projectable, and can be selected only when the source snapshot covers every current Form field. The Data Sources view lists and edits only sources already referenced by the Composition, without a competing source-add action in Data or the Split data pane."
+        governed_by: [
+          POL-UI-002#rule.governance,
+          POL-UI-006#rule.governance,
+          POL-UI-007#rule.governance,
+        ]
+    bindings:
+      - id: design-source-entry-verification
+        role: verification
+        facet: verification
+        responsibility: Verify the Design source picker, one-step source creation and reuse, and single source-action ownership with focused frontend tests.
+        targets:
+          - id: current-composition-source-order
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector:
+              kind: test
+              name: puts current Composition sources first and activates them by hidden draft identity
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-source-picker,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/CompositionSourcePicker.test.tsx,
+                    test: puts current Composition sources first and activates them by hidden draft identity,
+                  },
+                }
+          - id: current-source-reuse
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector:
+              kind: test
+              name: puts current sources first and reuses one from Design
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/CompositionStudioSync.test.tsx,
+                    test: puts current sources first and reuses one from Design,
+                  },
+                }
+          - id: new-form-projection
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector:
+              kind: test
+              name: starts new Form sources with projectable fields selected
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-source-picker,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/CompositionSourcePicker.test.tsx,
+                    test: starts new Form sources with projectable fields selected,
+                  },
+                }
+          - id: preview-snapshot-guard
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector:
+              kind: test
+              name: keeps Preview unavailable when the source snapshot omits current Form fields
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/CompositionDataWorkspace.test.tsx,
+                    test: keeps Preview unavailable when the source snapshot omits current Form fields,
+                  },
+                }
+          - id: snapshot-backed-filter-sort
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector:
+              kind: test
+              name: limits filter and sort options to fields in the source snapshot
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/CompositionDataWorkspace.test.tsx,
+                    test: limits filter and sort options to fields in the source snapshot,
+                  },
+                }
+          - id: projectable-snapshot-fields
+            adapter: typescript
+            path: frontend/src/components/CompositionDataWorkspace.test.tsx
+            selector:
+              kind: test
+              name: omits nonprojectable Form fields from the projection choices
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/CompositionDataWorkspace.test.tsx,
+                    test: omits nonprojectable Form fields from the projection choices,
+                  },
+                }
+          - id: expanded-form-snapshot
+            adapter: typescript
+            path: frontend/src/components/CompositionSourcePicker.test.tsx
+            selector:
+              kind: test
+              name: snapshots additional Form fields while limiting the initial projection
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-source-picker,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/CompositionSourcePicker.test.tsx,
+                    test: snapshots additional Form fields while limiting the initial projection,
+                  },
+                }
+          - id: new-saved-sql-table
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector:
+              kind: test
+              name: adds a Saved SQL source and its table directly from Design
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/CompositionStudioSync.test.tsx,
+                    test: adds a Saved SQL source and its table directly from Design,
+                  },
+                }
+          - id: source-action-ownership
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector:
+              kind: test
+              name: keeps one source action in Design and none in Data details
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/CompositionStudioSync.test.tsx,
+                    test: keeps one source action in Design and none in Data details,
+                  },
+                }
+          - id: route-source-first-table
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
+            selector:
+              kind: test
+              name: adds a source and its initial table together from Design
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-074#criterion.source-design-entry
+                covers: [
+                  FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: "src/routes/spaces/[space_id]/compositions/new.test.tsx",
+                    test: adds a source and its initial table together from Design,
+                  },
+                }

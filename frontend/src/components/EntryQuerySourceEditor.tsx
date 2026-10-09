@@ -26,8 +26,8 @@ import type {
   EntryQueryCompositionSort,
 } from "~/lib/entry-query-composition";
 import {
-  MAX_ENTRY_PROJECTION_FIELDS,
   type DraftSource,
+  MAX_ENTRY_PROJECTION_FIELDS,
 } from "~/lib/composition-draft";
 import type {
   EntryFieldCapability,
@@ -202,9 +202,18 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
   };
   const capabilities = createMemo((): EntryFieldCapability[] => {
     const form = definitionForm();
-    return form ? studioCapabilitiesFromForm(form) : studioFallbackCapabilities(
-      props.source.fieldSchema,
-      (_entry, index) => fallbackFieldName(index),
+    if (!form) {
+      return studioFallbackCapabilities(
+        props.source.fieldSchema,
+        (_entry, index) => fallbackFieldName(index),
+      );
+    }
+    const snapshottedFieldIds = new Set(
+      props.source.fieldSchema.map((entry) => entry.field_id),
+    );
+    return studioCapabilitiesFromForm(form).filter((field) =>
+      field.field.kind === "property" &&
+      snapshottedFieldIds.has(field.field.field_id)
     );
   });
 
@@ -263,10 +272,45 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
       ? t("entryBrowser.addSort")
       : `${t("entryBrowser.addSort")}: ${t("entryBrowser.noSortCapabilities")}`;
 
-  const schemaFieldIds = () =>
-    props.source.fieldSchema.map((entry) => entry.field_id);
-  const requiredMetricFields = () =>
-    [...new Set(props.requiredMetricFieldIds ?? [])];
+  const schemaFieldIds = () => {
+    const snapshotFieldIds = props.source.fieldSchema.map((entry) =>
+      entry.field_id
+    );
+    const form = definitionForm();
+    if (!form) return snapshotFieldIds;
+    const projectableFieldIds = new Set(
+      studioCapabilitiesFromForm(form).flatMap((field) =>
+        field.field.kind === "property" && field.projectable
+          ? [field.field.field_id]
+          : []
+      ),
+    );
+    const selectedFieldIds = new Set(
+      props.source.query.projection.kind === "fields"
+        ? props.source.query.projection.fields
+        : [],
+    );
+    return snapshotFieldIds.filter((fieldId) =>
+      projectableFieldIds.has(fieldId) || selectedFieldIds.has(fieldId)
+    );
+  };
+  const previewSchemaIsComplete = () => {
+    if (props.source.query.projection.kind === "preview") return true;
+    const form = definitionForm();
+    if (!form) return false;
+    const schemaById = new Map(
+      props.source.fieldSchema.map((entry) => [entry.field_id, entry]),
+    );
+    const fields = studioCapabilitiesFromForm(form);
+    return schemaById.size === props.source.fieldSchema.length &&
+      fields.length === schemaById.size &&
+      fields.every((field) =>
+        field.field.kind === "property" &&
+        schemaById.get(field.field.field_id)?.field_type === field.field_type
+      );
+  };
+  const requiredMetricFields =
+    () => [...new Set(props.requiredMetricFieldIds ?? [])];
   const initialProjectionFieldIds = () => {
     const required = requiredMetricFields();
     const remaining = schemaFieldIds().filter((fieldId) =>
@@ -286,9 +330,9 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
     }
     const projection = props.source.query.projection;
     const projected = projection.kind === "fields" ? projection.fields : [];
-    const missingMetricFields = requiredMetricFields().filter((fieldId) =>
-      !projected.includes(fieldId)
-    ).length;
+    const missingMetricFields =
+      requiredMetricFields().filter((fieldId) => !projected.includes(fieldId))
+        .length;
     // Individual removals can only recover the draft when at most one slot
     // is missing. Larger deficits require the metric bindings to be edited.
     return projected.length + missingMetricFields -
@@ -458,12 +502,18 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               type="radio"
               name={`projection-${props.source.draftId}`}
               checked={props.source.query.projection.kind === "preview"}
-              disabled={(props.requiredMetricFieldIds?.length ?? 0) > 0}
-              aria-describedby={(props.requiredMetricFieldIds?.length ?? 0) > 0
+              disabled={(props.requiredMetricFieldIds?.length ?? 0) > 0 ||
+                !previewSchemaIsComplete()}
+              aria-describedby={(props.requiredMetricFieldIds?.length ?? 0) >
+                  0
                 ? `metric-projection-lock-${props.source.draftId}`
+                : !previewSchemaIsComplete()
+                ? `preview-schema-lock-${props.source.draftId}`
                 : undefined}
               title={(props.requiredMetricFieldIds?.length ?? 0) > 0
                 ? t("composition.studioMetricProjectionRequired")
+                : !previewSchemaIsComplete()
+                ? t("composition.studioPreviewRequiresSchema")
                 : undefined}
               onChange={() => props.onProjection({ kind: "preview" })}
             />
@@ -475,6 +525,14 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               id={`metric-projection-lock-${props.source.draftId}`}
             >
               {t("composition.studioMetricProjectionRequired")}
+            </span>
+          </Show>
+          <Show when={!previewSchemaIsComplete()}>
+            <span
+              class="ui-sr-only"
+              id={`preview-schema-lock-${props.source.draftId}`}
+            >
+              {t("composition.studioPreviewRequiresSchema")}
             </span>
           </Show>
           <label>
@@ -495,12 +553,10 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
               onChange={() => {
                 const current = props.source.query.projection;
                 props.onProjection(
-                  current.kind === "fields"
-                    ? current
-                    : {
-                      kind: "fields",
-                      fields: initialProjectionFieldIds(),
-                    },
+                  current.kind === "fields" ? current : {
+                    kind: "fields",
+                    fields: initialProjectionFieldIds(),
+                  },
                 );
               }}
             />
@@ -540,8 +596,7 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
                       ? reservedCount > MAX_ENTRY_PROJECTION_FIELDS
                       : reservedCount >= MAX_ENTRY_PROJECTION_FIELDS);
                 };
-                const disabled = () =>
-                  projectionRecoveryBlocked() ||
+                const disabled = () => projectionRecoveryBlocked() ||
                   (selected() && requiredByMetric()) || disabledByLimit();
                 const disabledReason = () =>
                   projectionRecoveryBlocked()
@@ -619,7 +674,6 @@ export function EntryQuerySourceEditor(props: EntryQuerySourceEditorProps) {
           />
         )}
       </Show>
-
     </div>
   );
 }
