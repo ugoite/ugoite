@@ -92,13 +92,21 @@ describe("/login continuation", () => {
       issuer: "https://issuer.example/tenant-a",
       client_id: "client",
     }]);
+    authApiSpies.loginWithOidc.mockImplementation(() => {});
     render(() => <LoginRoute />);
 
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Continue with issuer.example/tenant-a",
-      }),
+    const oidcButton = await screen.findByRole("button", {
+      name: "Continue with issuer.example/tenant-a",
+    });
+    expect(oidcButton).toHaveTextContent(
+      "Continue with issuer.example/tenant-a",
     );
+    expect(oidcButton).toHaveAccessibleName(
+      "Continue with issuer.example/tenant-a",
+    );
+    expect(oidcButton).not.toHaveAccessibleName(/provider-1/);
+
+    fireEvent.click(oidcButton);
 
     expect(document.body.textContent).not.toContain("provider-1");
 
