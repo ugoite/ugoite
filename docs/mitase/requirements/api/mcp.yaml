@@ -104,12 +104,12 @@ requirements:
           - id: browser-context-selection-ui
             adapter: typescript
             path: frontend/src/components/konase/KonasePanel.test.tsx
-            selector: { kind: test, name: "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview" }
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps resource URIs internal and shows human-readable Context preview labels" }
             claims:
               - kind: verifies
                 criterion: REQ-API-012#criterion.selected-context-admission
                 covers: [FEAT-API-001#binding.konase-host/target.browser-panel]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/konase/KonasePanel.test.tsx, test: "REQ-UX-LIST-001: keeps resource URIs internal and shows human-readable Context preview labels" } }
   - id: REQ-API-013
     title: Current MCP surface documentation
     description: "Current-state MCP documentation describes the shipped v1 semantic facade: ugoite.search, ugoite.save, and authorized ugoite.delete, plus lazy stable Entry/Form resources. ugoite.save creates a structured Entry without id or updates one opaque Entry with id using form, fields, tags, and optional extra_attributes values; a declared Markdown Form field remains ordinary Markdown text and the Entry itself is never submitted as a Markdown document. Storage-specific routes, prompts, SQL, and revision tools remain future work."

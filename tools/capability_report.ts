@@ -530,7 +530,7 @@ export const PREFLIGHT_ROWS: PreflightRowSeed[] = [
       {
         path: "frontend/src/components/konase/KonasePanel.test.tsx",
         selector:
-          "REQ-UX-LIST-001: keeps Konase labels human-readable and exposes resource identities in the preview",
+          "REQ-UX-LIST-001: keeps resource URIs internal and shows human-readable Context preview labels",
       },
     ],
     availability: "existing",
