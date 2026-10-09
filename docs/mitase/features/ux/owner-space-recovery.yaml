@@ -39,13 +39,6 @@ features:
                 criterion: REQ-UX-RECOVERY-001#criterion.masked-owner-token
               - kind: satisfies
                 criterion: REQ-UX-RECOVERY-001#criterion.hidden-identifiers
-          - id: recovery-ui-index
-            adapter: declared
-            path: docs/spec/ui/index.md
-            selector: { kind: file }
-            claims:
-              - kind: satisfies
-                criterion: REQ-UX-RECOVERY-001#criterion.contract-index
           - id: recovery-route-inventory
             adapter: declared
             path: docs/spec/ui/ux-route-inventory.md
@@ -172,7 +165,6 @@ features:
                 criterion: REQ-UX-RECOVERY-001#criterion.contract-index
                 covers: [
                   FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-contract,
-                  FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-ui-index,
                   FEAT-UX-018#binding.owner-space-recovery-surface/target.recovery-route-inventory,
                 ]
                 runner: {
