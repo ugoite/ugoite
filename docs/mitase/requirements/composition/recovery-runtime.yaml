@@ -298,6 +298,11 @@ requirements:
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-studio-mode
                   - FEAT-COMP-005#binding.studio-design-runtime/target.browser-inspector-sheet
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: moves the sheet data jump to the Data workspace on narrow viewports } }
+              - kind: verifies
+                criterion: REQ-COMP-006#criterion.navigator-collapse-is-transient
+                covers:
+                  - FEAT-COMP-006#binding.studio-data-runtime/target.browser-data-workspace
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioMobile.test.tsx, test: moves the sheet data jump to the Data workspace on narrow viewports } }
           - id: studio-mobile-insert-case
             adapter: typescript
             path: frontend/src/components/CompositionStudioMobile.test.tsx

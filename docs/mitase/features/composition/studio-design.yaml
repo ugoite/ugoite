@@ -473,6 +473,8 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.navigator-collapse-is-transient
     - id: browser-studio-mobile-insert
       adapter: typescript
       path: frontend/src/components/CompositionStudioMobile.test.tsx
