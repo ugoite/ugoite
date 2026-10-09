@@ -303,6 +303,38 @@ describe("CompositionDataWorkspace", () => {
     await screen.findByRole("heading", { name: "Expenses" });
   });
 
+  it("keeps long navigator names available without exposing source identifiers", async () => {
+    const draft = twoSourceDraft();
+    const source = draft.sources[0];
+    if (!source) throw new Error("expected a source");
+    const fullName =
+      "Monthly totals for the previous fiscal quarter, including adjustments";
+    const namedDraft: CompositionDraft = {
+      ...draft,
+      sources: draft.sources.map((item) =>
+        item.draftId === source.draftId ? { ...item, name: fullName } : item
+      ),
+    };
+    const { container } = renderWorkspace(namedDraft);
+
+    const row = await screen.findByRole("button", { name: fullName });
+    expect(row).toHaveAttribute("title", fullName);
+    expect(row).toHaveAccessibleName(fullName);
+    const buttonLabels = Array.from(container.querySelectorAll("button"))
+      .map((button) =>
+        [
+          button.getAttribute("aria-label"),
+          button.getAttribute("title"),
+          button.textContent,
+        ].join(" ")
+      )
+      .join(" ");
+    for (const identifier of [source.draftId, "sql-1", "sql-rev-1"]) {
+      expect(document.body.textContent).not.toContain(identifier);
+      expect(buttonLabels).not.toContain(identifier);
+    }
+  });
+
   it("collapses the source navigator and restores it without losing the selected detail", async () => {
     const { container } = renderWorkspace(twoSourceDraft());
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
