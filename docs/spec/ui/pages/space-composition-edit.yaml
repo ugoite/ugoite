@@ -52,7 +52,10 @@ components:
     - id: studio-data
       type: list
       title: Data
-      source: draft sources restored from the lint-normalized document with human names only
+      source: >-
+        draft sources restored from the lint-normalized document with human names
+        only; use localized ordinal labels when current source metadata is
+        unavailable instead of exposing document source identifiers
       selection: full-row-activate
       reorder: keyboard-operable-move-up-down
       remove: blocked-while-displays-reference-with-reason
