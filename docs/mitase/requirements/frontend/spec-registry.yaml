@@ -106,6 +106,15 @@ requirements:
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers: [FEAT-FE-013#binding.frontend/target.component-account-recovery]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares Account Self-Recovery factors and code handoff" } }
+          - id: step-up-component-contract
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: { kind: test, name: "REQ-FE-040: declares step-up approval and identifier boundaries" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-040#criterion.registry-shape
+                covers: [FEAT-FE-013#binding.frontend/target.component-step-up]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares step-up approval and identifier boundaries" } }
           - id: component-types
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts

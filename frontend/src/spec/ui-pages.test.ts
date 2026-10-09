@@ -966,6 +966,68 @@ describe("UI spec YAML registry", () => {
     });
   });
 
+  it("REQ-FE-040: declares step-up approval and identifier boundaries", () => {
+    const stepUpPath = path.join(componentsDir, "step-up.yaml");
+    const stepUp = parse(readFileSync(stepUpPath, "utf8")) as {
+      component_group?: Record<string, unknown>;
+      components?: Array<Record<string, unknown>>;
+    };
+    const approval = stepUp.components?.find(({ id }) =>
+      id === "cli-operation-approval"
+    );
+
+    expect(stepUp.component_group).toMatchObject({
+      id: "step-up",
+      routes: ["/step-up"],
+    });
+    expect(approval).toMatchObject({
+      implementation: "frontend/src/routes/step-up.tsx",
+      tests: "frontend/src/routes/step-up.test.tsx",
+      heading: "stepUpPage.title",
+      challenge: {
+        source: "query.challenge",
+        missing:
+          "show-incomplete-link-action-without-session-or-status-request",
+        visible_or_accessible_identifier: "none",
+      },
+      sign_in: {
+        visible_when: "session-is-unauthenticated",
+        action: "sign-in-with-passkey",
+        return_to: "same-step-up-link",
+        status_request_before_sign_in: false,
+      },
+      pending: {
+        prompt: "stepUpPage.reviewPrompt",
+        primary_action: "stepUpPage.approve",
+        ceremony: "fresh-passkey",
+        disabled_while_busy: true,
+      },
+      identifiers: {
+        challenge: "query-only",
+        api_error_detail: "hidden",
+        visible_content: "none",
+        accessible_names: "none",
+      },
+      persistent_explanatory_copy: "none",
+    });
+
+    const routeTests = readFileSync(
+      path.join(repoRoot, "frontend/src/routes/step-up.test.tsx"),
+      "utf8",
+    );
+    expect(routeTests).toContain(
+      "REQ-FE-044: localizes the step-up approval task in Japanese",
+    );
+    expect(routeTests).toContain(
+      "does not expose challenge identifiers from API errors",
+    );
+    const uiIndex = readFileSync(
+      path.join(repoRoot, "docs/spec/ui/index.md"),
+      "utf8",
+    );
+    expect(uiIndex).toContain("`components/step-up.yaml`");
+  });
+
   it("REQ-FE-067: keeps one ordinary Form and Entry workspace", () => {
     const pages = loadPages();
     const forms = pages.find(({ spec }) => spec.page?.id === "space-form-grid");

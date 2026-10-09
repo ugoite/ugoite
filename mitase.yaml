@@ -21,6 +21,8 @@ inventory:
         - frontend/src/lib/auth-route.test.ts
         - frontend/src/routes/login.tsx
         - frontend/src/routes/login.test.tsx
+        - frontend/src/routes/step-up.tsx
+        - frontend/src/routes/step-up.test.tsx
         - frontend/src/lib/auth-api.test.ts
         - frontend/src/components/AccountMenu.tsx
         - frontend/src/components/AuthGate.tsx
@@ -413,6 +415,7 @@ inventory:
         - docs/spec/ui/components/login.yaml
         - docs/spec/ui/components/account-security.yaml
         - docs/spec/ui/components/account-recovery.yaml
+        - docs/spec/ui/components/step-up.yaml
         - docs/spec/ui/ux-route-inventory.md
         - .github/workflows/ci.yml
         - .github/workflows/codeql.yml
