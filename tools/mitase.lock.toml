@@ -1,13 +1,13 @@
-version = "0.2.4"
+version = "0.2.5"
 
 [target.x86_64-unknown-linux-gnu]
-sha256 = "1609d709f10da6e9d4d990bc58eaf3546fea074aacc37881be714e6e955c5a84"
+sha256 = "2ce45a732b6d3db693d7892fbb8160868c5f09896395a6cf99ffa65f66d128f3"
 
 [target.aarch64-unknown-linux-gnu]
-sha256 = "176a295da7c08a9c6ddbd4a7fd549044b3c4f63af02e55aa2a1a4d6877c50588"
+sha256 = "eff0aa71d2edfb5a6a6bf4c34703429411939b49ad3ec098c5f102a3553dac92"
 
 [target.x86_64-apple-darwin]
-sha256 = "a614c436850b180048d3b0d5afeccb42c78e0679eb742568cad0e58e021b7733"
+sha256 = "abc46e576b21d5a9dc7439a7d5ef432d2aea8cddabe3163d01cbed648f3484b2"
 
 [target.aarch64-apple-darwin]
-sha256 = "6d0c1ee7e047172c2936f5cc2481ad5e90b461dff37317682e9ff611e3eab393"
+sha256 = "fdbc75a5f3d53dc54d6ef3536d570451c4ad40049d69b94c5bf340fa73be3f2d"
