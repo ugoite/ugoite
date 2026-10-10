@@ -78,13 +78,13 @@ policies:
             selector: { kind: file }
             claims: [{ kind: documents, anchor: POL-UI-003#rule.governance }]
   - id: POL-UI-004
-    title: One-Row Action Bar at 390px
-    summary: Primary list and workspace actions remain in a single row without wrapping at 390px width.
+    title: Reachable Primary Actions at Narrow Viewports
+    summary: Primary actions stay reachable without wrapping or horizontal scrolling at narrow widths.
     description: Action bars keep their primary actions in one row at a 390px viewport so the operative actions stay visible and reachable without horizontal scrolling or wrapped overflow.
     rules:
       - id: governance
         level: must
-        statement: Primary list and workspace action bars remain in a single row without wrapping or horizontal scrolling at a 390px viewport.
+        statement: Primary actions stay reachable without wrapping or horizontal scrolling at narrow viewports.
         governed_by: [PHIL-INTERACTION-001#principle.single-control, PHIL-INTERACTION-001#principle.verifiable-interaction]
     bindings:
       - id: action-bar-evidence
