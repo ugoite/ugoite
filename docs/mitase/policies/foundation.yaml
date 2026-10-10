@@ -29,7 +29,7 @@ policies:
   - id: POL-016
     title: v0.1 Knowledge Compatibility Floor
     summary: Preserve v0.1 Knowledge meaning while allowing implementation evolution.
-    description: The v0.1 Knowledge compatibility floor freezes ownership, authority, append-only history, and adapter authority semantics. It does not freeze the physical Catalog Head encoding, Iceberg object layout, crate APIs, or frontend internals. A breaking semantic change requires an explicit compatibility review and must preserve the canonical v0.1 Knowledge fixture or establish a new versioned contract before it can merge.
+    description: User-owned Knowledge must survive storage and implementation evolution. The floor therefore pins only meaning — ownership, authority, append-only history, and adapter semantics — and leaves encodings, layouts, APIs, and UI internals free to change, with the canonical v0.1 fixture as the arbiter.
     rules:
       - id: governance
         level: must

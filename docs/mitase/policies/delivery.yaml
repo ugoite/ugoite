@@ -6,7 +6,7 @@ policies:
   - id: POL-003
     title: Minimal Node Deployment
     summary: Optimize for low-node, serverless-oriented deployments.
-    description: This policy keeps runtime topology intentionally small so product capabilities do not depend on unnecessary always-on services. It turns the serverless-oriented philosophy into operational guidance by preferring explicit, removable infrastructure over hidden long-lived dependencies.
+    description: Capabilities must not depend on infrastructure users did not ask for. Small, explicit, removable topology is how serverless-oriented operation stays honest about its hosting burden.
     rules:
       - id: governance
         level: should
@@ -31,7 +31,7 @@ policies:
   - id: POL-005
     title: CLI as First-Class Operator Surface
     summary: Use CLI workflows to keep automation explicit, inspectable, and scriptable.
-    description: This policy keeps automation visible and scriptable by treating the CLI as a first-class operational surface rather than a secondary afterthought. It reinforces low-node operation, reusable workflows, and durable rule-based automation that can be inspected directly by users and maintainers.
+    description: Automation that users cannot inspect is automation they cannot trust. A first-class CLI keeps workflows explicit, scriptable, and directly inspectable by users and maintainers.
     rules:
       - id: governance
         level: should
@@ -61,7 +61,7 @@ policies:
   - id: POL-008
     title: Requirement-to-Test Traceability
     summary: Require machine-readable linkage from requirement to executable tests.
-    description: This policy turns specifications into enforceable quality rules by requiring machine-readable links from requirements to tests. It strengthens trusted autonomy by ensuring that contributors and AI agents change behavior only through paths that remain continuously checkable in CI.
+    description: A requirement without a machine-readable path to its tests is a wish. Traceability turns specifications into enforceable rules by keeping every behavior change on a continuously checkable path in CI.
     rules:
       - id: governance
         level: must
@@ -98,7 +98,7 @@ policies:
   - id: POL-009
     title: Quality Gates Before Integration
     summary: Apply strict linting, typing, and regression gates before merging and release.
-    description: This policy enforces pre-integration quality gates so regressions are caught before they become shared product behavior. It operationalizes rule-based development and trusted constraints by making type checks, lint rules, and regression suites mandatory for change integration.
+    description: Shared product behavior must never regress silently. Mandatory type, lint, and regression gates catch breakage before integration, while fixes are still cheap.
     rules:
       - id: governance
         level: must
@@ -135,7 +135,7 @@ policies:
   - id: POL-013
     title: Spec-Driven Product Iteration
     summary: Evolve product behavior through explicit specifications before implementation drift.
-    description: This policy requires product evolution to move through explicit specs and shared documentation before implementation fragments into local decisions. It keeps iteration aligned with reusable rules so behavior changes remain reviewable, explainable, and continuously validated.
+    description: Implementation drifts toward local decisions unless specifications lead. Moving product evolution through explicit specs keeps behavior reviewable, explainable, and continuously validated.
     rules:
       - id: governance
         level: must
