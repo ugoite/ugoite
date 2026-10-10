@@ -69,6 +69,14 @@ regenerate it with `cargo run -p xtask -- openapi-generate`.
 
 Requirement IDs use `REQ-<CATEGORY>-<NNN>`. Tests should include the relevant ID in the test name or nearby source so traceability can be generated from the repository. A missing trace is documented as `untraced`, not masked with a deleted path.
 
+New or reworked specifications must keep `mitase:quality-gate` green: read
+any new `MITASE-QUALITY-*` finding, resolve the duplication or split the
+responsibility, or record the design reason in
+`tools/mitase_quality_baseline.json` through a reviewed commit. Never silence
+a warning mechanically — do not move a local acceptance condition into an
+abstract Policy, bulk-reword statements, or delete evidence just to clear
+the gate. Resolved baseline entries are pruned so regressions resurface.
+
 ## Pull requests
 
 Describe the behavior change, link an issue, list focused validation, and call out changes to storage compatibility, authentication, OpenAPI, or browser/server boundaries. `mise run ci` is the quality lane; `mise run ci:artifacts` is the artifact/E2E lane; `mise run ci:merge` reproduces the complete required merge gate locally.
