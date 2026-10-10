@@ -1,11 +1,11 @@
 import { assertEquals } from "@std/assert/equals";
 import {
+  type BaselineFile,
   compareBaselines,
   isEnforced,
   isQuality,
-  qualityFingerprint,
-  type BaselineFile,
   type QualityDiagnostic,
+  qualityFingerprint,
 } from "./mitase_quality_gate.ts";
 
 function diagnostic(
@@ -51,12 +51,22 @@ Deno.test("quality fingerprints ignore line numbers and statement text", () => {
 });
 
 Deno.test("quality gate passes on recorded findings and reports resolved", () => {
-  const known = diagnostic("MITASE-QUALITY-001", "REQ-A#criterion.x", "POL-A#rule.y", [
+  const known = diagnostic(
+    "MITASE-QUALITY-001",
+    "REQ-A#criterion.x",
     "POL-A#rule.y",
-  ]);
-  const stale = diagnostic("MITASE-QUALITY-002", "POL-B#rule.z", "REQ-B#criterion.w", [
+    [
+      "POL-A#rule.y",
+    ],
+  );
+  const stale = diagnostic(
+    "MITASE-QUALITY-002",
+    "POL-B#rule.z",
     "REQ-B#criterion.w",
-  ]);
+    [
+      "REQ-B#criterion.w",
+    ],
+  );
   const comparison = compareBaselines(
     [known],
     baseline(qualityFingerprint(known), qualityFingerprint(stale)),
@@ -67,12 +77,22 @@ Deno.test("quality gate passes on recorded findings and reports resolved", () =>
 });
 
 Deno.test("quality gate fails on new enforced findings only", () => {
-  const recorded = diagnostic("MITASE-QUALITY-001", "REQ-A#criterion.x", "POL-A#rule.y", [
+  const recorded = diagnostic(
+    "MITASE-QUALITY-001",
+    "REQ-A#criterion.x",
     "POL-A#rule.y",
-  ]);
-  const fresh = diagnostic("MITASE-QUALITY-004", "REQ-C#criterion.m", "REQ-D#criterion.n", [
+    [
+      "POL-A#rule.y",
+    ],
+  );
+  const fresh = diagnostic(
+    "MITASE-QUALITY-004",
+    "REQ-C#criterion.m",
     "REQ-D#criterion.n",
-  ]);
+    [
+      "REQ-D#criterion.n",
+    ],
+  );
   const info = diagnostic("MITASE-QUALITY-005", "POL-E#rule.governance");
   const comparison = compareBaselines(
     [recorded, fresh, info],
