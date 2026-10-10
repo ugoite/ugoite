@@ -473,6 +473,8 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
+      - kind: evidences
+        anchor: REQ-COMP-006#criterion.navigator-collapse-is-transient
     - id: browser-studio-mobile-insert
       adapter: typescript
       path: frontend/src/components/CompositionStudioMobile.test.tsx
@@ -672,7 +674,7 @@ features:
       path: frontend/src/components/CompositionStudioSync.test.tsx
       selector:
         kind: test
-        name: keeps insertion controls in Design and none in Data details
+        name: keeps display insertion in Design and source management in Data
       claims:
       - kind: evidences
         anchor: REQ-FE-074#criterion.source-design-entry

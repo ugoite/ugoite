@@ -4115,11 +4115,12 @@ a.tool {
   }
 }
 
-/* Data workspace: a collapsible source navigator beside the selected source
- * editor. Collapsing keeps the detail pane at the full available width. */
+/* Data workspace: a persistent source rail beside the selected source editor.
+ * The rail owns selection and its source-level actions; the editor owns the
+ * selected source detail. */
 .dataWorkspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr);
   gap: var(--ui-spacing-lg);
   align-items: start;
   min-width: 0;
@@ -4130,6 +4131,11 @@ a.tool {
 .dataWorkspaceNavigator {
   display: grid;
   align-content: start;
+  gap: var(--ui-spacing-sm);
+  position: sticky;
+  top: var(--ui-spacing-md);
+  max-height: calc(100dvh - var(--ui-spacing-xl));
+  overflow-y: auto;
   min-width: 0;
 }
 .dataWorkspaceNavigator[hidden] {
@@ -4137,9 +4143,24 @@ a.tool {
 }
 .dataWorkspaceNavigatorActions,
 .dataWorkspaceMainActions {
-  display: flex;
+  display: none;
   justify-content: flex-end;
   min-height: 44px;
+}
+.dataWorkspace--collapsible .dataWorkspaceNavigatorActions,
+.dataWorkspace--collapsible .dataWorkspaceMainActions {
+  display: flex;
+}
+.dataWorkspaceNavigatorFooter {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(44px, 1fr));
+  justify-items: center;
+  gap: var(--ui-spacing-xs);
+  padding-top: var(--ui-spacing-sm);
+  border-top: 1px solid var(--ui-border);
+}
+.dataWorkspaceNavigatorFooter > * {
+  min-width: 44px;
 }
 .dataWorkspaceMain {
   display: grid;
@@ -4156,6 +4177,25 @@ a.tool {
 @media (max-width: 560px) {
   .dataWorkspace {
     grid-template-columns: minmax(0, 1fr);
+    position: relative;
+  }
+  .dataWorkspace--mobile .dataWorkspaceNavigatorActions,
+  .dataWorkspace--mobile .dataWorkspaceMainActions {
+    display: flex;
+  }
+  .dataWorkspace--mobile-navigator-open .dataWorkspaceNavigator:not([hidden]) {
+    position: absolute;
+    z-index: 2;
+    inset: 0 auto auto 0;
+    width: min(21rem, calc(100vw - var(--ui-spacing-xl)));
+    height: min(72dvh, 36rem);
+    max-height: calc(100dvh - var(--ui-spacing-xl));
+    padding: var(--ui-spacing-md);
+    overflow: auto;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-lg);
+    background: var(--ui-surface-2);
+    box-shadow: var(--ui-shadow-lg);
   }
 }
 

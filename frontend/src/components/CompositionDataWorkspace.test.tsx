@@ -16,6 +16,7 @@ import {
   addEntryQuerySource,
   addMetricDisplay,
   addSavedSqlSource,
+  addTableDisplay,
   type CompositionDraft,
   createEmptyDraft,
   setEntryQueryDisplaySystemFields,
@@ -181,9 +182,11 @@ const savedSqlEntry = {
 
 interface Harness {
   container: HTMLElement;
+  unmount: () => void;
   editor: () => HTMLElement;
   current: () => CompositionDraft;
   onSelect: ReturnType<typeof vi.fn>;
+  onAddSource: ReturnType<typeof vi.fn>;
   onMove: ReturnType<typeof vi.fn>;
   onRemove: ReturnType<typeof vi.fn>;
   onNext: ReturnType<typeof vi.fn>;
@@ -199,6 +202,7 @@ const renderWorkspace = (
     sourceStates?: Record<string, CompositionSourcePageState>;
     diagnostics?: readonly CompositionResolveDiagnostic[];
     previewActive?: boolean;
+    collapsible?: boolean;
   } = {},
 ): Harness => {
   const [current, setCurrent] = createSignal(initial);
@@ -208,6 +212,7 @@ const renderWorkspace = (
     onSelect: vi.fn((id: string) =>
       setSelected((previous) => previous === id ? null : id)
     ),
+    onAddSource: vi.fn(),
     onMove: vi.fn(),
     onRemove: vi.fn(),
     onNext: vi.fn(),
@@ -215,13 +220,15 @@ const renderWorkspace = (
     onRetry: vi.fn(),
     onRevision: vi.fn(() => true),
   };
-  render(() => (
+  const rendered = render(() => (
     <CompositionDataWorkspace
       spaceId="space-1"
       draft={current()}
       headingId="studio-data-heading"
       selectedSourceId={selected()}
+      collapsible={overrides.collapsible}
       onSelectSource={harness.onSelect}
+      onAddSource={harness.onAddSource}
       onMoveSource={harness.onMove}
       onRemoveSource={harness.onRemove}
       onEntryQueryFilters={(id, filters) => {
@@ -266,6 +273,7 @@ const renderWorkspace = (
   return {
     ...harness,
     container,
+    unmount: rendered.unmount,
     editor: () => {
       const root = container.querySelector(".dataWorkspaceEditor");
       if (!root || !(root instanceof HTMLElement)) {
@@ -297,7 +305,10 @@ describe("CompositionDataWorkspace", () => {
     });
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   it("selects navigator sources with full-row activation", async () => {
     renderWorkspace(twoSourceDraft());
@@ -307,11 +318,13 @@ describe("CompositionDataWorkspace", () => {
     });
     const expenses = await screen.findByRole("button", { name: "Expenses" });
     expect(monthly.textContent).not.toMatch(/›/);
+    expect(expenses).toHaveAttribute("aria-pressed", "false");
     // No editor before selection: structure before explanation.
     expect(screen.queryByRole("heading", { name: "Expenses" })).toBeNull();
 
     fireEvent.click(expenses);
     await screen.findByRole("heading", { name: "Expenses" });
+    expect(expenses).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps long navigator names available without exposing source identifiers", async () => {
@@ -346,31 +359,41 @@ describe("CompositionDataWorkspace", () => {
     }
   });
 
-  it("collapses the source navigator and restores it without losing the selected detail", async () => {
+  it("preserves selected detail when closing and restoring the mobile navigator", async () => {
+    const media = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal("matchMedia", vi.fn(() => media));
     const { container } = renderWorkspace(twoSourceDraft());
     fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
     await screen.findByRole("heading", { name: "Expenses" });
 
     const navigator = container.querySelector(".dataWorkspaceNavigator");
     expect(navigator).toBeInTheDocument();
-    const hide = screen.getByRole("button", { name: "Hide data sources" });
-    expect(hide).toHaveAttribute("aria-expanded", "true");
-    expect(hide).toHaveAttribute("aria-controls", navigator?.id);
-    fireEvent.click(hide);
-    await Promise.resolve();
-
-    expect(navigator).toHaveAttribute("hidden");
-    expect(screen.getByRole("button", { name: "Show data sources" }))
-      .toHaveFocus();
-    expect(container.querySelector(".dataWorkspace")).toHaveClass(
-      "dataWorkspace--navigator-collapsed",
-    );
-    expect(screen.getByRole("heading", { name: "Expenses" })).toBeVisible();
-
     const show = screen.getByRole("button", { name: "Show data sources" });
     expect(show).toHaveAttribute("aria-expanded", "false");
     expect(show).toHaveAttribute("aria-controls", navigator?.id);
     fireEvent.click(show);
+    await Promise.resolve();
+
+    expect(navigator).not.toHaveAttribute("hidden");
+    const hide = screen.getByRole("button", { name: "Hide data sources" });
+    expect(hide).toHaveAttribute("aria-expanded", "true");
+    expect(hide).toHaveAttribute("aria-controls", navigator?.id);
+    expect(hide).toHaveFocus();
+
+    fireEvent.click(hide);
+    await Promise.resolve();
+    expect(navigator).toHaveAttribute("hidden");
+    const restoredShow = screen.getByRole("button", {
+      name: "Show data sources",
+    });
+    expect(restoredShow).toHaveFocus();
+    expect(screen.getByRole("heading", { name: "Expenses" })).toBeVisible();
+
+    fireEvent.click(restoredShow);
     await Promise.resolve();
 
     expect(navigator).not.toHaveAttribute("hidden");
@@ -382,23 +405,22 @@ describe("CompositionDataWorkspace", () => {
 
   it("reorders sources with keyboard-operable move buttons", async () => {
     const harness = renderWorkspace(twoSourceDraft());
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
 
-    const firstUp = await screen.findByRole("button", {
-      name: "Move Monthly totals up",
+    const selectedUp = await screen.findByRole("button", {
+      name: "Move Expenses up",
     });
-    const secondDown = await screen.findByRole("button", {
+    const selectedDown = await screen.findByRole("button", {
       name: "Move Expenses down",
     });
     // Boundary buttons stay disabled; native buttons keep keyboard focus.
-    expect(firstUp).toBeDisabled();
-    expect(secondDown).toBeDisabled();
+    expect(selectedUp).toBeEnabled();
+    expect(selectedDown).toBeDisabled();
 
-    const secondUp = await screen.findByRole("button", {
-      name: "Move Expenses up",
-    });
-    fireEvent.click(secondUp);
+    fireEvent.click(selectedUp);
     expect(harness.onMove).toHaveBeenCalledWith("src-2", "up");
 
+    fireEvent.click(await screen.findByRole("button", { name: "Monthly totals" }));
     const remove = await screen.findByRole("button", {
       name: "Remove Monthly totals",
     });
@@ -410,7 +432,101 @@ describe("CompositionDataWorkspace", () => {
     renderWorkspace(createEmptyDraft("Tool"));
     expect(screen.queryByText("Add data to begin.")).toBeNull();
     expect(screen.queryByRole("button", { name: "Add data" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Add source" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Expenses" })).toBeNull();
+  });
+
+  it("keeps source actions in the navigator footer", async () => {
+    const harness = renderWorkspace(twoSourceDraft());
+    const navigator = harness.container.querySelector(".dataWorkspaceNavigator");
+    if (!navigator) throw new Error("expected source navigator");
+    const footer = navigator.querySelector(".dataWorkspaceNavigatorFooter");
+    expect(footer).toBeInTheDocument();
+    expect(footer?.firstElementChild).toHaveAccessibleName("Add source");
+    expect(screen.getByRole("button", { name: "Move Source up" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove selected source" }))
+      .toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add source" }));
+    expect(harness.onAddSource).toHaveBeenCalledOnce();
+  });
+
+  it("disables source removal while a design block references it", async () => {
+    const draft = twoSourceDraft();
+    const withTable = addTableDisplay(draft, "src-2");
+    if (!withTable.ok) throw new Error("expected a table display");
+    const harness = renderWorkspace(withTable.draft);
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+
+    const remove = screen.getByRole("button", { name: "Remove Expenses" });
+    expect(remove).toBeDisabled();
+    expect(remove).toHaveAttribute("title", "Remove its design blocks first.");
+    fireEvent.click(remove);
+    expect(harness.onRemove).not.toHaveBeenCalled();
+  });
+
+  it("uses a closable mobile navigator and keeps its detail selection", async () => {
+    const media = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal("matchMedia", vi.fn(() => media));
+    const { container } = renderWorkspace(twoSourceDraft());
+    const navigator = container.querySelector(".dataWorkspaceNavigator");
+    expect(navigator).not.toHaveAttribute("hidden");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    await waitFor(() => expect(navigator).toHaveAttribute("hidden"));
+    const show = screen.getByRole("button", { name: "Show data sources" });
+    expect(show).toHaveFocus();
+    expect(screen.getByRole("heading", { name: "Expenses" })).toBeVisible();
+
+    fireEvent.click(show);
+    await Promise.resolve();
+    expect(navigator).not.toHaveAttribute("hidden");
+    expect(screen.getByRole("button", { name: "Expenses" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("heading", { name: "Expenses" })).toBeVisible();
+  });
+
+  it("supports older matchMedia change listeners", () => {
+    const media = {
+      matches: false,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    };
+    vi.stubGlobal("matchMedia", vi.fn(() => media));
+    const harness = renderWorkspace(twoSourceDraft());
+
+    expect(media.addListener).toHaveBeenCalledOnce();
+    harness.unmount();
+    expect(media.removeListener).toHaveBeenCalledOnce();
+  });
+
+  it("keeps source detail controls available in the Split pane", async () => {
+    const harness = renderWorkspace(twoSourceDraft(), { collapsible: true });
+    const workspace = harness.container.querySelector(".dataWorkspace");
+    const navigator = harness.container.querySelector(
+      ".dataWorkspaceNavigator",
+    );
+    expect(workspace).toHaveClass("dataWorkspace--collapsible");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Expenses" }));
+    await screen.findByRole("heading", { name: "Expenses" });
+    fireEvent.click(screen.getByRole("button", { name: "Hide data sources" }));
+
+    expect(navigator).toHaveAttribute("hidden");
+    expect(screen.getByRole("heading", { name: "Expenses" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Show data sources" }));
+    expect(navigator).not.toHaveAttribute("hidden");
+    expect(screen.getByRole("button", { name: "Expenses" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("maps entry-query filter edits onto the draft query", async () => {
@@ -1835,15 +1951,18 @@ describe("CompositionDataWorkspace", () => {
     expect(within(readyEditor).queryByText("Loading results…")).toBeNull();
   });
 
-  it("stacks the navigator and editor at narrow widths", () => {
+  it("uses a compact overlay navigator at narrow widths", () => {
     const css = stylesheet();
     expect(css).toMatch(/\.dataWorkspace\s*\{[^}]*display:\s*grid/);
+    expect(css).toMatch(
+      /\.dataWorkspace--collapsible\s+\.dataWorkspaceNavigatorActions[\s\S]*?\.dataWorkspace--collapsible\s+\.dataWorkspaceMainActions\s*\{[^}]*display:\s*flex/,
+    );
     expect(css).toMatch(
       /\.dataWorkspace--navigator-collapsed\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
     );
     // 390px sits inside the stacked rule: one column, no document scroll.
     expect(css).toMatch(
-      /@media\s*\(max-width:\s*560px\)[\s\S]*?\.dataWorkspace\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+      /@media\s*\(max-width:\s*560px\)[\s\S]*?\.dataWorkspace--mobile-navigator-open\s+\.dataWorkspaceNavigator[^}]*position:\s*absolute/,
     );
   });
 
