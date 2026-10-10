@@ -6,7 +6,7 @@ policies:
   - id: POL-001
     title: Storage and Query Portability
     summary: Keep storage and query surfaces portable and vendor-neutral.
-    description: This policy keeps storage layouts, SQL capabilities, and indexing contracts portable across backends and deployment environments. It protects user freedom by favoring open abstractions that can be reused, audited, and evolved without trapping data or query workflows inside a single provider.
+    description: Users choose where their Knowledge lives. Portability protects that freedom through open storage layouts, SQL capabilities, and indexing contracts that can be reimplemented without trapping data or query workflows inside a single provider.
     rules:
       - id: governance
         level: should
@@ -36,7 +36,7 @@ policies:
   - id: POL-002
     title: Rust Core as Canonical Logic Layer
     summary: Concentrate durable business logic in ugoite-core and reuse it from adapters.
-    description: This policy treats ugoite-core as the durable source of product logic so adapters do not drift into incompatible implementations. It supports portable architecture and continuously verifiable behavior by reusing the same core rules from backend, CLI, and future integrations.
+    description: Adapters multiply over time across backend, CLI, and future integrations, while product meaning must stay singular. Concentrating durable logic in ugoite-core keeps every surface executing the same rules instead of drifting into incompatible implementations.
     rules:
       - id: governance
         level: must
@@ -78,7 +78,7 @@ policies:
   - id: POL-004
     title: Backend as Thin API Adapter
     summary: Keep backend responsibility focused on protocol and orchestration boundaries.
-    description: This policy limits the backend to interface translation, orchestration, and security boundaries instead of duplicating durable business rules. It keeps deployments lighter and preserves freedom to reuse the same core behavior across multiple operator surfaces without API-layer lock-in.
+    description: A backend that owns business rules becomes a second product. Restricting it to translation, orchestration, and security boundaries keeps deployments light and every operator surface on the same core behavior without API-layer lock-in.
     rules:
       - id: governance
         level: must
@@ -125,7 +125,7 @@ policies:
   - id: POL-006
     title: Frontend Contract Discipline
     summary: Keep frontend behavior aligned with API contracts and shared UI specifications.
-    description: This policy requires the frontend to follow shared contracts and documented UI behavior instead of inventing parallel rules in the client. It supports durable verification and trusted AI-assisted work by making contract drift visible through typed interfaces, specs, and tests.
+    description: Client-side parallel rules stay invisible until they diverge. Requiring the frontend to follow shared contracts makes drift visible early through typed interfaces, specifications, and tests.
     rules:
       - id: governance
         level: must
@@ -167,7 +167,7 @@ policies:
   - id: POL-007
     title: Form and Entry Schema Governance
     summary: Enforce stable, typed entry/form behavior through documented schema contracts.
-    description: This policy stabilizes the product's structured content model through explicit schema contracts for forms, entries, and assets. It makes the data model portable and durable by ensuring that product behavior stays tied to documented rules instead of ad hoc field handling.
+    description: Structured content outlives any single surface. Explicit schema contracts for forms, entries, and assets keep the data model portable and durable as surfaces evolve around it.
     rules:
       - id: governance
         level: must
@@ -209,7 +209,7 @@ policies:
   - id: POL-012
     title: Search and Form References as Core Knowledge Operations
     summary: Treat search and typed Form references as first-class capabilities.
-    description: This policy elevates retrieval and Form-owned cross-reference behavior into core product capabilities rather than optional convenience features. It supports user freedom and durable knowledge rules by making searchable, typed structure part of the canonical system design.
+    description: Retrieval is how users reach their Knowledge. Treating search and typed Form references as core capabilities rather than conveniences keeps searchable, typed structure inside the canonical system design.
     rules:
       - id: governance
         level: must
@@ -252,14 +252,10 @@ policies:
     title: Compatibility Through Explicit Evolution
     summary: Manage change using explicit deprecation and migration guidance across layers.
     description: >-
-      This policy manages change through visible evolution rather than silent
-      breakage between layers. For the v0.1 Foundation Freeze, the protected
-      compatibility boundary is semantic: user-owned Knowledge recoverability,
-      unique catalog authority, append-only Knowledge history, and thin adapter
-      boundaries must survive later implementations. Physical encodings, crate
-      APIs, and UI internals are not frozen by that promise. Changes that can
-      affect the semantic boundary require the v0.1 Knowledge Compatibility
-      Review and canonical fixture evidence before merge.
+      Change is inevitable; silent breakage is not. Explicit evolution through
+      visible deprecation and migration guidance keeps the semantic boundary
+      intact while encodings, APIs, and UI internals evolve, with the
+      compatibility review and canonical fixture evidence gating risky changes.
     rules:
       - id: governance
         level: must
