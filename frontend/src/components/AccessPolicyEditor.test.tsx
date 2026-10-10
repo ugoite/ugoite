@@ -200,6 +200,56 @@ describe("AccessPolicyEditor", () => {
     expect(screen.getByText(unknownPrincipalId)).toBeVisible();
   });
 
+  it("REQ-UX-ACCESS-001: resolves grant names only from the current Space directory", async () => {
+    const [spaceId, setSpaceId] = createSignal("space-a");
+    type MemberDirectory = Awaited<ReturnType<typeof spaceApi.listMembers>>;
+    let resolveSpaceBDirectory!: (members: MemberDirectory) => void;
+    const pendingSpaceBDirectory = new Promise<MemberDirectory>((resolve) => {
+      resolveSpaceBDirectory = resolve;
+    });
+    vi.mocked(spaceApi.listMembers).mockImplementation((requestedSpaceId) =>
+      requestedSpaceId === "space-a"
+        ? Promise.resolve([member("principal-shared", "Previous Space member")])
+        : pendingSpaceBDirectory
+    );
+    vi.mocked(accessApi.get).mockImplementation(async (requestedSpaceId) => ({
+      policy_id: `policy-${requestedSpaceId}`,
+      inherit_space_role: true,
+      grants: [{ principal_id: "principal-shared", actions: ["read"] }],
+    }));
+
+    render(() => (
+      <AccessPolicyEditor
+        spaceId={spaceId()}
+        kind="entry"
+        resourceId="entry-1"
+      />
+    ));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Previous Space member")).toHaveLength(2);
+    });
+    setSpaceId("space-b");
+
+    await waitFor(() => {
+      expect(spaceApi.listMembers).toHaveBeenLastCalledWith("space-b");
+      expect(screen.getByText("不明なメンバー")).toBeVisible();
+    });
+    expect(screen.queryByText("Previous Space member")).toBeNull();
+    expect(screen.getByRole("combobox", { name: "メンバー" })).toBeDisabled();
+
+    resolveSpaceBDirectory([
+      member("principal-current", "Current Space member"),
+    ]);
+    const principalSelect = screen.getByRole("combobox", { name: "メンバー" });
+    await waitFor(() => {
+      expect(principalSelect).toBeEnabled();
+      expect(principalSelect).toHaveTextContent("Current Space member");
+      expect(screen.getByText("不明なメンバー")).toBeVisible();
+    });
+    expect(screen.queryByText("Previous Space member")).toBeNull();
+  });
+
   it("REQ-UX-ACCESS-001: selects a member by name and preserves its ID in the grant payload", async () => {
     const principalId = "principal-a";
     vi.mocked(spaceApi.listMembers).mockResolvedValue([

@@ -23,13 +23,15 @@ features:
               - kind: satisfies
                 criterion: REQ-UX-ACCESS-001#criterion.grant-identity-display
               - kind: satisfies
+                criterion: REQ-UX-ACCESS-001#criterion.space-scoped-member-labels
+              - kind: satisfies
                 criterion: REQ-UX-ACCESS-001#criterion.preserve-principal-routing
               - kind: satisfies
                 criterion: REQ-UX-ACCESS-001#criterion.member-directory-recovery
       - id: resource-access-verification
         role: verification
         facet: verification
-        responsibility: Verify human-readable member choices and grant rows, exact principal ID payload preservation, neutral fallback, and directory recovery through focused frontend cases.
+        responsibility: Verify human-readable member choices and grant rows, exact principal ID payload preservation, current-Space member scoping, neutral fallback, and directory recovery through focused frontend cases.
         targets:
           - id: grant-identity-disclosure
             adapter: typescript
@@ -101,5 +103,25 @@ features:
                   arguments: {
                     file: src/components/AccessPolicyEditor.test.tsx,
                     test: "REQ-UX-ACCESS-001: shows a neutral label and blocks member selection when the directory fails",
+                  },
+                }
+          - id: current-space-member-directory
+            adapter: typescript
+            path: frontend/src/components/AccessPolicyEditor.test.tsx
+            selector: {
+              kind: test,
+              name: "REQ-UX-ACCESS-001: resolves grant names only from the current Space directory",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ACCESS-001#criterion.space-scoped-member-labels
+                covers: [
+                  FEAT-UX-013#binding.resource-access-editor/target.access-policy-editor,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/components/AccessPolicyEditor.test.tsx,
+                    test: "REQ-UX-ACCESS-001: resolves grant names only from the current Space directory",
                   },
                 }

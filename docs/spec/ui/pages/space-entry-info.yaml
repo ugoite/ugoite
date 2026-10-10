@@ -49,3 +49,10 @@ components:
         reference: ../components/access-policy-editor.yaml
       items:
         - access-policy-editor
+      member_label_resolution:
+        source: current_space_member_directory
+        while_loading: localized_unknown_member
+        previous_space_directory: never_used
+      tests:
+        - path: frontend/src/components/AccessPolicyEditor.test.tsx
+          selector: "REQ-UX-ACCESS-001: resolves grant names only from the current Space directory"

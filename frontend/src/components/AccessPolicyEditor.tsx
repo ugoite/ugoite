@@ -19,9 +19,12 @@ export function AccessPolicyEditor(props: {
     async ([spaceId, kind, resourceId]) =>
       await accessApi.get(spaceId, kind, resourceId),
   );
-  const [members, { refetch: refetchMembers }] = createResource(
+  const [memberDirectory, { refetch: refetchMembers }] = createResource(
     () => props.spaceId,
-    async (spaceId) => await spaceApi.listMembers(spaceId),
+    async (spaceId) => ({
+      spaceId,
+      members: await spaceApi.listMembers(spaceId),
+    }),
   );
   const [selectedPrincipalId, setSelectedPrincipalId] = createSignal("");
   const [actions, setActions] = createSignal("read");
@@ -35,6 +38,16 @@ export function AccessPolicyEditor(props: {
 
   const canEdit = () =>
     loadedKey() === resourceKey() && !policy.loading && !policy.error;
+
+  const currentSpaceMembers = () => {
+    const directory = memberDirectory();
+    return directory?.spaceId === props.spaceId ? directory.members : undefined;
+  };
+  const memberDirectoryFailed = () =>
+    !memberDirectory.loading && Boolean(memberDirectory.error);
+  const memberDirectoryLoading = () =>
+    memberDirectory.loading ||
+    (!memberDirectoryFailed() && currentSpaceMembers() === undefined);
 
   createEffect(() => {
     const currentResourceKey = resourceKey();
@@ -74,7 +87,7 @@ export function AccessPolicyEditor(props: {
       ) as AccessPolicy["grants"][number]["actions"];
     if (
       !principal ||
-      !members()?.some((member) =>
+      !currentSpaceMembers()?.some((member) =>
         member.principal.state === "active" &&
         member.principal.principal_id === principal
       ) ||
@@ -88,17 +101,21 @@ export function AccessPolicyEditor(props: {
   };
 
   const eligibleMembers = () =>
-    (members() ?? []).filter((member) => member.principal.state === "active");
+    (currentSpaceMembers() ?? []).filter((member) =>
+      member.principal.state === "active"
+    );
 
   const principalOptionPrompt = () =>
-    members.loading
+    memberDirectoryLoading()
       ? t("common.loading")
       : eligibleMembers().length > 0
       ? t("accessPolicy.choosePrincipal")
       : t("accessPolicy.noAvailableMembers");
 
   const principalLabel = (principalId: string) =>
-    members()?.find((member) => member.principal.principal_id === principalId)
+    currentSpaceMembers()?.find((member) =>
+      member.principal.principal_id === principalId
+    )
       ?.principal.display_name.trim() || t("accessPolicy.unknownPrincipal");
 
   const save = async () => {
@@ -147,11 +164,11 @@ export function AccessPolicyEditor(props: {
         />
         {t("accessPolicy.inherit")}
       </label>
-      <Show when={members.error}>
+      <Show when={memberDirectoryFailed()}>
         <div class="ui-alert ui-alert-error" role="alert">
           <p>
             {formatUserFacingError(
-              members.error,
+              memberDirectory.error,
               "accessPolicy.failedLoadMembers",
             )}
           </p>
@@ -169,9 +186,10 @@ export function AccessPolicyEditor(props: {
           class="ui-input"
           aria-label={t("accessPolicy.principal")}
           value={selectedPrincipalId()}
-          disabled={!canEdit() || members.loading || Boolean(members.error) ||
+          disabled={!canEdit() || memberDirectoryLoading() ||
+            memberDirectoryFailed() ||
             eligibleMembers().length === 0}
-          aria-busy={members.loading || undefined}
+          aria-busy={memberDirectoryLoading() || undefined}
           onChange={(event) =>
             setSelectedPrincipalId(event.currentTarget.value)}
         >
@@ -197,8 +215,8 @@ export function AccessPolicyEditor(props: {
         type="button"
         class="ui-button ui-button-secondary w-fit"
         onClick={addGrant}
-        disabled={!canEdit() || !selectedPrincipalId() || members.loading ||
-          Boolean(members.error)}
+        disabled={!canEdit() || !selectedPrincipalId() ||
+          memberDirectoryLoading() || memberDirectoryFailed()}
       >
         {t("accessPolicy.addGrant")}
       </button>

@@ -17,6 +17,10 @@ requirements:
         kind: behavior
         statement: Existing grants show the member display name or a neutral unknown-member label; exact principal IDs appear only inside collapsed advanced details.
         governed_by: [POL-UI-005#rule.governance]
+      - id: space-scoped-member-labels
+        kind: behavior
+        statement: The resource access editor resolves grant names only against the current Space member directory; while that directory is unavailable or loading, it uses the neutral unknown-member label instead of a name from another Space.
+        governed_by: [POL-UI-005#rule.governance]
       - id: preserve-principal-routing
         kind: behavior
         statement: Saving a selected member preserves that member's exact principal ID in the access grant payload.
