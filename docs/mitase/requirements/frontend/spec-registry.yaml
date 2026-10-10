@@ -57,6 +57,36 @@ requirements:
                   - FEAT-FE-013#binding.frontend/target.page-space-sql
                   - FEAT-FE-013#binding.frontend/target.page-space-test-connection
                 runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: loads UI page specs" } }
+          - id: entry-history-identity-contract
+            adapter: typescript
+            path: frontend/src/spec/ui-pages.test.ts
+            selector: {
+              kind: test,
+              name: "REQ-UX-ENTRY-HISTORY-001: documents actor labels and collapsed revision identifiers",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
+                covers:
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-history
+                  - FEAT-FE-013#binding.frontend/target.page-space-entry-revision
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/spec/ui-pages.test.ts,
+                    test: "REQ-UX-ENTRY-HISTORY-001: documents actor labels and collapsed revision identifiers",
+                  },
+                }
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.revision-identifiers
+                covers: [FEAT-FE-013#binding.frontend/target.page-space-entry-revision]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/spec/ui-pages.test.ts,
+                    test: "REQ-UX-ENTRY-HISTORY-001: documents actor labels and collapsed revision identifiers",
+                  },
+                }
           - id: dashboard-recent-list-contract
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts

@@ -1,0 +1,19 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Entry History identity presentation
+requirements:
+  - id: REQ-UX-ENTRY-HISTORY-001
+    title: Human-Readable Entry History Identities
+    description: Entry History and Revision surfaces use member names or a localized neutral actor label in primary content, and keep exact revision and actor identifiers in collapsed technical details.
+    priority: high
+    status: implemented
+    criteria:
+      - id: actor-labels
+        kind: behavior
+        statement: Entry History row labels and the Revision actor label use the current Space member display name when available and a localized neutral label otherwise; raw or shortened actor identifiers never appear in ordinary visible content or accessible names.
+        governed_by: [POL-UI-005#rule.governance]
+      - id: revision-identifiers
+        kind: behavior
+        statement: Exact revision and actor identifiers appear only in the initially collapsed, localized technical disclosure on the Revision page, with a copy action for each available value; primary content and its accessible names do not contain either identifier.
+        governed_by: [POL-UI-005#rule.governance]

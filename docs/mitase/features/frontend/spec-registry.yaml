@@ -138,6 +138,8 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
           - id: page-space-entry-new
             adapter: declared
             path: docs/spec/ui/pages/space-entry-new.yaml
@@ -156,6 +158,10 @@ features:
                 criterion: REQ-FE-040#criterion.registry-shape
               - kind: satisfies
                 criterion: REQ-FE-040#criterion.route-coverage
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.revision-identifiers
           - id: page-space-form-grid
             adapter: declared
             path: docs/spec/ui/pages/space-form-grid.yaml

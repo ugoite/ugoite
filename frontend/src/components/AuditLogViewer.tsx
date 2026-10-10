@@ -11,7 +11,7 @@ import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { formatDateTimeLabel } from "~/lib/date-format";
 import {
   actorDisplayNameLookup,
-  shortActorFallback,
+  shortActorIdentifierForComparison,
 } from "~/lib/entry-history";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
@@ -217,7 +217,8 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
     // out of the primary row; the exact value remains in the details panel.
     const normalizedName = displayName.toLowerCase();
     const normalizedId = raw.toLowerCase();
-    const normalizedShortId = shortActorFallback(raw).toLowerCase();
+    const normalizedShortId = shortActorIdentifierForComparison(raw)
+      .toLowerCase();
     const containsIdentifier = (identifier: string): boolean => {
       const isIdentifierCharacter = (character: string | undefined) =>
         Boolean(character && /[\p{L}\p{N}_-]/u.test(character));

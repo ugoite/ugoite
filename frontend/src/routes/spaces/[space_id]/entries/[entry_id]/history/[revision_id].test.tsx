@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import { entryApi } from "~/lib/ugoite-client";
+import { entryApi, spaceApi } from "~/lib/ugoite-client";
 import SpaceEntryRevisionRoute from "./[revision_id]";
 import { expectBackLinkAtHeaderStart } from "~/test/back-link-placement";
 
@@ -39,6 +39,7 @@ vi.mock("~/lib/ugoite-client", () => ({
     getRevision: vi.fn(),
     restore: vi.fn(),
   },
+  spaceApi: { listMembers: vi.fn() },
 }));
 
 describe("entry revision review route", () => {
@@ -64,6 +65,7 @@ describe("entry revision review route", () => {
       markdown: "# Historical title\n\n## Body\nOriginal",
       fields: { Body: "Original" },
     });
+    vi.mocked(spaceApi.listMembers).mockResolvedValue([]);
     vi.mocked(entryApi.restore).mockResolvedValue({
       revision_id: "rev-new",
       restored_from: "rev-old",
@@ -140,6 +142,86 @@ describe("entry revision review route", () => {
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith("/spaces/default/entries/entry-1")
     );
+  });
+
+  it("REQ-UX-ENTRY-HISTORY-001: keeps exact revision and actor IDs in collapsed details and copies them", async () => {
+    const revisionId = "revision-id-opaque";
+    const actorId = "principal-id-unresolved";
+    vi.mocked(entryApi.getRevision).mockResolvedValue({
+      revision_id: revisionId,
+      timestamp: "2026-01-01T00:00:00Z",
+      form: "Task",
+      operation: "upsert",
+      entry_version: 1,
+      actor: actorId,
+      markdown: "# Historical title\n\n## Body\nOriginal",
+      fields: { Body: "Original" },
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const previousClipboard = Object.getOwnPropertyDescriptor(
+      navigator,
+      "clipboard",
+    );
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    try {
+      const { container } = render(() => <SpaceEntryRevisionRoute />);
+
+      expect(await screen.findByText(/Unknown actor/)).toBeInTheDocument();
+      const main = container.querySelector(".settingsMain")!;
+      const details = main.querySelector("details.revision-technical-details")!;
+      expect(details.open).toBe(false);
+      const primaryContent = main.textContent?.replace(
+        details.textContent ?? "",
+        "",
+      ) ?? "";
+      expect(primaryContent).not.toContain(revisionId);
+      expect(primaryContent).not.toContain(actorId);
+      expect(primaryContent).not.toContain("principal-id");
+      for (
+        const control of main.querySelectorAll<HTMLElement>(
+          "[aria-label], [title]",
+        )
+      ) {
+        if (details.contains(control)) continue;
+        expect(control.getAttribute("aria-label") ?? "").not.toContain(
+          revisionId,
+        );
+        expect(control.getAttribute("aria-label") ?? "").not.toContain(
+          actorId,
+        );
+        expect(control.getAttribute("title") ?? "").not.toContain(
+          revisionId,
+        );
+        expect(control.getAttribute("title") ?? "").not.toContain(actorId);
+      }
+      expect(
+        screen.getByRole("heading", { name: "Revision" }).textContent ?? "",
+      ).not.toContain(revisionId);
+      fireEvent.click(details.querySelector("summary")!);
+      expect(details.open).toBe(true);
+      expect(details.textContent).toContain(revisionId);
+      expect(details.textContent).toContain(actorId);
+
+      fireEvent.click(
+        screen.getByRole("button", { name: `Copy ${revisionId}` }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: `Copy ${actorId}` }),
+      );
+      await waitFor(() =>
+        expect(writeText.mock.calls).toEqual([[revisionId], [actorId]])
+      );
+    } finally {
+      if (previousClipboard) {
+        Object.defineProperty(navigator, "clipboard", previousClipboard);
+      } else {
+        Reflect.deleteProperty(navigator, "clipboard");
+      }
+    }
   });
 
   it("PR4: cancelling the restore dialog sends nothing and keeps the review", async () => {

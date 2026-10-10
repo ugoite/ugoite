@@ -1,0 +1,175 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: ux
+category: Entry History identity presentation
+features:
+  - id: FEAT-UX-019
+    title: Human-Readable Entry History Identities
+    summary: Keep actor labels human-readable across Entry History and Revision while retaining exact revision and actor IDs only in collapsed technical details.
+    status: implemented
+    bindings:
+      - id: entry-history-identity-presentation
+        role: implementation
+        facet: frontend
+        responsibility: Resolve Entry History actors to current Space member names or a localized neutral label, and keep exact Revision identifiers in the collapsed technical disclosure.
+        targets:
+          - id: actor-label-view-model
+            adapter: typescript
+            path: frontend/src/lib/entry-history.ts
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
+          - id: history-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
+          - id: revision-route
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx"
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
+              - kind: satisfies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.revision-identifiers
+      - id: entry-history-identifiers-verification
+        role: verification
+        facet: verification
+        responsibility: Verify resolved and unresolved actor labels plus exact Revision ID disclosure and copy behavior through frontend tests.
+        targets:
+          - id: resolved-actor-label
+            adapter: typescript
+            path: frontend/src/lib/entry-history.test.ts
+            selector: {
+              kind: test,
+              name: "REQ-UX-ENTRY-HISTORY-001: resolves an actor ID to the member display name",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
+                covers: [
+                  FEAT-UX-019#binding.entry-history-identity-presentation/target.actor-label-view-model,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/lib/entry-history.test.ts,
+                    test: "REQ-UX-ENTRY-HISTORY-001: resolves an actor ID to the member display name",
+                  },
+                }
+          - id: unresolved-actor-label
+            adapter: typescript
+            path: frontend/src/lib/entry-history.test.ts
+            selector: {
+              kind: test,
+              name: "REQ-UX-ENTRY-HISTORY-001: uses a neutral label for unresolved actor IDs",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
+                covers: [
+                  FEAT-UX-019#binding.entry-history-identity-presentation/target.actor-label-view-model,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: src/lib/entry-history.test.ts,
+                    test: "REQ-UX-ENTRY-HISTORY-001: uses a neutral label for unresolved actor IDs",
+                  },
+                }
+          - id: history-row-member-label
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx"
+            selector: {
+              kind: test,
+              name: "REQ-UX-ENTRY-HISTORY-001: resolves actor IDs to member names without showing IDs in rows",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
+                covers:
+                  - FEAT-UX-019#binding.entry-history-identity-presentation/target.actor-label-view-model
+                  - FEAT-UX-019#binding.entry-history-identity-presentation/target.history-route
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx",
+                    test: "REQ-UX-ENTRY-HISTORY-001: resolves actor IDs to member names without showing IDs in rows",
+                  },
+                }
+          - id: history-row-unknown-label
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx"
+            selector: {
+              kind: test,
+              name: "REQ-UX-ENTRY-HISTORY-001: uses a neutral label when the directory cannot resolve an actor",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
+                covers: [
+                  FEAT-UX-019#binding.entry-history-identity-presentation/target.history-route,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx",
+                    test: "REQ-UX-ENTRY-HISTORY-001: uses a neutral label when the directory cannot resolve an actor",
+                  },
+                }
+          - id: history-row-id-echo
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx"
+            selector: {
+              kind: test,
+              name: "REQ-UX-ENTRY-HISTORY-001: hides member names that echo actor IDs in rows",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
+                covers:
+                  - FEAT-UX-019#binding.entry-history-identity-presentation/target.actor-label-view-model
+                  - FEAT-UX-019#binding.entry-history-identity-presentation/target.history-route
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/index.test.tsx",
+                    test: "REQ-UX-ENTRY-HISTORY-001: hides member names that echo actor IDs in rows",
+                  },
+                }
+          - id: revision-identifier-disclosure
+            adapter: typescript
+            path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx"
+            selector: {
+              kind: test,
+              name: "REQ-UX-ENTRY-HISTORY-001: keeps exact revision and actor IDs in collapsed details and copies them",
+            }
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.actor-labels
+                covers: [
+                  FEAT-UX-019#binding.entry-history-identity-presentation/target.revision-route,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx",
+                    test: "REQ-UX-ENTRY-HISTORY-001: keeps exact revision and actor IDs in collapsed details and copies them",
+                  },
+                }
+              - kind: verifies
+                criterion: REQ-UX-ENTRY-HISTORY-001#criterion.revision-identifiers
+                covers: [
+                  FEAT-UX-019#binding.entry-history-identity-presentation/target.revision-route,
+                ]
+                runner: {
+                  runner: frontend-vitest-file,
+                  arguments: {
+                    file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx",
+                    test: "REQ-UX-ENTRY-HISTORY-001: keeps exact revision and actor IDs in collapsed details and copies them",
+                  },
+                }
