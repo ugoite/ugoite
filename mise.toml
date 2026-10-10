@@ -295,7 +295,12 @@ run = [
   { task = "check:supported" },
   "cargo run -p xtask -- legacy-auth-check",
   { task = "mitase:check" },
+  { task = "mitase:quality-gate" },
 ]
+
+[tasks."mitase:quality-gate"]
+description = "Fail on new Mitase quality findings versus the committed baseline"
+run = "deno run -A tools/mitase_quality_gate.ts"
 
 [tasks."mitase:check"]
 description = "Validate the canonical executable specification with Mitase"

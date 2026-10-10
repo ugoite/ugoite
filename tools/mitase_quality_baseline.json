@@ -1,0 +1,105 @@
+{
+  "mitase_version": "0.2.5",
+  "entries": [
+    {
+      "fingerprint": "MITASE-QUALITY-001|REQ-UX-DASH-001#criterion.recent-count-bound|POL-UI-013#rule.governance|POL-UI-013#rule.governance",
+      "note": "high-priority duplicate: generalize the Policy, remove/merge it, or record the reason in U-03"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-001|REQ-UX-ENTRY-001#criterion.no-decorative-cards|POL-UI-003#rule.governance|POL-UI-003#rule.governance",
+      "note": "high-priority duplicate: generalize the Policy, remove/merge it, or record the reason in U-03"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-001|REQ-UX-ENTRY-002#criterion.append-only-restore|POL-UI-008#rule.governance|POL-UI-008#rule.governance",
+      "note": "high-priority duplicate: generalize the Policy, remove/merge it, or record the reason in U-03"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-001|REQ-UX-LIST-001#criterion.full-row-activation|POL-UI-006#rule.governance|POL-UI-006#rule.governance",
+      "note": "high-priority duplicate: generalize the Policy, remove/merge it, or record the reason in U-03"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-001|REQ-UX-LIST-002#criterion.one-row-action-bar|POL-UI-004#rule.governance|POL-UI-004#rule.governance",
+      "note": "high-priority duplicate: generalize the Policy, remove/merge it, or record the reason in U-03"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-001|REQ-UX-NAV-001#criterion.single-shell-ownership|POL-UI-011#rule.governance|POL-UI-011#rule.governance",
+      "note": "high-priority duplicate: generalize the Policy, remove/merge it, or record the reason in U-03"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-001|REQ-UX-RESP-001#criterion.a11y-names-focus|POL-UI-007#rule.governance|POL-UI-007#rule.governance",
+      "note": "high-priority duplicate: generalize the Policy, remove/merge it, or record the reason in U-03"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-001|REQ-UX-RESP-001#criterion.fixed-surface-tokens|POL-UI-012#rule.governance|POL-UI-012#rule.governance",
+      "note": "high-priority duplicate: generalize the Policy, remove/merge it, or record the reason in U-03"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-002|POL-UI-013#rule.governance|REQ-UX-DASH-001#criterion.recent-count-bound|REQ-UX-DASH-001#criterion.recent-count-bound",
+      "note": "design review in U-03"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-001#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-002#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-003#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-004#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-005#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-006#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-007#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-008#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-009#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-010#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-011#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-012#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-013#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-014#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-015#rule.governance||",
+      "note": "description cleanup"
+    },
+    {
+      "fingerprint": "MITASE-QUALITY-005|POL-016#rule.governance||",
+      "note": "description cleanup"
+    }
+  ]
+}
