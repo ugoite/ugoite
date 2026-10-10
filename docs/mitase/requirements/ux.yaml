@@ -27,7 +27,7 @@ requirements:
         governed_by: [POL-UI-002#rule.governance]
       - id: single-shell-ownership
         kind: behavior
-        statement: Navigation controls live in the designated global and Space shells; routes do not add parallel navigation chrome duplicating shell destinations.
+        statement: The global shell exposes only the Spaces destination without parallel entries, and Space shells own Space navigation; routes add no parallel navigation chrome duplicating shell destinations.
         governed_by: [POL-UI-011#rule.governance]
     bindings:
       - id: back-control-verification
@@ -314,7 +314,7 @@ requirements:
     criteria:
       - id: no-decorative-cards
         kind: behavior
-        statement: Card containers appear only when they group an operative action or a distinct selectable record; static explanation or metadata uses plain structure without card chrome.
+        statement: The Entry workspace renders explanation, metadata, and create-form fields as plain structure, reserving card containers for actionable or selectable groupings.
         governed_by: [POL-UI-003#rule.governance]
       - id: explicit-async-states
         kind: behavior
@@ -388,7 +388,7 @@ requirements:
     criteria:
       - id: full-row-activation
         kind: behavior
-        statement: Selectable rows activate across the full row and do not add a separate boxed chevron control duplicating the row activation.
+        statement: List rows in the RowList primitive activate across the full row without a boxed chevron or Open column.
         governed_by: [POL-UI-006#rule.governance]
       - id: uuids-advanced-only
         kind: behavior
@@ -716,11 +716,11 @@ requirements:
         governed_by: [POL-UI-004#rule.governance]
       - id: a11y-names-focus
         kind: behavior
-        statement: Interactive controls expose accessible names and keep a visible, orderly focus path across the surface.
+        statement: Auth, account, and form surfaces expose accessible names with one inline context and keep a visible, orderly focus path across the surface.
         governed_by: [POL-UI-007#rule.governance]
       - id: fixed-surface-tokens
         kind: behavior
-        statement: Surface-aware components use the fixed surface palette tokens and do not add inline color styles or ad hoc color utilities.
+        statement: Surface-aware components style with the fixed surface palette tokens, adding no raw color utilities or inline color styles.
         governed_by: [POL-UI-012#rule.governance]
     bindings:
       - id: responsive-narrow-verification
