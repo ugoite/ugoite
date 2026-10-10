@@ -110,6 +110,24 @@ repository delivery, or become a second Knowledge authority.
   `tools/mitase.lock.toml` and `scripts/mitase`. Migration
   work never pins Mitase HEAD or a mutable branch.
 
+## Specification quality baseline (Mitase 0.2.5)
+
+Source of truth: `tools/mitase_quality_baseline.json` and
+`tools/mitase_quality_gate.ts`. `mitase:quality-gate` runs inside
+`check:repo` and fails on any new Q001-Q004 fingerprint versus the committed
+baseline; Q005 stays informational.
+
+- Fingerprints use rule, subject, reference, and related anchors only, so
+  moving a specification across lines or files never counts as a new finding.
+- A specification PR that adds a finding resolves it, splits the
+  responsibility, or records the design reason in the baseline through a
+  reviewed commit. Mechanical silencing (bulk rewording, moving local
+  conditions into abstract Policies, deleting evidence) is not acceptable.
+- Resolved entries are pruned from the baseline so regressions resurface;
+  total finding counts are never used as a gate.
+- No Ugoite-specific exemption may be added to the generic Mitase
+  validators; the gate consumes existing diagnostics only.
+
 ## Facet-oriented authoring adoption (Mitase 0.2.2)
 
 - Old-style specifications stay valid. Facet-oriented authoring applies to

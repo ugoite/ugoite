@@ -44,6 +44,13 @@ Treat `crates/ugoite-server` as the REST implementation and `/openapi.json` as t
 - Mitase validates declared specification relationships and evidence. It does
   not execute Ugoite tests, own repository delivery, or become a second
   Knowledge authority.
+- Author new specifications meaning-first: create only layers that carry
+  distinct decisions, keep one normative decision in one place, link
+  `governed_by` for derivation rather than topic association, and keep each
+  Criterion falsifiable with matching verification evidence. New Q001-Q004
+  quality findings fail `mitase:quality-gate`; resolve them or record a
+  design reason in `tools/mitase_quality_baseline.json` instead of silencing
+  them mechanically.
 - New cross-surface features follow facet-oriented authoring: one semantic
   capability feature, one implementation binding per opaque facet from the
   vocabulary in `docs/architecture/principles/control-surfaces.md`, direct
