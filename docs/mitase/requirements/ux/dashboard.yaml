@@ -12,4 +12,4 @@ requirements:
       - id: recent-count-bound
         kind: behavior
         statement: The Space dashboard Recent list keeps the most recent Entry per Form and displayed label before displaying at most four Entries.
-        governed_by: [POL-UI-013#rule.governance]
+        governed_by: []
