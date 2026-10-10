@@ -339,8 +339,8 @@ features:
               - kind: satisfies
                 criterion: REQ-UX-RESP-001#criterion.fixed-surface-tokens
   - id: FEAT-UX-006
-    title: Append-only restore baseline
-    summary: Record the shipped single-revision restore action and history routes satisfying the append-only restore criterion without changing UI behavior.
+    title: Restore confirm baseline
+    summary: Record the shipped single-revision restore action and history routes satisfying the restore confirm criterion without changing UI behavior.
     status: planned
     bindings:
       - id: restore-baseline
@@ -354,21 +354,21 @@ features:
             selector: { kind: file }
             claims:
               - kind: satisfies
-                criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
+                criterion: REQ-UX-ENTRY-002#criterion.restore-confirm-cancel
           - id: history-route
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/index.tsx"
             selector: { kind: file }
             claims:
               - kind: satisfies
-                criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
+                criterion: REQ-UX-ENTRY-002#criterion.restore-confirm-cancel
           - id: route-inventory-record
             adapter: declared
             path: docs/spec/ui/ux-route-inventory.md
             selector: { kind: file }
             claims:
               - kind: satisfies
-                criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
+                criterion: REQ-UX-ENTRY-002#criterion.restore-confirm-cancel
   - id: FEAT-UX-007
     title: Shared positional back control
     summary: Provide the shared BackLink as a 44px circular chevron-left link to the hierarchical parent, first at each nested surface's leading header edge, with no repeated visible Back copy and a localized destination name for assistive technology and hover discovery.

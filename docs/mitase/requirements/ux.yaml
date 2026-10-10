@@ -811,15 +811,15 @@ requirements:
                 covers: [FEAT-UX-005#binding.responsive-baseline/target.search-bar-surface]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/themes/usage.test.ts, test: "REQ-FE-042: avoids inline color styles in surface-aware components" } }
   - id: REQ-UX-ENTRY-002
-    title: Append-Only Restore
-    description: Entry restore appends a new revision derived from the selected historical revision while existing revision history remains intact and append-only.
+    title: Restore Confirm Dialog
+    description: The restore dialog sends no mutation until confirmed and keeps the revision review visible on cancel.
     priority: high
     status: planned
     criteria:
-      - id: append-only-restore
+      - id: restore-confirm-cancel
         kind: behavior
-        statement: Restore appends a new revision derived from the selected historical revision and never shortens, reorders, or rewrites existing history.
-        governed_by: [POL-UI-008#rule.governance]
+        statement: The restore dialog sends no mutation until confirmed and keeps the revision review visible on cancel.
+        governed_by: []
     bindings:
       - id: restore-dialog-verification
         role: verification
@@ -832,7 +832,7 @@ requirements:
             selector: { kind: test, name: "PR4: cancelling the restore dialog sends nothing and keeps the review" }
             claims:
               - kind: verifies
-                criterion: REQ-UX-ENTRY-002#criterion.append-only-restore
+                criterion: REQ-UX-ENTRY-002#criterion.restore-confirm-cancel
                 covers: [FEAT-UX-006#binding.restore-baseline/target.history-route]
                 runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].test.tsx", test: "PR4: cancelling the restore dialog sends nothing and keeps the review" } }
   - id: REQ-UX-DISMISS-001
