@@ -274,6 +274,90 @@ pub struct CompositionPreviewResponse {
     pub diagnostics: Vec<CompositionResolveDiagnostic>,
 }
 
+/// Target of a bounded, read-only Composition Metric query.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CompositionMetricQueryTarget {
+    SavedRevision {
+        composition_id: String,
+        revision_id: String,
+    },
+    Draft {
+        yaml: String,
+    },
+}
+
+/// Request to evaluate one metric from a stored exact revision or unsaved
+/// Composition draft.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionMetricQueryRequest {
+    pub target: CompositionMetricQueryTarget,
+    pub component_id: String,
+    #[serde(default)]
+    pub parameters: BTreeMap<String, Value>,
+}
+
+/// Semantic operation evaluated by the metric component.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionMetricOperation {
+    SqlScalar,
+    CountRows,
+    CountValues,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+/// Semantic category of the metric's source.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionMetricSourceKind {
+    EntryQuery,
+    SavedSql,
+}
+
+/// One successful metric result with its portable operation and type.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionMetricQueryValue {
+    pub component_id: String,
+    pub operation: CompositionMetricOperation,
+    pub source_kind: CompositionMetricSourceKind,
+    pub result_type: CompositionResultFieldType,
+    /// Integer results are canonical base-10 strings so Browser JSON parsing
+    /// cannot round values above JavaScript's exact integer range. Decimal
+    /// results are also strings and preserve their declared scale.
+    pub value: Value,
+}
+
+/// Stable metric-query diagnostic without backend error detail.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionMetricQueryDiagnostic {
+    pub code: CompositionDiagnosticCode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_id: Option<String>,
+}
+
+/// Result of one bounded metric query. A present `value: null` is distinct
+/// from a query that returns zero rows.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionMetricQueryResponse {
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_fingerprint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<CompositionMetricQueryValue>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<CompositionMetricQueryDiagnostic>,
+}
+
 /// Side-effect-free preview plan keyed by draft fingerprint instead of a
 /// stored revision reference. Source requests and component bindings reuse
 /// the existing portable resolve shapes.

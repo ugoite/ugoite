@@ -15,11 +15,14 @@ pub mod composition;
 pub use composition::{
     CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
     CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
-    CompositionListItem, CompositionListPage, CompositionParameterDefinition,
-    CompositionParameterFormat, CompositionParameterType, CompositionPreviewPlan,
-    CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
-    CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
-    CompositionResolveRequest, CompositionResolveResponse, CompositionResolvedComponentBinding,
+    CompositionListItem, CompositionListPage, CompositionMetricOperation,
+    CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
+    CompositionMetricQueryResponse, CompositionMetricQueryTarget, CompositionMetricQueryValue,
+    CompositionMetricSourceKind, CompositionParameterDefinition, CompositionParameterFormat,
+    CompositionParameterType, CompositionPreviewPlan, CompositionPreviewRequest,
+    CompositionPreviewResponse, CompositionPublicationReceipt, CompositionRawRevision,
+    CompositionResolveDiagnostic, CompositionResolvePlan, CompositionResolveRequest,
+    CompositionResolveResponse, CompositionResolvedComponentBinding,
     CompositionResolvedComponentKind, CompositionResolvedSource, CompositionRestoreRequest,
     CompositionRestoreResponse, CompositionResultFieldType, CompositionRevisionMetadata,
     CompositionRevisionReference, CompositionSaveRequest, CompositionSaveResponse,
@@ -90,6 +93,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "composition.history",
     "composition.resolve",
     "composition.preview",
+    "composition.metric.query",
     "composition.save",
     "composition.restore",
     "sql.list",
@@ -1172,6 +1176,16 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "composition.metric.query" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to query Composition Metric"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "compositions".into(),
+                    "metric-query".into(),
+                ],
+                vec![],
+            ),
             "composition.save" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to save Composition"),
                 vec![
@@ -2037,6 +2051,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to preview Composition",
             RequestBodyKind::Json,
         ),
+        "composition.metric.query" => (
+            HttpMethod::Post,
+            "Failed to query Composition Metric",
+            RequestBodyKind::Json,
+        ),
         "composition.save" => (
             HttpMethod::Post,
             "Failed to save Composition",
@@ -2319,6 +2338,7 @@ mod tests {
                 "composition.history",
                 "composition.resolve",
                 "composition.preview",
+                "composition.metric.query",
                 "composition.save",
                 "composition.restore",
             ]
@@ -3096,6 +3116,48 @@ mod tests {
             serde_json::from_str::<Value>(preview.body.as_deref().expect("preview body"))
                 .expect("preview request JSON"),
             preview_body
+        );
+
+        let metric_body = json!({
+            "target": {
+                "kind": "saved_revision",
+                "composition_id": "01900000-0000-7000-8000-000000000010",
+                "revision_id": "01900000-0000-7000-8000-000000000011"
+            },
+            "component_id": "monthly_total",
+            "parameters": {"month": "2026-10"}
+        });
+        let metric_query = prepare_request(
+            "composition.metric.query",
+            &json!({"space_id": "demo"}),
+            Some(&metric_body),
+        )
+        .expect("Composition Metric query request");
+        assert_eq!(metric_query.method, HttpMethod::Post);
+        assert_eq!(metric_query.path, "/spaces/demo/compositions/metric-query");
+        assert_eq!(metric_query.body_kind, RequestBodyKind::Json);
+        assert_eq!(
+            serde_json::from_str::<Value>(metric_query.body.as_deref().expect("metric query body"))
+                .expect("metric query request JSON"),
+            metric_body
+        );
+        let metric_request: CompositionMetricQueryRequest =
+            serde_json::from_value(metric_body.clone()).expect("metric query DTO");
+        assert_eq!(
+            serde_json::to_value(metric_request).expect("serialize metric query DTO"),
+            metric_body
+        );
+
+        let draft_metric_body = json!({
+            "target": {"kind": "draft", "yaml": "format: ugoite.composition\\n"},
+            "component_id": "sql_total",
+            "parameters": {}
+        });
+        let draft_metric_request: CompositionMetricQueryRequest =
+            serde_json::from_value(draft_metric_body.clone()).expect("draft metric query DTO");
+        assert_eq!(
+            serde_json::to_value(draft_metric_request).expect("serialize draft metric query DTO"),
+            draft_metric_body
         );
 
         let preview_success = json!({

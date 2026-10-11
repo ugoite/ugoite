@@ -379,3 +379,36 @@ shipped grammar. Stop conditions: canvas coordinates in Knowledge, split
 Design/Use semantics, parameter duplication into a UI-only type, Saved SQL
 latest-fallback, Browser aggregation or type inference, `text` runtime
 extension, or a permanent `sections` compatibility layer.
+
+## ADR-020 — Bounded Composition Metric query operation
+
+**Accepted ruling for the v0.2.2 Metric execution work.** Add one
+transport-neutral `composition.metric.query` operation instead of routing a
+Metric through `sql.query` pages or adding a caller-controlled limit mode to
+the existing SQL operation.
+
+The request identifies either an exact stored Composition revision or an
+unsaved YAML draft, one component ID, and its parameter values. The server
+resolves that target through the shared Core resolver and current
+authorization, then executes only the already-bound source for that metric.
+For a Saved SQL `sql_scalar` definition the source must be the exact Saved SQL
+revision recorded by the Composition. Execution uses the existing authorized
+read-only query planner, current Form scopes, and one fixed publication
+checkpoint, and materializes at most two result rows. Two rows prove the
+result is not scalar; the operation does not add `LIMIT 1`, wrap the SQL in a
+count, fetch a continuation, or infer a value from a table page. A table
+sharing the source continues to use `sql.query` independently.
+
+The response reports one typed value or stable Composition diagnostics. A
+present JSON `null` is a successful scalar result; zero rows are a distinct
+`metric_result_empty` diagnostic. Transport adapters do not expose backend
+SQL text, storage paths, or source identifiers in metric diagnostics. The
+operation is additive: the existing `composition.resolve`,
+`composition.preview`, and `sql.query` contracts keep their meanings and
+remain available.
+
+CLI, Browser, Native, and WASM adapters share the request and response
+vocabulary and Core evaluation rules. Local CLI execution uses the same
+bounded service probe without requiring a server. Browser execution sends
+current parameters and exact revision identity for each query; metric values
+are query results, not stored Composition authority.

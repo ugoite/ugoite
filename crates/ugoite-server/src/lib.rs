@@ -48,7 +48,13 @@ use ugoite_api_client::{
     CompositionDiagnosticCode as ApiCompositionDiagnosticCode, CompositionEntryIntegrity,
     CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
     CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
-    CompositionParameterDefinition, CompositionParameterFormat as ApiCompositionParameterFormat,
+    CompositionMetricOperation as ApiCompositionMetricOperation,
+    CompositionMetricQueryDiagnostic as ApiCompositionMetricQueryDiagnostic,
+    CompositionMetricQueryRequest, CompositionMetricQueryResponse,
+    CompositionMetricQueryTarget as ApiCompositionMetricQueryTarget,
+    CompositionMetricQueryValue as ApiCompositionMetricQueryValue,
+    CompositionMetricSourceKind as ApiCompositionMetricSourceKind, CompositionParameterDefinition,
+    CompositionParameterFormat as ApiCompositionParameterFormat,
     CompositionParameterType as ApiCompositionParameterType, CompositionPreviewPlan,
     CompositionPreviewRequest, CompositionPreviewResponse, CompositionPublicationReceipt,
     CompositionRawRevision, CompositionResolveDiagnostic, CompositionResolvePlan,
@@ -62,6 +68,13 @@ use ugoite_api_client::{
 use ugoite_core::composition::{
     CompositionDiagnostic as CoreCompositionDiagnostic, PreviewCompositionPlan,
     ResolvedComponentKind, ResolvedCompositionPlan,
+};
+use ugoite_core::composition_metric::{
+    CompositionMetricOperation as CoreCompositionMetricOperation,
+    CompositionMetricQueryRequest as CoreCompositionMetricQueryRequest,
+    CompositionMetricQueryResponse as CoreCompositionMetricQueryResponse,
+    CompositionMetricQueryTarget as CoreCompositionMetricQueryTarget,
+    CompositionMetricSourceKind as CoreCompositionMetricSourceKind,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::composition::{
@@ -1806,6 +1819,12 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/compositions/preview",
             post(preview_composition_handler)
                 .layer(DefaultBodyLimit::max(COMPOSITION_PREVIEW_MAX_REQUEST_BYTES)),
+        )
+        .route(
+            "/spaces/{space_id}/compositions/metric-query",
+            post(composition_metric_query_handler).layer(DefaultBodyLimit::max(
+                COMPOSITION_METRIC_QUERY_MAX_REQUEST_BYTES,
+            )),
         )
         .route(
             "/spaces/{space_id}/compositions/{entry_id}/restore",
@@ -11411,6 +11430,7 @@ async fn composition_history(
 
 const COMPOSITION_RESOLVE_MAX_REQUEST_BYTES: usize = 256 * 1024;
 const COMPOSITION_PREVIEW_MAX_REQUEST_BYTES: usize = 256 * 1024;
+const COMPOSITION_METRIC_QUERY_MAX_REQUEST_BYTES: usize = 256 * 1024;
 
 async fn resolve_composition_handler(
     State(state): State<AppState>,
@@ -11512,6 +11532,80 @@ async fn preview_composition_handler(
     }
 }
 
+async fn composition_metric_query_handler(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    request: Result<Json<CompositionMetricQueryRequest>, JsonRejection>,
+) -> ApiResult<Json<CompositionMetricQueryResponse>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let Json(request) = request.map_err(|error| {
+        ApiError::new(
+            error.status(),
+            json!({
+                "code": "INVALID_INPUT",
+                "message": error.body_text(),
+            }),
+        )
+    })?;
+    let target = match request.target {
+        ApiCompositionMetricQueryTarget::SavedRevision {
+            composition_id,
+            revision_id,
+        } => {
+            validate_id(&composition_id, "entry_id")?;
+            validate_id(&revision_id, "revision_id")?;
+            validate_composition_uuid(&composition_id, "Composition ID")?;
+            validate_composition_uuid(&revision_id, "Composition revision ID")?;
+            CoreCompositionMetricQueryTarget::SavedRevision {
+                composition_id,
+                revision_id,
+            }
+        }
+        ApiCompositionMetricQueryTarget::Draft { yaml } => {
+            CoreCompositionMetricQueryTarget::Draft { yaml }
+        }
+    };
+    if request.component_id.trim().is_empty() || request.component_id.len() > 128 {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({
+                "code": "INVALID_INPUT",
+                "message": "Composition component_id must contain 1 to 128 bytes",
+            }),
+        ));
+    }
+
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let result = state
+        .service
+        .query_composition_metric_authorized_for_principals(
+            &space_id,
+            &principals,
+            CoreCompositionMetricQueryRequest {
+                target,
+                component_id: request.component_id,
+                parameters: request.parameters,
+            },
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+    Ok(Json(api_composition_metric_query_response(result)?))
+}
+
+fn validate_composition_uuid(value: &str, label: &str) -> ApiResult<()> {
+    Uuid::parse_str(value).map(|_| ()).map_err(|_| {
+        ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({
+                "code": "INVALID_INPUT",
+                "message": format!("{label} must be a UUID"),
+            }),
+        )
+    })
+}
+
 fn api_composition_parameter_definition(
     parameter: &DomainCompositionParameter,
 ) -> CompositionParameterDefinition {
@@ -11571,6 +11665,58 @@ fn api_composition_result_field_type(
         DomainCompositionResultFieldType::Timestamp => ApiCompositionResultFieldType::Timestamp,
         DomainCompositionResultFieldType::Json => ApiCompositionResultFieldType::Json,
     }
+}
+
+fn api_composition_metric_query_response(
+    response: CoreCompositionMetricQueryResponse,
+) -> ApiResult<CompositionMetricQueryResponse> {
+    let result = response
+        .result
+        .map(|result| ApiCompositionMetricQueryValue {
+            component_id: result.component_id,
+            operation: match result.operation {
+                CoreCompositionMetricOperation::SqlScalar => {
+                    ApiCompositionMetricOperation::SqlScalar
+                }
+                CoreCompositionMetricOperation::CountRows => {
+                    ApiCompositionMetricOperation::CountRows
+                }
+                CoreCompositionMetricOperation::CountValues => {
+                    ApiCompositionMetricOperation::CountValues
+                }
+                CoreCompositionMetricOperation::Sum => ApiCompositionMetricOperation::Sum,
+                CoreCompositionMetricOperation::Avg => ApiCompositionMetricOperation::Avg,
+                CoreCompositionMetricOperation::Min => ApiCompositionMetricOperation::Min,
+                CoreCompositionMetricOperation::Max => ApiCompositionMetricOperation::Max,
+            },
+            source_kind: match result.source_kind {
+                CoreCompositionMetricSourceKind::EntryQuery => {
+                    ApiCompositionMetricSourceKind::EntryQuery
+                }
+                CoreCompositionMetricSourceKind::SavedSql => {
+                    ApiCompositionMetricSourceKind::SavedSql
+                }
+            },
+            result_type: api_composition_result_field_type(result.result_type),
+            value: result.value,
+        });
+    let diagnostics = response
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| {
+            Ok(ApiCompositionMetricQueryDiagnostic {
+                code: api_composition_diagnostic_code(diagnostic.code)?,
+                component_id: diagnostic.component_id,
+                parameter_id: diagnostic.parameter_id,
+            })
+        })
+        .collect::<ApiResult<Vec<_>>>()?;
+    Ok(CompositionMetricQueryResponse {
+        ok: response.ok,
+        draft_fingerprint: response.draft_fingerprint,
+        result,
+        diagnostics,
+    })
 }
 
 fn composition_resolve_success_response(
@@ -14361,6 +14507,12 @@ mod authentication_regression_tests {
                     .layer(DefaultBodyLimit::max(COMPOSITION_PREVIEW_MAX_REQUEST_BYTES)),
             )
             .route(
+                "/spaces/{space_id}/compositions/metric-query",
+                post(composition_metric_query_handler).layer(DefaultBodyLimit::max(
+                    COMPOSITION_METRIC_QUERY_MAX_REQUEST_BYTES,
+                )),
+            )
+            .route(
                 "/spaces/{space_id}/compositions/{entry_id}/restore",
                 post(restore_composition_handler)
                     .layer(DefaultBodyLimit::max(COMPOSITION_RESTORE_MAX_REQUEST_BYTES)),
@@ -15935,6 +16087,260 @@ mod authentication_regression_tests {
         assert!(!denied_body.to_string().contains("private-sql-source"));
         assert!(!missing_body.to_string().contains(&saved_sql_id));
         assert!(!denied_body.to_string().contains(&saved_sql_id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn composition_metric_query_route_preserves_revision_parameters_and_acl(
+    ) -> anyhow::Result<()> {
+        use ugoite_domain::composition::{
+            CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
+            CompositionMetricDefinition, CompositionParameter, CompositionParameterReference,
+            CompositionParameterType, CompositionResultColumn, CompositionResultFieldType,
+            CompositionSource, CompositionSpec, CompositionValue, DashboardFlowLayout, FlowItem,
+            FlowLayoutKind, FlowRow,
+        };
+        use ugoite_domain::id::{EntryId, RevisionId};
+
+        let state = AppState::new_for_tests(format!(
+            "memory://server-composition-metric-query-{}",
+            Uuid::now_v7()
+        ))?;
+        let principal_id = Uuid::from_u128(347416);
+        let space_id = state
+            .service
+            .create_space_for_principal("composition-metric-query", principal_id, "Metric test")
+            .await?
+            .to_string();
+        let viewer_id = Uuid::from_u128(347417);
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                principal_id,
+                SpacePrincipal {
+                    principal_id: viewer_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Metric viewer".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+
+        let sql_id = Uuid::from_u128(347418);
+        let sql = state
+            .service
+            .create_saved_sql_authorized_for_principals(
+                &space_id,
+                Some(&sql_id.to_string()),
+                &saved_sql::SqlPayload {
+                    name: Some("Metric parameter".to_string()),
+                    kind: saved_sql::SqlKind::UserQuery,
+                    metadata: None,
+                    sql: "SELECT {{minimum}} AS total".to_string(),
+                    variables: json!([{
+                        "name": "minimum",
+                        "type": "integer",
+                        "description": "Selected value"
+                    }]),
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let sql_id = sql["id"].as_str().expect("Saved SQL id").to_string();
+        let sql_revision_id = RevisionId::from_uuid(Uuid::parse_str(
+            sql["revision_id"].as_str().expect("Saved SQL revision id"),
+        )?);
+        let sql_entry_id = EntryId::from_uuid(Uuid::parse_str(&sql_id)?);
+
+        let metric_document = |name: &str| CompositionDocument {
+            format: CompositionFormat::UgoiteComposition,
+            format_version: 1,
+            name: name.to_string(),
+            kind: CompositionKind::Dashboard,
+            tags: Vec::new(),
+            spec: CompositionSpec {
+                parameters: vec![CompositionParameter {
+                    id: "minimum".to_string(),
+                    label: None,
+                    parameter_type: CompositionParameterType::Integer,
+                    required: true,
+                    default: None,
+                    format: None,
+                }],
+                sources: vec![CompositionSource::SavedSql {
+                    id: "metric_sql".to_string(),
+                    entry_id: sql_entry_id,
+                    revision_id: sql_revision_id,
+                    expected_result: vec![CompositionResultColumn {
+                        name: "total".to_string(),
+                        result_type: CompositionResultFieldType::Integer,
+                    }],
+                    variables: BTreeMap::from([(
+                        "minimum".to_string(),
+                        CompositionValue::Parameter(CompositionParameterReference {
+                            parameter: "minimum".to_string(),
+                        }),
+                    )]),
+                }],
+                components: vec![CompositionComponent::Metric {
+                    id: "parameter_total".to_string(),
+                    label: None,
+                    source: None,
+                    value_field: None,
+                    definition: Some(CompositionMetricDefinition::SqlScalar {
+                        source: "metric_sql".to_string(),
+                        column: "total".to_string(),
+                    }),
+                    presentation: None,
+                }],
+                layout: DashboardFlowLayout {
+                    kind: FlowLayoutKind::Flow,
+                    rows: vec![FlowRow {
+                        id: "main".to_string(),
+                        items: vec![
+                            FlowItem::Parameter {
+                                parameter: "minimum".to_string(),
+                            },
+                            FlowItem::Component {
+                                component: "parameter_total".to_string(),
+                            },
+                        ],
+                    }],
+                },
+            },
+        };
+        let original = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document: metric_document("Original metric"),
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        let latest = state
+            .service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                ugoite_iceberg::composition::CompositionSaveRequest {
+                    entry_id: Some(original.entry_id),
+                    base_revision_id: Some(original.revision_id),
+                    document: CompositionDocument {
+                        format: CompositionFormat::UgoiteComposition,
+                        format_version: 1,
+                        name: "Newer text-only revision".to_string(),
+                        kind: CompositionKind::Dashboard,
+                        tags: Vec::new(),
+                        spec: CompositionSpec {
+                            parameters: Vec::new(),
+                            sources: Vec::new(),
+                            components: vec![CompositionComponent::Text {
+                                id: "note".to_string(),
+                                label: None,
+                                text: "Updated".to_string(),
+                                style: ugoite_domain::composition::TextStyle::Body,
+                            }],
+                            layout: DashboardFlowLayout {
+                                kind: FlowLayoutKind::Flow,
+                                rows: vec![FlowRow {
+                                    id: "main".to_string(),
+                                    items: vec![FlowItem::Component {
+                                        component: "note".to_string(),
+                                    }],
+                                }],
+                            },
+                        },
+                    },
+                },
+                &principal_id.to_string(),
+                &[principal_id],
+            )
+            .await?;
+        assert_eq!(original.entry_id, latest.entry_id);
+        assert_ne!(original.revision_id, latest.revision_id);
+
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = reversible_knowledge_route(
+            state.clone(),
+            reversible_knowledge_identity(viewer_id, space_uid),
+        );
+        let query = |target, minimum| {
+            Request::post(format!("/spaces/{space_id}/compositions/metric-query"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    json!({
+                        "target": target,
+                        "component_id": "parameter_total",
+                        "parameters": {"minimum": minimum}
+                    })
+                    .to_string(),
+                ))
+        };
+        let saved_target = json!({
+            "kind": "saved_revision",
+            "composition_id": original.entry_id.to_string(),
+            "revision_id": original.revision_id.to_string()
+        });
+        let (saved_status, saved_body) =
+            route_json(route.clone(), query(saved_target.clone(), 42)?).await?;
+        assert_eq!(saved_status, StatusCode::OK, "{saved_body}");
+        assert_eq!(saved_body["ok"], true);
+        assert_eq!(saved_body["result"]["component_id"], "parameter_total");
+        assert_eq!(saved_body["result"]["operation"], "sql_scalar");
+        assert_eq!(saved_body["result"]["source_kind"], "saved_sql");
+        assert_eq!(saved_body["result"]["result_type"], "integer");
+        assert_eq!(saved_body["result"]["value"], "42");
+
+        let draft_yaml = ugoite_domain::composition::canonicalize_composition(&metric_document(
+            "Unsaved metric",
+        ))
+        .expect("valid draft composition")
+        .yaml;
+        let (draft_status, draft_body) = route_json(
+            route.clone(),
+            query(json!({"kind": "draft", "yaml": draft_yaml}), 73)?,
+        )
+        .await?;
+        assert_eq!(draft_status, StatusCode::OK, "{draft_body}");
+        assert_eq!(draft_body["ok"], true);
+        assert_eq!(draft_body["result"]["value"], "73");
+        assert_eq!(
+            draft_body["draft_fingerprint"].as_str().map(str::len),
+            Some(64)
+        );
+
+        Authorizer::new(state.service.operator().clone())
+            .set_policy(
+                &space_id,
+                principal_id,
+                &ResourceRef {
+                    kind: ResourceKind::SavedSql,
+                    id: sql_id.clone(),
+                    parent: None,
+                },
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            )
+            .await?;
+        let (denied_status, denied_body) = route_json(route, query(saved_target, 42)?).await?;
+        assert_eq!(denied_status, StatusCode::OK, "{denied_body}");
+        assert_eq!(denied_body["ok"], false);
+        assert_eq!(
+            denied_body["diagnostics"],
+            json!([{"code": "source_unavailable"}])
+        );
+        assert_eq!(denied_body["result"], Value::Null);
+        assert!(!denied_body.to_string().contains(&sql_id));
         Ok(())
     }
 
