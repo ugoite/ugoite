@@ -155,12 +155,12 @@ requirements:
           - id: core-policy
             adapter: rust
             path: crates/ugoite-core/src/query.rs
-            selector: { kind: symbol, name: tests::read_only_aggregate_policy_is_narrow_and_class_specific }
+            selector: { kind: symbol, name: tests::read_only_aggregate_policy_filters_function_classes }
             claims:
               - kind: verifies
                 criterion: REQ-API-015#criterion.function-class-policy
                 covers: [FEAT-API-001#binding.sql-service-implementation/target.core-function-policy]
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: query::tests::read_only_aggregate_policy_is_narrow_and_class_specific } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: query::tests::read_only_aggregate_policy_filters_function_classes } }
           - id: datafusion-registration
             adapter: rust
             path: crates/ugoite-iceberg/src/query_context.rs

@@ -214,7 +214,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn read_only_aggregate_policy_is_narrow_and_class_specific() {
+    fn read_only_aggregate_policy_filters_function_classes() {
         let policy = SqlFunctionPolicy::ReadOnlyAggregateV1;
         for function in ["COUNT", "SUM", "AVG", "MIN", "MAX"] {
             assert!(policy.allows_aggregate(function));
