@@ -2065,6 +2065,9 @@ fn validate_physical_plan(
     plan: &Arc<dyn ExecutionPlan>,
     authorized_scans: &BTreeSet<AuthorizedScan>,
 ) -> Result<()> {
+    let is_placeholder_row = (plan.as_ref() as &dyn Any)
+        .downcast_ref::<datafusion::physical_plan::placeholder_row::PlaceholderRowExec>()
+        .is_some();
     if let Some(scan) = (plan.as_ref() as &dyn Any)
         .downcast_ref::<iceberg_datafusion::physical_plan::IcebergTableScan>()
     {
@@ -2075,10 +2078,12 @@ fn validate_physical_plan(
         if !authorized_scans.contains(&authorized) {
             bail!("physical plan scans an unauthorized Iceberg table");
         }
-    } else if plan.children().is_empty() && plan.name() != "EmptyExec" {
+    } else if plan.children().is_empty() && plan.name() != "EmptyExec" && !is_placeholder_row {
         // Intermediate DataFusion operators are not an authorization boundary.
-        // A leaf is: permit only an authorized Iceberg scan (or an empty plan)
-        // so a future external provider cannot silently enter the query.
+        // A leaf is: permit only an authorized Iceberg scan, an empty plan, or
+        // DataFusion's synthetic placeholder row used after proven scalar
+        // cardinality rewrites, so a future external provider cannot silently
+        // enter the query.
         bail!("physical plan has an unauthorized data source");
     }
     for child in plan.children() {

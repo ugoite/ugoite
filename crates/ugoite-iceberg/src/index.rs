@@ -2819,7 +2819,7 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
         None,
         Some(relation_scopes),
         Some(checkpoint),
-        SqlFunctionPolicy::DenyAll,
+        SqlFunctionPolicy::ReadOnlyAggregateV1,
         SQL_MAX_OUTPUT_ROWS.saturating_add(1),
         false,
         forms,
@@ -2830,15 +2830,12 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
         .execute_stateless_page(sql_query, parameters, offset, limit)
         .await
         .map_err(map_sql_error)?;
-    Ok((
-        page.columns,
-        page.result_schema,
-        sql_result_batches_to_values_bounded(
-            &page.batches,
-            ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES,
-        )?,
-        page.has_order,
-    ))
+    let rows = sql_result_batches_to_values_bounded(
+        &page.batches,
+        &page.result_schema,
+        ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES,
+    )?;
+    Ok((page.columns, page.result_schema, rows, page.has_order))
 }
 
 /// Resolves quoted Form-name table references for Saved SQL using bindings
@@ -2873,7 +2870,7 @@ pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint_sta
         None,
         Some(relation_scopes),
         Some(checkpoint),
-        SqlFunctionPolicy::DenyAll,
+        SqlFunctionPolicy::ReadOnlyAggregateV1,
         SQL_MAX_OUTPUT_ROWS,
         false,
         forms,
@@ -3308,12 +3305,12 @@ fn record_batches_to_values_bounded(
     Ok(values)
 }
 
-/// SQL decimal columns are serialized as exact strings rather than JSON
-/// numbers. JSON consumers such as JavaScript cannot represent every decimal
-/// value without loss, so the value stays text while `result_schema` carries
-/// the server-owned `decimal` type and original scale.
+/// Decimal columns with an explicit `decimal` result-schema type are
+/// serialized as exact strings rather than JSON numbers. JSON consumers such
+/// as JavaScript cannot represent every decimal value without loss.
 fn sql_result_batches_to_values_bounded(
     batches: &[arrow_array::RecordBatch],
+    result_schema: &[SqlResultColumn],
     max_bytes: usize,
 ) -> Result<Vec<Value>> {
     use arrow_schema::{DataType, Field, Schema};
@@ -3322,8 +3319,16 @@ fn sql_result_batches_to_values_bounded(
     for batch in batches {
         let mut fields = Vec::with_capacity(batch.num_columns());
         let mut columns = Vec::with_capacity(batch.num_columns());
-        for (field, array) in batch.schema().fields().iter().zip(batch.columns()) {
-            if matches!(
+        for (column_index, (field, array)) in batch
+            .schema()
+            .fields()
+            .iter()
+            .zip(batch.columns())
+            .enumerate()
+        {
+            if result_schema.get(column_index).is_some_and(|column| {
+                column.column_type == ugoite_core::sql_query::SqlResultColumnType::Decimal
+            }) && matches!(
                 field.data_type(),
                 DataType::Decimal32(_, _)
                     | DataType::Decimal64(_, _)
@@ -4409,7 +4414,8 @@ async fn build_record(
 mod tests {
     use super::{
         asset_reference_projection, canonical_hydration_columns, canonical_hydration_projection,
-        datafusion_parameters, filter_literal, map_sql_error, validate_read_only_sql,
+        datafusion_parameters, filter_literal, map_sql_error, sql_result_batches_to_values_bounded,
+        validate_read_only_sql,
     };
     use arrow_array::{Array, ArrayRef, Decimal128Array, RecordBatch, StringArray};
     use arrow_schema::{DataType, Field, Schema};
@@ -4735,8 +4741,15 @@ mod tests {
         )
         .expect("decimal batch");
 
-        let rows = super::sql_result_batches_to_values_bounded(&[batch], 1024 * 1024)
-            .expect("exact decimal values");
+        let rows = sql_result_batches_to_values_bounded(
+            &[batch],
+            &[ugoite_core::sql_query::SqlResultColumn {
+                name: "amount".to_string(),
+                column_type: ugoite_core::sql_query::SqlResultColumnType::Decimal,
+            }],
+            1024 * 1024,
+        )
+        .expect("exact decimal values");
         assert_eq!(rows[0]["amount"], json!("12345678901234567.8901"));
         assert_eq!(rows[1]["amount"], Value::Null);
         assert_eq!(rows[2]["amount"], json!("-1.2340"));

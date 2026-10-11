@@ -29,11 +29,13 @@ SQL accepts exactly one read-only `SELECT` statement. The authorized query
 context exposes only permitted Form relations, columns, and functions, and
 executes through the fixed Space publication selected for the request chain.
 Core-owned SQL function policies admit scalar, aggregate, and window functions
-independently. The stateless page and count inputs currently keep user-authored
-aggregate functions closed; the explicit count operation applies its trusted
-row-count expression to the authorized query plan separately. Parameters use
-DataFusion's native `$name` syntax and are bound as typed scalars before
-planning; parameter text is never substituted into SQL.
+independently. Stateless page and count inputs share the closed
+`ReadOnlyAggregateV1` allowlist: `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` are
+available as aggregate functions, while window functions and unrelated
+aggregates remain unavailable. The explicit count operation applies its
+trusted row-count expression to the authorized query plan separately from
+user SQL. Parameters use DataFusion's native `$name` syntax and are bound as
+typed scalars before planning; parameter text is never substituted into SQL.
 
 The permitted aggregate functions are `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX`.
 `COUNT(*)` counts rows; `COUNT(expression)` ignores `NULL`; `SUM` and `AVG`

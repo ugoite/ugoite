@@ -80,6 +80,9 @@ pub(crate) fn checked_avg_udaf() -> AggregateUDF {
     AggregateUDF::new_from_impl(CheckedAvg {
         signature: Signature::numeric(1, Volatility::Immutable),
     })
+    // DataFusion exposes `mean` as the built-in alias of `avg`; preserve that
+    // SQL spelling when substituting the checked accumulator.
+    .with_aliases(["mean"])
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -820,6 +823,52 @@ mod tests {
         assert_eq!(
             merged.evaluate().expect("distinct sum"),
             ScalarValue::Int64(Some(6))
+        );
+    }
+
+    #[test]
+    fn distinct_average_merges_partial_states_without_double_counting() {
+        let mut left = CheckedNumericAccumulator::new(
+            NumericAggregate::Average,
+            DataType::Float64,
+            DataType::Float64,
+            true,
+        )
+        .expect("left accumulator");
+        left.update_batch(&[Arc::new(Float64Array::from(vec![2.0, 2.0, 8.0]))])
+            .expect("left values");
+
+        let mut right = CheckedNumericAccumulator::new(
+            NumericAggregate::Average,
+            DataType::Float64,
+            DataType::Float64,
+            true,
+        )
+        .expect("right accumulator");
+        right
+            .update_batch(&[Arc::new(Float64Array::from(vec![2.0, 8.0, 14.0]))])
+            .expect("right values");
+
+        let mut merged = CheckedNumericAccumulator::new(
+            NumericAggregate::Average,
+            DataType::Float64,
+            DataType::Float64,
+            true,
+        )
+        .expect("merged accumulator");
+        for partial in [
+            left.state().expect("left state"),
+            right.state().expect("right state"),
+        ] {
+            let batch = partial[0]
+                .to_array_of_size(1)
+                .expect("list partial state array");
+            merged.merge_batch(&[batch]).expect("merge state");
+        }
+
+        assert_eq!(
+            merged.evaluate().expect("distinct average"),
+            ScalarValue::Float64(Some(8.0))
         );
     }
 

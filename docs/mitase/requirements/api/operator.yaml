@@ -51,7 +51,7 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: function-class-policy
         kind: security
-        statement: Authorized SQL contexts register only functions admitted by a Core-owned policy, with scalar, aggregate, and window functions filtered independently; stateless page and count inputs share their user-function policy, while the explicit count operation's internal row-count expression remains separate from user SQL.
+        statement: Authorized SQL contexts register only functions admitted by a Core-owned policy, with scalar, aggregate, and window functions filtered independently; stateless page and count inputs admit only the COUNT, SUM, AVG, MIN, and MAX aggregate allowlist, while the explicit count operation's internal row-count expression remains separate from user SQL.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: local-remote-parity
         kind: quality
@@ -223,14 +223,14 @@ requirements:
           - id: stateless-input-and-count
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
-            selector: { kind: test, name: stateless_user_aggregate_functions_stay_closed_from_internal_count }
+            selector: { kind: test, name: stateless_sql_allows_only_the_read_only_aggregate_policy }
             claims:
               - kind: verifies
                 criterion: REQ-API-015#criterion.function-class-policy
                 covers:
                   - FEAT-API-001#binding.sql-service-implementation/target.query-sql
                   - FEAT-API-001#binding.sql-service-implementation/target.count-sql
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: stateless_user_aggregate_functions_stay_closed_from_internal_count } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: stateless_sql_allows_only_the_read_only_aggregate_policy } }
   - id: REQ-API-016
     title: Bounded stateless SQL export
     description: The CLI can stream a complete, explicitly bounded multi-page SQL result as NDJSON through the existing stateless SQL query operation in local and remote mode.

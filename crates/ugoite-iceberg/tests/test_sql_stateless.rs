@@ -489,7 +489,7 @@ async fn sql_query_page_serializes_decimal_results_as_exact_strings() -> Result<
             &space.space_id,
             query_request(
                 format!(
-                    "SELECT CAST('123456789012345678901.2345' AS DECIMAL(30, 4)) AS amount FROM \"{}\" ORDER BY \"_ugoite_id\"",
+                    "SELECT SUM(CAST('123456789012345678901.2345' AS DECIMAL(30, 4))) AS amount FROM \"{}\"",
                     space.form_name
                 ),
                 10,
@@ -503,10 +503,46 @@ async fn sql_query_page_serializes_decimal_results_as_exact_strings() -> Result<
         .expect("decimal page has a result schema");
     assert_eq!(schema.len(), 1);
     assert_eq!(schema[0].column_type.as_str(), "decimal");
+    assert_eq!(page.rows.len(), 1);
+    assert_eq!(
+        page.rows[0].get("amount"),
+        Some(&serde_json::json!("617283945061728394506.1725"))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn sql_query_page_serializes_decimal_projection_as_exact_strings() -> Result<()> {
+    let space = setup_sql_space(
+        "memory://sql-stateless-decimal-projection",
+        "sqldecimalprojection",
+    )
+    .await?;
+    let page = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_request(
+                format!(
+                    "SELECT CAST('123456789012345678901.2345' AS DECIMAL(30, 4)) AS amount FROM \"{}\" ORDER BY \"_ugoite_id\"",
+                    space.form_name
+                ),
+                10,
+            ),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("decimal projection failed: {error:#}"));
+
+    let schema = page
+        .result_schema
+        .expect("legacy decimal page has a result schema");
+    assert_eq!(schema.len(), 1);
+    assert_eq!(schema[0].column_type.as_str(), "decimal");
     assert_eq!(page.rows.len(), 5);
-    assert!(page.rows.iter().all(|row| {
-        row.get("amount") == Some(&serde_json::json!("123456789012345678901.2345"))
-    }));
+    assert!(page
+        .rows
+        .iter()
+        .all(|row| row["amount"] == "123456789012345678901.2345"));
     Ok(())
 }
 
@@ -1051,16 +1087,21 @@ async fn stateless_explicit_count_matches_full_result() -> Result<()> {
 }
 
 #[tokio::test]
-async fn stateless_user_aggregate_functions_stay_closed_from_internal_count() -> Result<()> {
+async fn stateless_sql_allows_only_the_read_only_aggregate_policy() -> Result<()> {
     let space = setup_sql_space("memory://sql-stateless-function-policy", "sqlfunctions").await?;
-    let aggregate_sql = format!("SELECT COUNT(*) FROM \"{}\"", space.form_name);
+    let aggregate_sql = format!("SELECT COUNT(*) AS row_count FROM \"{}\"", space.form_name);
 
-    assert!(space
+    let page = space
         .service
         .query_sql(&space.space_id, query_request(aggregate_sql.clone(), 10))
         .await
-        .is_err());
-    assert!(space
+        .expect("the query route admits the bounded read-only aggregate allowlist");
+    assert_eq!(page.rows.len(), 1);
+    assert_eq!(page.rows[0]["row_count"], 5);
+
+    // The explicit count route applies its own trusted row count to the SQL
+    // result. Counting one row produced by COUNT(*) therefore returns one.
+    let result_count = space
         .service
         .count_sql(
             &space.space_id,
@@ -1072,10 +1113,21 @@ async fn stateless_user_aggregate_functions_stay_closed_from_internal_count() ->
             },
         )
         .await
+        .expect("the count route admits the bounded read-only aggregate allowlist");
+    assert_eq!(result_count, 1);
+
+    let window_aggregate = format!(
+        "SELECT SUM(\"{}\") OVER (ORDER BY \"_ugoite_id\") AS total FROM \"{}\"",
+        space.priority_column, space.form_name
+    );
+    assert!(space
+        .service
+        .query_sql(&space.space_id, query_request(window_aggregate, 10))
+        .await
         .is_err());
 
-    // The separate count operation's trusted COUNT expression remains
-    // available for ordinary user SQL that contains no aggregate function.
+    // The separate count operation still counts rows for ordinary user SQL,
+    // independently of SQL aggregate expressions.
     let count = space
         .service
         .count_sql(

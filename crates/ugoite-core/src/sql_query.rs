@@ -130,11 +130,11 @@ pub struct SqlQueryPage {
     pub result_schema: Option<Vec<SqlResultColumn>>,
 }
 
-/// One ordered output column with its server-mapped portable logical type.
+/// One ordered SQL output column with its server-mapped portable logical type.
 ///
-/// The vocabulary intentionally matches the Composition
-/// `expected_result` logical types so the Browser can store the descriptor
-/// unchanged; the Browser performs no type inference of its own.
+/// SQL result types can be broader than the result types currently accepted
+/// by Composition. Consumers must explicitly map unsupported types instead
+/// of copying this descriptor into a Composition expectation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SqlResultColumn {

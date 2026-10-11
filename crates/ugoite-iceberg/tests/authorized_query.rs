@@ -466,6 +466,16 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
         .expect("AVG of Long returns Float64")
         .value(0);
     assert!((average - 62.5).abs() < 1e-12);
+    let mean = context
+        .execute("SELECT MEAN(field_101) AS mean FROM tasks")
+        .await?;
+    let mean = mean[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<arrow_array::Float64Array>()
+        .expect("MEAN retains DataFusion's AVG alias")
+        .value(0);
+    assert!((mean - average).abs() < 1e-12);
     assert_eq!(int(6), 0);
     for index in 7..=10 {
         assert!(
