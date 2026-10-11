@@ -37,6 +37,107 @@ fn form(id: u128, name: &str) -> FormDefinition {
     }
 }
 
+fn aggregate_form(id: u128) -> FormDefinition {
+    let field = |id, name: &str, field_type| FormField {
+        id: FieldId::new(id).unwrap(),
+        name: name.into(),
+        field_type,
+        required: false,
+        label: None,
+        description: None,
+        semantic_role: None,
+        reference_form: None,
+        list_item: None,
+        validation: None,
+        enum_values: Vec::new(),
+        deprecated: false,
+    };
+
+    FormDefinition {
+        id: FormId::from(Uuid::from_u128(id)),
+        version: FormVersion::new(1).unwrap(),
+        name: "Aggregate observations".into(),
+        description: None,
+        fields: vec![
+            field(100, "category", FieldType::String),
+            field(101, "amount", FieldType::Long),
+            field(102, "optional amount", FieldType::Double),
+            field(103, "empty amount", FieldType::Double),
+        ],
+        allow_extra_attributes: false,
+        extension_metadata: BTreeMap::new(),
+    }
+}
+
+fn aggregate_revision(
+    form: &FormDefinition,
+    entry: u128,
+    revision: u128,
+    category: &str,
+    amount: i64,
+    optional_amount: FieldValue,
+) -> EntryRevision {
+    EntryRevision {
+        form_id: form.id,
+        entry_id: EntryId::from(Uuid::from_u128(entry)),
+        revision_id: Uuid::from_u128(revision).into(),
+        change_id: format!("aggregate-change-{revision}"),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "test".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata {
+            updated_by: "test".into(),
+            ..EntryMetadata::default()
+        },
+        values: BTreeMap::from([
+            (
+                FieldId::new(100).unwrap(),
+                FieldValue::String(category.into()),
+            ),
+            (FieldId::new(101).unwrap(), FieldValue::Integer(amount)),
+            (FieldId::new(102).unwrap(), optional_amount),
+            (FieldId::new(103).unwrap(), FieldValue::Null),
+        ]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    }
+}
+
+async fn append_aggregate(
+    workspace: &IcebergWorkspace,
+    revision: EntryRevision,
+) -> anyhow::Result<i64> {
+    Ok(workspace
+        .commit(publication_context(
+            Uuid::new_v4().to_string(),
+            "test.aggregate-entry",
+            &revision,
+        )?)?
+        .append_revisions(revision.form_id, vec![revision])
+        .await?
+        .snapshot_id)
+}
+
+fn aggregate_policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQueryPolicy {
+    let mut authorized = policy(form, readable);
+    let form_policy = authorized.forms.get_mut(&form.id).unwrap();
+    form_policy.columns = ["field_100", "field_101", "field_102", "field_103"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    authorized.limits.allowed_functions = ["count", "sum", "avg", "min", "max"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    authorized
+}
+
 async fn create_form(workspace: &IcebergWorkspace, form: &FormDefinition) -> anyhow::Result<()> {
     workspace
         .commit(publication_context(
@@ -290,6 +391,334 @@ async fn count_aggregates_only_authorized_current_entries() -> anyhow::Result<()
         .expect("COUNT(*) returns an Int64")
         .value(0);
     assert_eq!(count, 1, "hidden Entries must not contribute to COUNT(*)");
+    Ok(())
+}
+
+#[tokio::test]
+async fn sql_aggregate_spike_covers_nulls_grouping_and_authorized_current_entries(
+) -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(200)),
+        "memory://authorized-query-aggregate-spike",
+    )
+    .await?;
+    let tasks = aggregate_form(201);
+    create_form(&workspace, &tasks).await?;
+    for (entry, revision_id, category, amount, optional_amount) in [
+        (206, 207, "food", 100, FieldValue::Number(1.5)),
+        (208, 209, "food", 200, FieldValue::Null),
+        (210, 211, "travel", -50, FieldValue::Number(-2.0)),
+        (214, 215, "zero", 0, FieldValue::Null),
+        (212, 213, "private", 10_000, FieldValue::Number(99.0)),
+    ] {
+        append_aggregate(
+            &workspace,
+            aggregate_revision(
+                &tasks,
+                entry,
+                revision_id,
+                category,
+                amount,
+                optional_amount,
+            ),
+        )
+        .await?;
+    }
+
+    let context = workspace
+        .authorized_query_context(aggregate_policy(&tasks, &[206, 208, 210, 214]))
+        .await?;
+    let batches = context
+        .execute(
+            "SELECT COUNT(*) AS row_count, COUNT(field_102) AS optional_count, \
+             SUM(field_101) AS total, AVG(field_101) AS average, \
+             MIN(field_101) AS minimum, MAX(field_101) AS maximum, \
+             COUNT(field_103) AS empty_count, SUM(field_103) AS empty_sum, \
+             AVG(field_103) AS empty_average, MIN(field_103) AS empty_minimum, \
+             MAX(field_103) AS empty_maximum, SUM(field_102) AS float_total, \
+             AVG(field_102) AS float_average, MIN(field_102) AS float_minimum, \
+             MAX(field_102) AS float_maximum FROM tasks",
+        )
+        .await?;
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].num_rows(), 1);
+    let batch = &batches[0];
+    let int = |index| {
+        batch
+            .column(index)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("COUNT and integer SUM/MIN/MAX use Int64 in this fixture")
+            .value(0)
+    };
+    assert_eq!(int(0), 4, "the denied Entry must not affect COUNT(*)");
+    assert_eq!(int(1), 2, "COUNT(field) ignores NULL values");
+    assert_eq!(int(2), 250);
+    assert_eq!(int(4), -50);
+    assert_eq!(int(5), 200);
+    assert_eq!(
+        batch.schema().field(2).data_type(),
+        &arrow_schema::DataType::Int64
+    );
+    assert_eq!(
+        batch.schema().field(3).data_type(),
+        &arrow_schema::DataType::Float64
+    );
+    let average = batch
+        .column(3)
+        .as_any()
+        .downcast_ref::<arrow_array::Float64Array>()
+        .expect("AVG of Long returns Float64")
+        .value(0);
+    assert!((average - 62.5).abs() < 1e-12);
+    assert_eq!(int(6), 0);
+    for index in 7..=10 {
+        assert!(
+            batch.column(index).is_null(0),
+            "column {index} must remain NULL"
+        );
+    }
+    let decimal = context
+        .execute("SELECT SUM(CAST(field_101 AS DECIMAL(10, 2))) AS total FROM tasks")
+        .await?;
+    assert_eq!(
+        decimal[0].schema().field(0).data_type(),
+        &arrow_schema::DataType::Decimal128(20, 2)
+    );
+    assert_eq!(
+        decimal[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::Decimal128Array>()
+            .expect("Decimal SUM stays Decimal128")
+            .value(0),
+        25_000
+    );
+    let float_value = |index| {
+        batch
+            .column(index)
+            .as_any()
+            .downcast_ref::<arrow_array::Float64Array>()
+            .expect("Double aggregate returns Float64")
+            .value(0)
+    };
+    assert_eq!(float_value(11), -0.5);
+    assert_eq!(float_value(12), -0.25);
+    assert_eq!(float_value(13), -2.0);
+    assert_eq!(float_value(14), 1.5);
+    let special_floats = context
+        .execute(
+            "SELECT SUM(CAST('NaN' AS DOUBLE)) AS nan_total, \
+             SUM(CAST('Infinity' AS DOUBLE)) AS infinity_total FROM tasks",
+        )
+        .await?;
+    let nan_total = special_floats[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<arrow_array::Float64Array>()
+        .expect("non-finite Double aggregate returns Float64")
+        .value(0);
+    let infinity_total = special_floats[0]
+        .column(1)
+        .as_any()
+        .downcast_ref::<arrow_array::Float64Array>()
+        .expect("non-finite Double aggregate returns Float64")
+        .value(0);
+    assert!(nan_total.is_nan());
+    assert!(infinity_total.is_infinite() && infinity_total.is_sign_positive());
+    let decimal_256 = context
+        .execute("SELECT SUM(CAST(field_101 AS DECIMAL(40, 2))) AS total FROM tasks")
+        .await?;
+    assert_eq!(
+        decimal_256[0].schema().field(0).data_type(),
+        &arrow_schema::DataType::Decimal256(50, 2)
+    );
+    assert_eq!(
+        decimal_256[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::Decimal256Array>()
+            .expect("Decimal256 SUM stays Decimal256")
+            .value(0)
+            .to_string(),
+        "25000"
+    );
+    let decimal_overflow = context
+        .execute(
+            "SELECT SUM(CAST('99999999999999999999999999999999999999' \
+             AS DECIMAL(38, 0))) AS total FROM tasks",
+        )
+        .await?;
+    assert_eq!(
+        decimal_overflow[0].schema().field(0).data_type(),
+        &arrow_schema::DataType::Decimal128(38, 0)
+    );
+    let decimal_overflow_value = decimal_overflow[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<arrow_array::Decimal128Array>()
+        .expect("Decimal128 SUM result")
+        .value(0);
+    // The precision-38 accumulator also wraps in this fixture; its mathematical
+    // sum is larger than Decimal128 can represent. Keep this as a release gate.
+    assert_eq!(
+        decimal_overflow_value,
+        59_717_633_079_061_536_536_625_392_568_231_788_540
+    );
+
+    let grouped = context
+        .execute(
+            "SELECT field_100, COUNT(*) AS item_count, SUM(field_101) AS total \
+             FROM tasks GROUP BY field_100 HAVING COUNT(*) > 0 ORDER BY total DESC",
+        )
+        .await?;
+    assert_eq!(
+        grouped.iter().map(|batch| batch.num_rows()).sum::<usize>(),
+        3
+    );
+    let group_batch = &grouped[0];
+    let categories = group_batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .expect("category is a string");
+    let totals = group_batch
+        .column(2)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .expect("grouped integer SUM uses Int64");
+    assert_eq!(categories.value(0), "food");
+    assert_eq!(totals.value(0), 300);
+    assert_eq!(categories.value(1), "zero");
+    assert_eq!(totals.value(1), 0);
+    assert_eq!(categories.value(2), "travel");
+    assert_eq!(totals.value(2), -50);
+
+    let plan = context
+        .physical_plan_for_testing(
+            "SELECT field_100, SUM(field_101) AS total FROM tasks GROUP BY field_100",
+        )
+        .await?;
+    let normalized_plan = plan.to_ascii_lowercase();
+    let aggregate = normalized_plan
+        .find("aggregateexec")
+        .expect("physical plan contains a DataFusion aggregate node");
+    let scan = normalized_plan
+        .find("icebergtablescan")
+        .expect("physical plan scans the authorized Iceberg provider");
+    assert!(
+        aggregate < scan,
+        "authorization source must be below aggregate: {plan}"
+    );
+    assert!(
+        normalized_plan.contains("entry_id"),
+        "scope filter must be in the plan: {plan}"
+    );
+    let scope_filter = normalized_plan
+        .find("filterexec")
+        .expect("EntryScope is enforced by the authorized relation before aggregation");
+    assert!(aggregate < scope_filter && scope_filter < scan, "{plan}");
+
+    let empty_context = workspace
+        .authorized_query_context(aggregate_policy(&tasks, &[]))
+        .await?;
+    let empty = empty_context
+        .execute(
+            "SELECT COUNT(*) AS row_count, SUM(field_101) AS total, \
+             AVG(field_101) AS average, MIN(field_101) AS minimum, \
+             MAX(field_101) AS maximum FROM tasks",
+        )
+        .await?;
+    assert_eq!(empty[0].num_rows(), 1);
+    assert_eq!(
+        empty[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .value(0),
+        0
+    );
+    for index in 1..=4 {
+        assert!(
+            empty[0].column(index).is_null(0),
+            "empty aggregate {index} must be NULL"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn sql_aggregate_spike_characterizes_int64_overflow_and_resource_limits() -> anyhow::Result<()>
+{
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(220)),
+        "memory://authorized-query-aggregate-limits",
+    )
+    .await?;
+    let tasks = aggregate_form(221);
+    create_form(&workspace, &tasks).await?;
+    for (entry, revision_id, amount) in [(226, 227, i64::MAX), (228, 229, 1), (230, 231, 100)] {
+        append_aggregate(
+            &workspace,
+            aggregate_revision(
+                &tasks,
+                entry,
+                revision_id,
+                "values",
+                amount,
+                FieldValue::Null,
+            ),
+        )
+        .await?;
+    }
+
+    let context = workspace
+        .authorized_query_context(aggregate_policy(&tasks, &[226, 228, 230]))
+        .await?;
+    let overflow = context
+        .execute("SELECT SUM(field_101) AS total FROM tasks")
+        .await?;
+    // Characterization only: DataFusion 54.1.0 wraps Int64 SUM here. Do not
+    // expose this function for Long fields until Ugoite provides checked
+    // handling or a wider exact result representation.
+    assert_eq!(
+        overflow[0].schema().field(0).data_type(),
+        &arrow_schema::DataType::Int64
+    );
+    assert_eq!(
+        overflow[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("SUM(Long) currently returns Int64")
+            .value(0),
+        i64::MIN + 100
+    );
+
+    let mut memory_limited = aggregate_policy(&tasks, &[226, 228, 230]);
+    memory_limited.limits.max_memory_bytes = 1;
+    let memory_context = workspace.authorized_query_context(memory_limited).await?;
+    let error = memory_context
+        .execute("SELECT field_100, SUM(field_101) AS total FROM tasks GROUP BY field_100")
+        .await
+        .expect_err("grouped aggregation must fail when the DataFusion memory budget is exceeded");
+    assert!(matches!(
+        error.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::ResourceLimitExceeded { .. })
+    ));
+
+    let mut timed_out = aggregate_policy(&tasks, &[226, 228, 230]);
+    timed_out.limits.timeout = Duration::from_nanos(1);
+    let timeout_context = workspace.authorized_query_context(timed_out).await?;
+    let error = timeout_context
+        .execute("SELECT SUM(field_101) AS total FROM tasks")
+        .await
+        .expect_err("timed out aggregate must not return a partial value");
+    assert!(matches!(
+        error.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::QueryTimedOut)
+    ));
     Ok(())
 }
 
