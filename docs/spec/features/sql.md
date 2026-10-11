@@ -61,8 +61,11 @@ including for empty and all-`NULL` results. Decimal columns use the logical
 type `decimal`; their row values are strings containing the exact base-10
 value, with no exponent and with the planned fractional scale preserved. They
 are never converted through binary floating point. Integer and float columns
-retain their portable types. Numeric overflow and non-finite-result failures
-use stable SQL aggregate error codes with safe messages.
+retain their portable types. Clients may opt in to `exact_integer_rows` for
+column-aligned base-10 strings that preserve integer digits beyond JavaScript's
+safe integer range; this leaves `rows` and the `integer` schema unchanged.
+Numeric overflow and non-finite-result failures use stable SQL aggregate error
+codes with safe messages.
 
 SQL results are not automatically materialized as Knowledge. A SELECT cannot
 write a publication, derived relation, or execution metadata. Future SQL DML

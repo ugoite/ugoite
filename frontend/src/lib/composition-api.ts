@@ -612,6 +612,7 @@ export const compositionApi = {
     const { continuation: _resolvedCursor, ...request } = source.request;
     const page = await sqlApi.query(spaceId, {
       ...request,
+      include_exact_integer_values: true,
       ...(cursor === undefined ? {} : { continuation: cursor }),
     }, signal);
     return { kind: "saved_sql", page };

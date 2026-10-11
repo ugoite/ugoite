@@ -8,7 +8,12 @@ title: 'Stateless SQL Query'
 - `POST /spaces/{space_id}/sql/query/count`
 
 The page request contains `sql`, `parameters`, optional `parameter_types`, and
-`limit`. An optional `saved_sql: { id, revision_id }` selects an exact Saved SQL
+`limit`. Clients that need integer digits preserved through JSON number parsing
+may set `include_exact_integer_values: true`; opted-in page responses add
+`exact_integer_rows`, a row- and column-aligned matrix with exact base-10
+strings for integer cells and `null` elsewhere. The original `rows` values and
+`integer` result schema remain unchanged, and legacy requests omit the matrix.
+An optional `saved_sql: { id, revision_id }` selects an exact Saved SQL
 revision; in that mode the stored SQL text is authoritative and the request's
 `sql` may be empty. A nonempty supplied `sql` must match the stored revision.
 Count accepts the same optional selector. A page response contains `columns`,

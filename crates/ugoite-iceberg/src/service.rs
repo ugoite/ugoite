@@ -6782,13 +6782,14 @@ impl UgoiteService {
             .limit
             .checked_add(1)
             .ok_or_else(|| anyhow!("SQL query page limit overflows"))?;
-        let (columns, result_schema, mut rows, has_order) =
+        let (columns, result_schema, mut rows, mut exact_integer_rows, has_order) =
             index::execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
                 &self.operator,
                 &self.workspace_path(space_id),
                 &execution_sql,
                 &relation_scopes,
                 parameters,
+                request.include_exact_integer_values,
                 offset,
                 fetch_limit,
                 forms,
@@ -6804,6 +6805,9 @@ impl UgoiteService {
         }
         let has_more = has_order && rows.len() > request.limit;
         rows.truncate(request.limit);
+        if let Some(exact_integer_rows) = exact_integer_rows.as_mut() {
+            exact_integer_rows.truncate(request.limit);
+        }
         let next = if has_more {
             let next_offset = offset
                 .checked_add(rows.len())
@@ -6831,6 +6835,7 @@ impl UgoiteService {
             has_more,
             next,
             result_schema: Some(result_schema),
+            exact_integer_rows,
         })
     }
 
@@ -7028,13 +7033,14 @@ impl UgoiteService {
             .limit
             .checked_add(1)
             .ok_or_else(|| anyhow!("SQL query page limit overflows"))?;
-        let (columns, result_schema, mut rows, has_order) =
+        let (columns, result_schema, mut rows, mut exact_integer_rows, has_order) =
             index::execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
                 &self.operator,
                 &self.workspace_path(space_id),
                 &execution_sql,
                 &relation_scopes,
                 parameters,
+                request.include_exact_integer_values,
                 offset,
                 fetch_limit,
                 forms.clone(),
@@ -7050,6 +7056,9 @@ impl UgoiteService {
         }
         let has_more = has_order && rows.len() > request.limit;
         rows.truncate(request.limit);
+        if let Some(exact_integer_rows) = exact_integer_rows.as_mut() {
+            exact_integer_rows.truncate(request.limit);
+        }
         let next = if has_more {
             let next_offset = offset
                 .checked_add(rows.len())
@@ -7077,6 +7086,7 @@ impl UgoiteService {
             has_more,
             next,
             result_schema: Some(result_schema),
+            exact_integer_rows,
         })
     }
 

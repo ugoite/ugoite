@@ -171,6 +171,8 @@ features:
               - kind: satisfies
                 criterion: REQ-API-015#criterion.typed-result-schema
               - kind: satisfies
+                criterion: REQ-API-015#criterion.exact-integer-presentation
+              - kind: satisfies
                 criterion: REQ-API-015#criterion.function-class-policy
           - id: result-schema-mapping
             adapter: rust
@@ -188,6 +190,13 @@ features:
                 criterion: REQ-API-015#criterion.typed-result-schema
               - kind: satisfies
                 criterion: REQ-API-015#criterion.exact-decimal-results
+          - id: exact-integer-result-encoding
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: symbol, name: sql_result_batches_to_values_with_exact_integers_bounded }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.exact-integer-presentation
           - id: checked-numeric-aggregates
             adapter: rust
             path: crates/ugoite-iceberg/src/safe_aggregates.rs
@@ -619,6 +628,8 @@ features:
         participants:
           - target: FEAT-API-001#binding.sql-service-implementation/target.query-sql
             role: service
+          - target: FEAT-API-001#binding.sql-service-implementation/target.exact-integer-result-encoding
+            role: service
           - target: FEAT-API-001#binding.sql-name-resolution/target.resolve-form-name-references
             role: service
           - target: FEAT-API-001#binding.core/target.create-sql
@@ -629,6 +640,8 @@ features:
             role: backend
           - target: FEAT-API-001#binding.frontend/target.sql-api
             role: client
+          - target: FEAT-FE-007#binding.frontend/target.sql-result-table
+            role: client
           - target: FEAT-API-001#binding.cli-implementation/target.sql-command
             role: operator
         guarantees:
@@ -636,6 +649,7 @@ features:
           - REQ-API-018#criterion.saved-sql-revision-binding
           - REQ-API-018#criterion.current-form-authorization
           - REQ-API-018#criterion.legacy-saved-sql-preservation
+          - REQ-API-015#criterion.exact-integer-presentation
       - id: count-sql
         kind: http
         source: FEAT-API-001#binding.contract/target.count-sql

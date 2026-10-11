@@ -465,7 +465,11 @@ describe("compositionApi", () => {
     );
     expect(sqlApi.query).toHaveBeenCalledWith(
       "space-1",
-      { ...sqlSource.request, continuation: "sql-cursor" },
+      {
+        ...sqlSource.request,
+        include_exact_integer_values: true,
+        continuation: "sql-cursor",
+      },
       signal,
     );
   });

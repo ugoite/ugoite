@@ -2807,11 +2807,18 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     sql_query: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
     parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    include_exact_integer_values: bool,
     offset: usize,
     limit: usize,
     forms: Vec<FormDefinition>,
     checkpoint: SpaceCheckpoint,
-) -> Result<(Vec<String>, Vec<SqlResultColumn>, Vec<Value>, bool)> {
+) -> Result<(
+    Vec<String>,
+    Vec<SqlResultColumn>,
+    Vec<Value>,
+    Option<Vec<Vec<Option<String>>>>,
+    bool,
+)> {
     let context = datafusion_sql_context_with_form_definitions(
         op,
         ws_path,
@@ -2830,12 +2837,19 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
         .execute_stateless_page(sql_query, parameters, offset, limit)
         .await
         .map_err(map_sql_error)?;
-    let rows = sql_result_batches_to_values_bounded(
+    let (rows, exact_integer_rows) = sql_result_batches_to_values_with_exact_integers_bounded(
         &page.batches,
         &page.result_schema,
         ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES,
+        include_exact_integer_values,
     )?;
-    Ok((page.columns, page.result_schema, rows, page.has_order))
+    Ok((
+        page.columns,
+        page.result_schema,
+        rows,
+        exact_integer_rows,
+        page.has_order,
+    ))
 }
 
 /// Resolves quoted Form-name table references for Saved SQL using bindings
@@ -3356,6 +3370,78 @@ fn sql_result_batches_to_values_bounded(
         decimal_string_batches.push(arrow_array::RecordBatch::try_new(schema, columns)?);
     }
     record_batches_to_values_bounded(&decimal_string_batches, max_bytes)
+}
+
+fn sql_result_batches_to_values_with_exact_integers_bounded(
+    batches: &[arrow_array::RecordBatch],
+    result_schema: &[SqlResultColumn],
+    max_bytes: usize,
+    include_exact_integer_values: bool,
+) -> Result<(Vec<Value>, Option<Vec<Vec<Option<String>>>>)> {
+    let rows = sql_result_batches_to_values_bounded(batches, result_schema, max_bytes)?;
+    if !include_exact_integer_values {
+        return Ok((rows, None));
+    }
+
+    let Some(exact_integer_rows) = sql_exact_integer_rows(batches, result_schema)? else {
+        return Ok((rows, None));
+    };
+    let rows_bytes = serde_json::to_vec(&rows)?.len();
+    let exact_integer_bytes = serde_json::to_vec(&exact_integer_rows)?.len();
+    if rows_bytes
+        .checked_add(exact_integer_bytes)
+        .is_none_or(|bytes| bytes > max_bytes)
+    {
+        return Err(anyhow!("DataFusion result exceeds its byte limit"));
+    }
+    Ok((rows, Some(exact_integer_rows)))
+}
+
+/// Creates a positional exact-integer sidecar without changing the ordinary
+/// JSON row values. Integer cells contain base-10 strings; other and null
+/// cells remain null so indexes continue to match `columns` exactly.
+fn sql_exact_integer_rows(
+    batches: &[arrow_array::RecordBatch],
+    result_schema: &[SqlResultColumn],
+) -> Result<Option<Vec<Vec<Option<String>>>>> {
+    use arrow_schema::DataType;
+
+    let integer_columns = result_schema
+        .iter()
+        .enumerate()
+        .filter_map(|(index, column)| {
+            (column.column_type == ugoite_core::sql_query::SqlResultColumnType::Integer)
+                .then_some(index)
+        })
+        .collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    for batch in batches {
+        if batch.num_columns() != result_schema.len() {
+            return Err(anyhow!("SQL result schema does not match its columns"));
+        }
+        let mut string_columns = Vec::with_capacity(integer_columns.len());
+        for &column_index in &integer_columns {
+            let column = batch.column(column_index);
+            let string_column = datafusion::arrow::compute::cast(column, &DataType::Utf8)?;
+            let string_column = string_column
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .cloned()
+                .ok_or_else(|| anyhow!("integer result could not be rendered as text"))?;
+            string_columns.push((column_index, string_column));
+        }
+
+        for row_index in 0..batch.num_rows() {
+            let mut row = vec![None; result_schema.len()];
+            for (column_index, string_column) in &string_columns {
+                if !string_column.is_null(row_index) {
+                    row[*column_index] = Some(string_column.value(row_index).to_owned());
+                }
+            }
+            rows.push(row);
+        }
+    }
+    Ok(Some(rows))
 }
 
 fn map_sql_error(error: anyhow::Error) -> anyhow::Error {

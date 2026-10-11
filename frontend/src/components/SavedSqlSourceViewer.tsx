@@ -327,6 +327,7 @@ function SavedSqlSourceResult(props: {
           columns={page()?.columns ?? []}
           columnTypes={page()?.result_schema?.map((column) => column.type)}
           rows={rows()}
+          exactIntegerRows={page()?.exact_integer_rows}
           pageIdentity={`${props.source.draftId}:${
             props.sourceState?.cursor ?? "first"
           }`}

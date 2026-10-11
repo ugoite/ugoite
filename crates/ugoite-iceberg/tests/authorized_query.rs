@@ -618,6 +618,17 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
         decimal_overflow.downcast_ref::<AuthorizedQueryError>(),
         Some(AuthorizedQueryError::QueryExecutionFailed { .. })
     ));
+    let precision_boundary = format!("9{}", "0".repeat(75));
+    let average_output_overflow = context
+        .execute(&format!(
+            "SELECT AVG(CAST('{precision_boundary}' AS DECIMAL(76, 0))) AS average FROM tasks"
+        ))
+        .await
+        .expect_err("Decimal256 AVG must fail when its scaled result exceeds output precision");
+    assert!(matches!(
+        average_output_overflow.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::QueryExecutionFailed { .. })
+    ));
     let distinct = context
         .execute(
             "SELECT SUM(DISTINCT CASE WHEN field_101 = 200 THEN 100 \
@@ -761,6 +772,17 @@ async fn sql_aggregate_rejects_int64_overflow_and_preserves_resource_limits() ->
         overflow.downcast_ref::<AuthorizedQueryError>(),
         Some(AuthorizedQueryError::QueryExecutionFailed { .. })
     ));
+    let unsigned_overflow = context
+        .execute("SELECT SUM(18446744073709551615) AS total FROM tasks")
+        .await
+        .expect_err("UInt64 SUM must fail instead of wrapping its result");
+    assert!(
+        matches!(
+            unsigned_overflow.downcast_ref::<AuthorizedQueryError>(),
+            Some(AuthorizedQueryError::QueryExecutionFailed { .. })
+        ),
+        "unexpected UInt64 SUM failure: {unsigned_overflow:#}"
+    );
 
     let mut memory_limited = aggregate_policy(&tasks, &[226, 228, 230]);
     memory_limited.limits.max_memory_bytes = 1;

@@ -373,6 +373,7 @@ export interface SqlQueryRequest {
   sql: string;
   parameters?: Record<string, unknown>;
   parameter_types?: Record<string, string>;
+  include_exact_integer_values?: boolean;
   limit: number;
   continuation?: string;
   saved_sql?: { id: string; revision_id: string };
@@ -390,6 +391,8 @@ export interface SqlQueryPage {
    * from row values.
    */
   result_schema?: SqlResultColumn[];
+  /** Exact base-10 integer strings, positionally aligned with rows/columns. */
+  exact_integer_rows?: (Array<string | null>)[];
 }
 
 /** One SQL output column with its server-mapped portable logical type. */

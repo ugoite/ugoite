@@ -65,6 +65,10 @@ requirements:
         kind: behavior
         statement: Every SQL query page carries a server-owned portable column descriptor in column order while preserving the page and row structure; null and empty results keep their planned output types, Decimal values are exact strings, and the Browser never infers types from row values. A SQL type not yet admitted by the Composition descriptor uses its documented json fallback there.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: exact-integer-presentation
+        kind: behavior
+        statement: SQL page clients may opt in to a column-aligned exact base-10 integer sidecar; legacy requests omit it, existing rows and integer schema remain unchanged, and browser result tables prefer exact sidecar values with a legacy fallback.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: checked-numeric-aggregates
         kind: security
         statement: COUNT, SUM, AVG, MIN, and MAX preserve their declared NULL and empty-set semantics; integer and decimal overflow and non-finite floating aggregate outputs fail without returning a wrapped or partial value.
@@ -128,6 +132,42 @@ requirements:
                 criterion: REQ-API-015#criterion.typed-result-schema
                 covers: [FEAT-API-001#binding.sql-service-implementation/target.query-sql]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: sql_query_page_carries_server_owned_result_schema } }
+          - id: exact-integer-page-transport
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: exact_integer_values_are_opt_in_and_preserve_the_legacy_sql_rows }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.exact-integer-presentation
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.query-sql
+                  - FEAT-API-001#binding.sql-service-implementation/target.exact-integer-result-encoding
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: exact_integer_values_are_opt_in_and_preserve_the_legacy_sql_rows } }
+          - id: exact-integer-table-rendering
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: prefers exact integer strings and falls back to legacy row numbers }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.exact-integer-presentation
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: prefers exact integer strings and falls back to legacy row numbers } }
+          - id: stateless-aggregate-boundaries
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: stateless_aggregate_boundaries_preserve_exact_values_and_fail_closed }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: stateless_aggregate_boundaries_preserve_exact_values_and_fail_closed } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.exact-integer-presentation
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.query-sql
+                  - FEAT-API-001#binding.sql-service-implementation/target.exact-integer-result-encoding
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: stateless_aggregate_boundaries_preserve_exact_values_and_fail_closed } }
           - id: arrow-mapping-pin
             adapter: rust
             path: crates/ugoite-iceberg/src/query_context.rs
