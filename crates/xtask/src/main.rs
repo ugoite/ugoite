@@ -566,6 +566,28 @@ fn contains_identifier(source: &str, identifier: &str) -> bool {
     })
 }
 
+fn contains_physical_table_reference(source: &str) -> bool {
+    // `CompositionComponent::Table` is a portable Composition variant, not an
+    // adapter type. Keep the broader guard for other `Table` references such
+    // as physical Table/ TableProvider types.
+    const PORTABLE_VARIANT: &str = "CompositionComponent::Table";
+    let allowed_occurrences = source
+        .match_indices(PORTABLE_VARIANT)
+        .filter(|(start, matched)| {
+            source[*start + matched.len()..]
+                .chars()
+                .next()
+                .is_none_or(|character| !character.is_alphanumeric() && character != '_')
+        })
+        .map(|(start, _)| start)
+        .collect::<Vec<_>>();
+    let mut source_without_composition_variant = source.to_owned();
+    for start in allowed_occurrences.into_iter().rev() {
+        source_without_composition_variant.replace_range(start..start + PORTABLE_VARIANT.len(), "");
+    }
+    source_without_composition_variant.contains("Table")
+}
+
 fn architecture_check() -> Result<()> {
     let mut violations = Vec::new();
     let server_manifest = fs::read_to_string("crates/ugoite-server/Cargo.toml")
@@ -620,13 +642,15 @@ fn architecture_check() -> Result<()> {
             "Transaction",
             "SessionContext",
         ] {
-            let contains_forbidden = if forbidden == "Operator" {
-                // Match the complete Rust identifier so logical names such as
-                // `SearchOperator` and `CompositionQueryOperator` do not trip
-                // this physical adapter type guard.
-                contains_identifier(&content, forbidden)
-            } else {
-                content.contains(forbidden)
+            let contains_forbidden = match forbidden {
+                "Operator" => {
+                    // Match the complete Rust identifier so logical names such as
+                    // `SearchOperator` and `CompositionQueryOperator` do not trip
+                    // this physical adapter type guard.
+                    contains_identifier(&content, forbidden)
+                }
+                "Table" => contains_physical_table_reference(&content),
+                _ => content.contains(forbidden),
             };
             if contains_forbidden {
                 violations.push(format!(
@@ -2141,6 +2165,22 @@ mod gate_contract_tests {
         assert!(contains_identifier("let _: Operator = value;", "Operator"));
         assert!(!contains_identifier("SearchOperator", "Operator"));
         assert!(!contains_identifier("CompositionQueryOperator", "Operator"));
+    }
+
+    #[test]
+    fn physical_table_guard_allows_portable_composition_table_variant() {
+        assert!(!contains_physical_table_reference(
+            "CompositionComponent::Table { source, query }"
+        ));
+        assert!(contains_physical_table_reference(
+            "use datafusion::catalog::Table;"
+        ));
+        assert!(contains_physical_table_reference(
+            "fn provider<T: TableProvider>() {}"
+        ));
+        assert!(contains_physical_table_reference(
+            "CompositionComponent::TableProvider { source }"
+        ));
     }
 
     const GOOD_SPACE_SOURCE: &str = r#"
