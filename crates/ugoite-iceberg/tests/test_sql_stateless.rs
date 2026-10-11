@@ -560,6 +560,49 @@ async fn sql_query_page_serializes_decimal_results_as_exact_strings() -> Result<
 }
 
 #[tokio::test]
+async fn sql_query_page_preserves_exact_decimal_minimum_and_maximum() -> Result<()> {
+    let space =
+        setup_sql_space("memory://sql-stateless-decimal-minmax", "sqldecimalminmax").await?;
+    let page = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_request(
+                format!(
+                    "SELECT MIN(CAST(CASE WHEN \"{}\" < 3 THEN '123456789012345678901.2345' ELSE '223456789012345678901.2345' END AS DECIMAL(30, 4))) AS minimum, \
+                     MAX(CAST(CASE WHEN \"{}\" < 3 THEN '123456789012345678901.2345' ELSE '223456789012345678901.2345' END AS DECIMAL(30, 4))) AS maximum \
+                     FROM \"{}\"",
+                    space.priority_column, space.priority_column, space.form_name
+                ),
+                10,
+            ),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("decimal MIN/MAX page failed: {error:#}"));
+
+    let schema = page
+        .result_schema
+        .expect("Decimal MIN/MAX page has a result schema");
+    assert_eq!(
+        schema
+            .iter()
+            .map(|column| (column.name.as_str(), column.column_type.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("minimum", "decimal"), ("maximum", "decimal")]
+    );
+    assert_eq!(page.rows.len(), 1);
+    assert_eq!(
+        page.rows[0].get("minimum"),
+        Some(&serde_json::json!("123456789012345678901.2345"))
+    );
+    assert_eq!(
+        page.rows[0].get("maximum"),
+        Some(&serde_json::json!("223456789012345678901.2345"))
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn sql_query_page_serializes_decimal_projection_as_exact_strings() -> Result<()> {
     let space = setup_sql_space(
         "memory://sql-stateless-decimal-projection",

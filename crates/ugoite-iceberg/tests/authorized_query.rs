@@ -445,6 +445,7 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
     let batches = context
         .execute(
             "SELECT COUNT(*) AS row_count, COUNT(field_102) AS optional_count, \
+             COUNT(field_101, field_102) AS pair_count, \
              SUM(field_101) AS total, AVG(field_101) AS average, \
              MIN(field_101) AS minimum, MAX(field_101) AS maximum, \
              COUNT(field_103) AS empty_count, SUM(field_103) AS empty_sum, \
@@ -467,19 +468,36 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
     };
     assert_eq!(int(0), 4, "the denied Entry must not affect COUNT(*)");
     assert_eq!(int(1), 2, "COUNT(field) ignores NULL values");
-    assert_eq!(int(2), 250);
-    assert_eq!(int(4), -50);
-    assert_eq!(int(5), 200);
+    assert_eq!(int(2), 2, "COUNT(a, b) ignores rows with any NULL input");
+    assert_eq!(int(3), 250);
+    assert_eq!(int(5), -50);
+    assert_eq!(int(6), 200);
     assert_eq!(
-        batch.schema().field(2).data_type(),
+        batch.schema().field(3).data_type(),
         &arrow_schema::DataType::Int64
     );
     assert_eq!(
-        batch.schema().field(3).data_type(),
+        batch.schema().field(4).data_type(),
         &arrow_schema::DataType::Float64
     );
+    let pair_count = context
+        .execute(
+            "SELECT COUNT(field_101, field_102) AS pair_count FROM tasks \
+             WHERE field_100 = 'food'",
+        )
+        .await?;
+    assert_eq!(
+        pair_count[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("multi-argument COUNT returns Int64")
+            .value(0),
+        1,
+        "COUNT(a, b) requires every argument to be non-NULL"
+    );
     let average = batch
-        .column(3)
+        .column(4)
         .as_any()
         .downcast_ref::<arrow_array::Float64Array>()
         .expect("AVG of Long returns Float64")
@@ -495,8 +513,8 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
         .expect("MEAN retains DataFusion's AVG alias")
         .value(0);
     assert!((mean - average).abs() < 1e-12);
-    assert_eq!(int(6), 0);
-    for index in 7..=10 {
+    assert_eq!(int(7), 0);
+    for index in 8..=11 {
         assert!(
             batch.column(index).is_null(0),
             "column {index} must remain NULL"
@@ -543,10 +561,10 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
             .expect("Double aggregate returns Float64")
             .value(0)
     };
-    assert_eq!(float_value(11), -0.5);
-    assert_eq!(float_value(12), -0.25);
-    assert_eq!(float_value(13), -2.0);
-    assert_eq!(float_value(14), 1.5);
+    assert_eq!(float_value(12), -0.5);
+    assert_eq!(float_value(13), -0.25);
+    assert_eq!(float_value(14), -2.0);
+    assert_eq!(float_value(15), 1.5);
     let window_aggregate = context
         .execute(
             "SELECT SUM(field_101) OVER (ORDER BY field_100 \
@@ -723,7 +741,8 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
         .await?;
     let empty = empty_context
         .execute(
-            "SELECT COUNT(*) AS row_count, SUM(field_101) AS total, \
+            "SELECT COUNT(*) AS row_count, COUNT(field_101) AS value_count, \
+             SUM(field_101) AS total, \
              AVG(field_101) AS average, MIN(field_101) AS minimum, \
              MAX(field_101) AS maximum FROM tasks",
         )
@@ -738,7 +757,16 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
             .value(0),
         0
     );
-    for index in 1..=4 {
+    assert_eq!(
+        empty[0]
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .value(0),
+        0
+    );
+    for index in 2..=5 {
         assert!(
             empty[0].column(index).is_null(0),
             "empty aggregate {index} must be NULL"

@@ -269,9 +269,15 @@ fn allowed_aggregate_functions(
         .into_iter()
         .filter(|function| {
             function_policy.allows_aggregate(function.name())
-                && !matches!(function.name().to_ascii_lowercase().as_str(), "sum" | "avg")
+                && !matches!(
+                    function.name().to_ascii_lowercase().as_str(),
+                    "count" | "sum" | "avg"
+                )
         })
         .collect::<Vec<_>>();
+    if function_policy.allows_aggregate("count") {
+        functions.push(Arc::new(crate::safe_aggregates::checked_count_udaf()));
+    }
     if function_policy.allows_aggregate("sum") {
         functions.push(Arc::new(crate::safe_aggregates::checked_sum_udaf()));
     }

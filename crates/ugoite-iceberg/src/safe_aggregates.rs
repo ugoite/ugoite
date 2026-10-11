@@ -21,7 +21,7 @@ use datafusion::arrow::datatypes::{
 use datafusion::common::{DataFusionError, Result as DataFusionResult, ScalarValue};
 use datafusion::logical_expr::function::{AccumulatorArgs, StateFieldsArgs};
 use datafusion::logical_expr::{
-    Accumulator, AggregateUDF, AggregateUDFImpl, Signature, Volatility,
+    Accumulator, AggregateUDF, AggregateUDFImpl, Signature, TypeSignature, Volatility,
 };
 use num_bigint::BigInt;
 
@@ -82,6 +82,264 @@ pub(crate) fn checked_avg_udaf() -> AggregateUDF {
     // DataFusion exposes `mean` as the built-in alias of `avg`; preserve that
     // SQL spelling when substituting the checked accumulator.
     .with_aliases(["mean"])
+}
+
+pub(crate) fn checked_count_udaf() -> AggregateUDF {
+    AggregateUDF::new_from_impl(CheckedCount {
+        signature: Signature::one_of(
+            vec![TypeSignature::VariadicAny, TypeSignature::Nullary],
+            Volatility::Immutable,
+        ),
+    })
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct CheckedCount {
+    signature: Signature,
+}
+
+impl AggregateUDFImpl for CheckedCount {
+    fn name(&self) -> &str {
+        "count"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, _arg_types: &[DataType]) -> DataFusionResult<DataType> {
+        Ok(DataType::Int64)
+    }
+
+    fn is_nullable(&self) -> bool {
+        false
+    }
+
+    fn default_value(&self, _data_type: &DataType) -> DataFusionResult<ScalarValue> {
+        Ok(ScalarValue::Int64(Some(0)))
+    }
+
+    fn accumulator(&self, args: AccumulatorArgs) -> DataFusionResult<Box<dyn Accumulator>> {
+        if args.is_distinct && args.exprs.len() > 1 {
+            return Err(DataFusionError::NotImplemented(
+                "COUNT DISTINCT with multiple arguments".into(),
+            ));
+        }
+        let input_type = if args.is_distinct {
+            let Some(field) = args.expr_fields.first() else {
+                return Err(failure(SqlAggregateFailure::UnsupportedType));
+            };
+            Some(count_distinct_value_type(field.data_type()))
+        } else {
+            None
+        };
+        Ok(Box::new(CheckedCountAccumulator::new(
+            args.is_distinct,
+            input_type,
+        )))
+    }
+
+    fn state_fields(&self, args: StateFieldsArgs) -> DataFusionResult<Vec<FieldRef>> {
+        if args.is_distinct {
+            if args.input_fields.len() != 1 {
+                return Err(DataFusionError::NotImplemented(
+                    "COUNT DISTINCT with multiple arguments".into(),
+                ));
+            }
+            let input_type = count_distinct_value_type(args.input_fields[0].data_type());
+            return Ok(vec![Arc::new(Field::new_list(
+                format!("{}_checked_count_distinct", args.name),
+                Field::new_list_field(input_type, true),
+                false,
+            ))]);
+        }
+        Ok(vec![Arc::new(Field::new(
+            format!("{}_checked_count", args.name),
+            DataType::UInt64,
+            false,
+        ))])
+    }
+}
+
+#[derive(Debug)]
+struct CheckedCountAccumulator {
+    distinct: bool,
+    input_type: Option<DataType>,
+    distinct_values: HashSet<ScalarValue>,
+    count: u64,
+}
+
+impl CheckedCountAccumulator {
+    fn new(distinct: bool, input_type: Option<DataType>) -> Self {
+        Self {
+            distinct,
+            input_type,
+            distinct_values: HashSet::new(),
+            count: 0,
+        }
+    }
+
+    fn add_count(&mut self, count: u64) -> DataFusionResult<()> {
+        let next = self
+            .count
+            .checked_add(count)
+            .ok_or_else(|| failure(SqlAggregateFailure::Overflow))?;
+        if next > i64::MAX as u64 {
+            return Err(failure(SqlAggregateFailure::Overflow));
+        }
+        self.count = next;
+        Ok(())
+    }
+
+    fn add_distinct_value(&mut self, value: ScalarValue) {
+        let value = match value {
+            ScalarValue::Dictionary(_, value) => *value,
+            value => value,
+        };
+        if !value.is_null() {
+            self.distinct_values.insert(value);
+        }
+    }
+
+    fn countable_rows(values: &[datafusion::arrow::array::ArrayRef]) -> usize {
+        let Some(first) = values.first() else {
+            return 0;
+        };
+        (0..first.len())
+            .filter(|index| values.iter().all(|value| value.is_valid(*index)))
+            .count()
+    }
+
+    fn distinct_state(&self) -> DataFusionResult<ScalarValue> {
+        let Some(input_type) = self.input_type.as_ref() else {
+            return Err(failure(SqlAggregateFailure::UnsupportedType));
+        };
+        let mut values = self.distinct_values.iter().cloned().collect::<Vec<_>>();
+        values.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(ScalarValue::List(ScalarValue::new_list(
+            &values, input_type, true,
+        )))
+    }
+
+    fn merge_distinct_state(&mut self, state: &dyn Array) -> DataFusionResult<()> {
+        let Some(list) = state.as_any().downcast_ref::<ListArray>() else {
+            return Err(failure(SqlAggregateFailure::UnsupportedType));
+        };
+        for row in 0..list.len() {
+            if list.is_null(row) {
+                continue;
+            }
+            let values = list.value(row);
+            for index in 0..values.len() {
+                self.add_distinct_value(ScalarValue::try_from_array(values.as_ref(), index)?);
+            }
+        }
+        Ok(())
+    }
+
+    fn result_count(&self) -> DataFusionResult<i64> {
+        let count = if self.distinct {
+            u64::try_from(self.distinct_values.len())
+                .map_err(|_| failure(SqlAggregateFailure::Overflow))?
+        } else {
+            self.count
+        };
+        i64::try_from(count).map_err(|_| failure(SqlAggregateFailure::Overflow))
+    }
+}
+
+impl Accumulator for CheckedCountAccumulator {
+    fn update_batch(
+        &mut self,
+        values: &[datafusion::arrow::array::ArrayRef],
+    ) -> DataFusionResult<()> {
+        if self.distinct {
+            if values.len() != 1 {
+                return Err(DataFusionError::NotImplemented(
+                    "COUNT DISTINCT with multiple arguments".into(),
+                ));
+            }
+            let array = &values[0];
+            for index in 0..array.len() {
+                self.add_distinct_value(ScalarValue::try_from_array(array.as_ref(), index)?);
+            }
+            return Ok(());
+        }
+        let count = u64::try_from(Self::countable_rows(values))
+            .map_err(|_| failure(SqlAggregateFailure::Overflow))?;
+        self.add_count(count)
+    }
+
+    fn evaluate(&mut self) -> DataFusionResult<ScalarValue> {
+        Ok(ScalarValue::Int64(Some(self.result_count()?)))
+    }
+
+    fn size(&self) -> usize {
+        std::mem::size_of_val(self) + ScalarValue::size_of_hashset(&self.distinct_values)
+            - std::mem::size_of_val(&self.distinct_values)
+    }
+
+    fn state(&mut self) -> DataFusionResult<Vec<ScalarValue>> {
+        if self.distinct {
+            return Ok(vec![self.distinct_state()?]);
+        }
+        Ok(vec![ScalarValue::UInt64(Some(self.count))])
+    }
+
+    fn merge_batch(
+        &mut self,
+        states: &[datafusion::arrow::array::ArrayRef],
+    ) -> DataFusionResult<()> {
+        if self.distinct {
+            let Some(state) = states.first() else {
+                return Ok(());
+            };
+            return self.merge_distinct_state(state.as_ref());
+        }
+        let Some(state) = states.first() else {
+            return Ok(());
+        };
+        if states.len() != 1 {
+            return Err(failure(SqlAggregateFailure::UnsupportedType));
+        }
+        for index in 0..state.len() {
+            match ScalarValue::try_from_array(state.as_ref(), index)? {
+                ScalarValue::UInt64(Some(count)) => self.add_count(count)?,
+                ScalarValue::UInt64(None) => {}
+                _ => return Err(failure(SqlAggregateFailure::UnsupportedType)),
+            }
+        }
+        Ok(())
+    }
+
+    fn retract_batch(
+        &mut self,
+        values: &[datafusion::arrow::array::ArrayRef],
+    ) -> DataFusionResult<()> {
+        if self.distinct {
+            return Err(DataFusionError::NotImplemented(
+                "COUNT DISTINCT does not support retracting rows".into(),
+            ));
+        }
+        let count = u64::try_from(Self::countable_rows(values))
+            .map_err(|_| failure(SqlAggregateFailure::Overflow))?;
+        self.count = self
+            .count
+            .checked_sub(count)
+            .ok_or_else(|| failure(SqlAggregateFailure::Overflow))?;
+        Ok(())
+    }
+
+    fn supports_retract_batch(&self) -> bool {
+        !self.distinct
+    }
+}
+
+fn count_distinct_value_type(data_type: &DataType) -> DataType {
+    match data_type {
+        DataType::Dictionary(_, value_type) => (**value_type).clone(),
+        data_type => data_type.clone(),
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -635,10 +893,12 @@ fn state_type(input_type: &DataType) -> DataType {
 #[cfg(test)]
 mod tests {
     use super::{
-        avg_result_type, sum_result_type, CheckedNumericAccumulator, NumericAggregate,
-        SqlAggregateFailure,
+        avg_result_type, sum_result_type, CheckedCountAccumulator, CheckedNumericAccumulator,
+        NumericAggregate, SqlAggregateFailure,
     };
-    use arrow_array::{ArrayRef, Decimal128Array, Decimal256Array, Float64Array, Int64Array};
+    use arrow_array::{
+        ArrayRef, Decimal128Array, Decimal256Array, Float64Array, Int64Array, UInt64Array,
+    };
     use arrow_buffer::i256;
     use datafusion::arrow::datatypes::DataType;
     use datafusion::common::ScalarValue;
@@ -679,6 +939,95 @@ mod tests {
             datafusion::common::DataFusionError::External(ref source)
                 if source.downcast_ref::<SqlAggregateFailure>() == Some(&SqlAggregateFailure::Overflow)
         ));
+    }
+
+    #[test]
+    fn checked_count_rejects_updates_outside_the_sql_int64_result_range() {
+        let mut accumulator = CheckedCountAccumulator::new(false, None);
+        accumulator.count = i64::MAX as u64;
+        let error = accumulator
+            .update_batch(&[Arc::new(Int64Array::from(vec![Some(1)]))])
+            .expect_err("COUNT cannot exceed its Int64 SQL result");
+        assert!(matches!(
+            error,
+            datafusion::common::DataFusionError::External(ref source)
+                if source.downcast_ref::<SqlAggregateFailure>() == Some(&SqlAggregateFailure::Overflow)
+        ));
+    }
+
+    #[test]
+    fn checked_count_rejects_partial_state_merge_outside_the_sql_int64_range() {
+        let mut accumulator = CheckedCountAccumulator::new(false, None);
+        accumulator.count = i64::MAX as u64;
+        let partial: ArrayRef = Arc::new(UInt64Array::from(vec![Some(1)]));
+        let error = accumulator
+            .merge_batch(&[partial])
+            .expect_err("merged COUNT cannot exceed its Int64 SQL result");
+        assert!(matches!(
+            error,
+            datafusion::common::DataFusionError::External(ref source)
+                if source.downcast_ref::<SqlAggregateFailure>() == Some(&SqlAggregateFailure::Overflow)
+        ));
+    }
+
+    #[test]
+    fn checked_count_merges_partial_states_and_requires_all_arguments_to_be_non_null() {
+        let mut left = CheckedCountAccumulator::new(false, None);
+        left.update_batch(&[
+            Arc::new(Int64Array::from(vec![Some(1), None, None])),
+            Arc::new(Int64Array::from(vec![Some(2), Some(3), None])),
+        ])
+        .expect("count rows when every argument is non-null");
+
+        let mut right = CheckedCountAccumulator::new(false, None);
+        right
+            .update_batch(&[Arc::new(Int64Array::from(vec![Some(3), Some(4)]))])
+            .expect("right values");
+
+        let mut merged = CheckedCountAccumulator::new(false, None);
+        for partial in [
+            left.state().expect("left state"),
+            right.state().expect("right state"),
+        ] {
+            let state = partial[0].to_array_of_size(1).expect("count state array");
+            merged.merge_batch(&[state]).expect("merge partial count");
+        }
+        assert_eq!(
+            merged.evaluate().expect("merged COUNT"),
+            ScalarValue::Int64(Some(3))
+        );
+    }
+
+    #[test]
+    fn checked_count_distinct_merges_states_and_ignores_nulls() {
+        let mut left = CheckedCountAccumulator::new(true, Some(DataType::Int64));
+        left.update_batch(&[Arc::new(Int64Array::from(vec![
+            Some(1),
+            Some(2),
+            Some(2),
+            None,
+        ]))])
+        .expect("left values");
+
+        let mut right = CheckedCountAccumulator::new(true, Some(DataType::Int64));
+        right
+            .update_batch(&[Arc::new(Int64Array::from(vec![Some(2), Some(3), None]))])
+            .expect("right values");
+
+        let mut merged = CheckedCountAccumulator::new(true, Some(DataType::Int64));
+        for partial in [
+            left.state().expect("left state"),
+            right.state().expect("right state"),
+        ] {
+            let state = partial[0]
+                .to_array_of_size(1)
+                .expect("distinct list state array");
+            merged.merge_batch(&[state]).expect("merge distinct state");
+        }
+        assert_eq!(
+            merged.evaluate().expect("merged COUNT DISTINCT"),
+            ScalarValue::Int64(Some(3))
+        );
     }
 
     #[test]
