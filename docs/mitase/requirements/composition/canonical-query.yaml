@@ -27,7 +27,7 @@ requirements:
       - id: used-field-verification
         role: verification
         facet: verification
-        responsibility: Verify the current EntryQuery source-schema fingerprint ignores unreferenced schema fields. Typed aggregate FieldId inclusion and full matching-set execution remain an explicit evidence gap until aggregate query execution lands.
+        responsibility: Verify the current EntryQuery source-schema fingerprint ignores unreferenced fields and includes unprojected typed aggregate fields; verify aggregates run against the complete current authorized text-and-filter matching set.
         targets:
           - id: case
             adapter: rust
@@ -39,6 +39,22 @@ requirements:
                 covers:
                   - FEAT-COMP-002#binding.entry-query-resolver/target.compile-entry-query-source
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::entry_query_fingerprint_ignores_unreferenced_schema_fields } }
+          - id: aggregate-matching-set-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_entry_query_traversal.rs
+            selector: { kind: test, name: authorized_aggregates_use_the_full_text_and_filter_matching_set }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+                covers:
+                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-entry-query
+                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.canonical-aggregate-matching-set
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry_query_traversal, test: authorized_aggregates_use_the_full_text_and_filter_matching_set } }
+              - kind: verifies
+                criterion: REQ-COMP-004#criterion.current-authorization
+                covers:
+                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-entry-query
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_entry_query_traversal, test: authorized_aggregates_use_the_full_text_and_filter_matching_set } }
       - id: saved-sql-revision-verification
         role: verification
         facet: verification
@@ -313,9 +329,9 @@ requirements:
           from the source schema and contributes even when it is absent from
           the table projection; it never changes that projection. Unrelated
           fields, labels, and other Composition document content are excluded
-          from this fingerprint. Typed aggregate current-schema fingerprinting
-          and full matching-set execution remain unverified until the aggregate
-          query execution slice lands.
+          from this fingerprint. Aggregate execution revalidates the current
+          Form field and operates over the full authorized matching set under
+          the canonical EntryQuery text and filter rules.
         governed_by: [POL-007#rule.governance]
       - id: exact-saved-sql-revision
         kind: behavior

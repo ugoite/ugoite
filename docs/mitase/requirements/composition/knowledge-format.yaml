@@ -88,9 +88,9 @@ requirements:
       - id: typed-metric-definition-validation
         role: verification
         facet: verification
-        responsibility: Verify count_rows, count_values, numeric sum/avg constraints, numeric/date/timestamp min/max, optional numeric presentation, projection-independent typed FieldIds, native/WASM canonical parity, CLI output, and Core fail-closed behavior until query execution is implemented.
+        responsibility: Verify typed definitions remain fail-closed until query dispatch is available, operation-specific aggregate result types, matching-set semantics, projection-independent aggregate FieldIds, and native/WASM canonical parity.
         targets:
-          - id: core-fail-closed-case
+          - id: typed-metric-fail-closed-case
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
             selector: { kind: symbol, name: tests::typed_metric_definitions_fail_closed_until_query_execution_is_available }
@@ -100,6 +100,36 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::typed_metric_definitions_fail_closed_until_query_execution_is_available } }
+          - id: matching-set-contract-case
+            adapter: rust
+            path: crates/ugoite-core/src/entry_query.rs
+            selector: { kind: symbol, name: tests::matching_set_preserves_scope_text_and_filters_but_drops_sort }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+                covers:
+                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.matching-set-contract
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: entry_query::tests::matching_set_preserves_scope_text_and_filters_but_drops_sort } }
+          - id: aggregate-source-fingerprint-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::aggregate_fields_stay_out_of_projection_and_enter_the_source_fingerprint }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+                covers:
+                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-source-fingerprint
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::aggregate_fields_stay_out_of_projection_and_enter_the_source_fingerprint } }
+          - id: domain-aggregate-result-type-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition_metric.rs
+            selector: { kind: symbol, name: tests::classifies_typed_aggregate_results_and_rejects_incompatible_fields }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+                covers:
+                  - FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-result-type
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition_metric::tests::classifies_typed_aggregate_results_and_rejects_incompatible_fields } }
           - id: cli-canonical-case
             adapter: rust
             path: crates/ugoite-cli/src/commands/composition.rs
@@ -834,8 +864,21 @@ requirements:
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: typed-metric-definition
         kind: behavior
-        statement: Composition v1 accepts typed EntryQuery aggregate definitions for count_rows, count_values, sum, avg, min, and max, and exact Saved SQL scalar columns, with strict operation-specific fields and optional display-only presentation. count_rows has no field_id; count_values counts non-NULL values, and the other field-based operations require a stable FieldId. sum and avg require numeric fields; min and max accept numeric, date, and timestamp fields, excluding time-only fields. Numeric presentation metadata is optional; date and timestamp min/max omit it and use type-based rendering. A typed aggregate FieldId is resolved from the source schema even when it is absent from the table projection; aggregate results use the full source matching set and are independent of table page size, page, sort, and display projection. The shared domain parser canonicalizes definitions, while Core execution remains fail-closed until its query implementation lands. Existing source plus value_field documents remain readable with unchanged meaning in the current v0.x series, and their retirement is reserved for a next-minor contract change without migration.
+        statement: Composition v1 accepts typed EntryQuery aggregate definitions for count_rows, count_values, sum, avg, min, and max, and exact Saved SQL scalar columns, with strict operation-specific fields and optional display-only presentation. count_rows has no field_id; count_values counts non-NULL values, and the other field-based operations require a stable FieldId. sum and avg require numeric fields; min and max accept numeric, date, and timestamp fields, excluding time-only fields. Numeric presentation metadata is optional; date and timestamp min/max omit it and use type-based rendering. A typed aggregate FieldId is resolved from the source schema even when it is absent from the table projection; aggregate results use the full source matching set and are independent of table page size, page, sort, and display projection. EntryQuery aggregates execute through the current authorized matching-set path; wiring those results into Composition query operations and executing exact Saved SQL scalar definitions remain separate runtime work. Existing source plus value_field documents remain readable with unchanged meaning in the current v0.x series, and their retirement is reserved for a next-minor contract change without migration.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: typed-entry-aggregate-execution
+        kind: behavior
+        statement: >-
+          A typed EntryQuery aggregate executes over the full matching set for
+          one current Form: canonical text and filters define membership, while
+          sort, cursor, page limit, and table projection do not. The aggregate
+          FieldId is validated against the current Form and remains part of
+          the source schema fingerprint even when it is not projected. The
+          executor reads the current publication and rebuilds current Space,
+          Form, and Entry authorization for each operation, executes the
+          aggregate within the closed authorized query context, and returns
+          only its scalar result.
+        governed_by: [POL-007#rule.governance, POL-011#rule.governance]
       - id: metric-runtime-values
         kind: behavior
         statement: >-

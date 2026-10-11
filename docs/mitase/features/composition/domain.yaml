@@ -40,6 +40,8 @@ features:
       - kind: documents
         anchor: REQ-COMP-002#criterion.metric-runtime-values
       - kind: documents
+        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+      - kind: documents
         anchor: REQ-COMP-002#criterion.ordered-component-layout
       - kind: documents
         anchor: REQ-COMP-002#criterion.used-field-schema-snapshot
@@ -409,8 +411,8 @@ features:
         criterion: REQ-COMP-002#criterion.typed-metric-definition
   - id: typed-metric-runtime-evidence
     role: evidence
-    facet: domain-tests
-    responsibility: Verify typed metrics fail closed until query execution lands; full matching-set execution and current-schema revalidation remain a follow-up evidence gap.
+    facet: core-tests
+    responsibility: Verify typed metric definitions remain fail-closed until the Composition metric-query operation dispatches aggregate and SQL scalar definitions.
     targets:
     - id: core-typed-metric-fail-closed
       adapter: rust

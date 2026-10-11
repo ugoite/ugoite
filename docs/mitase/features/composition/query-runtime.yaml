@@ -31,8 +31,7 @@ features:
   - id: entry-query-fingerprint-evidence
     role: evidence
     facet: core-tests
-    responsibility: Preserve focused evidence for excluding unrelated schema fields and matching the text-search
-      expansion defined by existing EntryQuery semantics.
+    responsibility: Preserve evidence that unused schema fields are excluded, text-search fields follow canonical EntryQuery semantics, and unprojected aggregate FieldIds enter the source fingerprint.
     targets:
     - id: ignores-unreferenced-fields
       adapter: rust
@@ -61,6 +60,17 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.used-field-fingerprint
+    - id: unprojected-aggregate-field
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: aggregate_fields_stay_out_of_projection_and_enter_the_source_fingerprint
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.used-field-fingerprint
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
   - id: entry-query-display-system-fields-evidence
     role: evidence
     facet: core-tests
@@ -370,6 +380,100 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.draft-preview
+  - id: entry-query-aggregate-runtime
+    role: implementation
+    facet: service
+    responsibility: Resolve operation-specific aggregate result types and execute each typed aggregate over the complete matching set of one current ACL-authorized Form publication through the canonical EntryQuery text and filter compiler.
+    targets:
+    - id: aggregate-result-type
+      adapter: rust
+      path: crates/ugoite-domain/src/composition_metric.rs
+      selector:
+        kind: symbol
+        name: composition_aggregate_result_type
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+    - id: matching-set-contract
+      adapter: rust
+      path: crates/ugoite-core/src/entry_query.rs
+      selector:
+        kind: symbol
+        name: EntryQuery::matching_set
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+    - id: aggregate-entry-query
+      adapter: rust
+      path: crates/ugoite-iceberg/src/service.rs
+      selector:
+        kind: symbol
+        name: aggregate_entries_authorized_for_principals
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+      - kind: satisfies
+        criterion: REQ-COMP-004#criterion.current-authorization
+    - id: canonical-aggregate-matching-set
+      adapter: rust
+      path: crates/ugoite-iceberg/src/index.rs
+      selector:
+        kind: symbol
+        name: aggregate_entry_query_at_checkpoint
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+    - id: aggregate-source-fingerprint
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: compile_entry_query_source_with_aggregate_fields
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+  - id: entry-query-aggregate-evidence
+    role: evidence
+    facet: iceberg-tests
+    responsibility: Verify full-set text and filter semantics, current Entry authorization, and typed count and numeric aggregate results.
+    targets:
+    - id: full-authorized-matching-set
+      adapter: rust
+      path: crates/ugoite-iceberg/tests/test_entry_query_traversal.rs
+      selector:
+        kind: test
+        name: authorized_aggregates_use_the_full_text_and_filter_matching_set
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+  - id: aggregate-result-type-evidence
+    role: evidence
+    facet: core-tests
+    responsibility: Verify aggregate result typing and operation-specific rejection of unsupported Form field types.
+    targets:
+    - id: operation-result-type
+      adapter: rust
+      path: crates/ugoite-domain/src/composition_metric.rs
+      selector:
+        kind: symbol
+        name: classifies_typed_aggregate_results_and_rejects_incompatible_fields
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
+  - id: entry-query-matching-set-evidence
+    role: evidence
+    facet: core-tests
+    responsibility: Verify aggregate matching sets retain EntryQuery scope, canonical text, and filters while excluding page sort.
+    targets:
+    - id: matching-set-semantics
+      adapter: rust
+      path: crates/ugoite-core/src/entry_query.rs
+      selector:
+        kind: symbol
+        name: matching_set_preserves_scope_text_and_filters_but_drops_sort
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-entry-aggregate-execution
   - id: metric-page-validation
     role: implementation
     facet: core
@@ -445,3 +549,20 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.typed-metric-value-field
+  contracts:
+  - id: typed-entry-aggregate-execution
+    kind: custom
+    source: FEAT-COMP-001#binding.contract/target.composition-contract
+    participants:
+    - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-result-type
+      role: domain
+    - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.matching-set-contract
+      role: core
+    - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-source-fingerprint
+      role: core
+    - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-entry-query
+      role: service
+    - target: FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.canonical-aggregate-matching-set
+      role: index
+    guarantees:
+    - REQ-COMP-002#criterion.typed-entry-aggregate-execution
