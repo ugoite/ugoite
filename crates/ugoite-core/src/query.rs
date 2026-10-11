@@ -103,10 +103,73 @@ pub struct QueryLimits {
     pub max_rows: usize,
     pub timeout: Duration,
     pub max_concurrency: usize,
-    /// Function names explicitly admitted by Core. Callers cannot provide
-    /// UDF implementations; a storage adapter may register a fixed,
-    /// internally-owned function only for an adapter-owned derived plan.
-    pub allowed_functions: BTreeSet<String>,
+    /// Functions explicitly admitted by Core, separated by DataFusion
+    /// function class so a name allowed in one class cannot enable another.
+    pub function_policy: SqlFunctionPolicy,
+}
+
+/// Core-owned allowlist for functions available to a bounded SQL context.
+///
+/// The names are static and the lists remain closed to each operation. A
+/// storage adapter may still register its own fixed UDF, but only when the
+/// matching scalar name is admitted by this policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqlFunctionPolicy {
+    scalar_functions: &'static [&'static str],
+    aggregate_functions: &'static [&'static str],
+    window_functions: &'static [&'static str],
+}
+
+impl SqlFunctionPolicy {
+    /// No SQL functions are available to user input in this context.
+    #[allow(non_upper_case_globals)]
+    pub const DenyAll: Self = Self {
+        scalar_functions: &[],
+        aggregate_functions: &[],
+        window_functions: &[],
+    };
+
+    /// Narrow read-only aggregate set for SQL inputs after numeric result
+    /// behavior has passed its safety gate. It deliberately admits no scalar
+    /// or window functions.
+    #[allow(non_upper_case_globals)]
+    pub const ReadOnlyAggregateV1: Self = Self {
+        scalar_functions: &[],
+        aggregate_functions: &["count", "sum", "avg", "min", "max"],
+        window_functions: &[],
+    };
+
+    /// Creates a policy for trusted Core-owned query shapes that require a
+    /// small, statically named subset from each function class.
+    pub const fn new(
+        scalar_functions: &'static [&'static str],
+        aggregate_functions: &'static [&'static str],
+        window_functions: &'static [&'static str],
+    ) -> Self {
+        Self {
+            scalar_functions,
+            aggregate_functions,
+            window_functions,
+        }
+    }
+
+    pub fn allows_scalar(self, name: &str) -> bool {
+        self.scalar_functions
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(name))
+    }
+
+    pub fn allows_aggregate(self, name: &str) -> bool {
+        self.aggregate_functions
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(name))
+    }
+
+    pub fn allows_window(self, name: &str) -> bool {
+        self.window_functions
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(name))
+    }
 }
 
 impl QueryLimits {
@@ -149,6 +212,22 @@ pub fn validate_keyword_query(query: &str) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_only_aggregate_policy_is_narrow_and_class_specific() {
+        let policy = SqlFunctionPolicy::ReadOnlyAggregateV1;
+        for function in ["COUNT", "SUM", "AVG", "MIN", "MAX"] {
+            assert!(policy.allows_aggregate(function));
+            assert!(!policy.allows_scalar(function));
+            assert!(!policy.allows_window(function));
+        }
+        for function in ["lower", "row_number", "approx_count_distinct"] {
+            assert!(!policy.allows_scalar(function));
+            assert!(!policy.allows_aggregate(function));
+            assert!(!policy.allows_window(function));
+        }
+        assert!(!SqlFunctionPolicy::DenyAll.allows_aggregate("count"));
+    }
 
     #[test]
     fn empty_and_whitespace_queries_are_rejected_before_search() {

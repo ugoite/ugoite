@@ -134,6 +134,27 @@ features:
         facet: service
         responsibility: Resolve and execute authorized SQL and revision-bound Saved SQL through the shared Iceberg service.
         targets:
+          - id: core-function-policy
+            adapter: rust
+            path: crates/ugoite-core/src/query.rs
+            selector: { kind: symbol, name: SqlFunctionPolicy }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.function-class-policy
+          - id: function-registration
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: bounded_session_context }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.function-class-policy
+          - id: function-policy-validation
+            adapter: rust
+            path: crates/ugoite-iceberg/src/query_context.rs
+            selector: { kind: symbol, name: validate_sql_function_policy }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.function-class-policy
           - id: query-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs
@@ -149,6 +170,8 @@ features:
                 criterion: REQ-API-018#criterion.legacy-saved-sql-preservation
               - kind: satisfies
                 criterion: REQ-API-015#criterion.typed-result-schema
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.function-class-policy
           - id: result-schema-mapping
             adapter: rust
             path: crates/ugoite-iceberg/src/query_context.rs
@@ -163,6 +186,8 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-018#criterion.current-form-authorization
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.function-class-policy
       - id: space-service-implementation
         role: implementation
         facet: service

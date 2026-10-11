@@ -10,6 +10,7 @@ use uuid::Uuid;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
+    SqlFunctionPolicy,
 };
 pub use ugoite_domain::entry::AssetReference;
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
@@ -410,7 +411,7 @@ pub async fn current_asset_reference_exists_in_workspace(
                 max_rows: 1,
                 timeout: std::time::Duration::from_secs(30),
                 max_concurrency: 1,
-                allowed_functions: BTreeSet::new(),
+                function_policy: SqlFunctionPolicy::DenyAll,
             },
         })
         .await?;

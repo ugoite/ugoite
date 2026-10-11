@@ -4,6 +4,7 @@ use std::time::Duration;
 use arrow_array::{Int64Array, StringArray};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
+    SqlFunctionPolicy,
 };
 use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
@@ -218,7 +219,7 @@ fn policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQueryPolicy {
             max_rows: 10,
             timeout: Duration::from_secs(5),
             max_concurrency: 1,
-            allowed_functions: BTreeSet::new(),
+            function_policy: SqlFunctionPolicy::DenyAll,
         },
     }
 }
@@ -374,10 +375,7 @@ async fn count_aggregates_only_authorized_current_entries() -> anyhow::Result<()
     append(&workspace, &tasks, 8, 9, "hidden").await?;
 
     let mut authorized_policy = policy(&tasks, &[6]);
-    authorized_policy
-        .limits
-        .allowed_functions
-        .insert("count".into());
+    authorized_policy.limits.function_policy = SqlFunctionPolicy::new(&[], &["count"], &[]);
     let context = workspace
         .authorized_query_context(authorized_policy)
         .await?;
@@ -1011,7 +1009,7 @@ async fn context_releases_concurrency_permits_after_errors() -> anyhow::Result<(
     }
     let mut busy_policy = policy(&tasks, &(52..63).collect::<Vec<_>>());
     busy_policy.limits.timeout = Duration::from_millis(50);
-    busy_policy.limits.allowed_functions.insert("count".into());
+    busy_policy.limits.function_policy = SqlFunctionPolicy::new(&[], &["count"], &[]);
     let busy = std::sync::Arc::new(workspace.authorized_query_context(busy_policy).await?);
     let running = busy.clone();
     let task = tokio::spawn(async move {

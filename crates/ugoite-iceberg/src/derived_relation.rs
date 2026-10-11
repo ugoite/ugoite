@@ -36,7 +36,7 @@ use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::io::{Cursor, Read, Seek};
 use std::str::FromStr;
@@ -3837,9 +3837,11 @@ pub async fn asset_text_search_matches(
             max_rows: MAX_ASSET_TEXT_MATCHES.saturating_add(1),
             timeout: Duration::from_secs(30),
             max_concurrency: 1,
-            allowed_functions: BTreeSet::from([
-                crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
-            ]),
+            function_policy: ugoite_core::query::SqlFunctionPolicy::new(
+                &[crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME],
+                &[],
+                &[],
+            ),
         })?;
     if !register_asset_text_table(&context, op, ws_path, "__ugoite_internal_asset_text").await? {
         return Ok(None);

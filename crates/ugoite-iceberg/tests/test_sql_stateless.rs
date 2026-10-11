@@ -1019,6 +1019,48 @@ async fn stateless_explicit_count_matches_full_result() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn stateless_user_aggregate_functions_stay_closed_from_internal_count() -> Result<()> {
+    let space = setup_sql_space("memory://sql-stateless-function-policy", "sqlfunctions").await?;
+    let aggregate_sql = format!("SELECT COUNT(*) FROM \"{}\"", space.form_name);
+
+    assert!(space
+        .service
+        .query_sql(&space.space_id, query_request(aggregate_sql.clone(), 10))
+        .await
+        .is_err());
+    assert!(space
+        .service
+        .count_sql(
+            &space.space_id,
+            SqlQueryCountRequest {
+                sql: aggregate_sql,
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                saved_sql: None,
+            },
+        )
+        .await
+        .is_err());
+
+    // The separate count operation's trusted COUNT expression remains
+    // available for ordinary user SQL that contains no aggregate function.
+    let count = space
+        .service
+        .count_sql(
+            &space.space_id,
+            SqlQueryCountRequest {
+                sql: base_sql(&space),
+                parameters: Map::new(),
+                parameter_types: BTreeMap::new(),
+                saved_sql: None,
+            },
+        )
+        .await?;
+    assert_eq!(count, 5);
+    Ok(())
+}
+
 /// Parameters bind as typed values: declared `string` filters, inferred
 /// `long` numbers bind (Form-type alias for `int64`), and a declared typed
 /// null binds without string substitution.

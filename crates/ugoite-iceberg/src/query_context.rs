@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
-use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
+use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn, SqlFunctionPolicy};
 use ugoite_core::sql_query::{
     SqlResultColumn, SqlResultColumnType, MAX_SQL_COLUMN_METADATA_BYTES, MAX_SQL_COLUMN_NAME_BYTES,
     MAX_SQL_OUTPUT_COLUMNS,
@@ -230,26 +230,22 @@ pub(crate) fn bounded_session_context(
         .with_memory_pool(Arc::new(GreedyMemoryPool::new(limits.max_memory_bytes)))
         .build_arc()
         .context("configure bounded DataFusion runtime")?;
-    let allowed_functions = &limits.allowed_functions;
+    let function_policy = limits.function_policy;
     let state = SessionStateBuilder::new()
         .with_config(config)
         .with_runtime_env(runtime)
         .with_expr_planners(SessionStateDefaults::default_expr_planners())
-        .with_scalar_functions(allowed_scalar_functions(allowed_functions))
+        .with_scalar_functions(allowed_scalar_functions(function_policy))
         .with_aggregate_functions(
             SessionStateDefaults::default_aggregate_functions()
                 .into_iter()
-                .filter(|function| {
-                    allowed_functions.contains(&function.name().to_ascii_lowercase())
-                })
+                .filter(|function| function_policy.allows_aggregate(function.name()))
                 .collect(),
         )
         .with_window_functions(
             SessionStateDefaults::default_window_functions()
                 .into_iter()
-                .filter(|function| {
-                    allowed_functions.contains(&function.name().to_ascii_lowercase())
-                })
+                .filter(|function| function_policy.allows_window(function.name()))
                 .collect(),
         )
         .with_table_function_list(Vec::new())
@@ -257,12 +253,12 @@ pub(crate) fn bounded_session_context(
     Ok(SessionContext::new_with_state(state))
 }
 
-fn allowed_scalar_functions(allowed_functions: &BTreeSet<String>) -> Vec<Arc<ScalarUDF>> {
+fn allowed_scalar_functions(function_policy: SqlFunctionPolicy) -> Vec<Arc<ScalarUDF>> {
     let mut functions = SessionStateDefaults::default_scalar_functions()
         .into_iter()
-        .filter(|function| allowed_functions.contains(&function.name().to_ascii_lowercase()))
+        .filter(|function| function_policy.allows_scalar(function.name()))
         .collect::<Vec<_>>();
-    if allowed_functions.contains(crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME) {
+    if function_policy.allows_scalar(crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME) {
         functions.push(crate::search_normalization::search_normalize_udf());
     }
     functions
@@ -1242,8 +1238,10 @@ impl AuthorizedQueryContext {
     #[doc(hidden)]
     pub async fn physical_plan_for_testing(&self, sql: &str) -> Result<String> {
         let plan = self.context.state().create_logical_plan(sql).await?;
+        validate_sql_function_policy(&plan, self.limits.function_policy)?;
         validate_logical_plan(&plan, &self.authorized_relations)?;
         let optimized = self.context.state().optimize(&plan)?;
+        validate_sql_function_policy(&optimized, self.limits.function_policy)?;
         validate_logical_plan(&optimized, &self.authorized_relations)?;
         let frame = self.context.execute_logical_plan(optimized).await?;
         let physical = frame.create_physical_plan().await?;
@@ -1371,6 +1369,8 @@ impl AuthorizedQueryContext {
             .state()
             .optimize(&plan)
             .map_err(AuthorizedQueryError::invalid_query)?;
+        validate_sql_function_policy(&optimized, self.limits.function_policy)
+            .map_err(AuthorizedQueryError::unauthorized)?;
         validate_logical_plan(&optimized, &self.authorized_relations)
             .map_err(AuthorizedQueryError::unauthorized)?;
         Ok(optimized)
@@ -1404,6 +1404,8 @@ impl AuthorizedQueryContext {
         let plan = plan
             .with_param_values(parameters)
             .map_err(AuthorizedQueryError::invalid_query)?;
+        validate_sql_function_policy(&plan, self.limits.function_policy)
+            .map_err(AuthorizedQueryError::unauthorized)?;
         validate_logical_plan(&plan, &self.authorized_relations)
             .map_err(AuthorizedQueryError::unauthorized)?;
         Ok(plan)
@@ -1952,6 +1954,28 @@ fn validate_logical_plan(
     Ok(())
 }
 
+fn validate_sql_function_policy(
+    plan: &LogicalPlan,
+    function_policy: SqlFunctionPolicy,
+) -> Result<()> {
+    if let LogicalPlan::Window(window) = plan {
+        for expression in &window.window_expr {
+            if let Expr::WindowFunction(function) = expression {
+                if !function_policy.allows_window(function.fun.name()) {
+                    bail!(
+                        "SQL window function {} is not admitted by the Core function policy",
+                        function.fun.name()
+                    );
+                }
+            }
+        }
+    }
+    for input in plan.inputs() {
+        validate_sql_function_policy(input, function_policy)?;
+    }
+    Ok(())
+}
+
 fn validate_physical_plan(
     plan: &Arc<dyn ExecutionPlan>,
     authorized_scans: &BTreeSet<AuthorizedScan>,
@@ -2176,5 +2200,76 @@ mod form_name_resolution_tests {
         assert!(is_legacy_relation_name(&format!("form_{}", "a".repeat(32))));
         assert!(is_legacy_relation_name(&format!("FORM_{}", "A".repeat(32))));
         assert!(!is_legacy_relation_name("form_not-a-uuid"));
+    }
+}
+
+#[cfg(test)]
+mod function_policy_tests {
+    use super::bounded_session_context;
+    use std::time::Duration;
+    use ugoite_core::query::{QueryLimits, SqlFunctionPolicy};
+
+    fn limits(function_policy: SqlFunctionPolicy) -> QueryLimits {
+        QueryLimits {
+            max_memory_bytes: 64 * 1024 * 1024,
+            max_rows: 1_000,
+            timeout: Duration::from_secs(30),
+            max_concurrency: 1,
+            function_policy,
+        }
+    }
+
+    #[tokio::test]
+    async fn read_only_aggregate_policy_registers_only_aggregate_functions() {
+        let context = bounded_session_context(&limits(SqlFunctionPolicy::ReadOnlyAggregateV1))
+            .expect("bounded DataFusion context should be created");
+
+        for sql in [
+            "SELECT COUNT(*)",
+            "SELECT SUM(1)",
+            "SELECT AVG(1)",
+            "SELECT MIN(1)",
+            "SELECT MAX(1)",
+        ] {
+            let plan = context
+                .state()
+                .create_logical_plan(sql)
+                .await
+                .unwrap_or_else(|error| panic!("aggregate policy rejected {sql}: {error}"));
+            super::validate_sql_function_policy(&plan, SqlFunctionPolicy::ReadOnlyAggregateV1)
+                .unwrap_or_else(|error| panic!("aggregate policy rejected {sql}: {error}"));
+        }
+
+        for sql in ["SELECT LOWER('value')", "SELECT ROW_NUMBER() OVER ()"] {
+            assert!(
+                context.state().create_logical_plan(sql).await.is_err(),
+                "aggregate policy unexpectedly admitted {sql}"
+            );
+        }
+
+        let aggregate_window = context
+            .state()
+            .create_logical_plan("SELECT COUNT(1) OVER ()")
+            .await
+            .expect("DataFusion resolves an admitted aggregate used with OVER");
+        assert!(
+            super::validate_sql_function_policy(
+                &aggregate_window,
+                SqlFunctionPolicy::ReadOnlyAggregateV1
+            )
+            .is_err(),
+            "an admitted aggregate must not become a window function by using OVER"
+        );
+    }
+
+    #[tokio::test]
+    async fn deny_all_policy_keeps_user_aggregates_unavailable() {
+        let context = bounded_session_context(&limits(SqlFunctionPolicy::DenyAll))
+            .expect("bounded DataFusion context should be created");
+        assert!(context
+            .state()
+            .create_logical_plan("SELECT COUNT(*)")
+            .await
+            .is_err());
     }
 }

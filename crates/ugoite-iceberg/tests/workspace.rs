@@ -5,6 +5,7 @@ use std::time::Duration;
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
+    SqlFunctionPolicy,
 };
 use ugoite_domain::change::ChangeCommand;
 use ugoite_domain::entry::{
@@ -998,7 +999,7 @@ async fn sql_relation_and_saved_query_survive_form_rename() -> anyhow::Result<()
                 max_rows: 10,
                 timeout: Duration::from_secs(5),
                 max_concurrency: 1,
-                allowed_functions: Default::default(),
+                function_policy: SqlFunctionPolicy::DenyAll,
             },
         })
         .await?;

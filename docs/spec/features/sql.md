@@ -28,8 +28,12 @@ names in Saved SQL diagnostics.
 SQL accepts exactly one read-only `SELECT` statement. The authorized query
 context exposes only permitted Form relations, columns, and functions, and
 executes through the fixed Space publication selected for the request chain.
-Parameters use DataFusion's native `$name` syntax and are bound as typed
-scalars before planning; parameter text is never substituted into SQL.
+Core-owned SQL function policies admit scalar, aggregate, and window functions
+independently. The stateless page and count inputs currently keep user-authored
+aggregate functions closed; the explicit count operation applies its trusted
+row-count expression to the authorized query plan separately. Parameters use
+DataFusion's native `$name` syntax and are bound as typed scalars before
+planning; parameter text is never substituted into SQL.
 
 `sql.query` returns one bounded page and an opaque continuation when a
 deterministic `ORDER BY` allows pagination. The continuation carries the fixed
