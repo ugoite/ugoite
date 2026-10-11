@@ -24,12 +24,6 @@ const { formListMock, sqlListMock, sqlGetMock, sqlQueryMock } = vi.hoisted(
   }),
 );
 
-vi.mock("~/lib/composition-api", async (importOriginal) => ({
-  ...await importOriginal<typeof import("~/lib/composition-api")>(),
-  canCreateSavedSqlComposition: (entry: { kind: string }) =>
-    entry.kind === "user-query",
-}));
-
 vi.mock("~/lib/ugoite-client", () => ({
   formApi: {
     list: (...args: unknown[]) =>
