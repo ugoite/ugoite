@@ -152,6 +152,9 @@ pub fn evaluate_composition_metric_page(
         CompositionResultFieldType::Boolean => value.is_boolean(),
         CompositionResultFieldType::Integer => value.as_i64().is_some(),
         CompositionResultFieldType::Float => value.as_f64().is_some_and(f64::is_finite),
+        CompositionResultFieldType::Decimal => value
+            .as_str()
+            .is_some_and(is_normalized_composition_metric_decimal),
         CompositionResultFieldType::Date => value
             .as_str()
             .is_some_and(is_normalized_composition_metric_date),
@@ -174,6 +177,33 @@ fn is_normalized_composition_metric_date(value: &str) -> bool {
         return false;
     };
     parsed.format("%Y-%m-%d").to_string() == value
+}
+
+/// Accept exact decimal values as plain JSON strings, preserving fractional
+/// scale without passing through a binary floating-point representation.
+fn is_normalized_composition_metric_decimal(value: &str) -> bool {
+    let (negative, unsigned) = match value.strip_prefix('-') {
+        Some(unsigned) => (true, unsigned),
+        None => (false, value),
+    };
+    let mut parts = unsigned.split('.');
+    let integer = parts.next().unwrap_or_default();
+    let fraction = parts.next();
+    if parts.next().is_some()
+        || integer.is_empty()
+        || !integer.bytes().all(|byte| byte.is_ascii_digit())
+        || (integer.len() > 1 && integer.starts_with('0'))
+    {
+        return false;
+    }
+    if let Some(fraction) = fraction {
+        if fraction.is_empty() || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+            return false;
+        }
+    }
+    let is_zero =
+        integer == "0" && fraction.is_none_or(|fraction| fraction.bytes().all(|b| b == b'0'));
+    !(negative && is_zero)
 }
 
 /// Accept normalized wall-clock timestamps and RFC 3339 timestamps with an
@@ -278,6 +308,7 @@ mod tests {
             CompositionResultFieldType::Boolean,
             CompositionResultFieldType::Integer,
             CompositionResultFieldType::Float,
+            CompositionResultFieldType::Decimal,
             CompositionResultFieldType::Date,
             CompositionResultFieldType::Timestamp,
         ] {
@@ -296,6 +327,7 @@ mod tests {
             (CompositionResultFieldType::Boolean, json!(true)),
             (CompositionResultFieldType::Integer, json!(42)),
             (CompositionResultFieldType::Float, json!(42.5)),
+            (CompositionResultFieldType::Decimal, json!("12.3400")),
             (CompositionResultFieldType::Date, json!("2026-10-03")),
             (
                 CompositionResultFieldType::Timestamp,
@@ -306,6 +338,31 @@ mod tests {
         for (expected_type, value) in cases {
             assert_eq!(evaluate_page(expected_type, &value), Ok(value));
         }
+    }
+
+    #[test]
+    fn validates_exact_decimal_metric_strings_without_losing_scale() {
+        for value in ["0", "0.00", "12.3400", "-12.34", "999999999999999999999999"] {
+            let value = json!(value);
+            assert_eq!(
+                evaluate_page(CompositionResultFieldType::Decimal, &value),
+                Ok(value)
+            );
+        }
+
+        for value in [
+            "", "-", "+1.2", "01.2", "-01", ".5", "1.", "1e3", "1.2.3", "-0", "-0.0000",
+        ] {
+            assert_eq!(
+                evaluate_page(CompositionResultFieldType::Decimal, &json!(value)),
+                Err(Code::MetricResultTypeMismatch),
+                "accepted noncanonical decimal {value:?}"
+            );
+        }
+        assert_eq!(
+            evaluate_page(CompositionResultFieldType::Decimal, &json!(12.34)),
+            Err(Code::MetricResultTypeMismatch)
+        );
     }
 
     #[test]

@@ -1,0 +1,104 @@
+format: ugoite.composition
+format_version: 1
+kind: dashboard
+name: Typed metric definitions
+tags: []
+spec:
+  sources:
+    - kind: entry_query
+      id: expense_rows
+      form_id: 00000000-0000-7000-8000-000000000010
+      field_schema:
+        - field_id: 100
+          field_type: string
+        - field_id: 102
+          field_type: double
+        - field_id: 103
+          field_type: string
+        - field_id: 104
+          field_type: date
+        - field_id: 105
+          field_type: timestamp
+      query:
+        page_limit: 100
+        projection:
+          kind: fields
+          fields:
+            - 100
+    - kind: saved_sql
+      id: monthly_total
+      entry_id: 00000000-0000-7000-8000-000000000020
+      revision_id: 00000000-0000-7000-8000-000000000021
+      expected_result:
+        - name: total
+          type: decimal
+  components:
+    - kind: metric
+      id: expense_count
+      definition:
+        kind: aggregate
+        source: expense_rows
+        operation: count_rows
+      presentation:
+        kind: number
+        unit: 件
+        fraction_digits: 0
+    - kind: metric
+      id: expense_sum
+      definition:
+        kind: aggregate
+        source: expense_rows
+        operation: sum
+        field_id: 102
+      presentation:
+        kind: number
+        unit: 円
+        fraction_digits: 0
+    - kind: metric
+      id: expense_values
+      definition:
+        kind: aggregate
+        source: expense_rows
+        operation: count_values
+        field_id: 103
+      presentation:
+        kind: number
+        unit: 件
+        fraction_digits: 0
+    - kind: metric
+      id: earliest_expense
+      definition:
+        kind: aggregate
+        source: expense_rows
+        operation: min
+        field_id: 104
+    - kind: metric
+      id: latest_expense
+      definition:
+        kind: aggregate
+        source: expense_rows
+        operation: max
+        field_id: 105
+    - kind: metric
+      id: total
+      definition:
+        kind: sql_scalar
+        source: monthly_total
+        column: total
+  layout:
+    kind: flow
+    rows:
+      - id: main
+        items:
+          - kind: component
+            component: expense_count
+          - kind: component
+            component: expense_sum
+          - kind: component
+            component: expense_values
+          - kind: component
+            component: earliest_expense
+          - kind: component
+            component: latest_expense
+          - kind: component
+            component: total

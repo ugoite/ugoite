@@ -36,6 +36,8 @@ features:
       - kind: documents
         anchor: REQ-COMP-002#criterion.typed-metric-value-field
       - kind: documents
+        anchor: REQ-COMP-002#criterion.typed-metric-definition
+      - kind: documents
         anchor: REQ-COMP-002#criterion.metric-runtime-values
       - kind: documents
         anchor: REQ-COMP-002#criterion.ordered-component-layout
@@ -78,6 +80,11 @@ features:
     - id: metric-value-fields-fixture
       adapter: declared
       path: crates/ugoite-domain/tests/fixtures/composition/metric-value-fields.ugcomp.yaml
+      selector:
+        kind: file
+    - id: typed-metric-definitions-fixture
+      adapter: declared
+      path: crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml
       selector:
         kind: file
   - id: portable-envelope-domain
@@ -372,10 +379,52 @@ features:
       claims:
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.typed-metric-value-field
+  - id: entry-query-field-schema-domain
+    role: implementation
+    facet: domain
+    responsibility: Carry FieldId and type snapshots for query-used properties and typed aggregate fields, including aggregate fields outside the table projection.
+    targets:
+    - id: field-schema-snapshot-entry
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: CompositionFieldSchemaEntry
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.used-field-schema-snapshot
+  - id: typed-metric-definition-domain
+    role: implementation
+    facet: domain
+    responsibility: Represent count_rows, count_values, sum/avg numeric aggregates, min/max numeric/date/timestamp aggregates, and exact SQL scalar metric definitions as strict typed Composition values. Numeric presentation is optional display metadata; date/timestamp min/max omit it, and time-only fields are unsupported. Typed aggregate fields bind through source field_schema independently of table projection.
+    targets:
+    - id: metric-definition-type
+      adapter: rust
+      path: crates/ugoite-domain/src/composition.rs
+      selector:
+        kind: symbol
+        name: CompositionMetricDefinition
+      claims:
+      - kind: satisfies
+        criterion: REQ-COMP-002#criterion.typed-metric-definition
+  - id: typed-metric-runtime-evidence
+    role: evidence
+    facet: domain-tests
+    responsibility: Verify typed metrics fail closed until query execution lands; full matching-set execution and current-schema revalidation remain a follow-up evidence gap.
+    targets:
+    - id: core-typed-metric-fail-closed
+      adapter: rust
+      path: crates/ugoite-core/src/composition.rs
+      selector:
+        kind: symbol
+        name: tests::typed_metric_definitions_fail_closed_until_query_execution_is_available
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.typed-metric-definition
   - id: metric-runtime-value-domain
     role: implementation
     facet: domain
-    responsibility: Validate selected date and timestamp metric values with the shared Rust domain semantics.
+    responsibility: Validate selected scalar metric values, including exact decimal strings and date/time formats, with the shared Rust domain semantics.
     targets:
     - id: metric-runtime-value-validator
       adapter: rust
@@ -389,8 +438,8 @@ features:
   - id: metric-runtime-value-evidence
     role: evidence
     facet: domain-tests
-    responsibility: Verify accepted normalized date/time values and stable rejection of invalid calendar,
-      clock, precision, and offset forms.
+    responsibility: Verify exact Decimal values preserve fractional scale and accepted normalized date/time values,
+      with stable rejection of invalid decimal, calendar, clock, precision, and offset forms.
     targets:
     - id: accepted-metric-date-time-values
       adapter: rust
@@ -407,6 +456,15 @@ features:
       selector:
         kind: symbol
         name: rejects_malformed_or_non_normalized_composition_metric_dates_and_timestamps
+      claims:
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: exact-decimal-metric-values
+      adapter: rust
+      path: crates/ugoite-domain/src/composition_metric.rs
+      selector:
+        kind: symbol
+        name: tests::validates_exact_decimal_metric_strings_without_losing_scale
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.metric-runtime-values

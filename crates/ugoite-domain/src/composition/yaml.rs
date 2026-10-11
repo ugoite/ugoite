@@ -111,8 +111,9 @@ mod tests {
         MAX_COMPOSITION_YAML_BYTES, MAX_COMPOSITION_YAML_DEPTH,
     };
     use crate::composition::{
-        CompositionDiagnosticCode, CompositionLiteral, CompositionSource, CompositionValue,
-        DEFAULT_COMPOSITION_PAGE_LIMIT,
+        CompositionAggregateOperation, CompositionDiagnosticCode, CompositionLiteral,
+        CompositionMetricDefinition, CompositionMetricPresentation, CompositionSource,
+        CompositionValue, DEFAULT_COMPOSITION_PAGE_LIMIT,
     };
     use serde_saphyr::DuplicateKeyPolicy;
     use std::cell::RefCell;
@@ -121,6 +122,10 @@ mod tests {
 
     const MONTHLY_EXPENSE: &str =
         include_str!("../../tests/fixtures/composition/monthly-expense.ugcomp.yaml");
+    const METRIC_VALUE_FIELDS: &str =
+        include_str!("../../tests/fixtures/composition/metric-value-fields.ugcomp.yaml");
+    const TYPED_METRIC_DEFINITIONS: &str =
+        include_str!("../../tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml");
 
     #[test]
     fn parses_the_shared_monthly_expense_fixture() {
@@ -188,7 +193,7 @@ mod tests {
             parse_composition_yaml(&empty_name),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
-        let unsupported_type = MONTHLY_EXPENSE.replace("type: float", "type: decimal");
+        let unsupported_type = MONTHLY_EXPENSE.replace("type: float", "type: decimal128");
         assert_eq!(
             parse_composition_yaml(&unsupported_type),
             Err(CompositionDiagnosticCode::InvalidComposition)
@@ -224,6 +229,184 @@ mod tests {
                 parse_composition_yaml(&input),
                 Err(CompositionDiagnosticCode::InvalidComposition),
                 "accepted invalid metric value field shape: {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn parses_typed_metric_definitions_and_keeps_existing_scalar_documents_readable() {
+        let parsed = parse_composition_yaml(TYPED_METRIC_DEFINITIONS).unwrap();
+        let sum_without_number_presentation = TYPED_METRIC_DEFINITIONS.replace(
+            "      presentation:\n        kind: number\n        unit: 円\n        fraction_digits: 0\n    - id: expense_values",
+            "    - id: expense_values",
+        );
+        assert!(parse_composition_yaml(&sum_without_number_presentation).is_ok());
+        let numeric_min_without_presentation = TYPED_METRIC_DEFINITIONS.replace(
+            "operation: min\n        field_id: 104",
+            "operation: min\n        field_id: 102",
+        );
+        assert!(parse_composition_yaml(&numeric_min_without_presentation).is_ok());
+        assert!(matches!(
+            &parsed.spec.components[0],
+            crate::composition::CompositionComponent::Metric {
+                definition: Some(CompositionMetricDefinition::Aggregate {
+                    operation: CompositionAggregateOperation::CountRows,
+                    field_id: None,
+                    ..
+                }),
+                presentation: Some(CompositionMetricPresentation::Number { .. }),
+                ..
+            }
+        ));
+        assert!(matches!(
+            &parsed.spec.components[1],
+            crate::composition::CompositionComponent::Metric {
+                definition: Some(CompositionMetricDefinition::Aggregate {
+                    operation: CompositionAggregateOperation::Sum,
+                    field_id: Some(field_id),
+                    ..
+                }),
+                ..
+            } if field_id.get() == 102
+        ));
+        assert!(matches!(
+            &parsed.spec.components[2],
+            crate::composition::CompositionComponent::Metric {
+                definition: Some(CompositionMetricDefinition::Aggregate {
+                    operation: CompositionAggregateOperation::CountValues,
+                    field_id: Some(field_id),
+                    ..
+                }),
+                ..
+            } if field_id.get() == 103
+        ));
+        assert!(matches!(
+            &parsed.spec.components[3],
+            crate::composition::CompositionComponent::Metric {
+                definition: Some(CompositionMetricDefinition::Aggregate {
+                    operation: CompositionAggregateOperation::Min,
+                    field_id: Some(field_id),
+                    ..
+                }),
+                presentation: None,
+                ..
+            } if field_id.get() == 104
+        ));
+        assert!(matches!(
+            &parsed.spec.components[4],
+            crate::composition::CompositionComponent::Metric {
+                definition: Some(CompositionMetricDefinition::Aggregate {
+                    operation: CompositionAggregateOperation::Max,
+                    field_id: Some(field_id),
+                    ..
+                }),
+                presentation: None,
+                ..
+            } if field_id.get() == 105
+        ));
+        assert!(matches!(
+            &parsed.spec.components[5],
+            crate::composition::CompositionComponent::Metric {
+                definition: Some(CompositionMetricDefinition::SqlScalar { column, .. }),
+                presentation: None,
+                ..
+            } if column == "total"
+        ));
+
+        // The old exact-scalar shape remains readable in the current v0.x
+        // series until its next-minor retirement.
+        let old_document = parse_composition_yaml(METRIC_VALUE_FIELDS).unwrap();
+        assert!(matches!(
+            &old_document.spec.components[0],
+            crate::composition::CompositionComponent::Metric {
+                source: Some(source),
+                value_field: Some(_),
+                definition: None,
+                presentation: None,
+                ..
+            } if source == "expense_rows"
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_typed_metric_definition_shapes() {
+        let invalid = [
+            TYPED_METRIC_DEFINITIONS.replace("operation: count_rows", "operation: median"),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "operation: count_values\n        field_id: 103",
+                "operation: count_values",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "operation: count_values\n        field_id: 103",
+                "operation: count_rows\n        field_id: 103",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "operation: count_rows\n      presentation:",
+                "operation: count_rows\n        field_id: 102\n      presentation:",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "operation: sum\n        field_id: 102",
+                "operation: sum",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "operation: sum\n        field_id: 102",
+                "operation: sum\n        field_id: 104",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "operation: sum\n        field_id: 102",
+                "operation: sum\n        field_id: 102\n        unsupported: true",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "source: expense_rows\n        operation: sum",
+                "source: monthly_total\n        operation: sum",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "field_id: 102\n          field_type: double",
+                "field_id: 102\n          field_type: date",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "kind: sql_scalar\n        source: monthly_total",
+                "kind: sql_scalar\n        source: expense_rows",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace("column: total", "column: missing"),
+            TYPED_METRIC_DEFINITIONS.replace("type: decimal", "type: json"),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "        fraction_digits: 0\n    - id: expense_sum",
+                "        fraction_digits: 0\n        format: currency\n    - id: expense_sum",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "      definition:\n        kind: sql_scalar",
+                "      source: monthly_total\n      value_field:\n        kind: sql_column\n        name: total\n      definition:\n        kind: sql_scalar",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "        field_id: 104\n    - id: latest_expense",
+                "        field_id: 104\n      presentation:\n        kind: number\n    - id: latest_expense",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "operation: min\n        field_id: 104",
+                "operation: min\n        field_id: 103",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "field_id: 104\n          field_type: date",
+                "field_id: 104\n          field_type: time",
+            ),
+            TYPED_METRIC_DEFINITIONS.replace(
+                "field_id: 105\n          field_type: timestamp",
+                "field_id: 105\n          field_type: time",
+            ),
+            TYPED_METRIC_DEFINITIONS
+                .replace(
+                    "        column: total\n  layout:",
+                    "        column: total\n      presentation:\n        kind: number\n  layout:",
+                )
+                .replace("type: decimal", "type: date"),
+        ];
+
+        for input in invalid {
+            assert_eq!(
+                parse_composition_yaml(&input),
+                Err(CompositionDiagnosticCode::InvalidComposition),
+                "accepted invalid typed metric definition: {input}"
             );
         }
     }

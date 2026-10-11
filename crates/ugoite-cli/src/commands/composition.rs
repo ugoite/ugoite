@@ -1328,6 +1328,15 @@ mod tests {
     const MONTHLY_EXPENSE_CANONICAL: &str = include_str!(
         "../../../../crates/ugoite-domain/tests/fixtures/composition/monthly-expense.canonical.ugcomp.yaml"
     );
+    const TYPED_METRIC_DEFINITIONS: &str = include_str!(
+        "../../../../crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml"
+    );
+    const TYPED_METRIC_DEFINITIONS_CANONICAL: &str = include_str!(
+        "../../../../crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.canonical.ugcomp.yaml"
+    );
+    const TYPED_METRIC_DEFINITIONS_FINGERPRINT: &str = include_str!(
+        "../../../../crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.fingerprint.txt"
+    );
 
     #[test]
     fn lint_file_returns_the_shared_canonical_document_response() {
@@ -1344,6 +1353,27 @@ mod tests {
         assert_eq!(value.fingerprint.len(), 64);
         assert_eq!(value.document["format_version"], 1);
         assert_eq!(value.document["name"], "Monthly expenses");
+    }
+
+    #[test]
+    fn lint_file_preserves_typed_metric_definitions_and_shared_fingerprint() {
+        let mut file = tempfile::NamedTempFile::new().expect("temporary YAML file");
+        file.write_all(TYPED_METRIC_DEFINITIONS.as_bytes())
+            .expect("write typed metric fixture");
+
+        let response = lint_file(file.path()).expect("lint succeeds");
+
+        assert!(response.ok);
+        let value = response.value.expect("canonical value");
+        assert_eq!(value.canonical_yaml, TYPED_METRIC_DEFINITIONS_CANONICAL);
+        assert_eq!(
+            value.fingerprint,
+            TYPED_METRIC_DEFINITIONS_FINGERPRINT.trim()
+        );
+        assert_eq!(
+            value.document["spec"]["components"][0]["definition"]["operation"],
+            "count_rows"
+        );
     }
 
     #[test]

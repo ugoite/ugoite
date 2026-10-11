@@ -509,6 +509,7 @@ fn parse_composition_result_field_type(
         "boolean" => Some(FieldType::Boolean),
         "integer" => Some(FieldType::Integer),
         "float" => Some(FieldType::Float),
+        "decimal" => Some(FieldType::Decimal),
         "date" => Some(FieldType::Date),
         "timestamp" => Some(FieldType::Timestamp),
         "json" => Some(FieldType::Json),
@@ -689,6 +690,9 @@ mod tests {
     const METRIC_VALUE_FIELDS_COMPOSITION: &str = include_str!(
         "../../ugoite-domain/tests/fixtures/composition/metric-value-fields.ugcomp.yaml"
     );
+    const TYPED_METRIC_DEFINITIONS_COMPOSITION: &str = include_str!(
+        "../../ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml"
+    );
     const UNKNOWN_LIST_ITEM_FIELD_COMPOSITION: &str = include_str!(
         "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml"
     );
@@ -711,6 +715,7 @@ mod tests {
             MONTHLY_EXPENSE_COMPOSITION,
             MONTHLY_EXPENSE_LABELED_COMPOSITION,
             METRIC_VALUE_FIELDS_COMPOSITION,
+            TYPED_METRIC_DEFINITIONS_COMPOSITION,
         ] {
             let native = ugoite_domain::composition::canonicalize_composition_yaml(yaml).unwrap();
             let request = serde_json::json!({
@@ -727,6 +732,63 @@ mod tests {
             );
             assert_eq!(response["value"]["canonical_yaml"], native.yaml);
             assert_eq!(response["value"]["fingerprint"], native.fingerprint);
+        }
+
+        let invalid_typed_metric_definitions = [
+            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace("operation: count_rows", "operation: median"),
+            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
+                "operation: count_values\n        field_id: 103",
+                "operation: count_values",
+            ),
+            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
+                "operation: count_values\n        field_id: 103",
+                "operation: count_rows\n        field_id: 103",
+            ),
+            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
+                "        field_id: 104\n    - id: latest_expense",
+                "        field_id: 104\n      presentation:\n        kind: number\n    - id: latest_expense",
+            ),
+            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
+                "operation: min\n        field_id: 104",
+                "operation: min\n        field_id: 103",
+            ),
+            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
+                "field_id: 104\n          field_type: date",
+                "field_id: 104\n          field_type: time",
+            ),
+            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
+                "field_id: 105\n          field_type: timestamp",
+                "field_id: 105\n          field_type: time",
+            ),
+            TYPED_METRIC_DEFINITIONS_COMPOSITION
+                .replace(
+                    "        column: total\n  layout:",
+                    "        column: total\n      presentation:\n        kind: number\n  layout:",
+                )
+                .replace("type: decimal", "type: date"),
+            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
+                "operation: sum\n        field_id: 102",
+                "operation: sum\n        field_id: 103",
+            ),
+            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
+                "kind: sql_scalar\n        source: monthly_total",
+                "kind: sql_scalar\n        source: expense_rows",
+            ),
+        ];
+        for yaml in invalid_typed_metric_definitions {
+            assert_eq!(
+                ugoite_domain::composition::canonicalize_composition_yaml(&yaml),
+                Err(ugoite_domain::composition::CompositionDiagnosticCode::InvalidComposition),
+                "native domain accepted an invalid typed metric definition: {yaml}"
+            );
+            let request = serde_json::json!({
+                "action": "domain.canonicalize_composition",
+                "value": {"yaml": yaml},
+            });
+            let response: Value =
+                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
+            assert_eq!(response["ok"], false, "{response}");
+            assert_eq!(response["error"]["code"], "invalid_composition");
         }
 
         let native =

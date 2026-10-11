@@ -179,6 +179,10 @@ async function main(): Promise<void> {
     "../../ugoite-domain/tests/fixtures/composition/metric-value-fields.ugcomp.yaml",
     import.meta.url,
   );
+  const typedMetricDefinitionsFixturePath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml",
+    import.meta.url,
+  );
   const canonicalPath = new URL(
     "../../ugoite-domain/tests/fixtures/composition/monthly-expense.canonical.ugcomp.yaml",
     import.meta.url,
@@ -203,6 +207,14 @@ async function main(): Promise<void> {
     "../../ugoite-domain/tests/fixtures/composition/metric-value-fields.fingerprint.txt",
     import.meta.url,
   );
+  const typedMetricDefinitionsCanonicalPath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/typed-metric-definitions.canonical.ugcomp.yaml",
+    import.meta.url,
+  );
+  const typedMetricDefinitionsFingerprintPath = new URL(
+    "../../ugoite-domain/tests/fixtures/composition/typed-metric-definitions.fingerprint.txt",
+    import.meta.url,
+  );
   const invalidListItemPath = new URL(
     "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml",
     import.meta.url,
@@ -218,6 +230,64 @@ async function main(): Promise<void> {
   const yaml = await Deno.readTextFile(fixturePath);
   const labeledYaml = await Deno.readTextFile(labeledFixturePath);
   const metricValueFieldsYaml = await Deno.readTextFile(metricValueFieldsFixturePath);
+  const typedMetricDefinitionsYaml = await Deno.readTextFile(
+    typedMetricDefinitionsFixturePath,
+  );
+  const invalidTypedMetricDefinitionsYaml = [
+    typedMetricDefinitionsYaml.replace("operation: count_rows", "operation: median"),
+    typedMetricDefinitionsYaml.replace(
+      "operation: count_rows\n      presentation:",
+      "operation: count_rows\n        field_id: 102\n      presentation:",
+    ),
+    typedMetricDefinitionsYaml.replace(
+      "operation: count_values\n        field_id: 103",
+      "operation: count_values",
+    ),
+    typedMetricDefinitionsYaml.replace(
+      "operation: count_values\n        field_id: 103",
+      "operation: count_rows\n        field_id: 103",
+    ),
+    typedMetricDefinitionsYaml.replace(
+      "        field_id: 104\n    - id: latest_expense",
+      "        field_id: 104\n      presentation:\n        kind: number\n    - id: latest_expense",
+    ),
+    typedMetricDefinitionsYaml.replace(
+      "operation: min\n        field_id: 104",
+      "operation: min\n        field_id: 103",
+    ),
+    typedMetricDefinitionsYaml.replace(
+      "field_id: 104\n          field_type: date",
+      "field_id: 104\n          field_type: time",
+    ),
+    typedMetricDefinitionsYaml.replace(
+      "field_id: 105\n          field_type: timestamp",
+      "field_id: 105\n          field_type: time",
+    ),
+    typedMetricDefinitionsYaml.replace(
+      "        column: total\n  layout:",
+      "        column: total\n      presentation:\n        kind: number\n  layout:",
+    ).replace("type: decimal", "type: date"),
+    typedMetricDefinitionsYaml.replace(
+      "operation: sum\n        field_id: 102",
+      "operation: sum\n        field_id: 103",
+    ),
+    typedMetricDefinitionsYaml.replace(
+      "kind: sql_scalar\n        source: monthly_total",
+      "kind: sql_scalar\n        source: expense_rows",
+    ),
+    typedMetricDefinitionsYaml.replace("column: total", "column: missing"),
+    typedMetricDefinitionsYaml.replace(
+      "      definition:\n        kind: sql_scalar",
+      "      source: monthly_total\n      value_field:\n        kind: sql_column\n        name: total\n      definition:\n        kind: sql_scalar",
+    ),
+    typedMetricDefinitionsYaml.replace(
+      "operation: sum\n        field_id: 102",
+      "operation: sum\n        field_id: 102\n        unsupported: true",
+    ),
+  ];
+  if (invalidTypedMetricDefinitionsYaml.some((yaml) => yaml === typedMetricDefinitionsYaml)) {
+    throw new Error("Could not build every invalid typed metric definition fixture");
+  }
   const canonicalYaml = await Deno.readTextFile(canonicalPath);
   const fingerprint = (await Deno.readTextFile(fingerprintPath)).trim();
   const labeledCanonicalYaml = await Deno.readTextFile(labeledCanonicalPath);
@@ -227,6 +297,12 @@ async function main(): Promise<void> {
   );
   const metricValueFieldsFingerprint = (
     await Deno.readTextFile(metricValueFieldsFingerprintPath)
+  ).trim();
+  const typedMetricDefinitionsCanonicalYaml = await Deno.readTextFile(
+    typedMetricDefinitionsCanonicalPath,
+  );
+  const typedMetricDefinitionsFingerprint = (
+    await Deno.readTextFile(typedMetricDefinitionsFingerprintPath)
   ).trim();
   const invalidListItemYaml = await Deno.readTextFile(invalidListItemPath);
   const unknownFormatVersionYaml = await Deno.readTextFile(unknownFormatVersionPath);
@@ -451,6 +527,30 @@ async function main(): Promise<void> {
     "typed metric value fields semantic fingerprint",
   );
 
+  const typedMetricDefinitionsResponse = await invokeWasm(instance.exports, {
+    action: "domain.canonicalize_composition",
+    value: { yaml: typedMetricDefinitionsYaml },
+  });
+  const typedMetricDefinitionsResponseValue = typedMetricDefinitionsResponse.value as Record<
+    string,
+    unknown
+  >;
+  assertEqual(
+    typedMetricDefinitionsResponse.ok,
+    true,
+    "typed metric definitions parse result",
+  );
+  assertEqual(
+    typedMetricDefinitionsResponseValue.canonical_yaml,
+    typedMetricDefinitionsCanonicalYaml,
+    "typed metric definitions canonical YAML",
+  );
+  assertEqual(
+    typedMetricDefinitionsResponseValue.fingerprint,
+    typedMetricDefinitionsFingerprint,
+    "typed metric definitions semantic fingerprint",
+  );
+
   const invalidMetricValueFieldYaml = yaml.replace(
     "kind: sql_column",
     "kind: unknown_column",
@@ -498,6 +598,17 @@ async function main(): Promise<void> {
     assertEqual(invalidResponse.ok, false, "invalid document result");
     assertEqual(error.kind, "composition_diagnostic", "diagnostic kind");
     assertEqual(error.code, expectedCode, "diagnostic code");
+  }
+
+  for (const invalidYaml of invalidTypedMetricDefinitionsYaml) {
+    const invalidResponse = await invokeWasm(instance.exports, {
+      action: "domain.canonicalize_composition",
+      value: { yaml: invalidYaml },
+    });
+    const error = invalidResponse.error as Record<string, unknown>;
+    assertEqual(invalidResponse.ok, false, "invalid typed metric definition result");
+    assertEqual(error.kind, "composition_diagnostic", "typed metric diagnostic kind");
+    assertEqual(error.code, "invalid_composition", "typed metric diagnostic code");
   }
 
   for (const fixture of metricPageEvaluationFixtures) {
