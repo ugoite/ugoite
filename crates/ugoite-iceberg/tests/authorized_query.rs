@@ -877,6 +877,24 @@ async fn function_variants_and_storage_failures_are_closed_errors() -> anyhow::R
         Some(AuthorizedQueryError::UnauthorizedQueryFeature { .. })
     ));
 
+    let aggregate_context = workspace
+        .authorized_query_context(aggregate_policy(&tasks, &[]))
+        .await?;
+    let scalar_count = aggregate_context
+        .execute("SELECT COUNT(*) AS row_count")
+        .await?;
+    assert_eq!(scalar_count[0].num_rows(), 1);
+    assert_eq!(
+        scalar_count[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("COUNT returns Int64")
+            .value(0),
+        1,
+        "the synthetic scalar input has one row"
+    );
+
     let checkpoint = workspace.capture_checkpoint().await?;
     let mut checkpoint_policy = policy(&tasks, &[72]);
     checkpoint_policy.checkpoint = Some(checkpoint.clone());

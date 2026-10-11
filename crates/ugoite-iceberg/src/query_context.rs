@@ -2012,6 +2012,9 @@ fn validate_logical_plan(
         LogicalPlan::Window(_) => {
             bail!("window functions are not supported for read-only query execution")
         }
+        LogicalPlan::Unnest(_) => {
+            bail!("UNNEST is not supported for read-only query execution")
+        }
         LogicalPlan::TableScan(scan) => {
             let relation = scan.table_name.to_string();
             if !authorized_relations.contains(&relation) {
@@ -2030,8 +2033,7 @@ fn validate_logical_plan(
         | LogicalPlan::SubqueryAlias(_)
         | LogicalPlan::Limit(_)
         | LogicalPlan::Values(_)
-        | LogicalPlan::Distinct(_)
-        | LogicalPlan::Unnest(_) => {}
+        | LogicalPlan::Distinct(_) => {}
     }
     for input in plan.inputs() {
         validate_logical_plan(input, authorized_relations)?;
