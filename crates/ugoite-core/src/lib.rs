@@ -3,6 +3,7 @@
 
 pub mod change;
 pub mod composition;
+pub mod composition_metric;
 pub mod entry;
 pub mod entry_query;
 pub mod error;

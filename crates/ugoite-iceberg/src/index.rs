@@ -2990,6 +2990,37 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     ))
 }
 
+/// Executes a bounded scalar probe against a fixed authorized publication.
+/// The caller uses the rows only for cardinality validation; table paging and
+/// ordering are intentionally not part of this contract.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn execute_sql_scalar_probe_authorized_by_form_at_checkpoint_stateless(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    forms: Vec<FormDefinition>,
+    checkpoint: SpaceCheckpoint,
+) -> Result<(Vec<String>, Vec<SqlResultColumn>, Vec<Value>)> {
+    let (columns, result_schema, mut rows, _exact_integer_rows, _has_order) =
+        execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
+            op,
+            ws_path,
+            sql_query,
+            relation_scopes,
+            parameters,
+            false,
+            0,
+            ugoite_core::sql_query::MAX_SQL_SCALAR_PROBE_ROWS,
+            forms,
+            checkpoint,
+        )
+        .await?;
+    rows.truncate(ugoite_core::sql_query::MAX_SQL_SCALAR_PROBE_ROWS);
+    Ok((columns, result_schema, rows))
+}
+
 /// Resolves quoted Form-name table references for Saved SQL using bindings
 /// already captured in a Saved SQL revision. The resulting SQL still passes
 /// through the ordinary authorized query planner.

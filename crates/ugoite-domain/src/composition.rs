@@ -328,6 +328,19 @@ impl CompositionResultFieldType {
     pub const fn supports_metric(self) -> bool {
         !matches!(self, Self::Json)
     }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::Float => "float",
+            Self::Decimal => "decimal",
+            Self::Date => "date",
+            Self::Timestamp => "timestamp",
+            Self::Json => "json",
+        }
+    }
 }
 
 /// The logical schema snapshot of one Form field used by an EntryQuery or a
@@ -790,6 +803,7 @@ pub enum CompositionDiagnosticCode {
     MetricResultColumnMissing,
     MetricResultColumnAmbiguous,
     MetricResultPageIncomplete,
+    MetricScalarExpectedOneRow,
 }
 
 impl CompositionDiagnosticCode {
@@ -812,6 +826,7 @@ impl CompositionDiagnosticCode {
             Self::MetricResultColumnMissing => "metric_result_column_missing",
             Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
             Self::MetricResultPageIncomplete => "metric_result_page_incomplete",
+            Self::MetricScalarExpectedOneRow => "metric_scalar_expected_one_row",
         }
     }
 }
@@ -1329,6 +1344,10 @@ mod tests {
                 CompositionDiagnosticCode::MetricFieldNotProjected,
                 "metric_field_not_projected",
             ),
+            (
+                CompositionDiagnosticCode::MetricScalarExpectedOneRow,
+                "metric_scalar_expected_one_row",
+            ),
         ];
 
         for (code, spelling) in codes {
@@ -1393,8 +1412,9 @@ mod tests {
             "metric_result_column_missing",
             "metric_result_column_ambiguous",
             "metric_result_page_incomplete",
+            "metric_scalar_expected_one_row",
         ];
-        assert_eq!(frozen_codes.len(), 17);
+        assert_eq!(frozen_codes.len(), 18);
         for spelling in frozen_codes {
             let code: CompositionDiagnosticCode =
                 serde_json::from_str(&format!("\"{spelling}\"")).unwrap();

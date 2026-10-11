@@ -19,6 +19,9 @@ pub const SQL_CONTINUATION_VERSION: u32 = 1;
 pub const MAX_SQL_QUERY_BYTES: usize = 256 * 1024;
 pub const MAX_SQL_PARAMETER_BYTES: usize = 256 * 1024;
 pub const MAX_SQL_PAGE_LIMIT: usize = 1_000;
+/// A scalar metric needs one row for success and a second row to prove that
+/// the selected SQL result is not scalar.
+pub const MAX_SQL_SCALAR_PROBE_ROWS: usize = 2;
 pub const MAX_SQL_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_SQL_OUTPUT_COLUMNS: usize = 256;
 pub const MAX_SQL_COLUMN_NAME_BYTES: usize = 16 * 1024;
@@ -143,7 +146,21 @@ pub struct SqlQueryPage {
     pub exact_integer_rows: Option<Vec<Vec<Option<String>>>>,
 }
 
-/// One ordered SQL output column with its server-mapped portable logical type.
+/// Result of one closed Saved SQL scalar probe.
+///
+/// The executor reads no more than two rows. Zero and one row are complete
+/// outcomes; two rows prove the result is not scalar. This type deliberately
+/// has no continuation or page metadata because a scalar probe is not a table
+/// page.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlScalarProbeResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Value>,
+    pub result_schema: Vec<SqlResultColumn>,
+}
+
+/// One ordered output column with its server-mapped portable logical type.
 ///
 /// SQL result types can be broader than the result types currently accepted
 /// by Composition. Consumers must explicitly map unsupported types instead
