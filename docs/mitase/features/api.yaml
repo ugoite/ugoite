@@ -179,6 +179,29 @@ features:
             claims:
               - kind: satisfies
                 criterion: REQ-API-015#criterion.typed-result-schema
+          - id: decimal-result-encoding
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: symbol, name: sql_result_batches_to_values_bounded }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.typed-result-schema
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.exact-decimal-results
+          - id: checked-numeric-aggregates
+            adapter: rust
+            path: crates/ugoite-iceberg/src/safe_aggregates.rs
+            selector: { kind: symbol, name: checked_sum_udaf }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+          - id: aggregate-error-mapping
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: symbol, name: map_sql_error }
+            claims:
+              - kind: satisfies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
           - id: count-sql
             adapter: rust
             path: crates/ugoite-iceberg/src/service.rs

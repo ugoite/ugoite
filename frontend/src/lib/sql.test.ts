@@ -24,6 +24,14 @@ describe("sql helpers", () => {
     expect(diagnostics).toHaveLength(0);
   });
 
+  it("accepts read-only SQL with numeric aggregate expressions", () => {
+    const diagnostics = sqlLintDiagnostics(
+      'SELECT COUNT(*) AS total, SUM(amount) AS sum, AVG(amount) AS average, MIN(amount) AS minimum, MAX(amount) AS maximum FROM "Expenses" WHERE amount IS NOT NULL',
+    );
+
+    expect(diagnostics).toEqual([]);
+  });
+
   it("uses the shared SQL rules for linting", () => {
     const diagnostics = sqlLintDiagnostics(
       'SELECT * FROM "form_00000000000000000000000000000001" LIMIT invalid',

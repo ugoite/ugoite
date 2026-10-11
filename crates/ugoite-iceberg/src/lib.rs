@@ -25,6 +25,7 @@ pub mod index;
 pub mod integrity;
 pub mod preferences;
 pub mod query_context;
+mod safe_aggregates;
 pub mod sample_data;
 pub mod saved_sql;
 pub mod search;

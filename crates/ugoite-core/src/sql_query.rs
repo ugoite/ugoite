@@ -153,6 +153,8 @@ pub enum SqlResultColumnType {
     Float,
     Date,
     Timestamp,
+    /// Exact base-10 value transported as a string in `rows`.
+    Decimal,
     Json,
 }
 
@@ -165,6 +167,7 @@ impl SqlResultColumnType {
             Self::Float => "float",
             Self::Date => "date",
             Self::Timestamp => "timestamp",
+            Self::Decimal => "decimal",
             Self::Json => "json",
         }
     }
@@ -406,6 +409,7 @@ mod tests {
             (SqlResultColumnType::Float, "float"),
             (SqlResultColumnType::Date, "date"),
             (SqlResultColumnType::Timestamp, "timestamp"),
+            (SqlResultColumnType::Decimal, "decimal"),
             (SqlResultColumnType::Json, "json"),
         ] {
             assert_eq!(column_type.as_str(), spelling);

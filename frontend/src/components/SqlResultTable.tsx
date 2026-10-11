@@ -12,6 +12,7 @@ export interface SqlResultTableProps {
 const numericColumnTypes = new Set<SqlResultColumnType>([
   "integer",
   "float",
+  "decimal",
 ]);
 
 const formatCell = (value: unknown): string => {

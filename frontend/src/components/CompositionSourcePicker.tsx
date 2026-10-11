@@ -278,9 +278,22 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
       const schemaByName = new Map(
         (page.result_schema ?? []).map((column) => [column.name, column.type]),
       );
+      const compositionResultTypes = new Set<CompositionResultType>([
+        "string",
+        "boolean",
+        "integer",
+        "float",
+        "date",
+        "timestamp",
+        "json",
+      ]);
       const expectedResult = columns.map((name) => ({
         name,
-        type: (schemaByName.get(name) ?? "json") as CompositionResultType,
+        type: compositionResultTypes.has(
+            schemaByName.get(name) as CompositionResultType,
+          )
+          ? schemaByName.get(name) as CompositionResultType
+          : "json",
       }));
       props.onSelect({
         kind: "saved_sql",

@@ -1,5 +1,6 @@
 import {
   autocompletion,
+  type Completion,
   type CompletionContext,
   type CompletionSource,
 } from "@codemirror/autocomplete";
@@ -17,6 +18,26 @@ const NON_CODE_NODES = new Set([
   "LineComment",
   "BlockComment",
 ]);
+
+const SQL_AGGREGATE_FUNCTIONS = ["AVG", "COUNT", "MAX", "MIN", "SUM"];
+
+const aggregateCompletions: Completion[] = SQL_AGGREGATE_FUNCTIONS.map(
+  (name) => ({
+    label: name,
+    type: "function",
+    apply(view, _completion, from, to) {
+      const hasOpeningParenthesis = view.state.doc.sliceString(to, to + 1) ===
+        "(";
+      const insert = hasOpeningParenthesis ? name : `${name}()`;
+      view.dispatch({
+        changes: { from, to, insert },
+        selection: {
+          anchor: from + name.length + (hasOpeningParenthesis ? 0 : 1),
+        },
+      });
+    },
+  }),
+);
 
 export function sqlCompletionSource(schema: SqlSchema): CompletionSource {
   const schemaSource = schemaCompletionSource({ schema });
@@ -45,7 +66,33 @@ export function sqlCompletionSource(schema: SqlSchema): CompletionSource {
       };
     }
 
-    return schemaSource(context) ?? keywords(context);
+    const existingCompletions = schemaSource(context) ?? keywords(context);
+    const functionToken = context.matchBefore(/[A-Za-z_][A-Za-z0-9_]*$/);
+    if (!functionToken) return existingCompletions;
+
+    const matchingAggregates = aggregateCompletions.filter((completion) =>
+      completion.label.toUpperCase().startsWith(
+        functionToken.text.toUpperCase(),
+      )
+    );
+    if (matchingAggregates.length === 0) return existingCompletions;
+
+    const existingOptions = existingCompletions?.from === functionToken.from
+      ? existingCompletions.options
+      : [];
+    const labels = new Set(
+      matchingAggregates.map((completion) => completion.label),
+    );
+    return {
+      from: functionToken.from,
+      options: [
+        ...matchingAggregates,
+        ...existingOptions.filter((completion) =>
+          !labels.has(completion.label)
+        ),
+      ],
+      validFor: /^[A-Za-z_][A-Za-z0-9_]*$/,
+    };
   };
 }
 

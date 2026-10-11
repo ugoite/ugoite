@@ -63,7 +63,15 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: typed-result-schema
         kind: behavior
-        statement: Every SQL query page carries a server-owned portable column descriptor in column order alongside the unchanged columns and rows; null and empty results keep their planned output types, and the Browser stores the descriptor unchanged without inferring types from row values.
+        statement: Every SQL query page carries a server-owned portable column descriptor in column order while preserving the page and row structure; null and empty results keep their planned output types, Decimal values are exact strings, and the Browser never infers types from row values. A SQL type not yet admitted by the Composition descriptor uses its documented json fallback there.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: checked-numeric-aggregates
+        kind: security
+        statement: COUNT, SUM, AVG, MIN, and MAX preserve their declared NULL and empty-set semantics; integer and decimal overflow and non-finite floating aggregate outputs fail without returning a wrapped or partial value.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: exact-decimal-results
+        kind: behavior
+        statement: Decimal SQL output uses the server-owned decimal result type and an exact base-10 string row value that preserves scale without binary floating-point conversion.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
     bindings:
       - id: cli-verification
@@ -138,6 +146,46 @@ requirements:
                 criterion: REQ-API-015#criterion.typed-result-schema
                 covers: [FEAT-API-001#binding.sql-service-implementation/target.result-schema-mapping]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: query_context::result_schema_tests::non_scalar_arrow_outputs_stay_json_without_inference } }
+          - id: checked-aggregate-overflow
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: sql_aggregate_rejects_int64_overflow_and_preserves_resource_limits }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: sql_aggregate_rejects_int64_overflow_and_preserves_resource_limits } }
+          - id: exact-decimal-row-encoding
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: test, name: tests::sql_decimal_result_values_keep_exact_digits_and_scale_as_strings }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.exact-decimal-results
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.decimal-result-encoding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::sql_decimal_result_values_keep_exact_digits_and_scale_as_strings } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.typed-result-schema
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.decimal-result-encoding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::sql_decimal_result_values_keep_exact_digits_and_scale_as_strings } }
+          - id: safe-overflow-diagnostic
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: test, name: tests::mapped_aggregate_failures_use_stable_safe_diagnostics }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.aggregate-error-mapping]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::mapped_aggregate_failures_use_stable_safe_diagnostics } }
+          - id: checked-distinct-aggregate-state
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts } }
           - id: descriptor-passthrough
             adapter: typescript
             path: frontend/src/lib/composition-api.test.ts

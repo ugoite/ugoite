@@ -11,6 +11,7 @@ test-support = []
 anyhow = "1.0"
 async-trait = "0.1"
 arrow-array = "58.4"
+arrow-buffer = "58.4"
 arrow-json = "58.4"
 arrow-schema = "58.4"
 base64 = "0.23"

@@ -6,7 +6,12 @@ import type {
   EntryQueryCompositionProjection,
   EntryQueryCompositionSort,
 } from "./entry-query-composition";
-import type { SqlQueryPage, SqlQueryRequest, SqlResultColumn } from "./types";
+import type {
+  SqlQueryPage,
+  SqlQueryRequest,
+  SqlResultColumn,
+  SqlResultColumnType,
+} from "./types";
 import {
   canonicalizeCompositionDocument,
   type CompositionDocumentCanonicalization,
@@ -233,14 +238,7 @@ export interface CompositionParameterDefinition {
   format?: "year-month";
 }
 
-export type CompositionResultType =
-  | "string"
-  | "boolean"
-  | "integer"
-  | "float"
-  | "date"
-  | "timestamp"
-  | "json";
+export type CompositionResultType = SqlResultColumnType;
 
 export interface CompositionResolveDiagnostic {
   code: string;

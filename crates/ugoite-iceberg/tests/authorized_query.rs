@@ -390,7 +390,7 @@ async fn count_aggregates_only_authorized_current_entries() -> anyhow::Result<()
 }
 
 #[tokio::test]
-async fn sql_aggregate_spike_covers_nulls_grouping_and_authorized_current_entries(
+async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts(
 ) -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(200)),
@@ -501,26 +501,49 @@ async fn sql_aggregate_spike_covers_nulls_grouping_and_authorized_current_entrie
     assert_eq!(float_value(12), -0.25);
     assert_eq!(float_value(13), -2.0);
     assert_eq!(float_value(14), 1.5);
-    let special_floats = context
+    let window_aggregate = context
+        .execute(
+            "SELECT SUM(field_101) OVER (ORDER BY field_100 \
+             ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS rolling_total FROM tasks",
+        )
+        .await
+        .expect_err("windowed aggregates are outside the read-only aggregate policy");
+    assert!(matches!(
+        window_aggregate.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::UnauthorizedQueryFeature { .. })
+    ));
+    let special_float_sum = context
         .execute(
             "SELECT SUM(CAST('NaN' AS DOUBLE)) AS nan_total, \
              SUM(CAST('Infinity' AS DOUBLE)) AS infinity_total FROM tasks",
         )
-        .await?;
-    let nan_total = special_floats[0]
-        .column(0)
-        .as_any()
-        .downcast_ref::<arrow_array::Float64Array>()
-        .expect("non-finite Double aggregate returns Float64")
-        .value(0);
-    let infinity_total = special_floats[0]
-        .column(1)
-        .as_any()
-        .downcast_ref::<arrow_array::Float64Array>()
-        .expect("non-finite Double aggregate returns Float64")
-        .value(0);
-    assert!(nan_total.is_nan());
-    assert!(infinity_total.is_infinite() && infinity_total.is_sign_positive());
+        .await
+        .expect_err("SUM must reject non-finite inputs");
+    assert!(matches!(
+        special_float_sum.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::QueryExecutionFailed { .. })
+    ));
+    let non_finite_min_max_sql = "SELECT MIN(CAST('NaN' AS DOUBLE)) AS nan_min, \
+         MAX(CAST('Infinity' AS DOUBLE)) AS infinity_max FROM tasks";
+    let non_finite_min_max = context
+        .execute(non_finite_min_max_sql)
+        .await
+        .expect_err("MIN/MAX must reject non-finite aggregate results");
+    assert!(matches!(
+        non_finite_min_max.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::QueryExecutionFailed { .. })
+    ));
+    let non_finite_page = match context
+        .execute_stateless_page(non_finite_min_max_sql, HashMap::new(), 0, 10)
+        .await
+    {
+        Err(error) => error,
+        Ok(_) => panic!("stateless pages must reject non-finite aggregate results"),
+    };
+    assert!(matches!(
+        non_finite_page.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::QueryExecutionFailed { .. })
+    ));
     let decimal_256 = context
         .execute("SELECT SUM(CAST(field_101 AS DECIMAL(40, 2))) AS total FROM tasks")
         .await?;
@@ -543,23 +566,36 @@ async fn sql_aggregate_spike_covers_nulls_grouping_and_authorized_current_entrie
             "SELECT SUM(CAST('99999999999999999999999999999999999999' \
              AS DECIMAL(38, 0))) AS total FROM tasks",
         )
+        .await
+        .expect_err("Decimal128 SUM must fail instead of wrapping its result");
+    assert!(matches!(
+        decimal_overflow.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::QueryExecutionFailed { .. })
+    ));
+    let distinct = context
+        .execute(
+            "SELECT SUM(DISTINCT CASE WHEN field_101 = 200 THEN 100 \
+             ELSE field_101 END) AS total, \
+             AVG(DISTINCT CASE WHEN field_101 = 200 THEN 100 \
+             ELSE field_101 END) AS average FROM tasks",
+        )
         .await?;
     assert_eq!(
-        decimal_overflow[0].schema().field(0).data_type(),
-        &arrow_schema::DataType::Decimal128(38, 0)
+        distinct[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("distinct integer sum remains Int64")
+            .value(0),
+        50
     );
-    let decimal_overflow_value = decimal_overflow[0]
-        .column(0)
+    let distinct_average = distinct[0]
+        .column(1)
         .as_any()
-        .downcast_ref::<arrow_array::Decimal128Array>()
-        .expect("Decimal128 SUM result")
+        .downcast_ref::<arrow_array::Float64Array>()
+        .expect("distinct integer average returns Float64")
         .value(0);
-    // The precision-38 accumulator also wraps in this fixture; its mathematical
-    // sum is larger than Decimal128 can represent. Keep this as a release gate.
-    assert_eq!(
-        decimal_overflow_value,
-        59_717_633_079_061_536_536_625_392_568_231_788_540
-    );
+    assert!((distinct_average - (50.0 / 3.0)).abs() < 1e-12);
 
     let grouped = context
         .execute(
@@ -644,7 +680,7 @@ async fn sql_aggregate_spike_covers_nulls_grouping_and_authorized_current_entrie
 }
 
 #[tokio::test]
-async fn sql_aggregate_spike_characterizes_int64_overflow_and_resource_limits() -> anyhow::Result<()>
+async fn sql_aggregate_rejects_int64_overflow_and_preserves_resource_limits() -> anyhow::Result<()>
 {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(220)),
@@ -673,23 +709,12 @@ async fn sql_aggregate_spike_characterizes_int64_overflow_and_resource_limits() 
         .await?;
     let overflow = context
         .execute("SELECT SUM(field_101) AS total FROM tasks")
-        .await?;
-    // Characterization only: DataFusion 54.1.0 wraps Int64 SUM here. Do not
-    // expose this function for Long fields until Ugoite provides checked
-    // handling or a wider exact result representation.
-    assert_eq!(
-        overflow[0].schema().field(0).data_type(),
-        &arrow_schema::DataType::Int64
-    );
-    assert_eq!(
-        overflow[0]
-            .column(0)
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .expect("SUM(Long) currently returns Int64")
-            .value(0),
-        i64::MIN + 100
-    );
+        .await
+        .expect_err("SUM must not wrap when the Int64 result range is exceeded");
+    assert!(matches!(
+        overflow.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::QueryExecutionFailed { .. })
+    ));
 
     let mut memory_limited = aggregate_policy(&tasks, &[226, 228, 230]);
     memory_limited.limits.max_memory_bytes = 1;

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
+  type CompositionMetricPageRequest,
   encodeSpreadsheetCsv,
   evaluateCompositionMetricPage,
   getWasmSupportedOperations,
@@ -114,6 +115,24 @@ describe("portable Ugoite API protocol WASM", () => {
         kind: "composition_diagnostic",
         code: "metric_result_page_incomplete",
       },
+    });
+  });
+
+  it("accepts decimal result types at the Composition protocol boundary", () => {
+    const request = {
+      expected_result_type: "decimal",
+      is_complete: true,
+      row_count: 1,
+      selected_column_count: 1,
+      selected_value: "12345678901234567890.012300",
+    } satisfies CompositionMetricPageRequest;
+
+    expect(request).toEqual({
+      expected_result_type: "decimal",
+      is_complete: true,
+      row_count: 1,
+      selected_column_count: 1,
+      selected_value: "12345678901234567890.012300",
     });
   });
 

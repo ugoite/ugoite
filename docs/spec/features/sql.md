@@ -35,6 +35,17 @@ row-count expression to the authorized query plan separately. Parameters use
 DataFusion's native `$name` syntax and are bound as typed scalars before
 planning; parameter text is never substituted into SQL.
 
+The permitted aggregate functions are `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX`.
+`COUNT(*)` counts rows; `COUNT(expression)` ignores `NULL`; `SUM` and `AVG`
+accept numeric values; and `MIN`/`MAX` accept comparable scalar values. `SUM`,
+`AVG`, and floating aggregate results use checked accumulation: integer and
+decimal overflow, unsupported numeric types, and non-finite floating results
+fail the query instead of returning a wrapped, partial, or non-finite value.
+`COUNT`, checked `SUM`, and checked `AVG` preserve SQL `DISTINCT` semantics.
+Window functions are not part of this read-only aggregate policy.
+`sql.query.count` remains the count of rows in the SQL result and is distinct
+from a SQL expression such as `SELECT COUNT(*) ...`.
+
 `sql.query` returns one bounded page and an opaque continuation when a
 deterministic `ORDER BY` allows pagination. The continuation carries the fixed
 publication, SQL and parameter fingerprints, pagination position, and
@@ -42,6 +53,14 @@ authorization coordinate. It is client-held state, not an authorization token;
 each request rechecks current authorization. `sql.query.count` is explicit and
 separate from page retrieval. No total-cardinality ceiling or persistent SQL
 execution lifecycle is introduced.
+
+Every new SQL page carries a server-owned `result_schema` in column order,
+including for empty and all-`NULL` results. Decimal columns use the logical
+type `decimal`; their row values are strings containing the exact base-10
+value, with no exponent and with the planned fractional scale preserved. They
+are never converted through binary floating point. Integer and float columns
+retain their portable types. Numeric overflow and non-finite-result failures
+use stable SQL aggregate error codes with safe messages.
 
 SQL results are not automatically materialized as Knowledge. A SELECT cannot
 write a publication, derived relation, or execution metadata. Future SQL DML

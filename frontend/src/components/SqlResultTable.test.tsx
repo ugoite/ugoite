@@ -126,6 +126,21 @@ describe("SqlResultTable", () => {
     );
   });
 
+  it("keeps exact decimal strings numeric without converting them to JavaScript numbers", () => {
+    renderTable(
+      ["amount"],
+      [["12345678901234567.8901"]],
+      ["decimal"],
+    );
+
+    expect(screen.getByRole("columnheader", { name: "amount" })).toHaveClass(
+      "result-table-header--numeric",
+    );
+    expect(
+      screen.getByRole("cell", { name: "12345678901234567.8901" }),
+    ).toHaveClass("result-table-cell--numeric");
+  });
+
   it("uses the server schema instead of inferring numeric rows", () => {
     renderTable(["payload"], [[42]], ["json"]);
 

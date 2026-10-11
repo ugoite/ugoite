@@ -2833,7 +2833,7 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     Ok((
         page.columns,
         page.result_schema,
-        record_batches_to_values_bounded(
+        sql_result_batches_to_values_bounded(
             &page.batches,
             ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES,
         )?,
@@ -3308,8 +3308,60 @@ fn record_batches_to_values_bounded(
     Ok(values)
 }
 
+/// SQL decimal columns are serialized as exact strings rather than JSON
+/// numbers. JSON consumers such as JavaScript cannot represent every decimal
+/// value without loss, so the value stays text while `result_schema` carries
+/// the server-owned `decimal` type and original scale.
+fn sql_result_batches_to_values_bounded(
+    batches: &[arrow_array::RecordBatch],
+    max_bytes: usize,
+) -> Result<Vec<Value>> {
+    use arrow_schema::{DataType, Field, Schema};
+
+    let mut decimal_string_batches = Vec::with_capacity(batches.len());
+    for batch in batches {
+        let mut fields = Vec::with_capacity(batch.num_columns());
+        let mut columns = Vec::with_capacity(batch.num_columns());
+        for (field, array) in batch.schema().fields().iter().zip(batch.columns()) {
+            if matches!(
+                field.data_type(),
+                DataType::Decimal32(_, _)
+                    | DataType::Decimal64(_, _)
+                    | DataType::Decimal128(_, _)
+                    | DataType::Decimal256(_, _)
+            ) {
+                fields.push(Arc::new(Field::new(
+                    field.name(),
+                    DataType::Utf8,
+                    field.is_nullable(),
+                )));
+                columns.push(datafusion::arrow::compute::cast(
+                    array.as_ref(),
+                    &DataType::Utf8,
+                )?);
+            } else {
+                fields.push(field.clone());
+                columns.push(array.clone());
+            }
+        }
+        let schema = Arc::new(Schema::new_with_metadata(
+            fields,
+            batch.schema().metadata().clone(),
+        ));
+        decimal_string_batches.push(arrow_array::RecordBatch::try_new(schema, columns)?);
+    }
+    record_batches_to_values_bounded(&decimal_string_batches, max_bytes)
+}
+
 fn map_sql_error(error: anyhow::Error) -> anyhow::Error {
     use crate::query_context::AuthorizedQueryError;
+
+    if let Some(failure) = error
+        .downcast_ref::<AuthorizedQueryError>()
+        .and_then(AuthorizedQueryError::sql_aggregate_failure)
+    {
+        return AppError::invalid_input(failure.code(), failure.public_message()).into();
+    }
 
     let message = match error.downcast_ref::<AuthorizedQueryError>() {
         Some(AuthorizedQueryError::InvalidQuery { .. }) => "invalid SQL query",
@@ -4359,7 +4411,7 @@ mod tests {
         asset_reference_projection, canonical_hydration_columns, canonical_hydration_projection,
         datafusion_parameters, filter_literal, map_sql_error, validate_read_only_sql,
     };
-    use arrow_array::{ArrayRef, RecordBatch, StringArray};
+    use arrow_array::{Array, ArrayRef, Decimal128Array, RecordBatch, StringArray};
     use arrow_schema::{DataType, Field, Schema};
     use chrono::DateTime;
     use datafusion::logical_expr::Expr;
@@ -4385,6 +4437,39 @@ mod tests {
                 .message(),
             "SQL uses an unsupported or non-read-only relation, statement, or function"
         );
+    }
+
+    #[test]
+    fn mapped_aggregate_failures_use_stable_safe_diagnostics() {
+        for (failure, expected_code, expected_message) in [
+            (
+                crate::safe_aggregates::SqlAggregateFailure::Overflow,
+                ugoite_core::error::ErrorCode::SqlAggregateOverflow,
+                "SQL aggregate result exceeds the supported numeric range",
+            ),
+            (
+                crate::safe_aggregates::SqlAggregateFailure::NonFinite,
+                ugoite_core::error::ErrorCode::SqlAggregateNonFinite,
+                "SQL aggregate result is not a finite number",
+            ),
+            (
+                crate::safe_aggregates::SqlAggregateFailure::UnsupportedType,
+                ugoite_core::error::ErrorCode::SqlAggregateTypeUnsupported,
+                "SQL aggregate does not support this numeric type",
+            ),
+        ] {
+            let error: anyhow::Error =
+                crate::query_context::AuthorizedQueryError::QueryExecutionFailed {
+                    source: datafusion::common::DataFusionError::External(Box::new(failure)).into(),
+                }
+                .into();
+            let mapped = map_sql_error(error);
+            let app = mapped
+                .downcast_ref::<ugoite_core::error::AppError>()
+                .expect("aggregate failures map to an API error");
+            assert_eq!(app.code(), expected_code);
+            assert_eq!(app.message(), expected_message);
+        }
     }
 
     #[test]
@@ -4629,6 +4714,32 @@ mod tests {
             super::record_batches_to_values_bounded(&[batch], super::ASSET_TEXT_SEARCH_MAX_BYTES)
                 .expect_err("large candidate JSON conversion must be rejected");
         assert!(error.to_string().contains("byte limit"));
+    }
+
+    #[test]
+    fn sql_decimal_result_values_keep_exact_digits_and_scale_as_strings() {
+        let decimal = Decimal128Array::from(vec![
+            Some(123_456_789_012_345_678_901_i128),
+            None,
+            Some(-12_340_i128),
+        ])
+        .with_precision_and_scale(30, 4)
+        .expect("decimal type");
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "amount",
+                decimal.data_type().clone(),
+                true,
+            )])),
+            vec![Arc::new(decimal)],
+        )
+        .expect("decimal batch");
+
+        let rows = super::sql_result_batches_to_values_bounded(&[batch], 1024 * 1024)
+            .expect("exact decimal values");
+        assert_eq!(rows[0]["amount"], json!("12345678901234567.8901"));
+        assert_eq!(rows[1]["amount"], Value::Null);
+        assert_eq!(rows[2]["amount"], json!("-1.2340"));
     }
 
     fn hydration_test_form() -> ugoite_domain::form::FormDefinition {

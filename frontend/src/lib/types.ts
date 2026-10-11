@@ -406,6 +406,7 @@ export type SqlResultColumnType =
   | "float"
   | "date"
   | "timestamp"
+  | "decimal"
   | "json";
 
 export interface SqlQueryCountRequest {

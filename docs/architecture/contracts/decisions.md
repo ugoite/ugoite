@@ -295,14 +295,25 @@ grammar freeze recorded in [`composition.md`](composition.md):
    `sql.query` operations. It creates no registry, history, or publication
    state; it stores no fingerprints; it changes no query grammar. It requires
    current ACL exactly like saved-revision resolution.
-2. `sql.query` `result_schema`: a backward-compatible response extension
-   carrying the server-owned portable logical column types (`string`,
-   `boolean`, `integer`, `float`, `decimal`, `date`, `timestamp`, `json`) mapped from
-   DataFusion/Arrow output in Rust. Existing `columns` and `rows` are
-   unchanged. The Browser performs no type inference and keeps no type
-   mapping; it stores the descriptor unchanged in the Composition
-   `expected_result`. Null and empty results retain their types;
-   duplicate or ambiguous columns fail closed.
+2. `sql.query` `result_schema`: a response extension carrying the
+   server-owned portable logical column types (`string`,
+   `boolean`, `integer`, `float`, `date`, `timestamp`, `decimal`, `json`)
+   mapped from DataFusion/Arrow output in Rust. Request shapes, column names,
+   and row/object structure stay unchanged. Top-level Decimal cells change
+   from JSON numbers to exact decimal strings, retaining their planned scale;
+   this intentional value-type change prevents precision loss. Consumers can
+   branch on `result_schema` for typed handling. Nested values represented as
+   `json` do not gain a recursive decimal type contract. The Browser performs
+   no type inference and keeps no type mapping. Null and empty results retain
+   their planned types; duplicate or ambiguous columns fail closed.
+3. The five enabled SQL aggregates retain their existing result types, but
+   `SUM` and `AVG` accumulate integer and decimal values with checked wide
+   state. Overflow, unsupported input types, and non-finite floating
+   aggregate outputs fail with stable SQL aggregate error codes and safe
+   messages; no partial aggregate value is returned. `DISTINCT` remains
+   supported for `SUM` and `AVG`; the checked accumulators merge their exact
+   distinct input state without using DataFusion's wrapping built-ins. Window
+   functions are excluded from this policy.
 
 Document grammar, storage layout, mutation operations, query grammar, the
 existing `source` plus `value_field` exact-scalar semantics, generic write

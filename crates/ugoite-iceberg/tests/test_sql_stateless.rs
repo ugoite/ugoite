@@ -480,6 +480,37 @@ async fn sql_query_page_carries_server_owned_result_schema() -> Result<()> {
 }
 
 #[tokio::test]
+async fn sql_query_page_serializes_decimal_results_as_exact_strings() -> Result<()> {
+    let space =
+        setup_sql_space("memory://sql-stateless-decimal-result", "sqldecimalresult").await?;
+    let page = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_request(
+                format!(
+                    "SELECT CAST('123456789012345678901.2345' AS DECIMAL(30, 4)) AS amount FROM \"{}\" ORDER BY \"_ugoite_id\"",
+                    space.form_name
+                ),
+                10,
+            ),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("decimal page failed: {error:#}"));
+
+    let schema = page
+        .result_schema
+        .expect("decimal page has a result schema");
+    assert_eq!(schema.len(), 1);
+    assert_eq!(schema[0].column_type.as_str(), "decimal");
+    assert_eq!(page.rows.len(), 5);
+    assert!(page.rows.iter().all(|row| {
+        row.get("amount") == Some(&serde_json::json!("123456789012345678901.2345"))
+    }));
+    Ok(())
+}
+
+#[tokio::test]
 async fn listing_empty_saved_sql_does_not_create_its_form() -> Result<()> {
     let service = UgoiteService::new("memory://sql-read-only-list")?;
     service.create_space("sqlreadonlylist").await?;

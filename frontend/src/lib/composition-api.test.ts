@@ -311,6 +311,31 @@ describe("compositionApi", () => {
     ]);
   });
 
+  it("preserves decimal SQL result types without converting their values", () => {
+    const entry = {
+      id: "sql-1",
+      name: "Exact total",
+      kind: "user-query" as const,
+      sql: "SELECT total FROM monthly",
+      variables: [],
+      created_at: "2026-10-01T00:00:00Z",
+      updated_at: "2026-10-02T00:00:00Z",
+      revision_id: "sql-revision-3",
+    };
+
+    const document = buildSavedSqlCompositionDocument(
+      entry,
+      "Exact total",
+      ["total"],
+      {},
+      [{ name: "total", type: "decimal" }],
+    );
+
+    expect(document.spec.sources[0].expected_result).toEqual([
+      { name: "total", type: "decimal" },
+    ]);
+  });
+
   it("does not offer save-as for search history or unsupported parameter types", () => {
     const base = {
       id: "sql-1",
