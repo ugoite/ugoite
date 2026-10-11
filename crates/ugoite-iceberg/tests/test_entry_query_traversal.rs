@@ -23,9 +23,11 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use serde_json::{json, Value};
 use ugoite_core::entry_query::{
-    EntryFieldRef, EntryPageRequest, EntryProjection, EntryQuery, EntryQueryScope, EntrySort,
-    EntrySortDirection,
+    EntryFieldRef, EntryFilter, EntryPageRequest, EntryProjection, EntryQuery,
+    EntryQueryAggregateRequest, EntryQueryMatchingSet, EntryQueryScope, EntrySort,
+    EntrySortDirection, SearchOperator,
 };
+use ugoite_domain::composition::CompositionAggregateOperation;
 use ugoite_domain::identity::{
     AccessPolicy, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
@@ -159,6 +161,165 @@ async fn text_search_ignores_uuid_and_matches_scalar_lists() -> Result<()> {
             .collect::<Vec<_>>(),
         ["list-match"]
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn authorized_aggregates_use_the_full_text_and_filter_matching_set() -> Result<()> {
+    let service = UgoiteService::new("memory://authorized-entry-query-aggregate")?;
+    let owner = Uuid::from_u128(501);
+    let viewer = Uuid::from_u128(502);
+    let space_id = service
+        .create_space_for_principal("authorized-entry-query-aggregate", owner, "Owner")
+        .await?
+        .to_string();
+    upsert_task_form(&service, &space_id).await?;
+    let form_id = form_id(&service, &space_id, "Task").await?;
+    let status = property_ref(&service, &space_id, "Task", "Status").await?;
+    let priority = property_ref(&service, &space_id, "Task", "Priority").await?;
+    let nickname = property_ref(&service, &space_id, "Task", "Nickname").await?;
+    let EntryFieldRef::Property {
+        field_id: priority_field_id,
+    } = priority
+    else {
+        anyhow::bail!("Priority should be a Form property")
+    };
+    create_task(
+        &service,
+        &space_id,
+        "visible-needle",
+        BTreeMap::from([
+            ("Status".to_owned(), json!("open needle")),
+            ("Priority".to_owned(), json!(4)),
+            ("Nickname".to_owned(), json!("visible")),
+        ]),
+    )
+    .await?;
+    create_task(
+        &service,
+        &space_id,
+        "hidden-needle",
+        BTreeMap::from([
+            ("Status".to_owned(), json!("open needle")),
+            ("Priority".to_owned(), json!(9)),
+            ("Nickname".to_owned(), json!("hidden")),
+        ]),
+    )
+    .await?;
+
+    let authorizer = Authorizer::new(service.operator().clone());
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_owned(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Entry,
+                id: "hidden-needle".to_owned(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+
+    let matching_set = EntryQueryMatchingSet {
+        scope: EntryQueryScope::Form { form_id },
+        text: Some("needle".to_owned()),
+        filters: vec![EntryFilter {
+            field: status,
+            operator: SearchOperator::Contains,
+            value: json!("open"),
+        }],
+    };
+    let count = service
+        .aggregate_entries_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            EntryQueryAggregateRequest {
+                matching_set: matching_set.clone(),
+                operation: CompositionAggregateOperation::CountRows,
+                field_id: None,
+            },
+        )
+        .await?;
+    assert_eq!(count.value, Some(json!(1)));
+
+    let sum = service
+        .aggregate_entries_authorized_for_principals(
+            &space_id,
+            &[viewer],
+            EntryQueryAggregateRequest {
+                matching_set,
+                operation: CompositionAggregateOperation::Sum,
+                field_id: Some(priority_field_id),
+            },
+        )
+        .await?;
+    assert_eq!(sum.value, Some(json!(4)));
+
+    for (operation, field_id, expected) in [
+        (
+            CompositionAggregateOperation::CountValues,
+            match nickname {
+                EntryFieldRef::Property { field_id } => field_id,
+                _ => anyhow::bail!("Nickname should be a Form property"),
+            },
+            json!(1),
+        ),
+        (
+            CompositionAggregateOperation::Avg,
+            priority_field_id,
+            json!(4.0),
+        ),
+        (
+            CompositionAggregateOperation::Min,
+            priority_field_id,
+            json!(4),
+        ),
+        (
+            CompositionAggregateOperation::Max,
+            priority_field_id,
+            json!(4),
+        ),
+    ] {
+        let result = service
+            .aggregate_entries_authorized_for_principals(
+                &space_id,
+                &[viewer],
+                EntryQueryAggregateRequest {
+                    matching_set: EntryQueryMatchingSet {
+                        scope: EntryQueryScope::Form { form_id },
+                        text: Some("needle".to_owned()),
+                        filters: vec![EntryFilter {
+                            field: status,
+                            operator: SearchOperator::Contains,
+                            value: json!("open"),
+                        }],
+                    },
+                    operation,
+                    field_id: Some(field_id),
+                },
+            )
+            .await?;
+        assert_eq!(result.value, Some(expected), "{operation:?}");
+    }
     Ok(())
 }
 

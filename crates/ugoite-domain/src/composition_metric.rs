@@ -4,7 +4,9 @@
 //! paths. This module only classifies the selected descriptor and validates a
 //! normalized page supplied by those paths.
 
-use crate::composition::{CompositionDiagnosticCode, CompositionResultFieldType};
+use crate::composition::{
+    CompositionAggregateOperation, CompositionDiagnosticCode, CompositionResultFieldType,
+};
 use crate::form::FieldType;
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
@@ -90,6 +92,45 @@ pub fn composition_metric_result_type(
 
     validate_composition_metric_result_type(result_type)?;
     Ok(result_type)
+}
+
+/// Classify the portable result type for one typed aggregate over a Form
+/// field. Row counts have no field; other operations require one.
+pub fn composition_aggregate_result_type(
+    operation: CompositionAggregateOperation,
+    field_type: Option<&FieldType>,
+) -> Result<CompositionResultFieldType, CompositionMetricDiagnosticCode> {
+    match (operation, field_type) {
+        (CompositionAggregateOperation::CountRows, None)
+        | (CompositionAggregateOperation::CountValues, Some(_)) => {
+            Ok(CompositionResultFieldType::Integer)
+        }
+        (CompositionAggregateOperation::Sum, Some(FieldType::Integer | FieldType::Long)) => {
+            Ok(CompositionResultFieldType::Integer)
+        }
+        (CompositionAggregateOperation::Sum, Some(FieldType::Float | FieldType::Double))
+        | (CompositionAggregateOperation::Avg, Some(FieldType::Integer | FieldType::Long))
+        | (CompositionAggregateOperation::Avg, Some(FieldType::Float | FieldType::Double)) => {
+            Ok(CompositionResultFieldType::Float)
+        }
+        (
+            CompositionAggregateOperation::Min | CompositionAggregateOperation::Max,
+            Some(field_type),
+        ) => match field_type {
+            FieldType::Integer
+            | FieldType::Long
+            | FieldType::Float
+            | FieldType::Double
+            | FieldType::Date
+            | FieldType::Timestamp
+            | FieldType::TimestampTz
+            | FieldType::TimestampNs
+            | FieldType::TimestampTzNs
+            | FieldType::RowReference => composition_metric_result_type(field_type),
+            _ => Err(CompositionMetricDiagnosticCode::MetricResultNotScalar),
+        },
+        _ => Err(CompositionMetricDiagnosticCode::MetricResultTypeMismatch),
+    }
 }
 
 /// Validate a declared result type before a metric source is executed.
@@ -243,11 +284,14 @@ fn has_supported_fractional_precision(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        composition_metric_result_type, evaluate_composition_metric_page,
-        validate_composition_metric_result_type, CompositionMetricDiagnosticCode as Code,
-        CompositionMetricPage,
+        composition_aggregate_result_type, composition_metric_result_type,
+        evaluate_composition_metric_page, validate_composition_metric_result_type,
+        CompositionMetricDiagnosticCode as Code, CompositionMetricPage,
     };
-    use crate::composition::{CompositionDiagnosticCode, CompositionResultFieldType};
+    use crate::composition::{
+        CompositionAggregateOperation as Operation, CompositionDiagnosticCode,
+        CompositionResultFieldType,
+    };
     use crate::form::FieldType;
     use serde_json::{json, Value};
 
@@ -284,6 +328,46 @@ mod tests {
         for (field_type, expected) in cases {
             assert_eq!(composition_metric_result_type(&field_type), Ok(expected));
         }
+    }
+
+    #[test]
+    fn classifies_typed_aggregate_results_and_rejects_incompatible_fields() {
+        assert_eq!(
+            composition_aggregate_result_type(Operation::CountRows, None),
+            Ok(CompositionResultFieldType::Integer)
+        );
+        assert_eq!(
+            composition_aggregate_result_type(Operation::CountValues, Some(&FieldType::List)),
+            Ok(CompositionResultFieldType::Integer)
+        );
+        assert_eq!(
+            composition_aggregate_result_type(Operation::Sum, Some(&FieldType::Long)),
+            Ok(CompositionResultFieldType::Integer)
+        );
+        assert_eq!(
+            composition_aggregate_result_type(Operation::Avg, Some(&FieldType::Double)),
+            Ok(CompositionResultFieldType::Float)
+        );
+        assert_eq!(
+            composition_aggregate_result_type(Operation::Min, Some(&FieldType::Date)),
+            Ok(CompositionResultFieldType::Date)
+        );
+        assert_eq!(
+            composition_aggregate_result_type(Operation::Min, Some(&FieldType::String)),
+            Err(Code::MetricResultNotScalar)
+        );
+        assert_eq!(
+            composition_aggregate_result_type(Operation::Max, Some(&FieldType::Time)),
+            Err(Code::MetricResultNotScalar)
+        );
+        assert_eq!(
+            composition_aggregate_result_type(Operation::Sum, Some(&FieldType::String)),
+            Err(Code::MetricResultTypeMismatch)
+        );
+        assert_eq!(
+            composition_aggregate_result_type(Operation::CountRows, Some(&FieldType::String)),
+            Err(Code::MetricResultTypeMismatch)
+        );
     }
 
     #[test]
