@@ -48,14 +48,17 @@ components:
     - id: composition-components
       type: query-results
       title: Flow rows with parameter controls, text, metrics, and tables
-      source: existing entry.query and exact-revision sql.query operations
+      source: entry.query and exact-revision sql.query for tables; composition.metric.query for metrics
       layout: saved-tool rows in row-array then item order
       text_presentation: fixed title-heading-body-caption styles without source fetch
       table_presentation:
         entry_query: EntryResultTable
         saved_sql: SqlResultTable
         result_presentation_reference: ../components/result-table.yaml
-      metric_presentation: shared WASM metric evaluator
+      metric_presentation: server metric query result with distinct loading, zero-row, NULL, zero, stale, unavailable, invalid, and error states
+      metric_saved_sql_rows: exactly-one; zero-or-multiple-show-one-direct-Edit-or-Table-action
+      metric_numeric_presentation: exact-integer-and-decimal; no-inferred-unit-or-fraction-digits
+      metric_pagination: independent-of-table-pages
       pagination_owner: composition query handle
       description: Composition table components delegate presentation to the source-native Entry or SQL result presenter. Composition does not implement a third generic table grammar, and source query semantics remain unchanged.
       entry_query_form_scoped_property_identity: A Form-scoped EntryQuery projection of property key form_id reads its value from row properties; the row's top-level system Form identity remains separate.

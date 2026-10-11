@@ -48,8 +48,6 @@ features:
         criterion: REQ-COMP-002#criterion.ordered-component-layout
       - kind: evidences
         anchor: REQ-COMP-002#criterion.optional-display-labels
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-value-field
     - id: browser-studio-mode
       adapter: typescript
       path: frontend/src/components/CompositionStudio.tsx
@@ -255,24 +253,6 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.optional-display-labels
-    - id: browser-inspector-metric-source
-      adapter: typescript
-      path: frontend/src/components/CompositionInspector.test.tsx
-      selector:
-        kind: test
-        name: maps metric source changes to component source and value field
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-value-field
-    - id: browser-inspector-metric-value
-      adapter: typescript
-      path: frontend/src/components/CompositionInspector.test.tsx
-      selector:
-        kind: test
-        name: maps metric value changes to the typed value field
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-value-field
     - id: browser-inspector-table-edits
       adapter: typescript
       path: frontend/src/components/CompositionInspector.test.tsx
@@ -327,15 +307,6 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-006#criterion.work-state-is-transient
-    - id: browser-inspector-draft-metric-source
-      adapter: typescript
-      path: frontend/src/lib/composition-draft.test.ts
-      selector:
-        kind: test
-        name: retargets metric source and value field together
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-value-field
     - id: browser-inspector-draft-text-edits
       adapter: typescript
       path: frontend/src/lib/composition-draft.test.ts
@@ -686,15 +657,6 @@ features:
       selector:
         kind: test
         name: adds a source and its initial table together from Design
-      claims:
-      - kind: evidences
-        anchor: REQ-FE-074#criterion.source-design-entry
-    - id: browser-studio-new-source-single-metric
-      adapter: typescript
-      path: frontend/src/routes/spaces/[space_id]/compositions/new.test.tsx
-      selector:
-        kind: test
-        name: adds a new one-column Saved SQL metric without a field-pick step
       claims:
       - kind: evidences
         anchor: REQ-FE-074#criterion.source-design-entry

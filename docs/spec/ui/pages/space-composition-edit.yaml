@@ -86,7 +86,7 @@ components:
       type: dialog
       title: Choose a source
       source: Forms through form.list and Saved SQL through sql.list
-      selection: full-row-activate; table adds immediately; metric continues to named field selection when needed
+      selection: full-row-activate; table adds immediately; metric continues to source-calculation-field-preview-insert when needed
       rendering: human-name-only rows with loading, empty, and error states
       row_name_overflow: ellipsis-with-full-name-native-title
       internal_identifiers: form-source-draft-entry-revision-ids-never-rendered
@@ -99,16 +99,14 @@ components:
       type: dialog
       title: Add data component
       kind_selection: Table/Metric tabs inside the picker
-      sequence: kind, source; Metric asks for a field only when the selected source has multiple candidates
-      selection: table adds on source selection; metric adds on its sole source candidate or field selection
+      sequence: kind, then source, calculation, compatible field-or-column-when-required, preview, insert
+      selection: table adds on source selection; metric adds only after a valid preview
       label: omitted during insertion; optional edit in Inspector after selection
       source_selection: catalog browse preserves selected Table or Metric kind
       entry_query_field_labels: resolved human Form labels only; no field ID or ordinal fallback
-      entry_query_metric_field: added_to_the_source_fields_projection
-      entry_query_metric_candidates: rust_scalar_types_only_excludes_list_object_list_row_reference_asset_reference_binary_maps_to_string
-      projection_initialization: reserve_metric_bound_fields_then_schema_order_up_to_64
-      projection_capacity: at_limit_only_already_projected_fields_are_selectable
-      overbooked_projection_recovery: disable_projection_controls_with_metric_binding_title
+      entry_query_metric_field: stored_in_the_metric_definition_without_changing_table_projection
+      entry_query_metric_candidates: operation_compatible_form_schema_fields_from_shared_rust_domain_via_wasm
+      saved_sql_metric_column: selected_from_an_exact_saved_revision
       internal_field_ids: never rendered
       sizing: 720px maximum width and viewport-capped vertical scrolling
     - id: studio-tags
@@ -120,7 +118,7 @@ components:
     - id: studio-preview
       type: query-results
       title: Preview
-      source: canonical draft YAML through composition.preview with debounced side-effect-free resolution
+      source: canonical draft YAML through composition.preview with debounced side-effect-free resolution; composition.metric.query uses the draft target for metrics
       result_presentation: CompositionRenderer
       rendering:
         mode: shared-composition-renderer

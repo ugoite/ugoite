@@ -5,7 +5,7 @@ category: Frontend Space selection and preference surfaces
 features:
   - id: FEAT-FE-014
     title: Composition Studio contract
-    summary: Connect the planned Composition Studio authoring contract (structure-first multi-source authoring, typed parameter binding, side-effect-free preview, exact-revision edit) to its declarative component specification while implementation and verification land in later changes.
+    summary: Connect the planned Composition Studio authoring contract (structure-first multi-source authoring, aggregate Form and Saved SQL scalar metrics, typed parameter binding, side-effect-free preview, exact-revision edit) to its declarative component specification while implementation and verification land in later changes.
     status: planned
     bindings:
       - id: frontend
@@ -26,6 +26,12 @@ features:
                 criterion: REQ-FE-070#criterion.source-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.display-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.metric-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.metric-result-presentation
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.metric-saved-lifecycle
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
               - kind: satisfies
@@ -251,20 +257,6 @@ features:
                 criterion: REQ-FE-070#criterion.source-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-source-navigator]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: "keeps long navigator names available without exposing source identifiers" } }
-      - id: entry-query-metric-preview-verification
-        role: verification
-        facet: verification
-        responsibility: Verify the Studio EntryQuery metric journey adds a scalar Form field through the display picker and renders the live Entry value in the canvas preview.
-        targets:
-          - id: entry-query-metric-preview
-            adapter: typescript
-            path: e2e/composition-studio-journey.test.ts
-            selector: { kind: test, name: Composition Studio builds a reusable tool from existing knowledge }
-            claims:
-              - kind: verifies
-                criterion: REQ-FE-070#criterion.display-authoring
-                covers: [FEAT-FE-014#binding.frontend/target.composition-display-picker]
-                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-studio-journey.test.ts, test: Composition Studio builds a reusable tool from existing knowledge } }
       - id: composition-picker-name-verification
         role: verification
         facet: verification
