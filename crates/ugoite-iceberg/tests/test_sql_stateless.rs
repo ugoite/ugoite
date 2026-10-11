@@ -1144,6 +1144,62 @@ async fn stateless_sql_allows_only_the_read_only_aggregate_policy() -> Result<()
     Ok(())
 }
 
+#[tokio::test]
+async fn stateless_count_preserves_aggregate_result_row_semantics() -> Result<()> {
+    let space = setup_sql_space("memory://sql-stateless-aggregate-count", "sqlaggcount").await?;
+    let count = |sql: String| async {
+        space
+            .service
+            .count_sql(
+                &space.space_id,
+                SqlQueryCountRequest {
+                    sql,
+                    parameters: Map::new(),
+                    parameter_types: BTreeMap::new(),
+                    saved_sql: None,
+                },
+            )
+            .await
+    };
+
+    let grouped = format!(
+        "SELECT \"{}\", SUM(\"{}\") FROM \"{}\" GROUP BY \"{}\"",
+        space.status_column, space.priority_column, space.form_name, space.status_column
+    );
+    assert_eq!(
+        count(grouped).await?,
+        2,
+        "count returns grouped result rows"
+    );
+
+    let empty_grouped = format!(
+        "SELECT \"{}\" FROM \"{}\" WHERE \"{}\" = 'missing' GROUP BY \"{}\"",
+        space.status_column, space.form_name, space.status_column, space.status_column
+    );
+    assert_eq!(count(empty_grouped).await?, 0, "no groups means zero rows");
+
+    let empty_scalar = format!(
+        "SELECT COUNT(*) FROM \"{}\" WHERE \"{}\" = 'missing'",
+        space.form_name, space.status_column
+    );
+    assert_eq!(
+        count(empty_scalar).await?,
+        1,
+        "a scalar aggregate over an empty input still returns one row"
+    );
+
+    let sum = format!(
+        "SELECT SUM(\"{}\") FROM \"{}\"",
+        space.priority_column, space.form_name
+    );
+    assert_eq!(
+        count(sum).await?,
+        1,
+        "a valid scalar SUM returns one result row"
+    );
+    Ok(())
+}
+
 /// Parameters bind as typed values: declared `string` filters, inferred
 /// `long` numbers bind (Form-type alias for `int64`), and a declared typed
 /// null binds without string substitution.

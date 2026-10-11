@@ -125,6 +125,25 @@ async fn append_aggregate(
         .snapshot_id)
 }
 
+async fn append_aggregate_batch(
+    workspace: &IcebergWorkspace,
+    revisions: Vec<EntryRevision>,
+) -> anyhow::Result<i64> {
+    let first = revisions
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("aggregate batch must contain at least one Entry"))?;
+    let form_id = first.form_id;
+    Ok(workspace
+        .commit(publication_context(
+            Uuid::new_v4().to_string(),
+            "test.aggregate-entry-batch",
+            first,
+        )?)?
+        .append_revisions(form_id, revisions)
+        .await?
+        .snapshot_id)
+}
+
 fn aggregate_policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQueryPolicy {
     let mut authorized = policy(form, readable);
     let form_policy = authorized.forms.get_mut(&form.id).unwrap();
@@ -499,6 +518,23 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
             .value(0),
         25_000
     );
+    let decimal_average = context
+        .execute("SELECT AVG(CAST(field_101 AS DECIMAL(10, 2))) AS average FROM tasks")
+        .await?;
+    assert_eq!(
+        decimal_average[0].schema().field(0).data_type(),
+        &arrow_schema::DataType::Decimal128(14, 6)
+    );
+    assert_eq!(
+        decimal_average[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::Decimal128Array>()
+            .expect("decimal AVG stays Decimal128")
+            .value(0),
+        62_500_000,
+        "decimal AVG preserves exact base-10 output scale"
+    );
     let float_value = |index| {
         batch
             .column(index)
@@ -748,6 +784,120 @@ async fn sql_aggregate_rejects_int64_overflow_and_preserves_resource_limits() ->
     assert!(matches!(
         error.downcast_ref::<AuthorizedQueryError>(),
         Some(AuthorizedQueryError::QueryTimedOut)
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn high_cardinality_grouping_and_distinct_aggregates_are_bounded() -> anyhow::Result<()> {
+    const ENTRY_COUNT: usize = 512;
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(240)),
+        "memory://authorized-query-aggregate-cardinality",
+    )
+    .await?;
+    let tasks = aggregate_form(241);
+    create_form(&workspace, &tasks).await?;
+    let entry_ids = (0..ENTRY_COUNT)
+        .map(|index| 10_000 + index as u128)
+        .collect::<Vec<_>>();
+    let revisions = entry_ids
+        .iter()
+        .enumerate()
+        .map(|(index, entry_id)| {
+            aggregate_revision(
+                &tasks,
+                *entry_id,
+                20_000 + index as u128,
+                &format!("category-{index:04}"),
+                (index % 256) as i64,
+                FieldValue::Null,
+            )
+        })
+        .collect::<Vec<_>>();
+    append_aggregate_batch(&workspace, revisions).await?;
+
+    let mut parallel = aggregate_policy(&tasks, &entry_ids);
+    parallel.limits.max_rows = ENTRY_COUNT + 1;
+    parallel.limits.max_concurrency = 4;
+    parallel.limits.timeout = Duration::from_secs(30);
+    let parallel_context = workspace.authorized_query_context(parallel.clone()).await?;
+    let distinct_sql = "SELECT SUM(DISTINCT amount) AS total, AVG(DISTINCT amount) AS average \
+         FROM (SELECT field_101 AS amount FROM tasks \
+         UNION ALL SELECT field_101 AS amount FROM tasks) AS duplicate_inputs";
+    let distinct_plan = parallel_context
+        .physical_plan_for_testing(distinct_sql)
+        .await?;
+    assert!(
+        distinct_plan.matches("AggregateExec").count() >= 2,
+        "the distinct aggregate should use partial and final aggregate stages: {distinct_plan}"
+    );
+    assert!(
+        distinct_plan.contains("UnionExec"),
+        "the aggregate inputs should reach distinct states through multiple partitions: {distinct_plan}"
+    );
+    let distinct = parallel_context.execute(distinct_sql).await?;
+    assert_eq!(
+        distinct[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("distinct SUM stays Int64")
+            .value(0),
+        (0..256).sum::<i64>()
+    );
+    let average = distinct[0]
+        .column(1)
+        .as_any()
+        .downcast_ref::<arrow_array::Float64Array>()
+        .expect("distinct AVG returns Float64")
+        .value(0);
+    assert!((average - 127.5).abs() < 1e-12);
+
+    let mut group_memory_limited = aggregate_policy(&tasks, &entry_ids);
+    group_memory_limited.limits.max_rows = ENTRY_COUNT + 1;
+    group_memory_limited.limits.max_memory_bytes = 8 * 1024;
+    group_memory_limited.limits.timeout = Duration::from_secs(30);
+    let group_context = workspace
+        .authorized_query_context(group_memory_limited)
+        .await?;
+    let groups = group_context
+        .execute("SELECT field_100, COUNT(*) FROM tasks GROUP BY field_100")
+        .await
+        .expect_err("512 output groups must stay within the configured memory budget");
+    assert!(matches!(
+        groups.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::ResourceLimitExceeded { .. })
+    ));
+
+    let mut distinct_memory_limited = aggregate_policy(&tasks, &entry_ids);
+    distinct_memory_limited.limits.max_rows = ENTRY_COUNT + 1;
+    distinct_memory_limited.limits.max_memory_bytes = 8 * 1024;
+    distinct_memory_limited.limits.timeout = Duration::from_secs(30);
+    let distinct_context = workspace
+        .authorized_query_context(distinct_memory_limited)
+        .await?;
+    let distinct = distinct_context
+        .execute("SELECT SUM(DISTINCT field_101) FROM tasks")
+        .await
+        .expect_err("a large DISTINCT state must stay within the configured memory budget");
+    assert!(matches!(
+        distinct.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::ResourceLimitExceeded { .. })
+    ));
+
+    let mut row_limited = aggregate_policy(&tasks, &entry_ids);
+    row_limited.limits.max_rows = 32;
+    row_limited.limits.max_memory_bytes = 8 * 1024 * 1024;
+    row_limited.limits.timeout = Duration::from_secs(30);
+    let row_context = workspace.authorized_query_context(row_limited).await?;
+    let rows = row_context
+        .execute("SELECT field_100, COUNT(*) FROM tasks GROUP BY field_100")
+        .await
+        .expect_err("an oversized aggregate result must not be returned as a prefix");
+    assert!(matches!(
+        rows.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::ResourceLimitExceeded { .. })
     ));
     Ok(())
 }

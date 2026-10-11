@@ -1089,7 +1089,7 @@ impl AuthorizedQueryContext {
                 .state()
                 .optimize(&frame.logical_plan().clone())
                 .map_err(AuthorizedQueryError::invalid_query)?;
-            validate_logical_plan(&plan, &self.authorized_relations)
+            validate_relation_plan(&plan, &self.authorized_relations)
                 .map_err(AuthorizedQueryError::unauthorized)?;
             let validation_plan = plan.clone();
             let frame = self
@@ -1990,6 +1990,25 @@ fn validate_logical_plan(
     plan: &LogicalPlan,
     authorized_relations: &BTreeSet<String>,
 ) -> Result<()> {
+    validate_logical_plan_inner(plan, authorized_relations, false)
+}
+
+/// Validates plans built only from the typed, authorized relation API. That
+/// API uses DataFusion's LogicalPlan::Unnest for list-field traversal; raw SQL
+/// still goes through `validate_logical_plan`, where user-authored UNNEST is
+/// rejected.
+fn validate_relation_plan(
+    plan: &LogicalPlan,
+    authorized_relations: &BTreeSet<String>,
+) -> Result<()> {
+    validate_logical_plan_inner(plan, authorized_relations, true)
+}
+
+fn validate_logical_plan_inner(
+    plan: &LogicalPlan,
+    authorized_relations: &BTreeSet<String>,
+    allow_internal_unnest: bool,
+) -> Result<()> {
     // The private catalog and view/provider construction are the authorization
     // boundary: a plan cannot resolve the hidden Iceberg source directly, and
     // every public relation already contains its Entry predicate and visible
@@ -2012,9 +2031,8 @@ fn validate_logical_plan(
         LogicalPlan::Window(_) => {
             bail!("window functions are not supported for read-only query execution")
         }
-        LogicalPlan::Unnest(_) => {
-            bail!("UNNEST is not supported for read-only query execution")
-        }
+        LogicalPlan::Unnest(_) if allow_internal_unnest => {}
+        LogicalPlan::Unnest(_) => bail!("UNNEST is not supported for read-only query execution"),
         LogicalPlan::TableScan(scan) => {
             let relation = scan.table_name.to_string();
             if !authorized_relations.contains(&relation) {
@@ -2036,7 +2054,7 @@ fn validate_logical_plan(
         | LogicalPlan::Distinct(_) => {}
     }
     for input in plan.inputs() {
-        validate_logical_plan(input, authorized_relations)?;
+        validate_logical_plan_inner(input, authorized_relations, allow_internal_unnest)?;
     }
     Ok(())
 }
