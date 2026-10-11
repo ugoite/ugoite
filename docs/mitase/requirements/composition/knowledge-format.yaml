@@ -88,18 +88,18 @@ requirements:
       - id: typed-metric-definition-validation
         role: verification
         facet: verification
-        responsibility: Verify typed definitions remain fail-closed until query dispatch is available, operation-specific aggregate result types, matching-set semantics, projection-independent aggregate FieldIds, and native/WASM canonical parity.
+        responsibility: Verify typed aggregate and SQL scalar definitions resolve into server metric bindings. Companion targets verify operation-specific aggregate result types, matching-set semantics, projection-independent aggregate FieldIds, and native/WASM canonical parity.
         targets:
-          - id: typed-metric-fail-closed-case
+          - id: typed-metric-binding-resolution-case
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
-            selector: { kind: symbol, name: tests::typed_metric_definitions_fail_closed_until_query_execution_is_available }
+            selector: { kind: symbol, name: tests::typed_metric_definitions_resolve_to_server_metric_bindings }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-002#criterion.typed-metric-definition
                 covers:
                   - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
-                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::typed_metric_definitions_fail_closed_until_query_execution_is_available } }
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::typed_metric_definitions_resolve_to_server_metric_bindings } }
           - id: matching-set-contract-case
             adapter: rust
             path: crates/ugoite-core/src/entry_query.rs
