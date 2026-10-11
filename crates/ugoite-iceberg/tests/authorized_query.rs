@@ -631,7 +631,9 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
     ));
     let distinct = context
         .execute(
-            "SELECT SUM(DISTINCT CASE WHEN field_101 = 200 THEN 100 \
+            "SELECT COUNT(DISTINCT CASE WHEN field_101 = 200 THEN 100 \
+             ELSE field_101 END) AS distinct_count, \
+             SUM(DISTINCT CASE WHEN field_101 = 200 THEN 100 \
              ELSE field_101 END) AS total, \
              AVG(DISTINCT CASE WHEN field_101 = 200 THEN 100 \
              ELSE field_101 END) AS average FROM tasks",
@@ -642,12 +644,21 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
             .column(0)
             .as_any()
             .downcast_ref::<Int64Array>()
+            .expect("distinct integer count remains Int64")
+            .value(0),
+        3
+    );
+    assert_eq!(
+        distinct[0]
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
             .expect("distinct integer sum remains Int64")
             .value(0),
         50
     );
     let distinct_average = distinct[0]
-        .column(1)
+        .column(2)
         .as_any()
         .downcast_ref::<arrow_array::Float64Array>()
         .expect("distinct integer average returns Float64")
@@ -844,7 +855,8 @@ async fn high_cardinality_grouping_and_distinct_aggregates_are_bounded() -> anyh
     parallel.limits.max_concurrency = 4;
     parallel.limits.timeout = Duration::from_secs(30);
     let parallel_context = workspace.authorized_query_context(parallel.clone()).await?;
-    let distinct_sql = "SELECT SUM(DISTINCT amount) AS total, AVG(DISTINCT amount) AS average \
+    let distinct_sql = "SELECT COUNT(DISTINCT amount) AS distinct_count, \
+         SUM(DISTINCT amount) AS total, AVG(DISTINCT amount) AS average \
          FROM (SELECT field_101 AS amount FROM tasks \
          UNION ALL SELECT field_101 AS amount FROM tasks) AS duplicate_inputs";
     let distinct_plan = parallel_context
@@ -864,12 +876,21 @@ async fn high_cardinality_grouping_and_distinct_aggregates_are_bounded() -> anyh
             .column(0)
             .as_any()
             .downcast_ref::<Int64Array>()
+            .expect("distinct count stays Int64")
+            .value(0),
+        256
+    );
+    assert_eq!(
+        distinct[0]
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
             .expect("distinct SUM stays Int64")
             .value(0),
         (0..256).sum::<i64>()
     );
     let average = distinct[0]
-        .column(1)
+        .column(2)
         .as_any()
         .downcast_ref::<arrow_array::Float64Array>()
         .expect("distinct AVG returns Float64")
@@ -905,6 +926,22 @@ async fn high_cardinality_grouping_and_distinct_aggregates_are_bounded() -> anyh
         .expect_err("a large DISTINCT state must stay within the configured memory budget");
     assert!(matches!(
         distinct.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::ResourceLimitExceeded { .. })
+    ));
+
+    let mut distinct_count_memory_limited = aggregate_policy(&tasks, &entry_ids);
+    distinct_count_memory_limited.limits.max_rows = ENTRY_COUNT + 1;
+    distinct_count_memory_limited.limits.max_memory_bytes = 8 * 1024;
+    distinct_count_memory_limited.limits.timeout = Duration::from_secs(30);
+    let distinct_count_context = workspace
+        .authorized_query_context(distinct_count_memory_limited)
+        .await?;
+    let distinct_count = distinct_count_context
+        .execute("SELECT COUNT(DISTINCT field_101) FROM tasks")
+        .await
+        .expect_err("a high-cardinality COUNT(DISTINCT) state must stay within the memory budget");
+    assert!(matches!(
+        distinct_count.downcast_ref::<AuthorizedQueryError>(),
         Some(AuthorizedQueryError::ResourceLimitExceeded { .. })
     ));
 

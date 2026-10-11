@@ -2837,7 +2837,7 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
         .execute_stateless_page(sql_query, parameters, offset, limit)
         .await
         .map_err(map_sql_error)?;
-    let (rows, exact_integer_rows) = sql_result_batches_to_values_with_exact_integers_bounded(
+    let serialized_rows = sql_result_batches_to_values_with_exact_integers_bounded(
         &page.batches,
         &page.result_schema,
         ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES,
@@ -2846,8 +2846,8 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     Ok((
         page.columns,
         page.result_schema,
-        rows,
-        exact_integer_rows,
+        serialized_rows.rows,
+        serialized_rows.exact_integer_rows,
         page.has_order,
     ))
 }
@@ -3372,19 +3372,32 @@ fn sql_result_batches_to_values_bounded(
     record_batches_to_values_bounded(&decimal_string_batches, max_bytes)
 }
 
+type ExactIntegerRows = Vec<Vec<Option<String>>>;
+
+struct SerializedSqlResultRows {
+    rows: Vec<Value>,
+    exact_integer_rows: Option<ExactIntegerRows>,
+}
+
 fn sql_result_batches_to_values_with_exact_integers_bounded(
     batches: &[arrow_array::RecordBatch],
     result_schema: &[SqlResultColumn],
     max_bytes: usize,
     include_exact_integer_values: bool,
-) -> Result<(Vec<Value>, Option<Vec<Vec<Option<String>>>>)> {
+) -> Result<SerializedSqlResultRows> {
     let rows = sql_result_batches_to_values_bounded(batches, result_schema, max_bytes)?;
     if !include_exact_integer_values {
-        return Ok((rows, None));
+        return Ok(SerializedSqlResultRows {
+            rows,
+            exact_integer_rows: None,
+        });
     }
 
     let Some(exact_integer_rows) = sql_exact_integer_rows(batches, result_schema)? else {
-        return Ok((rows, None));
+        return Ok(SerializedSqlResultRows {
+            rows,
+            exact_integer_rows: None,
+        });
     };
     let rows_bytes = serde_json::to_vec(&rows)?.len();
     let exact_integer_bytes = serde_json::to_vec(&exact_integer_rows)?.len();
@@ -3394,7 +3407,10 @@ fn sql_result_batches_to_values_with_exact_integers_bounded(
     {
         return Err(anyhow!("DataFusion result exceeds its byte limit"));
     }
-    Ok((rows, Some(exact_integer_rows)))
+    Ok(SerializedSqlResultRows {
+        rows,
+        exact_integer_rows: Some(exact_integer_rows),
+    })
 }
 
 /// Creates a positional exact-integer sidecar without changing the ordinary
@@ -3403,7 +3419,7 @@ fn sql_result_batches_to_values_with_exact_integers_bounded(
 fn sql_exact_integer_rows(
     batches: &[arrow_array::RecordBatch],
     result_schema: &[SqlResultColumn],
-) -> Result<Option<Vec<Vec<Option<String>>>>> {
+) -> Result<Option<ExactIntegerRows>> {
     use arrow_schema::DataType;
 
     let integer_columns = result_schema
