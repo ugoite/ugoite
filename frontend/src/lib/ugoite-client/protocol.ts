@@ -219,7 +219,7 @@ export const validateAssetReference = async (
   });
 
 export type CompositionMetricPageRequest = {
-  expected_result_type: SqlResultColumnType;
+  expected_result_type: Exclude<SqlResultColumnType, "decimal">;
   is_complete: boolean;
   row_count: number;
   selected_column_count: number;

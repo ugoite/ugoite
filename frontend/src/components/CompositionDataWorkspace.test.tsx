@@ -1695,6 +1695,12 @@ describe("CompositionDataWorkspace", () => {
       ...savedSqlEntry,
       revision_id: "sql-rev-2",
     });
+    sqlQueryMock.mockResolvedValueOnce({
+      columns: ["total"],
+      rows: [["12345678901234567890.012300"]],
+      has_more: false,
+      result_schema: [{ name: "total", type: "decimal" }],
+    });
     fireEvent.click(
       await screen.findByRole("button", { name: "Monthly totals" }),
     );
@@ -1718,7 +1724,10 @@ describe("CompositionDataWorkspace", () => {
     await waitFor(() => {
       expect(harness.onRevision).toHaveBeenCalledWith(
         "src-1",
-        expect.objectContaining({ revisionId: "sql-rev-2" }),
+        expect.objectContaining({
+          revisionId: "sql-rev-2",
+          expectedResult: [{ name: "total", type: "json" }],
+        }),
         { month_start: "date" },
       );
     });

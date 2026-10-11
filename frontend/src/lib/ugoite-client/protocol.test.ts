@@ -118,8 +118,9 @@ describe("portable Ugoite API protocol WASM", () => {
     });
   });
 
-  it("accepts decimal result types at the Composition protocol boundary", () => {
+  it("keeps decimal SQL types outside Composition metric protocol inputs", () => {
     const request = {
+      // @ts-expect-error Decimal is a SQL type but is not a Composition metric type yet.
       expected_result_type: "decimal",
       is_complete: true,
       row_count: 1,
@@ -127,13 +128,7 @@ describe("portable Ugoite API protocol WASM", () => {
       selected_value: "12345678901234567890.012300",
     } satisfies CompositionMetricPageRequest;
 
-    expect(request).toEqual({
-      expected_result_type: "decimal",
-      is_complete: true,
-      row_count: 1,
-      selected_column_count: 1,
-      selected_value: "12345678901234567890.012300",
-    });
+    expect(request.expected_result_type).toBe("decimal");
   });
 
   it("rethrows non-diagnostic metric protocol failures", async () => {

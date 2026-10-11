@@ -3,13 +3,11 @@ import { A } from "@solidjs/router";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
 import { SqlResultTable } from "~/components/SqlResultTable";
-import type {
-  CompositionResolveDiagnostic,
-  CompositionResolvedSource,
-} from "~/lib/composition-api";
-import type {
-  CompositionParameterType,
-  CompositionResultType,
+import {
+  type CompositionParameterType,
+  type CompositionResolveDiagnostic,
+  type CompositionResolvedSource,
+  compositionResultTypeFromSql,
 } from "~/lib/composition-api";
 import type { DraftSource } from "~/lib/composition-draft";
 import type { SavedSqlRevisionUpdate } from "~/lib/composition-draft";
@@ -131,8 +129,7 @@ export function SavedSqlSourceViewer(props: SavedSqlSourceViewerProps) {
             revisionId: current.revision_id,
             expectedResult: columns.map((name) => ({
               name,
-              type: (schemaByName.get(name) ??
-                "json") as CompositionResultType,
+              type: compositionResultTypeFromSql(schemaByName.get(name)),
             })),
             variableNames: current.variables.map((variable) => variable.name),
           },

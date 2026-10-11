@@ -238,7 +238,37 @@ export interface CompositionParameterDefinition {
   format?: "year-month";
 }
 
-export type CompositionResultType = SqlResultColumnType;
+export type CompositionResultType =
+  | "string"
+  | "boolean"
+  | "integer"
+  | "float"
+  | "date"
+  | "timestamp"
+  | "json";
+
+/**
+ * Keep SQL's server-owned schema descriptor separate from the Composition
+ * source grammar. A SQL result type becomes a Composition type only after the
+ * Domain and portable protocol admit it; unknown types retain the JSON
+ * fallback rather than producing a document the server cannot read.
+ */
+export function compositionResultTypeFromSql(
+  resultType: SqlResultColumnType | undefined,
+): CompositionResultType {
+  switch (resultType) {
+    case "string":
+    case "boolean":
+    case "integer":
+    case "float":
+    case "date":
+    case "timestamp":
+    case "json":
+      return resultType;
+    default:
+      return "json";
+  }
+}
 
 export interface CompositionResolveDiagnostic {
   code: string;
@@ -360,9 +390,9 @@ export const buildSavedSqlCompositionDocument = (
   });
   const sourceId = "sql_results";
   const componentId = "results_table";
-  // The descriptor stores the server-owned column types unchanged; columns
-  // absent from the schema keep the previous json fallback. The Browser
-  // never infers types from row values.
+  // Composition currently supports a narrower result type set than SQL.
+  // Keep the server descriptor authoritative while mapping unsupported
+  // SQL types, including Decimal, to the JSON fallback.
   const schemaByName = new Map(
     (resultSchema ?? []).map((column) => [column.name, column.type]),
   );
@@ -381,7 +411,7 @@ export const buildSavedSqlCompositionDocument = (
         revision_id: entry.revision_id,
         expected_result: columns.map((column) => ({
           name: column,
-          type: schemaByName.get(column) ?? "json",
+          type: compositionResultTypeFromSql(schemaByName.get(column)),
         })),
         variables: Object.fromEntries(
           entry.variables.map((variable) => [

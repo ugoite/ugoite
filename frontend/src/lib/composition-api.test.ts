@@ -311,7 +311,7 @@ describe("compositionApi", () => {
     ]);
   });
 
-  it("preserves decimal SQL result types without converting their values", () => {
+  it("maps decimal SQL result types to the supported JSON Composition type", () => {
     const entry = {
       id: "sql-1",
       name: "Exact total",
@@ -332,7 +332,7 @@ describe("compositionApi", () => {
     );
 
     expect(document.spec.sources[0].expected_result).toEqual([
-      { name: "total", type: "decimal" },
+      { name: "total", type: "json" },
     ]);
   });
 
