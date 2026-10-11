@@ -877,8 +877,10 @@ async fn function_variants_and_storage_failures_are_closed_errors() -> anyhow::R
         Some(AuthorizedQueryError::UnauthorizedQueryFeature { .. })
     ));
 
+    let mut no_from_aggregate_policy = policy(&tasks, &[]);
+    no_from_aggregate_policy.limits.function_policy = SqlFunctionPolicy::ReadOnlyAggregateV1;
     let aggregate_context = workspace
-        .authorized_query_context(aggregate_policy(&tasks, &[]))
+        .authorized_query_context(no_from_aggregate_policy)
         .await?;
     let scalar_count = aggregate_context
         .execute("SELECT COUNT(*) AS row_count")
