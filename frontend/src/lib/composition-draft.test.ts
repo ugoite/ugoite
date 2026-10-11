@@ -31,8 +31,8 @@ import {
   setEntryQueryFilters,
   setEntryQueryProjection,
   setEntryQuerySort,
+  setMetricDefinition,
   setMetricSource,
-  setMetricValueField,
   setSavedSqlRevision,
   setTableSource,
   setTextContent,
@@ -87,7 +87,7 @@ describe("composition draft model", () => {
     const metric = addMetricDisplay(
       table.draft,
       "src-1",
-      { column: "total" },
+      { kind: "sql_scalar", column: "total" },
       "Total",
     );
     expect(metric.draftId).toBe("disp-2");
@@ -115,7 +115,11 @@ describe("composition draft model", () => {
     });
     expect(document.spec.components[1]).toMatchObject({
       kind: "metric",
-      value_field: { kind: "sql_column", name: "total" },
+      definition: {
+        kind: "sql_scalar",
+        source: "src-1",
+        column: "total",
+      },
     });
   });
 
@@ -299,8 +303,12 @@ describe("composition draft model", () => {
           {
             kind: "metric",
             id: "disp-2",
-            source: "src-2",
-            value_field: { kind: "entry_field", field_id: 1 },
+            definition: {
+              kind: "aggregate",
+              source: "src-2",
+              operation: "count_values",
+              field_id: 1,
+            },
           },
         ],
         layout: {
@@ -363,6 +371,41 @@ describe("composition draft model", () => {
       },
     } as unknown as CompositionStudioDocument;
     expect(() => draftFromDocument(document, {})).toThrow();
+  });
+
+  it("never falls back to persisted source identities as visible names", () => {
+    const sourceId = "internal-source-identity";
+    const document: CompositionStudioDocument = {
+      format: "ugoite.composition",
+      format_version: 1,
+      kind: "dashboard",
+      name: "Tools",
+      tags: [],
+      spec: {
+        parameters: [],
+        sources: [{
+          kind: "saved_sql",
+          id: sourceId,
+          entry_id: "internal-entry-identity",
+          revision_id: "internal-revision-identity",
+          expected_result: [{ name: "total", type: "float" }],
+          variables: {},
+        }],
+        components: [{ kind: "table", id: "rows", source: sourceId }],
+        layout: {
+          kind: "flow",
+          rows: [{
+            id: "main",
+            items: [{ kind: "component", component: "rows" }],
+          }],
+        },
+      },
+    };
+    const draft = draftFromDocument(document, {});
+    expect(draft.sources[0].name).toBeTruthy();
+    expect(draft.sources[0].name).not.toContain(sourceId);
+    expect(draft.sources[0].name).not.toContain("internal-entry-identity");
+    expect(draft.sources[0].name).not.toContain("internal-revision-identity");
   });
 
   it("restores multi-row layout order with text and parameter placement", () => {
@@ -443,8 +486,11 @@ describe("composition draft model", () => {
             kind: "metric",
             id: "total",
             label: "Monthly total",
-            source: "month_total",
-            value_field: { kind: "sql_column", name: "total" },
+            definition: {
+              kind: "sql_scalar",
+              source: "month_total",
+              column: "total",
+            },
           },
           {
             kind: "table",
@@ -513,7 +559,7 @@ describe("composition draft model", () => {
       kind: "metric",
       draftId: "disp-2",
       sourceDraftId: "src-2",
-      valueField: { column: "total" },
+      definition: { kind: "sql_scalar", column: "total" },
     });
     expect(draft.displays[2]).toMatchObject({
       kind: "table",
@@ -586,8 +632,11 @@ describe("composition draft model", () => {
       kind: "metric",
       id: "disp-2",
       label: "Monthly total",
-      source: "src-2",
-      value_field: { kind: "sql_column", name: "total" },
+      definition: {
+        kind: "sql_scalar",
+        source: "src-2",
+        column: "total",
+      },
     });
     expect(emitted.spec.components).toContainEqual({
       kind: "table",
@@ -662,8 +711,11 @@ describe("composition draft model", () => {
           {
             kind: "metric",
             id: "total",
-            source: "month_total",
-            value_field: { kind: "sql_column", name: "total" },
+            definition: {
+              kind: "sql_scalar",
+              source: "month_total",
+              column: "total",
+            },
           },
         ],
         layout: {
@@ -723,14 +775,13 @@ describe("composition draft model", () => {
         {},
       )
     ).toThrow();
-    // Unknown future metric value-field kinds fail closed.
+    // Unknown future metric definition kinds fail closed.
     expect(() =>
       draftFromDocument(
         withComponents([{
           kind: "metric",
           id: "total",
-          source: "month_total",
-          value_field: { kind: "future_field" },
+          definition: { kind: "future", source: "month_total" },
         }]),
         {},
       )
@@ -999,47 +1050,60 @@ describe("composition draft model", () => {
     );
   });
 
-  it("retargets metric source and value field together", () => {
+  it("retargets metric source and typed definition", () => {
     let draft = createEmptyDraft();
     draft = addSavedSqlSource(draft, sqlSeed()).draft;
     draft = addEntryQuerySource(draft, entrySeed()).draft;
     const metric = addMetricDisplay(
       draft,
       "src-1",
-      { column: "total" },
+      { kind: "sql_scalar", column: "total" },
       "Total",
     );
     if (!metric.ok) throw new Error("expected metric");
     draft = metric.draft;
 
-    const moved = setMetricSource(draft, "disp-1", "src-2", { fieldId: 1 });
+    const moved = setMetricSource(draft, "disp-1", "src-2");
     expect(moved.ok).toBe(true);
     if (!moved.ok) throw new Error("expected source change");
     expect(
       toStudioDocument(moved.draft).spec.components[0],
     ).toMatchObject({
       kind: "metric",
-      source: "src-2",
-      value_field: { kind: "entry_field", field_id: 1 },
+      definition: {
+        kind: "aggregate",
+        source: "src-2",
+        operation: "count_rows",
+      },
     });
 
-    const rebound = setMetricValueField(moved.draft, "disp-1", {
-      column: "total",
+    const rebound = setMetricDefinition(moved.draft, "disp-1", {
+      kind: "aggregate",
+      operation: "sum",
+      fieldId: 1,
     });
     expect(rebound.ok).toBe(true);
     if (!rebound.ok) throw new Error("expected value change");
     expect(
       toStudioDocument(rebound.draft).spec.components[0],
     ).toMatchObject({
-      value_field: { kind: "sql_column", name: "total" },
+      definition: {
+        kind: "aggregate",
+        source: "src-2",
+        operation: "sum",
+        field_id: 1,
+      },
     });
 
     // Existing guards stay: wrong kinds and unknown identities fail closed.
-    expect(setMetricSource(draft, "disp-1", "src-9", { column: "total" }))
+    expect(setMetricSource(draft, "disp-1", "src-9"))
       .toEqual({ ok: false, error: "unknown-source" });
-    expect(setMetricSource(draft, "nope", "src-1", { column: "total" }))
+    expect(setMetricSource(draft, "nope", "src-1"))
       .toEqual({ ok: false, error: "unknown-display" });
-    expect(setMetricValueField(draft, "nope", { column: "total" })).toEqual({
+    expect(setMetricDefinition(draft, "nope", {
+      kind: "sql_scalar",
+      column: "total",
+    })).toEqual({
       ok: false,
       error: "unknown-display",
     });
@@ -1311,24 +1375,26 @@ describe("composition draft model", () => {
     });
   });
 
-  it("keeps EntryQuery metric fields in the source projection", () => {
+  it("keeps metric aggregate fields independent from table projection", () => {
     let draft = createEmptyDraft();
-    draft = addEntryQuerySource(draft, entrySeed()).draft;
-    const metric = addMetricDisplay(draft, "src-1", { fieldId: 1 });
+    draft = addEntryQuerySource(draft, {
+      ...entrySeed(),
+      fieldSchema: [
+        { field_id: 1, field_type: "string" },
+        { field_id: 2, field_type: "integer" },
+      ],
+    }).draft;
+    const metric = addMetricDisplay(draft, "src-1", {
+      kind: "aggregate",
+      operation: "sum",
+      fieldId: 2,
+    });
     expect(metric.ok).toBe(true);
     if (!metric.ok) throw new Error("expected metric");
     draft = metric.draft;
     expect(toStudioDocument(draft).spec.sources[0]).toMatchObject({
       kind: "entry_query",
-      query: { projection: { kind: "fields", fields: [1] } },
-    });
-
-    const rebound = setMetricValueField(draft, metric.draftId!, { fieldId: 2 });
-    expect(rebound.ok).toBe(true);
-    if (!rebound.ok) throw new Error("expected value field change");
-    draft = rebound.draft;
-    expect(toStudioDocument(draft).spec.sources[0]).toMatchObject({
-      query: { projection: { kind: "fields", fields: [1, 2] } },
+      query: { projection: { kind: "preview" } },
     });
 
     const preview = setEntryQueryProjection(draft, "src-1", {
@@ -1337,11 +1403,19 @@ describe("composition draft model", () => {
     expect(preview.ok).toBe(true);
     if (!preview.ok) throw new Error("expected projection change");
     expect(toStudioDocument(preview.draft).spec.sources[0]).toMatchObject({
-      query: { projection: { kind: "fields", fields: [2] } },
+      query: { projection: { kind: "preview" } },
+    });
+    expect(toStudioDocument(preview.draft).spec.components[0]).toMatchObject({
+      definition: {
+        kind: "aggregate",
+        source: "src-1",
+        operation: "sum",
+        field_id: 2,
+      },
     });
   });
 
-  it("rejects a metric field that would exceed the EntryQuery projection limit", () => {
+  it("allows aggregate fields outside the EntryQuery table projection limit", () => {
     const fields = Array.from(
       { length: MAX_ENTRY_PROJECTION_FIELDS + 1 },
       (_, index) => ({
@@ -1364,30 +1438,52 @@ describe("composition draft model", () => {
       },
     }).draft;
 
-    expect(
-      addMetricDisplay(draft, "src-1", {
-        fieldId: MAX_ENTRY_PROJECTION_FIELDS + 1,
-      }),
-    ).toEqual({ ok: false, error: "invalid-query" });
+    const metric = addMetricDisplay(draft, "src-1", {
+      kind: "aggregate",
+      operation: "sum",
+      fieldId: MAX_ENTRY_PROJECTION_FIELDS + 1,
+    });
+    expect(metric.ok).toBe(true);
+    if (!metric.ok) {
+      throw new Error("expected metric independent of projection");
+    }
+    expect(toStudioDocument(metric.draft).spec.sources[0]).toMatchObject({
+      query: {
+        projection: {
+          kind: "fields",
+          fields: fields.slice(0, MAX_ENTRY_PROJECTION_FIELDS).map((field) =>
+            field.field_id
+          ),
+        },
+      },
+    });
   });
 
-  it("adds a metric field when retargeting to an EntryQuery source", () => {
+  it("retargets a Saved SQL scalar metric to the Form row-count operation", () => {
     let draft = createEmptyDraft();
     draft = addSavedSqlSource(draft, sqlSeed()).draft;
     draft = addEntryQuerySource(draft, entrySeed()).draft;
-    const metric = addMetricDisplay(draft, "src-1", { column: "total" });
+    const metric = addMetricDisplay(draft, "src-1", {
+      kind: "sql_scalar",
+      column: "total",
+    });
     if (!metric.ok || !metric.draftId) throw new Error("expected metric");
     const moved = setMetricSource(
       metric.draft,
       metric.draftId,
       "src-2",
-      { fieldId: 2 },
     );
     expect(moved.ok).toBe(true);
     if (!moved.ok) throw new Error("expected source change");
     expect(toStudioDocument(moved.draft).spec.sources[1]).toMatchObject({
       kind: "entry_query",
-      query: { projection: { kind: "fields", fields: [2] } },
+    });
+    expect(toStudioDocument(moved.draft).spec.components[0]).toMatchObject({
+      definition: {
+        kind: "aggregate",
+        source: "src-2",
+        operation: "count_rows",
+      },
     });
   });
 
