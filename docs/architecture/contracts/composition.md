@@ -27,10 +27,10 @@ Frozen v1 pin (see `composition_v1_freeze_pins_portable_contract` in
 | Parser limits | 64 KiB YAML bytes, nesting depth 64, 256 collection items |
 | Tags | document tags are the sole semantic value and equal stored Entry tags |
 | Source grammar | `entry_query` (Form scope, six filter operators, two sort directions, fields/preview projection, optional Created/Updated display columns) and exact `saved_sql` (EntryId + RevisionId, ordered unique `expected_result`, eight logical types) |
-| Metric identity | typed `definition` (`aggregate` or `sql_scalar`) with stable FieldId / exact column name; legacy exact-scalar `source` + `value_field` stays readable in this v0.x series and is retired only with a next-minor contract change |
+| Metric identity | exactly one typed `definition` (`aggregate` or `sql_scalar`) with a stable FieldId or exact column name; the unshipped `source` + `value_field` shape is rejected |
 | Components | `text` / `metric` / `table`; `flow` layout rows/items, unique row and component IDs, exactly-once component placement, parameter controls for required parameters without defaults, empty layouts and empty rows invalid; text styles `title` / `heading` / `body` / `caption` |
 | Fingerprints | document SHA-256 over normalized value; per-source schema fingerprints over FormId + used-field snapshot |
-| Diagnostics | 17 caller-visible codes; missing/denied sources conceal as `source_unavailable` |
+| Diagnostics | 14 caller-visible codes; missing/denied sources conceal as `source_unavailable` |
 | Operations | `lint`, `list`, `get`, `history`, `resolve`, `save`, `restore` (export stays a CLI file operation) |
 | Idempotency | `Idempotency-Key` required on save/restore; same key + same payload replays, differing payload conflicts |
 | Raw recovery | unsupported versions and broken references keep raw inspect, export, and history |
@@ -64,11 +64,8 @@ Parameters keep their semantic definition under `spec.parameters`; the layout
 only places controls bound to parameter IDs. An `entry_query` source carries a sorted `field_schema`
 snapshot for the property fields used by its query and typed aggregate
 definitions. A preview projection uses all current property fields; an
-explicit projection, filter, or sort uses the fields it names. A legacy scalar
-metric using `source` plus `value_field` may reference only a field already in
-an explicit source projection; it never widens or rewrites that query
-projection. Preview does not promise a scalar result field for a legacy metric.
-A typed aggregate binds its `field_id` through `field_schema` and may use a
+explicit projection, filter, or sort uses the fields it names. A typed aggregate
+binds its `field_id` through `field_schema` and may use a
 field that the table projection does not display. Its full matching set is
 defined by the source Form, filters, and text search; table page size, current
 page, sort, and projection do not change the aggregate set. Execution must
@@ -85,9 +82,6 @@ The complete illustrative document is maintained in
 `crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml`.
 It is a contract fixture for domain, parser, canonicalization, and WASM parity
 tests, not an assertion that persistence or rendering is already shipped.
-The `metric-value-fields.ugcomp.yaml` fixture covers both source-aware metric
-field variants.
-
 The additive typed metric grammar is covered by
 `typed-metric-definitions.ugcomp.yaml`. An aggregate definition names an
 EntryQuery source and one operation (`count_rows`, `count_values`, `sum`,
@@ -100,13 +94,11 @@ omit it and use type-based rendering. Aggregate field identity and type do not d
 projection. A `sql_scalar` definition names an exact Saved SQL source
 and output column; its presentation is optional. The typed grammar is parsed,
 validated, canonicalized, and fingerprinted through the shared Rust/WASM
-contract. Core resolution remains fail-closed for these new definitions until
-the follow-up query execution work lands.
-
-The former `source` plus `value_field` shape remains accepted and canonicalizes
-with unchanged meaning for existing documents in the current v0.x series.
-Its removal is tracked for the next minor version; no implicit conversion or
-migration is performed.
+contract. The Core resolver validates these typed definitions and binds their
+source schema. Aggregate execution and SQL Scalar execution are separate query
+operations. The unshipped former `source` plus `value_field` shape is rejected
+as `invalid_composition`; no migration reader or conversion is provided. This
+does not change ordinary SQL documents, Saved SQL revisions, or Space Knowledge.
 
 The typed v1 model supports `string`, `boolean`, `integer`, `float`, `date`, and
 `timestamp` parameters. A parameter may carry a typed default and a display
@@ -147,22 +139,17 @@ parameter without a default and without a layout control. Component
 declaration order does not supply a fallback render order. Pixel coordinates,
 CSS, and canvas state are never layout content.
 
-A metric `value_field` in the existing v0.x scalar form is a tagged value so an
-EntryQuery property cannot be confused with a Saved SQL result column.
-EntryQuery metrics use
-`{ kind: entry_field, field_id: 102 }`, where `field_id` is the stable Form
-property identity and must be in the source's explicit `fields` projection.
-The `preview` projection does not promise a scalar metric property and returns
-`metric_field_not_projected` for one. Saved SQL metrics use
-`{ kind: sql_column, name: total }`, where `name` is the exact output column
-name and must uniquely match an `expected_result` field. A metric may select
-only a scalar result type; `json` fields are available to tables. Resolution checks
-that the tag matches the referenced source; for an EntryQuery property it
-carries both the stable `FieldId` and the current Form field name used as the
-`EntryResult.properties` key. A Saved SQL column name is matched against the
-exact selected revision's declared result descriptor and runtime result.
+An `aggregate` definition names an `entry_query` source and an operation.
+`count_rows` has no field; other operations use the source Form's stable
+`FieldId`. The resolver checks the operation against the current Form field
+type and retains the field in the source-schema fingerprint even when it is
+not projected for the table. A `sql_scalar` definition names a `saved_sql`
+source and exact output column; that column must uniquely match a declared
+scalar `expected_result` column. The two source types cannot be interchanged.
 
-Decimal metric values must be plain JSON strings with an optional minus sign,
+Integer metric values are canonical decimal strings, including values outside
+JavaScript's safe integer range; JSON numbers are rejected to prevent Browser
+precision loss. Decimal metric values must be plain JSON strings with an optional minus sign,
 an integer part, and an optional non-empty fractional part. Exponents, leading
 integer zeros, and negative zero are rejected; fractional scale is preserved.
 Runtime metric values declared as `date` must be JSON strings containing a
@@ -172,32 +159,20 @@ seconds precision with an optional normalized fractional part
 (`YYYY-MM-DDTHH:MM:SS[.fraction]`), or valid RFC 3339 timestamps with an
 explicit `Z` or numeric `±HH:MM` offset. Fractional seconds have one to nine
 digits; normalized local timestamps omit trailing zeroes. The shared domain
-evaluator rejects malformed values with `metric_result_type_mismatch`; query
-adapters do not implement a second date/time parser.
-
-The Core resolver binds each legacy scalar metric to the current source field
-or the exact Saved SQL revision's declared result column and type. New typed
-definitions use `definition` and do not populate `value_field`; Core rejects
-them as `invalid_composition` until their query execution work lands rather
-than interpreting them as tables or old scalar metrics. Existing scalar
-metrics' EntryQuery and Saved
-SQL page adapters validate one already-authorized page: it must be complete,
-contain exactly one row, and contain exactly one selected scalar value of the
-declared type. The adapters use the shared Domain evaluator and do not execute
-queries, fetch additional pages, or aggregate rows. Focused CLI query
-orchestration (`composition query`) and Browser rendering through the shared
-evaluator are implemented with the test evidence recorded in the acceptance
-plan; complete CLI/Browser query journey acceptance remains planned.
+validator rejects malformed non-null values with `metric_result_type_mismatch`
+and accepts SQL `NULL` for a one-row scalar. Cardinality and exact
+selected-column checks belong to the Core SQL Scalar probe; zero rows and
+multiple rows use `metric_scalar_expected_one_row`. Metrics are never computed
+from a browser or CLI query page. Aggregate execution, SQL Scalar execution,
+and their full query journey are tracked as separate runtime work.
 
 The shared Rust and portable API diagnostic vocabulary includes
 `unsupported_format_version`, `invalid_composition`, `parameter_unknown`,
 `parameter_missing`, `parameter_type_mismatch`, `source_unavailable`,
 `missing_field`,
-`field_type_changed`, `source_schema_changed`, `metric_field_not_projected`,
-`metric_result_not_scalar`, `metric_result_type_mismatch`,
-`metric_result_empty`, `metric_result_multiple_rows`,
-`metric_result_column_missing`, `metric_result_column_ambiguous`, and
-`metric_result_page_incomplete`. Audit note: `missing_form`,
+`field_type_changed`, `source_schema_changed`, `metric_result_not_scalar`,
+`metric_result_type_mismatch`, `metric_scalar_expected_one_row`,
+`metric_result_column_missing`, and `metric_result_column_ambiguous`. Audit note: `missing_form`,
 `saved_sql_revision_missing`, and `not_authorized` were removed from the
 portable vocabulary as unreachable. The current resolver projects a missing,
 denied, or mismatched source descriptor to `source_unavailable`; it does not
@@ -256,9 +231,11 @@ Each `entry_query` source has a narrower source-schema fingerprint. The core
 resolver computes it from only the source `FormId` and the normalized schema
 snapshot for fields that the resolved EntryQuery uses. This includes
 projection fields (all property fields for preview), filter and sort fields,
-and fields searched under existing EntryQuery text-search semantics. A metric
-field is covered when it is part of the explicit source projection; a metric
-cannot add a field to the query or its fingerprint. The
+fields searched under existing EntryQuery text-search semantics, and typed
+aggregate fields even when they are absent from the table projection. An
+aggregate field changes the source-schema fingerprint but does not widen the
+table query projection. The retired `source` plus `value_field` shape has no
+reader. The
 snapshot is unique and normalized by `FieldId`; each field contributes its
 logical type, List item metadata, and RowReference target metadata. Unrelated
 Form fields, labels, and the rest of the Composition document do not affect

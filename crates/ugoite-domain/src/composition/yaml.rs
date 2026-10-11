@@ -122,8 +122,6 @@ mod tests {
 
     const MONTHLY_EXPENSE: &str =
         include_str!("../../tests/fixtures/composition/monthly-expense.ugcomp.yaml");
-    const METRIC_VALUE_FIELDS: &str =
-        include_str!("../../tests/fixtures/composition/metric-value-fields.ugcomp.yaml");
     const TYPED_METRIC_DEFINITIONS: &str =
         include_str!("../../tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml");
 
@@ -209,32 +207,31 @@ mod tests {
     }
 
     #[test]
-    fn rejects_ambiguous_or_unknown_metric_value_field_shapes() {
-        let invalid = [
-            MONTHLY_EXPENSE.replace("kind: sql_column", "kind: unknown_column"),
-            MONTHLY_EXPENSE.replace("name: total", "name: total\n        field_id: 100"),
-            MONTHLY_EXPENSE.replace(
-                "kind: sql_column\n        name: total",
-                "kind: entry_field\n        name: total",
-            ),
-            MONTHLY_EXPENSE.replace(
-                "kind: sql_column\n        name: total",
-                "kind: sql_column\n        name: total\n        extra: true",
-            ),
-            MONTHLY_EXPENSE.replace("kind: sql_column\n        name: total", "total"),
-        ];
+    fn rejects_legacy_metric_shapes_and_requires_a_typed_definition() {
+        let legacy = MONTHLY_EXPENSE.replace(
+            "      definition:\n        kind: sql_scalar\n        source: month_total\n        column: total",
+            "      source: month_total\n      value_field:\n        kind: sql_column\n        name: total",
+        );
+        let missing_definition = MONTHLY_EXPENSE.replace(
+            "      definition:\n        kind: sql_scalar\n        source: month_total\n        column: total\n",
+            "",
+        );
+        let mixed = MONTHLY_EXPENSE.replace(
+            "      definition:\n        kind: sql_scalar\n        source: month_total\n        column: total",
+            "      source: month_total\n      value_field:\n        kind: sql_column\n        name: total\n      definition:\n        kind: sql_scalar\n        source: month_total\n        column: total",
+        );
 
-        for input in invalid {
+        for input in [&legacy, &missing_definition, &mixed] {
             assert_eq!(
-                parse_composition_yaml(&input),
+                parse_composition_yaml(input),
                 Err(CompositionDiagnosticCode::InvalidComposition),
-                "accepted invalid metric value field shape: {input}"
+                "legacy or incomplete metric shape was not rejected deterministically: {input}"
             );
         }
     }
 
     #[test]
-    fn parses_typed_metric_definitions_and_keeps_existing_scalar_documents_readable() {
+    fn parses_typed_metric_definitions() {
         let parsed = parse_composition_yaml(TYPED_METRIC_DEFINITIONS).unwrap();
         let sum_without_number_presentation = TYPED_METRIC_DEFINITIONS.replace(
             "      presentation:\n        kind: number\n        unit: 円\n        fraction_digits: 0\n    - id: expense_values",
@@ -249,11 +246,11 @@ mod tests {
         assert!(matches!(
             &parsed.spec.components[0],
             crate::composition::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::Aggregate {
+                definition: CompositionMetricDefinition::Aggregate {
                     operation: CompositionAggregateOperation::CountRows,
                     field_id: None,
                     ..
-                }),
+                },
                 presentation: Some(CompositionMetricPresentation::Number { .. }),
                 ..
             }
@@ -261,33 +258,33 @@ mod tests {
         assert!(matches!(
             &parsed.spec.components[1],
             crate::composition::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::Aggregate {
+                definition: CompositionMetricDefinition::Aggregate {
                     operation: CompositionAggregateOperation::Sum,
                     field_id: Some(field_id),
                     ..
-                }),
+                },
                 ..
             } if field_id.get() == 102
         ));
         assert!(matches!(
             &parsed.spec.components[2],
             crate::composition::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::Aggregate {
+                definition: CompositionMetricDefinition::Aggregate {
                     operation: CompositionAggregateOperation::CountValues,
                     field_id: Some(field_id),
                     ..
-                }),
+                },
                 ..
             } if field_id.get() == 103
         ));
         assert!(matches!(
             &parsed.spec.components[3],
             crate::composition::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::Aggregate {
+                definition: CompositionMetricDefinition::Aggregate {
                     operation: CompositionAggregateOperation::Min,
                     field_id: Some(field_id),
                     ..
-                }),
+                },
                 presentation: None,
                 ..
             } if field_id.get() == 104
@@ -295,11 +292,11 @@ mod tests {
         assert!(matches!(
             &parsed.spec.components[4],
             crate::composition::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::Aggregate {
+                definition: CompositionMetricDefinition::Aggregate {
                     operation: CompositionAggregateOperation::Max,
                     field_id: Some(field_id),
                     ..
-                }),
+                },
                 presentation: None,
                 ..
             } if field_id.get() == 105
@@ -307,24 +304,10 @@ mod tests {
         assert!(matches!(
             &parsed.spec.components[5],
             crate::composition::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::SqlScalar { column, .. }),
+                definition: CompositionMetricDefinition::SqlScalar { column, .. },
                 presentation: None,
                 ..
             } if column == "total"
-        ));
-
-        // The old exact-scalar shape remains readable in the current v0.x
-        // series until its next-minor retirement.
-        let old_document = parse_composition_yaml(METRIC_VALUE_FIELDS).unwrap();
-        assert!(matches!(
-            &old_document.spec.components[0],
-            crate::composition::CompositionComponent::Metric {
-                source: Some(source),
-                value_field: Some(_),
-                definition: None,
-                presentation: None,
-                ..
-            } if source == "expense_rows"
         ));
     }
 
@@ -373,10 +356,6 @@ mod tests {
             TYPED_METRIC_DEFINITIONS.replace(
                 "        fraction_digits: 0\n    - id: expense_sum",
                 "        fraction_digits: 0\n        format: currency\n    - id: expense_sum",
-            ),
-            TYPED_METRIC_DEFINITIONS.replace(
-                "      definition:\n        kind: sql_scalar",
-                "      source: monthly_total\n      value_field:\n        kind: sql_column\n        name: total\n      definition:\n        kind: sql_scalar",
             ),
             TYPED_METRIC_DEFINITIONS.replace(
                 "        field_id: 104\n    - id: latest_expense",

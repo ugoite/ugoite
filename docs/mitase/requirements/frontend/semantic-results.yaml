@@ -400,13 +400,10 @@ requirements:
                 criterion: REQ-FE-068#criterion.local-horizontal-overflow
                 covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/entry-browser-ux.test.ts, test: "REQ-FE-068: a single-column Entry table fits phone widths" } }
-          # Source-native Composition table delegation is implemented (RS5):
-          # entry_query sources render through Entry presentation,
-          # saved_sql sources through SqlResultTable, metrics through the
-          # shared evaluator. The metric half remains verified through
-          # REQ-COMP-002 bindings. Mobile browser overflow keeps its single
-          # REQ-FE-067 owner; RS7 refreshes narrow-viewport evidence on the
-          # post-refactor source.
+          # Source-native Composition tables render through their existing
+          # presenters. Metric values come from the server metric operation
+          # and are never computed from a source page. Mobile browser overflow
+          # keeps its single REQ-FE-067 owner.
           - id: composition-source-rendering
             adapter: typescript
             path: frontend/src/components/CompositionRenderer.test.tsx
@@ -419,12 +416,12 @@ requirements:
           - id: composition-flow-row-rendering
             adapter: typescript
             path: frontend/src/components/DashboardFlowRenderer.test.tsx
-            selector: { kind: test, name: delegates flow metrics and tables to source-native presenters }
+            selector: { kind: test, name: does not derive metrics from pages while rendering tables }
             claims:
               - kind: verifies
                 criterion: REQ-FE-068#criterion.source-native-composition-rendering
                 covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-dashboard-flow-renderer]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "delegates flow metrics and tables to source-native presenters" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "does not derive metrics from pages while rendering tables" } }
           - id: composition-flow-viewport
             adapter: typescript
             path: frontend/src/components/DashboardFlowRenderer.test.tsx

@@ -324,14 +324,14 @@ requirements:
           by preview), plus the fields searched under existing EntryQuery
           text-search semantics when text is present. The snapshot includes
           field IDs and types with typed List item and RowReference target
-          metadata. A legacy scalar metric field contributes only when the
-          source projection already includes it. A typed aggregate field comes
-          from the source schema and contributes even when it is absent from
-          the table projection; it never changes that projection. Unrelated
-          fields, labels, and other Composition document content are excluded
-          from this fingerprint. Aggregate execution revalidates the current
-          Form field and operates over the full authorized matching set under
-          the canonical EntryQuery text and filter rules.
+          metadata. A typed aggregate field comes from the source schema and
+          contributes even when it is absent from the table projection; it
+          never changes that projection. The unshipped `source` plus
+          `value_field` Metric shape was retired by ADR-020 and has no reader.
+          Unrelated fields, labels, and other Composition document content are
+          excluded from this fingerprint. Aggregate execution revalidates the
+          current Form field and operates over the full authorized matching set
+          under the canonical EntryQuery text and filter rules.
         governed_by: [POL-007#rule.governance]
       - id: exact-saved-sql-revision
         kind: behavior

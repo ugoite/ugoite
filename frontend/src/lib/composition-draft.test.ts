@@ -54,7 +54,6 @@ vi.mock("./ugoite-client", () => ({
   entryApi: { query: vi.fn() },
   sqlApi: { query: vi.fn() },
   protocolFetch: vi.fn(),
-  evaluateCompositionMetricPage: vi.fn(),
 }));
 
 const sqlSeed = () => ({

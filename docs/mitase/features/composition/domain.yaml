@@ -79,11 +79,6 @@ features:
       path: crates/ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml
       selector:
         kind: file
-    - id: metric-value-fields-fixture
-      adapter: declared
-      path: crates/ugoite-domain/tests/fixtures/composition/metric-value-fields.ugcomp.yaml
-      selector:
-        kind: file
     - id: typed-metric-definitions-fixture
       adapter: declared
       path: crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml
@@ -366,21 +361,6 @@ features:
         anchor: REQ-COMP-002#criterion.optional-display-labels
       - kind: evidences
         anchor: REQ-COMP-003#criterion.wasm-parity
-  - id: metric-value-field-domain
-    role: implementation
-    facet: domain
-    responsibility: Model EntryQuery metric properties by stable FieldId and Saved SQL metric output by
-      exact column name.
-    targets:
-    - id: metric-value-field-type
-      adapter: rust
-      path: crates/ugoite-domain/src/composition.rs
-      selector:
-        kind: symbol
-        name: CompositionMetricValueField
-      claims:
-      - kind: satisfies
-        criterion: REQ-COMP-002#criterion.typed-metric-value-field
   - id: entry-query-field-schema-domain
     role: implementation
     facet: domain
@@ -412,36 +392,35 @@ features:
   - id: typed-metric-runtime-evidence
     role: evidence
     facet: core-tests
-    responsibility: Verify typed metric definitions remain fail-closed until the Composition metric-query operation dispatches aggregate and SQL scalar definitions.
+    responsibility: Verify typed Metric definitions resolve from their declared source kind and bind their operation, field, and result type in layout order.
     targets:
-    - id: core-typed-metric-fail-closed
+    - id: core-typed-metric-bindings
       adapter: rust
       path: crates/ugoite-core/src/composition.rs
       selector:
         kind: symbol
-        name: tests::typed_metric_definitions_fail_closed_until_query_execution_is_available
+        name: tests::resolve_plan_binds_typed_metrics_in_render_order
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.typed-metric-definition
   - id: metric-runtime-value-domain
     role: implementation
     facet: domain
-    responsibility: Validate selected scalar metric values, including exact decimal strings and date/time formats, with the shared Rust domain semantics.
+    responsibility: Validate nullable scalar metric values, including exact integer/decimal strings and normalized date/time forms, with shared Rust domain semantics.
     targets:
     - id: metric-runtime-value-validator
       adapter: rust
       path: crates/ugoite-domain/src/composition_metric.rs
       selector:
         kind: symbol
-        name: evaluate_composition_metric_page
+        name: validate_composition_metric_scalar_value
       claims:
       - kind: satisfies
         criterion: REQ-COMP-002#criterion.metric-runtime-values
   - id: metric-runtime-value-evidence
     role: evidence
     facet: domain-tests
-    responsibility: Verify exact Decimal values preserve fractional scale and accepted normalized date/time values,
-      with stable rejection of invalid decimal, calendar, clock, precision, and offset forms.
+    responsibility: Verify exact Integer and Decimal strings avoid precision loss or scale loss, and normalized date/time values reject malformed forms.
     targets:
     - id: accepted-metric-date-time-values
       adapter: rust
@@ -470,52 +449,15 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.metric-runtime-values
-  - id: metric-value-field-contract-evidence
-    role: evidence
-    facet: domain-tests
-    responsibility: Verify typed metric references canonicalize and retain distinct stable identities
-      through native and WASM execution.
-    targets:
-    - id: metric-value-fields-canonical-golden
+    - id: exact-integer-metric-values
       adapter: rust
-      path: crates/ugoite-wasm/src/lib.rs
+      path: crates/ugoite-domain/src/composition_metric.rs
       selector:
         kind: symbol
-        name: composition_canonicalization_matches_the_native_domain_contract
+        name: tests::validates_exact_integer_metric_strings_without_numeric_conversion
       claims:
       - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-value-field
-    - id: invalid-metric-value-field-shapes
-      adapter: rust
-      path: crates/ugoite-wasm/src/lib.rs
-      selector:
-        kind: symbol
-        name: composition_canonicalization_matches_the_native_domain_contract
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-value-field
-    - id: wasm-metric-value-field-parity
-      adapter: rust
-      path: crates/ugoite-wasm/src/lib.rs
-      selector:
-        kind: symbol
-        name: composition_canonicalization_matches_the_native_domain_contract
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-value-field
-      - kind: evidences
-        anchor: REQ-COMP-003#criterion.wasm-parity
-    - id: wasm32-metric-value-field-parity
-      adapter: typescript
-      path: crates/ugoite-wasm/tests/composition_parity.ts
-      selector:
-        kind: symbol
-        name: main
-      claims:
-      - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-value-field
-      - kind: evidences
-        anchor: REQ-COMP-003#criterion.wasm-parity
+        anchor: REQ-COMP-002#criterion.metric-runtime-values
   - id: component-layout-domain
     role: implementation
     facet: domain
@@ -781,14 +723,6 @@ features:
     participants:
     - target: FEAT-COMP-001#binding.metric-runtime-value-domain/target.metric-runtime-value-validator
       role: implementation
-    - target: FEAT-COMP-002#binding.metric-page-validation/target.entry-metric-page-adapter
-      role: implementation
-    - target: FEAT-COMP-002#binding.metric-page-validation/target.saved-sql-metric-page-adapter
-      role: implementation
-    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-shared-metric-evaluator
-      role: client
-    - target: FEAT-COMP-004#binding.browser-query-runtime/target.browser-composition-renderer
-      role: client
     guarantees:
     - REQ-COMP-002#criterion.metric-runtime-values
   - id: ordered-component-layout

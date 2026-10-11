@@ -1,10 +1,9 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DashboardFlowRenderer } from "./DashboardFlowRenderer";
-import { compositionApi } from "~/lib/composition-api";
 import type {
   CompositionParameterDefinition,
   CompositionResolvePlan,
@@ -133,13 +132,7 @@ const renderFlow = (
   ));
 
 describe("DashboardFlowRenderer", () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it("renders rows in order with parameter controls interleaved", async () => {
-    vi.spyOn(compositionApi, "evaluateMetricPage").mockResolvedValue({
-      ok: true,
-      value: 42,
-    });
+  it("renders rows in order with parameter controls interleaved", () => {
     const { container } = renderFlow();
 
     const rows = Array.from(
@@ -159,16 +152,12 @@ describe("DashboardFlowRenderer", () => {
     // Unplaced optional parameters render no in-flow control.
     expect(screen.queryByLabelText("Region")).toBeNull();
 
-    // Metrics share the source without aggregation; the table delegates to
-    // the source-native presenter.
-    expect(await screen.findAllByText("42", { selector: "output" }))
-      .toHaveLength(2);
+    // The table delegates page rendering to the source-native presenter.
+    // Metrics are rendered by their server query, never from this page.
     expect(screen.getByRole("table")).toBeInTheDocument();
   });
 
-  it("renders each text style without fetching sources", async () => {
-    const evaluate = vi.spyOn(compositionApi, "evaluateMetricPage")
-      .mockResolvedValue({ ok: true, value: 1 });
+  it("renders each text style without fetching sources", () => {
     renderFlow({
       layout: {
         rows: [{
@@ -206,7 +195,6 @@ describe("DashboardFlowRenderer", () => {
     );
     expect(screen.getByText("Settled monthly.")).toHaveClass("flowText--body");
     expect(screen.getByText("Unaudited.")).toHaveClass("flowText--caption");
-    await waitFor(() => expect(evaluate).not.toHaveBeenCalled());
   });
 
   it("binds parameter changes to transient work state", () => {
@@ -236,9 +224,7 @@ describe("DashboardFlowRenderer", () => {
     );
   });
 
-  it("delegates flow metrics and tables to source-native presenters", async () => {
-    const evaluate = vi.spyOn(compositionApi, "evaluateMetricPage")
-      .mockResolvedValue({ ok: true, value: 42 });
+  it("does not derive metrics from pages while rendering tables", () => {
     renderFlow({
       layout: {
         rows: [{
@@ -251,17 +237,6 @@ describe("DashboardFlowRenderer", () => {
       },
     });
 
-    await waitFor(() =>
-      expect(evaluate).toHaveBeenCalledWith({
-        expected_result_type: "float",
-        is_complete: true,
-        row_count: 1,
-        selected_column_count: 1,
-        selected_value: 42,
-      })
-    );
-    expect(await screen.findByText("42", { selector: "output" }))
-      .toBeInTheDocument();
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
   });

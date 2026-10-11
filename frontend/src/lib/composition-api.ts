@@ -10,10 +10,7 @@ import type { SqlQueryPage, SqlQueryRequest, SqlResultColumn } from "./types";
 import {
   canonicalizeCompositionDocument,
   type CompositionDocumentCanonicalization,
-  type CompositionMetricPageEvaluation,
-  type CompositionMetricPageRequest,
   entryApi,
-  evaluateCompositionMetricPage,
   protocolFetch,
   sqlApi,
 } from "./ugoite-client";
@@ -107,14 +104,22 @@ export interface CompositionLintDocument {
     }>;
     components: Array<
       | {
-        kind: string;
+        kind: "metric";
         id: string;
         label?: string;
-        source: string;
-        value_field?: { kind: string; field_id?: number; name?: string };
+        definition:
+          | {
+            kind: "aggregate";
+            source: string;
+            operation: "count_rows" | "count_values" | "sum" | "avg" | "min" | "max";
+            field_id?: number;
+          }
+          | { kind: "sql_scalar"; source: string; column: string };
+        presentation?: { kind: "number"; unit?: string; fraction_digits?: number };
       }
+      | { kind: "table"; id: string; label?: string; source: string }
       | {
-        kind: string;
+        kind: "text";
         id: string;
         label?: string;
         text: string;
@@ -560,12 +565,6 @@ export const compositionApi = {
     );
   },
 
-  async evaluateMetricPage(
-    request: CompositionMetricPageRequest,
-  ): Promise<CompositionMetricPageEvaluation> {
-    return await evaluateCompositionMetricPage(request);
-  },
-
   async querySource(
     spaceId: string,
     source: CompositionResolvedSource,
@@ -592,5 +591,3 @@ export const compositionApi = {
 
 export const compositionDisplayName = (value: unknown): string =>
   typeof value === "string" && value.trim() ? value.trim() : "Composition";
-
-export type { CompositionMetricPageEvaluation, CompositionMetricPageRequest };

@@ -4,7 +4,6 @@ import {
   buildSpreadsheetCsvRequest,
   canonicalizeCompositionDocument,
   encodeSpreadsheetCsv,
-  evaluateCompositionMetricPage,
   getWasmSupportedOperations,
   prepareApiRequest,
   protocolFetch,
@@ -91,38 +90,6 @@ describe("portable Ugoite API protocol WASM", () => {
     ).resolves.toBe(
       '"\'=SUM(A1:A2)","a,b","line\nbreak","日本語"',
     );
-  });
-
-  it("adapts metric protocol envelopes to scalar and diagnostic results", async () => {
-    await expect(evaluateCompositionMetricPage({
-      expected_result_type: "integer",
-      is_complete: true,
-      row_count: 1,
-      selected_column_count: 1,
-      selected_value: 42,
-    })).resolves.toEqual({ ok: true, value: 42 });
-
-    await expect(evaluateCompositionMetricPage({
-      expected_result_type: "integer",
-      is_complete: false,
-      row_count: 1,
-      selected_column_count: 1,
-      selected_value: 42,
-    })).resolves.toEqual({
-      ok: false,
-      error: {
-        kind: "composition_diagnostic",
-        code: "metric_result_page_incomplete",
-      },
-    });
-  });
-
-  it("rethrows non-diagnostic metric protocol failures", async () => {
-    const cyclic: Record<string, unknown> = {};
-    cyclic.self = cyclic;
-
-    await expect(evaluateCompositionMetricPage(cyclic as never)).rejects
-      .toThrow(TypeError);
   });
 
   it("measures the exact CSV request envelope without a guessed margin", () => {

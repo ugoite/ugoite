@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { For, Show } from "solid-js";
 import {
   CompositionEntryQueryTable,
   type CompositionFieldTypeLookup,
@@ -8,7 +8,6 @@ import { ResultPagination } from "~/components/ResultPagination";
 import { SqlResultTable } from "~/components/SqlResultTable";
 import { t, type TranslationKey } from "~/lib/i18n";
 import {
-  compositionApi,
   type CompositionResolvedComponentBinding,
   type CompositionResolveDiagnostic,
   type CompositionResolvedSource,
@@ -65,14 +64,11 @@ const knownDiagnosticCodes = new Set([
   "missing_field",
   "field_type_changed",
   "source_schema_changed",
-  "metric_field_not_projected",
   "metric_result_not_scalar",
   "metric_result_type_mismatch",
-  "metric_result_empty",
-  "metric_result_multiple_rows",
+  "metric_scalar_expected_one_row",
   "metric_result_column_missing",
   "metric_result_column_ambiguous",
-  "metric_result_page_incomplete",
 ]);
 
 export const compositionDiagnosticMessage = (
@@ -116,24 +112,6 @@ export function CompositionDiagnostics(props: {
     </ul>
   );
 }
-
-const displayCell = (value: unknown): string => {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  try {
-    return JSON.stringify(value) ?? "—";
-  } catch {
-    return "—";
-  }
-};
-
-const objectValue = (value: unknown): Record<string, unknown> | undefined =>
-  value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
 
 export function CompositionSavedSqlTable(props: {
   binding: Extract<CompositionResolvedComponentBinding, { kind: "table" }>;
@@ -208,62 +186,6 @@ export function CompositionSavedSqlTable(props: {
   );
 }
 
-const metricRequest = (
-  binding: Extract<CompositionResolvedComponentBinding, { kind: "metric" }>,
-  source: CompositionResolvedSource,
-  page: NonNullable<CompositionSourcePageState["page"]>,
-) => {
-  let selectedColumnCount = 0;
-  let selectedValue: unknown;
-  let hasSelectedValue = false;
-
-  if (page.kind === "saved_sql") {
-    const result = page.page;
-    const key = binding.result_property_key;
-    const indexes = key === undefined
-      ? []
-      : result.columns.flatMap((column, index) =>
-        column === key ? [index] : []
-      );
-    selectedColumnCount = indexes.length;
-    if (indexes.length === 1 && result.rows.length > 0) {
-      const row = result.rows[0];
-      if (Array.isArray(row)) {
-        selectedValue = row[indexes[0]];
-        hasSelectedValue = indexes[0] < row.length;
-      } else {
-        const values = objectValue(row);
-        hasSelectedValue = !!values && Object.hasOwn(values, key!);
-        selectedValue = values?.[key!];
-      }
-    }
-  } else {
-    const result = page.page;
-    const key = binding.result_property_key;
-    const projection = source.kind === "entry_query"
-      ? source.request.projection
-      : undefined;
-    selectedColumnCount = projection?.kind === "fields"
-      ? projection.fields.filter((field) =>
-        field.kind === "property" && field.field_id === binding.metric_field_id
-      ).length
-      : 0;
-    if (result.rows.length > 0 && key !== undefined) {
-      const values = objectValue(result.rows[0].properties);
-      hasSelectedValue = !!values && Object.hasOwn(values, key);
-      selectedValue = values?.[key];
-    }
-  }
-
-  return {
-    expected_result_type: binding.expected_result_type,
-    is_complete: !page.page.has_more && page.page.next === undefined,
-    row_count: page.page.rows.length,
-    selected_column_count: selectedColumnCount,
-    ...(hasSelectedValue ? { selected_value: selectedValue } : {}),
-  };
-};
-
 export function CompositionMetric(props: {
   binding: Extract<CompositionResolvedComponentBinding, { kind: "metric" }>;
   source: CompositionResolvedSource;
@@ -271,81 +193,10 @@ export function CompositionMetric(props: {
   ownsSourceStatus: boolean;
   onRetry: () => void;
 }) {
-  const [evaluation, setEvaluation] = createSignal<
-    Awaited<ReturnType<typeof compositionApi.evaluateMetricPage>> | undefined
-  >();
-  const [loading, setLoading] = createSignal(false);
-  const [failed, setFailed] = createSignal(false);
-  let generation = 0;
-
-  createEffect(() => {
-    const state = props.sourceState;
-    // A metric describes the complete source result, so keep the first-page
-    // evaluation while its table is browsing continuation pages.
-    if (state?.cursor !== undefined) return;
-    const page = state?.page;
-    const requestGeneration = ++generation;
-    setEvaluation(undefined);
-    setFailed(false);
-    if (!page || state?.status !== "ready") {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    void compositionApi.evaluateMetricPage(
-      metricRequest(props.binding, props.source, page),
-    ).then(
-      (result) => {
-        if (requestGeneration === generation) setEvaluation(result);
-      },
-      () => {
-        if (requestGeneration === generation) setFailed(true);
-      },
-    ).finally(() => {
-      if (requestGeneration === generation) setLoading(false);
-    });
-  });
-
-  onCleanup(() => {
-    generation += 1;
-  });
-
-  const value = () => {
-    const result = evaluation();
-    return result?.ok ? displayCell(result.value) : undefined;
-  };
-  const diagnostic = () => {
-    const result = evaluation();
-    return result && !result.ok
-      ? compositionDiagnosticMessage(result.error)
-      : undefined;
-  };
-
   return (
     <section class="section">
       <Show when={props.binding.label}>
         <h2>{props.binding.label}</h2>
-      </Show>
-      <Show when={loading()}>
-        <LocalBusyIndicator label={t("composition.queryLoading")} />
-      </Show>
-      <Show when={!loading() && failed()}>
-        <p class="ui-text-danger" role="alert">
-          {t("composition.metricUnavailable")}
-        </p>
-        <button
-          class="ui-button ui-button-secondary"
-          type="button"
-          onClick={props.onRetry}
-        >
-          {t("composition.retry")}
-        </button>
-      </Show>
-      <Show when={!loading() && !failed() && diagnostic()}>
-        <p class="ui-text-danger" role="alert">{diagnostic()}</p>
-      </Show>
-      <Show when={!loading() && !failed() && value() !== undefined}>
-        <output class="compositionMetric">{value()}</output>
       </Show>
       <Show
         when={props.ownsSourceStatus &&
@@ -353,9 +204,7 @@ export function CompositionMetric(props: {
       >
         <LocalBusyIndicator label={t("composition.queryLoading")} />
       </Show>
-      <Show
-        when={props.ownsSourceStatus && props.sourceState?.status === "error"}
-      >
+      <Show when={props.ownsSourceStatus && props.sourceState?.status === "error"}>
         <p class="ui-text-danger" role="alert">
           {t("composition.queryFailed")}
         </p>

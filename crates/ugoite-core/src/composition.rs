@@ -6,10 +6,10 @@
 
 use crate::entry_query::{
     entry_field_capability, entry_query_text_searches_field_type, EntryFieldRef, EntryFilter,
-    EntryPage, EntryPageRequest, EntryProjection, EntryQuery, EntryQueryFieldKind, EntryQueryScope,
-    EntrySort, EntrySortDirection, SearchOperator,
+    EntryPageRequest, EntryProjection, EntryQuery, EntryQueryFieldKind, EntryQueryScope, EntrySort,
+    EntrySortDirection, SearchOperator,
 };
-use crate::sql_query::{SavedSqlRevisionRef, SqlQueryPage, SqlQueryRequest};
+use crate::sql_query::{SavedSqlRevisionRef, SqlQueryRequest};
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -18,15 +18,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use ugoite_domain::composition::{
     CompositionAggregateOperation, CompositionComponent, CompositionDiagnosticCode,
     CompositionFieldSchemaEntry, CompositionLiteral, CompositionMetricDefinition,
-    CompositionMetricValueField, CompositionParameter, CompositionParameterType,
-    CompositionQueryOperator, CompositionResultFieldType, CompositionSortDirection,
-    CompositionSource, CompositionSpec, CompositionValue, EntryQueryDisplaySystemField,
-    EntryQueryProjectionTemplate, EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
+    CompositionParameter, CompositionParameterType, CompositionQueryOperator,
+    CompositionResultFieldType, CompositionSortDirection, CompositionSource, CompositionSpec,
+    CompositionValue, EntryQueryDisplaySystemField, EntryQueryProjectionTemplate,
+    EntryQueryTemplate, DEFAULT_COMPOSITION_PAGE_LIMIT,
 };
 use ugoite_domain::composition_metric::{
-    composition_aggregate_result_type, composition_metric_result_type,
-    evaluate_composition_metric_page, validate_composition_metric_result_type,
-    CompositionMetricDiagnosticCode, CompositionMetricPage,
+    composition_aggregate_result_type, validate_composition_metric_result_type,
 };
 use ugoite_domain::form::{FieldType, FormDefinition};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
@@ -251,31 +249,12 @@ pub fn compile_entry_query_source(
     bindings: &ParameterBindings,
     current_form: &FormDefinition,
 ) -> Result<CompiledEntryQuery, Vec<CompositionDiagnostic>> {
-    compile_entry_query_source_with_metric_fields(
-        form_id,
-        field_schema,
-        template,
-        bindings,
-        current_form,
-        &[],
-    )
-}
-
-fn compile_entry_query_source_with_metric_fields(
-    form_id: FormId,
-    field_schema: &[CompositionFieldSchemaEntry],
-    template: &EntryQueryTemplate,
-    bindings: &ParameterBindings,
-    current_form: &FormDefinition,
-    metric_fields: &[FieldId],
-) -> Result<CompiledEntryQuery, Vec<CompositionDiagnostic>> {
     compile_entry_query_source_with_aggregate_fields(
         form_id,
         field_schema,
         template,
         bindings,
         current_form,
-        metric_fields,
         &[],
     )
 }
@@ -286,7 +265,6 @@ fn compile_entry_query_source_with_aggregate_fields(
     template: &EntryQueryTemplate,
     bindings: &ParameterBindings,
     current_form: &FormDefinition,
-    metric_fields: &[FieldId],
     aggregate_fields: &[FieldId],
 ) -> Result<CompiledEntryQuery, Vec<CompositionDiagnostic>> {
     if current_form.id != form_id || current_form.validate().is_err() {
@@ -387,24 +365,6 @@ fn compile_entry_query_source_with_aggregate_fields(
         return Err(vec![CompositionDiagnostic::without_parameter(
             CompositionDiagnosticCode::InvalidComposition,
         )]);
-    }
-
-    if !metric_fields.is_empty() {
-        let projected_fields = match &request.projection {
-            EntryProjection::Preview => None,
-            EntryProjection::Fields { fields } => Some(fields),
-        };
-        if metric_fields.iter().any(|metric_field| {
-            !projected_fields.is_some_and(|fields| {
-                fields.contains(&EntryFieldRef::Property {
-                    field_id: *metric_field,
-                })
-            })
-        }) {
-            return Err(vec![CompositionDiagnostic::without_parameter(
-                CompositionDiagnosticCode::MetricFieldNotProjected,
-            )]);
-        }
     }
 
     let current_by_id = current_form
@@ -838,11 +798,10 @@ pub struct ResolvedComponentBinding {
     pub source_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metric_field_id: Option<FieldId>,
-    /// Typed EntryQuery operation. Legacy scalar metrics and SQL scalar
-    /// metrics leave this absent.
+    /// EntryQuery aggregate operation. SQL scalar metrics leave this absent.
     #[serde(skip)]
     pub aggregate_operation: Option<CompositionAggregateOperation>,
-    /// Current EntryResult property key or exact Saved SQL output alias.
+    /// Aggregate field name or exact Saved SQL output alias.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_property_key: Option<String>,
     /// Portable logical result type for scalar metric components.
@@ -946,31 +905,29 @@ fn resolve_composition_parts(
         .iter()
         .map(|source| (source.id(), source))
         .collect::<BTreeMap<_, _>>();
-    let mut metric_fields_by_source: BTreeMap<&str, Vec<FieldId>> = BTreeMap::new();
     let mut aggregate_fields_by_source: BTreeMap<&str, Vec<FieldId>> = BTreeMap::new();
     let mut metric_sql_columns_by_source: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
     let mut metric_diagnostics = Vec::new();
     for component in &render_components {
-        // The authorized aggregate executor is available, but the public
-        // Composition metric-query operation does not dispatch to it yet.
-        // Keep typed definitions fail-closed until that operation is wired.
-        if component.metric_definition().is_some() {
+        let Some(source_id) = component.source_id() else {
+            // Text carries no source binding and emits no source request.
+            continue;
+        };
+        if !source_ids.contains(source_id) {
             return Err(vec![CompositionDiagnostic::without_parameter(
                 CompositionDiagnosticCode::InvalidComposition,
             )]);
         }
-        match component.metric_definition() {
-            Some(CompositionMetricDefinition::Aggregate {
-                source, field_id, ..
-            }) => {
-                if !matches!(
-                    sources_by_id.get(source.as_str()),
-                    Some(CompositionSource::EntryQuery { .. })
-                ) {
-                    return Err(vec![CompositionDiagnostic::without_parameter(
-                        CompositionDiagnosticCode::InvalidComposition,
-                    )]);
-                }
+        match (
+            component.metric_definition(),
+            sources_by_id.get(source_id).copied(),
+        ) {
+            (
+                Some(CompositionMetricDefinition::Aggregate {
+                    source, field_id, ..
+                }),
+                Some(CompositionSource::EntryQuery { .. }),
+            ) if source == source_id => {
                 if let Some(field_id) = field_id {
                     aggregate_fields_by_source
                         .entry(source)
@@ -978,46 +935,16 @@ fn resolve_composition_parts(
                         .push(*field_id);
                 }
             }
-            // Saved SQL scalar cardinality is implemented by the following
-            // query-runtime slice. Keep that definition closed here.
-            Some(CompositionMetricDefinition::SqlScalar { .. }) => {
-                return Err(vec![CompositionDiagnostic::without_parameter(
-                    CompositionDiagnosticCode::InvalidComposition,
-                )]);
-            }
-            None => {}
-        }
-        let Some(source_id) = component.source_id() else {
-            // Text carries no source binding and emits no source request.
-            continue;
-        };
-        let value_field = component.value_field();
-        if !source_ids.contains(source_id) {
-            return Err(vec![CompositionDiagnostic::without_parameter(
-                CompositionDiagnosticCode::InvalidComposition,
-            )]);
-        }
-        match (sources_by_id.get(source_id).copied(), value_field) {
-            (Some(CompositionSource::EntryQuery { .. }), Some(value_field)) => {
-                let CompositionMetricValueField::EntryField { field_id } = value_field else {
-                    return Err(vec![CompositionDiagnostic::without_parameter(
-                        CompositionDiagnosticCode::InvalidComposition,
-                    )]);
-                };
-                metric_fields_by_source
-                    .entry(source_id)
-                    .or_default()
-                    .push(*field_id);
-            }
             (
+                Some(CompositionMetricDefinition::SqlScalar { source, column }),
                 Some(CompositionSource::SavedSql {
                     expected_result, ..
                 }),
-                Some(CompositionMetricValueField::SqlColumn { name }),
-            ) => {
-                let mut matching_columns =
-                    expected_result.iter().filter(|column| column.name == *name);
-                let Some(column) = matching_columns.next() else {
+            ) if source == source_id => {
+                let mut matching_columns = expected_result
+                    .iter()
+                    .filter(|result_column| result_column.name == *column);
+                let Some(result_column) = matching_columns.next() else {
                     metric_diagnostics.push(CompositionDiagnostic::without_parameter(
                         CompositionDiagnosticCode::MetricResultColumnMissing,
                     ));
@@ -1029,16 +956,18 @@ fn resolve_composition_parts(
                     ));
                     continue;
                 }
-                if let Err(code) = validate_composition_metric_result_type(column.result_type) {
+                if let Err(code) =
+                    validate_composition_metric_result_type(result_column.result_type)
+                {
                     metric_diagnostics.push(CompositionDiagnostic::without_parameter(code.into()));
                     continue;
                 }
                 metric_sql_columns_by_source
-                    .entry(source_id)
+                    .entry(source)
                     .or_default()
-                    .insert(name.clone());
+                    .insert(column.clone());
             }
-            (Some(_), None) => {}
+            (None, Some(_)) => {}
             _ => {
                 return Err(vec![CompositionDiagnostic::without_parameter(
                     CompositionDiagnosticCode::InvalidComposition,
@@ -1083,10 +1012,6 @@ fn resolve_composition_parts(
                 query,
                 &bindings,
                 current_form,
-                metric_fields_by_source
-                    .get(source_id)
-                    .map(Vec::as_slice)
-                    .unwrap_or_default(),
                 aggregate_fields_by_source
                     .get(source_id)
                     .map(Vec::as_slice)
@@ -1171,12 +1096,16 @@ fn resolve_component_bindings(
             )]
         })?;
         let (kind, metric_field_id, aggregate_operation, result_property_key, expected_result_type) =
-            match component.metric_definition() {
-                Some(CompositionMetricDefinition::Aggregate {
-                    source,
-                    operation,
-                    field_id,
-                }) if source == source_id => {
+            match component {
+                CompositionComponent::Metric {
+                    definition:
+                        CompositionMetricDefinition::Aggregate {
+                            source,
+                            operation,
+                            field_id,
+                        },
+                    ..
+                } if source == source_id => {
                     let current_form =
                         match (source_definition, current_by_id.get(source_id).copied()) {
                             (
@@ -1218,85 +1147,50 @@ fn resolve_component_bindings(
                         Some(expected_result_type),
                     )
                 }
-                Some(CompositionMetricDefinition::Aggregate { .. })
-                | Some(CompositionMetricDefinition::SqlScalar { .. }) => {
+                CompositionComponent::Metric {
+                    definition: CompositionMetricDefinition::SqlScalar { source, column },
+                    ..
+                } if source == source_id => {
+                    let CompositionSource::SavedSql {
+                        expected_result, ..
+                    } = source_definition
+                    else {
+                        return Err(vec![CompositionDiagnostic::without_parameter(
+                            CompositionDiagnosticCode::InvalidComposition,
+                        )]);
+                    };
+                    let mut matching_columns = expected_result
+                        .iter()
+                        .filter(|result_column| result_column.name == *column);
+                    let Some(result_column) = matching_columns.next() else {
+                        return Err(vec![CompositionDiagnostic::without_parameter(
+                            CompositionDiagnosticCode::MetricResultColumnMissing,
+                        )]);
+                    };
+                    if matching_columns.next().is_some() {
+                        return Err(vec![CompositionDiagnostic::without_parameter(
+                            CompositionDiagnosticCode::MetricResultColumnAmbiguous,
+                        )]);
+                    }
+                    validate_composition_metric_result_type(result_column.result_type).map_err(
+                        |code| vec![CompositionDiagnostic::without_parameter(code.into())],
+                    )?;
+                    (
+                        ResolvedComponentKind::Metric,
+                        None,
+                        None,
+                        Some(column.clone()),
+                        Some(result_column.result_type),
+                    )
+                }
+                CompositionComponent::Table { .. } => {
+                    (ResolvedComponentKind::Tabular, None, None, None, None)
+                }
+                CompositionComponent::Metric { .. } | CompositionComponent::Text { .. } => {
                     return Err(vec![CompositionDiagnostic::without_parameter(
                         CompositionDiagnosticCode::InvalidComposition,
                     )]);
                 }
-                None => match (source_definition, component.value_field()) {
-                    (
-                        CompositionSource::EntryQuery { .. },
-                        Some(CompositionMetricValueField::EntryField { field_id }),
-                    ) => {
-                        let current_form = match current_by_id.get(source_id).copied() {
-                            Some(CurrentSourceDescriptor::EntryQuery {
-                                current_form: Some(form),
-                                ..
-                            }) => form,
-                            _ => {
-                                return Err(vec![CompositionDiagnostic::without_parameter(
-                                    CompositionDiagnosticCode::SourceUnavailable,
-                                )]);
-                            }
-                        };
-                        let Some(field) = current_form
-                            .fields
-                            .iter()
-                            .find(|field| field.id == *field_id)
-                        else {
-                            return Err(vec![CompositionDiagnostic::without_parameter(
-                                CompositionDiagnosticCode::MissingField,
-                            )]);
-                        };
-                        let expected_result_type =
-                            composition_metric_result_type(&field.field_type).map_err(|code| {
-                                vec![CompositionDiagnostic::without_parameter(code.into())]
-                            })?;
-                        (
-                            ResolvedComponentKind::Metric,
-                            Some(*field_id),
-                            None,
-                            Some(field.name.clone()),
-                            Some(expected_result_type),
-                        )
-                    }
-                    (
-                        CompositionSource::SavedSql {
-                            expected_result, ..
-                        },
-                        Some(CompositionMetricValueField::SqlColumn { name }),
-                    ) => {
-                        let mut matching_columns =
-                            expected_result.iter().filter(|column| column.name == *name);
-                        let Some(column) = matching_columns.next() else {
-                            return Err(vec![CompositionDiagnostic::without_parameter(
-                                CompositionDiagnosticCode::MetricResultColumnMissing,
-                            )]);
-                        };
-                        if matching_columns.next().is_some() {
-                            return Err(vec![CompositionDiagnostic::without_parameter(
-                                CompositionDiagnosticCode::MetricResultColumnAmbiguous,
-                            )]);
-                        }
-                        validate_composition_metric_result_type(column.result_type).map_err(
-                            |code| vec![CompositionDiagnostic::without_parameter(code.into())],
-                        )?;
-                        (
-                            ResolvedComponentKind::Metric,
-                            None,
-                            None,
-                            Some(name.clone()),
-                            Some(column.result_type),
-                        )
-                    }
-                    (_, None) => (ResolvedComponentKind::Tabular, None, None, None, None),
-                    _ => {
-                        return Err(vec![CompositionDiagnostic::without_parameter(
-                            CompositionDiagnosticCode::InvalidComposition,
-                        )]);
-                    }
-                },
             };
         resolved.push(ResolvedComponentBinding {
             component_id: component_id.to_owned(),
@@ -1310,96 +1204,6 @@ fn resolve_component_bindings(
         });
     }
     Ok(resolved)
-}
-
-/// Evaluate one already-authorized EntryQuery page for a resolved scalar
-/// metric. This function does not fetch another page or aggregate rows.
-pub fn evaluate_entry_metric_page(
-    binding: &ResolvedComponentBinding,
-    page: &EntryPage,
-) -> Result<Value, CompositionDiagnostic> {
-    let (expected_type, property_key) = metric_binding(binding, true)?;
-    let selected_value = if page.rows.len() == 1 {
-        page.rows[0]
-            .properties
-            .as_ref()
-            .and_then(Value::as_object)
-            .and_then(|properties| properties.get(property_key))
-    } else {
-        None
-    };
-    let selected_column_count = if page.rows.len() == 1 && selected_value.is_none() {
-        0
-    } else {
-        1
-    };
-    evaluate_composition_metric_page(
-        expected_type,
-        CompositionMetricPage {
-            is_complete: !page.has_more && page.next.is_none(),
-            row_count: page.rows.len(),
-            selected_column_count,
-            selected_value,
-        },
-    )
-    .map_err(metric_page_diagnostic)
-}
-
-/// Evaluate one already-authorized exact-revision Saved SQL page for a
-/// resolved scalar metric. Result aliases are compared exactly as returned by
-/// the SQL engine; duplicate aliases remain ambiguous even if a JSON row map
-/// has collapsed them to one property.
-pub fn evaluate_saved_sql_metric_page(
-    binding: &ResolvedComponentBinding,
-    page: &SqlQueryPage,
-) -> Result<Value, CompositionDiagnostic> {
-    let (expected_type, column_name) = metric_binding(binding, false)?;
-    let selected_column_count = page
-        .columns
-        .iter()
-        .filter(|column| column.as_str() == column_name)
-        .count();
-    let selected_value = if page.rows.len() == 1 && selected_column_count == 1 {
-        page.rows[0]
-            .as_object()
-            .and_then(|row| row.get(column_name))
-    } else {
-        None
-    };
-    evaluate_composition_metric_page(
-        expected_type,
-        CompositionMetricPage {
-            is_complete: !page.has_more && page.next.is_none(),
-            row_count: page.rows.len(),
-            selected_column_count,
-            selected_value,
-        },
-    )
-    .map_err(metric_page_diagnostic)
-}
-
-fn metric_binding(
-    binding: &ResolvedComponentBinding,
-    entry_source: bool,
-) -> Result<(CompositionResultFieldType, &str), CompositionDiagnostic> {
-    if binding.kind != ResolvedComponentKind::Metric
-        || binding.metric_field_id.is_some() != entry_source
-    {
-        return Err(CompositionDiagnostic::without_parameter(
-            CompositionDiagnosticCode::InvalidComposition,
-        ));
-    }
-    let expected_type = binding.expected_result_type.ok_or_else(|| {
-        CompositionDiagnostic::without_parameter(CompositionDiagnosticCode::InvalidComposition)
-    })?;
-    let property_key = binding.result_property_key.as_deref().ok_or_else(|| {
-        CompositionDiagnostic::without_parameter(CompositionDiagnosticCode::InvalidComposition)
-    })?;
-    Ok((expected_type, property_key))
-}
-
-fn metric_page_diagnostic(code: CompositionMetricDiagnosticCode) -> CompositionDiagnostic {
-    CompositionDiagnostic::without_parameter(code.into())
 }
 
 fn composition_parameter_type_for_sql(variable_type: &str) -> Option<CompositionParameterType> {
@@ -1533,36 +1337,28 @@ fn wall_timestamp_nanos_are_representable(timestamp: NaiveDateTime) -> bool {
 mod tests {
     use super::{
         bind_parameters, compile_entry_query_source,
-        compile_entry_query_source_with_aggregate_fields,
-        compile_entry_query_source_with_metric_fields, compile_saved_sql_source,
-        evaluate_entry_metric_page, evaluate_saved_sql_metric_page, resolve_composition,
-        resolve_composition_preview, resolve_value_template, CompositionDiagnostic,
-        CompositionRevisionRef, CurrentSourceDescriptor, ParameterBindings, ResolveInput,
-        ResolvedComponentBinding, ResolvedComponentKind, ResolvedSourceRequest,
-        SavedSqlRevisionMetadata,
+        compile_entry_query_source_with_aggregate_fields, compile_saved_sql_source,
+        resolve_composition, resolve_composition_preview, resolve_value_template,
+        CompositionDiagnostic, CompositionRevisionRef, CurrentSourceDescriptor, ParameterBindings,
+        ResolveInput, ResolvedSourceRequest, SavedSqlRevisionMetadata,
     };
-    use crate::entry_query::{EntryFieldRef, EntryPage, EntryResult};
-    use crate::sql_query::SqlQueryPage;
+    use crate::entry_query::EntryFieldRef;
     use serde_json::{json, Value};
     use std::collections::BTreeMap;
     use ugoite_domain::composition::{
-        CompositionComponent, CompositionDiagnosticCode, CompositionFieldSchemaEntry,
-        CompositionLiteral, CompositionMetricValueField, CompositionParameter,
-        CompositionParameterFormat, CompositionParameterReference, CompositionParameterType,
-        CompositionQueryOperator, CompositionResultColumn, CompositionResultFieldType,
-        CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
-        DashboardFlowLayout, EntryQueryDisplaySystemField, EntryQueryFilterTemplate,
-        EntryQueryProjectionTemplate, EntryQuerySortTemplate, EntryQueryTemplate, FlowItem,
-        FlowLayoutKind, FlowRow, TextStyle,
+        CompositionAggregateOperation, CompositionComponent, CompositionDiagnosticCode,
+        CompositionFieldSchemaEntry, CompositionLiteral, CompositionMetricDefinition,
+        CompositionParameter, CompositionParameterFormat, CompositionParameterReference,
+        CompositionParameterType, CompositionQueryOperator, CompositionResultColumn,
+        CompositionResultFieldType, CompositionSortDirection, CompositionSource, CompositionSpec,
+        CompositionValue, DashboardFlowLayout, EntryQueryDisplaySystemField,
+        EntryQueryFilterTemplate, EntryQueryProjectionTemplate, EntryQuerySortTemplate,
+        EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow, TextStyle,
     };
     use ugoite_domain::form::{
         FieldType, FormDefinition, FormField, FormVersion, ListItemDefinition,
     };
     use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
-
-    const TYPED_METRIC_DEFINITIONS: &str = include_str!(
-        "../../ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml"
-    );
 
     fn parameter(
         id: &str,
@@ -1589,6 +1385,42 @@ mod tests {
             "source": source,
         }))
         .expect("the domain component representation deserializes")
+    }
+
+    fn aggregate_metric_component(
+        id: &str,
+        label: Option<&str>,
+        source: &str,
+        operation: CompositionAggregateOperation,
+        field_id: Option<FieldId>,
+    ) -> CompositionComponent {
+        CompositionComponent::Metric {
+            id: id.to_owned(),
+            label: label.map(str::to_owned),
+            definition: CompositionMetricDefinition::Aggregate {
+                source: source.to_owned(),
+                operation,
+                field_id,
+            },
+            presentation: None,
+        }
+    }
+
+    fn sql_scalar_metric_component(
+        id: &str,
+        label: Option<&str>,
+        source: &str,
+        column: &str,
+    ) -> CompositionComponent {
+        CompositionComponent::Metric {
+            id: id.to_owned(),
+            label: label.map(str::to_owned),
+            definition: CompositionMetricDefinition::SqlScalar {
+                source: source.to_owned(),
+                column: column.to_owned(),
+            },
+            presentation: None,
+        }
     }
 
     fn parameter_ref(id: &str) -> CompositionValue {
@@ -1771,59 +1603,6 @@ mod tests {
         )
     }
 
-    fn metric_binding(
-        metric_field_id: Option<FieldId>,
-        property_key: &str,
-        expected_result_type: CompositionResultFieldType,
-    ) -> ResolvedComponentBinding {
-        ResolvedComponentBinding {
-            component_id: "metric".to_owned(),
-            kind: ResolvedComponentKind::Metric,
-            label: None,
-            source_id: Some("source".to_owned()),
-            metric_field_id,
-            aggregate_operation: None,
-            result_property_key: Some(property_key.to_owned()),
-            expected_result_type: Some(expected_result_type),
-        }
-    }
-
-    fn entry_result(properties: Value) -> EntryResult {
-        let (entry_id, revision_id) = id_pair();
-        EntryResult {
-            id: entry_id.to_string(),
-            form_id: FormId::from(uuid::Uuid::from_u128(44)),
-            revision_id,
-            created_at_micros: 0,
-            updated_at_micros: 0,
-            properties: Some(properties),
-            preview: None,
-        }
-    }
-
-    fn entry_page(rows: Vec<EntryResult>, has_more: bool, next: Option<&str>) -> EntryPage {
-        EntryPage {
-            rows,
-            has_more,
-            next: next.map(str::to_owned),
-        }
-    }
-
-    fn sql_page(
-        columns: &[&str],
-        rows: Vec<Value>,
-        has_more: bool,
-        next: Option<&str>,
-    ) -> SqlQueryPage {
-        SqlQueryPage {
-            columns: columns.iter().map(|column| (*column).to_owned()).collect(),
-            rows,
-            has_more,
-            next: next.map(str::to_owned),
-            result_schema: None,
-        }
-    }
-
     fn sql_metric_diagnostics(
         expected_result: Vec<CompositionResultColumn>,
         selector: &str,
@@ -1841,11 +1620,10 @@ mod tests {
         spec.components = vec![CompositionComponent::Metric {
             id: "total".to_owned(),
             label: None,
-            source: Some("report".to_owned()),
-            value_field: Some(CompositionMetricValueField::SqlColumn {
-                name: selector.to_owned(),
-            }),
-            definition: None,
+            definition: CompositionMetricDefinition::SqlScalar {
+                source: "report".to_owned(),
+                column: selector.to_owned(),
+            },
             presentation: None,
         }];
         spec.layout = single_row_layout("summary", &["total"]);
@@ -1863,21 +1641,6 @@ mod tests {
             parameters: &BTreeMap::new(),
             current_sources: &current_sources,
         }))
-    }
-
-    #[test]
-    fn typed_metric_definitions_fail_closed_until_query_execution_is_available() {
-        let document = ugoite_domain::composition::parse_composition_yaml(TYPED_METRIC_DEFINITIONS)
-            .expect("typed metric grammar is accepted by the domain");
-
-        let diagnostics = diagnostic_codes(resolve_composition_preview(
-            &document.spec,
-            &BTreeMap::new(),
-            &[],
-            "typed-metric-draft".to_owned(),
-        ));
-
-        assert_eq!(diagnostics, [CompositionDiagnosticCode::InvalidComposition]);
     }
 
     fn diagnostic_codes<T>(
@@ -2224,70 +1987,6 @@ mod tests {
     }
 
     #[test]
-    fn metric_fields_preserve_the_source_projection_and_fingerprint() {
-        let form = form(&[
-            (100, FieldType::String),
-            (101, FieldType::Integer),
-            (102, FieldType::Double),
-        ]);
-        let template = EntryQueryTemplate {
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: vec![FieldId::new(100).unwrap(), FieldId::new(101).unwrap()],
-            },
-            ..empty_entry_query_template()
-        };
-
-        let original = compile_entry_query_source(
-            form.id,
-            &schema(&form),
-            &template,
-            &empty_bindings(),
-            &form,
-        )
-        .expect("the declared query projection compiles");
-        let with_metric = compile_entry_query_source_with_metric_fields(
-            form.id,
-            &schema(&form),
-            &template,
-            &empty_bindings(),
-            &form,
-            &[FieldId::new(101).unwrap()],
-        )
-        .expect("a metric may use a field already selected by its source");
-
-        assert_eq!(with_metric.request, original.request);
-        assert_eq!(
-            with_metric.source_schema_fingerprint,
-            original.source_schema_fingerprint
-        );
-        assert_eq!(
-            with_metric.source_schema_fingerprint,
-            compile_entry_query_source_with_metric_fields(
-                form.id,
-                &schema(&form),
-                &template,
-                &empty_bindings(),
-                &form,
-                &[FieldId::new(101).unwrap()],
-            )
-            .expect("repeated resolution has the same fingerprint")
-            .source_schema_fingerprint
-        );
-
-        assert_eq!(
-            diagnostic_codes(compile_entry_query_source_with_metric_fields(
-                form.id,
-                &schema(&form),
-                &template,
-                &empty_bindings(),
-                &form,
-                &[FieldId::new(102).unwrap()],
-            )),
-            [CompositionDiagnosticCode::MetricFieldNotProjected]
-        );
-    }
-
-    #[test]
     fn aggregate_fields_stay_out_of_projection_and_enter_the_source_fingerprint() {
         let form = form(&[(100, FieldType::String), (102, FieldType::Double)]);
         let template = EntryQueryTemplate {
@@ -2311,7 +2010,6 @@ mod tests {
             &template,
             &empty_bindings(),
             &form,
-            &[],
             &[FieldId::new(102).unwrap()],
         )
         .expect("an aggregate may use a current Form field outside the table projection");
@@ -2320,84 +2018,6 @@ mod tests {
         assert_ne!(
             with_aggregate.source_schema_fingerprint,
             table_only.source_schema_fingerprint
-        );
-    }
-
-    #[test]
-    fn metric_field_does_not_rewrite_a_preview_projection() {
-        let form = form(&[(100, FieldType::String), (101, FieldType::Double)]);
-        let template = empty_entry_query_template();
-        let preview = compile_entry_query_source(
-            form.id,
-            &schema(&form),
-            &template,
-            &empty_bindings(),
-            &form,
-        )
-        .expect("preview compiles without a metric");
-        let with_metric = compile_entry_query_source_with_metric_fields(
-            form.id,
-            &schema(&form),
-            &template,
-            &empty_bindings(),
-            &form,
-            &[FieldId::new(101).unwrap()],
-        )
-        .expect_err("Preview does not promise a scalar metric field");
-
-        assert_eq!(
-            preview.request.projection,
-            crate::entry_query::EntryProjection::Preview
-        );
-        assert_eq!(
-            with_metric
-                .iter()
-                .map(|diagnostic| diagnostic.code)
-                .collect::<Vec<_>>(),
-            [CompositionDiagnosticCode::MetricFieldNotProjected]
-        );
-    }
-
-    #[test]
-    fn metric_fields_do_not_expand_the_entry_query_projection_limit() {
-        let fields = (100..=164)
-            .map(|id| (id, FieldType::String))
-            .collect::<Vec<_>>();
-        let form = form(&fields);
-        let bounded_template = EntryQueryTemplate {
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: (100..164).map(|id| FieldId::new(id).unwrap()).collect(),
-            },
-            ..empty_entry_query_template()
-        };
-
-        assert_eq!(
-            diagnostic_codes(compile_entry_query_source_with_metric_fields(
-                form.id,
-                &schema(&form),
-                &bounded_template,
-                &empty_bindings(),
-                &form,
-                &[FieldId::new(164).unwrap()],
-            )),
-            [CompositionDiagnosticCode::MetricFieldNotProjected]
-        );
-
-        let over_limit_template = EntryQueryTemplate {
-            projection: EntryQueryProjectionTemplate::Fields {
-                fields: (100..=164).map(|id| FieldId::new(id).unwrap()).collect(),
-            },
-            ..empty_entry_query_template()
-        };
-        assert_eq!(
-            diagnostic_codes(compile_entry_query_source(
-                form.id,
-                &schema(&form),
-                &over_limit_template,
-                &empty_bindings(),
-                &form,
-            )),
-            [CompositionDiagnosticCode::InvalidComposition]
         );
     }
 
@@ -3475,7 +3095,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_plan_binds_components_in_render_order_with_stable_metric_identity() {
+    fn resolve_plan_binds_typed_metrics_in_render_order() {
         let mut current_form = form(&[(100, FieldType::String), (101, FieldType::Integer)]);
         current_form.fields[1].name = "total_amount".to_owned();
         let entry_source = entry_query_source(
@@ -3498,27 +3118,15 @@ mod tests {
         };
         let mut spec = composition_spec(Vec::new(), vec![entry_source, sql_source]);
         spec.components = vec![
-            CompositionComponent::Metric {
-                id: "entry-total".to_owned(),
-                label: Some("Entry total".to_owned()),
-                source: Some("entries".to_owned()),
-                value_field: Some(CompositionMetricValueField::EntryField {
-                    field_id: FieldId::new(101).unwrap(),
-                }),
-                definition: None,
-                presentation: None,
-            },
+            aggregate_metric_component(
+                "entry-total",
+                Some("Entry total"),
+                "entries",
+                CompositionAggregateOperation::Sum,
+                Some(FieldId::new(101).unwrap()),
+            ),
             tabular_component("rows", None, "entries"),
-            CompositionComponent::Metric {
-                id: "sql-total".to_owned(),
-                label: Some("SQL total".to_owned()),
-                source: Some("report".to_owned()),
-                value_field: Some(CompositionMetricValueField::SqlColumn {
-                    name: "total".to_owned(),
-                }),
-                definition: None,
-                presentation: None,
-            },
+            sql_scalar_metric_component("sql-total", Some("SQL total"), "report", "total"),
         ];
         spec.layout = flow_layout(vec![
             layout_row(
@@ -3566,6 +3174,7 @@ mod tests {
             Some("SQL total")
         );
         assert_eq!(plan.component_bindings[0].metric_field_id, None);
+        assert_eq!(plan.component_bindings[0].aggregate_operation, None);
         assert_eq!(
             plan.component_bindings[0].expected_result_type,
             Some(CompositionResultFieldType::Float)
@@ -3597,6 +3206,10 @@ mod tests {
         assert_eq!(
             plan.component_bindings[1].metric_field_id,
             Some(FieldId::new(101).unwrap())
+        );
+        assert_eq!(
+            plan.component_bindings[1].aggregate_operation,
+            Some(CompositionAggregateOperation::Sum)
         );
         assert_eq!(
             plan.component_bindings[1].expected_result_type,
@@ -3745,16 +3358,13 @@ mod tests {
                 text: "Note".to_owned(),
                 style: TextStyle::Body,
             },
-            CompositionComponent::Metric {
-                id: "entry-total".to_owned(),
-                label: None,
-                source: Some("entries".to_owned()),
-                value_field: Some(CompositionMetricValueField::EntryField {
-                    field_id: FieldId::new(101).unwrap(),
-                }),
-                definition: None,
-                presentation: None,
-            },
+            aggregate_metric_component(
+                "entry-total",
+                None,
+                "entries",
+                CompositionAggregateOperation::Sum,
+                Some(FieldId::new(101).unwrap()),
+            ),
         ];
         spec.layout = flow_layout(vec![
             layout_row(
@@ -4052,7 +3662,7 @@ mod tests {
     }
 
     #[test]
-    fn entry_metric_rejects_a_current_non_scalar_form_field() {
+    fn entry_sum_rejects_a_current_non_numeric_form_field() {
         let mut current_form = form(&[(101, FieldType::List)]);
         current_form.fields[0].list_item = Some(ListItemDefinition {
             field_type: FieldType::String,
@@ -4069,16 +3679,13 @@ mod tests {
             },
         );
         let mut spec = composition_spec(Vec::new(), vec![source]);
-        spec.components = vec![CompositionComponent::Metric {
-            id: "total".to_owned(),
-            label: None,
-            source: Some("entries".to_owned()),
-            value_field: Some(CompositionMetricValueField::EntryField {
-                field_id: FieldId::new(101).unwrap(),
-            }),
-            definition: None,
-            presentation: None,
-        }];
+        spec.components = vec![aggregate_metric_component(
+            "total",
+            None,
+            "entries",
+            CompositionAggregateOperation::Sum,
+            Some(FieldId::new(101).unwrap()),
+        )];
         spec.layout = single_row_layout("summary", &["total"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
             source_id: "entries",
@@ -4096,158 +3703,7 @@ mod tests {
                 parameters: &BTreeMap::new(),
                 current_sources: &current_sources,
             })),
-            vec![CompositionDiagnosticCode::MetricResultNotScalar]
-        );
-    }
-
-    #[test]
-    fn entry_metric_page_adapter_checks_one_complete_scalar_row() {
-        let binding = metric_binding(
-            Some(FieldId::new(101).unwrap()),
-            "amount",
-            CompositionResultFieldType::Integer,
-        );
-        assert_eq!(
-            evaluate_entry_metric_page(
-                &binding,
-                &entry_page(vec![entry_result(json!({"amount": 42}))], false, None),
-            ),
-            Ok(json!(42))
-        );
-
-        let failures = [
-            (
-                entry_page(Vec::new(), false, None),
-                CompositionDiagnosticCode::MetricResultEmpty,
-            ),
-            (
-                entry_page(
-                    vec![
-                        entry_result(json!({"amount": 42})),
-                        entry_result(json!({"amount": 43})),
-                    ],
-                    false,
-                    None,
-                ),
-                CompositionDiagnosticCode::MetricResultMultipleRows,
-            ),
-            (
-                entry_page(vec![entry_result(json!({}))], false, None),
-                CompositionDiagnosticCode::MetricResultColumnMissing,
-            ),
-            (
-                entry_page(vec![entry_result(json!({"amount": [42]}))], false, None),
-                CompositionDiagnosticCode::MetricResultNotScalar,
-            ),
-            (
-                entry_page(vec![entry_result(json!({"amount": "42"}))], false, None),
-                CompositionDiagnosticCode::MetricResultTypeMismatch,
-            ),
-            (
-                entry_page(
-                    vec![entry_result(json!({"amount": 42}))],
-                    false,
-                    Some("next"),
-                ),
-                CompositionDiagnosticCode::MetricResultPageIncomplete,
-            ),
-        ];
-        for (page, expected_code) in failures {
-            assert_eq!(
-                evaluate_entry_metric_page(&binding, &page)
-                    .expect_err("invalid metric page must have a stable diagnostic")
-                    .code,
-                expected_code
-            );
-        }
-    }
-
-    #[test]
-    fn saved_sql_metric_page_adapter_checks_exact_alias_and_scalar_shape() {
-        let binding = metric_binding(None, "total", CompositionResultFieldType::Float);
-        assert_eq!(
-            evaluate_saved_sql_metric_page(
-                &binding,
-                &sql_page(&["total"], vec![json!({"total": 42.5})], false, None),
-            ),
-            Ok(json!(42.5))
-        );
-
-        let failures = [
-            (
-                sql_page(&["other"], vec![json!({"other": 42.5})], false, None),
-                CompositionDiagnosticCode::MetricResultColumnMissing,
-            ),
-            (
-                sql_page(&["total"], vec![json!({"other": 42.5})], false, None),
-                CompositionDiagnosticCode::MetricResultColumnMissing,
-            ),
-            (
-                sql_page(
-                    &["total", "total"],
-                    vec![json!({"total": 42.5})],
-                    false,
-                    None,
-                ),
-                CompositionDiagnosticCode::MetricResultColumnAmbiguous,
-            ),
-            (
-                sql_page(&["total"], Vec::new(), false, None),
-                CompositionDiagnosticCode::MetricResultEmpty,
-            ),
-            (
-                sql_page(
-                    &["total"],
-                    vec![json!({"total": 1.0}), json!({"total": 2.0})],
-                    false,
-                    None,
-                ),
-                CompositionDiagnosticCode::MetricResultMultipleRows,
-            ),
-            (
-                sql_page(
-                    &["total"],
-                    vec![json!({"total": {"value": 42.5}})],
-                    false,
-                    None,
-                ),
-                CompositionDiagnosticCode::MetricResultNotScalar,
-            ),
-            (
-                sql_page(&["total"], vec![json!({"total": "42.5"})], false, None),
-                CompositionDiagnosticCode::MetricResultTypeMismatch,
-            ),
-            (
-                sql_page(&["total"], vec![json!({"total": 42.5})], true, Some("next")),
-                CompositionDiagnosticCode::MetricResultPageIncomplete,
-            ),
-        ];
-        for (page, expected_code) in failures {
-            assert_eq!(
-                evaluate_saved_sql_metric_page(&binding, &page)
-                    .expect_err("invalid metric page must have a stable diagnostic")
-                    .code,
-                expected_code
-            );
-        }
-    }
-
-    #[test]
-    fn metric_page_adapter_rejects_wrong_binding_kind() {
-        let mut binding = metric_binding(
-            Some(FieldId::new(101).unwrap()),
-            "amount",
-            CompositionResultFieldType::Integer,
-        );
-        binding.kind = ResolvedComponentKind::Tabular;
-        let diagnostic = evaluate_entry_metric_page(
-            &binding,
-            &entry_page(vec![entry_result(json!({"amount": 42}))], false, None),
-        )
-        .expect_err("tabular bindings cannot be evaluated as metrics");
-        assert_eq!(
-            diagnostic.code,
-            CompositionDiagnosticCode::InvalidComposition
+            vec![CompositionDiagnosticCode::MetricResultTypeMismatch]
         );
     }
 
@@ -4277,7 +3733,7 @@ mod tests {
     }
 
     #[test]
-    fn metric_value_field_variant_must_match_its_source_kind() {
+    fn metric_definition_kind_must_match_its_source_kind() {
         let current_form = form(&[(100, FieldType::Integer)]);
         let entry_source =
             entry_query_source("entries", &current_form, empty_entry_query_template());
@@ -4292,30 +3748,19 @@ mod tests {
         let sql_metadata = saved_sql_metadata(entry_id, revision_id, BTreeMap::new());
         let (composition_entry_id, composition_revision_id) = id_pair();
 
-        for (source_id, value_field) in [
-            (
-                "entries",
-                CompositionMetricValueField::SqlColumn {
-                    name: "total".to_owned(),
-                },
-            ),
-            (
+        for component in [
+            aggregate_metric_component(
+                "total",
+                None,
                 "report",
-                CompositionMetricValueField::EntryField {
-                    field_id: FieldId::new(100).unwrap(),
-                },
+                CompositionAggregateOperation::Sum,
+                Some(FieldId::new(100).unwrap()),
             ),
+            sql_scalar_metric_component("total", None, "entries", "field_100"),
         ] {
             let mut spec =
                 composition_spec(Vec::new(), vec![entry_source.clone(), sql_source.clone()]);
-            spec.components = vec![CompositionComponent::Metric {
-                id: "total".to_owned(),
-                label: None,
-                source: Some(source_id.to_owned()),
-                value_field: Some(value_field),
-                definition: None,
-                presentation: None,
-            }];
+            spec.components = vec![component];
             spec.layout = single_row_layout("main", &["total"]);
             let current_sources = [
                 CurrentSourceDescriptor::EntryQuery {
@@ -4354,16 +3799,13 @@ mod tests {
                 empty_entry_query_template(),
             )],
         );
-        spec.components = vec![CompositionComponent::Metric {
-            id: "private-component".to_owned(),
-            label: None,
-            source: Some("private-source-name".to_owned()),
-            value_field: Some(CompositionMetricValueField::EntryField {
-                field_id: FieldId::new(100).unwrap(),
-            }),
-            definition: None,
-            presentation: None,
-        }];
+        spec.components = vec![aggregate_metric_component(
+            "private-component",
+            None,
+            "private-source-name",
+            CompositionAggregateOperation::Sum,
+            Some(FieldId::new(100).unwrap()),
+        )];
         spec.layout = single_row_layout("private-section", &["private-component"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
             source_id: "private-source-name",
@@ -4411,14 +3853,13 @@ mod tests {
                 },
             )],
         );
-        spec.components = vec![CompositionComponent::Metric {
-            id: "private-component".to_owned(),
-            label: None,
-            source: Some(source_id.to_owned()),
-            value_field: Some(CompositionMetricValueField::EntryField { field_id }),
-            definition: None,
-            presentation: None,
-        }];
+        spec.components = vec![aggregate_metric_component(
+            "private-component",
+            None,
+            source_id,
+            CompositionAggregateOperation::Sum,
+            Some(field_id),
+        )];
         spec.layout = single_row_layout("private-section", &["private-component"]);
 
         let denied_sources = [CurrentSourceDescriptor::EntryQuery {
@@ -4499,16 +3940,13 @@ mod tests {
                 },
             )],
         );
-        spec.components = vec![CompositionComponent::Metric {
-            id: "total".to_owned(),
-            label: None,
-            source: Some("entries".to_owned()),
-            value_field: Some(CompositionMetricValueField::EntryField {
-                field_id: FieldId::new(101).unwrap(),
-            }),
-            definition: None,
-            presentation: None,
-        }];
+        spec.components = vec![aggregate_metric_component(
+            "total",
+            None,
+            "entries",
+            CompositionAggregateOperation::Sum,
+            Some(FieldId::new(101).unwrap()),
+        )];
         spec.layout = single_row_layout("main", &["total"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
             source_id: "entries",
@@ -4524,7 +3962,7 @@ mod tests {
             parameters: &BTreeMap::new(),
             current_sources: &current_sources,
         })
-        .expect_err("a missing projected metric field cannot produce a partial plan");
+        .expect_err("a missing aggregate field cannot produce a partial plan");
 
         assert_eq!(
             diagnostics
@@ -4532,59 +3970,6 @@ mod tests {
                 .map(|diagnostic| diagnostic.code)
                 .collect::<Vec<_>>(),
             [CompositionDiagnosticCode::MissingField]
-        );
-    }
-
-    #[test]
-    fn unprojected_entry_query_metric_reports_a_stable_diagnostic() {
-        let current_form = form(&[(100, FieldType::String), (101, FieldType::Integer)]);
-        let mut query_schema = schema(&current_form);
-        query_schema.retain(|field| field.field_id == FieldId::new(100).unwrap());
-        let source = CompositionSource::EntryQuery {
-            id: "entries".to_owned(),
-            form_id: current_form.id,
-            field_schema: query_schema,
-            query: EntryQueryTemplate {
-                projection: EntryQueryProjectionTemplate::Fields {
-                    fields: vec![FieldId::new(100).unwrap()],
-                },
-                ..empty_entry_query_template()
-            },
-        };
-        let mut spec = composition_spec(Vec::new(), vec![source]);
-        spec.components = vec![CompositionComponent::Metric {
-            id: "total".to_owned(),
-            label: None,
-            source: Some("entries".to_owned()),
-            value_field: Some(CompositionMetricValueField::EntryField {
-                field_id: FieldId::new(101).unwrap(),
-            }),
-            definition: None,
-            presentation: None,
-        }];
-        spec.layout = single_row_layout("main", &["total"]);
-        let current_sources = [CurrentSourceDescriptor::EntryQuery {
-            source_id: "entries",
-            current_form: Some(&current_form),
-        }];
-
-        let diagnostics = resolve_composition(ResolveInput {
-            composition_revision: CompositionRevisionRef {
-                entry_id: id_pair().0,
-                revision_id: id_pair().1,
-            },
-            spec: &spec,
-            parameters: &BTreeMap::new(),
-            current_sources: &current_sources,
-        })
-        .expect_err("the metric cannot change the EntryQuery projection");
-
-        assert_eq!(
-            diagnostics
-                .into_iter()
-                .map(|diagnostic| diagnostic.code)
-                .collect::<Vec<_>>(),
-            [CompositionDiagnosticCode::MetricFieldNotProjected]
         );
     }
 
@@ -4605,16 +3990,13 @@ mod tests {
                 },
             )],
         );
-        spec.components = vec![CompositionComponent::Metric {
-            id: "total".to_owned(),
-            label: None,
-            source: Some("entries".to_owned()),
-            value_field: Some(CompositionMetricValueField::EntryField {
-                field_id: FieldId::new(101).unwrap(),
-            }),
-            definition: None,
-            presentation: None,
-        }];
+        spec.components = vec![aggregate_metric_component(
+            "total",
+            None,
+            "entries",
+            CompositionAggregateOperation::Sum,
+            Some(FieldId::new(101).unwrap()),
+        )];
         spec.layout = single_row_layout("main", &["total"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
             source_id: "entries",
@@ -4832,16 +4214,12 @@ mod tests {
         }];
         let resolve_selected_column = |column: &str| {
             let mut spec = composition_spec(Vec::new(), vec![source.clone()]);
-            spec.components = vec![CompositionComponent::Metric {
-                id: "summary".to_owned(),
-                label: None,
-                source: Some("monthly-expenses".to_owned()),
-                value_field: Some(CompositionMetricValueField::SqlColumn {
-                    name: column.to_owned(),
-                }),
-                definition: None,
-                presentation: None,
-            }];
+            spec.components = vec![sql_scalar_metric_component(
+                "summary",
+                None,
+                "monthly-expenses",
+                column,
+            )];
             spec.layout = single_row_layout("main", &["summary"]);
 
             let plan = resolve_composition(ResolveInput {

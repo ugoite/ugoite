@@ -251,10 +251,8 @@ the current authorized Form at execution. Aggregate results use the source's
 full matching set and do not depend on table page size, page, sort, or display
 projection. The new grammar is accepted and canonicalized by the shared domain
 parser. Core query execution for these definitions is a follow-up slice and
-remains fail-closed until it lands. The
-existing `source` plus `value_field` exact-scalar shape remains readable with
-its current meaning in the same v0.x series; removal is tracked for the next
-minor version without migration or conversion.
+remains fail-closed until it lands. This ruling does not define a legacy metric
+compatibility path; that unshipped shape is retired by ADR-020.
 
 The parser uses `serde-saphyr` 1.3.0 with duplicate-key errors, strict typed
 deserialization, and explicit resource budgets. It rejects multiple documents,
@@ -304,13 +302,12 @@ grammar freeze recorded in [`composition.md`](composition.md):
    `expected_result`. Null and empty results retain their types;
    duplicate or ambiguous columns fail closed.
 
-Document grammar, storage layout, mutation operations, query grammar, the
-existing `source` plus `value_field` exact-scalar semantics, generic write
-guard, idempotency semantics, raw recovery, downgrade compatibility, and the
-`string` spec carrier are unchanged. The additive typed Metric `definition`
-grammar is representable and canonicalizable, but its query execution is not
-part of this ruling. The operation inventory and freeze tests are updated in
-the same change that introduces `composition.preview`.
+Document grammar, storage layout, mutation operations, query grammar, generic
+write guard, idempotency semantics, raw recovery, downgrade compatibility, and
+the `string` spec carrier are unchanged. Typed Metric `definition` grammar is
+representable and canonicalizable, but its query execution is not part of this
+ruling. The operation inventory and freeze tests are updated in the same change
+that introduces `composition.preview`.
 
 ## ADR-019 — Composition layout v1 ruling (sections to layout AST)
 
@@ -339,10 +336,9 @@ this ruling:
 
 1. `format_version` stays `1`; no migration reader is built for the
    pre-release `sections` grammar.
-   The separately added typed Metric `definition` shape is additive. Existing
-   `source` plus `value_field` documents remain readable with unchanged
-   semantics in the current v0.x series; their retirement is a next-minor
-   change and does not use an implicit migration.
+   Typed Metric definitions use only `definition: aggregate | sql_scalar`;
+   ADR-020 supersedes earlier compatibility statements for the unshipped
+   `source` plus `value_field` metric shape.
 2. Components are `text` / `metric` / `table` only. `text` carries a fixed
    `style` enum (`title`, `heading`, `body`, `caption`); no Markdown, HTML,
    CSS, or handlers. Parameters are never duplicated as components; a layout
@@ -358,6 +354,18 @@ this ruling:
    cannot be saved from the Browser Studio.
 6. Studio IA is `Design` (finished-Tool look, edit affordances only) /
    `Data` (per-source EntryQuery / exact Saved SQL viewers) / `Inspector`
+
+## ADR-020 — Typed-only Composition Metric definitions
+
+**Accepted ruling for the pre-release SQL/Metric redesign (2026-10-11).** A
+Composition Metric has exactly one typed `definition`: `aggregate` for an
+EntryQuery source or `sql_scalar` for an exact Saved SQL output column. The
+unshipped `source` plus `value_field` document shape, its parser and resolver
+branches, and page-based client evaluators are removed without a migration
+reader. Ordinary SQL, Saved SQL, Space Knowledge, and non-Metric Composition
+documents retain their existing meaning. A SQL Scalar probe requires exactly
+one row and one declared output column; zero or multiple rows report
+`metric_scalar_expected_one_row`, and a SQL NULL value from one row is valid.
    (selected block only), plus desktop-only `Split`. Studio and Use surfaces
    share one renderer.
 
