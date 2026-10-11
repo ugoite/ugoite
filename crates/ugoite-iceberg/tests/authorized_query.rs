@@ -132,10 +132,7 @@ fn aggregate_policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQuery
         .into_iter()
         .map(str::to_string)
         .collect();
-    authorized.limits.allowed_functions = ["count", "sum", "avg", "min", "max"]
-        .into_iter()
-        .map(str::to_string)
-        .collect();
+    authorized.limits.function_policy = SqlFunctionPolicy::ReadOnlyAggregateV1;
     authorized
 }
 
