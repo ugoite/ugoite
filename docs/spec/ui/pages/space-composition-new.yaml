@@ -77,12 +77,7 @@ components:
         referenced_field_missing_from_schema_and_form: distinct-deterministic-localized-ordinal-skipping-live-form-names-and-prior-fallbacks
       field_identity:
         raw_field_id: query-data-only-never-rendered-in-field-filter-sort-projection-or-dialog-labels
-      metric_projection:
-        selected_metric_field: added_to_fields_projection
-        projection_edit: retain_fields_used_by_metrics
-        preview_option: unavailable_while_metric_uses_a_field
-        initial_fields: reserve_metric_bound_fields_then_schema_order_up_to_64
-        capacity: at_limit_only_already_projected_fields_are_selectable
+      metric_projection: aggregate_uses_the_full_authorized_matching_set_independent_of_table_projection
       selection: full-row-activate
       reorder: keyboard-operable-move-up-down
       remove: blocked-while-displays-reference-with-reason
@@ -103,7 +98,7 @@ components:
       type: dialog
       title: Choose a source
       source: Forms through form.list and Saved SQL through sql.list
-      selection: full-row-activate; table adds immediately; metric continues to named field selection when needed
+      selection: full-row-activate; table adds immediately; metric continues to source-calculation-field-preview-insert when needed
       rendering: human-name-only rows with loading, empty, and error states
       row_name_overflow: ellipsis-with-full-name-native-title
       internal_identifiers: form-source-draft-entry-revision-ids-never-rendered
@@ -116,14 +111,14 @@ components:
       type: dialog
       title: Add data component
       kind_selection: Table/Metric tabs inside the picker
-      sequence: kind, source; Metric asks for a field only when the selected source has multiple candidates
-      selection: table adds on source selection; metric adds on its sole source candidate or field selection
+      sequence: kind, then source, calculation, compatible field-or-column-when-required, preview, insert
+      selection: table adds on source selection; metric adds only after a valid preview
       label: omitted during insertion; optional edit in Inspector after selection
       source_selection: catalog browse preserves selected Table or Metric kind
       entry_query_field_labels: resolved human Form labels only; no field ID or ordinal fallback
-      entry_query_metric_field: added_to_the_source_fields_projection
-      entry_query_metric_candidates: rust_scalar_types_only_excludes_list_object_list_row_reference_asset_reference_binary_maps_to_string
-      projection_capacity: at_limit_only_already_projected_fields_are_selectable
+      entry_query_metric_field: stored_in_the_metric_definition_without_changing_table_projection
+      entry_query_metric_candidates: operation_compatible_form_schema_fields_from_shared_rust_domain_via_wasm
+      saved_sql_metric_column: selected_from_an_exact_saved_revision
       internal_field_ids: never rendered
       sizing: 720px maximum width and viewport-capped vertical scrolling
     - id: studio-parameters
@@ -152,7 +147,7 @@ components:
       type: query-results
       title: Preview
       status: removed
-      source: blocks preview inline on the Design canvas through the shared debounced handle, per-source results page inside the Data workspace, and resolve diagnostics render in the every-mode strip
+      source: blocks preview inline on the Design canvas through the shared debounced handle, per-source results page inside the Data workspace, composition.metric.query with the draft target for metrics, and resolve diagnostics in the every-mode strip
       result_presentation: CompositionRenderer
       rendering:
         mode: shared-composition-renderer
