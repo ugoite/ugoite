@@ -371,6 +371,7 @@ pub enum CompositionResultFieldType {
     Boolean,
     Integer,
     Float,
+    Decimal,
     Date,
     Timestamp,
     Json,

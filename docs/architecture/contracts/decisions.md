@@ -230,10 +230,31 @@ ordered tag list written to the owning Entry.
 
 An exact Saved SQL source carries an ordered `expected_result` descriptor with
 unique output names and portable logical types (`string`, `boolean`, `integer`,
-`float`, `date`, `timestamp`, or `json`). It describes an expected result and
+`float`, `decimal`, `date`, `timestamp`, or `json`). Decimal scalar values are
+plain decimal strings with no exponent, leading integer zeros, or negative
+zero; fractional scale, including trailing zeros, is preserved. It describes an expected result and
 does not store SQL-backend type names. The resolver derives source-result
 fingerprints from exact revision identity, the normalized descriptor, and bound
 variable schema. No source-result fingerprint is stored in the document.
+
+Typed metrics add a `definition` discriminator for EntryQuery aggregates
+(`count_rows`, `count_values`, `sum`, `avg`, `min`, `max`) and exact Saved SQL
+scalar columns, plus an optional display-only `presentation`. `count_rows` has
+no field; `count_values` counts non-NULL values, and the other field-based
+operations carry a stable `FieldId`. `sum` and `avg` require a numeric field;
+`min` and `max` accept numeric, date, or timestamp fields, excluding time-only
+fields. Numeric formatting is optional display metadata. Date and timestamp
+`min`/`max` results omit it and use type-based rendering. A typed aggregate
+field may be absent from the table projection; its
+FieldId and type are bound through the source schema and revalidated against
+the current authorized Form at execution. Aggregate results use the source's
+full matching set and do not depend on table page size, page, sort, or display
+projection. The new grammar is accepted and canonicalized by the shared domain
+parser. Core query execution for these definitions is a follow-up slice and
+remains fail-closed until it lands. The
+existing `source` plus `value_field` exact-scalar shape remains readable with
+its current meaning in the same v0.x series; removal is tracked for the next
+minor version without migration or conversion.
 
 The parser uses `serde-saphyr` 1.3.0 with duplicate-key errors, strict typed
 deserialization, and explicit resource budgets. It rejects multiple documents,
@@ -276,18 +297,20 @@ grammar freeze recorded in [`composition.md`](composition.md):
    current ACL exactly like saved-revision resolution.
 2. `sql.query` `result_schema`: a backward-compatible response extension
    carrying the server-owned portable logical column types (`string`,
-   `boolean`, `integer`, `float`, `date`, `timestamp`, `json`) mapped from
+   `boolean`, `integer`, `float`, `decimal`, `date`, `timestamp`, `json`) mapped from
    DataFusion/Arrow output in Rust. Existing `columns` and `rows` are
    unchanged. The Browser performs no type inference and keeps no type
    mapping; it stores the descriptor unchanged in the Composition
    `expected_result`. Null and empty results retain their types;
    duplicate or ambiguous columns fail closed.
 
-Document grammar, storage layout, mutation operations, query grammar, metric
-exact-scalar semantics, generic write guard, idempotency semantics, raw
-recovery, downgrade compatibility, and the `string` spec carrier are
-unchanged. The operation inventory and freeze tests are updated in the same
-change that introduces `composition.preview`.
+Document grammar, storage layout, mutation operations, query grammar, the
+existing `source` plus `value_field` exact-scalar semantics, generic write
+guard, idempotency semantics, raw recovery, downgrade compatibility, and the
+`string` spec carrier are unchanged. The additive typed Metric `definition`
+grammar is representable and canonicalizable, but its query execution is not
+part of this ruling. The operation inventory and freeze tests are updated in
+the same change that introduces `composition.preview`.
 
 ## ADR-019 — Composition layout v1 ruling (sections to layout AST)
 
@@ -316,6 +339,10 @@ this ruling:
 
 1. `format_version` stays `1`; no migration reader is built for the
    pre-release `sections` grammar.
+   The separately added typed Metric `definition` shape is additive. Existing
+   `source` plus `value_field` documents remain readable with unchanged
+   semantics in the current v0.x series; their retirement is a next-minor
+   change and does not use an implicit migration.
 2. Components are `text` / `metric` / `table` only. `text` carries a fixed
    `style` enum (`title`, `heading`, `body`, `caption`); no Markdown, HTML,
    CSS, or handlers. Parameters are never duplicated as components; a layout

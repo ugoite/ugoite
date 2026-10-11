@@ -485,6 +485,9 @@ inventory:
         - crates/ugoite-domain/tests/fixtures/composition/monthly-expense.ugcomp.yaml
         - crates/ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml
         - crates/ugoite-domain/tests/fixtures/composition/metric-value-fields.ugcomp.yaml
+        - crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml
+        - crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.canonical.ugcomp.yaml
+        - crates/ugoite-domain/tests/fixtures/composition/typed-metric-definitions.fingerprint.txt
 validation:
   preset: strict
   readiness:

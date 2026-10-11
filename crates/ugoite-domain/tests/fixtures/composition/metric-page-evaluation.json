@@ -44,6 +44,45 @@
     "expected_response": { "ok": true, "value": 12.5 }
   },
   {
+    "name": "exact decimal scalar preserves fractional scale",
+    "value": {
+      "expected_result_type": "decimal",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": "12.3400"
+    },
+    "expected_response": { "ok": true, "value": "12.3400" }
+  },
+  {
+    "name": "decimal JSON number is rejected",
+    "value": {
+      "expected_result_type": "decimal",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": 12.34
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_type_mismatch" }
+    }
+  },
+  {
+    "name": "decimal negative zero is rejected",
+    "value": {
+      "expected_result_type": "decimal",
+      "is_complete": true,
+      "row_count": 1,
+      "selected_column_count": 1,
+      "selected_value": "-0.0000"
+    },
+    "expected_response": {
+      "ok": false,
+      "error": { "kind": "composition_diagnostic", "code": "metric_result_type_mismatch" }
+    }
+  },
+  {
     "name": "date scalar",
     "value": {
       "expected_result_type": "date",

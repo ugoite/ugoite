@@ -317,6 +317,7 @@ pub enum CompositionResultFieldType {
     Boolean,
     Integer,
     Float,
+    Decimal,
     Date,
     Timestamp,
     Json,
@@ -329,8 +330,8 @@ impl CompositionResultFieldType {
     }
 }
 
-/// The logical schema snapshot of one query-used Form field, including typed
-/// List item and RowReference target metadata when applicable.
+/// The logical schema snapshot of one Form field used by an EntryQuery or a
+/// typed aggregate, including typed List item and RowReference target metadata.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct CompositionFieldSchemaEntry {
     pub field_id: FieldId,
@@ -519,6 +520,91 @@ pub enum CompositionMetricValueField {
     SqlColumn { name: String },
 }
 
+/// The portable operation applied to an EntryQuery matching set by an
+/// aggregate metric.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositionAggregateOperation {
+    CountRows,
+    CountValues,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+/// A typed, source-bound definition for a metric introduced by the v1
+/// document grammar. Execution remains owned by the matching-set and SQL
+/// query paths in Core.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CompositionMetricDefinition {
+    Aggregate {
+        source: String,
+        operation: CompositionAggregateOperation,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        field_id: Option<FieldId>,
+    },
+    SqlScalar {
+        source: String,
+        column: String,
+    },
+}
+
+impl CompositionMetricDefinition {
+    pub fn source_id(&self) -> &str {
+        match self {
+            Self::Aggregate { source, .. } | Self::SqlScalar { source, .. } => source,
+        }
+    }
+
+    pub(crate) fn is_well_formed(&self) -> bool {
+        match self {
+            Self::Aggregate {
+                source,
+                operation,
+                field_id,
+            } => {
+                !source.trim().is_empty()
+                    && match operation {
+                        CompositionAggregateOperation::CountRows => field_id.is_none(),
+                        CompositionAggregateOperation::CountValues
+                        | CompositionAggregateOperation::Sum
+                        | CompositionAggregateOperation::Avg
+                        | CompositionAggregateOperation::Min
+                        | CompositionAggregateOperation::Max => field_id.is_some(),
+                    }
+            }
+            Self::SqlScalar { source, column } => {
+                !source.trim().is_empty() && !column.trim().is_empty()
+            }
+        }
+    }
+}
+
+/// Portable formatting hints for a metric value. These fields affect display
+/// only; they do not alter the stored definition or query semantics.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CompositionMetricPresentation {
+    Number {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unit: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fraction_digits: Option<u8>,
+    },
+}
+
+impl CompositionMetricPresentation {
+    pub(crate) fn is_well_formed(&self) -> bool {
+        match self {
+            Self::Number { unit, .. } => {
+                unit.as_deref().is_none_or(|value| !value.trim().is_empty())
+            }
+        }
+    }
+}
+
 /// A visual component supported by the dashboard renderer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -536,8 +622,19 @@ pub enum CompositionComponent {
         /// Optional display text; component and source bindings continue to use IDs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
-        source: String,
-        value_field: CompositionMetricValueField,
+        /// Existing v0.x scalar metric shape, retained so saved Compositions
+        /// remain readable until the breaking grammar retirement planned for
+        /// the next minor version.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value_field: Option<CompositionMetricValueField>,
+        /// Typed v1 metric definition. Its aggregate and SQL scalar execution
+        /// paths are supplied by the follow-up query work.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        definition: Option<CompositionMetricDefinition>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        presentation: Option<CompositionMetricPresentation>,
     },
     Table {
         id: String,
@@ -560,7 +657,14 @@ impl CompositionComponent {
     pub fn source_id(&self) -> Option<&str> {
         match self {
             Self::Text { .. } => None,
-            Self::Metric { source, .. } | Self::Table { source, .. } => Some(source),
+            Self::Metric {
+                source, definition, ..
+            } => source.as_deref().or_else(|| {
+                definition
+                    .as_ref()
+                    .map(CompositionMetricDefinition::source_id)
+            }),
+            Self::Table { source, .. } => Some(source),
         }
     }
 
@@ -574,8 +678,39 @@ impl CompositionComponent {
 
     pub fn value_field(&self) -> Option<&CompositionMetricValueField> {
         match self {
-            Self::Metric { value_field, .. } => Some(value_field),
+            Self::Metric { value_field, .. } => value_field.as_ref(),
             Self::Text { .. } | Self::Table { .. } => None,
+        }
+    }
+
+    pub fn metric_definition(&self) -> Option<&CompositionMetricDefinition> {
+        match self {
+            Self::Metric { definition, .. } => definition.as_ref(),
+            Self::Text { .. } | Self::Table { .. } => None,
+        }
+    }
+
+    pub(crate) fn metric_shape_is_well_formed(&self) -> bool {
+        let Self::Metric {
+            source,
+            value_field,
+            definition,
+            presentation,
+            ..
+        } = self
+        else {
+            return true;
+        };
+
+        match (source, value_field, definition, presentation) {
+            (Some(source), Some(_), None, None) => !source.trim().is_empty(),
+            (None, None, Some(definition), presentation) => {
+                definition.is_well_formed()
+                    && presentation
+                        .as_ref()
+                        .is_none_or(CompositionMetricPresentation::is_well_formed)
+            }
+            _ => false,
         }
     }
 }
@@ -718,6 +853,32 @@ mod tests {
         DashboardFlowLayout {
             kind: FlowLayoutKind::Flow,
             rows,
+        }
+    }
+
+    #[test]
+    fn typed_metric_grammar_accepts_projection_independent_aggregates() {
+        let canonical = super::canonicalize_composition_yaml(include_str!(
+            "../tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml"
+        ))
+        .expect("typed aggregate fields may be absent from the table projection");
+        let CompositionSource::EntryQuery {
+            field_schema,
+            query,
+            ..
+        } = &canonical.document.spec.sources[0]
+        else {
+            panic!("first source should be an EntryQuery")
+        };
+        assert!(matches!(
+            &query.projection,
+            EntryQueryProjectionTemplate::Fields { fields }
+                if fields == &[crate::id::FieldId::new(100).unwrap()]
+        ));
+        for field_id in [102, 103, 104, 105] {
+            assert!(field_schema
+                .iter()
+                .any(|field| field.field_id.get() == field_id));
         }
     }
 
@@ -1112,7 +1273,7 @@ mod tests {
         assert!(matches!(
             &document.spec.components[0],
             CompositionComponent::Metric {
-                value_field: CompositionMetricValueField::SqlColumn { name },
+                value_field: Some(CompositionMetricValueField::SqlColumn { name }),
                 ..
             } if name == "total"
         ));

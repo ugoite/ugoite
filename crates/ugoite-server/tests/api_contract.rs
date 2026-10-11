@@ -1672,6 +1672,7 @@ fn openapi_documents_composition_resolve_metric_result_type() {
             "boolean",
             "integer",
             "float",
+            "decimal",
             "date",
             "timestamp",
             "json"

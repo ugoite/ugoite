@@ -15005,7 +15005,7 @@
       },
       "CompositionResultFieldType": {
         "type": "string",
-        "enum": ["string", "boolean", "integer", "float", "date", "timestamp", "json"]
+        "enum": ["string", "boolean", "integer", "float", "decimal", "date", "timestamp", "json"]
       },
       "CompositionResolveDiagnostic": {
         "type": "object",

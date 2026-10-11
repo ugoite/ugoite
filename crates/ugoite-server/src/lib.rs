@@ -11566,6 +11566,7 @@ fn api_composition_result_field_type(
         DomainCompositionResultFieldType::Boolean => ApiCompositionResultFieldType::Boolean,
         DomainCompositionResultFieldType::Integer => ApiCompositionResultFieldType::Integer,
         DomainCompositionResultFieldType::Float => ApiCompositionResultFieldType::Float,
+        DomainCompositionResultFieldType::Decimal => ApiCompositionResultFieldType::Decimal,
         DomainCompositionResultFieldType::Date => ApiCompositionResultFieldType::Date,
         DomainCompositionResultFieldType::Timestamp => ApiCompositionResultFieldType::Timestamp,
         DomainCompositionResultFieldType::Json => ApiCompositionResultFieldType::Json,
@@ -16088,10 +16089,12 @@ mod authentication_regression_tests {
             CompositionComponent::Metric {
                 id: "monthly_total".to_string(),
                 label: Some("Monthly total".to_string()),
-                source: "older_entries".to_string(),
-                value_field: CompositionMetricValueField::EntryField {
+                source: Some("older_entries".to_string()),
+                value_field: Some(CompositionMetricValueField::EntryField {
                     field_id: value_field_id,
-                },
+                }),
+                definition: None,
+                presentation: None,
             },
             CompositionComponent::Table {
                 id: "rows".to_string(),

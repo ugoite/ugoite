@@ -62,7 +62,7 @@ requirements:
       - id: display-label-verification
         role: verification
         facet: verification
-        responsibility: Verify optional display labels round-trip through canonical YAML and the fingerprint natively and in WASM, and typed metric references canonicalize with unknown value-field shapes rejected identically.
+        responsibility: Verify optional display labels round-trip through canonical YAML and the fingerprint natively and in WASM, typed metric references canonicalize, and typed Metric definitions canonicalize identically through native and WASM paths while rejecting invalid shapes.
         targets:
           - id: case
             adapter: rust
@@ -80,6 +80,61 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.metric-value-field-domain/target.metric-value-field-type
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.typed-metric-definition
+                covers:
+                  - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-wasm, test: tests::composition_canonicalization_matches_the_native_domain_contract } }
+      - id: typed-metric-definition-validation
+        role: verification
+        facet: verification
+        responsibility: Verify count_rows, count_values, numeric sum/avg constraints, numeric/date/timestamp min/max, optional numeric presentation, projection-independent typed FieldIds, native/WASM canonical parity, CLI output, and Core fail-closed behavior until query execution is implemented.
+        targets:
+          - id: core-fail-closed-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::typed_metric_definitions_fail_closed_until_query_execution_is_available }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.typed-metric-definition
+                covers:
+                  - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::typed_metric_definitions_fail_closed_until_query_execution_is_available } }
+          - id: cli-canonical-case
+            adapter: rust
+            path: crates/ugoite-cli/src/commands/composition.rs
+            selector: { kind: symbol, name: tests::lint_file_preserves_typed_metric_definitions_and_shared_fingerprint }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.typed-metric-definition
+                covers:
+                  - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-cli, test: commands::composition::tests::lint_file_preserves_typed_metric_definitions_and_shared_fingerprint } }
+          - id: domain-canonical-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition.rs
+            selector: { kind: symbol, name: tests::typed_metric_grammar_accepts_projection_independent_aggregates }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.typed-metric-definition
+                covers:
+                  - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::typed_metric_grammar_accepts_projection_independent_aggregates } }
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.used-field-schema-snapshot
+                covers:
+                  - FEAT-COMP-001#binding.entry-query-field-schema-domain/target.field-schema-snapshot-entry
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition::tests::typed_metric_grammar_accepts_projection_independent_aggregates } }
+          - id: decimal-metric-value-case
+            adapter: rust
+            path: crates/ugoite-domain/src/composition_metric.rs
+            selector: { kind: symbol, name: tests::validates_exact_decimal_metric_strings_without_losing_scale }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.metric-runtime-values
+                covers:
+                  - FEAT-COMP-001#binding.metric-runtime-value-domain/target.metric-runtime-value-validator
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-domain, test: composition_metric::tests::validates_exact_decimal_metric_strings_without_losing_scale } }
       - id: envelope-verification
         role: verification
         facet: verification
@@ -777,16 +832,25 @@ requirements:
         kind: behavior
         statement: A metric value reference distinguishes an EntryQuery property by stable FieldId from a Saved SQL output column by its exact result name; resolution requires the value-field kind to match its source.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
+      - id: typed-metric-definition
+        kind: behavior
+        statement: Composition v1 accepts typed EntryQuery aggregate definitions for count_rows, count_values, sum, avg, min, and max, and exact Saved SQL scalar columns, with strict operation-specific fields and optional display-only presentation. count_rows has no field_id; count_values counts non-NULL values, and the other field-based operations require a stable FieldId. sum and avg require numeric fields; min and max accept numeric, date, and timestamp fields, excluding time-only fields. Numeric presentation metadata is optional; date and timestamp min/max omit it and use type-based rendering. A typed aggregate FieldId is resolved from the source schema even when it is absent from the table projection; aggregate results use the full source matching set and are independent of table page size, page, sort, and display projection. The shared domain parser canonicalizes definitions, while Core execution remains fail-closed until its query implementation lands. Existing source plus value_field documents remain readable with unchanged meaning in the current v0.x series, and their retirement is reserved for a next-minor contract change without migration.
+        governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: metric-runtime-values
         kind: behavior
         statement: >-
-          Metric date values are valid Gregorian dates in normalized YYYY-MM-DD
-          form. Metric timestamp values are normalized local timestamps in
-          YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS[.fraction] form, or valid
-          RFC 3339 timestamps with an explicit UTC designator or numeric offset.
-          Fractions are limited to nine digits; normalized local fractions have
-          no trailing zeroes. Malformed strings produce
-          metric_result_type_mismatch through the shared Rust domain evaluator.
+          Decimal metric values are exact JSON strings in plain notation with
+          an optional minus sign, an integer part without leading zeroes, and
+          an optional non-empty fractional part. Exponents and negative zero
+          are rejected, while fractional scale, including trailing zeroes, is
+          preserved. Metric date values are valid Gregorian dates in
+          normalized YYYY-MM-DD form. Metric timestamp values are normalized
+          local timestamps in YYYY-MM-DDTHH:MM or
+          YYYY-MM-DDTHH:MM:SS[.fraction] form, or valid RFC 3339 timestamps
+          with an explicit UTC designator or numeric offset. Fractions are
+          limited to nine digits; normalized local fractions have no trailing
+          zeroes. Malformed values produce metric_result_type_mismatch through
+          the shared Rust domain evaluator.
         governed_by: [POL-002#rule.governance, POL-007#rule.governance]
       - id: ordered-component-layout
         kind: behavior
@@ -820,12 +884,15 @@ requirements:
         kind: behavior
         statement: >-
           An entry_query source records a FieldId and FieldType snapshot for
-          property fields used by its filters, sort, and projection; a preview
-          projection records all current property fields returned by preview.
-          An EntryQuery metric must reference a field in an explicit source
-          projection and never widens the source query. Preview does not promise
-          a scalar result field for a metric. The snapshot includes List item
-          and RowReference target
+          property fields used by its filters, sort, projection, and typed
+          aggregate definitions; a preview projection records all current
+          property fields returned by preview. A typed aggregate may reference
+          a field outside the table projection without widening or rewriting
+          that projection, and execution revalidates the FieldId and type
+          against the current authorized Form schema. Legacy scalar metrics
+          using source plus value_field still require an explicit source
+          projection; Preview does not promise a scalar result field for one.
+          The snapshot includes List item and RowReference target
           metadata when present. When text search is present, it also includes
           every text-searchable property field under existing EntryQuery
           semantics, excluding binary, list, object_list, and asset_reference

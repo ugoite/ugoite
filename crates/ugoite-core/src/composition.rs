@@ -924,6 +924,14 @@ fn resolve_composition_parts(
     let mut metric_sql_columns_by_source: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
     let mut metric_diagnostics = Vec::new();
     for component in &render_components {
+        // Typed aggregate and SQL scalar definitions are accepted by the
+        // document domain ahead of their query execution work. Do not let an
+        // unimplemented definition fall through as a tabular component.
+        if component.metric_definition().is_some() {
+            return Err(vec![CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::InvalidComposition,
+            )]);
+        }
         let Some(source_id) = component.source_id() else {
             // Text carries no source binding and emits no source request.
             continue;
@@ -1081,6 +1089,11 @@ fn resolve_component_bindings(
 ) -> Result<Vec<ResolvedComponentBinding>, Vec<CompositionDiagnostic>> {
     let mut resolved = Vec::with_capacity(components.len());
     for component in components {
+        if component.metric_definition().is_some() {
+            return Err(vec![CompositionDiagnostic::without_parameter(
+                CompositionDiagnosticCode::InvalidComposition,
+            )]);
+        }
         let component_id = component.id();
         let Some(source_id) = component.source_id() else {
             // Text carries no source binding and triggers no source request.
@@ -1433,6 +1446,10 @@ mod tests {
     };
     use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
 
+    const TYPED_METRIC_DEFINITIONS: &str = include_str!(
+        "../../ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml"
+    );
+
     fn parameter(
         id: &str,
         parameter_type: CompositionParameterType,
@@ -1709,10 +1726,12 @@ mod tests {
         spec.components = vec![CompositionComponent::Metric {
             id: "total".to_owned(),
             label: None,
-            source: "report".to_owned(),
-            value_field: CompositionMetricValueField::SqlColumn {
+            source: Some("report".to_owned()),
+            value_field: Some(CompositionMetricValueField::SqlColumn {
                 name: selector.to_owned(),
-            },
+            }),
+            definition: None,
+            presentation: None,
         }];
         spec.layout = single_row_layout("summary", &["total"]);
         let metadata = saved_sql_metadata(entry_id, revision_id, BTreeMap::new());
@@ -1729,6 +1748,21 @@ mod tests {
             parameters: &BTreeMap::new(),
             current_sources: &current_sources,
         }))
+    }
+
+    #[test]
+    fn typed_metric_definitions_fail_closed_until_query_execution_is_available() {
+        let document = ugoite_domain::composition::parse_composition_yaml(TYPED_METRIC_DEFINITIONS)
+            .expect("typed metric grammar is accepted by the domain");
+
+        let diagnostics = diagnostic_codes(resolve_composition_preview(
+            &document.spec,
+            &BTreeMap::new(),
+            &[],
+            "typed-metric-draft".to_owned(),
+        ));
+
+        assert_eq!(diagnostics, [CompositionDiagnosticCode::InvalidComposition]);
     }
 
     fn diagnostic_codes<T>(
@@ -3316,19 +3350,23 @@ mod tests {
             CompositionComponent::Metric {
                 id: "entry-total".to_owned(),
                 label: Some("Entry total".to_owned()),
-                source: "entries".to_owned(),
-                value_field: CompositionMetricValueField::EntryField {
+                source: Some("entries".to_owned()),
+                value_field: Some(CompositionMetricValueField::EntryField {
                     field_id: FieldId::new(101).unwrap(),
-                },
+                }),
+                definition: None,
+                presentation: None,
             },
             tabular_component("rows", None, "entries"),
             CompositionComponent::Metric {
                 id: "sql-total".to_owned(),
                 label: Some("SQL total".to_owned()),
-                source: "report".to_owned(),
-                value_field: CompositionMetricValueField::SqlColumn {
+                source: Some("report".to_owned()),
+                value_field: Some(CompositionMetricValueField::SqlColumn {
                     name: "total".to_owned(),
-                },
+                }),
+                definition: None,
+                presentation: None,
             },
         ];
         spec.layout = flow_layout(vec![
@@ -3559,10 +3597,12 @@ mod tests {
             CompositionComponent::Metric {
                 id: "entry-total".to_owned(),
                 label: None,
-                source: "entries".to_owned(),
-                value_field: CompositionMetricValueField::EntryField {
+                source: Some("entries".to_owned()),
+                value_field: Some(CompositionMetricValueField::EntryField {
                     field_id: FieldId::new(101).unwrap(),
-                },
+                }),
+                definition: None,
+                presentation: None,
             },
         ];
         spec.layout = flow_layout(vec![
@@ -3881,10 +3921,12 @@ mod tests {
         spec.components = vec![CompositionComponent::Metric {
             id: "total".to_owned(),
             label: None,
-            source: "entries".to_owned(),
-            value_field: CompositionMetricValueField::EntryField {
+            source: Some("entries".to_owned()),
+            value_field: Some(CompositionMetricValueField::EntryField {
                 field_id: FieldId::new(101).unwrap(),
-            },
+            }),
+            definition: None,
+            presentation: None,
         }];
         spec.layout = single_row_layout("summary", &["total"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
@@ -4118,8 +4160,10 @@ mod tests {
             spec.components = vec![CompositionComponent::Metric {
                 id: "total".to_owned(),
                 label: None,
-                source: source_id.to_owned(),
-                value_field,
+                source: Some(source_id.to_owned()),
+                value_field: Some(value_field),
+                definition: None,
+                presentation: None,
             }];
             spec.layout = single_row_layout("main", &["total"]);
             let current_sources = [
@@ -4162,10 +4206,12 @@ mod tests {
         spec.components = vec![CompositionComponent::Metric {
             id: "private-component".to_owned(),
             label: None,
-            source: "private-source-name".to_owned(),
-            value_field: CompositionMetricValueField::EntryField {
+            source: Some("private-source-name".to_owned()),
+            value_field: Some(CompositionMetricValueField::EntryField {
                 field_id: FieldId::new(100).unwrap(),
-            },
+            }),
+            definition: None,
+            presentation: None,
         }];
         spec.layout = single_row_layout("private-section", &["private-component"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
@@ -4217,8 +4263,10 @@ mod tests {
         spec.components = vec![CompositionComponent::Metric {
             id: "private-component".to_owned(),
             label: None,
-            source: source_id.to_owned(),
-            value_field: CompositionMetricValueField::EntryField { field_id },
+            source: Some(source_id.to_owned()),
+            value_field: Some(CompositionMetricValueField::EntryField { field_id }),
+            definition: None,
+            presentation: None,
         }];
         spec.layout = single_row_layout("private-section", &["private-component"]);
 
@@ -4303,10 +4351,12 @@ mod tests {
         spec.components = vec![CompositionComponent::Metric {
             id: "total".to_owned(),
             label: None,
-            source: "entries".to_owned(),
-            value_field: CompositionMetricValueField::EntryField {
+            source: Some("entries".to_owned()),
+            value_field: Some(CompositionMetricValueField::EntryField {
                 field_id: FieldId::new(101).unwrap(),
-            },
+            }),
+            definition: None,
+            presentation: None,
         }];
         spec.layout = single_row_layout("main", &["total"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
@@ -4354,10 +4404,12 @@ mod tests {
         spec.components = vec![CompositionComponent::Metric {
             id: "total".to_owned(),
             label: None,
-            source: "entries".to_owned(),
-            value_field: CompositionMetricValueField::EntryField {
+            source: Some("entries".to_owned()),
+            value_field: Some(CompositionMetricValueField::EntryField {
                 field_id: FieldId::new(101).unwrap(),
-            },
+            }),
+            definition: None,
+            presentation: None,
         }];
         spec.layout = single_row_layout("main", &["total"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
@@ -4405,10 +4457,12 @@ mod tests {
         spec.components = vec![CompositionComponent::Metric {
             id: "total".to_owned(),
             label: None,
-            source: "entries".to_owned(),
-            value_field: CompositionMetricValueField::EntryField {
+            source: Some("entries".to_owned()),
+            value_field: Some(CompositionMetricValueField::EntryField {
                 field_id: FieldId::new(101).unwrap(),
-            },
+            }),
+            definition: None,
+            presentation: None,
         }];
         spec.layout = single_row_layout("main", &["total"]);
         let current_sources = [CurrentSourceDescriptor::EntryQuery {
@@ -4630,10 +4684,12 @@ mod tests {
             spec.components = vec![CompositionComponent::Metric {
                 id: "summary".to_owned(),
                 label: None,
-                source: "monthly-expenses".to_owned(),
-                value_field: CompositionMetricValueField::SqlColumn {
+                source: Some("monthly-expenses".to_owned()),
+                value_field: Some(CompositionMetricValueField::SqlColumn {
                     name: column.to_owned(),
-                },
+                }),
+                definition: None,
+                presentation: None,
             }];
             spec.layout = single_row_layout("main", &["summary"]);
 
