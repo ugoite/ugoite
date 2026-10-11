@@ -48,13 +48,46 @@ const renderTable = (overrides?: {
 describe("EntryResultTable", () => {
   it("renders the current page as a native table with Entry identity", () => {
     renderTable();
-    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Entry pages" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Entry pages" }))
+      .toHaveAttribute("tabindex", "0");
     expect(screen.getAllByRole("row")).toHaveLength(3);
     expect(
       document.querySelector('[data-entry-id="entry-0"]'),
     ).not.toBeNull();
     expect(screen.queryByText("entry-0")).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+  });
+
+  it("aligns numeric columns without changing Entry row actions", () => {
+    const onOpenEntry = vi.fn();
+    render(() => (
+      <EntryResultTable
+        columns={[{
+          key: "amount",
+          label: "Amount",
+          numeric: () => true,
+          cell: () => <span title="42">42</span>,
+        }]}
+        rows={rows(1)}
+        pageIdentity="entry-page-numeric"
+        tableLabel="Entry amounts"
+        trailingAction="open"
+        openLabel="Open entry"
+        onOpenEntry={onOpenEntry}
+      />
+    ));
+    const row = screen.getByRole("row", { name: /42/ });
+    expect(screen.getByRole("columnheader", { name: "Amount" })).toHaveClass(
+      "result-table-header--numeric",
+    );
+    expect(within(row).getByRole("cell", { name: "42" })).toHaveClass(
+      "result-table-cell--numeric",
+    );
+    expect(within(row).getByRole("button", { name: "Open entry" }))
+      .toBeInTheDocument();
+    expect(onOpenEntry).not.toHaveBeenCalled();
   });
 
   it("selects on row click and opens only from the trailing control", () => {

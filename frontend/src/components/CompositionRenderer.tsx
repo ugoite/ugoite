@@ -1,5 +1,8 @@
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
-import { CompositionEntryQueryTable } from "~/components/CompositionEntryQueryTable";
+import {
+  CompositionEntryQueryTable,
+  type CompositionFieldTypeLookup,
+} from "~/components/CompositionEntryQueryTable";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { ResultPagination } from "~/components/ResultPagination";
 import { SqlResultTable } from "~/components/SqlResultTable";
@@ -27,6 +30,8 @@ export type CompositionFieldKeys = (
   sourceId?: string,
 ) => string | undefined;
 
+export type { CompositionFieldTypeLookup };
+
 type RendererProps = {
   /**
    * Resolved sources with their component bindings. Saved revisions pass
@@ -44,6 +49,7 @@ type RendererProps = {
   >;
   fieldNames?: CompositionFieldNames;
   fieldKeys?: CompositionFieldKeys;
+  fieldTypes?: CompositionFieldTypeLookup;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -179,6 +185,7 @@ export function CompositionSavedSqlTable(props: {
         <Show when={!failed() && rows().length > 0}>
           <SqlResultTable
             columns={page()?.columns ?? []}
+            columnTypes={page()?.result_schema?.map((column) => column.type)}
             rows={rows()}
             pageIdentity={`${sourceId()}:${
               props.sourceState?.cursor ?? "first"
@@ -415,6 +422,7 @@ export function CompositionRenderer(props: RendererProps) {
                 ownsSourceStatus={ownsSourceStatus}
                 fieldNames={props.fieldNames}
                 fieldKeys={props.fieldKeys}
+                fieldTypes={props.fieldTypes}
                 onNext={() => props.onNext(binding.source_id)}
                 onPrevious={() => props.onPrevious(binding.source_id)}
                 onRetry={() => props.onRetry(binding.source_id)}

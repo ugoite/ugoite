@@ -453,6 +453,9 @@ export default function SpaceSqlRunRoute() {
         >
           <SqlResultTable
             columns={visiblePage()?.columns ?? []}
+            columnTypes={visiblePage()?.result_schema?.map((column) =>
+              column.type
+            )}
             rows={visiblePage()?.rows ?? []}
             pageIdentity={visiblePage()?.pageIdentity ?? makeQueryIdentity(
               spaceId(),

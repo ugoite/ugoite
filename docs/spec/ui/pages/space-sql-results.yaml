@@ -30,6 +30,7 @@ components:
       type: query-results
       source: sql.query using exact Saved SQL ID and revision with server-derived Form bindings
       result_presentation: SqlResultTable
+      result_presentation_reference: ../components/result-table.yaml
       pagination_owner: space-sql-results route
       description: Renders every row in the current SQL page with a native table without creating persistent execution state.
       rendering:

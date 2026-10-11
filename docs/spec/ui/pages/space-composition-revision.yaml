@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-10-09"
+updated: "2026-10-11"
 page:
   id: space-composition-revision
   title: Saved tool revision
@@ -54,6 +54,7 @@ components:
       table_presentation:
         entry_query: EntryResultTable
         saved_sql: SqlResultTable
+        result_presentation_reference: ../components/result-table.yaml
       metric_presentation: shared WASM metric evaluator
       pagination_owner: composition query handle
       description: Composition table components delegate presentation to the source-native Entry or SQL result presenter. Composition does not implement a third generic table grammar, and source query semantics remain unchanged.

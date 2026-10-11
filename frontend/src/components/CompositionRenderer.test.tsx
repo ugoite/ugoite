@@ -80,8 +80,54 @@ describe("CompositionRenderer", () => {
     ).toEqual(["Total", "Details"]);
     expect(await screen.findByText("42", { selector: "output" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Details" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Details" })).toHaveAttribute(
+      "tabindex",
+      "0",
+    );
     expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
+  });
+
+  it("aligns an all-null Saved SQL column from its server result schema", async () => {
+    vi.spyOn(compositionApi, "evaluateMetricPage").mockResolvedValue({
+      ok: true,
+      value: 42,
+    });
+    const nullValueSources = {
+      summary: {
+        ...sources.summary,
+        page: {
+          kind: "saved_sql" as const,
+          page: {
+            columns: ["total"],
+            result_schema: [{ name: "total", type: "float" as const }],
+            rows: [{ total: null }],
+            has_more: false,
+          },
+        },
+      },
+    };
+    render(() => (
+      <CompositionRenderer
+        plan={plan}
+        sources={nullValueSources}
+        onNext={() => {}}
+        onPrevious={() => {}}
+        onRetry={() => {}}
+      />
+    ));
+
+    expect(screen.getByRole("table", { name: "Details" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Details" })).toHaveAttribute(
+      "tabindex",
+      "0",
+    );
+    expect(screen.getByRole("columnheader", { name: "total" })).toHaveClass(
+      "result-table-header--numeric",
+    );
+    expect(screen.getByRole("cell", { name: "—" })).toHaveClass(
+      "result-table-cell--numeric",
+    );
   });
 
   it("shows the stable evaluator diagnostic without aggregating result rows", async () => {

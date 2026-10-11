@@ -21,6 +21,14 @@ requirements:
         kind: behavior
         statement: Result surfaces share header typography, row height, dividers, cell padding, scroll containment, focus rings, and Previous/Next touch targets without sharing row semantics or paging state.
         governed_by: [POL-006#rule.governance]
+      - id: source-native-table-visual-details
+        kind: behavior
+        statement: SQL and EntryQuery native tables use legible headers and shared cell spacing, right-align numeric columns with tabular figures, render null values as an em dash, and truncate long cell text to one line while keeping the complete value available in text and a title.
+        governed_by: [POL-006#rule.governance]
+      - id: table-identity-keyboard-scroll
+        kind: behavior
+        statement: SQL and EntryQuery result viewports are keyboard-focusable named regions with a visible focus indicator, and their native tables carry the surface-localized or component-provided table name; row actions and pagination remain keyboard-operable with 44px action targets.
+        governed_by: [POL-006#rule.governance]
       - id: controller-owned-paging
         kind: behavior
         statement: Cursors, continuations, request generation, fetch, retry identity, and query identity stay in the surface controller or query handle; table presenters render the current page only.
@@ -31,7 +39,7 @@ requirements:
         governed_by: [POL-006#rule.governance]
       - id: local-horizontal-overflow
         kind: behavior
-        statement: Horizontal scrolling is contained in the result viewport; pages do not overflow horizontally at 320px and 390px widths, and narrow one- or two-column tables fit the viewport without a fixed giant minimum width.
+        statement: Horizontal scrolling is contained in the result viewport; pages do not overflow horizontally at 320px, 390px, or the 640 CSS-pixel layout width corresponding to 200% zoom at 1280px, and narrow one- or two-column tables fit without a fixed giant minimum width.
         governed_by: [POL-006#rule.governance]
       - id: no-redundant-result-explanation
         kind: behavior
@@ -135,6 +143,28 @@ requirements:
                 criterion: REQ-FE-068#criterion.controller-owned-paging
                 covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "renders the current page as a native table with Entry identity" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.table-identity-keyboard-scroll
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "renders the current page as a native table with Entry identity" } }
+          - id: entry-result-table-visual-details
+            adapter: typescript
+            path: frontend/src/components/EntryResultTable.test.tsx
+            selector: { kind: test, name: "aligns numeric columns without changing Entry row actions" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-table-visual-details
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryResultTable.test.tsx, test: "aligns numeric columns without changing Entry row actions" } }
+          - id: entry-browser-numeric-alignment
+            adapter: typescript
+            path: frontend/src/components/EntryBrowser.test.tsx
+            selector: { kind: test, name: "right-aligns projected numeric fields using EntryQuery capability types" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-table-visual-details
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryBrowser.test.tsx, test: "right-aligns projected numeric fields using EntryQuery capability types" } }
           - id: entry-result-table-selection
             adapter: typescript
             path: frontend/src/components/EntryResultTable.test.tsx
@@ -259,6 +289,28 @@ requirements:
                 criterion: REQ-FE-068#criterion.shared-result-visual-language
                 covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "fits narrow results without a fixed giant width" } }
+          - id: sql-result-table-visual-details
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: "names the table, exposes keyboard scroll, and marks numeric and long cells" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-table-visual-details
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "names the table, exposes keyboard scroll, and marks numeric and long cells" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.table-identity-keyboard-scroll
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "names the table, exposes keyboard scroll, and marks numeric and long cells" } }
+          - id: sql-result-schema-null-numeric
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: "uses result schema types to align all-null numeric columns" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-table-visual-details
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: "uses result schema types to align all-null numeric columns" } }
           - id: composition-paging-ownership
             adapter: typescript
             path: frontend/src/lib/composition-query-handle.test.ts
@@ -313,6 +365,41 @@ requirements:
                 criterion: REQ-FE-068#criterion.local-horizontal-overflow
                 covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: Saved SQL many-column localizes overflow in the result viewport" } }
+          - id: result-surface-zoom-sql
+            adapter: typescript
+            path: e2e/result-surface-narrow.test.ts
+            selector: { kind: test, name: "REQ-FE-068: SQL table reflows at the 640px CSS viewport used by 200% zoom" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: SQL table reflows at the 640px CSS viewport used by 200% zoom" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.table-identity-keyboard-scroll
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/result-surface-narrow.test.ts, test: "REQ-FE-068: SQL table reflows at the 640px CSS viewport used by 200% zoom" } }
+          - id: result-surface-zoom-entry
+            adapter: typescript
+            path: e2e/entry-browser-ux.test.ts
+            selector: { kind: test, name: "REQ-FE-068: Entry table stays locally scrollable at a 200% zoom viewport" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entry-browser-ux.test.ts, test: "REQ-FE-068: Entry table stays locally scrollable at a 200% zoom viewport" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.table-identity-keyboard-scroll
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entry-browser-ux.test.ts, test: "REQ-FE-068: Entry table stays locally scrollable at a 200% zoom viewport" } }
+          - id: result-surface-single-column-entry-phone
+            adapter: typescript
+            path: e2e/entry-browser-ux.test.ts
+            selector: { kind: test, name: "REQ-FE-068: a single-column Entry table fits phone widths" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+                covers: [FEAT-SRCH-001#binding.frontend/target.entry-browser]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/entry-browser-ux.test.ts, test: "REQ-FE-068: a single-column Entry table fits phone widths" } }
           # Source-native Composition table delegation is implemented (RS5):
           # entry_query sources render through Entry presentation,
           # saved_sql sources through SqlResultTable, metrics through the
@@ -356,6 +443,55 @@ requirements:
                 criterion: REQ-FE-068#criterion.source-native-composition-rendering
                 covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "renders fields projections in projection order with timestamps last" } }
+          - id: composition-entry-numeric-alignment
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: "marks numeric projected properties for native table alignment" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-table-visual-details
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "marks numeric projected properties for native table alignment" } }
+          - id: composition-entry-null-numeric-alignment
+            adapter: typescript
+            path: frontend/src/components/CompositionEntryQueryTable.test.tsx
+            selector: { kind: test, name: "uses saved field schema to align an all-null numeric property" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-table-visual-details
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionEntryQueryTable.test.tsx, test: "uses saved field schema to align an all-null numeric property" } }
+          - id: composition-flow-null-numeric-alignment
+            adapter: typescript
+            path: frontend/src/components/DashboardFlowRenderer.test.tsx
+            selector: { kind: test, name: "passes saved field types to an all-null Entry table in flow layout" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-table-visual-details
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-dashboard-flow-renderer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/DashboardFlowRenderer.test.tsx, test: "passes saved field types to an all-null Entry table in flow layout" } }
+          - id: composition-entry-table-identity
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+            selector: { kind: test, name: "renders placed controls in flow order with text and the source-native table" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.table-identity-keyboard-scroll
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-entry-query-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: "renders placed controls in flow order with text and the source-native table" } }
+          - id: composition-saved-sql-table-identity-and-types
+            adapter: typescript
+            path: frontend/src/components/CompositionRenderer.test.tsx
+            selector: { kind: test, name: "aligns an all-null Saved SQL column from its server result schema" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.source-native-table-visual-details
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-saved-sql-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "aligns an all-null Saved SQL column from its server result schema" } }
+              - kind: verifies
+                criterion: REQ-FE-068#criterion.table-identity-keyboard-scroll
+                covers: [FEAT-COMP-004#binding.browser-query-runtime/target.browser-saved-sql-viewer]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionRenderer.test.tsx, test: "aligns an all-null Saved SQL column from its server result schema" } }
           - id: composition-property-timestamp-separation
             adapter: typescript
             path: frontend/src/components/CompositionEntryQueryTable.test.tsx

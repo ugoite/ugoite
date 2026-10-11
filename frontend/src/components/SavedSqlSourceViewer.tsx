@@ -328,6 +328,7 @@ function SavedSqlSourceResult(props: {
       <Show when={status() === "ready" && rows().length > 0}>
         <SqlResultTable
           columns={page()?.columns ?? []}
+          columnTypes={page()?.result_schema?.map((column) => column.type)}
           rows={rows()}
           pageIdentity={`${props.source.draftId}:${
             props.sourceState?.cursor ?? "first"

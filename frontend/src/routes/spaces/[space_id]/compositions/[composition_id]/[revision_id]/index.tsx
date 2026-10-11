@@ -11,6 +11,7 @@ import {
   CompositionDiagnostics,
   type CompositionFieldKeys,
   type CompositionFieldNames,
+  type CompositionFieldTypeLookup,
   CompositionRenderer,
 } from "~/components/CompositionRenderer";
 import { DashboardFlowRenderer } from "~/components/DashboardFlowRenderer";
@@ -242,6 +243,10 @@ export default function CompositionRevisionRoute() {
   };
   const fieldKeys: CompositionFieldKeys = (formId, fieldId) =>
     resolveCompositionFieldKey(forms(), formId, fieldId);
+  const fieldTypes: CompositionFieldTypeLookup = (_formId, fieldId, sourceId) =>
+    layoutDocument()?.spec.sources.find((source) =>
+      source.id === sourceId && source.kind === "entry_query"
+    )?.field_schema?.find((field) => field.field_id === fieldId)?.field_type;
   const flowRows = () => {
     const rows = layoutDocument()?.spec.layout?.rows;
     return Array.isArray(rows) ? rows : undefined;
@@ -392,6 +397,7 @@ export default function CompositionRevisionRoute() {
                 texts={flowTexts()}
                 fieldNames={fieldNames}
                 fieldKeys={fieldKeys}
+                fieldTypes={fieldTypes}
                 onNext={handle.next}
                 onPrevious={handle.previous}
                 onRetry={handle.retry}
@@ -411,6 +417,7 @@ export default function CompositionRevisionRoute() {
                 sources={current().sources}
                 fieldNames={fieldNames}
                 fieldKeys={fieldKeys}
+                fieldTypes={fieldTypes}
                 onNext={handle.next}
                 onPrevious={handle.previous}
                 onRetry={handle.retry}

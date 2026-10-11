@@ -198,6 +198,45 @@ describe("entryQueryDisplayColumns", () => {
     expect(columns[0].text(row)).toBe("projected Form value");
   });
 
+  it("marks numeric projected properties for native table alignment", () => {
+    const row = {
+      ...entryRow(),
+      properties: { amount: 12.5 },
+    };
+    const columns = entryQueryDisplayColumns(
+      source({
+        kind: "fields",
+        fields: [{ kind: "property", field_id: 9 }],
+      }),
+      [row],
+      undefined,
+      (formId, fieldId) =>
+        formId === "form-1" && fieldId === 9 ? "amount" : undefined,
+    );
+    expect(columns[0].numeric?.(row)).toBe(true);
+  });
+
+  it("uses saved field schema to align an all-null numeric property", () => {
+    const row = {
+      ...entryRow(),
+      properties: { amount: null },
+    };
+    const columns = entryQueryDisplayColumns(
+      source({
+        kind: "fields",
+        fields: [{ kind: "property", field_id: 9 }],
+      }),
+      [row],
+      undefined,
+      (formId, fieldId) =>
+        formId === "form-1" && fieldId === 9 ? "amount" : undefined,
+      (_formId, fieldId, sourceId) =>
+        sourceId === "entries" && fieldId === 9 ? "double" : undefined,
+    );
+
+    expect(columns[0].numeric?.(row)).toBe(true);
+  });
+
   it("keeps the top-level Form UUID out of all-Forms headings and cells", () => {
     const allFormsSource = source({
       kind: "fields",

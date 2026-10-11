@@ -477,4 +477,44 @@ test.describe("Result surface narrow viewports", () => {
       await expectNoPageHorizontalOverflow(page);
     }
   });
+
+  test("REQ-FE-068: SQL table reflows at the 640px CSS viewport used by 200% zoom", async ({ page }) => {
+    // Mitase evidence: REQ-FE-068#criterion.local-horizontal-overflow.
+    // A 1280px desktop viewport at 200% browser zoom has a 640 CSS-pixel
+    // layout viewport; Playwright models that reflow width directly.
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 640, height: 800 });
+    await page.goto(
+      getFrontendUrl(
+        `/spaces/${seed.spaceId}/sql/${seed.manyColumnSqlId}/run`,
+      ),
+      { waitUntil: "domcontentloaded" },
+    );
+
+    const table = page.getByRole("table", { name: "SQL results" });
+    const viewport = page.getByRole("region", { name: "SQL results" });
+    await expect(table).toBeVisible();
+    await expect(viewport).toHaveAttribute("tabindex", "0");
+    await expectNoPageHorizontalOverflow(page);
+    await expectViewportRectWithinViewport(page, viewport);
+    const metrics = await viewport.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+    await viewport.focus();
+    await expect(viewport).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => viewport.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0);
+    const cellStyle = await viewport.locator("td.result-table-cell > span")
+      .first().evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          textOverflow: style.textOverflow,
+          whiteSpace: style.whiteSpace,
+        };
+      });
+    expect(cellStyle).toEqual({ textOverflow: "ellipsis", whiteSpace: "nowrap" });
+  });
 });
