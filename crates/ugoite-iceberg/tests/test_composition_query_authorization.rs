@@ -11,10 +11,11 @@ use ugoite_core::{
 use ugoite_domain::composition::{
     CompositionAggregateOperation, CompositionComponent, CompositionDocument,
     CompositionFieldSchemaEntry, CompositionFormat, CompositionKind, CompositionMetricDefinition,
-    CompositionParameter, CompositionParameterType, CompositionResultColumn,
-    CompositionResultFieldType, CompositionSortDirection, CompositionSource, CompositionSpec,
-    DashboardFlowLayout, EntryQueryProjectionTemplate, EntryQuerySortTemplate, EntryQueryTemplate,
-    FlowItem, FlowLayoutKind, FlowRow,
+    CompositionParameter, CompositionParameterType, CompositionQueryOperator,
+    CompositionResultColumn, CompositionResultFieldType, CompositionSortDirection,
+    CompositionSource, CompositionSpec, CompositionValue, DashboardFlowLayout,
+    EntryQueryFilterTemplate, EntryQueryProjectionTemplate, EntryQuerySortTemplate,
+    EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow,
 };
 use ugoite_domain::form::FieldType;
 use ugoite_domain::identity::{
@@ -64,14 +65,21 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
             &json!({
                 "name": form_name,
                 "fields": {
-                    "amount": {"id": 101, "type": "long", "required": false}
+                    "amount": {"id": 101, "type": "long", "required": false},
+                    "all_null": {"id": 102, "type": "long", "required": false}
                 }
             }),
         )
         .await?;
     let amount_field_id = ugoite_domain::id::FieldId::new(101)?;
+    let all_null_field_id = ugoite_domain::id::FieldId::new(102)?;
     let amount_column = ugoite_domain::form::sql_column_name(amount_field_id);
-    let amount_field = |amount: i64| BTreeMap::from([("amount".to_string(), json!(amount))]);
+    let amount_field = |amount: i64| {
+        BTreeMap::from([
+            ("amount".to_string(), json!(amount)),
+            ("all_null".to_string(), Value::Null),
+        ])
+    };
     for (id, amount) in [
         ("metric-entry-01", 9_007_199_254_740_993_i64),
         ("metric-entry-02", 1_i64),
@@ -94,7 +102,10 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
             "metric-entry-null",
             form_name.to_string(),
             Vec::new(),
-            BTreeMap::from([("amount".to_string(), Value::Null)]),
+            BTreeMap::from([
+                ("amount".to_string(), Value::Null),
+                ("all_null".to_string(), Value::Null),
+            ]),
             BTreeMap::new(),
             "owner",
         )
@@ -262,15 +273,74 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
             },
         ),
     ];
+    let metric_aggregate =
+        |id: &str, source: &str, operation: CompositionAggregateOperation, field_id| {
+            metric(
+                id,
+                CompositionMetricDefinition::Aggregate {
+                    source: source.to_string(),
+                    operation,
+                    field_id,
+                },
+            )
+        };
+    let mut components = components;
+    for (id, operation) in [
+        ("all_null_sum", CompositionAggregateOperation::Sum),
+        ("all_null_avg", CompositionAggregateOperation::Avg),
+        ("all_null_min", CompositionAggregateOperation::Min),
+        ("all_null_max", CompositionAggregateOperation::Max),
+    ] {
+        components.push(metric_aggregate(
+            id,
+            entry_source_id,
+            operation,
+            Some(all_null_field_id),
+        ));
+    }
+    components.push(metric_aggregate(
+        "all_null_count_values",
+        entry_source_id,
+        CompositionAggregateOperation::CountValues,
+        Some(all_null_field_id),
+    ));
+    components.push(metric_aggregate(
+        "empty_count_rows",
+        "empty_entries",
+        CompositionAggregateOperation::CountRows,
+        None,
+    ));
+    components.push(metric_aggregate(
+        "empty_count_values",
+        "empty_entries",
+        CompositionAggregateOperation::CountValues,
+        Some(amount_field_id),
+    ));
+    for (id, operation) in [
+        ("empty_sum", CompositionAggregateOperation::Sum),
+        ("empty_avg", CompositionAggregateOperation::Avg),
+        ("empty_min", CompositionAggregateOperation::Min),
+        ("empty_max", CompositionAggregateOperation::Max),
+    ] {
+        components.push(metric_aggregate(
+            id,
+            "empty_entries",
+            operation,
+            Some(amount_field_id),
+        ));
+    }
     let mut sources = vec![CompositionSource::EntryQuery {
         id: entry_source_id.to_string(),
         form_id: form.form_id,
-        field_schema: vec![CompositionFieldSchemaEntry {
-            field_id: amount_field_id,
-            field_type: FieldType::Long,
-            reference_form: None,
-            list_item: None,
-        }],
+        field_schema: [amount_field_id, all_null_field_id]
+            .into_iter()
+            .map(|field_id| CompositionFieldSchemaEntry {
+                field_id,
+                field_type: FieldType::Long,
+                reference_form: None,
+                list_item: None,
+            })
+            .collect(),
         query: EntryQueryTemplate {
             text: None,
             filters: Vec::new(),
@@ -280,6 +350,31 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
             display_system_fields: Vec::new(),
         },
     }];
+    sources.push(CompositionSource::EntryQuery {
+        id: "empty_entries".to_string(),
+        form_id: form.form_id,
+        field_schema: [amount_field_id, all_null_field_id]
+            .into_iter()
+            .map(|field_id| CompositionFieldSchemaEntry {
+                field_id,
+                field_type: FieldType::Long,
+                reference_form: None,
+                list_item: None,
+            })
+            .collect(),
+        query: EntryQueryTemplate {
+            text: None,
+            filters: vec![EntryQueryFilterTemplate {
+                field_id: amount_field_id,
+                operator: CompositionQueryOperator::Gte,
+                value: serde_json::from_value::<CompositionValue>(json!(i64::MAX))?,
+            }],
+            sort: Vec::new(),
+            page_limit: 1,
+            projection: EntryQueryProjectionTemplate::Preview,
+            display_system_fields: Vec::new(),
+        },
+    });
     sources.extend([
         sql_source(
             "scalar_sql",
@@ -402,6 +497,30 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
         ugoite_core::composition_metric::CompositionMetricOperation::Sum
     );
     assert_eq!(aggregate_result.value, json!("9007199254740994"));
+
+    for (component_id, expected_value) in [
+        ("all_null_sum", Value::Null),
+        ("all_null_avg", Value::Null),
+        ("all_null_min", Value::Null),
+        ("all_null_max", Value::Null),
+        ("all_null_count_values", json!("0")),
+        ("empty_count_rows", json!("0")),
+        ("empty_count_values", json!("0")),
+        ("empty_sum", Value::Null),
+        ("empty_avg", Value::Null),
+        ("empty_min", Value::Null),
+        ("empty_max", Value::Null),
+    ] {
+        let response = service
+            .query_composition_metric_local(&space_id, query(component_id))
+            .await
+            .with_context(|| format!("querying {component_id} should succeed"))?;
+        assert!(response.ok, "{component_id} failed: {response:?}");
+        let result = response
+            .result
+            .with_context(|| format!("{component_id} should return a scalar result"))?;
+        assert_eq!(result.value, expected_value, "{component_id}");
+    }
 
     let sql_scalar_result = service
         .query_composition_metric_local(&space_id, query("sql_scalar"))

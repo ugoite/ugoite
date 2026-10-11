@@ -3,7 +3,7 @@ use arrow_array::{
     Array, BooleanArray, Int64Array, ListArray, StringArray, StructArray,
     TimestampMicrosecondArray, TimestampNanosecondArray,
 };
-use arrow_json::writer::ArrayWriter;
+use arrow_json::writer::{ArrayWriter, JsonArray, WriterBuilder};
 use arrow_schema::Schema;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
@@ -602,7 +602,7 @@ pub(crate) async fn aggregate_entry_query_at_checkpoint(
         .execute_with_parameters(&aggregate_sql, datafusion_parameters(&values, &types)?)
         .await
         .map_err(map_sql_error)?;
-    let rows = record_batches_to_values(&batches)?;
+    let rows = record_batches_to_values_with_explicit_nulls(&batches)?;
     if rows.len() != 1 {
         return Err(anyhow!(
             "DataFusion aggregate did not return one result row"
@@ -3442,6 +3442,28 @@ fn record_batches_to_values(batches: &[arrow_array::RecordBatch]) -> Result<Vec<
         .context("encode DataFusion result rows as JSON")?;
     writer.finish().context("finish DataFusion JSON encoding")?;
     serde_json::from_slice(&writer.into_inner()).context("decode DataFusion result rows")
+}
+
+/// Metric aggregates always produce one scalar row, including when SQL
+/// semantics produce NULL for an empty or all-NULL input. Keep this adapter's
+/// null behavior local to the metric result so ordinary SQL JSON output
+/// retains its established omission of null-valued keys.
+fn record_batches_to_values_with_explicit_nulls(
+    batches: &[arrow_array::RecordBatch],
+) -> Result<Vec<Value>> {
+    let mut encoded = Vec::new();
+    {
+        let mut writer = WriterBuilder::new()
+            .with_explicit_nulls(true)
+            .build::<_, JsonArray>(&mut encoded);
+        writer
+            .write_batches(&batches.iter().collect::<Vec<_>>())
+            .context("encode Composition metric result rows as JSON")?;
+        writer
+            .finish()
+            .context("finish Composition metric JSON encoding")?;
+    }
+    serde_json::from_slice(&encoded).context("decode Composition metric result rows")
 }
 
 /// Converts only bounded Arrow batches to JSON. The per-batch preflight keeps
