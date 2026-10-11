@@ -2,15 +2,15 @@
 //!
 //! DataFusion 54's built-in SUM and decimal AVG accumulators use wrapping
 //! arithmetic for their intermediate state. These implementations retain the
-//! same portable result types while accumulating exact values in checked i256
-//! state, including DISTINCT partial-state merging. Floating aggregates reject
+//! same portable result types while accumulating exact values in arbitrary-
+//! precision state, including DISTINCT partial-state merging, and check the
+//! final value against its declared result type. Floating aggregates reject
 //! non-finite inputs and results.
 
 use std::collections::HashSet;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::sync::Arc;
 
-use arrow_array::ArrowNativeTypeOp;
 use arrow_array::{Array, ListArray};
 use arrow_buffer::i256;
 use datafusion::arrow::datatypes::{
@@ -23,8 +23,7 @@ use datafusion::logical_expr::function::{AccumulatorArgs, StateFieldsArgs};
 use datafusion::logical_expr::{
     Accumulator, AggregateUDF, AggregateUDFImpl, Signature, Volatility,
 };
-
-const WIDE_STATE_BYTES: i32 = 32;
+use num_bigint::BigInt;
 
 /// Internal marker preserved through DataFusion's error source chain so the
 /// SQL adapter can map numeric failures to stable, safe public diagnostics.
@@ -216,7 +215,7 @@ struct CheckedNumericAccumulator {
     output_type: DataType,
     distinct: bool,
     distinct_values: HashSet<ScalarValue>,
-    exact_sum: i256,
+    exact_sum: BigInt,
     float_sum: f64,
     count: u64,
     seen_value: bool,
@@ -238,7 +237,7 @@ impl CheckedNumericAccumulator {
             output_type,
             distinct,
             distinct_values: HashSet::new(),
-            exact_sum: i256::ZERO,
+            exact_sum: BigInt::ZERO,
             float_sum: 0.0,
             count: 0,
             seen_value: false,
@@ -263,10 +262,7 @@ impl CheckedNumericAccumulator {
             exact => {
                 let value = exact_integer_value(&exact)
                     .ok_or_else(|| failure(SqlAggregateFailure::UnsupportedType))?;
-                self.exact_sum = self
-                    .exact_sum
-                    .checked_add(value)
-                    .ok_or_else(|| failure(SqlAggregateFailure::Overflow))?;
+                self.exact_sum += value;
                 self.seen_value = true;
                 Ok(())
             }
@@ -290,11 +286,7 @@ impl CheckedNumericAccumulator {
         if is_float(&self.input_type) {
             ScalarValue::Float64(self.seen_value.then_some(self.float_sum))
         } else {
-            ScalarValue::FixedSizeBinary(
-                WIDE_STATE_BYTES,
-                self.seen_value
-                    .then(|| self.exact_sum.to_be_bytes().to_vec()),
-            )
+            ScalarValue::Binary(self.seen_value.then(|| self.exact_sum.to_signed_bytes_be()))
         }
     }
 
@@ -326,15 +318,8 @@ impl CheckedNumericAccumulator {
         }
         match state {
             ScalarValue::Float64(Some(value)) => self.add_float(value)?,
-            ScalarValue::FixedSizeBinary(_, Some(bytes)) => {
-                let bytes: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| failure(SqlAggregateFailure::Overflow))?;
-                let value = i256::from_be_bytes(bytes);
-                self.exact_sum = self
-                    .exact_sum
-                    .checked_add(value)
-                    .ok_or_else(|| failure(SqlAggregateFailure::Overflow))?;
+            ScalarValue::Binary(Some(bytes)) | ScalarValue::FixedSizeBinary(_, Some(bytes)) => {
+                self.exact_sum += BigInt::from_signed_bytes_be(&bytes);
                 self.seen_value = true;
             }
             _ => return Err(failure(SqlAggregateFailure::UnsupportedType)),
@@ -348,7 +333,11 @@ impl CheckedNumericAccumulator {
         }
         match self.output_type {
             DataType::Float64 => Ok(ScalarValue::Float64(Some(self.float_sum))),
-            _ => decimal_or_integer_scalar(self.exact_sum, &self.output_type),
+            _ => decimal_or_integer_scalar(
+                big_int_to_i256(&self.exact_sum)
+                    .ok_or_else(|| failure(SqlAggregateFailure::Overflow))?,
+                &self.output_type,
+            ),
         }
     }
 
@@ -387,37 +376,16 @@ impl CheckedNumericAccumulator {
                 if scale_delta < 0 {
                     return Err(failure(SqlAggregateFailure::UnsupportedType));
                 }
-                let scale_factor = (0..scale_delta).try_fold(i256::from(1_i32), |value, _| {
-                    value.checked_mul(i256::from(10))
-                });
-                let scale_factor =
-                    scale_factor.ok_or_else(|| failure(SqlAggregateFailure::Overflow))?;
-                let divisor = i256::from_i128(i128::from(self.count));
-                // Divide before scaling to avoid a false overflow for a
-                // representable result when a high-precision Decimal256 sum
-                // temporarily exceeds i256 after multiplying by 10^scale.
-                // Splitting quotient/remainder preserves truncation toward
-                // zero while keeping the remainder product below 10^scale *
-                // count, which fits comfortably in i256 for Arrow decimals.
-                let quotient = self
-                    .exact_sum
-                    .checked_div(divisor)
-                    .ok_or_else(|| failure(SqlAggregateFailure::Overflow))?;
-                let remainder = self
-                    .exact_sum
-                    .checked_rem(divisor)
-                    .ok_or_else(|| failure(SqlAggregateFailure::Overflow))?;
-                let whole = quotient
-                    .checked_mul(scale_factor)
-                    .ok_or_else(|| failure(SqlAggregateFailure::Overflow))?;
-                let fraction = remainder
-                    .checked_mul(scale_factor)
-                    .ok_or_else(|| failure(SqlAggregateFailure::Overflow))?
-                    .div_wrapping(divisor);
-                let average = whole
-                    .checked_add(fraction)
-                    .ok_or_else(|| failure(SqlAggregateFailure::Overflow))?;
-                decimal_or_integer_scalar(average, &self.output_type)
+                // Keep the sum and scaling exact until division is complete.
+                // Decimal256 inputs can have a sum wider than i256 even when
+                // their average fits the declared output type.
+                let scale_factor = BigInt::from(10_u8).pow(scale_delta as u32);
+                let average = (&self.exact_sum * scale_factor) / BigInt::from(self.count);
+                decimal_or_integer_scalar(
+                    big_int_to_i256(&average)
+                        .ok_or_else(|| failure(SqlAggregateFailure::Overflow))?,
+                    &self.output_type,
+                )
             }
             _ => Err(failure(SqlAggregateFailure::UnsupportedType)),
         }
@@ -448,6 +416,7 @@ impl Accumulator for CheckedNumericAccumulator {
     fn size(&self) -> usize {
         std::mem::size_of_val(self) + ScalarValue::size_of_hashset(&self.distinct_values)
             - std::mem::size_of_val(&self.distinct_values)
+            + usize::try_from(self.exact_sum.bits().div_ceil(8)).unwrap_or(0)
     }
 
     fn state(&mut self) -> DataFusionResult<Vec<ScalarValue>> {
@@ -546,22 +515,39 @@ fn avg_result_type(input: &DataType) -> Option<DataType> {
     })
 }
 
-fn exact_integer_value(value: &ScalarValue) -> Option<i256> {
+fn exact_integer_value(value: &ScalarValue) -> Option<BigInt> {
     match value {
-        ScalarValue::Int8(Some(value)) => Some(i256::from(i64::from(*value))),
-        ScalarValue::Int16(Some(value)) => Some(i256::from(i64::from(*value))),
-        ScalarValue::Int32(Some(value)) => Some(i256::from(i64::from(*value))),
-        ScalarValue::Int64(Some(value)) => Some(i256::from(*value)),
-        ScalarValue::UInt8(Some(value)) => Some(i256::from(i64::from(*value))),
-        ScalarValue::UInt16(Some(value)) => Some(i256::from(i64::from(*value))),
-        ScalarValue::UInt32(Some(value)) => Some(i256::from(i64::from(*value))),
-        ScalarValue::UInt64(Some(value)) => Some(i256::from_i128(i128::from(*value))),
-        ScalarValue::Decimal32(Some(value), _, _) => Some(i256::from(i64::from(*value))),
-        ScalarValue::Decimal64(Some(value), _, _) => Some(i256::from(*value)),
-        ScalarValue::Decimal128(Some(value), _, _) => Some(i256::from_i128(*value)),
-        ScalarValue::Decimal256(Some(value), _, _) => Some(*value),
+        ScalarValue::Int8(Some(value)) => Some(BigInt::from(*value)),
+        ScalarValue::Int16(Some(value)) => Some(BigInt::from(*value)),
+        ScalarValue::Int32(Some(value)) => Some(BigInt::from(*value)),
+        ScalarValue::Int64(Some(value)) => Some(BigInt::from(*value)),
+        ScalarValue::UInt8(Some(value)) => Some(BigInt::from(*value)),
+        ScalarValue::UInt16(Some(value)) => Some(BigInt::from(*value)),
+        ScalarValue::UInt32(Some(value)) => Some(BigInt::from(*value)),
+        ScalarValue::UInt64(Some(value)) => Some(BigInt::from(*value)),
+        ScalarValue::Decimal32(Some(value), _, _) => Some(BigInt::from(*value)),
+        ScalarValue::Decimal64(Some(value), _, _) => Some(BigInt::from(*value)),
+        ScalarValue::Decimal128(Some(value), _, _) => Some(BigInt::from(*value)),
+        ScalarValue::Decimal256(Some(value), _, _) => {
+            Some(BigInt::from_signed_bytes_be(&value.to_be_bytes()))
+        }
         _ => None,
     }
+}
+
+fn big_int_to_i256(value: &BigInt) -> Option<i256> {
+    let bytes = value.to_signed_bytes_be();
+    if bytes.len() > 32 {
+        return None;
+    }
+    let sign_extension = if value.sign() == num_bigint::Sign::Minus {
+        u8::MAX
+    } else {
+        0
+    };
+    let mut padded = [sign_extension; 32];
+    padded[32 - bytes.len()..].copy_from_slice(&bytes);
+    Some(i256::from_be_bytes(padded))
 }
 
 fn decimal_or_integer_scalar(value: i256, output_type: &DataType) -> DataFusionResult<ScalarValue> {
@@ -642,7 +628,7 @@ fn state_type(input_type: &DataType) -> DataType {
     if is_float(input_type) {
         DataType::Float64
     } else {
-        DataType::FixedSizeBinary(WIDE_STATE_BYTES)
+        DataType::Binary
     }
 }
 
@@ -759,6 +745,111 @@ mod tests {
             accumulator.evaluate().expect("representable average"),
             ScalarValue::Decimal256(Some(expected), 76, 4)
         );
+    }
+
+    #[test]
+    fn decimal256_average_accepts_wide_sum_and_merges_partial_states() {
+        let input =
+            i256::from_string(&format!("9{}", "0".repeat(75))).expect("76-digit decimal value");
+        let input_type = DataType::Decimal256(76, 76);
+        let output_type = DataType::Decimal256(76, 76);
+
+        let mut direct = CheckedNumericAccumulator::new(
+            NumericAggregate::Average,
+            input_type.clone(),
+            output_type.clone(),
+            false,
+        )
+        .expect("direct accumulator");
+        direct
+            .update_batch(&[Arc::new(
+                Decimal256Array::from(vec![Some(input); 7])
+                    .with_precision_and_scale(76, 76)
+                    .expect("Decimal256 array"),
+            )])
+            .expect("seven individually representable values have a wide exact sum");
+        assert_eq!(
+            direct.evaluate().expect("direct average"),
+            ScalarValue::Decimal256(Some(input), 76, 76)
+        );
+
+        let mut left = CheckedNumericAccumulator::new(
+            NumericAggregate::Average,
+            input_type.clone(),
+            output_type.clone(),
+            false,
+        )
+        .expect("left accumulator");
+        left.update_batch(&[Arc::new(
+            Decimal256Array::from(vec![Some(input); 3])
+                .with_precision_and_scale(76, 76)
+                .expect("Decimal256 array"),
+        )])
+        .expect("left values");
+
+        let mut right = CheckedNumericAccumulator::new(
+            NumericAggregate::Average,
+            input_type.clone(),
+            output_type.clone(),
+            false,
+        )
+        .expect("right accumulator");
+        right
+            .update_batch(&[Arc::new(
+                Decimal256Array::from(vec![Some(input); 4])
+                    .with_precision_and_scale(76, 76)
+                    .expect("Decimal256 array"),
+            )])
+            .expect("right values");
+
+        let mut merged = CheckedNumericAccumulator::new(
+            NumericAggregate::Average,
+            input_type,
+            output_type,
+            false,
+        )
+        .expect("merged accumulator");
+        for partial in [
+            left.state().expect("left state"),
+            right.state().expect("right state"),
+        ] {
+            let count = partial[0].to_array_of_size(1).expect("count state array");
+            let sum = partial[1].to_array_of_size(1).expect("sum state array");
+            merged
+                .merge_batch(&[count, sum])
+                .expect("merge partial state");
+        }
+        assert_eq!(
+            merged.evaluate().expect("merged average"),
+            ScalarValue::Decimal256(Some(input), 76, 76)
+        );
+    }
+
+    #[test]
+    fn decimal256_average_rejects_a_result_outside_output_precision() {
+        let input =
+            i256::from_string(&format!("9{}", "0".repeat(75))).expect("76-digit decimal value");
+        let values: ArrayRef = Arc::new(
+            Decimal256Array::from(vec![Some(input)])
+                .with_precision_and_scale(76, 0)
+                .expect("Decimal256 array"),
+        );
+        let mut accumulator = CheckedNumericAccumulator::new(
+            NumericAggregate::Average,
+            DataType::Decimal256(76, 0),
+            DataType::Decimal256(76, 4),
+            false,
+        )
+        .expect("accumulator");
+        accumulator.update_batch(&[values]).expect("update");
+        let error = accumulator
+            .evaluate()
+            .expect_err("scaled result exceeds Decimal256 output precision");
+        assert!(matches!(
+            error,
+            datafusion::common::DataFusionError::External(ref source)
+                if source.downcast_ref::<SqlAggregateFailure>() == Some(&SqlAggregateFailure::Overflow)
+        ));
     }
 
     #[test]

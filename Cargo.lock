@@ -6660,6 +6660,7 @@ dependencies = [
  "hmac 0.13.0",
  "iceberg",
  "iceberg-datafusion",
+ "num-bigint",
  "opendal",
  "parquet",
  "quick-xml 0.42.0",
