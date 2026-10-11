@@ -44,6 +44,7 @@ export interface EntryBrowserProps {
 const fieldKey = (field: EntryFieldRef): string => JSON.stringify(field);
 const filterOperatorLabel = (operator: EntryFilterOperator): string =>
   t(`entryBrowser.operator.${operator}`);
+const numericFieldTypes = new Set(["integer", "numeric"]);
 
 const dateFromMicros = (micros: number): string => {
   const date = new Date(micros / 1_000);
@@ -233,6 +234,9 @@ export function EntryBrowser(props: EntryBrowserProps) {
     visibleColumns().map((column) => ({
       key: column.key,
       label: column.label,
+      numeric: () => column.kind === "field" && numericFieldTypes.has(
+        capabilityForField(props, column.field)?.field_type ?? "",
+      ),
       // Keep the cell expression reactive to label metadata that arrives
       // after the query rows. Its value is display-only and must not change
       // the table's page identity or cause another EntryQuery.

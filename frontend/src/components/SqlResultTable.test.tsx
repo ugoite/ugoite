@@ -1,12 +1,18 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen, within } from "@solidjs/testing-library";
 import { describe, expect, it } from "vitest";
+import type { SqlResultColumnType } from "~/lib/types";
 import { SqlResultTable } from "./SqlResultTable";
 
-const renderTable = (columns: string[], rows: unknown[]) =>
+const renderTable = (
+  columns: string[],
+  rows: unknown[],
+  columnTypes?: SqlResultColumnType[],
+) =>
   render(() => (
     <SqlResultTable
       columns={columns}
+      columnTypes={columnTypes}
       rows={rows}
       pageIdentity="sql-page-1"
       tableLabel="SQL pages"
@@ -83,5 +89,50 @@ describe("SqlResultTable", () => {
     expect(
       container.querySelector(".result-table-viewport"),
     ).not.toBeNull();
+  });
+
+  it("names the table, exposes keyboard scroll, and marks numeric and long cells", () => {
+    const longValue = "A long result value ".repeat(8);
+    renderTable(
+      ["amount", "description", "missing"],
+      [[12.5, longValue, null]],
+      ["float", "string", "string"],
+    );
+
+    const table = screen.getByRole("table", { name: "SQL pages" });
+    const viewport = screen.getByRole("region", { name: "SQL pages" });
+    expect(viewport).toHaveAttribute("tabindex", "0");
+    expect(table).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "amount" })).toHaveClass(
+      "result-table-header--numeric",
+    );
+    expect(screen.getByRole("cell", { name: "12.5" })).toHaveClass(
+      "result-table-cell--numeric",
+    );
+    expect(
+      document.querySelector('td[data-column-key="description"] > span'),
+    ).toHaveAttribute("title", longValue);
+    expect(screen.getByRole("cell", { name: "—" })).toBeInTheDocument();
+  });
+
+  it("uses result schema types to align all-null numeric columns", () => {
+    renderTable(["total"], [{ total: null }], ["float"]);
+
+    expect(screen.getByRole("columnheader", { name: "total" })).toHaveClass(
+      "result-table-header--numeric",
+    );
+    expect(screen.getByRole("cell", { name: "—" })).toHaveClass(
+      "result-table-cell--numeric",
+    );
+  });
+
+  it("uses the server schema instead of inferring numeric rows", () => {
+    renderTable(["payload"], [[42]], ["json"]);
+
+    expect(screen.getByRole("columnheader", { name: "payload" }))
+      .not.toHaveClass("result-table-header--numeric");
+    expect(screen.getByRole("cell", { name: "42" })).not.toHaveClass(
+      "result-table-cell--numeric",
+    );
   });
 });

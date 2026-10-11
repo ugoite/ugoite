@@ -131,6 +131,12 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.shared-result-visual-language
               - kind: satisfies
+                criterion: REQ-FE-068#criterion.source-native-table-visual-details
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.table-identity-keyboard-scroll
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.local-horizontal-overflow
+              - kind: satisfies
                 criterion: REQ-FE-068#criterion.controller-owned-paging
           - id: entry-result-table
             adapter: typescript
@@ -144,9 +150,13 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.shared-result-visual-language
               - kind: satisfies
+                criterion: REQ-FE-068#criterion.source-native-table-visual-details
+              - kind: satisfies
                 criterion: REQ-FE-068#criterion.controller-owned-paging
               - kind: satisfies
                 criterion: REQ-FE-068#criterion.keyboard-row-navigation
+              - kind: satisfies
+                criterion: REQ-FE-068#criterion.table-identity-keyboard-scroll
               - kind: satisfies
                 criterion: REQ-FE-065#criterion.confirm-action
           - id: result-pagination

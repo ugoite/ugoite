@@ -1,11 +1,18 @@
-import { For, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
+import type { SqlResultColumnType } from "~/lib/types";
 
 export interface SqlResultTableProps {
   columns: readonly string[];
+  columnTypes?: readonly SqlResultColumnType[];
   rows: readonly unknown[];
   pageIdentity: string;
   tableLabel: string;
 }
+
+const numericColumnTypes = new Set<SqlResultColumnType>([
+  "integer",
+  "float",
+]);
 
 const formatCell = (value: unknown): string => {
   if (value === null || value === undefined) return "—";
@@ -38,19 +45,37 @@ const rowCell = (row: unknown, column: string, index: number): unknown => {
  * result viewport only.
  */
 export function SqlResultTable(props: SqlResultTableProps) {
+  const numericColumns = createMemo(() => props.columns.map((_, index) => {
+    const type = props.columnTypes?.[index];
+    return type !== undefined && numericColumnTypes.has(type);
+  }));
+
   return (
     <Show when={props.rows.length > 0}>
       <div
         class="result-table-viewport"
         data-page-identity={props.pageIdentity}
+        role="region"
+        tabIndex={0}
         aria-label={props.tableLabel}
       >
-        <table class="result-table result-table--sql">
+        <table
+          class="result-table result-table--sql"
+          aria-label={props.tableLabel}
+        >
           <thead>
             <tr>
               <For each={props.columns}>
-                {(column) => (
-                  <th scope="col" class="result-table-header">
+                {(column, columnIndex) => (
+                  <th
+                    scope="col"
+                    class="result-table-header"
+                    classList={{
+                      "result-table-header--numeric": numericColumns()[
+                        columnIndex()
+                      ],
+                    }}
+                  >
                     {column}
                   </th>
                 )}
@@ -69,6 +94,11 @@ export function SqlResultTable(props: SqlResultTableProps) {
                       return (
                         <td
                           class="result-table-cell"
+                          classList={{
+                            "result-table-cell--numeric": numericColumns()[
+                              columnIndex()
+                            ],
+                          }}
                           data-column-key={column}
                         >
                           <span title={value}>{value}</span>

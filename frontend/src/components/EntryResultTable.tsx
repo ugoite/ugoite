@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import type { EntryQueryResult } from "~/lib/entry-query";
 import { createRowActionKeyHandler } from "~/lib/row-action-focus";
@@ -7,6 +7,7 @@ import { RowListChevron } from "./RowList";
 export interface EntryResultColumn {
   key: string;
   label: string;
+  numeric?: (row: EntryQueryResult) => boolean;
   cell: (row: EntryQueryResult) => JSX.Element;
 }
 
@@ -40,24 +41,38 @@ export function EntryResultTable(props: EntryResultTableProps) {
   const handleKeyDown = createRowActionKeyHandler(() => tableElement);
   const showTrailingAction = () =>
     props.trailingAction !== undefined && props.onOpenEntry !== undefined;
+  const numericColumns = createMemo(() => props.columns.map((column) =>
+    props.rows.some((row) => column.numeric?.(row) ?? false)
+  ));
 
   return (
     <Show when={props.rows.length > 0}>
       <div
         class="result-table-viewport entry-browser-table-scroll"
         data-page-identity={props.pageIdentity}
+        role="region"
+        tabIndex={0}
         aria-label={props.tableLabel}
       >
         <table
           ref={tableElement}
           class="result-table result-table--entry entry-browser-table"
           classList={{ "result-table--static": props.onSelectEntry === undefined }}
+          aria-label={props.tableLabel}
         >
           <thead>
             <tr>
               <For each={props.columns}>
-                {(column) => (
-                  <th scope="col" class="result-table-header">
+                {(column, columnIndex) => (
+                  <th
+                    scope="col"
+                    class="result-table-header"
+                    classList={{
+                      "result-table-header--numeric": numericColumns()[
+                        columnIndex()
+                      ],
+                    }}
+                  >
                     {column.label}
                   </th>
                 )}
@@ -85,9 +100,14 @@ export function EntryResultTable(props: EntryResultTableProps) {
                   onFocusIn={() => props.onSelectEntry?.(row)}
                 >
                   <For each={props.columns}>
-                    {(column) => (
+                    {(column, columnIndex) => (
                       <td
                         class="result-table-cell"
+                        classList={{
+                          "result-table-cell--numeric": numericColumns()[
+                            columnIndex()
+                          ],
+                        }}
                         data-column-key={column.key}
                       >
                         {column.cell(row)}

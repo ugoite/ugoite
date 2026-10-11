@@ -11,6 +11,9 @@ global account Security surface is specified in
 
 FormTable's Form-field columns, optional timestamps, and accessible column
 picker are described in `components/form-table.yaml`.
+The shared visual and accessibility contract for source-native Entry and SQL
+result tables, including their use in Composition revisions, is in
+`components/result-table.yaml`.
 
 The current browser is server-backed and authenticated. Shared navigation and
 the Browser Konase panel reference are described in

@@ -1,0 +1,47 @@
+version: "0.1"
+updated: "2026-10-11"
+component_group:
+  id: source-native-result-table
+  title: Source-native result tables
+components:
+  - id: result-table-viewport
+    type: native-query-result-table
+    implementations:
+      entry_query: frontend/src/components/EntryResultTable.tsx
+      saved_sql: frontend/src/components/SqlResultTable.tsx
+    shared_styles: frontend/src/app.css
+    semantics:
+      renderer: native-html-table
+      row_selection: owned-by-source-presenter
+      row_action: owned-by-source-presenter
+      column_identity: owned-by-source-presenter
+      paging: owned-by-query-controller-or-route
+      current_page_only: true
+    presentation:
+      headers:
+        contrast: stronger-than-body-muted-text
+        weight: semibold
+      cells:
+        row_spacing: shared
+        numeric_alignment: right
+        numeric_font: tabular-figures
+        "null": "em-dash"
+        long_text:
+          visual: single-line-ellipsis
+          complete_value: remains-as-text-and-title
+      narrow_tables: intrinsic-width-without-large-fixed-minimum
+      wide_tables: horizontal-scroll-inside-viewport
+    accessibility:
+      viewport:
+        role: region
+        accessible_name: localized-or-component-provided-table-label
+        keyboard_focusable: true
+        focus_indicator: visible
+      table:
+        accessible_name: localized-or-component-provided-table-label
+      action_targets: 44px
+      pagination_targets: 44px
+    responsive:
+      page_horizontal_overflow: false
+      tested_widths_css_px: [320, 390, 640]
+      zoom_equivalence: 640px-effective-layout-width-at-200-percent-of-1280px

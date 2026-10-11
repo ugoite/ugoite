@@ -8,6 +8,7 @@ components:
     type: server-query-results
     implementation: frontend/src/components/EntryBrowser.tsx
     result_presentation: frontend/src/components/EntryResultTable.tsx
+    result_presentation_reference: result-table.yaml
     pagination_owner: EntryBrowser
     pagination_component: ResultPagination
     pagination_reference: result-pagination.yaml

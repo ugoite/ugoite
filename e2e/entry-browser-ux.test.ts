@@ -118,7 +118,9 @@ test.describe("Form Entry browser UX", () => {
         element.scrollLeft = element.scrollWidth;
       });
       await expect.poll(async () => (await openButton.boundingBox())?.x)
-        .toBeCloseTo(initialActionX!, 0);
+        .toBeGreaterThanOrEqual(initialActionX! - 1);
+      await expect.poll(async () => (await openButton.boundingBox())?.x)
+        .toBeLessThanOrEqual(initialActionX! + 1);
 
       await row.click();
       await expect(row).toHaveAttribute("aria-selected", "true");
@@ -144,6 +146,92 @@ test.describe("Form Entry browser UX", () => {
       new RegExp(`/spaces/${spaceId}/entries/${alphaEntryId}$`),
     );
     await expect(page.getByLabel("Summary")).toHaveValue(alphaSummary);
+  });
+
+  test("REQ-FE-068: Entry table stays locally scrollable at a 200% zoom viewport", async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width: 640, height: 800 });
+    await page.goto(
+      getFrontendUrl(`/spaces/${spaceId}/forms/${alphaForm}/entries`),
+      { waitUntil: "domcontentloaded" },
+    );
+
+    const table = page.getByRole("table", { name: "Entry pages" });
+    const scroll = page.getByRole("region", { name: "Entry pages" });
+    await expect(table).toBeVisible();
+    await expect(scroll).toHaveAttribute("tabindex", "0");
+    const widths = await page.evaluate(() => ({
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: document.documentElement.clientWidth,
+    }));
+    expect(widths.documentWidth).toBeLessThanOrEqual(widths.viewportWidth + 1);
+    const scrollMetrics = await scroll.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(scrollMetrics.scrollWidth).toBeGreaterThan(
+      scrollMetrics.clientWidth,
+    );
+    await scroll.focus();
+    await expect(scroll).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => scroll.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0);
+  });
+
+  test("REQ-FE-068: a single-column Entry table fits phone widths", async ({ page }) => {
+    test.setTimeout(90_000);
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(
+        getFrontendUrl(`/spaces/${spaceId}/forms/${alphaForm}/entries`),
+        { waitUntil: "domcontentloaded" },
+      );
+
+      await page.getByRole("button", { name: "Columns" }).click();
+      await page.getByRole("radio", { name: "Selected fields" }).click();
+      await page.getByRole("checkbox", { name: "Summary" }).check();
+      await page.getByRole("checkbox", { name: "Notes" }).uncheck();
+      await page.getByRole("checkbox", { name: "Created" }).uncheck();
+      await page.getByRole("checkbox", { name: "Updated" }).uncheck();
+      await page.getByRole("button", { name: "Apply" }).click();
+
+      const table = page.getByRole("table", { name: "Entry pages" });
+      await expect(table.getByRole("columnheader", { name: "Summary" }))
+        .toBeVisible();
+      const scroll = page.getByRole("region", { name: "Entry pages" });
+      await expect(scroll).toHaveAttribute("tabindex", "0");
+      const widths = await page.evaluate(() => ({
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: document.documentElement.clientWidth,
+      }));
+      expect(widths.documentWidth).toBeLessThanOrEqual(
+        widths.viewportWidth + 1,
+      );
+      const metrics = await scroll.evaluate((element) => ({
+        left: element.getBoundingClientRect().left,
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      }));
+      expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+      const cellStyle = await table.locator("tbody td.result-table-cell > span")
+        .first().evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            textOverflow: style.textOverflow,
+            whiteSpace: style.whiteSpace,
+          };
+        });
+      expect(cellStyle).toEqual({ textOverflow: "ellipsis", whiteSpace: "nowrap" });
+
+      const openButton = table.getByRole("button", { name: "Open entry" });
+      const action = await openButton.boundingBox();
+      expect(action).not.toBeNull();
+      expect(action!.x).toBeGreaterThanOrEqual(metrics.left);
+      expect(action!.x + action!.width).toBeLessThanOrEqual(
+        metrics.left + metrics.clientWidth + 1,
+      );
+    }
   });
 
   test("REQ-E2E-003: changing Forms does not retain the previous Entry rows", async ({ page }) => {

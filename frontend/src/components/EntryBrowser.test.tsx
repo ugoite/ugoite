@@ -552,6 +552,54 @@ describe("EntryBrowser", () => {
     ).not.toBeNull();
   });
 
+  it("right-aligns projected numeric fields using EntryQuery capability types", async () => {
+    queryMock.mockResolvedValue({
+      rows: [{
+        id: "entry-amount",
+        form_id: "form-1",
+        revision_id: "revision-amount",
+        created_at_micros: CREATED_MICROS,
+        updated_at_micros: UPDATED_MICROS,
+        properties: { Amount: 12.5 },
+      }],
+      has_more: false,
+    });
+    const base = systemEntryCapabilities({ kind: "form", form_id: "form-1" });
+    const capabilities: EntryQueryCapabilities = {
+      ...base,
+      fields: [
+        ...base.fields,
+        {
+          field: { kind: "property", field_id: 42 },
+          name: "Amount",
+          field_type: "numeric",
+          filterable: true,
+          sortable: true,
+          projectable: true,
+          supported_operators: ["equals", "gt"],
+        },
+      ],
+    };
+    const controller = createEntryQueryController(
+      () => "space-1",
+      { scope: capabilities.scope, filters: [], sort: [] },
+      { kind: "fields", fields: [{ kind: "property", field_id: 42 }] },
+      50,
+      queryMock,
+    );
+    await controller.load();
+    render(() => (
+      <EntryBrowser controller={controller} capabilities={capabilities} />
+    ));
+
+    expect(screen.getByRole("columnheader", { name: "Amount" })).toHaveClass(
+      "result-table-header--numeric",
+    );
+    expect(screen.getByRole("cell", { name: "12.5" })).toHaveClass(
+      "result-table-cell--numeric",
+    );
+  });
+
   it("keeps timestamp columns after Form fields in stable Created then Updated order", async () => {
     queryMock.mockResolvedValue({
       rows: [{

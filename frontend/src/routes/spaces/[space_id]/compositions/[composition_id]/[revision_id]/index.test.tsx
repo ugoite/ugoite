@@ -523,7 +523,11 @@ describe("Composition revision flow layout", () => {
     expect(flowRows[0].textContent).toContain("Month");
     expect(flowRows[1].textContent).toContain("Monthly summary");
     expect(flowRows[2].textContent).toContain("Details");
-    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Details" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Details" })).toHaveAttribute(
+      "tabindex",
+      "0",
+    );
     expect(screen.getByRole("cell", { name: "Travel" })).toBeInTheDocument();
   });
 

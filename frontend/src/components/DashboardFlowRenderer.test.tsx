@@ -266,6 +266,73 @@ describe("DashboardFlowRenderer", () => {
     expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
   });
 
+  it("passes saved field types to an all-null Entry table in flow layout", () => {
+    const entrySource: CompositionResolvePlan["sources"][number] = {
+      kind: "entry_query",
+      source_id: "entries",
+      source_schema_fingerprint: "entry-fingerprint",
+      request: {
+        query: {
+          scope: { kind: "form", form_id: "form-1" },
+          filters: [],
+          sort: [],
+        },
+        projection: { kind: "fields", fields: [{ kind: "property", field_id: 9 }] },
+        limit: 1,
+      },
+    };
+    renderFlow({
+      layout: {
+        rows: [{
+          id: "entries",
+          items: [{ kind: "component", component: "entries" }],
+        }],
+      },
+      plan: {
+        sources: [entrySource],
+        component_bindings: [{
+          component_id: "entries",
+          kind: "table",
+          label: "Entries",
+          source_id: "entries",
+        }],
+      },
+      parameterDefinitions: [],
+      parameterValues: {},
+      sources: {
+        entries: {
+          status: "ready",
+          cursorStack: [undefined],
+          page: {
+            kind: "entry_query",
+            page: {
+              rows: [{
+                id: "entry-1",
+                form_id: "form-1",
+                revision_id: "revision-1",
+                created_at_micros: 1,
+                updated_at_micros: 1,
+                properties: { amount: null },
+              }],
+              has_more: false,
+            },
+          },
+        },
+      },
+      fieldNames: (_formId, fieldId) => fieldId === 9 ? "Amount" : undefined,
+      fieldKeys: (_formId, fieldId) => fieldId === 9 ? "amount" : undefined,
+      fieldTypes: (_formId, fieldId, sourceId) =>
+        sourceId === "entries" && fieldId === 9 ? "double" : undefined,
+    });
+
+    expect(screen.getByRole("columnheader", { name: "Amount" })).toHaveClass(
+      "result-table-header--numeric",
+    );
+    expect(screen.getByRole("cell", { name: "—" })).toHaveClass(
+      "result-table-cell--numeric",
+    );
+  });
+
   it("shows an explicit empty state for an empty layout", () => {
     renderFlow({ layout: { rows: [] } });
 

@@ -3694,6 +3694,11 @@ a.tool {
   overflow-x: auto;
 }
 
+.result-table-viewport:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .result-table {
   width: 100%;
   border-collapse: separate;
@@ -3702,16 +3707,23 @@ a.tool {
 
 .result-table th,
 .result-table td {
-  padding: 10px 12px;
+  padding: 12px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: middle;
 }
 
 .result-table th {
-  color: var(--muted);
+  color: var(--ink);
   font-size: 12px;
   font-weight: 700;
+  background: var(--soft2);
+}
+
+.result-table .result-table-header--numeric,
+.result-table .result-table-cell--numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .result-pagination {
@@ -4232,6 +4244,14 @@ a.tool {
   white-space: nowrap;
 }
 
+.result-table--entry .result-table-cell > span {
+  display: block;
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Read-only Entry presentation (e.g. Composition entry_query sources):
  * rows are not selectable and carry no trailing action. */
 .result-table--entry.result-table--static tbody tr {
@@ -4345,12 +4365,23 @@ a.tool {
  * results fit the viewport; wide results scroll inside the result viewport
  * only. No fixed giant minimum width is imposed. */
 .result-table--sql .result-table-cell {
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-table--sql .result-table-cell > span {
+  display: block;
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .entry-browser-table {
   width: 100%;
-  min-width: 36rem;
+  min-width: min(36rem, 100%);
   border-collapse: separate;
   border-spacing: 0;
 }

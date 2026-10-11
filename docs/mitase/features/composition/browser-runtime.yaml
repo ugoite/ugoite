@@ -77,6 +77,8 @@ features:
         criterion: REQ-FE-068#criterion.source-native-composition-rendering
       - kind: satisfies
         criterion: REQ-FE-068#criterion.local-horizontal-overflow
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.source-native-table-visual-details
     - id: browser-flow-text
       adapter: typescript
       path: frontend/src/components/composition/TextComponent.tsx
@@ -104,6 +106,10 @@ features:
       claims:
       - kind: satisfies
         criterion: REQ-COMP-004#criterion.exact-saved-sql-revision
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.source-native-table-visual-details
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.table-identity-keyboard-scroll
       - kind: evidences
         anchor: REQ-COMP-004#criterion.concealed-unavailable-references
     - id: browser-entry-query-table
@@ -123,6 +129,10 @@ features:
         criterion: REQ-FE-068#criterion.composition-system-form-id-hidden
       - kind: satisfies
         criterion: REQ-FE-068#criterion.local-horizontal-overflow
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.source-native-table-visual-details
+      - kind: satisfies
+        criterion: REQ-FE-068#criterion.table-identity-keyboard-scroll
     - id: browser-home-route
       adapter: typescript
       path: frontend/src/routes/spaces/[space_id]/dashboard.tsx
@@ -170,6 +180,10 @@ features:
         anchor: REQ-FE-068#criterion.composition-system-form-id-hidden
       - kind: documents
         anchor: REQ-FE-068#criterion.composition-form-scoped-form-id-property
+      - kind: documents
+        anchor: REQ-FE-068#criterion.source-native-table-visual-details
+      - kind: documents
+        anchor: REQ-FE-068#criterion.table-identity-keyboard-scroll
   - id: browser-query-runtime-evidence
     role: evidence
     facet: frontend-tests
@@ -301,6 +315,26 @@ features:
         anchor: REQ-COMP-002#criterion.ordered-component-layout
       - kind: evidences
         anchor: REQ-COMP-002#criterion.parameter-placement
+    - id: browser-composition-entry-table-identity
+      adapter: typescript
+      path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx
+      selector:
+        kind: test
+        name: renders placed controls in flow order with text and the source-native table
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.table-identity-keyboard-scroll
+    - id: browser-composition-saved-sql-table-identity-and-types
+      adapter: typescript
+      path: frontend/src/components/CompositionRenderer.test.tsx
+      selector:
+        kind: test
+        name: aligns an all-null Saved SQL column from its server result schema
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.source-native-table-visual-details
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.table-identity-keyboard-scroll
     - id: browser-flow-text-styles
       adapter: typescript
       path: frontend/src/components/DashboardFlowRenderer.test.tsx
@@ -319,6 +353,15 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-FE-068#criterion.local-horizontal-overflow
+    - id: browser-flow-entry-field-type
+      adapter: typescript
+      path: frontend/src/components/DashboardFlowRenderer.test.tsx
+      selector:
+        kind: test
+        name: passes saved field types to an all-null Entry table in flow layout
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-068#criterion.source-native-table-visual-details
     - id: browser-flow-revision-route
       adapter: typescript
       path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx

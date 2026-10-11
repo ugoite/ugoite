@@ -21,7 +21,23 @@ export interface EntryDisplayColumn {
   key: string;
   label: string;
   text: (row: EntryQueryResult) => string;
+  numeric?: (row: EntryQueryResult) => boolean;
 }
+
+export type CompositionFieldTypeLookup = (
+  formId: string | undefined,
+  fieldId: number,
+  sourceId?: string,
+) => string | undefined;
+
+const numericFieldTypes = new Set([
+  "double",
+  "float",
+  "integer",
+  "long",
+  "number",
+  "numeric",
+]);
 
 const previewText = (row: EntryQueryResult): string =>
   row.preview?.trim() || "—";
@@ -61,6 +77,7 @@ export function entryQueryDisplayColumns(
     fieldId: number,
     sourceId?: string,
   ) => string | undefined,
+  fieldTypes?: CompositionFieldTypeLookup,
 ): EntryDisplayColumn[] {
   const projection: EntryProjection = source.request.projection;
   const selectedSystemFields = source.display_system_fields ??
@@ -118,6 +135,7 @@ export function entryQueryDisplayColumns(
       field,
       label,
       propertyKey,
+      fieldTypes?.(formId, field.field_id, source.source_id),
     );
     if (column === "unresolved") {
       unresolvedProjectedProperties += 1;
@@ -150,6 +168,7 @@ export function entryQueryDisplayColumns(
         key: name,
         label: name,
         text: (row) => propertyText(row, name),
+      numeric: (row) => typeof row.properties?.[name] === "number",
       }),
     )
     : [];
@@ -160,6 +179,7 @@ const displayColumnForField = (
   field: EntryFieldRef,
   label: string | undefined,
   propertyKey: string | undefined,
+  fieldType?: string,
 ): EntryDisplayColumn | null | "unresolved" => {
   if (field.kind === "created_at" || field.kind === "updated_at") {
     return {
@@ -179,6 +199,9 @@ const displayColumnForField = (
       key: `property:${field.field_id}`,
       label: label === propertyKey ? label : label ?? propertyKey,
       text: (row) => propertyText(row, propertyKey),
+      numeric: (row) =>
+        numericFieldTypes.has(fieldType ?? "") ||
+        typeof row.properties?.[propertyKey] === "number",
     };
   }
   return null;
@@ -199,6 +222,7 @@ export function CompositionEntryQueryTable(props: {
     fieldId: number,
     sourceId?: string,
   ) => string | undefined;
+  fieldTypes?: CompositionFieldTypeLookup;
   onNext: () => void;
   onPrevious: () => void;
   onRetry: () => void;
@@ -214,6 +238,7 @@ export function CompositionEntryQueryTable(props: {
       rows(),
       props.fieldNames,
       props.fieldKeys,
+      props.fieldTypes,
     );
   const sourceId = () => props.binding.source_id;
   const status = () => props.sourceState?.status;
@@ -253,6 +278,7 @@ export function CompositionEntryQueryTable(props: {
             columns={columns().map((column) => ({
               key: column.key,
               label: column.label,
+              numeric: column.numeric,
               cell: (row) => (
                 <span title={column.text(row)}>{column.text(row)}</span>
               ),

@@ -1177,6 +1177,80 @@ describe("UI spec YAML registry", () => {
     expect(compat?.spec.page?.implementation).not.toBe("implemented");
   });
 
+  it("REQ-FE-068: specifies source-native result table presentation", () => {
+    const resultTablePath = path.join(componentsDir, "result-table.yaml");
+    const resultTable = parse(readFileSync(resultTablePath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    expect(resultTable.components?.find(({ id }) =>
+      id === "result-table-viewport"
+    )).toMatchObject({
+      implementations: {
+        entry_query: "frontend/src/components/EntryResultTable.tsx",
+        saved_sql: "frontend/src/components/SqlResultTable.tsx",
+      },
+      semantics: {
+        renderer: "native-html-table",
+        row_selection: "owned-by-source-presenter",
+        column_identity: "owned-by-source-presenter",
+        paging: "owned-by-query-controller-or-route",
+        current_page_only: true,
+      },
+      presentation: {
+        cells: {
+          numeric_alignment: "right",
+          null: "em-dash",
+          long_text: {
+            visual: "single-line-ellipsis",
+            complete_value: "remains-as-text-and-title",
+          },
+        },
+        narrow_tables: "intrinsic-width-without-large-fixed-minimum",
+        wide_tables: "horizontal-scroll-inside-viewport",
+      },
+      accessibility: {
+        viewport: {
+          role: "region",
+          accessible_name: "localized-or-component-provided-table-label",
+          keyboard_focusable: true,
+        },
+        table: {
+          accessible_name: "localized-or-component-provided-table-label",
+        },
+      },
+      responsive: {
+        page_horizontal_overflow: false,
+        tested_widths_css_px: [320, 390, 640],
+      },
+    });
+
+    const entryBrowser = parse(readFileSync(
+      path.join(componentsDir, "entry-browser.yaml"),
+      "utf8",
+    )) as { components?: Array<Record<string, unknown>> };
+    expect(entryBrowser.components?.find(({ id }) => id === "form-entry-table"))
+      .toMatchObject({ result_presentation_reference: "result-table.yaml" });
+
+    const sqlResults = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-sql-results"
+    );
+    expect(sqlResults?.spec.components?.body?.find(({ id }) =>
+      id === "sql-results-table"
+    )).toMatchObject({
+      result_presentation_reference: "../components/result-table.yaml",
+    });
+    const compositionRevision = loadPages().find(({ spec }) =>
+      spec.page?.id === "space-composition-revision"
+    );
+    expect(compositionRevision?.spec.components?.body?.find(({ id }) =>
+      id === "composition-components"
+    )?.table_presentation).toMatchObject({
+      result_presentation_reference: "../components/result-table.yaml",
+    });
+    expect(readFileSync(path.join(repoRoot, "docs/spec/ui/index.md"), "utf8"))
+      .toContain("`components/result-table.yaml`");
+  });
+
   it("REQ-FE-075: declares FormTable's optional timestamps and column picker", () => {
     const formTablePath = path.join(componentsDir, "form-table.yaml");
     const formTable = parse(readFileSync(formTablePath, "utf8")) as {
