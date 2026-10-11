@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
-use ugoite_core::query::EntryScope;
+use ugoite_core::query::{EntryScope, SqlFunctionPolicy};
 use ugoite_domain::entry::AssetReference;
 use uuid::Uuid;
 
@@ -365,9 +365,11 @@ async fn asset_text_search_authorized_inner(
             max_rows: crate::MAX_NORMAL_READ_ROWS,
             timeout: ASSET_TEXT_SEARCH_TIMEOUT,
             max_concurrency: 1,
-            allowed_functions: BTreeSet::from([
-                crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
-            ]),
+            function_policy: SqlFunctionPolicy::new(
+                &[crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME],
+                &[],
+                &[],
+            ),
         }) {
             Ok(context) => context,
             Err(_) => return Ok(None),

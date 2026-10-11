@@ -88,6 +88,7 @@ use tokio::sync::Semaphore;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
+    SqlFunctionPolicy,
 };
 use ugoite_domain::change::{
     selective_inverse_with_form_schema, ChangeCommand, ChangeDescriptor, RevertFieldAction,
@@ -1342,7 +1343,7 @@ impl IcebergWorkspace {
             max_rows: limit,
             timeout: Duration::from_secs(30),
             max_concurrency: 1,
-            allowed_functions: BTreeSet::new(),
+            function_policy: SqlFunctionPolicy::DenyAll,
         };
         let context = self
             .authorized_revision_lookup_context(
@@ -1427,7 +1428,7 @@ impl IcebergWorkspace {
                     max_rows: revision_ids.len(),
                     timeout: Duration::from_secs(30),
                     max_concurrency: 1,
-                    allowed_functions: BTreeSet::new(),
+                    function_policy: SqlFunctionPolicy::DenyAll,
                 },
             )
             .await?;
@@ -1510,7 +1511,7 @@ impl IcebergWorkspace {
                     max_rows: page_limit,
                     timeout: Duration::from_secs(30),
                     max_concurrency: 1,
-                    allowed_functions: BTreeSet::new(),
+                    function_policy: SqlFunctionPolicy::DenyAll,
                 },
             )
             .await?;
@@ -2471,7 +2472,7 @@ impl IcebergWorkspace {
                     max_rows: 1,
                     timeout: Duration::from_secs(30),
                     max_concurrency: 1,
-                    allowed_functions: BTreeSet::new(),
+                    function_policy: SqlFunctionPolicy::DenyAll,
                 },
             })
             .await?;
@@ -3127,7 +3128,7 @@ impl IcebergWorkspace {
                     max_rows,
                     timeout: Duration::from_secs(30),
                     max_concurrency: 1,
-                    allowed_functions: BTreeSet::new(),
+                    function_policy: SqlFunctionPolicy::DenyAll,
                 },
             )
             .await?;
@@ -3215,7 +3216,7 @@ impl IcebergWorkspace {
                     max_rows: max_rows.unwrap_or(i64::MAX as usize / 2),
                     timeout: Duration::from_secs(30),
                     max_concurrency: 1,
-                    allowed_functions: BTreeSet::new(),
+                    function_policy: SqlFunctionPolicy::DenyAll,
                 },
                 permits,
             )
@@ -3301,7 +3302,7 @@ impl IcebergWorkspace {
                     max_rows: DERIVED_REVISION_PAGE_SIZE,
                     timeout: Duration::from_secs(30),
                     max_concurrency: 1,
-                    allowed_functions: BTreeSet::new(),
+                    function_policy: SqlFunctionPolicy::DenyAll,
                 },
                 self.maintenance_query_permits(1),
             )

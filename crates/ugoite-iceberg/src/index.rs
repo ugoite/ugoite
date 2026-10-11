@@ -36,6 +36,7 @@ use ugoite_core::entry_query::{
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
+    SqlFunctionPolicy,
 };
 
 /// Adapter-owned LIKE pattern escaping for EntryQuery `contains` filters.
@@ -550,10 +551,14 @@ pub(crate) async fn query_entry_page_at_checkpoint(
         None,
         Some(relation_scopes),
         Some(checkpoint),
-        BTreeSet::from([
-            "array_to_string".to_string(),
-            crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
-        ]),
+        SqlFunctionPolicy::new(
+            &[
+                "array_to_string",
+                crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME,
+            ],
+            &[],
+            &[],
+        ),
         limit.saturating_add(1),
         true,
         forms.to_vec(),
@@ -809,11 +814,14 @@ pub(crate) async fn count_entries_at_checkpoint(
         None,
         Some(relation_scopes),
         Some(checkpoint),
-        BTreeSet::from([
-            "array_to_string".to_string(),
-            "count".to_string(),
-            crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
-        ]),
+        SqlFunctionPolicy::new(
+            &[
+                "array_to_string",
+                crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME,
+            ],
+            &["count"],
+            &[],
+        ),
         1,
         false,
         forms.to_vec(),
@@ -1363,10 +1371,14 @@ pub(crate) async fn query_entry_candidates_authorized_after(
         None,
         Some(&searchable_scopes),
         None,
-        BTreeSet::from([
-            "array_to_string".to_string(),
-            crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
-        ]),
+        SqlFunctionPolicy::new(
+            &[
+                "array_to_string",
+                crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME,
+            ],
+            &[],
+            &[],
+        ),
         crate::MAX_NORMAL_READ_ROWS,
         false,
     )
@@ -1589,7 +1601,7 @@ pub(crate) async fn authorized_asset_reference_query_context(
         None,
         Some(relation_scopes),
         None,
-        BTreeSet::new(),
+        SqlFunctionPolicy::DenyAll,
         AUTHORIZED_ASSET_REFERENCE_MAX_ROWS,
         true,
         form_definitions,
@@ -1683,10 +1695,14 @@ async fn query_entry_rows_authorized_internal(
         None,
         Some(relation_scopes),
         None,
-        BTreeSet::from([
-            "array_to_string".to_string(),
-            crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME.to_string(),
-        ]),
+        SqlFunctionPolicy::new(
+            &[
+                "array_to_string",
+                crate::search_normalization::SEARCH_NORMALIZE_FUNCTION_NAME,
+            ],
+            &[],
+            &[],
+        ),
         response_limit.unwrap_or(i64::MAX as usize / 2),
         true,
     )
@@ -1783,7 +1799,7 @@ pub(crate) async fn query_form_entry_rows_authorized(
         None,
         Some(&relation_scopes),
         None,
-        BTreeSet::new(),
+        SqlFunctionPolicy::DenyAll,
         crate::MAX_NORMAL_READ_ROWS,
         true,
     )
@@ -1890,7 +1906,7 @@ pub(crate) async fn query_form_projected_page_authorized(
         None,
         Some(relation_scopes),
         Some(checkpoint),
-        BTreeSet::new(),
+        SqlFunctionPolicy::DenyAll,
         page_limit,
         true,
         forms.clone(),
@@ -2751,7 +2767,7 @@ pub async fn current_entry_exists_in_form(
         None,
         None,
         None,
-        BTreeSet::new(),
+        SqlFunctionPolicy::DenyAll,
     )
     .await?
     .is_empty())
@@ -2803,7 +2819,7 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
         None,
         Some(relation_scopes),
         Some(checkpoint),
-        BTreeSet::new(),
+        SqlFunctionPolicy::DenyAll,
         SQL_MAX_OUTPUT_ROWS.saturating_add(1),
         false,
         forms,
@@ -2857,7 +2873,7 @@ pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint_sta
         None,
         Some(relation_scopes),
         Some(checkpoint),
-        BTreeSet::new(),
+        SqlFunctionPolicy::DenyAll,
         SQL_MAX_OUTPUT_ROWS,
         false,
         forms,
@@ -3002,9 +3018,9 @@ async fn execute_datafusion_sql(
         relation_scopes,
         checkpoint,
         // Direct authorized queries support the minimal aggregate needed for
-        // row counts. Stateless SQL pages use their own deliberately empty
-        // allowlist and remain aggregate-free.
-        BTreeSet::from(["count".to_string()]),
+        // row counts. Stateless SQL pages keep their own closed policy until
+        // aggregate numeric behavior passes its safety gate.
+        SqlFunctionPolicy::new(&[], &["count"], &[]),
     )
     .await
 }
@@ -3018,7 +3034,7 @@ async fn execute_datafusion_sql_with_functions(
     allowed_relations: Option<&HashSet<String>>,
     relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     checkpoint: Option<SpaceCheckpoint>,
-    allowed_functions: BTreeSet<String>,
+    function_policy: SqlFunctionPolicy,
 ) -> Result<Vec<Value>> {
     validate_read_only_sql(sql)?;
     let context = datafusion_sql_context(
@@ -3028,7 +3044,7 @@ async fn execute_datafusion_sql_with_functions(
         allowed_relations,
         relation_scopes,
         checkpoint,
-        allowed_functions,
+        function_policy,
     )
     .await
     .map_err(map_sql_error)?;
@@ -3043,7 +3059,7 @@ async fn datafusion_sql_context(
     allowed_relations: Option<&HashSet<String>>,
     relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     checkpoint: Option<SpaceCheckpoint>,
-    allowed_functions: BTreeSet<String>,
+    function_policy: SqlFunctionPolicy,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
     datafusion_sql_context_with_limits(
         op,
@@ -3052,7 +3068,7 @@ async fn datafusion_sql_context(
         allowed_relations,
         relation_scopes,
         checkpoint,
-        allowed_functions,
+        function_policy,
         SQL_MAX_OUTPUT_ROWS,
         false,
     )
@@ -3067,7 +3083,7 @@ async fn datafusion_sql_context_with_limits(
     allowed_relations: Option<&HashSet<String>>,
     relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     checkpoint: Option<SpaceCheckpoint>,
-    allowed_functions: BTreeSet<String>,
+    function_policy: SqlFunctionPolicy,
     max_rows: usize,
     include_payload: bool,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
@@ -3081,7 +3097,7 @@ async fn datafusion_sql_context_with_limits(
         allowed_relations,
         relation_scopes,
         checkpoint,
-        allowed_functions,
+        function_policy,
         max_rows,
         include_payload,
         forms,
@@ -3098,7 +3114,7 @@ async fn datafusion_sql_context_with_form_definitions(
     allowed_relations: Option<&HashSet<String>>,
     relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     checkpoint: Option<SpaceCheckpoint>,
-    allowed_functions: BTreeSet<String>,
+    function_policy: SqlFunctionPolicy,
     max_rows: usize,
     include_payload: bool,
     forms: Vec<FormDefinition>,
@@ -3110,7 +3126,7 @@ async fn datafusion_sql_context_with_form_definitions(
         allowed_relations,
         relation_scopes,
         checkpoint,
-        allowed_functions,
+        function_policy,
         max_rows,
         include_payload,
         forms,
@@ -3127,7 +3143,7 @@ async fn datafusion_search_context_with_limits(
     allowed_relations: Option<&HashSet<String>>,
     relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     checkpoint: Option<SpaceCheckpoint>,
-    allowed_functions: BTreeSet<String>,
+    function_policy: SqlFunctionPolicy,
     max_rows: usize,
     include_payload: bool,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
@@ -3145,7 +3161,7 @@ async fn datafusion_search_context_with_limits(
         allowed_relations,
         relation_scopes,
         checkpoint,
-        allowed_functions,
+        function_policy,
         max_rows,
         include_payload,
         forms,
@@ -3161,7 +3177,7 @@ async fn datafusion_sql_context_with_form_snapshot(
     allowed_relations: Option<&HashSet<String>>,
     relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     checkpoint: Option<SpaceCheckpoint>,
-    allowed_functions: BTreeSet<String>,
+    function_policy: SqlFunctionPolicy,
     max_rows: usize,
     include_payload: bool,
     forms: Vec<FormDefinition>,
@@ -3232,7 +3248,7 @@ async fn datafusion_sql_context_with_form_snapshot(
                 max_rows,
                 timeout: SQL_TIMEOUT,
                 max_concurrency: 1,
-                allowed_functions,
+                function_policy,
             },
         })
         .await
@@ -3353,7 +3369,7 @@ pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
         None,
         Some(&relation_scopes),
         None,
-        BTreeSet::new(),
+        SqlFunctionPolicy::DenyAll,
         crate::MAX_NORMAL_READ_ROWS,
         true,
     )
@@ -4003,7 +4019,7 @@ async fn collect_filtered_entries_with_form_scopes(
         None,
         Some(relation_scopes),
         None,
-        BTreeSet::from(["array_has".to_string()]),
+        SqlFunctionPolicy::new(&["array_has"], &[], &[]),
         crate::MAX_NORMAL_READ_ROWS,
         true,
     )
