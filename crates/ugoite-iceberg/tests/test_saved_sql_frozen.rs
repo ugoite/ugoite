@@ -213,6 +213,7 @@ async fn prebinding_space_saved_sql_reads_executes_and_reopens_without_mutation(
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: Default::default(),
+                include_exact_integer_values: false,
                 limit: 100,
                 continuation: None,
                 saved_sql: Some(source.clone()),
@@ -269,6 +270,7 @@ async fn prebinding_space_saved_sql_reads_executes_and_reopens_without_mutation(
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: Default::default(),
+                include_exact_integer_values: false,
                 limit: 100,
                 continuation: None,
                 saved_sql: Some(SavedSqlRevisionRef {

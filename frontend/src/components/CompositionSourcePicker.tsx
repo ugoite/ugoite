@@ -11,8 +11,8 @@ import {
 } from "~/lib/entry-query-composition";
 import {
   canCreateSavedSqlComposition,
+  compositionResultTypeFromSql,
   type CompositionParameterType,
-  type CompositionResultType,
 } from "~/lib/composition-api";
 import {
   type DraftEntryQuerySeed,
@@ -280,7 +280,7 @@ export function CompositionSourcePicker(props: CompositionSourcePickerProps) {
       );
       const expectedResult = columns.map((name) => ({
         name,
-        type: (schemaByName.get(name) ?? "json") as CompositionResultType,
+        type: compositionResultTypeFromSql(schemaByName.get(name)),
       }));
       props.onSelect({
         kind: "saved_sql",

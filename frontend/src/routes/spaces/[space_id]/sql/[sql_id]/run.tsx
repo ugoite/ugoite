@@ -92,6 +92,7 @@ export default function SpaceSqlRunRoute() {
       sql: normalizeSqlVariables(current.sql).sql,
       parameters: currentState.parameters ?? {},
       parameter_types: currentState.parameterTypes ?? {},
+      include_exact_integer_values: true,
       limit: 100,
       saved_sql: { id: current.id, revision_id: current.revision_id },
       ...(continuation() ? { continuation: continuation() } : {}),
@@ -457,6 +458,7 @@ export default function SpaceSqlRunRoute() {
               column.type
             )}
             rows={visiblePage()?.rows ?? []}
+            exactIntegerRows={visiblePage()?.exact_integer_rows}
             pageIdentity={visiblePage()?.pageIdentity ?? makeQueryIdentity(
               spaceId(),
               sqlId(),

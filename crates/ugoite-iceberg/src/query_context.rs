@@ -194,6 +194,20 @@ pub enum AuthorizedQueryError {
 }
 
 impl AuthorizedQueryError {
+    pub(crate) fn sql_aggregate_failure(
+        &self,
+    ) -> Option<crate::safe_aggregates::SqlAggregateFailure> {
+        let source = match self {
+            Self::InvalidQuery { source } | Self::QueryExecutionFailed { source } => source,
+            _ => return None,
+        };
+        source.chain().find_map(|cause| {
+            cause
+                .downcast_ref::<crate::safe_aggregates::SqlAggregateFailure>()
+                .copied()
+        })
+    }
+
     fn invalid_query(source: impl Into<anyhow::Error>) -> Self {
         Self::InvalidQuery {
             source: source.into(),
@@ -236,12 +250,7 @@ pub(crate) fn bounded_session_context(
         .with_runtime_env(runtime)
         .with_expr_planners(SessionStateDefaults::default_expr_planners())
         .with_scalar_functions(allowed_scalar_functions(function_policy))
-        .with_aggregate_functions(
-            SessionStateDefaults::default_aggregate_functions()
-                .into_iter()
-                .filter(|function| function_policy.allows_aggregate(function.name()))
-                .collect(),
-        )
+        .with_aggregate_functions(allowed_aggregate_functions(function_policy))
         .with_window_functions(
             SessionStateDefaults::default_window_functions()
                 .into_iter()
@@ -251,6 +260,25 @@ pub(crate) fn bounded_session_context(
         .with_table_function_list(Vec::new())
         .build();
     Ok(SessionContext::new_with_state(state))
+}
+
+fn allowed_aggregate_functions(
+    function_policy: SqlFunctionPolicy,
+) -> Vec<Arc<datafusion::logical_expr::AggregateUDF>> {
+    let mut functions = SessionStateDefaults::default_aggregate_functions()
+        .into_iter()
+        .filter(|function| {
+            function_policy.allows_aggregate(function.name())
+                && !matches!(function.name().to_ascii_lowercase().as_str(), "sum" | "avg")
+        })
+        .collect::<Vec<_>>();
+    if function_policy.allows_aggregate("sum") {
+        functions.push(Arc::new(crate::safe_aggregates::checked_sum_udaf()));
+    }
+    if function_policy.allows_aggregate("avg") {
+        functions.push(Arc::new(crate::safe_aggregates::checked_avg_udaf()));
+    }
+    functions
 }
 
 fn allowed_scalar_functions(function_policy: SqlFunctionPolicy) -> Vec<Arc<ScalarUDF>> {
@@ -1061,7 +1089,7 @@ impl AuthorizedQueryContext {
                 .state()
                 .optimize(&frame.logical_plan().clone())
                 .map_err(AuthorizedQueryError::invalid_query)?;
-            validate_logical_plan(&plan, &self.authorized_relations)
+            validate_relation_plan(&plan, &self.authorized_relations)
                 .map_err(AuthorizedQueryError::unauthorized)?;
             let validation_plan = plan.clone();
             let frame = self
@@ -1073,6 +1101,7 @@ impl AuthorizedQueryContext {
                 Some(max_bytes) => self.collect_frame_bounded(frame, max_bytes).await?,
                 None => self.collect_frame(frame).await?,
             };
+            validate_finite_aggregate_outputs(&validation_plan, &batches)?;
             let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
             if rows > self.limits.max_rows || rows > limit {
                 return Err(AuthorizedQueryError::resource_limit(anyhow!(
@@ -1284,6 +1313,7 @@ impl AuthorizedQueryContext {
             Some(max_bytes) => self.collect_frame_bounded(frame, max_bytes).await?,
             None => self.collect_frame(frame).await?,
         };
+        validate_finite_aggregate_outputs(&validation_plan, &batches)?;
         let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
         if rows > self.limits.max_rows {
             return Err(AuthorizedQueryError::resource_limit(anyhow!(
@@ -1325,6 +1355,7 @@ impl AuthorizedQueryContext {
             .limit(offset, Some(limit))
             .map_err(AuthorizedQueryError::resource_limit)?;
         let batches = self.collect_frame(page).await?;
+        validate_finite_aggregate_outputs(&validation_plan, &batches)?;
         self.validate_revision_invariants(&validation_plan).await?;
         Ok(StatelessSqlPage {
             columns,
@@ -1490,6 +1521,56 @@ impl AuthorizedQueryContext {
     }
 }
 
+fn validate_finite_aggregate_outputs(
+    plan: &LogicalPlan,
+    batches: &[arrow_array::RecordBatch],
+) -> Result<()> {
+    if !plan_contains_aggregate(plan) {
+        return Ok(());
+    }
+    for batch in batches {
+        for column in batch.columns() {
+            if !matches!(
+                column.data_type(),
+                datafusion::arrow::datatypes::DataType::Float16
+                    | datafusion::arrow::datatypes::DataType::Float32
+                    | datafusion::arrow::datatypes::DataType::Float64
+            ) {
+                continue;
+            }
+            for index in 0..column.len() {
+                let value =
+                    datafusion::common::ScalarValue::try_from_array(column.as_ref(), index)?;
+                let finite = match value {
+                    datafusion::common::ScalarValue::Float16(Some(value)) => {
+                        f32::from(value).is_finite()
+                    }
+                    datafusion::common::ScalarValue::Float32(Some(value)) => value.is_finite(),
+                    datafusion::common::ScalarValue::Float64(Some(value)) => value.is_finite(),
+                    _ => true,
+                };
+                if !finite {
+                    return Err(AuthorizedQueryError::execution_failed(anyhow::Error::new(
+                        datafusion::common::DataFusionError::External(Box::new(
+                            crate::safe_aggregates::SqlAggregateFailure::NonFinite,
+                        )),
+                    ))
+                    .into());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn plan_contains_aggregate(plan: &LogicalPlan) -> bool {
+    matches!(plan, LogicalPlan::Aggregate(_) | LogicalPlan::Window(_))
+        || plan
+            .inputs()
+            .iter()
+            .any(|input| plan_contains_aggregate(input))
+}
+
 fn collect_scanned_provider_addresses(plan: &LogicalPlan, providers: &mut BTreeSet<usize>) {
     if let LogicalPlan::TableScan(scan) = plan {
         if let Some(source) =
@@ -1517,11 +1598,9 @@ pub struct StatelessSqlPage {
 
 /// Map one Arrow output type to its portable logical column type.
 ///
-/// Only exact portable equivalents map to a scalar type; every other
-/// output (nested, binary, temporal-without-date-semantics, decimal, null,
-/// or dictionary-encoded values) stays `json` so the transported rows keep
-/// their exact values and later metric authoring rejects ambiguity instead
-/// of guessing.
+/// Only exact portable equivalents map to a scalar type. Decimal outputs are
+/// explicitly typed and transported as scale-preserving decimal strings so
+/// consumers never route them through binary floating point.
 pub(crate) fn sql_result_column_type(
     data_type: &datafusion::arrow::datatypes::DataType,
 ) -> SqlResultColumnType {
@@ -1540,6 +1619,10 @@ pub(crate) fn sql_result_column_type(
         Arrow::Utf8 | Arrow::LargeUtf8 | Arrow::Utf8View => SqlResultColumnType::String,
         Arrow::Date32 | Arrow::Date64 => SqlResultColumnType::Date,
         Arrow::Timestamp(_, _) => SqlResultColumnType::Timestamp,
+        Arrow::Decimal32(_, _)
+        | Arrow::Decimal64(_, _)
+        | Arrow::Decimal128(_, _)
+        | Arrow::Decimal256(_, _) => SqlResultColumnType::Decimal,
         _ => SqlResultColumnType::Json,
     }
 }
@@ -1907,6 +1990,25 @@ fn validate_logical_plan(
     plan: &LogicalPlan,
     authorized_relations: &BTreeSet<String>,
 ) -> Result<()> {
+    validate_logical_plan_inner(plan, authorized_relations, false)
+}
+
+/// Validates plans built only from the typed, authorized relation API. That
+/// API uses DataFusion's LogicalPlan::Unnest for list-field traversal; raw SQL
+/// still goes through `validate_logical_plan`, where user-authored UNNEST is
+/// rejected.
+fn validate_relation_plan(
+    plan: &LogicalPlan,
+    authorized_relations: &BTreeSet<String>,
+) -> Result<()> {
+    validate_logical_plan_inner(plan, authorized_relations, true)
+}
+
+fn validate_logical_plan_inner(
+    plan: &LogicalPlan,
+    authorized_relations: &BTreeSet<String>,
+    allow_internal_unnest: bool,
+) -> Result<()> {
     // The private catalog and view/provider construction are the authorization
     // boundary: a plan cannot resolve the hidden Iceberg source directly, and
     // every public relation already contains its Entry predicate and visible
@@ -1926,6 +2028,11 @@ fn validate_logical_plan(
         | LogicalPlan::RecursiveQuery(_) => {
             bail!("statement kind is not supported for read-only query execution")
         }
+        LogicalPlan::Window(_) => {
+            bail!("window functions are not supported for read-only query execution")
+        }
+        LogicalPlan::Unnest(_) if allow_internal_unnest => {}
+        LogicalPlan::Unnest(_) => bail!("UNNEST is not supported for read-only query execution"),
         LogicalPlan::TableScan(scan) => {
             let relation = scan.table_name.to_string();
             if !authorized_relations.contains(&relation) {
@@ -1934,7 +2041,6 @@ fn validate_logical_plan(
         }
         LogicalPlan::Projection(_)
         | LogicalPlan::Filter(_)
-        | LogicalPlan::Window(_)
         | LogicalPlan::Aggregate(_)
         | LogicalPlan::Sort(_)
         | LogicalPlan::Join(_)
@@ -1945,11 +2051,10 @@ fn validate_logical_plan(
         | LogicalPlan::SubqueryAlias(_)
         | LogicalPlan::Limit(_)
         | LogicalPlan::Values(_)
-        | LogicalPlan::Distinct(_)
-        | LogicalPlan::Unnest(_) => {}
+        | LogicalPlan::Distinct(_) => {}
     }
     for input in plan.inputs() {
-        validate_logical_plan(input, authorized_relations)?;
+        validate_logical_plan_inner(input, authorized_relations, allow_internal_unnest)?;
     }
     Ok(())
 }
@@ -1980,6 +2085,9 @@ fn validate_physical_plan(
     plan: &Arc<dyn ExecutionPlan>,
     authorized_scans: &BTreeSet<AuthorizedScan>,
 ) -> Result<()> {
+    let is_placeholder_row = (plan.as_ref() as &dyn Any)
+        .downcast_ref::<datafusion::physical_plan::placeholder_row::PlaceholderRowExec>()
+        .is_some();
     if let Some(scan) = (plan.as_ref() as &dyn Any)
         .downcast_ref::<iceberg_datafusion::physical_plan::IcebergTableScan>()
     {
@@ -1990,10 +2098,12 @@ fn validate_physical_plan(
         if !authorized_scans.contains(&authorized) {
             bail!("physical plan scans an unauthorized Iceberg table");
         }
-    } else if plan.children().is_empty() && plan.name() != "EmptyExec" {
+    } else if plan.children().is_empty() && plan.name() != "EmptyExec" && !is_placeholder_row {
         // Intermediate DataFusion operators are not an authorization boundary.
-        // A leaf is: permit only an authorized Iceberg scan (or an empty plan)
-        // so a future external provider cannot silently enter the query.
+        // A leaf is: permit only an authorized Iceberg scan, an empty plan, or
+        // DataFusion's synthetic placeholder row used after proven scalar
+        // cardinality rewrites, so a future external provider cannot silently
+        // enter the query.
         bail!("physical plan has an unauthorized data source");
     }
     for child in plan.children() {
@@ -2110,6 +2220,10 @@ mod result_schema_tests {
             (DataType::Utf8View, SqlResultColumnType::String),
             (DataType::Date32, SqlResultColumnType::Date),
             (DataType::Date64, SqlResultColumnType::Date),
+            (DataType::Decimal32(9, 2), SqlResultColumnType::Decimal),
+            (DataType::Decimal64(18, 2), SqlResultColumnType::Decimal),
+            (DataType::Decimal128(38, 2), SqlResultColumnType::Decimal),
+            (DataType::Decimal256(76, 2), SqlResultColumnType::Decimal),
             (
                 DataType::Timestamp(TimeUnit::Microsecond, None),
                 SqlResultColumnType::Timestamp,
@@ -2126,7 +2240,7 @@ mod result_schema_tests {
 
     #[test]
     fn non_scalar_arrow_outputs_stay_json_without_inference() {
-        // Nested, binary, time-of-day, interval, decimal, null, and
+        // Nested, binary, time-of-day, interval, null, and
         // dictionary outputs keep their exact row values as json instead of
         // guessing a scalar portable type from the physical representation.
         let cases = [
@@ -2137,7 +2251,6 @@ mod result_schema_tests {
             DataType::Time64(datafusion::arrow::datatypes::TimeUnit::Microsecond),
             DataType::Duration(datafusion::arrow::datatypes::TimeUnit::Millisecond),
             DataType::Interval(datafusion::arrow::datatypes::IntervalUnit::MonthDayNano),
-            DataType::Decimal128(10, 2),
             DataType::List(Arc::new(Field::new("item", DataType::Int32, true))),
             DataType::Struct(vec![Field::new("a", DataType::Int32, true)].into()),
             DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),

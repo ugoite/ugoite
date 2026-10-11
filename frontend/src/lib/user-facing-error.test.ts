@@ -21,6 +21,35 @@ describe("formatUserFacingError", () => {
     expect(message).toContain("Space not found: demo");
   });
 
+  it.each([
+    [
+      "SQL_AGGREGATE_OVERFLOW",
+      "SQL の集計結果が対応する数値範囲を超えました。",
+    ],
+    [
+      "SQL_AGGREGATE_NON_FINITE",
+      "SQL の集計で有限でない数値が発生しました。",
+    ],
+    [
+      "SQL_AGGREGATE_TYPE_UNSUPPORTED",
+      "選択した値の型はこの SQL 集計に対応していません。",
+    ],
+  ])("localizes SQL aggregate error code %s", (code, japaneseSummary) => {
+    const error = new UgoiteApiError({
+      kind: "api",
+      code,
+      operation: "sql.get",
+      message: code,
+    });
+
+    setLocale("ja");
+    expect(formatUserFacingError(error, "sqlPage.failedQuery"))
+      .toContain(japaneseSummary);
+    setLocale("en");
+    expect(formatUserFacingError(error, "sqlPage.failedQuery"))
+      .toContain("SQL aggregate");
+  });
+
   it("uses a known operation when a response has no code", () => {
     setLocale("ja");
     const error = new UgoiteApiError({

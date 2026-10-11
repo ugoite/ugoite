@@ -5,6 +5,7 @@ export interface SqlResultTableProps {
   columns: readonly string[];
   columnTypes?: readonly SqlResultColumnType[];
   rows: readonly unknown[];
+  exactIntegerRows?: readonly (readonly (string | null)[])[];
   pageIdentity: string;
   tableLabel: string;
 }
@@ -12,6 +13,7 @@ export interface SqlResultTableProps {
 const numericColumnTypes = new Set<SqlResultColumnType>([
   "integer",
   "float",
+  "decimal",
 ]);
 
 const formatCell = (value: unknown): string => {
@@ -88,8 +90,16 @@ export function SqlResultTable(props: SqlResultTableProps) {
                 <tr data-row-index={rowIndex()}>
                   <For each={props.columns}>
                     {(column, columnIndex) => {
+                      const rowNumber = rowIndex();
+                      const columnNumber = columnIndex();
+                      const exactIntegerValue =
+                        props.columnTypes?.[columnNumber] === "integer"
+                          ? props.exactIntegerRows?.[rowNumber]?.[columnNumber]
+                          : undefined;
                       const value = formatCell(
-                        rowCell(row, column, columnIndex()),
+                        exactIntegerValue !== undefined
+                          ? exactIntegerValue
+                          : rowCell(row, column, columnNumber),
                       );
                       return (
                         <td

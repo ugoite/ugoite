@@ -6644,6 +6644,7 @@ version = "0.2.1"
 dependencies = [
  "anyhow",
  "arrow-array",
+ "arrow-buffer",
  "arrow-json",
  "arrow-schema",
  "async-trait",
@@ -6659,6 +6660,7 @@ dependencies = [
  "hmac 0.13.0",
  "iceberg",
  "iceberg-datafusion",
+ "num-bigint",
  "opendal",
  "parquet",
  "quick-xml 0.42.0",

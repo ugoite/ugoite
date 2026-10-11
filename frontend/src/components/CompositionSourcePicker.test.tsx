@@ -24,11 +24,6 @@ const { formListMock, sqlListMock, sqlGetMock, sqlQueryMock } = vi.hoisted(
   }),
 );
 
-vi.mock("~/lib/composition-api", () => ({
-  canCreateSavedSqlComposition: (entry: { kind: string }) =>
-    entry.kind === "user-query",
-}));
-
 vi.mock("~/lib/ugoite-client", () => ({
   formApi: {
     list: (...args: unknown[]) =>
@@ -365,6 +360,34 @@ describe("CompositionSourcePicker", () => {
         variableTypes: {},
       },
     });
+  });
+
+  it("maps decimal SQL result columns to the supported JSON type", async () => {
+    sqlQueryMock.mockResolvedValueOnce({
+      columns: ["total"],
+      rows: [["12345678901234567890.012300"]],
+      has_more: false,
+      result_schema: [{ name: "total", type: "decimal" }],
+    });
+    const onSelect = vi.fn();
+    render(() => (
+      <CompositionSourcePicker
+        spaceId="space-1"
+        onSelect={onSelect}
+        onClose={() => {}}
+      />
+    ));
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Saved SQL" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));
+    await waitFor(() => expect(onSelect).toHaveBeenCalledTimes(1));
+
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "saved_sql",
+      seed: expect.objectContaining({
+        expectedResult: [{ name: "total", type: "json" }],
+      }),
+    }));
   });
 
   it("switches the source lists behind Forms and Saved SQL tabs", async () => {

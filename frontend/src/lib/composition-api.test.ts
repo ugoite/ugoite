@@ -311,6 +311,31 @@ describe("compositionApi", () => {
     ]);
   });
 
+  it("maps decimal SQL result types to the supported JSON Composition type", () => {
+    const entry = {
+      id: "sql-1",
+      name: "Exact total",
+      kind: "user-query" as const,
+      sql: "SELECT total FROM monthly",
+      variables: [],
+      created_at: "2026-10-01T00:00:00Z",
+      updated_at: "2026-10-02T00:00:00Z",
+      revision_id: "sql-revision-3",
+    };
+
+    const document = buildSavedSqlCompositionDocument(
+      entry,
+      "Exact total",
+      ["total"],
+      {},
+      [{ name: "total", type: "decimal" }],
+    );
+
+    expect(document.spec.sources[0].expected_result).toEqual([
+      { name: "total", type: "json" },
+    ]);
+  });
+
   it("does not offer save-as for search history or unsupported parameter types", () => {
     const base = {
       id: "sql-1",
@@ -440,7 +465,11 @@ describe("compositionApi", () => {
     );
     expect(sqlApi.query).toHaveBeenCalledWith(
       "space-1",
-      { ...sqlSource.request, continuation: "sql-cursor" },
+      {
+        ...sqlSource.request,
+        include_exact_integer_values: true,
+        continuation: "sql-cursor",
+      },
       signal,
     );
   });

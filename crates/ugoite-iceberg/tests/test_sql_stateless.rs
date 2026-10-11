@@ -170,6 +170,7 @@ async fn quoted_form_name_with_digits_hyphen_and_parameter_resolves() -> Result<
                 sql,
                 parameters: Map::from_iter([("priority".into(), json!(3))]),
                 parameter_types: BTreeMap::new(),
+                include_exact_integer_values: false,
                 limit: 10,
                 continuation: None,
                 saved_sql: None,
@@ -294,6 +295,7 @@ async fn saved_sql_revision_uses_fixed_form_binding_and_continuation_identity() 
                 sql: String::new(),
                 parameters: Map::new(),
                 parameter_types: BTreeMap::new(),
+                include_exact_integer_values: false,
                 limit: 2,
                 continuation: None,
                 saved_sql: Some(source.clone()),
@@ -418,10 +420,56 @@ fn query_request(sql: String, limit: usize) -> SqlQueryRequest {
         sql,
         parameters: Map::new(),
         parameter_types: BTreeMap::new(),
+        include_exact_integer_values: false,
         limit,
         continuation: None,
         saved_sql: None,
     }
+}
+
+#[tokio::test]
+async fn exact_integer_values_are_opt_in_and_preserve_the_legacy_sql_rows() -> Result<()> {
+    let space = setup_sql_space("memory://sql-exact-integer-values", "sqlexactintegers").await?;
+    let sql = "SELECT CAST(9007199254740993 AS BIGINT) AS above_safe, \
+        CAST(9007199254740991 AS BIGINT) AS ordinary, \
+        CAST(NULL AS BIGINT) AS missing, 'label' AS note";
+    let legacy_page = space
+        .service
+        .query_sql(&space.space_id, query_request(sql.to_string(), 10))
+        .await?;
+    assert_eq!(legacy_page.exact_integer_rows, None);
+    assert_eq!(
+        legacy_page.rows[0]["above_safe"],
+        json!(9_007_199_254_740_993_i64)
+    );
+    assert_eq!(
+        legacy_page.rows[0]["ordinary"],
+        json!(9_007_199_254_740_991_i64)
+    );
+
+    let mut request = query_request(sql.to_string(), 10);
+    request.include_exact_integer_values = true;
+    let exact_page = space.service.query_sql(&space.space_id, request).await?;
+    assert_eq!(exact_page.rows, legacy_page.rows);
+    assert_eq!(exact_page.columns, legacy_page.columns);
+    assert_eq!(
+        exact_page.exact_integer_rows,
+        Some(vec![vec![
+            Some("9007199254740993".into()),
+            Some("9007199254740991".into()),
+            None,
+            None,
+        ]])
+    );
+
+    let mut text_request = query_request("SELECT 'label' AS note".to_string(), 10);
+    text_request.include_exact_integer_values = true;
+    let text_page = space
+        .service
+        .query_sql(&space.space_id, text_request)
+        .await?;
+    assert_eq!(text_page.exact_integer_rows, Some(vec![vec![None]]));
+    Ok(())
 }
 
 #[tokio::test]
@@ -476,6 +524,73 @@ async fn sql_query_page_carries_server_owned_result_schema() -> Result<()> {
             .collect::<Vec<_>>(),
         vec![("status", "string"), ("priority", "integer")]
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn sql_query_page_serializes_decimal_results_as_exact_strings() -> Result<()> {
+    let space =
+        setup_sql_space("memory://sql-stateless-decimal-result", "sqldecimalresult").await?;
+    let page = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_request(
+                format!(
+                    "SELECT SUM(CAST('123456789012345678901.2345' AS DECIMAL(30, 4))) AS amount FROM \"{}\"",
+                    space.form_name
+                ),
+                10,
+            ),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("decimal page failed: {error:#}"));
+
+    let schema = page
+        .result_schema
+        .expect("decimal page has a result schema");
+    assert_eq!(schema.len(), 1);
+    assert_eq!(schema[0].column_type.as_str(), "decimal");
+    assert_eq!(page.rows.len(), 1);
+    assert_eq!(
+        page.rows[0].get("amount"),
+        Some(&serde_json::json!("617283945061728394506.1725"))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn sql_query_page_serializes_decimal_projection_as_exact_strings() -> Result<()> {
+    let space = setup_sql_space(
+        "memory://sql-stateless-decimal-projection",
+        "sqldecimalprojection",
+    )
+    .await?;
+    let page = space
+        .service
+        .query_sql(
+            &space.space_id,
+            query_request(
+                format!(
+                    "SELECT CAST('123456789012345678901.2345' AS DECIMAL(30, 4)) AS amount FROM \"{}\" ORDER BY \"_ugoite_id\"",
+                    space.form_name
+                ),
+                10,
+            ),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("decimal projection failed: {error:#}"));
+
+    let schema = page
+        .result_schema
+        .expect("legacy decimal page has a result schema");
+    assert_eq!(schema.len(), 1);
+    assert_eq!(schema[0].column_type.as_str(), "decimal");
+    assert_eq!(page.rows.len(), 5);
+    assert!(page
+        .rows
+        .iter()
+        .all(|row| row["amount"] == "123456789012345678901.2345"));
     Ok(())
 }
 
@@ -637,6 +752,7 @@ async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Resul
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(3))]),
                 parameter_types: BTreeMap::new(),
+                include_exact_integer_values: false,
                 limit: 2,
                 continuation: None,
                 saved_sql: Some(SavedSqlRevisionRef {
@@ -656,6 +772,7 @@ async fn synthetic_prebinding_revision_reads_and_runs_without_rewrite() -> Resul
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(3))]),
                 parameter_types: BTreeMap::new(),
+                include_exact_integer_values: false,
                 limit: 2,
                 continuation: first.next,
                 saved_sql: Some(SavedSqlRevisionRef {
@@ -882,6 +999,7 @@ async fn synthetic_prebinding_revision_rejections_fail_closed() -> Result<()> {
         sql: String::new(),
         parameters: Map::new(),
         parameter_types: BTreeMap::new(),
+        include_exact_integer_values: false,
         limit: 10,
         continuation: None,
         saved_sql: Some(SavedSqlRevisionRef {
@@ -1020,16 +1138,21 @@ async fn stateless_explicit_count_matches_full_result() -> Result<()> {
 }
 
 #[tokio::test]
-async fn stateless_user_aggregate_functions_stay_closed_from_internal_count() -> Result<()> {
+async fn stateless_sql_allows_only_the_read_only_aggregate_policy() -> Result<()> {
     let space = setup_sql_space("memory://sql-stateless-function-policy", "sqlfunctions").await?;
-    let aggregate_sql = format!("SELECT COUNT(*) FROM \"{}\"", space.form_name);
+    let aggregate_sql = format!("SELECT COUNT(*) AS row_count FROM \"{}\"", space.form_name);
 
-    assert!(space
+    let page = space
         .service
         .query_sql(&space.space_id, query_request(aggregate_sql.clone(), 10))
         .await
-        .is_err());
-    assert!(space
+        .expect("the query route admits the bounded read-only aggregate allowlist");
+    assert_eq!(page.rows.len(), 1);
+    assert_eq!(page.rows[0]["row_count"], 5);
+
+    // The explicit count route applies its own trusted row count to the SQL
+    // result. Counting one row produced by COUNT(*) therefore returns one.
+    let result_count = space
         .service
         .count_sql(
             &space.space_id,
@@ -1041,10 +1164,21 @@ async fn stateless_user_aggregate_functions_stay_closed_from_internal_count() ->
             },
         )
         .await
+        .expect("the count route admits the bounded read-only aggregate allowlist");
+    assert_eq!(result_count, 1);
+
+    let window_aggregate = format!(
+        "SELECT SUM(\"{}\") OVER (ORDER BY \"_ugoite_id\") AS total FROM \"{}\"",
+        space.priority_column, space.form_name
+    );
+    assert!(space
+        .service
+        .query_sql(&space.space_id, query_request(window_aggregate, 10))
+        .await
         .is_err());
 
-    // The separate count operation's trusted COUNT expression remains
-    // available for ordinary user SQL that contains no aggregate function.
+    // The separate count operation still counts rows for ordinary user SQL,
+    // independently of SQL aggregate expressions.
     let count = space
         .service
         .count_sql(
@@ -1058,6 +1192,155 @@ async fn stateless_user_aggregate_functions_stay_closed_from_internal_count() ->
         )
         .await?;
     assert_eq!(count, 5);
+    Ok(())
+}
+
+#[tokio::test]
+async fn stateless_count_preserves_aggregate_result_row_semantics() -> Result<()> {
+    let space = setup_sql_space("memory://sql-stateless-aggregate-count", "sqlaggcount").await?;
+    let count = |sql: String| async {
+        space
+            .service
+            .count_sql(
+                &space.space_id,
+                SqlQueryCountRequest {
+                    sql,
+                    parameters: Map::new(),
+                    parameter_types: BTreeMap::new(),
+                    saved_sql: None,
+                },
+            )
+            .await
+    };
+
+    let grouped = format!(
+        "SELECT \"{}\", SUM(\"{}\") FROM \"{}\" GROUP BY \"{}\"",
+        space.status_column, space.priority_column, space.form_name, space.status_column
+    );
+    assert_eq!(
+        count(grouped).await?,
+        2,
+        "count returns grouped result rows"
+    );
+
+    let empty_grouped = format!(
+        "SELECT \"{}\" FROM \"{}\" WHERE \"{}\" = 'missing' GROUP BY \"{}\"",
+        space.status_column, space.form_name, space.status_column, space.status_column
+    );
+    assert_eq!(count(empty_grouped).await?, 0, "no groups means zero rows");
+
+    let empty_scalar = format!(
+        "SELECT COUNT(*) FROM \"{}\" WHERE \"{}\" = 'missing'",
+        space.form_name, space.status_column
+    );
+    assert_eq!(
+        count(empty_scalar).await?,
+        1,
+        "a scalar aggregate over an empty input still returns one row"
+    );
+
+    let sum = format!(
+        "SELECT SUM(\"{}\") FROM \"{}\"",
+        space.priority_column, space.form_name
+    );
+    assert_eq!(
+        count(sum).await?,
+        1,
+        "a valid scalar SUM returns one result row"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn stateless_aggregate_boundaries_preserve_exact_values_and_fail_closed() -> Result<()> {
+    let space = setup_sql_space(
+        "memory://sql-stateless-aggregate-boundaries",
+        "sqlaggboundaries",
+    )
+    .await?;
+
+    // Seven equal Decimal256(76, 76) inputs have raw unscaled coefficients
+    // whose sum exceeds i256, while their average remains the exact value 0.9.
+    // The first scan contributes five rows and the second contributes two.
+    let decimal_average_sql = format!(
+        "SELECT AVG(amount) AS average FROM (\
+             SELECT CAST('0.9' AS DECIMAL(76, 76)) AS amount FROM \"{}\" \
+             UNION ALL \
+             SELECT CAST('0.9' AS DECIMAL(76, 76)) AS amount FROM \"{}\" \
+             WHERE \"{}\" IN (1, 2)\
+         ) AS seven_values",
+        space.relation, space.relation, space.priority_column
+    );
+    let exact_average = space
+        .service
+        .query_sql(&space.space_id, query_request(decimal_average_sql, 10))
+        .await
+        .unwrap_or_else(|error| panic!("representable Decimal256 AVG failed: {error:#}"));
+    let exact_average_schema = exact_average
+        .result_schema
+        .as_ref()
+        .expect("Decimal256 AVG returns its result schema");
+    assert_eq!(exact_average_schema[0].column_type.as_str(), "decimal");
+    assert_eq!(exact_average.rows.len(), 1);
+    assert_eq!(
+        exact_average.rows[0].get("average"),
+        Some(&json!(format!("0.9{}", "0".repeat(75))))
+    );
+
+    let decimal_overflow_value = format!("9{}", "0".repeat(75));
+    let decimal_overflow_sql = format!(
+        "SELECT AVG(CAST('{decimal_overflow_value}' AS DECIMAL(76, 0))) AS average FROM \"{}\"",
+        space.relation
+    );
+    assert!(
+        space
+            .service
+            .query_sql(&space.space_id, query_request(decimal_overflow_sql, 10))
+            .await
+            .is_err(),
+        "an overflowing Decimal256 AVG must not return a SQL page"
+    );
+
+    let mut exact_unsigned_request = query_request(
+        format!(
+            "SELECT SUM(18446744073709551615) AS total FROM \"{}\" WHERE \"{}\" = 1",
+            space.relation, space.priority_column
+        ),
+        10,
+    );
+    exact_unsigned_request.include_exact_integer_values = true;
+    let exact_unsigned = space
+        .service
+        .query_sql(&space.space_id, exact_unsigned_request)
+        .await
+        .unwrap_or_else(|error| panic!("representable UInt64 SUM failed: {error:#}"));
+    assert_eq!(
+        exact_unsigned
+            .result_schema
+            .as_ref()
+            .expect("UInt64 SUM has a result schema")[0]
+            .column_type
+            .as_str(),
+        "integer"
+    );
+    assert_eq!(exact_unsigned.rows[0].get("total"), Some(&json!(u64::MAX)));
+    assert_eq!(
+        exact_unsigned.exact_integer_rows,
+        Some(vec![vec![Some(u64::MAX.to_string())]])
+    );
+
+    let unsigned_overflow_sql = format!(
+        "SELECT SUM(18446744073709551615) AS total FROM \"{}\" WHERE \"{}\" <= 3",
+        space.relation, space.priority_column
+    );
+    assert!(
+        space
+            .service
+            .query_sql(&space.space_id, query_request(unsigned_overflow_sql, 10),)
+            .await
+            .is_err(),
+        "an overflowing UInt64 SUM must not return a SQL page"
+    );
     Ok(())
 }
 
@@ -1083,6 +1366,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                     Value::String("open".to_string()),
                 )]),
                 parameter_types: BTreeMap::from([("status".to_string(), "string".to_string())]),
+            include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
             saved_sql: None,
@@ -1109,6 +1393,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                 ),
                 parameters: Map::from_iter([("priority".to_string(), json!(3))]),
                 parameter_types: BTreeMap::new(),
+            include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
             saved_sql: None,
@@ -1133,6 +1418,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                 ),
                 parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
                 parameter_types: BTreeMap::from([("probe".to_string(), "string".to_string())]),
+            include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
             saved_sql: None,
@@ -1153,6 +1439,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                 ),
                 parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
                 parameter_types: BTreeMap::new(),
+            include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
             saved_sql: None,
@@ -1175,6 +1462,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                 ),
                 parameters: Map::from_iter([("probe".to_string(), json!([1, 2]))]),
                 parameter_types: BTreeMap::from([("probe".to_string(), "string".to_string())]),
+            include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
             saved_sql: None,
@@ -1198,6 +1486,7 @@ async fn stateless_parameters_bind_with_types_and_typed_null() -> Result<()> {
                 ),
                 parameters: Map::from_iter([("priority".to_string(), Value::String("3".to_string()))]),
                 parameter_types: BTreeMap::from([("priority".to_string(), "int64".to_string())]),
+            include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
             saved_sql: None,
@@ -1232,6 +1521,7 @@ async fn stateless_parameters_bind_declared_long_double_and_typed_nulls() -> Res
                 ),
                 parameters: Map::from_iter([("priority".to_string(), json!(3))]),
                 parameter_types: BTreeMap::from([("priority".to_string(), "long".to_string())]),
+            include_exact_integer_values: false,
                 limit: 1_000,
                 continuation: None,
                 saved_sql: None,
@@ -1263,6 +1553,7 @@ async fn stateless_parameters_bind_declared_long_double_and_typed_nulls() -> Res
                     ),
                     parameters: Map::from_iter([("ratio".to_string(), json!(2.5))]),
                     parameter_types,
+            include_exact_integer_values: false,
                     limit: 1_000,
                     continuation: None,
                     saved_sql: None,
@@ -1286,6 +1577,7 @@ async fn stateless_parameters_bind_declared_long_double_and_typed_nulls() -> Res
                     ),
                     parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
                     parameter_types: BTreeMap::from([("probe".to_string(), kind.to_string())]),
+            include_exact_integer_values: false,
                     limit: 1_000,
                     continuation: None,
                     saved_sql: None,
@@ -1316,6 +1608,7 @@ async fn stateless_continuation_resets_on_parameter_type_change() -> Result<()> 
                 sql: null_sql.clone(),
                 parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
                 parameter_types: BTreeMap::from([("probe".to_string(), "string".to_string())]),
+                include_exact_integer_values: false,
                 limit: 2,
                 continuation: None,
                 saved_sql: None,
@@ -1337,6 +1630,7 @@ async fn stateless_continuation_resets_on_parameter_type_change() -> Result<()> 
                 sql: null_sql.clone(),
                 parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
                 parameter_types: BTreeMap::from([("probe".to_string(), "string".to_string())]),
+                include_exact_integer_values: false,
                 limit: 2,
                 continuation: Some(continuation.clone()),
                 saved_sql: None,
@@ -1361,6 +1655,7 @@ async fn stateless_continuation_resets_on_parameter_type_change() -> Result<()> 
                 sql: null_sql,
                 parameters: Map::from_iter([("probe".to_string(), Value::Null)]),
                 parameter_types: BTreeMap::from([("probe".to_string(), "long".to_string())]),
+                include_exact_integer_values: false,
                 limit: 2,
                 continuation: Some(continuation),
                 saved_sql: None,
@@ -1426,6 +1721,7 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
                     Value::String("open".to_string()),
                 )]),
                 parameter_types: BTreeMap::from([("status".to_string(), "string".to_string())]),
+                include_exact_integer_values: false,
                 limit: 2,
                 continuation: None,
                 saved_sql: None,
@@ -1447,6 +1743,7 @@ async fn stateless_continuation_resets_on_context_change() -> Result<()> {
                     Value::String("closed".to_string()),
                 )]),
                 parameter_types: BTreeMap::from([("status".to_string(), "string".to_string())]),
+                include_exact_integer_values: false,
                 limit: 2,
                 continuation: Some(param_continuation),
                 saved_sql: None,

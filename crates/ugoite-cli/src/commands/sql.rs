@@ -403,6 +403,7 @@ mod export_sink_tests {
             has_more: true,
             next: Some(next.to_string()),
             result_schema: None,
+            exact_integer_rows: None,
         };
         let mut validator = ExportPageValidator::default();
         validator.accept(&page(&["one"], "token-1"), 1).unwrap();
@@ -428,6 +429,7 @@ mod export_sink_tests {
             has_more: true,
             next: None,
             result_schema: None,
+            exact_integer_rows: None,
         };
         let error = validator
             .accept(&page, 1)
@@ -726,6 +728,7 @@ pub async fn run(
                     sql,
                     parameters,
                     parameter_types,
+                    include_exact_integer_values: false,
                     limit,
                     continuation,
                     saved_sql: None,
@@ -794,6 +797,7 @@ pub async fn run(
                 sql,
                 parameters,
                 parameter_types,
+                include_exact_integer_values: false,
                 limit: page_size.min(max_rows),
                 continuation: None,
                 saved_sql: None,
@@ -893,6 +897,7 @@ pub async fn run(
                     sql: String::new(),
                     parameters,
                     parameter_types,
+                    include_exact_integer_values: false,
                     limit,
                     continuation,
                     saved_sql: Some(SavedSqlRevisionRef {

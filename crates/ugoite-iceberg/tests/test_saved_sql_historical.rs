@@ -286,6 +286,7 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(1000))]),
                 parameter_types: Default::default(),
+                include_exact_integer_values: false,
                 limit: 1,
                 continuation: None,
                 saved_sql: Some(historical_ref.clone()),
@@ -303,6 +304,7 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
                 sql: String::new(),
                 parameters: Map::from_iter([("minimum".into(), json!(1000))]),
                 parameter_types: Default::default(),
+                include_exact_integer_values: false,
                 limit: 1,
                 continuation: first.next.clone(),
                 saved_sql: Some(historical_ref.clone()),
@@ -334,6 +336,7 @@ async fn historical_saved_sql_revisions_read_run_and_continue_without_space_muta
                 sql: String::new(),
                 parameters: Map::from_iter([("maximum".into(), json!(3000))]),
                 parameter_types: Default::default(),
+                include_exact_integer_values: false,
                 limit: 10,
                 continuation: None,
                 saved_sql: Some(SavedSqlRevisionRef {

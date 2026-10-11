@@ -71,6 +71,11 @@ ugoite sql query query.sql \
 # Explicit count; count is not coupled to page retrieval
 ugoite sql count \
   'SELECT field_<FieldId> FROM form_<FormId> WHERE field_<StatusId> = $status'
+
+# Checked numeric aggregates; DISTINCT keeps ordinary SQL semantics.
+ugoite sql query \
+  'SELECT COUNT(*) AS entries, SUM(field_<AmountId>) AS total, AVG(DISTINCT field_<AmountId>) AS average FROM "Expense"' \
+  --format json
 ```
 
 `sql saved list`, `get`, `create`, `update`, and `delete` manage durable
@@ -102,6 +107,13 @@ statement and reject DDL, DML, and multiple statements before execution. Use
 When `has_more` is true, pass `next` back as `--continuation`. The
 continuation fixes the publication used by the query chain while the current
 authorization is checked again for every request.
+
+SQL supports `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX`. Integer and Decimal
+`SUM`/`AVG` use checked accumulation; overflow and non-finite floating results
+fail with a stable SQL aggregate error. Decimal columns are returned as exact
+base-10 strings at their planned scale. Checked `SUM(DISTINCT ...)` and
+`AVG(DISTINCT ...)` retain SQL duplicate handling. Window functions are outside
+the read-only aggregate policy.
 
 An explicit `ORDER BY` is required for a result that needs more than one page.
 An unordered result that exceeds `--limit` is rejected instead of silently

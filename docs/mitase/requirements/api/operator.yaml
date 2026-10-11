@@ -51,7 +51,7 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: function-class-policy
         kind: security
-        statement: Authorized SQL contexts register only functions admitted by a Core-owned policy, with scalar, aggregate, and window functions filtered independently; stateless page and count inputs share their user-function policy, while the explicit count operation's internal row-count expression remains separate from user SQL.
+        statement: Authorized SQL contexts register only functions admitted by a Core-owned policy, with scalar, aggregate, and window functions filtered independently; stateless page and count inputs admit only the COUNT, SUM, AVG, MIN, and MAX aggregate allowlist, while the explicit count operation's internal row-count expression remains separate from user SQL.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: local-remote-parity
         kind: quality
@@ -63,7 +63,19 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: typed-result-schema
         kind: behavior
-        statement: Every SQL query page carries a server-owned portable column descriptor in column order alongside the unchanged columns and rows; null and empty results keep their planned output types, and the Browser stores the descriptor unchanged without inferring types from row values.
+        statement: Every SQL query page carries a server-owned portable column descriptor in column order while preserving the page and row structure; null and empty results keep their planned output types, Decimal values are exact strings, and the Browser never infers types from row values. A SQL type not yet admitted by the Composition descriptor uses its documented json fallback there.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: exact-integer-presentation
+        kind: behavior
+        statement: SQL page clients may opt in to a column-aligned exact base-10 integer sidecar; legacy requests omit it, existing rows and integer schema remain unchanged, and browser result tables prefer exact sidecar values with a legacy fallback.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: checked-numeric-aggregates
+        kind: security
+        statement: COUNT, SUM, AVG, MIN, and MAX preserve their declared NULL and empty-set semantics; integer and decimal overflow and non-finite floating aggregate outputs fail without returning a wrapped or partial value.
+        governed_by: [POL-004#rule.governance, POL-008#rule.governance]
+      - id: exact-decimal-results
+        kind: behavior
+        statement: Decimal SQL output uses the server-owned decimal result type and an exact base-10 string row value that preserves scale without binary floating-point conversion.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
     bindings:
       - id: cli-verification
@@ -120,6 +132,42 @@ requirements:
                 criterion: REQ-API-015#criterion.typed-result-schema
                 covers: [FEAT-API-001#binding.sql-service-implementation/target.query-sql]
                 runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: sql_query_page_carries_server_owned_result_schema } }
+          - id: exact-integer-page-transport
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: exact_integer_values_are_opt_in_and_preserve_the_legacy_sql_rows }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.exact-integer-presentation
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.query-sql
+                  - FEAT-API-001#binding.sql-service-implementation/target.exact-integer-result-encoding
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: exact_integer_values_are_opt_in_and_preserve_the_legacy_sql_rows } }
+          - id: exact-integer-table-rendering
+            adapter: typescript
+            path: frontend/src/components/SqlResultTable.test.tsx
+            selector: { kind: test, name: prefers exact integer strings and falls back to legacy row numbers }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.exact-integer-presentation
+                covers: [FEAT-FE-007#binding.frontend/target.sql-result-table]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/SqlResultTable.test.tsx, test: prefers exact integer strings and falls back to legacy row numbers } }
+          - id: stateless-aggregate-boundaries
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
+            selector: { kind: test, name: stateless_aggregate_boundaries_preserve_exact_values_and_fail_closed }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: stateless_aggregate_boundaries_preserve_exact_values_and_fail_closed } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.exact-integer-presentation
+                covers:
+                  - FEAT-API-001#binding.sql-service-implementation/target.query-sql
+                  - FEAT-API-001#binding.sql-service-implementation/target.exact-integer-result-encoding
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: stateless_aggregate_boundaries_preserve_exact_values_and_fail_closed } }
           - id: arrow-mapping-pin
             adapter: rust
             path: crates/ugoite-iceberg/src/query_context.rs
@@ -138,6 +186,46 @@ requirements:
                 criterion: REQ-API-015#criterion.typed-result-schema
                 covers: [FEAT-API-001#binding.sql-service-implementation/target.result-schema-mapping]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: query_context::result_schema_tests::non_scalar_arrow_outputs_stay_json_without_inference } }
+          - id: checked-aggregate-overflow
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: sql_aggregate_rejects_int64_overflow_and_preserves_resource_limits }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: sql_aggregate_rejects_int64_overflow_and_preserves_resource_limits } }
+          - id: exact-decimal-row-encoding
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: test, name: tests::sql_decimal_result_values_keep_exact_digits_and_scale_as_strings }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.exact-decimal-results
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.decimal-result-encoding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::sql_decimal_result_values_keep_exact_digits_and_scale_as_strings } }
+              - kind: verifies
+                criterion: REQ-API-015#criterion.typed-result-schema
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.decimal-result-encoding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::sql_decimal_result_values_keep_exact_digits_and_scale_as_strings } }
+          - id: safe-overflow-diagnostic
+            adapter: rust
+            path: crates/ugoite-iceberg/src/index.rs
+            selector: { kind: test, name: tests::mapped_aggregate_failures_use_stable_safe_diagnostics }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.aggregate-error-mapping]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: tests::mapped_aggregate_failures_use_stable_safe_diagnostics } }
+          - id: checked-distinct-aggregate-state
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/authorized_query.rs
+            selector: { kind: test, name: sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts }
+            claims:
+              - kind: verifies
+                criterion: REQ-API-015#criterion.checked-numeric-aggregates
+                covers: [FEAT-API-001#binding.sql-service-implementation/target.checked-numeric-aggregates]
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: authorized_query, test: sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts } }
           - id: descriptor-passthrough
             adapter: typescript
             path: frontend/src/lib/composition-api.test.ts
@@ -175,14 +263,14 @@ requirements:
           - id: stateless-input-and-count
             adapter: rust
             path: crates/ugoite-iceberg/tests/test_sql_stateless.rs
-            selector: { kind: test, name: stateless_user_aggregate_functions_stay_closed_from_internal_count }
+            selector: { kind: test, name: stateless_sql_allows_only_the_read_only_aggregate_policy }
             claims:
               - kind: verifies
                 criterion: REQ-API-015#criterion.function-class-policy
                 covers:
                   - FEAT-API-001#binding.sql-service-implementation/target.query-sql
                   - FEAT-API-001#binding.sql-service-implementation/target.count-sql
-                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: stateless_user_aggregate_functions_stay_closed_from_internal_count } }
+                runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_sql_stateless, test: stateless_sql_allows_only_the_read_only_aggregate_policy } }
   - id: REQ-API-016
     title: Bounded stateless SQL export
     description: The CLI can stream a complete, explicitly bounded multi-page SQL result as NDJSON through the existing stateless SQL query operation in local and remote mode.

@@ -735,6 +735,7 @@ fn compile_saved_sql_source_with_metric_columns(
         sql: String::new(),
         parameters,
         parameter_types,
+        include_exact_integer_values: false,
         limit: DEFAULT_COMPOSITION_PAGE_LIMIT,
         continuation: None,
         saved_sql: Some(saved_sql),
@@ -1821,6 +1822,7 @@ mod tests {
             has_more,
             next: next.map(str::to_owned),
             result_schema: None,
+            exact_integer_rows: None,
         }
     }
 

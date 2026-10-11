@@ -136,6 +136,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       sql: "SELECT value FROM demo ORDER BY value",
       parameters: {},
       parameter_types: {},
+      include_exact_integer_values: true,
       limit: 100,
       saved_sql: { id: "saved-query", revision_id: "rev-1" },
       continuation: "opaque-next",
@@ -152,9 +153,28 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
       sql: "SELECT value FROM demo ORDER BY value",
       parameters: {},
       parameter_types: {},
+      include_exact_integer_values: true,
       limit: 100,
       saved_sql: { id: "saved-query", revision_id: "rev-1" },
     }, expect.any(AbortSignal));
+  });
+
+  it("requests and displays exact values for integers beyond JavaScript precision", async () => {
+    queryMock.mockReset().mockResolvedValue({
+      columns: ["amount"],
+      rows: [{ amount: 9_007_199_254_740_992 }],
+      has_more: false,
+      result_schema: [{ name: "amount", type: "integer" }],
+      exact_integer_rows: [["9007199254740993"]],
+    });
+
+    render(() => <SpaceSqlRunRoute />);
+
+    expect(await screen.findByRole("cell", { name: "9007199254740993" }))
+      .toBeInTheDocument();
+    expect(queryMock).toHaveBeenLastCalledWith("default", expect.objectContaining({
+      include_exact_integer_values: true,
+    }), expect.any(AbortSignal));
   });
 
   it("REQ-FE-068: omits persistent explanatory copy from saved SQL results", async () => {
@@ -457,6 +477,7 @@ describe("/spaces/:space_id/sql/:sql_id/run", () => {
         parameter_types: {
           threshold: changedField === "types" ? "string" : "integer",
         },
+        include_exact_integer_values: true,
         limit: 100,
         saved_sql: { id: "saved-query", revision_id: "rev-1" },
       }, expect.any(AbortSignal));

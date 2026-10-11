@@ -1,6 +1,6 @@
 import initializeWasm from "../generated/ugoite_wasm.wasm?init";
 import { apiFetch, type ApiFetchOptions } from "../api";
-import type { AssetReference } from "../types";
+import type { AssetReference, SqlResultColumnType } from "../types";
 import {
   classifyMutationOutcome,
   MUTATION_ERROR_CODES,
@@ -219,14 +219,7 @@ export const validateAssetReference = async (
   });
 
 export type CompositionMetricPageRequest = {
-  expected_result_type:
-    | "string"
-    | "boolean"
-    | "integer"
-    | "float"
-    | "date"
-    | "timestamp"
-    | "json";
+  expected_result_type: Exclude<SqlResultColumnType, "decimal">;
   is_complete: boolean;
   row_count: number;
   selected_column_count: number;

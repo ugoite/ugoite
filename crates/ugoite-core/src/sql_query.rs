@@ -26,6 +26,10 @@ pub const MAX_SQL_COLUMN_METADATA_BYTES: usize = 1024 * 1024;
 
 type HmacSha256 = Hmac<Sha256>;
 
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SqlQueryRequest {
@@ -35,6 +39,10 @@ pub struct SqlQueryRequest {
     pub parameters: Map<String, Value>,
     #[serde(default)]
     pub parameter_types: BTreeMap<String, String>,
+    /// Requests a parallel, column-aligned string view of integer result
+    /// cells for clients that cannot preserve all JSON integer digits.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub include_exact_integer_values: bool,
     pub limit: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continuation: Option<String>,
@@ -106,6 +114,7 @@ impl SqlQueryCountRequest {
             sql: self.sql.clone(),
             parameters: self.parameters.clone(),
             parameter_types: self.parameter_types.clone(),
+            include_exact_integer_values: false,
             limit: 1,
             continuation: None,
             saved_sql: self.saved_sql.clone(),
@@ -128,13 +137,17 @@ pub struct SqlQueryPage {
     /// types come from the planned output schema rather than row values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_schema: Option<Vec<SqlResultColumn>>,
+    /// Exact base-10 strings for integer cells, aligned with `rows` and
+    /// `columns`. Present only when requested by `include_exact_integer_values`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exact_integer_rows: Option<Vec<Vec<Option<String>>>>,
 }
 
-/// One ordered output column with its server-mapped portable logical type.
+/// One ordered SQL output column with its server-mapped portable logical type.
 ///
-/// The vocabulary intentionally matches the Composition
-/// `expected_result` logical types so the Browser can store the descriptor
-/// unchanged; the Browser performs no type inference of its own.
+/// SQL result types can be broader than the result types currently accepted
+/// by Composition. Consumers must explicitly map unsupported types instead
+/// of copying this descriptor into a Composition expectation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SqlResultColumn {
@@ -153,6 +166,8 @@ pub enum SqlResultColumnType {
     Float,
     Date,
     Timestamp,
+    /// Exact base-10 value transported as a string in `rows`.
+    Decimal,
     Json,
 }
 
@@ -165,6 +180,7 @@ impl SqlResultColumnType {
             Self::Float => "float",
             Self::Date => "date",
             Self::Timestamp => "timestamp",
+            Self::Decimal => "decimal",
             Self::Json => "json",
         }
     }
@@ -374,12 +390,14 @@ mod tests {
             serde_json::from_str(r#"{"columns":["a"],"rows":[],"has_more":false}"#)
                 .expect("legacy page");
         assert_eq!(legacy.result_schema, None);
+        assert_eq!(legacy.exact_integer_rows, None);
 
         let typed = SqlQueryPage {
             columns: vec!["total".to_string(), "label".to_string()],
             rows: vec![],
             has_more: false,
             next: None,
+            exact_integer_rows: None,
             result_schema: Some(vec![
                 SqlResultColumn {
                     name: "total".to_string(),
@@ -393,9 +411,35 @@ mod tests {
         };
         let encoded = serde_json::to_value(&typed).expect("encode");
         assert_eq!(encoded["result_schema"][0]["type"], "float");
+        assert!(encoded.get("exact_integer_rows").is_none());
         assert_eq!(
             serde_json::from_value::<SqlQueryPage>(encoded).expect("decode"),
             typed
+        );
+
+        let exact_integer_page = SqlQueryPage {
+            columns: vec!["total".to_string()],
+            rows: vec![serde_json::json!({"total": i64::MAX})],
+            has_more: false,
+            next: None,
+            result_schema: Some(vec![SqlResultColumn {
+                name: "total".to_string(),
+                column_type: SqlResultColumnType::Integer,
+            }]),
+            exact_integer_rows: Some(vec![vec![Some(i64::MAX.to_string())]]),
+        };
+        let exact_encoded = serde_json::to_value(&exact_integer_page).expect("encode exact page");
+        assert_eq!(
+            exact_encoded["rows"][0]["total"],
+            serde_json::json!(i64::MAX)
+        );
+        assert_eq!(
+            exact_encoded["exact_integer_rows"][0][0],
+            i64::MAX.to_string()
+        );
+        assert_eq!(
+            serde_json::from_value::<SqlQueryPage>(exact_encoded).expect("decode exact page"),
+            exact_integer_page
         );
 
         // The portable vocabulary keeps stable wire spellings.
@@ -406,6 +450,7 @@ mod tests {
             (SqlResultColumnType::Float, "float"),
             (SqlResultColumnType::Date, "date"),
             (SqlResultColumnType::Timestamp, "timestamp"),
+            (SqlResultColumnType::Decimal, "decimal"),
             (SqlResultColumnType::Json, "json"),
         ] {
             assert_eq!(column_type.as_str(), spelling);
@@ -414,5 +459,28 @@ mod tests {
                 format!("\"{spelling}\"")
             );
         }
+    }
+
+    #[test]
+    fn exact_integer_values_are_opt_in_and_omitted_by_default() {
+        let old_request: SqlQueryRequest = serde_json::from_str(r#"{"sql":"SELECT 1","limit":10}"#)
+            .expect("legacy request remains valid");
+        assert!(!old_request.include_exact_integer_values);
+        assert!(serde_json::to_value(&old_request)
+            .expect("serialize default request")
+            .get("include_exact_integer_values")
+            .is_none());
+
+        let opted_in = SqlQueryRequest {
+            sql: "SELECT 1".to_string(),
+            limit: 10,
+            include_exact_integer_values: true,
+            ..SqlQueryRequest::default()
+        };
+        assert_eq!(
+            serde_json::to_value(opted_in).expect("serialize opt-in request")
+                ["include_exact_integer_values"],
+            true
+        );
     }
 }

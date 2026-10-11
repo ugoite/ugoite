@@ -59,6 +59,11 @@ vi.mock("@solidjs/router", () => ({
 }));
 
 vi.mock("~/lib/composition-api", () => ({
+  compositionResultTypeFromSql: (resultType: string | undefined) =>
+    ["string", "boolean", "integer", "float", "date", "timestamp", "json"]
+      .includes(resultType ?? "")
+      ? resultType
+      : "json",
   canCreateSavedSqlComposition: (entry: { kind: string }) =>
     entry.kind === "user-query",
   compositionApi: {

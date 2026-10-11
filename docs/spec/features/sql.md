@@ -29,11 +29,24 @@ SQL accepts exactly one read-only `SELECT` statement. The authorized query
 context exposes only permitted Form relations, columns, and functions, and
 executes through the fixed Space publication selected for the request chain.
 Core-owned SQL function policies admit scalar, aggregate, and window functions
-independently. The stateless page and count inputs currently keep user-authored
-aggregate functions closed; the explicit count operation applies its trusted
-row-count expression to the authorized query plan separately. Parameters use
-DataFusion's native `$name` syntax and are bound as typed scalars before
-planning; parameter text is never substituted into SQL.
+independently. Stateless page and count inputs share the closed
+`ReadOnlyAggregateV1` allowlist: `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX` are
+available as aggregate functions, while window functions and unrelated
+aggregates remain unavailable. The explicit count operation applies its
+trusted row-count expression to the authorized query plan separately from
+user SQL. Parameters use DataFusion's native `$name` syntax and are bound as
+typed scalars before planning; parameter text is never substituted into SQL.
+
+The permitted aggregate functions are `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX`.
+`COUNT(*)` counts rows; `COUNT(expression)` ignores `NULL`; `SUM` and `AVG`
+accept numeric values; and `MIN`/`MAX` accept comparable scalar values. `SUM`,
+`AVG`, and floating aggregate results use checked accumulation: integer and
+decimal overflow, unsupported numeric types, and non-finite floating results
+fail the query instead of returning a wrapped, partial, or non-finite value.
+`COUNT`, checked `SUM`, and checked `AVG` preserve SQL `DISTINCT` semantics.
+Window functions are not part of this read-only aggregate policy.
+`sql.query.count` remains the count of rows in the SQL result and is distinct
+from a SQL expression such as `SELECT COUNT(*) ...`.
 
 `sql.query` returns one bounded page and an opaque continuation when a
 deterministic `ORDER BY` allows pagination. The continuation carries the fixed
@@ -42,6 +55,17 @@ authorization coordinate. It is client-held state, not an authorization token;
 each request rechecks current authorization. `sql.query.count` is explicit and
 separate from page retrieval. No total-cardinality ceiling or persistent SQL
 execution lifecycle is introduced.
+
+Every new SQL page carries a server-owned `result_schema` in column order,
+including for empty and all-`NULL` results. Decimal columns use the logical
+type `decimal`; their row values are strings containing the exact base-10
+value, with no exponent and with the planned fractional scale preserved. They
+are never converted through binary floating point. Integer and float columns
+retain their portable types. Clients may opt in to `exact_integer_rows` for
+column-aligned base-10 strings that preserve integer digits beyond JavaScript's
+safe integer range; this leaves `rows` and the `integer` schema unchanged.
+Numeric overflow and non-finite-result failures use stable SQL aggregate error
+codes with safe messages.
 
 SQL results are not automatically materialized as Knowledge. A SELECT cannot
 write a publication, derived relation, or execution metadata. Future SQL DML

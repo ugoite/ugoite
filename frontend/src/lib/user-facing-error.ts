@@ -37,6 +37,9 @@ const CODE_KEYS: Record<string, TranslationKey> = {
   MUTATION_REJECTED: "errors.mutationRejected",
   MUTATION_OUTCOME_UNKNOWN: "errors.mutationOutcomeUnknown",
   MUTATION_RECEIPT_INVALID: "errors.mutationReceiptInvalid",
+  SQL_AGGREGATE_OVERFLOW: "errors.code.sqlAggregateOverflow",
+  SQL_AGGREGATE_NON_FINITE: "errors.code.sqlAggregateNonFinite",
+  SQL_AGGREGATE_TYPE_UNSUPPORTED: "errors.code.sqlAggregateTypeUnsupported",
 };
 
 const OPERATION_KEYS: Partial<

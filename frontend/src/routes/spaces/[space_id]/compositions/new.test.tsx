@@ -80,6 +80,11 @@ vi.mock("~/lib/composition-api", () => ({
     entry.kind === "user-query",
   compositionDisplayName: (value: unknown) =>
     typeof value === "string" && value.trim() ? value.trim() : "Composition",
+  compositionResultTypeFromSql: (resultType: string | undefined) =>
+    ["string", "boolean", "integer", "float", "date", "timestamp", "json"]
+      .includes(resultType ?? "")
+      ? resultType
+      : "json",
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({

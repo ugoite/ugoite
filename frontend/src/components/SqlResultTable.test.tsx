@@ -8,12 +8,14 @@ const renderTable = (
   columns: string[],
   rows: unknown[],
   columnTypes?: SqlResultColumnType[],
+  exactIntegerRows?: (Array<string | null>)[],
 ) =>
   render(() => (
     <SqlResultTable
       columns={columns}
       columnTypes={columnTypes}
       rows={rows}
+      exactIntegerRows={exactIntegerRows}
       pageIdentity="sql-page-1"
       tableLabel="SQL pages"
     />
@@ -124,6 +126,41 @@ describe("SqlResultTable", () => {
     expect(screen.getByRole("cell", { name: "—" })).toHaveClass(
       "result-table-cell--numeric",
     );
+  });
+
+  it("keeps exact decimal strings numeric without converting them to JavaScript numbers", () => {
+    renderTable(
+      ["amount"],
+      [["12345678901234567.8901"]],
+      ["decimal"],
+    );
+
+    expect(screen.getByRole("columnheader", { name: "amount" })).toHaveClass(
+      "result-table-header--numeric",
+    );
+    expect(
+      screen.getByRole("cell", { name: "12345678901234567.8901" }),
+    ).toHaveClass("result-table-cell--numeric");
+  });
+
+  it("prefers exact integer strings and falls back to legacy row numbers", () => {
+    renderTable(
+      ["wide", "ordinary", "missing"],
+      [[9_223_372_036_854_776_000, 42, null]],
+      ["integer", "integer", "integer"],
+      [["9223372036854775807", "42", null]],
+    );
+
+    expect(screen.getByRole("cell", { name: "9223372036854775807" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "—" })).toBeInTheDocument();
+  });
+
+  it("falls back to existing integer row values when the sidecar is absent", () => {
+    renderTable(["value"], [[42]], ["integer"]);
+
+    expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
   });
 
   it("uses the server schema instead of inferring numeric rows", () => {

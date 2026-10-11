@@ -5719,7 +5719,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
+                  "$ref": "#/components/schemas/SqlQueryPage"
                 }
               }
             }
@@ -13910,10 +13910,45 @@
           "saved_sql": {"$ref": "#/components/schemas/SavedSqlRevisionRef"},
           "parameters": {"type": "object", "additionalProperties": true},
           "parameter_types": {"type": "object", "additionalProperties": {"type": "string"}},
+          "include_exact_integer_values": {"type": "boolean", "default": false, "description": "Include column-aligned exact base-10 strings for integer result cells."},
           "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
           "continuation": {"type": "string"}
         },
         "required": ["limit"],
+        "additionalProperties": false
+      },
+      "SqlQueryPage": {
+        "type": "object",
+        "properties": {
+          "columns": {"type": "array", "items": {"type": "string"}},
+          "rows": {"type": "array", "items": {"$ref": "#/components/schemas/JsonValue"}},
+          "has_more": {"type": "boolean"},
+          "next": {"type": "string"},
+          "result_schema": {"type": "array", "items": {"$ref": "#/components/schemas/SqlResultColumn"}},
+          "exact_integer_rows": {
+            "type": "array",
+            "description": "Present only when requested; cells align with rows and columns, with exact base-10 strings for integer values and null in other positions.",
+            "items": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {"type": "string"},
+                  {"type": "null"}
+                ]
+              }
+            }
+          }
+        },
+        "required": ["columns", "rows", "has_more"],
+        "additionalProperties": false
+      },
+      "SqlResultColumn": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "type": {"type": "string", "enum": ["string", "boolean", "integer", "float", "date", "timestamp", "decimal", "json"]}
+        },
+        "required": ["name", "type"],
         "additionalProperties": false
       },
       "SqlQueryCountRequest": {

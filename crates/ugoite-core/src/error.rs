@@ -51,6 +51,9 @@ pub enum ErrorCode {
     FormVersionConflict,
     CompositionRegistryConflict,
     IdempotencyConflict,
+    SqlAggregateOverflow,
+    SqlAggregateNonFinite,
+    SqlAggregateTypeUnsupported,
 }
 
 impl ErrorCode {
@@ -92,6 +95,9 @@ impl ErrorCode {
             Self::FormVersionConflict => "FORM_VERSION_CONFLICT",
             Self::CompositionRegistryConflict => "COMPOSITION_REGISTRY_CONFLICT",
             Self::IdempotencyConflict => "IDEMPOTENCY_CONFLICT",
+            Self::SqlAggregateOverflow => "SQL_AGGREGATE_OVERFLOW",
+            Self::SqlAggregateNonFinite => "SQL_AGGREGATE_NON_FINITE",
+            Self::SqlAggregateTypeUnsupported => "SQL_AGGREGATE_TYPE_UNSUPPORTED",
         }
     }
 }

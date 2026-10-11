@@ -187,6 +187,7 @@ export function CompositionSavedSqlTable(props: {
             columns={page()?.columns ?? []}
             columnTypes={page()?.result_schema?.map((column) => column.type)}
             rows={rows()}
+            exactIntegerRows={page()?.exact_integer_rows}
             pageIdentity={`${sourceId()}:${
               props.sourceState?.cursor ?? "first"
             }`}

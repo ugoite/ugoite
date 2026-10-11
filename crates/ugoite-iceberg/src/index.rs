@@ -2945,11 +2945,18 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     sql_query: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
     parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    include_exact_integer_values: bool,
     offset: usize,
     limit: usize,
     forms: Vec<FormDefinition>,
     checkpoint: SpaceCheckpoint,
-) -> Result<(Vec<String>, Vec<SqlResultColumn>, Vec<Value>, bool)> {
+) -> Result<(
+    Vec<String>,
+    Vec<SqlResultColumn>,
+    Vec<Value>,
+    Option<Vec<Vec<Option<String>>>>,
+    bool,
+)> {
     let context = datafusion_sql_context_with_form_definitions(
         op,
         ws_path,
@@ -2957,7 +2964,7 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
         None,
         Some(relation_scopes),
         Some(checkpoint),
-        SqlFunctionPolicy::DenyAll,
+        SqlFunctionPolicy::ReadOnlyAggregateV1,
         SQL_MAX_OUTPUT_ROWS.saturating_add(1),
         false,
         forms,
@@ -2968,13 +2975,17 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
         .execute_stateless_page(sql_query, parameters, offset, limit)
         .await
         .map_err(map_sql_error)?;
+    let serialized_rows = sql_result_batches_to_values_with_exact_integers_bounded(
+        &page.batches,
+        &page.result_schema,
+        ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES,
+        include_exact_integer_values,
+    )?;
     Ok((
         page.columns,
         page.result_schema,
-        record_batches_to_values_bounded(
-            &page.batches,
-            ugoite_core::sql_query::MAX_SQL_OUTPUT_BYTES,
-        )?,
+        serialized_rows.rows,
+        serialized_rows.exact_integer_rows,
         page.has_order,
     ))
 }
@@ -3011,7 +3022,7 @@ pub(crate) async fn execute_sql_query_authorized_by_form_count_at_checkpoint_sta
         None,
         Some(relation_scopes),
         Some(checkpoint),
-        SqlFunctionPolicy::DenyAll,
+        SqlFunctionPolicy::ReadOnlyAggregateV1,
         SQL_MAX_OUTPUT_ROWS,
         false,
         forms,
@@ -3446,8 +3457,156 @@ fn record_batches_to_values_bounded(
     Ok(values)
 }
 
+/// Decimal columns with an explicit `decimal` result-schema type are
+/// serialized as exact strings rather than JSON numbers. JSON consumers such
+/// as JavaScript cannot represent every decimal value without loss.
+fn sql_result_batches_to_values_bounded(
+    batches: &[arrow_array::RecordBatch],
+    result_schema: &[SqlResultColumn],
+    max_bytes: usize,
+) -> Result<Vec<Value>> {
+    use arrow_schema::{DataType, Field, Schema};
+
+    let mut decimal_string_batches = Vec::with_capacity(batches.len());
+    for batch in batches {
+        let mut fields = Vec::with_capacity(batch.num_columns());
+        let mut columns = Vec::with_capacity(batch.num_columns());
+        for (column_index, (field, array)) in batch
+            .schema()
+            .fields()
+            .iter()
+            .zip(batch.columns())
+            .enumerate()
+        {
+            if result_schema.get(column_index).is_some_and(|column| {
+                column.column_type == ugoite_core::sql_query::SqlResultColumnType::Decimal
+            }) && matches!(
+                field.data_type(),
+                DataType::Decimal32(_, _)
+                    | DataType::Decimal64(_, _)
+                    | DataType::Decimal128(_, _)
+                    | DataType::Decimal256(_, _)
+            ) {
+                fields.push(Arc::new(Field::new(
+                    field.name(),
+                    DataType::Utf8,
+                    field.is_nullable(),
+                )));
+                columns.push(datafusion::arrow::compute::cast(
+                    array.as_ref(),
+                    &DataType::Utf8,
+                )?);
+            } else {
+                fields.push(field.clone());
+                columns.push(array.clone());
+            }
+        }
+        let schema = Arc::new(Schema::new_with_metadata(
+            fields,
+            batch.schema().metadata().clone(),
+        ));
+        decimal_string_batches.push(arrow_array::RecordBatch::try_new(schema, columns)?);
+    }
+    record_batches_to_values_bounded(&decimal_string_batches, max_bytes)
+}
+
+type ExactIntegerRows = Vec<Vec<Option<String>>>;
+
+struct SerializedSqlResultRows {
+    rows: Vec<Value>,
+    exact_integer_rows: Option<ExactIntegerRows>,
+}
+
+fn sql_result_batches_to_values_with_exact_integers_bounded(
+    batches: &[arrow_array::RecordBatch],
+    result_schema: &[SqlResultColumn],
+    max_bytes: usize,
+    include_exact_integer_values: bool,
+) -> Result<SerializedSqlResultRows> {
+    let rows = sql_result_batches_to_values_bounded(batches, result_schema, max_bytes)?;
+    if !include_exact_integer_values {
+        return Ok(SerializedSqlResultRows {
+            rows,
+            exact_integer_rows: None,
+        });
+    }
+
+    let Some(exact_integer_rows) = sql_exact_integer_rows(batches, result_schema)? else {
+        return Ok(SerializedSqlResultRows {
+            rows,
+            exact_integer_rows: None,
+        });
+    };
+    let rows_bytes = serde_json::to_vec(&rows)?.len();
+    let exact_integer_bytes = serde_json::to_vec(&exact_integer_rows)?.len();
+    if rows_bytes
+        .checked_add(exact_integer_bytes)
+        .is_none_or(|bytes| bytes > max_bytes)
+    {
+        return Err(anyhow!("DataFusion result exceeds its byte limit"));
+    }
+    Ok(SerializedSqlResultRows {
+        rows,
+        exact_integer_rows: Some(exact_integer_rows),
+    })
+}
+
+/// Creates a positional exact-integer sidecar without changing the ordinary
+/// JSON row values. Integer cells contain base-10 strings; other and null
+/// cells remain null so indexes continue to match `columns` exactly.
+fn sql_exact_integer_rows(
+    batches: &[arrow_array::RecordBatch],
+    result_schema: &[SqlResultColumn],
+) -> Result<Option<ExactIntegerRows>> {
+    use arrow_schema::DataType;
+
+    let integer_columns = result_schema
+        .iter()
+        .enumerate()
+        .filter_map(|(index, column)| {
+            (column.column_type == ugoite_core::sql_query::SqlResultColumnType::Integer)
+                .then_some(index)
+        })
+        .collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    for batch in batches {
+        if batch.num_columns() != result_schema.len() {
+            return Err(anyhow!("SQL result schema does not match its columns"));
+        }
+        let mut string_columns = Vec::with_capacity(integer_columns.len());
+        for &column_index in &integer_columns {
+            let column = batch.column(column_index);
+            let string_column = datafusion::arrow::compute::cast(column, &DataType::Utf8)?;
+            let string_column = string_column
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .cloned()
+                .ok_or_else(|| anyhow!("integer result could not be rendered as text"))?;
+            string_columns.push((column_index, string_column));
+        }
+
+        for row_index in 0..batch.num_rows() {
+            let mut row = vec![None; result_schema.len()];
+            for (column_index, string_column) in &string_columns {
+                if !string_column.is_null(row_index) {
+                    row[*column_index] = Some(string_column.value(row_index).to_owned());
+                }
+            }
+            rows.push(row);
+        }
+    }
+    Ok(Some(rows))
+}
+
 fn map_sql_error(error: anyhow::Error) -> anyhow::Error {
     use crate::query_context::AuthorizedQueryError;
+
+    if let Some(failure) = error
+        .downcast_ref::<AuthorizedQueryError>()
+        .and_then(AuthorizedQueryError::sql_aggregate_failure)
+    {
+        return AppError::invalid_input(failure.code(), failure.public_message()).into();
+    }
 
     let message = match error.downcast_ref::<AuthorizedQueryError>() {
         Some(AuthorizedQueryError::InvalidQuery { .. }) => "invalid SQL query",
@@ -4495,9 +4654,10 @@ async fn build_record(
 mod tests {
     use super::{
         asset_reference_projection, canonical_hydration_columns, canonical_hydration_projection,
-        datafusion_parameters, filter_literal, map_sql_error, validate_read_only_sql,
+        datafusion_parameters, filter_literal, map_sql_error, sql_result_batches_to_values_bounded,
+        validate_read_only_sql,
     };
-    use arrow_array::{ArrayRef, RecordBatch, StringArray};
+    use arrow_array::{Array, ArrayRef, Decimal128Array, RecordBatch, StringArray};
     use arrow_schema::{DataType, Field, Schema};
     use chrono::DateTime;
     use datafusion::logical_expr::Expr;
@@ -4523,6 +4683,39 @@ mod tests {
                 .message(),
             "SQL uses an unsupported or non-read-only relation, statement, or function"
         );
+    }
+
+    #[test]
+    fn mapped_aggregate_failures_use_stable_safe_diagnostics() {
+        for (failure, expected_code, expected_message) in [
+            (
+                crate::safe_aggregates::SqlAggregateFailure::Overflow,
+                ugoite_core::error::ErrorCode::SqlAggregateOverflow,
+                "SQL aggregate result exceeds the supported numeric range",
+            ),
+            (
+                crate::safe_aggregates::SqlAggregateFailure::NonFinite,
+                ugoite_core::error::ErrorCode::SqlAggregateNonFinite,
+                "SQL aggregate result is not a finite number",
+            ),
+            (
+                crate::safe_aggregates::SqlAggregateFailure::UnsupportedType,
+                ugoite_core::error::ErrorCode::SqlAggregateTypeUnsupported,
+                "SQL aggregate does not support this numeric type",
+            ),
+        ] {
+            let error: anyhow::Error =
+                crate::query_context::AuthorizedQueryError::QueryExecutionFailed {
+                    source: datafusion::common::DataFusionError::External(Box::new(failure)).into(),
+                }
+                .into();
+            let mapped = map_sql_error(error);
+            let app = mapped
+                .downcast_ref::<ugoite_core::error::AppError>()
+                .expect("aggregate failures map to an API error");
+            assert_eq!(app.code(), expected_code);
+            assert_eq!(app.message(), expected_message);
+        }
     }
 
     #[test]
@@ -4767,6 +4960,39 @@ mod tests {
             super::record_batches_to_values_bounded(&[batch], super::ASSET_TEXT_SEARCH_MAX_BYTES)
                 .expect_err("large candidate JSON conversion must be rejected");
         assert!(error.to_string().contains("byte limit"));
+    }
+
+    #[test]
+    fn sql_decimal_result_values_keep_exact_digits_and_scale_as_strings() {
+        let decimal = Decimal128Array::from(vec![
+            Some(123_456_789_012_345_678_901_i128),
+            None,
+            Some(-12_340_i128),
+        ])
+        .with_precision_and_scale(30, 4)
+        .expect("decimal type");
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "amount",
+                decimal.data_type().clone(),
+                true,
+            )])),
+            vec![Arc::new(decimal)],
+        )
+        .expect("decimal batch");
+
+        let rows = sql_result_batches_to_values_bounded(
+            &[batch],
+            &[ugoite_core::sql_query::SqlResultColumn {
+                name: "amount".to_string(),
+                column_type: ugoite_core::sql_query::SqlResultColumnType::Decimal,
+            }],
+            1024 * 1024,
+        )
+        .expect("exact decimal values");
+        assert_eq!(rows[0]["amount"], json!("12345678901234567.8901"));
+        assert_eq!(rows[1]["amount"], Value::Null);
+        assert_eq!(rows[2]["amount"], json!("-1.2340"));
     }
 
     fn hydration_test_form() -> ugoite_domain::form::FormDefinition {
