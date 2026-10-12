@@ -11,12 +11,13 @@ import { IconButton } from "~/components/IconButton";
 import {
   type CompositionDraft,
   type DraftDisplay,
+  inputComponentIdForVariable,
 } from "~/lib/composition-draft";
 import { displayDefaultName } from "~/lib/composition-display-name";
 import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 import { t } from "~/lib/i18n";
 
-const PARAMETER_BLOCK_PREFIX = "param:";
+const INPUT_BLOCK_PREFIX = "input:";
 
 export type { CompositionInspectorDataJump };
 
@@ -33,24 +34,39 @@ export interface CompositionInspectorProps {
 
 type InspectorSelection =
   | { kind: "component"; display: DraftDisplay }
-  | { kind: "parameter"; parameterId: string };
+  | {
+    kind: "parameter";
+    parameterId: string;
+    inputComponentId: string;
+  };
 
 const resolveSelection = (
   draft: CompositionDraft,
   selectedId: string | null,
 ): InspectorSelection | undefined => {
   if (!selectedId) return undefined;
-  if (selectedId.startsWith(PARAMETER_BLOCK_PREFIX)) {
-    const parameterId = selectedId.slice(PARAMETER_BLOCK_PREFIX.length);
-    if (!draft.parameters.some((parameter) => parameter.id === parameterId)) {
-      return undefined;
+  if (selectedId.startsWith(INPUT_BLOCK_PREFIX)) {
+    const inputComponentId = selectedId.slice(INPUT_BLOCK_PREFIX.length);
+    for (const row of draft.layoutRows) {
+      for (const item of row.items) {
+        if (item.kind !== "parameter") continue;
+        const componentId = item.inputComponentId ??
+          inputComponentIdForVariable(item.parameterId);
+        if (
+          componentId === inputComponentId &&
+          draft.parameters.some((parameter) =>
+            parameter.id === item.parameterId
+          )
+        ) {
+          return {
+            kind: "parameter",
+            parameterId: item.parameterId,
+            inputComponentId,
+          };
+        }
+      }
     }
-    const placed = draft.layoutRows.some((row) =>
-      row.items.some((item) =>
-        item.kind === "parameter" && item.parameterId === parameterId
-      )
-    );
-    return placed ? { kind: "parameter", parameterId } : undefined;
+    return undefined;
   }
   const display = draft.displays.find((entry) => entry.draftId === selectedId);
   return display ? { kind: "component", display } : undefined;
@@ -92,6 +108,9 @@ export function CompositionInspector(props: CompositionInspectorProps) {
           <ParameterPlacementInspector
             draft={props.draft}
             parameterId={(entry() as { parameterId: string }).parameterId}
+            inputComponentId={(entry() as {
+              inputComponentId: string;
+            }).inputComponentId}
             apply={apply}
             actions={(() => {
               const parameterId = (entry() as {

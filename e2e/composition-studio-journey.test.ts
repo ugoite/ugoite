@@ -494,7 +494,7 @@ test.describe("Composition Studio Journey", () => {
       ).toBeVisible();
 
       // Data mode opens on Sources and keeps Parameters and Tags in their own
-      // tabs. Capture the novice path before editing parameter defaults.
+      // tabs. Capture the default-first path before saving.
       await page.getByRole("radio", { name: "Data", exact: true }).click();
       const dataTabs = page.getByRole("tablist", { name: "Data" });
       await expect(
@@ -513,8 +513,12 @@ test.describe("Composition Studio Journey", () => {
         body: await page.screenshot({ fullPage: true }),
         contentType: "image/png",
       });
-      await page.getByLabel("Default for Parameter 1").fill(seed.monthStart);
-      await page.getByLabel("Default for Parameter 2").fill(seed.monthEnd);
+      await expect(page.getByLabel("Default for Parameter 1")).toHaveValue(
+        seed.monthStart,
+      );
+      await expect(page.getByLabel("Default for Parameter 2")).toHaveValue(
+        seed.monthEnd,
+      );
       await expect(page.getByLabel("Default for month_start")).toHaveCount(0);
       await expect(page.getByLabel("Default for month_end")).toHaveCount(0);
       await dataTabs.getByRole("tab", { name: "Tags", exact: true }).click();
@@ -577,7 +581,13 @@ test.describe("Composition Studio Journey", () => {
       await expect(page.getByLabel("Parameter 1")).toHaveValue(
         seed.monthStart,
       );
+      await expect(page.getByLabel("Parameter 1")).toHaveAttribute(
+        "readonly",
+      );
       await expect(page.getByLabel("Parameter 2")).toHaveValue(seed.monthEnd);
+      await expect(page.getByLabel("Parameter 2")).toHaveAttribute(
+        "readonly",
+      );
       await expect(page.getByLabel("month_start")).toHaveCount(0);
       await expect(page.getByLabel("month_end")).toHaveCount(0);
       await expect(

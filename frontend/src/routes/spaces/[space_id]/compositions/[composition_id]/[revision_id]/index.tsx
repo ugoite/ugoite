@@ -21,6 +21,7 @@ import { IconButton } from "~/components/IconButton";
 import { IconLink } from "~/components/IconLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
 import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
+import { safeText } from "~/lib/display-value";
 import { t } from "~/lib/i18n";
 import { compositionFormFieldName } from "~/lib/composition-field-name";
 import { compositionApi, compositionDisplayName } from "~/lib/composition-api";
@@ -244,25 +245,18 @@ export default function CompositionRevisionRoute() {
   };
   const parameterDisplayDefinitions = () => {
     const resolved = definitions();
-    const declarations = layoutDocument()?.spec.parameters;
+    const declarations = layoutDocument()?.spec.variables;
     if (!declarations) {
       return resolved.map((definition) => ({
         ...definition,
         label: definition.label?.trim() || t("composition.parameterFallback"),
       }));
     }
-    const byId = new Map(resolved.map((definition) => [
-      definition.id,
-      definition,
-    ]));
     const declarationIds = new Set(
       declarations.map((definition) => definition.id),
     );
     return [
-      ...declarations.flatMap((declaration) => {
-        const definition = byId.get(declaration.id);
-        return definition ? [definition] : [];
-      }),
+      ...declarations,
       ...resolved.filter((definition) => !declarationIds.has(definition.id)),
     ];
   };
@@ -283,40 +277,63 @@ export default function CompositionRevisionRoute() {
       string,
       { text: string; style: "title" | "heading" | "body" | "caption" }
     > = {};
+    const defaults = Object.fromEntries(
+      parameterDisplayDefinitions().flatMap((definition) =>
+        definition.default === undefined
+          ? []
+          : [[definition.id, definition.default] as const]
+      ),
+    );
+    const values = { ...defaults, ...handle.parameters() };
     for (const component of layoutDocument()?.spec.components ?? []) {
       if (
-        component.kind === "text" && "text" in component &&
-        typeof component.text === "string" &&
-        "style" in component &&
+        component.kind === "text" &&
         (component.style === "title" || component.style === "heading" ||
           component.style === "body" || component.style === "caption")
       ) {
-        texts[component.id] = { text: component.text, style: component.style };
+        texts[component.id] = {
+          text: component.content.kind === "literal"
+            ? component.content.text
+            : safeText(values[component.content.variable]),
+          style: component.style,
+        };
       }
     }
     return texts;
   };
+  const inputVariables = () =>
+    Object.fromEntries(
+      (layoutDocument()?.spec.components ?? []).flatMap((component) =>
+        component.kind === "input"
+          ? [[component.id, component.variable] as const]
+          : []
+      ),
+    );
+  const inputLabels = () =>
+    Object.fromEntries(
+      (layoutDocument()?.spec.components ?? []).flatMap((component) =>
+        component.kind === "input" && component.label
+          ? [[component.id, component.label] as const]
+          : []
+      ),
+    );
   const placedParameterIds = () => {
     const placed = new Set<string>();
+    const inputByComponent = inputVariables();
     for (const row of flowRows() ?? []) {
       for (const item of row.items ?? []) {
-        if (item.kind === "parameter" && item.parameter) {
-          placed.add(item.parameter);
-        }
+        const variableId = inputByComponent[item.component ?? ""];
+        if (variableId) placed.add(variableId);
       }
     }
     return placed;
   };
   const resolvedPlan = () =>
     current().resolved?.ok ? current().resolved?.plan : undefined;
-  // Placed controls render inside the flow; the section below keeps only
-  // unplaced (optional with defaults) definitions editable. Without a
-  // resolved plan every declared parameter stays editable here so resolve
-  // diagnostics keep their control.
+  // Placed Inputs render in the flow before data resolution. This section
+  // keeps only variables without a placed Input.
   const sectionDefinitions = () => {
-    if (flowRows() === undefined || resolvedPlan() === undefined) {
-      return definitions();
-    }
+    if (flowRows() === undefined) return definitions();
     const placed = placedParameterIds();
     return parameterDisplayDefinitions().filter((definition) =>
       !placed.has(definition.id)
@@ -400,8 +417,6 @@ export default function CompositionRevisionRoute() {
                       definition.id,
                     )}
                     value={handle.parameters()[definition.id]}
-                    onChange={(value) =>
-                      handle.setParameter(definition.id, value)}
                     invalid={parameterMismatch(definition.id)}
                   />
                 </FieldStackRow>
@@ -419,47 +434,46 @@ export default function CompositionRevisionRoute() {
       <Show when={current().resolving}>
         <LocalBusyIndicator label={t("composition.queryLoading")} />
       </Show>
-      <Show when={current().resolved?.ok && current().resolved?.plan}>
+      <Show when={flowRows()}>
+        {(rows) => (
+          <DashboardFlowRenderer
+            layout={{ rows: rows() }}
+            inputVariables={inputVariables()}
+            inputLabels={inputLabels()}
+            plan={resolvedPlan() ?? { sources: [], component_bindings: [] }}
+            texts={flowTexts()}
+            parameterDefinitions={parameterDisplayDefinitions()}
+            parameterDisplayDefinitions={parameterDisplayDefinitions()}
+            parameterValues={handle.parameters()}
+            parameterInvalid={parameterMismatch}
+            sources={current().sources}
+            fieldNames={fieldNames}
+            fieldKeys={fieldKeys}
+            fieldTypes={fieldTypes}
+            metricQueryContext={metricQueryContext()}
+            onNext={handle.next}
+            onPrevious={handle.previous}
+            onRetry={handle.retry}
+          />
+        )}
+      </Show>
+      <Show
+        when={flowRows() === undefined && current().resolved?.ok &&
+          current().resolved?.plan}
+      >
         {(plan) => (
-          <Show
-            when={flowRows()}
-            fallback={
-              <CompositionRenderer
-                plan={plan()}
-                sources={current().sources}
-                texts={flowTexts()}
-                fieldNames={fieldNames}
-                fieldKeys={fieldKeys}
-                fieldTypes={fieldTypes}
-                metricQueryContext={metricQueryContext()}
-                onNext={handle.next}
-                onPrevious={handle.previous}
-                onRetry={handle.retry}
-              />
-            }
-          >
-            {(rows) => (
-              <DashboardFlowRenderer
-                layout={{ rows: rows() }}
-                plan={plan()}
-                texts={flowTexts()}
-                parameterDefinitions={definitions()}
-                parameterDisplayDefinitions={parameterDisplayDefinitions()}
-                parameterValues={handle.parameters()}
-                onParameterChange={(parameterId, value) =>
-                  handle.setParameter(parameterId, value)}
-                parameterInvalid={parameterMismatch}
-                sources={current().sources}
-                fieldNames={fieldNames}
-                fieldKeys={fieldKeys}
-                fieldTypes={fieldTypes}
-                metricQueryContext={metricQueryContext()}
-                onNext={handle.next}
-                onPrevious={handle.previous}
-                onRetry={handle.retry}
-              />
-            )}
-          </Show>
+          <CompositionRenderer
+            plan={plan()}
+            sources={current().sources}
+            texts={flowTexts()}
+            fieldNames={fieldNames}
+            fieldKeys={fieldKeys}
+            fieldTypes={fieldTypes}
+            metricQueryContext={metricQueryContext()}
+            onNext={handle.next}
+            onPrevious={handle.previous}
+            onRetry={handle.retry}
+          />
         )}
       </Show>
     </>

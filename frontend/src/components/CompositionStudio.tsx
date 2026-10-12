@@ -245,8 +245,8 @@ export function CompositionStudio(props: CompositionStudioProps) {
   const removeSelectedBlock = () => {
     const blockId = selectedId();
     if (!blockId) return;
-    const result = blockId.startsWith("param:")
-      ? unplaceParameterControl(draft(), blockId.slice("param:".length))
+    const result = blockId.startsWith("input:")
+      ? unplaceParameterControl(draft(), blockId.slice("input:".length))
       : removeDisplay(draft(), blockId);
     if (!result.ok) return;
 
@@ -1060,8 +1060,6 @@ export function CompositionStudio(props: CompositionStudioProps) {
             setDisplayPickerSourceId(null);
             setDisplayPickerOpen(true);
           }}
-          onParameterChange={(parameterId, value) =>
-            previewHandle.setParameter(parameterId, value)}
           onNext={(sourceId) => previewHandle.next(sourceId)}
           onPrevious={(sourceId) => previewHandle.previous(sourceId)}
           onRetry={(sourceId) => previewHandle.retry(sourceId)}

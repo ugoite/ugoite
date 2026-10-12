@@ -476,7 +476,7 @@ describe("buildEntryQueryCompositionDocument", () => {
       name: "Notes view",
       tags: [],
       spec: {
-        parameters: [],
+        variables: [],
         sources: [
           { ...built.source, field_schema: built.fieldSchema },
         ],

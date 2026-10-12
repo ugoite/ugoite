@@ -75,7 +75,7 @@ export interface CompositionLintDocument {
   name: string;
   tags: string[];
   spec: {
-    parameters?: Array<{
+    variables?: Array<{
       id: string;
       label?: string;
       type: CompositionParameterType;
@@ -96,7 +96,7 @@ export interface CompositionLintDocument {
         items?: { type: string; target_form?: string };
       }>;
       expected_result?: Array<{ name: string; type: CompositionResultType }>;
-      variables?: Record<string, { parameter: string }>;
+      variables?: Record<string, { variable: string }>;
       query?: {
         text?: unknown;
         // Canonical documents omit empty filters/sort; readers default
@@ -108,6 +108,12 @@ export interface CompositionLintDocument {
       };
     }>;
     components: Array<
+      | {
+        kind: "input";
+        id: string;
+        label?: string;
+        variable: string;
+      }
       | {
         kind: "metric";
         id: string;
@@ -126,7 +132,9 @@ export interface CompositionLintDocument {
         kind: "text";
         id: string;
         label?: string;
-        text: string;
+        content:
+          | { kind: "literal"; text: string }
+          | { kind: "variable"; variable: string };
         style: CompositionTextStyle;
       }
     >;
@@ -155,9 +163,8 @@ export interface CompositionRestoreResponse {
 export type CompositionTextStyle = "title" | "heading" | "body" | "caption";
 
 export interface CompositionFlowLayoutItem {
-  kind: string;
-  component?: string;
-  parameter?: string;
+  kind: "component";
+  component: string;
 }
 
 export interface CompositionFlowLayoutRow {
@@ -166,7 +173,7 @@ export interface CompositionFlowLayoutRow {
 }
 
 export interface CompositionFlowLayout {
-  kind: string;
+  kind: "flow";
   rows: CompositionFlowLayoutRow[];
 }
 
@@ -189,7 +196,7 @@ export interface SavedSqlCompositionDocument {
   name: string;
   tags: string[];
   spec: {
-    parameters: Array<{
+    variables: Array<{
       id: string;
       type: CompositionParameterType;
       required: true;
@@ -201,21 +208,17 @@ export interface SavedSqlCompositionDocument {
       entry_id: string;
       revision_id: string;
       expected_result: Array<{ name: string; type: CompositionResultType }>;
-      variables: Record<string, { parameter: string }>;
+      variables: Record<string, { variable: string }>;
     }>;
-    components: Array<{
-      id: string;
-      kind: "table";
-      source: string;
-    }>;
+    components: Array<
+      | { id: string; kind: "input"; variable: string }
+      | { id: string; kind: "table"; source: string }
+    >;
     layout: {
       kind: "flow";
       rows: Array<{
         id: string;
-        items: Array<
-          | { kind: "component"; component: string }
-          | { kind: "parameter"; parameter: string }
-        >;
+        items: Array<{ kind: "component"; component: string }>;
       }>;
     };
   };
@@ -312,9 +315,15 @@ interface CompositionResolvedComponentBase {
   component_id: string;
   label?: string;
   source_id?: string;
+  variable_id?: string;
 }
 
 export type CompositionResolvedComponentBinding =
+  | (CompositionResolvedComponentBase & {
+    kind: "input";
+    variable_id: string;
+    source_id?: undefined;
+  })
   | (CompositionResolvedComponentBase & {
     kind: "metric";
     /** Metric and table bindings always carry their source request identity. */
@@ -419,7 +428,7 @@ export const buildSavedSqlCompositionDocument = (
   parameterValues: Record<string, unknown>,
   resultSchema?: readonly SqlResultColumn[],
 ): SavedSqlCompositionDocument => {
-  const parameters = entry.variables.map((variable) => {
+  const variables = entry.variables.map((variable) => {
     if (
       !compositionParameterTypes.has(variable.type as CompositionParameterType)
     ) {
@@ -447,7 +456,7 @@ export const buildSavedSqlCompositionDocument = (
     name: name.trim(),
     tags: [],
     spec: {
-      parameters,
+      variables,
       sources: [{
         id: sourceId,
         kind: "saved_sql",
@@ -460,16 +469,29 @@ export const buildSavedSqlCompositionDocument = (
         variables: Object.fromEntries(
           entry.variables.map((variable) => [
             variable.name,
-            { parameter: variable.name },
+            { variable: variable.name },
           ]),
         ),
       }],
-      components: [{ id: componentId, kind: "table", source: sourceId }],
+      components: [
+        ...variables.map((variable) => ({
+          id: `input-${variable.id}`,
+          kind: "input" as const,
+          variable: variable.id,
+        })),
+        { id: componentId, kind: "table" as const, source: sourceId },
+      ],
       layout: {
         kind: "flow",
         rows: [{
           id: "main",
-          items: [{ kind: "component", component: componentId }],
+          items: [
+            ...variables.map((variable) => ({
+              kind: "component" as const,
+              component: `input-${variable.id}`,
+            })),
+            { kind: "component" as const, component: componentId },
+          ],
         }],
       },
     },

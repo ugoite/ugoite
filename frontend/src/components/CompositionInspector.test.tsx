@@ -180,16 +180,49 @@ describe("CompositionInspector", () => {
     expect(unplace).toHaveAttribute("title", "Unplace Month");
     fireEvent.click(unplace);
 
-    expect(harnessCalls.remove).toEqual(["param:month"]);
+    expect(harnessCalls.remove).toEqual(["input:input-month"]);
+  });
+
+  it("targets the selected Input component when a variable has siblings", () => {
+    const initial = seedDraft();
+    const withSibling: CompositionDraft = {
+      ...initial,
+      layoutRows: initial.layoutRows.map((row, index) =>
+        index === 0
+          ? {
+            ...row,
+            items: [
+              ...row.items,
+              {
+                kind: "parameter" as const,
+                parameterId: "month",
+                inputComponentId: "input-month-secondary",
+                label: "Secondary month",
+              },
+            ],
+          }
+          : row
+      ),
+    };
+    renderHarness(
+      designBlockIdForParameter("month", "input-month-secondary"),
+      withSibling,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Unplace Month" }));
+
+    expect(harnessCalls.remove).toEqual(["input:input-month-secondary"]);
   });
 
   it("limits Metric source and column controls to Saved SQL names", () => {
     renderHarness("disp-1");
 
     const source = screen.getByLabelText("Source");
-    expect(Array.from(source.querySelectorAll("option")).map((option) =>
-      option.textContent
-    )).toEqual(["Monthly", "Backup"]);
+    expect(
+      Array.from(source.querySelectorAll("option")).map((option) =>
+        option.textContent
+      ),
+    ).toEqual(["Monthly", "Backup"]);
     expect(screen.queryByLabelText("Operation")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Field")).not.toBeInTheDocument();
     expect(document.body).not.toHaveTextContent("src-1");
@@ -275,7 +308,11 @@ describe("CompositionInspector", () => {
       expectedResult: [{ name: "last_day", type: "date" }],
       variables: {},
     });
-    const added = addMetricDisplay(dateSource.draft, dateSource.draftId, "last_day");
+    const added = addMetricDisplay(
+      dateSource.draft,
+      dateSource.draftId,
+      "last_day",
+    );
     if (!added.ok || !added.draftId) throw new Error("expected Metric block");
 
     renderHarness(added.draftId, added.draft);
@@ -330,7 +367,7 @@ describe("CompositionInspector", () => {
     const text = last.displays.find((display) => display.draftId === "disp-3");
     expect(text).toMatchObject({
       kind: "text",
-      text: "New heading",
+      content: { kind: "literal", text: "New heading" },
       style: "title",
     });
     // Text carries no source binding: sources stay stable, no refetch.
@@ -374,6 +411,40 @@ describe("CompositionInspector", () => {
     ).toMatchObject({ kind: "text", style: "caption" });
   });
 
+  it("preserves variable-bound Text while editing its style", () => {
+    const initial = seedDraft();
+    const variableText: CompositionDraft = {
+      ...initial,
+      displays: initial.displays.map((display) =>
+        display.kind === "text"
+          ? {
+            ...display,
+            content: { kind: "variable" as const, variable: "region" },
+          }
+          : display
+      ),
+    };
+    renderHarness("disp-3", variableText);
+
+    const content = screen.getByRole("textbox", { name: "Text" });
+    expect(content).toHaveValue("Region");
+    expect(content).toHaveAttribute("readonly");
+    fireEvent.change(screen.getByLabelText("Style"), {
+      target: { value: "caption" },
+    });
+
+    expect(harnessCalls.draft).toHaveLength(1);
+    expect(
+      harnessCalls.draft[0].displays.find((display) =>
+        display.draftId === "disp-3"
+      ),
+    ).toMatchObject({
+      kind: "text",
+      content: { kind: "variable", variable: "region" },
+      style: "caption",
+    });
+  });
+
   it("changes parameter placement targets without a label override", () => {
     renderHarness(designBlockIdForParameter("month"));
 
@@ -392,10 +463,18 @@ describe("CompositionInspector", () => {
     const items = toStudioDocument(next).spec.layout.rows.flatMap((row) =>
       row.items
     );
-    expect(items).toContainEqual({ kind: "parameter", parameter: "region" });
+    expect(items).toContainEqual({
+      kind: "component",
+      component: "input-month",
+    });
     expect(items).not.toContainEqual({
-      kind: "parameter",
-      parameter: "month",
+      kind: "component",
+      component: "input-region",
+    });
+    expect(toStudioDocument(next).spec.components).toContainEqual({
+      kind: "input",
+      id: "input-month",
+      variable: "region",
     });
     // Both declarations stay owned by the Parameters section.
     expect(next.parameters.map((parameter) => parameter.id).sort()).toEqual([

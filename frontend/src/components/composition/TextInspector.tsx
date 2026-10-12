@@ -12,6 +12,7 @@ import {
 } from "~/lib/composition-draft";
 import type { CompositionTextStyle } from "~/lib/composition-api";
 import { t } from "~/lib/i18n";
+import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 
 const textStyles: readonly CompositionTextStyle[] = [
   "title",
@@ -60,19 +61,39 @@ export function TextInspector(props: {
               >
                 {t("composition.studioText")}
               </label>
-              <input
-                id={`studio-inspector-text-${entry().draftId}`}
-                class="ui-input"
-                value={entry().text}
-                onInput={(event) =>
-                  props.apply(
-                    setTextContent(
-                      props.draft,
-                      entry().draftId,
-                      event.currentTarget.value,
-                    ),
-                  )}
-              />
+              <Show
+                when={entry().content.kind === "literal"}
+                fallback={
+                  <input
+                    id={`studio-inspector-text-${entry().draftId}`}
+                    class="ui-input"
+                    value={compositionParameterDisplayName(
+                      props.draft.parameters,
+                      entry().content.kind === "variable"
+                        ? entry().content.variable
+                        : "",
+                    )}
+                    readOnly
+                    aria-readonly="true"
+                  />
+                }
+              >
+                <input
+                  id={`studio-inspector-text-${entry().draftId}`}
+                  class="ui-input"
+                  value={entry().content.kind === "literal"
+                    ? entry().content.text
+                    : ""}
+                  onInput={(event) =>
+                    props.apply(
+                      setTextContent(
+                        props.draft,
+                        entry().draftId,
+                        event.currentTarget.value,
+                      ),
+                    )}
+                />
+              </Show>
             </div>
             <div class="ui-field">
               <label

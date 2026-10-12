@@ -9,6 +9,7 @@ import type {
   EntryQueryCompositionProjection,
   EntryQueryCompositionSort,
   EntryQueryCompositionSystemField,
+  EntryQueryCompositionValue,
 } from "./entry-query-composition";
 import { compositionApi } from "./composition-api";
 import type { CompositionDocumentCanonicalization } from "./ugoite-client";
@@ -44,7 +45,7 @@ export interface DraftEntryQuerySeed {
   name: string;
   fieldSchema: EntryQueryCompositionFieldSchemaEntry[];
   query: {
-    text?: { parameter: string } | unknown;
+    text?: EntryQueryCompositionValue;
     filters: EntryQueryCompositionFilter[];
     sort: EntryQueryCompositionSort[];
     projection: EntryQueryCompositionProjection;
@@ -138,6 +139,10 @@ export interface DraftMetricPresentation {
   fractionDigits?: number;
 }
 
+export type DraftTextContent =
+  | { kind: "literal"; text: string }
+  | { kind: "variable"; variable: string };
+
 export type DraftDisplay =
   | {
     kind: "table";
@@ -156,7 +161,7 @@ export type DraftDisplay =
   | {
     kind: "text";
     draftId: string;
-    text: string;
+    content: DraftTextContent;
     style: CompositionTextStyle;
     label?: string;
   };
@@ -169,7 +174,12 @@ export type DraftDisplay =
  */
 export type DraftLayoutItem =
   | { kind: "component"; draftId: string }
-  | { kind: "parameter"; parameterId: string };
+  | {
+    kind: "parameter";
+    parameterId: string;
+    inputComponentId?: string;
+    label?: string;
+  };
 
 export interface DraftLayoutRow {
   id: string;
@@ -236,7 +246,7 @@ export interface CompositionStudioDocument {
   name: string;
   tags: string[];
   spec: {
-    parameters: Array<{
+    variables: Array<{
       id: string;
       label?: string;
       type: CompositionParameterType;
@@ -251,7 +261,7 @@ export interface CompositionStudioDocument {
         entry_id: string;
         revision_id: string;
         expected_result: Array<{ name: string; type: CompositionResultType }>;
-        variables: Record<string, { parameter: string }>;
+        variables: Record<string, { variable: string }>;
       }
       | {
         kind: "entry_query";
@@ -271,6 +281,7 @@ export interface CompositionStudioDocument {
       }
     >;
     components: Array<
+      | { kind: "input"; id: string; label?: string; variable: string }
       | { kind: "table"; id: string; label?: string; source: string }
       | {
         kind: "metric";
@@ -288,7 +299,9 @@ export interface CompositionStudioDocument {
         kind: "text";
         id: string;
         label?: string;
-        text: string;
+        content:
+          | { kind: "literal"; text: string }
+          | { kind: "variable"; variable: string };
         style: CompositionTextStyle;
       }
     >;
@@ -296,10 +309,7 @@ export interface CompositionStudioDocument {
       kind: "flow";
       rows: Array<{
         id: string;
-        items: Array<
-          | { kind: "component"; component: string }
-          | { kind: "parameter"; parameter: string }
-        >;
+        items: Array<{ kind: "component"; component: string }>;
       }>;
     };
   };
@@ -323,14 +333,14 @@ type CompositionStudioRevisionSourceDocument =
 
 /**
  * Composition read back from the canonical revision. The domain omits empty
- * optional collections, so the editor accepts missing parameter and Saved SQL
+ * optional collections, so the editor accepts missing variable and Saved SQL
  * variable collections and restores them as empty draft state.
  */
 export type CompositionStudioRevisionDocument =
   & Omit<CompositionStudioDocument, "spec">
   & {
-    spec: Omit<CompositionStudioDocument["spec"], "parameters" | "sources"> & {
-      parameters?: CompositionStudioDocument["spec"]["parameters"];
+    spec: Omit<CompositionStudioDocument["spec"], "variables" | "sources"> & {
+      variables?: CompositionStudioDocument["spec"]["variables"];
       sources: CompositionStudioRevisionSourceDocument[];
     };
   };
@@ -346,6 +356,10 @@ export const createEmptyDraft = (name = ""): CompositionDraft => ({
   nextDisplaySeq: 1,
   nextRowSeq: 1,
 });
+
+/** Stable component identity for the draft's one Input placement per variable. */
+export const inputComponentIdForVariable = (variableId: string): string =>
+  `input-${variableId}`;
 
 export const setDraftName = (
   draft: CompositionDraft,
@@ -591,7 +605,7 @@ const isEntryQueryFilterValue = (value: unknown): boolean => {
   if (typeof value === "object") {
     const record = value as Record<string, unknown>;
     return Object.keys(record).length === 1 &&
-      typeof record.parameter === "string" && record.parameter.length > 0;
+      typeof record.variable === "string" && record.variable.length > 0;
   }
   return false;
 };
@@ -913,7 +927,7 @@ export const addTextDisplay = (
   const display: DraftDisplay = {
     kind: "text",
     draftId,
-    text: init.text ?? "",
+    content: { kind: "literal", text: init.text ?? "" },
     style: init.style ?? "body",
     ...(init.label ? { label: init.label } : {}),
   };
@@ -953,14 +967,14 @@ export const placeParameterControl = (
 /** Unplace a parameter control; the semantic parameter stays declared. */
 export const unplaceParameterControl = (
   draft: CompositionDraft,
-  parameterId: string,
+  inputComponentId: string,
 ): DraftResult => {
-  if (!draft.parameters.some((parameter) => parameter.id === parameterId)) {
-    return { ok: false, error: "unknown-parameter" };
-  }
   const placed = draft.layoutRows.some((row) =>
     row.items.some((item) =>
-      item.kind === "parameter" && item.parameterId === parameterId
+      item.kind === "parameter" &&
+      (item.inputComponentId ??
+          inputComponentIdForVariable(item.parameterId)) ===
+        inputComponentId
     )
   );
   if (!placed) return { ok: false, error: "unknown-block" };
@@ -970,7 +984,10 @@ export const unplaceParameterControl = (
       .map((row) => ({
         ...row,
         items: row.items.filter((item) =>
-          item.kind !== "parameter" || item.parameterId !== parameterId
+          item.kind !== "parameter" ||
+          (item.inputComponentId ??
+              inputComponentIdForVariable(item.parameterId)) !==
+            inputComponentId
         ),
       }))
       .filter((row) => row.items.length > 0),
@@ -1257,7 +1274,7 @@ export const setTextContent = (
   const current = draft.displays[index];
   if (current.kind !== "text") return { ok: false, error: "unknown-display" };
   const displays = [...draft.displays];
-  displays[index] = { ...current, text };
+  displays[index] = { ...current, content: { kind: "literal", text } };
   return { ok: true, draft: { ...draft, displays } };
 };
 
@@ -1293,6 +1310,7 @@ export const setTextStyle = (
  */
 export const retargetParameterControl = (
   draft: CompositionDraft,
+  inputComponentId: string,
   fromParameterId: string,
   toParameterId: string,
 ): DraftResult => {
@@ -1308,11 +1326,13 @@ export const retargetParameterControl = (
   let placed = false;
   for (const row of draft.layoutRows) {
     for (const item of row.items) {
-      if (item.kind === "parameter" && item.parameterId === fromParameterId) {
+      if (
+        item.kind === "parameter" && item.parameterId === fromParameterId &&
+        (item.inputComponentId ??
+            inputComponentIdForVariable(item.parameterId)) ===
+          inputComponentId
+      ) {
         placed = true;
-      }
-      if (item.kind === "parameter" && item.parameterId === toParameterId) {
-        return { ok: false, error: "parameter-already-placed" };
       }
     }
   }
@@ -1324,8 +1344,11 @@ export const retargetParameterControl = (
       layoutRows: draft.layoutRows.map((row) => ({
         ...row,
         items: row.items.map((item) =>
-          item.kind === "parameter" && item.parameterId === fromParameterId
-            ? { kind: "parameter" as const, parameterId: toParameterId }
+          item.kind === "parameter" && item.parameterId === fromParameterId &&
+            (item.inputComponentId ??
+                inputComponentIdForVariable(item.parameterId)) ===
+              inputComponentId
+            ? { ...item, parameterId: toParameterId, inputComponentId }
             : item
         ),
       })),
@@ -1420,8 +1443,8 @@ export const removeParameter = (
     }
     const mentions = (value: unknown): boolean => {
       if (typeof value !== "object" || value === null) return false;
-      if ("parameter" in value) {
-        return (value as { parameter: unknown }).parameter === parameterId;
+      if ("variable" in value) {
+        return (value as { variable: unknown }).variable === parameterId;
       }
       return false;
     };
@@ -1453,7 +1476,7 @@ export const toStudioDocument = (
   name: draft.name.trim(),
   tags: [...draft.tags],
   spec: {
-    parameters: draft.parameters.map((parameter) => ({
+    variables: draft.parameters.map((parameter) => ({
       id: parameter.id,
       ...(parameter.label ? { label: parameter.label } : {}),
       type: parameter.type,
@@ -1474,9 +1497,10 @@ export const toStudioDocument = (
             ...column,
           })),
           variables: Object.fromEntries(
-            Object.entries(source.variables).map((
-              [name, binding],
-            ) => [name, { ...binding }]),
+            Object.entries(source.variables).map(([name, binding]) => [
+              name,
+              { variable: binding.parameter },
+            ]),
           ),
         };
       }
@@ -1503,45 +1527,60 @@ export const toStudioDocument = (
         },
       };
     }),
-    components: draft.displays.map((display) => {
-      if (display.kind === "table") {
+    components: [
+      ...draft.displays.map((display) => {
+        if (display.kind === "table") {
+          return {
+            kind: "table" as const,
+            id: display.draftId,
+            ...(display.label ? { label: display.label } : {}),
+            source: display.sourceDraftId,
+          };
+        }
+        if (display.kind === "text") {
+          return {
+            kind: "text" as const,
+            id: display.draftId,
+            ...(display.label ? { label: display.label } : {}),
+            content: { ...display.content },
+            style: display.style,
+          };
+        }
         return {
-          kind: "table" as const,
+          kind: "metric" as const,
           id: display.draftId,
           ...(display.label ? { label: display.label } : {}),
           source: display.sourceDraftId,
+          column: display.column ?? "",
+          ...(display.presentation
+            ? {
+              presentation: {
+                kind: "number" as const,
+                ...(display.presentation.unit === undefined
+                  ? {}
+                  : { unit: display.presentation.unit }),
+                ...(display.presentation.fractionDigits === undefined
+                  ? {}
+                  : { fraction_digits: display.presentation.fractionDigits }),
+              },
+            }
+            : {}),
         };
-      }
-      if (display.kind === "text") {
-        return {
-          kind: "text" as const,
-          id: display.draftId,
-          ...(display.label ? { label: display.label } : {}),
-          text: display.text,
-          style: display.style,
-        };
-      }
-      return {
-        kind: "metric" as const,
-        id: display.draftId,
-        ...(display.label ? { label: display.label } : {}),
-        source: display.sourceDraftId,
-        column: display.column ?? "",
-        ...(display.presentation
-          ? {
-            presentation: {
-              kind: "number" as const,
-              ...(display.presentation.unit === undefined
-                ? {}
-                : { unit: display.presentation.unit }),
-              ...(display.presentation.fractionDigits === undefined
-                ? {}
-                : { fraction_digits: display.presentation.fractionDigits }),
-            },
-          }
-          : {}),
-      };
-    }),
+      }),
+      ...draft.layoutRows.flatMap((row) =>
+        row.items.flatMap((item) =>
+          item.kind === "parameter"
+            ? [{
+              kind: "input" as const,
+              id: item.inputComponentId ??
+                inputComponentIdForVariable(item.parameterId),
+              ...(item.label === undefined ? {} : { label: item.label }),
+              variable: item.parameterId,
+            }]
+            : []
+        )
+      ),
+    ],
     layout: {
       kind: "flow",
       // Empty rows carry no placement meaning and the domain rejects them,
@@ -1557,7 +1596,11 @@ export const toStudioDocument = (
             items: row.items.map((item) =>
               item.kind === "component"
                 ? { kind: "component" as const, component: item.draftId }
-                : { kind: "parameter" as const, parameter: item.parameterId }
+                : {
+                  kind: "component" as const,
+                  component: item.inputComponentId ??
+                    inputComponentIdForVariable(item.parameterId),
+                }
             ),
           }));
         return rows;
@@ -1580,6 +1623,13 @@ export const draftFromDocument = (
   const fail = (what: string): never => {
     throw new Error(`Unsupported Composition document ${what}`);
   };
+  if (
+    document.spec.variables !== undefined &&
+    !Array.isArray(document.spec.variables)
+  ) {
+    return fail("variables collection");
+  }
+  const variables = document.spec.variables ?? [];
   const sources: DraftSource[] = document.spec.sources.map((source, index) => {
     const draftId = `src-${index + 1}`;
     const name = sourceNames[source.id]?.trim() ||
@@ -1597,10 +1647,7 @@ export const draftFromDocument = (
         variables: Object.fromEntries(
           Object.entries(
             source.variables === undefined ? {} : source.variables,
-          ).map(([key, binding]) => [
-            key,
-            { ...binding },
-          ]),
+          ).map(([key, binding]) => [key, { parameter: binding.variable }]),
         ),
       };
     }
@@ -1639,21 +1686,53 @@ export const draftFromDocument = (
       index,
     ) => [source.id, `src-${index + 1}`]),
   );
-  const displays: DraftDisplay[] = document.spec.components.map(
+  const inputByComponentId = new Map<
+    string,
+    Extract<CompositionStudioDocument["spec"]["components"][number], {
+      kind: "input";
+    }>
+  >();
+  for (const component of document.spec.components) {
+    if (component.kind !== "input") continue;
+    inputByComponentId.set(component.id, component);
+  }
+  const displayComponents = document.spec.components.filter((component) =>
+    component.kind !== "input"
+  );
+  const displays: DraftDisplay[] = displayComponents.map(
     (component, index) => {
       const draftId = `disp-${index + 1}`;
       if (component.kind === "text") {
         if (
-          typeof component.text !== "string" ||
           (component.style !== "title" && component.style !== "heading" &&
             component.style !== "body" && component.style !== "caption")
         ) {
           return fail(`text component shape: ${component.id}`);
         }
+        let content: DraftTextContent;
+        if (
+          component.content.kind === "literal" &&
+          typeof component.content.text === "string"
+        ) {
+          content = { kind: "literal", text: component.content.text };
+        } else if (
+          component.content.kind === "variable" &&
+          typeof component.content.variable === "string" &&
+          variables.some((variable) =>
+            variable.id === component.content.variable
+          )
+        ) {
+          content = {
+            kind: "variable",
+            variable: component.content.variable,
+          };
+        } else {
+          return fail(`text component content: ${component.id}`);
+        }
         return {
           kind: "text",
           draftId,
-          text: component.text,
+          content,
           style: component.style,
           ...(component.label ? { label: component.label } : {}),
         };
@@ -1706,28 +1785,28 @@ export const draftFromDocument = (
     },
   );
   const componentDraftIds = new Map(
-    document.spec.components.map((component, index) => [
+    displayComponents.map((component, index) => [
       component.id,
       `disp-${index + 1}`,
     ]),
   );
-  const parameters = document.spec.parameters === undefined
-    ? []
-    : document.spec.parameters;
-  const parameterIds = new Set(parameters.map((parameter) => parameter.id));
+  const variableIds = new Set(variables.map((variable) => variable.id));
   const layoutRows: DraftLayoutRow[] = document.spec.layout.rows.map((row) => ({
     id: row.id,
     items: row.items.map((item) => {
       if (item.kind === "component") {
         const draftId = componentDraftIds.get(item.component);
-        if (!draftId) return fail(`layout component: ${item.component}`);
-        return { kind: "component" as const, draftId };
-      }
-      if (item.kind === "parameter") {
-        if (!parameterIds.has(item.parameter)) {
-          return fail(`layout parameter: ${item.parameter}`);
+        if (draftId) return { kind: "component" as const, draftId };
+        const input = inputByComponentId.get(item.component);
+        if (input && variableIds.has(input.variable)) {
+          return {
+            kind: "parameter" as const,
+            parameterId: input.variable,
+            inputComponentId: input.id,
+            ...(input.label === undefined ? {} : { label: input.label }),
+          };
         }
-        return { kind: "parameter" as const, parameterId: item.parameter };
+        return fail(`layout component: ${item.component}`);
       }
       return fail(
         `layout item kind: ${String((item as { kind: unknown }).kind)}`,
@@ -1739,15 +1818,13 @@ export const draftFromDocument = (
     tags: [...document.tags],
     sources,
     displays,
-    parameters: parameters.map((parameter) => ({
-      id: parameter.id,
-      ...(parameter.label ? { label: parameter.label } : {}),
-      type: parameter.type,
-      required: parameter.required,
-      ...(parameter.default === undefined
-        ? {}
-        : { default: parameter.default }),
-      ...(parameter.format ? { format: parameter.format } : {}),
+    parameters: variables.map((variable) => ({
+      id: variable.id,
+      ...(variable.label ? { label: variable.label } : {}),
+      type: variable.type,
+      required: variable.required,
+      ...(variable.default === undefined ? {} : { default: variable.default }),
+      ...(variable.format ? { format: variable.format } : {}),
     })),
     layoutRows,
     nextSourceSeq: sources.length + 1,
@@ -1814,9 +1891,6 @@ export const draftSaveReadiness = (
         );
       } else {
         if (!parameterIds.has(item.parameterId)) {
-          return { ready: false, reason: "refs" };
-        }
-        if (placedParameters.has(item.parameterId)) {
           return { ready: false, reason: "refs" };
         }
         placedParameters.add(item.parameterId);

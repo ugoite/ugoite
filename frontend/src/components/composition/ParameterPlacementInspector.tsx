@@ -21,6 +21,7 @@ import { compositionParameterDisplayName } from "~/lib/composition-parameter-nam
 export function ParameterPlacementInspector(props: {
   draft: CompositionDraft;
   parameterId: string;
+  inputComponentId: string;
   apply: InspectorApply;
   actions?: JSX.Element;
 }) {
@@ -55,6 +56,7 @@ export function ParameterPlacementInspector(props: {
                 props.apply(
                   retargetParameterControl(
                     props.draft,
+                    props.inputComponentId,
                     entry().id,
                     event.currentTarget.value,
                   ),

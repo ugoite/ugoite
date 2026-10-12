@@ -190,7 +190,7 @@ describe("compositionApi", () => {
       name: "Tool",
       tags: [],
       spec: {
-        parameters: [],
+        variables: [],
         sources: [],
         components: [],
         layout: { kind: "flow", rows: [] },
@@ -279,7 +279,7 @@ describe("compositionApi", () => {
       { month_start: "2026-10-01", include_zero: false },
     );
 
-    expect(document.spec.parameters).toEqual([
+    expect(document.spec.variables).toEqual([
       {
         id: "month_start",
         type: "date",
@@ -298,15 +298,32 @@ describe("compositionApi", () => {
         { name: "day", type: "json" },
       ],
       variables: {
-        month_start: { parameter: "month_start" },
-        include_zero: { parameter: "include_zero" },
+        month_start: { variable: "month_start" },
+        include_zero: { variable: "include_zero" },
       },
     }]);
-    expect(document.spec.components).toEqual([{
-      id: "results_table",
-      kind: "table",
-      source: "sql_results",
-    }]);
+    expect(document.spec.components).toEqual([
+      {
+        id: "input-month_start",
+        kind: "input",
+        variable: "month_start",
+      },
+      {
+        id: "input-include_zero",
+        kind: "input",
+        variable: "include_zero",
+      },
+      {
+        id: "results_table",
+        kind: "table",
+        source: "sql_results",
+      },
+    ]);
+    expect(document.spec.layout.rows[0].items).toEqual([
+      { kind: "component", component: "input-month_start" },
+      { kind: "component", component: "input-include_zero" },
+      { kind: "component", component: "results_table" },
+    ]);
   });
 
   it("stores the server-owned column types unchanged and never infers from rows", () => {

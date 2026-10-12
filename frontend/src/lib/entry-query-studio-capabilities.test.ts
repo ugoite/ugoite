@@ -57,12 +57,13 @@ describe("entry-query-studio-capabilities", () => {
     clearStudioFormDefinitionCache();
   });
 
-  it("round-trips parameter bindings through display text", () => {
-    expect(studioBindingName({ parameter: "month" })).toBe("month");
+  it("round-trips variable bindings through display text", () => {
+    expect(studioBindingName({ variable: "month" })).toBe("month");
+    expect(studioBindingName({ parameter: "legacy" })).toBeUndefined();
     expect(studioBindingName("plain")).toBeUndefined();
-    expect(studioBindingName({ parameter: "", extra: 1 })).toBeUndefined();
+    expect(studioBindingName({ variable: "", extra: 1 })).toBeUndefined();
     expect(studioParseBindingText("{{month}}")).toEqual({
-      parameter: "month",
+      variable: "month",
     });
     expect(studioParseBindingText("lunch")).toBe("lunch");
   });
@@ -72,7 +73,7 @@ describe("entry-query-studio-capabilities", () => {
       studioFilterToEntryFilter({
         field_id: 101,
         operator: "equals",
-        value: { parameter: "month" },
+        value: { variable: "month" },
       }),
     ).toEqual({
       field: { kind: "property", field_id: 101 },
@@ -88,7 +89,7 @@ describe("entry-query-studio-capabilities", () => {
     ).toEqual({
       field_id: 101,
       operator: "contains",
-      value: { parameter: "month" },
+      value: { variable: "month" },
     });
     expect(
       studioEntryFilterToComposition({

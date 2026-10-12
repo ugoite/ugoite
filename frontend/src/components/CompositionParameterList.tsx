@@ -25,18 +25,9 @@ const displayValue = (parameter: DraftParameter): string => {
   return "";
 };
 
-const parseValue = (
+const needsSharedNumericParser = (
   type: CompositionParameterType,
-  value: string,
-): unknown | undefined => {
-  if (value === "") return undefined;
-  if (type === "boolean") return value === "true";
-  if (type === "integer" || type === "float") {
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : value;
-  }
-  return value;
-};
+): boolean => type === "integer" || type === "float";
 
 interface CompositionParameterListProps {
   parameters: DraftParameter[];
@@ -167,30 +158,31 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
                   fallback={
                     <input
                       class="ui-input"
-                      type={parameter.type === "date"
-                        ? "date"
-                        : parameter.type === "timestamp"
-                        ? "datetime-local"
-                        : parameter.type === "integer" ||
-                            parameter.type === "float"
-                        ? "number"
-                        : "text"}
-                      step={parameter.type === "integer" ? "1" : undefined}
+                      type="text"
+                      inputMode={parameter.type === "integer" ||
+                          parameter.type === "float"
+                        ? "decimal"
+                        : undefined}
                       value={displayValue(parameter)}
+                      readOnly={needsSharedNumericParser(parameter.type)}
+                      aria-readonly={needsSharedNumericParser(parameter.type)
+                        ? "true"
+                        : undefined}
                       aria-label={t("composition.studioParameterDefaultName", {
                         name: compositionParameterDisplayName(
                           props.parameters,
                           parameter.id,
                         ),
                       })}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        if (needsSharedNumericParser(parameter.type)) return;
                         props.onUpdate({
                           ...parameter,
-                          default: parseValue(
-                            parameter.type,
-                            event.currentTarget.value,
-                          ),
-                        })}
+                          default: event.currentTarget.value === ""
+                            ? undefined
+                            : event.currentTarget.value,
+                        });
+                      }}
                     />
                   }
                 >
@@ -206,10 +198,9 @@ export function CompositionParameterList(props: CompositionParameterListProps) {
                     onChange={(event) =>
                       props.onUpdate({
                         ...parameter,
-                        default: parseValue(
-                          parameter.type,
-                          event.currentTarget.value,
-                        ),
+                        default: event.currentTarget.value === ""
+                          ? undefined
+                          : event.currentTarget.value === "true",
                       })}
                   >
                     <option value="">—</option>

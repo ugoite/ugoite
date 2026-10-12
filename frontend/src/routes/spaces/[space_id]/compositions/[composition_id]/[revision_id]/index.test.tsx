@@ -109,7 +109,7 @@ describe("Composition exact-revision route", () => {
     });
   });
 
-  it("loads and resolves only the exact revision and binds typed parameter changes", async () => {
+  it("loads the exact revision and shows its declared default read-only", async () => {
     render(() => <CompositionRevisionRoute />);
 
     expect(await screen.findByRole("heading", { name: "Monthly expenses" }))
@@ -129,17 +129,18 @@ describe("Composition exact-revision route", () => {
     );
     const input = await screen.findByLabelText("Month");
     expect(input).toHaveValue("2026-01-01");
-    expect(input).toBeRequired();
+    expect(input).toHaveAttribute("readonly");
+    expect(input).toHaveAttribute("aria-required", "true");
     fireEvent.change(input, { target: { value: "2026-02-01" } });
-
     await waitFor(() =>
-      expect(compositionApi.resolve).toHaveBeenLastCalledWith(
-        "space-1",
-        "tool-1",
-        "revision-2",
-        { month_start: "2026-02-01" },
-        expect.any(AbortSignal),
-      )
+      expect(compositionApi.resolve).toHaveBeenCalledTimes(1)
+    );
+    expect(compositionApi.resolve).toHaveBeenLastCalledWith(
+      "space-1",
+      "tool-1",
+      "revision-2",
+      {},
+      expect.any(AbortSignal),
     );
   });
 
@@ -175,14 +176,17 @@ describe("Composition exact-revision route", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Enter a value for Month.",
     );
-    expect(screen.getByLabelText("Month")).toBeRequired();
+    expect(screen.getByLabelText("Month")).toHaveAttribute(
+      "aria-required",
+      "true",
+    );
     expect(screen.getByLabelText("Month")).toHaveAttribute(
       "aria-invalid",
       "true",
     );
   });
 
-  it("accepts false as a supplied value for a required boolean parameter", async () => {
+  it("preserves false as the read-only default for a required boolean variable", async () => {
     vi.mocked(compositionApi.resolve).mockResolvedValue({
       ok: true,
       parameter_definitions: [{
@@ -190,24 +194,23 @@ describe("Composition exact-revision route", () => {
         label: "Include archived",
         type: "boolean",
         required: true,
+        default: false,
       }],
       plan,
     });
     render(() => <CompositionRevisionRoute />);
 
-    const select = await screen.findByLabelText("Include archived");
-    expect(select).toBeRequired();
-    expect(select).toHaveValue("");
-    fireEvent.change(select, { target: { value: "false" } });
-
-    await waitFor(() =>
-      expect(compositionApi.resolve).toHaveBeenLastCalledWith(
-        "space-1",
-        "tool-1",
-        "revision-2",
-        { include_archived: false },
-        expect.any(AbortSignal),
-      )
+    const input = await screen.findByLabelText("Include archived");
+    expect(input).toHaveValue("false");
+    expect(input).toHaveAttribute("readonly");
+    expect(input).toHaveAttribute("aria-required", "true");
+    expect(compositionApi.resolve).toHaveBeenCalledTimes(1);
+    expect(compositionApi.resolve).toHaveBeenCalledWith(
+      "space-1",
+      "tool-1",
+      "revision-2",
+      {},
+      expect.any(AbortSignal),
     );
   });
 
@@ -376,7 +379,7 @@ describe("Composition revision flow layout", () => {
     name: "Monthly expenses",
     tags: [],
     spec: {
-      parameters: [
+      variables: [
         {
           id: "month",
           label: "Month",
@@ -389,10 +392,11 @@ describe("Composition revision flow layout", () => {
       ],
       sources: [{ kind: "entry_query", id: "entries", form_id: "form-1" }],
       components: [
+        { kind: "input", id: "input-month", variable: "month" },
         {
           kind: "text",
           id: "summary_title",
-          text: "Monthly summary",
+          content: { kind: "literal", text: "Monthly summary" },
           style: "heading",
         },
         { kind: "table", id: "rows", label: "Details", source: "entries" },
@@ -402,7 +406,7 @@ describe("Composition revision flow layout", () => {
         rows: [
           {
             id: "controls",
-            items: [{ kind: "parameter", parameter: "month" }],
+            items: [{ kind: "component", component: "input-month" }],
           },
           {
             id: "heading",
@@ -434,6 +438,11 @@ describe("Composition revision flow layout", () => {
       },
     }],
     component_bindings: [
+      {
+        component_id: "input-month",
+        kind: "input",
+        variable_id: "month",
+      },
       { component_id: "summary_title", kind: "text" },
       {
         component_id: "rows",
@@ -532,18 +541,23 @@ describe("Composition revision flow layout", () => {
   });
 
   it("uses declaration order for localized ordinals when placement order differs", async () => {
-    const parameters = (lintDocument.spec.parameters ?? []).map(({
+    const variables = (lintDocument.spec.variables ?? []).map(({
       label: _label,
-      ...parameter
-    }) => parameter);
+      ...variable
+    }) => variable);
     const layout = lintDocument.spec.layout;
     const controls = layout.rows.find((row) => row.id === "controls");
+    const regionInput = {
+      kind: "input" as const,
+      id: "input-region",
+      variable: "region",
+    };
     const reorderedLayout = {
       ...layout,
       rows: [
         {
           ...controls!,
-          items: [{ kind: "parameter" as const, parameter: "region" }],
+          items: [{ kind: "component" as const, component: "input-region" }],
         },
         ...layout.rows.filter((row) => row.id !== "controls"),
       ],
@@ -553,7 +567,12 @@ describe("Composition revision flow layout", () => {
       value: {
         document: {
           ...lintDocument,
-          spec: { ...lintDocument.spec, parameters, layout: reorderedLayout },
+          spec: {
+            ...lintDocument.spec,
+            variables,
+            components: [...lintDocument.spec.components, regionInput],
+            layout: reorderedLayout,
+          },
         },
         canonical_yaml: "canonical",
         fingerprint: "fingerprint",
@@ -561,7 +580,7 @@ describe("Composition revision flow layout", () => {
     });
     vi.mocked(compositionApi.resolve).mockResolvedValueOnce({
       ok: true,
-      parameter_definitions: [...parameters].reverse(),
+      parameter_definitions: [...variables].reverse(),
       plan: flowPlan,
     });
     const { container } = render(() => <CompositionRevisionRoute />);
@@ -583,29 +602,32 @@ describe("Composition revision flow layout", () => {
     expect(screen.getByLabelText("パラメーター2")).toBeInTheDocument();
   });
 
-  it("keeps unplaced parameters editable outside the flow without duplication", async () => {
+  it("shows unplaced variables outside the flow without duplication", async () => {
     render(() => <CompositionRevisionRoute />);
 
     expect(await screen.findByLabelText("Region")).toBeInTheDocument();
+    expect(screen.getByLabelText("Region")).toHaveAttribute("readonly");
     // The placed control renders once, inside the flow only.
     expect(screen.getAllByLabelText("Month")).toHaveLength(1);
+    expect(screen.getByLabelText("Month")).toHaveAttribute("readonly");
     expect(screen.getAllByLabelText("Region")).toHaveLength(1);
   });
 
-  it("drives resolve through the in-flow control", async () => {
+  it("keeps exact-revision resolve defaults without browser-side edits", async () => {
     render(() => <CompositionRevisionRoute />);
 
     const month = await screen.findByLabelText("Month");
     fireEvent.change(month, { target: { value: "2026-02-01" } });
 
     await waitFor(() =>
-      expect(compositionApi.resolve).toHaveBeenLastCalledWith(
-        "space-1",
-        "tool-1",
-        "revision-2",
-        { month: "2026-02-01" },
-        expect.any(AbortSignal),
-      )
+      expect(compositionApi.resolve).toHaveBeenCalledTimes(1)
+    );
+    expect(compositionApi.resolve).toHaveBeenLastCalledWith(
+      "space-1",
+      "tool-1",
+      "revision-2",
+      {},
+      expect.any(AbortSignal),
     );
   });
 

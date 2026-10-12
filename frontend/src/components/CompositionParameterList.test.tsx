@@ -99,6 +99,55 @@ describe("composition parameter list", () => {
     expect(onUpdate).toHaveBeenCalledWith({ ...month, default: "2026-10-01" });
   });
 
+  it("keeps numeric defaults read-only until the shared parser is available", () => {
+    const integer: DraftParameter = {
+      id: "limit",
+      type: "integer",
+      required: false,
+      default: 0,
+    };
+    const onUpdate = vi.fn();
+    render(() => (
+      <CompositionParameterList
+        parameters={[integer]}
+        headingId="params"
+        onAdd={() => {}}
+        onUpdate={onUpdate}
+        onRemove={() => undefined}
+      />
+    ));
+
+    const input = screen.getByLabelText("Default for Parameter 1");
+    expect(input).toHaveValue("0");
+    expect(input).toHaveAttribute("readonly");
+    fireEvent.change(input, { target: { value: "12" } });
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("maps the boolean choice to its typed literal without parsing arbitrary input", () => {
+    const boolean: DraftParameter = {
+      id: "include_archived",
+      type: "boolean",
+      required: false,
+      default: false,
+    };
+    const onUpdate = vi.fn();
+    render(() => (
+      <CompositionParameterList
+        parameters={[boolean]}
+        headingId="params"
+        onAdd={() => {}}
+        onUpdate={onUpdate}
+        onRemove={() => undefined}
+      />
+    ));
+
+    fireEvent.change(screen.getByLabelText("Default for Parameter 1"), {
+      target: { value: "true" },
+    });
+    expect(onUpdate).toHaveBeenCalledWith({ ...boolean, default: true });
+  });
+
   it("uses localized ordinal labels instead of unlabeled parameter keys", () => {
     const region: DraftParameter = {
       id: "region_key",

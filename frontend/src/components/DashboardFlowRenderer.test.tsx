@@ -45,6 +45,11 @@ const plan: CompositionResolvePlan = {
   }],
   component_bindings: [
     {
+      component_id: "input-month",
+      kind: "input",
+      variable_id: "month",
+    },
+    {
       component_id: "summary_title",
       kind: "text",
       label: "Summary",
@@ -102,7 +107,7 @@ const renderFlow = (
         rows: [
           {
             id: "controls",
-            items: [{ kind: "parameter", parameter: "month" }],
+            items: [{ kind: "component", component: "input-month" }],
           },
           {
             id: "heading",
@@ -125,7 +130,6 @@ const renderFlow = (
       texts={texts}
       parameterDefinitions={definitions}
       parameterValues={{ month: "2026-10-01" }}
-      onParameterChange={() => {}}
       sources={readySources}
       onNext={() => {}}
       onPrevious={() => {}}
@@ -177,6 +181,8 @@ describe("DashboardFlowRenderer", () => {
     // The parameter control shows the declared human label, never the id.
     const input = screen.getByLabelText("Month");
     expect(input).toHaveValue("2026-10-01");
+    expect(input).toHaveAttribute("readonly");
+    expect(input).toHaveAttribute("aria-readonly", "true");
     expect(screen.queryByLabelText("month")).toBeNull();
     // Unplaced optional parameters render no in-flow control.
     expect(screen.queryByLabelText("Region")).toBeNull();
@@ -262,8 +268,7 @@ describe("DashboardFlowRenderer", () => {
     await waitFor(() => expect(query).not.toHaveBeenCalled());
   });
 
-  it("binds parameter changes to transient work state", () => {
-    const onParameterChange = vi.fn();
+  it("renders an Input from its variable binding without browser-side mutation", () => {
     renderFlow({
       parameterDefinitions: [{
         id: "include_archived",
@@ -274,19 +279,30 @@ describe("DashboardFlowRenderer", () => {
       layout: {
         rows: [{
           id: "controls",
-          items: [{ kind: "parameter", parameter: "include_archived" }],
+          items: [{ kind: "component", component: "input-include-archived" }],
         }],
       },
       parameterValues: {},
-      onParameterChange,
+      inputVariables: { "input-include-archived": "include_archived" },
+      plan: {
+        composition_revision: {
+          entry_id: "tool-1",
+          revision_id: "revision-1",
+        },
+        sources: [],
+        component_bindings: [{
+          component_id: "input-include-archived",
+          kind: "input",
+          variable_id: "include_archived",
+          label: "Include archived",
+        }],
+      },
     });
 
-    const select = screen.getByLabelText("Include archived");
-    fireEvent.change(select, { target: { value: "false" } });
-    expect(onParameterChange).toHaveBeenCalledWith(
-      "include_archived",
-      false,
-    );
+    const input = screen.getByLabelText("Include archived");
+    expect(input).toHaveValue("");
+    expect(input).toHaveAttribute("readonly");
+    expect(input).toHaveAttribute("aria-required", "true");
   });
 
   it("delegates flow metrics and tables to source-native presenters", async () => {
@@ -436,7 +452,6 @@ describe("DashboardFlowRenderer", () => {
         texts={texts}
         parameterDefinitions={definitions}
         parameterValues={{ month: "2026-10-01" }}
-        onParameterChange={() => {}}
         metricQueryContext={{
           spaceId: "space-1",
           target: {
@@ -550,7 +565,6 @@ describe("DashboardFlowRenderer", () => {
           id: "broken",
           items: [
             { kind: "component", component: "missing_component" },
-            { kind: "parameter", parameter: "missing_parameter" },
           ],
         }],
       },

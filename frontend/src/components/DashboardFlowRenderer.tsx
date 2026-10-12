@@ -41,9 +41,11 @@ export const flowSourceStatusOwner = (
   const owners = new Map<string, string>();
   for (const row of rows) {
     for (const item of row.items) {
-      if (item.kind !== "component" || !item.component) continue;
+      if (!item.component) continue;
       const binding = bindings.get(item.component);
-      if (!binding || binding.kind === "text") continue;
+      if (!binding || binding.kind === "text" || binding.kind === "input") {
+        continue;
+      }
       if (usesServerMetricQuery(binding)) continue;
       if (sources.has(binding.source_id) && !owners.has(binding.source_id)) {
         owners.set(binding.source_id, binding.component_id);
@@ -58,11 +60,10 @@ export interface DashboardFlowItemProps {
   /** Resolved binding for component items; absent while preview is pending. */
   binding?: CompositionResolvedComponentBinding;
   texts: Readonly<DashboardFlowTexts>;
-  /** Semantic definition for parameter items; absent when undeclared. */
+  /** Semantic definition for Input components; absent when undeclared. */
   definition?: CompositionParameterDefinition;
   parameterDisplayName?: string;
   parameterValues: Readonly<Record<string, unknown>>;
-  onParameterChange: (parameterId: string, value: unknown | undefined) => void;
   parameterInvalid?: (parameterId: string) => boolean;
   sources: Record<string, CompositionSourcePageState>;
   sourceById: ReadonlyMap<
@@ -81,30 +82,25 @@ export interface DashboardFlowItemProps {
 
 /**
  * One flow layout item shared by the saved-Tool renderer and the Design
- * canvas. Parameter controls bind transient Work state, text joins its
+ * canvas. Input controls bind transient Work state, text joins its
  * declaration by component id with no source fetch, and metrics and
  * tables delegate to the source-native presenters.
  */
 export function DashboardFlowItem(props: DashboardFlowItemProps) {
-  if (props.item.kind === "parameter" && props.item.parameter) {
+  if (!props.item.component) return null;
+  if (props.binding?.kind === "input" && props.definition) {
     return (
-      <Show when={props.definition}>
-        {(entry) => (
-          <div class="compositionFlowItem compositionFlowItem--parameter">
-            <ParameterControl
-              definition={entry()}
-              displayName={props.parameterDisplayName ??
-                t("composition.studioParameters")}
-              value={props.parameterValues[entry().id]}
-              onChange={(value) => props.onParameterChange(entry().id, value)}
-              invalid={props.parameterInvalid?.(entry().id)}
-            />
-          </div>
-        )}
-      </Show>
+      <div class="compositionFlowItem compositionFlowItem--parameter">
+        <ParameterControl
+          definition={props.definition}
+          displayName={props.parameterDisplayName ??
+            t("composition.studioParameters")}
+          value={props.parameterValues[props.definition.id]}
+          invalid={props.parameterInvalid?.(props.definition.id)}
+        />
+      </div>
     );
   }
-  if (props.item.kind !== "component" || !props.item.component) return null;
   return (
     <Show when={props.binding}>
       {(entry) => (
@@ -130,21 +126,24 @@ export function DashboardFlowItem(props: DashboardFlowItemProps) {
 type DashboardFlowRendererProps = {
   /**
    * First-class flow layout: rows render top to bottom, items within a row
-   * render in order. The resolve plan carries bindings in this same order;
-   * parameter controls emit no bindings and render from the definitions.
+   * render in order. Each Input is a normal component binding in the
+   * canonical document and resolves its Variable definition here.
    */
   layout: Pick<CompositionFlowLayout, "rows">;
+  /** Input component id -> variable id from the canonical document. */
+  inputVariables?: Readonly<Record<string, string>>;
+  /** Optional Input label overrides keyed by component id. */
+  inputLabels?: Readonly<Record<string, string>>;
   /** Resolved sources with their layout-ordered component bindings. */
   plan: Pick<CompositionResolvePlan, "sources" | "component_bindings">;
   /** Text content and style joined by component id. */
   texts: Readonly<DashboardFlowTexts>;
-  /** Semantic parameter definitions; layout-placed controls come first. */
+  /** Semantic variable definitions used by Input component bindings. */
   parameterDefinitions: readonly CompositionParameterDefinition[];
   /** Declaration-order definitions used only for localized display names. */
   parameterDisplayDefinitions?: readonly CompositionParameterDefinition[];
   /** Transient parameter values owned by the composition query handle. */
   parameterValues: Readonly<Record<string, unknown>>;
-  onParameterChange: (parameterId: string, value: unknown | undefined) => void;
   parameterInvalid?: (parameterId: string) => boolean;
   sources: Record<string, CompositionSourcePageState>;
   fieldNames?: CompositionFieldNames;
@@ -163,13 +162,28 @@ type DashboardFlowRendererProps = {
  * parameter controls stay bound to transient Work state.
  */
 export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
-  const bindingById = () =>
-    new Map(
+  const bindingById = () => {
+    const bindings = new Map(
       props.plan.component_bindings.map((binding) => [
         binding.component_id,
         binding,
       ]),
     );
+    for (
+      const [componentId, variableId] of Object.entries(
+        props.inputVariables ?? {},
+      )
+    ) {
+      if (!bindings.has(componentId)) {
+        bindings.set(componentId, {
+          component_id: componentId,
+          kind: "input" as const,
+          variable_id: variableId,
+        });
+      }
+    }
+    return bindings;
+  };
   const sourceById = () =>
     new Map(props.plan.sources.map((source) => [source.source_id, source]));
   const definitionById = () =>
@@ -198,17 +212,15 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
             <div class="compositionFlowRow">
               <For each={row.items}>
                 {(item) => {
-                  const binding = () =>
-                    item.kind === "component" && item.component
-                      ? bindingById().get(item.component)
-                      : undefined;
+                  const binding = () => bindingById().get(item.component);
                   const definition = () =>
-                    item.kind === "parameter" && item.parameter
-                      ? definitionById().get(item.parameter)
+                    binding()?.kind === "input"
+                      ? definitionById().get(binding()!.variable_id)
                       : undefined;
                   const ownsSourceStatus = () => {
                     const current = binding();
                     return current !== undefined && current.kind !== "text" &&
+                      current.kind !== "input" &&
                       sourceStatusOwner().get(
                           (current as { source_id: string }).source_id,
                         ) === current.component_id;
@@ -219,16 +231,16 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
                       binding={binding()}
                       texts={props.texts}
                       definition={definition()}
-                      parameterDisplayName={item.kind === "parameter" &&
-                          item.parameter
-                        ? compositionParameterDisplayName(
-                          props.parameterDisplayDefinitions ??
-                            props.parameterDefinitions,
-                          item.parameter,
-                        )
+                      parameterDisplayName={binding()?.kind === "input"
+                        ? binding()!.label?.trim() ||
+                          props.inputLabels?.[item.component] ||
+                          compositionParameterDisplayName(
+                            props.parameterDisplayDefinitions ??
+                              props.parameterDefinitions,
+                            binding()!.variable_id,
+                          )
                         : undefined}
                       parameterValues={props.parameterValues}
-                      onParameterChange={props.onParameterChange}
                       parameterInvalid={props.parameterInvalid}
                       sources={props.sources}
                       sourceById={sourceById()}
