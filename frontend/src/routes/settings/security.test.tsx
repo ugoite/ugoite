@@ -102,7 +102,7 @@ describe("SecuritySettingsRoute", () => {
     expect(screen.queryByRole("tab", { name: "CLI / MCP" })).toBeNull();
   });
 
-  it("REQ-UX-LIST-001: keeps passkey IDs out of ordinary rows and revokes by exact credential identity", async () => {
+  it("REQ-UX-LIST-001: keeps passkey IDs out of Security settings and revokes by exact credential identity", async () => {
     setLocale("ja");
     const credentialIds = ["credential-private-1", "credential-private-2"];
     vi.mocked(authApi.listPasskeys).mockResolvedValue([{
@@ -129,9 +129,7 @@ describe("SecuritySettingsRoute", () => {
       exact: true,
     })).toBeInTheDocument();
     for (const credentialId of credentialIds) {
-      const identifier = screen.getByText(credentialId);
-      expect(identifier.closest("details")).not.toHaveAttribute("open");
-      expect(identifier).not.toBeVisible();
+      expect(screen.queryByText(credentialId)).not.toBeInTheDocument();
     }
     const revokes = screen.getAllByRole("button", {
       name: /取り消し: パスキー \d/,
@@ -145,7 +143,7 @@ describe("SecuritySettingsRoute", () => {
     );
   });
 
-  it("REQ-UX-LIST-001: keeps session IDs out of ordinary rows and revokes by exact session identity", async () => {
+  it("REQ-UX-LIST-001: keeps session IDs out of Security settings and revokes by exact session identity", async () => {
     setLocale("ja");
     searchParams.tab = "sessions";
     const sessionIds = ["session-private-1", "session-private-2"];
@@ -176,9 +174,7 @@ describe("SecuritySettingsRoute", () => {
       exact: true,
     })).toBeInTheDocument();
     for (const sessionId of sessionIds) {
-      const identifier = screen.getByText(sessionId);
-      expect(identifier.closest("details")).not.toHaveAttribute("open");
-      expect(identifier).not.toBeVisible();
+      expect(screen.queryByText(sessionId)).not.toBeInTheDocument();
     }
     expect(screen.queryByText(credentialId)).not.toBeInTheDocument();
     const revokes = screen.getAllByRole("button", {
@@ -218,11 +214,13 @@ describe("SecuritySettingsRoute", () => {
 
     expect(await screen.findByText(/取り消し済み/)).toBeVisible();
     const sessionPanel = screen.getByRole("tabpanel", { name: "セッション" });
+    expect(sessionPanel).not.toHaveTextContent("revoked-session-1");
+    expect(sessionPanel).not.toHaveTextContent("credential-1");
     expect(within(sessionPanel).queryByRole("button"))
       .not.toBeInTheDocument();
   });
 
-  it("REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details", async () => {
+  it("REQ-UX-LIST-001: never renders passkey or session identifiers", async () => {
     const credentialId = "passkey-internal-id";
     const secondCredentialId = "passkey-second-internal-id";
     const sessionId = "session-internal-id";
@@ -242,28 +240,21 @@ describe("SecuritySettingsRoute", () => {
       last_seen_at: null,
     }]);
 
-    render(() => <SecuritySettingsRoute />);
+    const { container } = render(() => <SecuritySettingsRoute />);
 
-    const credentialValue = await screen.findByText(credentialId);
-    const credentialDetails = credentialValue.closest("details");
-    expect(credentialDetails).not.toHaveAttribute("open");
-    expect(credentialValue).not.toBeVisible();
+    await screen.findByText("Passkey 1 · last used never");
     expect(screen.getByText("Passkey 1 · last used never")).toBeVisible();
     expect(screen.getByText("Passkey 2 · last used never")).toBeVisible();
     expect(screen.getByRole("button", { name: "Revoke passkey 1" }))
       .toBeVisible();
     expect(screen.getByRole("button", { name: "Revoke passkey 2" }))
       .toBeVisible();
-    fireEvent.click(
-      within(credentialDetails!).getByText("Technical details"),
-    );
-    expect(credentialValue).toBeVisible();
+    for (const identifier of [credentialId, secondCredentialId]) {
+      expect(container.innerHTML).not.toContain(identifier);
+    }
 
     fireEvent.click(screen.getByRole("tab", { name: "Sessions" }));
-    const sessionValue = await screen.findByText(sessionId);
-    const sessionDetails = sessionValue.closest("details");
-    expect(sessionDetails).not.toHaveAttribute("open");
-    expect(sessionValue).not.toBeVisible();
+    await screen.findByText("Browser session 1 · last seen never");
     expect(screen.getByText("Browser session 1 · last seen never"))
       .toBeVisible();
     expect(screen.getByText("Browser session 2 · last seen never"))
@@ -272,10 +263,9 @@ describe("SecuritySettingsRoute", () => {
       .toBeVisible();
     expect(screen.getByRole("button", { name: "Revoke session 2" }))
       .toBeVisible();
-    fireEvent.click(
-      within(sessionDetails!).getByText("Technical details"),
-    );
-    expect(sessionValue).toBeVisible();
+    for (const identifier of [sessionId, secondSessionId]) {
+      expect(container.innerHTML).not.toContain(identifier);
+    }
   });
 
   it("exposes the node audit viewer from account security settings", async () => {

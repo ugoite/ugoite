@@ -99,13 +99,13 @@ features:
                 criterion: REQ-UX-ENTRY-001#criterion.form-derived-guidance
   - id: FEAT-UX-003
     title: List interaction baseline
-    summary: Record that Space, Entry, Asset, Browser Konase, account Security, approval, and audit surfaces keep opaque identifiers out of primary labels, with credential and audit target IDs available only in closed technical details when needed.
+    summary: Record that Space, Entry, Asset, Browser Konase, account Security, approval, and audit surfaces keep opaque identifiers out of primary labels; account Security omits credential and session IDs, while audit target IDs remain available only in closed technical details when needed.
     status: planned
     bindings:
       - id: list-baseline
         role: implementation
         facet: frontend
-        responsibility: Keep the list interaction baseline connected to live Space, dashboard, form-entry, Asset detail, Browser Konase, account Security, and Space audit target disclosure surfaces plus their UI specifications.
+        responsibility: Keep the list interaction baseline connected to live Space, dashboard, form-entry, Asset detail, Browser Konase, and account Security identifier boundaries plus Space audit target disclosure surfaces and their UI specifications.
         targets:
           - id: spaces-route-surface
             adapter: typescript
@@ -253,26 +253,26 @@ features:
       - id: account-security-identifier-verification
         role: verification
         facet: verification
-        responsibility: Verify passkey and session identifiers stay in closed technical details, while ordinary labels and revoke actions use localized one-based labels and requests retain the exact identifiers.
+        responsibility: Verify passkey and session identifiers are never rendered, while ordinary labels and revoke actions use localized one-based labels and requests retain the exact identifiers.
         targets:
           - id: passkey-row-identities
             adapter: typescript
             path: frontend/src/routes/settings/security.test.tsx
-            selector: { kind: test, name: "REQ-UX-LIST-001: keeps passkey IDs out of ordinary rows and revokes by exact credential identity" }
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps passkey IDs out of Security settings and revokes by exact credential identity" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-003#binding.list-baseline/target.account-security-route, FEAT-UX-003#binding.list-baseline/target.account-security-specification]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/settings/security.test.tsx, test: "REQ-UX-LIST-001: keeps passkey IDs out of ordinary rows and revokes by exact credential identity" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/settings/security.test.tsx, test: "REQ-UX-LIST-001: keeps passkey IDs out of Security settings and revokes by exact credential identity" } }
           - id: session-row-identities
             adapter: typescript
             path: frontend/src/routes/settings/security.test.tsx
-            selector: { kind: test, name: "REQ-UX-LIST-001: keeps session IDs out of ordinary rows and revokes by exact session identity" }
+            selector: { kind: test, name: "REQ-UX-LIST-001: keeps session IDs out of Security settings and revokes by exact session identity" }
             claims:
               - kind: verifies
                 criterion: REQ-UX-LIST-001#criterion.uuids-advanced-only
                 covers: [FEAT-UX-003#binding.list-baseline/target.account-security-route, FEAT-UX-003#binding.list-baseline/target.account-security-specification]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/settings/security.test.tsx, test: "REQ-UX-LIST-001: keeps session IDs out of ordinary rows and revokes by exact session identity" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/routes/settings/security.test.tsx, test: "REQ-UX-LIST-001: keeps session IDs out of Security settings and revokes by exact session identity" } }
   - id: FEAT-UX-004
     title: Localization baseline
     summary: Record the shared locale dictionary satisfying the dictionary-copy criteria without changing UI behavior.

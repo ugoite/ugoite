@@ -190,7 +190,7 @@ describe("UI spec YAML registry", () => {
     });
   });
 
-  it("REQ-FE-040: declares account security credential identifier details", () => {
+  it("REQ-FE-040: declares account security identifier boundaries", () => {
     const securityPath = path.join(
       componentsDir,
       "account-security.yaml",
@@ -211,14 +211,7 @@ describe("UI spec YAML registry", () => {
       tests: "frontend/src/routes/settings/security.test.tsx",
       primary_label: "localized-numbered-passkey-and-last-used",
       missing_activity: "localized-never",
-      identifier_visibility: "closed-technical-details-only",
-      technical_details: {
-        summary: "securityPage.technicalDetails",
-        values: [{
-          label: "securityPage.credentialId",
-          source: "credential.credential_id",
-        }],
-      },
+      identifier_visibility: "never-rendered",
       action: {
         trigger: "revoke-passkey",
         visible_label: "settings.revoke",
@@ -233,14 +226,7 @@ describe("UI spec YAML registry", () => {
       primary_label: "localized-numbered-browser-session-and-last-seen",
       missing_activity: "localized-never",
       revoked_status: "localized-revoked",
-      identifier_visibility: "closed-technical-details-only",
-      technical_details: {
-        summary: "securityPage.technicalDetails",
-        values: [{
-          label: "securityPage.sessionId",
-          source: "session.session_id",
-        }],
-      },
+      identifier_visibility: "never-rendered",
       action: {
         trigger: "revoke-active-session",
         visible_label: "settings.revoke",
@@ -253,8 +239,9 @@ describe("UI spec YAML registry", () => {
       path.join(repoRoot, "frontend/src/routes/settings/security.tsx"),
       "utf8",
     );
-    expect(implementation).toContain("securityPage.credentialId");
-    expect(implementation).toContain("securityPage.sessionId");
+    expect(implementation).not.toContain("securityPage.credentialId");
+    expect(implementation).not.toContain("securityPage.sessionId");
+    expect(implementation).not.toContain("securityPage.technicalDetails");
     expect(implementation).toContain("securityPage.passkeyNumberedLabel");
     expect(implementation).toContain(
       "securityPage.browserSessionNumberedLabel",
@@ -264,7 +251,7 @@ describe("UI spec YAML registry", () => {
       "utf8",
     );
     expect(securityTests).toContain(
-      "REQ-UX-LIST-001: keeps passkey and session IDs in closed technical details",
+      "REQ-UX-LIST-001: never renders passkey or session identifiers",
     );
     const uiIndex = readFileSync(
       path.join(repoRoot, "docs/spec/ui/index.md"),
