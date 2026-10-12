@@ -296,7 +296,7 @@ requirements:
                   },
                 }
 
-  - id: REQ-FE-077
+  - id: REQ-FE-078
     title: Form-assisted Saved SQL Summary Authoring
     description: A no-code summary flow helps users create ordinary Saved SQL from a Form and then use its declared result column in a Metric.
     priority: medium
