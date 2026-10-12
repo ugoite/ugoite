@@ -156,6 +156,8 @@ inventory:
         - e2e/entries.test.ts
         - e2e/knowledge-journey.test.ts
         - e2e/composition-golden-journey.test.ts
+        - e2e/composition-studio-journey.test.ts
+        - e2e/composition-metric-journey.test.ts
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id].tsx
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx
         - frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx

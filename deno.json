@@ -26,6 +26,7 @@
     "docsite:e2e:navigation": "deno task --cwd e2e docsite:navigation",
     "e2e:install:browsers": "deno task --cwd e2e install:browsers",
     "e2e:smoke": "bash e2e/scripts/run-e2e-parity.sh smoke",
+    "e2e:composition-metric": "bash e2e/scripts/run-e2e-parity.sh composition-metric",
     "e2e:late-query-response": "bash e2e/scripts/run-e2e.sh late-query-response",
     "e2e:asset-owned": "bash e2e/scripts/run-e2e-parity.sh asset-owned",
     "e2e:smoke-and-asset-owned": "bash e2e/scripts/run-e2e-parity.sh smoke-and-asset-owned",

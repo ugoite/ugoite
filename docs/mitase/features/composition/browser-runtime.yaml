@@ -315,6 +315,17 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.metric-runtime-values
+    - id: e2e-saved-sql-metric-row-cardinality
+      adapter: typescript
+      path: e2e/composition-metric-journey.test.ts
+      selector:
+        kind: test
+        name: Browser reopens a metric tool at its exact revision and surfaces the stable multiple-rows diagnostic without aggregation
+      claims:
+      - kind: evidences
+        anchor: REQ-FE-070#criterion.metric-result-presentation
+      - kind: evidences
+        anchor: REQ-COMP-004#criterion.exact-saved-sql-revision
     - id: browser-metric-draft-query
       adapter: typescript
       path: frontend/src/components/CompositionRenderer.test.tsx

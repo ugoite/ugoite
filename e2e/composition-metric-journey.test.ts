@@ -9,7 +9,8 @@ import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 
 const METRIC_SCALAR = 40;
 const SECOND_AMOUNT = 2;
-const MULTIPLE_ROWS_DIAGNOSTIC = "The metric returned more than one row.";
+const MULTIPLE_ROWS_DIAGNOSTIC =
+  "The metric source must return exactly one row.";
 
 type SeedState = {
   spaceId: string;
@@ -208,7 +209,9 @@ test.describe("Composition Metric Journey", () => {
       await page.goto(getFrontendUrl(`/spaces/${seed.spaceId}/dashboard`), {
         waitUntil: "domcontentloaded",
       });
-      const link = page.getByRole("link", { name: seed.compositionName });
+      const link = page.getByRole("link", {
+        name: new RegExp(`^${seed.compositionName} Dashboard`),
+      });
       await expect(link).toHaveAttribute("href", path);
       await link.click();
       await expect(page).toHaveURL(new RegExp(`${path}$`));
