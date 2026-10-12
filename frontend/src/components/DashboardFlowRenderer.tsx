@@ -21,6 +21,7 @@ import type {
   CompositionTextStyle,
 } from "~/lib/composition-api";
 import type { CompositionSourcePageState } from "~/lib/composition-query-handle";
+import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 
 export type DashboardFlowTexts = Record<
   string,
@@ -59,6 +60,7 @@ export interface DashboardFlowItemProps {
   texts: Readonly<DashboardFlowTexts>;
   /** Semantic definition for parameter items; absent when undeclared. */
   definition?: CompositionParameterDefinition;
+  parameterDisplayName?: string;
   parameterValues: Readonly<Record<string, unknown>>;
   onParameterChange: (parameterId: string, value: unknown | undefined) => void;
   parameterInvalid?: (parameterId: string) => boolean;
@@ -91,6 +93,8 @@ export function DashboardFlowItem(props: DashboardFlowItemProps) {
           <div class="compositionFlowItem compositionFlowItem--parameter">
             <ParameterControl
               definition={entry()}
+              displayName={props.parameterDisplayName ??
+                t("composition.studioParameters")}
               value={props.parameterValues[entry().id]}
               onChange={(value) => props.onParameterChange(entry().id, value)}
               invalid={props.parameterInvalid?.(entry().id)}
@@ -213,6 +217,13 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
                       binding={binding()}
                       texts={props.texts}
                       definition={definition()}
+                      parameterDisplayName={item.kind === "parameter" &&
+                          item.parameter
+                        ? compositionParameterDisplayName(
+                          props.parameterDefinitions,
+                          item.parameter,
+                        )
+                        : undefined}
                       parameterValues={props.parameterValues}
                       onParameterChange={props.onParameterChange}
                       parameterInvalid={props.parameterInvalid}

@@ -202,6 +202,8 @@ components:
     scope: data-mode-parameters-tab-only
     disclosure: renders-only-with-at-least-one-source-and-when-tab-is-selected
     label_kind: compact-section-label
+    row_label: authored-human-label-else-localized-ordinal-by-declaration-order
+    binding_key: internal-reference-only-never-a-display-fallback
     binding: existing-composition-parameter-grammar-by-reference
     type_compatibility: rust-owned-diagnostics
   - id: studio-tags
@@ -257,7 +259,7 @@ components:
           ja: [タイトル, 見出し, 本文, キャプション]
     parameter_controls:
       order: layout-placement-first
-      labels: declared-human-label
+      labels: declared-human-label-else-localized-ordinal-by-declaration-order
       state: transient-work-never-stored
     metric_semantics: Form-aggregate-and-Saved-SQL-scalar-through-server-metric-query
     metric_rendering_status: planned
@@ -304,6 +306,7 @@ components:
       palette_entries: [text-always, data-always, parameters-only-with-parameters]
       data: opens-data-component-picker-with-Table-and-Metric-tabs
       parameter: place-existing-only-no-creation
+      parameter_label: authored-human-label-else-localized-ordinal-never-binding-key
     removal:
       owner: selected-block-inspector
       action: localized-icon-button-in-inspector-title-bar
@@ -343,6 +346,7 @@ components:
       style: fixed-enum-only
     parameter_control:
       ref: owned-label-read-only-no-override
+      label_fallback: localized-ordinal-by-declaration-order-never-binding-key
       placement: retarget-existing-parameter-in-place
     data_jump: expand-and-focus-existing-source-row
     data_jump_narrow: dismiss-sheet-show-data-workspace-focus-jumped-row

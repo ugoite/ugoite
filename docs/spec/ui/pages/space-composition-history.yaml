@@ -31,8 +31,8 @@ components:
       source: composition.history with a bounded page limit of 50
       selection: full-row-activate
       current_marker: composition.list latest revision identity
-      identity_display: human-timestamp-only
-      revision_identity: advanced-disclosure-only
+      identity_display: operation-current-marker-and-timestamp-only
+      revision_identity: route-target-only-never-rendered-in-page-content
     - id: composition-history-pagination
       type: button
       title: Previous and Next

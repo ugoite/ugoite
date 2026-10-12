@@ -9,12 +9,14 @@ import {
   retargetParameterControl,
 } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
+import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 
 /**
  * Parameter control inspector: the semantic parameter ref renders as the
- * owned label with no override input, and placement retargets to another
- * declared parameter in place. Declarations stay owned by the Parameters
- * section; the inspector never creates parameters or edits their labels.
+ * owned label or localized ordinal with no override input, and placement
+ * retargets to another declared parameter in place. Declarations stay owned
+ * by the Parameters section; the inspector never creates parameters or edits
+ * their labels.
  */
 export function ParameterPlacementInspector(props: {
   draft: CompositionDraft;
@@ -29,7 +31,10 @@ export function ParameterPlacementInspector(props: {
   return (
     <InspectorShell
       icon="canvas-input"
-      title={definition()?.label ?? props.parameterId}
+      title={compositionParameterDisplayName(
+        props.draft.parameters,
+        props.parameterId,
+      )}
       actions={props.actions}
     >
       <Show when={definition()}>
@@ -59,7 +64,10 @@ export function ParameterPlacementInspector(props: {
               <For each={props.draft.parameters}>
                 {(parameter) => (
                   <option value={parameter.id}>
-                    {parameter.label ?? parameter.id}
+                    {compositionParameterDisplayName(
+                      props.draft.parameters,
+                      parameter.id,
+                    )}
                   </option>
                 )}
               </For>

@@ -35,6 +35,10 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
               - kind: satisfies
+                criterion: REQ-FE-077#criterion.parameter-display-names
+              - kind: satisfies
+                criterion: REQ-FE-077#criterion.history-hides-revision-identifiers
+              - kind: satisfies
                 criterion: REQ-FE-070#criterion.side-effect-free-preview
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.exact-revision-edit
@@ -121,6 +125,10 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
               - kind: satisfies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+              - kind: satisfies
+                criterion: REQ-FE-077#criterion.parameter-display-names
+              - kind: satisfies
                 criterion: REQ-FE-070#criterion.entry-query-field-labels
           - id: composition-design-canvas
             adapter: typescript
@@ -131,6 +139,10 @@ features:
                 criterion: REQ-FE-070#criterion.display-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+              - kind: satisfies
+                criterion: REQ-FE-077#criterion.parameter-display-names
           - id: composition-parameter-list
             adapter: typescript
             path: frontend/src/components/CompositionParameterList.tsx
@@ -139,9 +151,29 @@ features:
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.typed-parameter-binding
               - kind: satisfies
+                criterion: REQ-FE-077#criterion.parameter-display-names
+              - kind: satisfies
                 criterion: REQ-FE-070#criterion.structure-first-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.no-persistent-explanatory-copy
+          - id: composition-parameter-name
+            adapter: typescript
+            path: frontend/src/lib/composition-parameter-name.ts
+            selector: { kind: symbol, name: compositionParameterDisplayName }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+              - kind: satisfies
+                criterion: REQ-FE-077#criterion.parameter-display-names
+          - id: composition-parameter-control
+            adapter: typescript
+            path: frontend/src/components/composition/ParameterControl.tsx
+            selector: { kind: symbol, name: ParameterControl }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+              - kind: satisfies
+                criterion: REQ-FE-077#criterion.parameter-display-names
           - id: composition-use-surface
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.tsx
@@ -153,6 +185,10 @@ features:
                 criterion: REQ-FE-070#criterion.display-authoring
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.accessible-icon-actions
+              - kind: satisfies
+                criterion: REQ-FE-070#criterion.typed-parameter-binding
+              - kind: satisfies
+                criterion: REQ-FE-077#criterion.parameter-display-names
           - id: composition-studio-shell
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/new.tsx
@@ -215,6 +251,8 @@ features:
                 criterion: REQ-FE-070#criterion.accessible-icon-actions
               - kind: satisfies
                 criterion: REQ-FE-070#criterion.exact-revision-edit
+              - kind: satisfies
+                criterion: REQ-FE-077#criterion.history-hides-revision-identifiers
           - id: composition-list-new
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/compositions/index.tsx

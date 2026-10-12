@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DashboardFlowRenderer } from "./DashboardFlowRenderer";
 import { compositionApi } from "~/lib/composition-api";
+import { setLocale } from "~/lib/i18n";
 import type {
   CompositionParameterDefinition,
   CompositionResolvePlan,
@@ -199,6 +200,23 @@ describe("DashboardFlowRenderer", () => {
       expect.any(AbortSignal),
     );
     expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+
+  it("uses localized ordinal labels for unlabeled runtime parameters", async () => {
+    setLocale("en");
+    const unlabeledDefinitions = definitions.map((
+      { label: _label, ...entry },
+    ) => entry);
+    renderFlow({ parameterDefinitions: unlabeledDefinitions });
+
+    expect(await screen.findByLabelText("Parameter 1")).toHaveValue(
+      "2026-10-01",
+    );
+    expect(screen.queryByLabelText("month")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("region")).not.toBeInTheDocument();
+
+    setLocale("ja");
+    expect(screen.getByLabelText("パラメーター1")).toHaveValue("2026-10-01");
   });
 
   it("renders each text style without fetching sources", async () => {

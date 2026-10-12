@@ -116,9 +116,10 @@ describe("Composition history route", () => {
     expect(restored).toHaveTextContent("2026");
     // The current revision is marked without showing its identifier.
     expect(restored).toHaveTextContent("Current");
-    // Raw identifiers live only in the advanced disclosure.
-    expect(screen.getByText("Technical details")).toBeInTheDocument();
-    expect(screen.getByText("revision-1")).toBeInTheDocument();
+    // Revision IDs stay in route targets and never appear in the page content.
+    expect(screen.queryByText("Technical details")).not.toBeInTheDocument();
+    expect(screen.queryByText("revision-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("revision-2")).not.toBeInTheDocument();
     // One Back to the saved-tools list.
     const back = screen.getByRole("link", { name: "Back to saved tools" });
     expect(back).toHaveAttribute("href", "/spaces/space-1/compositions");

@@ -207,21 +207,6 @@ export default function CompositionHistoryRoute() {
                   }}
                 </For>
               </RowList>
-              <details>
-                <summary>{t("composition.technicalDetails")}</summary>
-                <dl>
-                  <For each={currentPage().revisions}>
-                    {(revision) => (
-                      <div>
-                        <dt>{t("composition.revisionId")}</dt>
-                        <dd class="font-mono break-all">
-                          {revision.revision.revision_id}
-                        </dd>
-                      </div>
-                    )}
-                  </For>
-                </dl>
-              </details>
             </Show>
             <nav
               class="rowListActions mt-4"

@@ -36,11 +36,12 @@ export const serializeParameterInput = (
  */
 export function ParameterControl(props: {
   definition: CompositionParameterDefinition;
+  displayName: string;
   value: unknown;
   onChange: (value: unknown | undefined) => void;
   invalid?: boolean;
 }) {
-  const label = () => props.definition.label || props.definition.id;
+  const label = () => props.displayName;
   const value = () => parameterDisplayValue(props.definition, props.value);
   const handleInput = (raw: string) =>
     props.onChange(serializeParameterInput(props.definition, raw));

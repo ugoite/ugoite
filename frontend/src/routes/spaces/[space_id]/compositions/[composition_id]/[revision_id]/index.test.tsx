@@ -531,6 +531,41 @@ describe("Composition revision flow layout", () => {
     expect(screen.getByRole("cell", { name: "Travel" })).toBeInTheDocument();
   });
 
+  it("uses localized ordinals for unlabeled placed and unplaced parameters", async () => {
+    const parameters = (lintDocument.spec.parameters ?? []).map(({
+      label: _label,
+      ...parameter
+    }) => parameter);
+    vi.mocked(compositionApi.lint).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        document: {
+          ...lintDocument,
+          spec: { ...lintDocument.spec, parameters },
+        },
+        canonical_yaml: "canonical",
+        fingerprint: "fingerprint",
+      },
+    });
+    vi.mocked(compositionApi.resolve).mockResolvedValueOnce({
+      ok: true,
+      parameter_definitions: parameters,
+      plan: flowPlan,
+    });
+    render(() => <CompositionRevisionRoute />);
+
+    expect(await screen.findByLabelText("Parameter 1")).toHaveValue(
+      "2026-10-01",
+    );
+    expect(await screen.findByLabelText("Parameter 2")).toBeInTheDocument();
+    expect(screen.queryByLabelText("month")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("region")).not.toBeInTheDocument();
+
+    setLocale("ja");
+    expect(screen.getByLabelText("パラメーター1")).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText("パラメーター2")).toBeInTheDocument();
+  });
+
   it("keeps unplaced parameters editable outside the flow without duplication", async () => {
     render(() => <CompositionRevisionRoute />);
 

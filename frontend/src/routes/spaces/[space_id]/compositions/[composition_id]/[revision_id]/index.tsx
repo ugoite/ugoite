@@ -20,6 +20,7 @@ import { FieldStack, FieldStackRow } from "~/components/FieldStack";
 import { IconButton } from "~/components/IconButton";
 import { IconLink } from "~/components/IconLink";
 import { LocalBusyIndicator } from "~/components/LocalBusyIndicator";
+import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 import { t } from "~/lib/i18n";
 import { compositionFormFieldName } from "~/lib/composition-field-name";
 import { compositionApi, compositionDisplayName } from "~/lib/composition-api";
@@ -368,6 +369,10 @@ export default function CompositionRevisionRoute() {
                 <FieldStackRow>
                   <ParameterControl
                     definition={definition}
+                    displayName={compositionParameterDisplayName(
+                      definitions(),
+                      definition.id,
+                    )}
                     value={handle.parameters()[definition.id]}
                     onChange={(value) =>
                       handle.setParameter(definition.id, value)}

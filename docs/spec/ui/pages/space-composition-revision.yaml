@@ -40,6 +40,8 @@ components:
       title: Declared parameters
       source: composition.resolve for the selected exact revision
       placement: layout-placed controls render inside the flow in placement order; unplaced definitions stay in this section
+      labels: authored-human-label-else-localized-ordinal-by-definition-order
+      binding_key: internal-reference-only-never-a-display-fallback
       state: transient-work-never-stored
     - id: composition-diagnostics
       type: list

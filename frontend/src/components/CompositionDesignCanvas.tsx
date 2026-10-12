@@ -23,6 +23,7 @@ import {
   unplacedParameters,
 } from "~/lib/composition-draft";
 import { t } from "~/lib/i18n";
+import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 import type {
   CompositionFlowLayoutItem,
   CompositionParameterDefinition,
@@ -83,12 +84,11 @@ const blockIcon = (
 
 const blockName = (
   draft: CompositionDraft,
-  definitions: ReadonlyMap<string, CompositionParameterDefinition>,
   item: DraftLayoutItem,
   fieldNames?: CompositionFieldNames,
 ): string => {
   if (item.kind === "parameter") {
-    return definitions.get(item.parameterId)?.label ?? item.parameterId;
+    return compositionParameterDisplayName(draft.parameters, item.parameterId);
   }
   const display = draft.displays.find((entry) =>
     entry.draftId === item.draftId
@@ -228,13 +228,21 @@ function PaletteDialog(props: {
                       type="button"
                       class="designPaletteItem"
                       aria-label={t("composition.studioPlaceParameter", {
-                        name: parameter.label ?? parameter.id,
+                        name: compositionParameterDisplayName(
+                          props.draft.parameters,
+                          parameter.id,
+                        ),
                       })}
                       onClick={() =>
                         props.onInsertParameter(insertTarget, parameter.id)}
                     >
                       <UiIcon name="canvas-input" />
-                      <span>{parameter.label ?? parameter.id}</span>
+                      <span>
+                        {compositionParameterDisplayName(
+                          props.draft.parameters,
+                          parameter.id,
+                        )}
+                      </span>
                     </button>
                   )}
                 </For>
@@ -378,8 +386,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
         : designBlockIdForComponent(item.draftId);
     const selected = () => props.selectedId === blockId();
     const highlighted = () => props.highlightedIds?.has(blockId()) ?? false;
-    const name = () =>
-      blockName(props.draft, definitionById(), item, props.fieldNames);
+    const name = () => blockName(props.draft, item, props.fieldNames);
     const binding = () =>
       item.kind === "component" ? bindingById().get(item.draftId) : undefined;
     const ownsSourceStatus = () => {
@@ -453,6 +460,12 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
             texts={texts()}
             definition={item.kind === "parameter"
               ? definitionById().get(item.parameterId)
+              : undefined}
+            parameterDisplayName={item.kind === "parameter"
+              ? compositionParameterDisplayName(
+                props.draft.parameters,
+                item.parameterId,
+              )
               : undefined}
             parameterValues={props.parameterValues}
             onParameterChange={props.onParameterChange}
