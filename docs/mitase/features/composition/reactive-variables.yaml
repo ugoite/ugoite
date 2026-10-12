@@ -186,12 +186,30 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-variable-declarations
+          - id: missing-and-unknown-variable-diagnostics
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::required_missing_and_unknown_names_have_stable_order
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-variable-declarations
           - id: saved-sql-exact-variable-types
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
             selector:
               kind: symbol
               name: tests::saved_sql_source_checks_variable_types_and_literal_values
+            claims:
+              - kind: evidences
+                anchor: REQ-COMP-007#criterion.typed-source-binding
+          - id: saved-sql-supported-variable-types
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector:
+              kind: symbol
+              name: tests::saved_sql_source_binds_every_supported_sql_variable_type
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.typed-source-binding
@@ -204,12 +222,12 @@ features:
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.input-component-binding
-          - id: local-text-binding
+          - id: variable-backed-text-reference
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
             selector:
               kind: symbol
-              name: tests::text_components_emit_layout_ordered_bindings_without_source_requests
+              name: tests::dependency_index_is_semantic_and_independent_of_layout_order
             claims:
               - kind: evidences
                 anchor: REQ-COMP-007#criterion.direct-text-binding

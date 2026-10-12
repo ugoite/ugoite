@@ -135,6 +135,15 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-variable-declarations
                 covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.runtime-variable-binding]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::invalid_supplied_value_does_not_fall_back_to_a_default } }
+          - id: missing-and-unknown-variable-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::required_missing_and_unknown_names_have_stable_order }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-variable-declarations
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.runtime-variable-binding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::required_missing_and_unknown_names_have_stable_order } }
           - id: exact-sql-variable-type-case
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
@@ -144,6 +153,15 @@ requirements:
                 criterion: REQ-COMP-007#criterion.typed-source-binding
                 covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.typed-saved-sql-variable-binding]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_source_checks_variable_types_and_literal_values } }
+          - id: supported-sql-variable-types-case
+            adapter: rust
+            path: crates/ugoite-core/src/composition.rs
+            selector: { kind: symbol, name: tests::saved_sql_source_binds_every_supported_sql_variable_type }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-007#criterion.typed-source-binding
+                covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.typed-saved-sql-variable-binding]
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::saved_sql_source_binds_every_supported_sql_variable_type } }
           - id: local-input-value-case
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
@@ -153,7 +171,7 @@ requirements:
                 criterion: REQ-COMP-007#criterion.input-component-binding
                 covers: [FEAT-COMP-008#binding.core-typed-variable-resolution/target.local-components-and-dependency-index]
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::input_components_resolve_through_semantic_variable_values } }
-          - id: local-text-reference-case
+          - id: variable-backed-text-reference-case
             adapter: rust
             path: crates/ugoite-core/src/composition.rs
             selector: { kind: symbol, name: tests::dependency_index_is_semantic_and_independent_of_layout_order }
