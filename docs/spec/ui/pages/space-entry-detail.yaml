@@ -1,5 +1,5 @@
 version: "0.5"
-updated: "2026-10-09"
+updated: "2026-10-12"
 page:
   id: space-entry-detail
   title: Entry Detail
@@ -46,6 +46,9 @@ components:
           type: button
           presentation: icon-label
           intent: primary-mutation
+          keyboard_shortcuts:
+            macos: Cmd+S
+            other: Ctrl+S
         - id: history
           type: link
           presentation: icon-only

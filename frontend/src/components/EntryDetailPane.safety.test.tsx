@@ -86,6 +86,16 @@ const notesForm: Form = {
   },
 };
 
+const markdownForm: Form = {
+  id: "00000000-0000-7000-8000-000000000002",
+  name: "Markdown",
+  version: 1,
+  template: "# Markdown\n\n## Body\n",
+  fields: {
+    Body: { id: 101, type: "markdown", required: false },
+  },
+};
+
 const storedEntry = (overrides: Record<string, unknown> = {}) => ({
   id: "entry-1",
   form: "Notes",
@@ -135,6 +145,84 @@ describe("EntryDetailPane safety/recovery", () => {
     }
     expect(remove).toHaveClass("tool-danger");
     expect(container.querySelectorAll(".actionbar")).toHaveLength(1);
+  });
+
+  it("REQ-FE-005: saves Markdown Entry content with Ctrl+S and Cmd+S", async () => {
+    const getMock = entryApi.get as ReturnType<typeof vi.fn>;
+    getMock.mockResolvedValue(
+      storedEntry({ form: "Markdown", fields: { Body: "# Original" } }),
+    );
+    const updateMock = entryApi.update as ReturnType<typeof vi.fn>;
+    updateMock.mockResolvedValue({ id: "entry-1", revision_id: "rev-2" });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        forms={() => [markdownForm]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const body = await screen.findByLabelText("Body");
+    fireEvent.input(body, { target: { value: "# Updated" } });
+    expect(fireEvent.keyDown(document, { key: "s", ctrlKey: true })).toBe(
+      false,
+    );
+
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+    const firstPayload = updateMock.mock.calls[0][2] as Record<string, unknown>;
+    expect(firstPayload.parent_revision_id).toBe("rev-1");
+    expect(firstPayload.fields).toEqual({ Body: "# Updated" });
+
+    fireEvent.input(body, { target: { value: "# Updated again" } });
+    expect(fireEvent.keyDown(document, { key: "s", metaKey: true })).toBe(
+      false,
+    );
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
+    const secondPayload = updateMock.mock.calls[1][2] as Record<string, unknown>;
+    expect(secondPayload.parent_revision_id).toBe("rev-2");
+    expect(secondPayload.fields).toEqual({ Body: "# Updated again" });
+  });
+
+  it("prevents the browser save action without mutating a clean Entry", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue(storedEntry());
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        forms={() => [notesForm]}
+      />
+    ));
+
+    await screen.findByLabelText("Notes");
+    expect(fireEvent.keyDown(document, { key: "s", ctrlKey: true })).toBe(
+      false,
+    );
+    expect(entryApi.update).not.toHaveBeenCalled();
+  });
+
+  it("does not save the Entry behind an open confirmation dialog", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue(storedEntry());
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        forms={() => [notesForm]}
+      />
+    ));
+
+    const notes = await screen.findByLabelText("Notes");
+    fireEvent.input(notes, { target: { value: "local edit" } });
+    fireEvent.click(screen.getByRole("button", { name: "Delete entry" }));
+    const dialog = await screen.findByRole("dialog");
+
+    expect(fireEvent.keyDown(dialog, { key: "s", ctrlKey: true })).toBe(
+      false,
+    );
+    expect(entryApi.update).not.toHaveBeenCalled();
   });
 
   it("REQ-FE-035: hides internal identifiers when Entry loading fails and keeps recovery actions", async () => {
