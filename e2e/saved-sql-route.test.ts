@@ -175,20 +175,15 @@ test.describe("Saved SQL route", () => {
       });
       await page.getByLabel("Form for this query").selectOption(form!.id!);
       const aggregate = page.getByLabel("Aggregate");
-      await aggregate.focus();
-      await aggregate.press("ArrowDown");
-      await aggregate.press("ArrowDown");
+      await aggregate.selectOption("sum");
       await expect(aggregate).toHaveValue("sum");
       const aggregateField = page.getByLabel("Field", { exact: true });
-      await aggregateField.focus();
-      await aggregateField.press("r");
+      await aggregateField.selectOption("Revenue");
       await expect(aggregateField).toHaveValue("Revenue");
-      await aggregateField.press("q");
+      await aggregateField.press("ArrowUp");
       await expect(aggregateField).toHaveValue("Quantity");
       const filterField = page.getByLabel("Filter field");
-      await filterField.focus();
-      await filterField.press("c");
-      await filterField.press("Enter");
+      await filterField.selectOption("Category");
       await expect(filterField).toHaveValue("Category");
       await page.getByRole("button", { name: "Generate aggregate SQL" })
         .click();
