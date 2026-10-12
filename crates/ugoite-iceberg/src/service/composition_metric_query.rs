@@ -345,36 +345,16 @@ impl UgoiteService {
         request: SqlQueryRequest,
     ) -> Result<SqlScalarProbeResult> {
         validate_scalar_probe_request(&request)?;
-        let saved_revision = self
-            .read_saved_sql_query_revision(space_id, request.saved_sql.as_ref())
-            .await?;
-        let query_sql = saved_revision
-            .as_ref()
-            .map_or(request.sql.as_str(), |revision| revision.sql.as_str());
-        let normalized_sql = index::normalize_sql_template(query_sql)?;
-        validate_saved_sql_client_sql(saved_revision.is_some(), &request.sql, &normalized_sql)?;
-        index::validate_read_only_sql(&normalized_sql)?;
+        let prepared = sql_execution::prepare_sql_request(self, space_id, &request, None).await?;
         self.validate_complete_space(space_id).await?;
-        let parameter_types = effective_sql_parameter_types(
-            &request.parameters,
-            &saved_sql_parameter_types(saved_revision.as_ref(), &request.parameter_types)?,
-        )?;
-        let parameters = index::datafusion_parameters(&request.parameters, &parameter_types)
-            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         let publication = workspace.current_publication().await?;
         let checkpoint = workspace.resolve_publication(&publication).await?;
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
-        let relation_scopes = forms
-            .iter()
-            .map(|form| (sql_relation_name(form.id), EntryScope::AllCurrent))
-            .collect::<BTreeMap<_, _>>();
-        let execution_sql = if let Some(revision) = &saved_revision {
-            bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
-        } else {
-            normalized_sql
-        };
+        let relation_scopes = sql_execution::all_current_relation_scopes(&forms);
+        let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
+        let parameters = prepared.parameters;
         let (columns, result_schema, rows) =
             index::execute_sql_scalar_probe_authorized_by_form_at_checkpoint_stateless(
                 &self.operator,
@@ -447,23 +427,17 @@ impl UgoiteService {
                 );
             }
         }
-        let saved_sql = request.saved_sql.as_ref().expect("validated scalar probe");
-        let saved_revision = self
-            .read_saved_sql_query_revision(space_id, Some(saved_sql))
-            .await?;
-        let query_sql = saved_revision
-            .as_ref()
-            .map_or(request.sql.as_str(), |revision| revision.sql.as_str());
-        let normalized_sql = index::normalize_sql_template(query_sql)?;
-        validate_saved_sql_client_sql(saved_revision.is_some(), &request.sql, &normalized_sql)?;
-        index::validate_read_only_sql(&normalized_sql)?;
+        let prepared = sql_execution::prepare_sql_request(
+            self,
+            space_id,
+            &request,
+            Some(sql_execution::SqlSourceAuthorization {
+                state: &state,
+                principal_ids,
+            }),
+        )
+        .await?;
         self.validate_complete_space(space_id).await?;
-        let parameter_types = effective_sql_parameter_types(
-            &request.parameters,
-            &saved_sql_parameter_types(saved_revision.as_ref(), &request.parameter_types)?,
-        )?;
-        let parameters = index::datafusion_parameters(&request.parameters, &parameter_types)
-            .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         let publication = workspace.current_publication().await?;
@@ -478,23 +452,10 @@ impl UgoiteService {
                 composition_id,
             )?;
         }
-        let named_scopes =
-            Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
-        let relation_scopes = forms
-            .iter()
-            .filter_map(|form| {
-                named_scopes
-                    .get(&form.name.to_ascii_lowercase())
-                    .cloned()
-                    .map(|scope| (sql_relation_name(form.id), scope))
-            })
-            .collect::<BTreeMap<_, _>>();
-        ensure_saved_sql_access(&state, principal_ids, saved_sql)?;
-        let execution_sql = if let Some(revision) = &saved_revision {
-            bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
-        } else {
-            normalized_sql
-        };
+        let relation_scopes =
+            sql_execution::authorized_relation_scopes(&state, principal_ids, &forms)?;
+        let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
+        let parameters = prepared.parameters;
         let (columns, result_schema, rows) =
             index::execute_sql_scalar_probe_authorized_by_form_at_checkpoint_stateless(
                 &self.operator,

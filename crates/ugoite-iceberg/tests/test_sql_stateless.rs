@@ -452,6 +452,28 @@ async fn composition_scalar_probe_reads_at_most_two_rows_from_exact_saved_revisi
         select(&format!("{} >= 1", space.priority_column)),
     )
     .await?;
+    let parameterized = space
+        .service
+        .create_saved_sql(
+            &space.space_id,
+            Some("parameterized-scalar"),
+            &SqlPayload {
+                name: Some("Parameterized scalar".into()),
+                kind: SqlKind::UserQuery,
+                metadata: None,
+                sql: format!(
+                    "SELECT COUNT(*) AS result FROM \"{}\" WHERE \"{}\" >= $minimum",
+                    space.form_name, space.priority_column
+                ),
+                variables: json!([{
+                    "name": "minimum",
+                    "type": "integer",
+                    "description": ""
+                }]),
+            },
+            "owner",
+        )
+        .await?;
 
     let probe = |id: &str, saved: &Value| SqlQueryRequest {
         sql: String::new(),
@@ -488,6 +510,34 @@ async fn composition_scalar_probe_reads_at_most_two_rows_from_exact_saved_revisi
         .await?;
     assert_eq!(multiple.rows.len(), 2);
     assert_eq!(multiple.columns, ["status"]);
+
+    let parameterized_revision = SavedSqlRevisionRef {
+        id: "parameterized-scalar".into(),
+        revision_id: parameterized["revision_id"]
+            .as_str()
+            .context("parameterized Saved SQL revision id")?
+            .into(),
+    };
+    let parameterized_request = || SqlQueryRequest {
+        sql: String::new(),
+        parameters: Map::from_iter([("minimum".into(), json!(3))]),
+        parameter_types: BTreeMap::new(),
+        include_exact_integer_values: false,
+        limit: 2,
+        continuation: None,
+        saved_sql: Some(parameterized_revision.clone()),
+    };
+    let page = space
+        .service
+        .query_sql(&space.space_id, parameterized_request())
+        .await?;
+    let scalar = space
+        .service
+        .probe_sql_scalar_local(&space.space_id, parameterized_request())
+        .await?;
+    assert_eq!(page.columns, scalar.columns);
+    assert_eq!(page.rows, scalar.rows);
+    assert_eq!(scalar.rows[0]["result"], 3);
     Ok(())
 }
 
