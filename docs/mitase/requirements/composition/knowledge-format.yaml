@@ -88,7 +88,7 @@ requirements:
       - id: typed-metric-definition-validation
         role: verification
         facet: verification
-        responsibility: Verify typed aggregate and SQL scalar definitions resolve into server metric bindings. Companion targets verify operation-specific aggregate result types, matching-set semantics, projection-independent aggregate FieldIds, and native/WASM canonical parity.
+        responsibility: Verify typed aggregate and SQL scalar definitions resolve into server metric bindings and execute through the Composition Metric query operation with exact Saved SQL revision and current authorization. Companion targets verify operation-specific aggregate result types, matching-set semantics, projection-independent aggregate FieldIds, and native/WASM canonical parity.
         targets:
           - id: typed-metric-binding-resolution-case
             adapter: rust
@@ -100,6 +100,20 @@ requirements:
                 covers:
                   - FEAT-COMP-001#binding.typed-metric-definition-domain/target.metric-definition-type
                 runner: { runner: cargo-test-unit, arguments: { package: ugoite-core, test: composition::tests::typed_metric_definitions_resolve_to_server_metric_bindings } }
+          - id: typed-metric-query-execution-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
+            selector: { kind: test, name: typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe }
+            claims:
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-metric-definition, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe } } }
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-entry-aggregate-execution, covers: [FEAT-COMP-002#binding.entry-query-aggregate-runtime/target.aggregate-entry-query, FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe } } }
+          - id: typed-metric-current-authorization-case
+            adapter: rust
+            path: crates/ugoite-iceberg/tests/test_composition_query_authorization.rs
+            selector: { kind: test, name: authorized_metric_scalar_rechecks_current_form_and_saved_sql_access }
+            claims:
+              - { kind: verifies, criterion: REQ-COMP-002#criterion.typed-metric-definition, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_metric_scalar_rechecks_current_form_and_saved_sql_access } } }
+              - { kind: verifies, criterion: REQ-COMP-004#criterion.current-authorization, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_metric_scalar_rechecks_current_form_and_saved_sql_access } } }
           - id: matching-set-contract-case
             adapter: rust
             path: crates/ugoite-core/src/entry_query.rs

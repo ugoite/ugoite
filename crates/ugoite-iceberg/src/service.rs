@@ -160,6 +160,7 @@ use ugoite_storage::{
     SpaceCatalogStore, StorageBackend,
 };
 
+#[path = "service/composition_metric_query.rs"]
 mod composition_metric_query;
 mod composition_resolver;
 pub use composition_resolver::CompositionPreview;
