@@ -65,6 +65,10 @@ export interface DashboardFlowItemProps {
   parameterDisplayName?: string;
   parameterValues: Readonly<Record<string, unknown>>;
   parameterInvalid?: (parameterId: string) => boolean;
+  onParameterChange?: (
+    parameterId: string,
+    value: unknown | undefined,
+  ) => void;
   sources: Record<string, CompositionSourcePageState>;
   sourceById: ReadonlyMap<
     string,
@@ -96,6 +100,8 @@ export function DashboardFlowItem(props: DashboardFlowItemProps) {
           displayName={props.parameterDisplayName ??
             t("composition.studioParameters")}
           value={props.parameterValues[props.definition.id]}
+          onChange={(value) =>
+            props.onParameterChange?.(props.definition.id, value)}
           invalid={props.parameterInvalid?.(props.definition.id)}
         />
       </div>
@@ -145,6 +151,10 @@ type DashboardFlowRendererProps = {
   /** Transient parameter values owned by the composition query handle. */
   parameterValues: Readonly<Record<string, unknown>>;
   parameterInvalid?: (parameterId: string) => boolean;
+  onParameterChange?: (
+    parameterId: string,
+    value: unknown | undefined,
+  ) => void;
   sources: Record<string, CompositionSourcePageState>;
   fieldNames?: CompositionFieldNames;
   fieldKeys?: CompositionFieldKeys;
@@ -242,6 +252,7 @@ export function DashboardFlowRenderer(props: DashboardFlowRendererProps) {
                         : undefined}
                       parameterValues={props.parameterValues}
                       parameterInvalid={props.parameterInvalid}
+                      onParameterChange={props.onParameterChange}
                       sources={props.sources}
                       sourceById={sourceById()}
                       ownsSourceStatus={ownsSourceStatus()}

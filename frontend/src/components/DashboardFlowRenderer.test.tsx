@@ -145,6 +145,7 @@ describe("DashboardFlowRenderer", () => {
   });
 
   it("renders rows in order with parameter controls interleaved", async () => {
+    const onParameterChange = vi.fn();
     const query = vi.spyOn(compositionApi, "queryMetric").mockImplementation(
       (_spaceId, request) =>
         Promise.resolve({
@@ -157,6 +158,7 @@ describe("DashboardFlowRenderer", () => {
         }),
     );
     const { container } = renderFlow({
+      onParameterChange,
       metricQueryContext: {
         spaceId: "space-1",
         target: {
@@ -181,8 +183,9 @@ describe("DashboardFlowRenderer", () => {
     // The parameter control shows the declared human label, never the id.
     const input = screen.getByLabelText("Month");
     expect(input).toHaveValue("2026-10-01");
-    expect(input).toHaveAttribute("readonly");
-    expect(input).toHaveAttribute("aria-readonly", "true");
+    expect(input).not.toHaveAttribute("readonly");
+    fireEvent.input(input, { target: { value: "2026-11-01" } });
+    expect(onParameterChange).toHaveBeenCalledWith("month", "2026-11-01");
     expect(screen.queryByLabelText("month")).toBeNull();
     // Unplaced optional parameters render no in-flow control.
     expect(screen.queryByLabelText("Region")).toBeNull();
@@ -268,8 +271,10 @@ describe("DashboardFlowRenderer", () => {
     await waitFor(() => expect(query).not.toHaveBeenCalled());
   });
 
-  it("renders an Input from its variable binding without browser-side mutation", () => {
+  it("binds parameter changes to transient work state", () => {
+    const onParameterChange = vi.fn();
     renderFlow({
+      onParameterChange,
       parameterDefinitions: [{
         id: "include_archived",
         label: "Include archived",
@@ -301,8 +306,10 @@ describe("DashboardFlowRenderer", () => {
 
     const input = screen.getByLabelText("Include archived");
     expect(input).toHaveValue("");
-    expect(input).toHaveAttribute("readonly");
+    expect(input).not.toHaveAttribute("readonly");
     expect(input).toHaveAttribute("aria-required", "true");
+    fireEvent.input(input, { target: { value: "true" } });
+    expect(onParameterChange).toHaveBeenCalledWith("include_archived", true);
   });
 
   it("delegates flow metrics and tables to source-native presenters", async () => {

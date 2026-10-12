@@ -1920,6 +1920,24 @@ mod tests {
     }
 
     #[test]
+    fn float_variables_accept_finite_integer_notation_from_json() {
+        let variables = [variable(
+            "ratio",
+            CompositionVariableType::Float,
+            true,
+            None,
+            None,
+        )];
+        let supplied = BTreeMap::from([("ratio".to_owned(), json!(1))]);
+
+        let bindings = bind_variables(&variables, &supplied);
+
+        assert!(bindings.diagnostics.is_empty());
+        assert!(bindings.invalid_values.is_empty());
+        assert_eq!(bindings.values, supplied);
+    }
+
+    #[test]
     fn duplicate_declarations_are_invalid_composition() {
         let variables = [
             variable("same", CompositionVariableType::String, true, None, None),

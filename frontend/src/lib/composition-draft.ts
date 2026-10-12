@@ -818,7 +818,8 @@ export const addTableDisplay = (
   if (!draft.sources.some((source) => source.draftId === sourceDraftId)) {
     return { ok: false, error: "unknown-source" };
   }
-  const draftId = `disp-${draft.nextDisplaySeq}`;
+  const displayIdentity = nextDisplayDraftIdentity(draft);
+  const draftId = displayIdentity.draftId;
   const display: DraftDisplay = {
     kind: "table",
     draftId,
@@ -828,7 +829,7 @@ export const addTableDisplay = (
   const placed = insertLayoutItem(
     {
       ...draft,
-      nextDisplaySeq: draft.nextDisplaySeq + 1,
+      nextDisplaySeq: displayIdentity.nextDisplaySeq,
       displays: [...draft.displays, display],
     },
     { kind: "component", draftId },
@@ -896,7 +897,8 @@ export const addMetricDisplay = (
   if (!metricColumnFitsSource(source, column, true)) {
     return { ok: false, error: "invalid-query" };
   }
-  const draftId = `disp-${draft.nextDisplaySeq}`;
+  const displayIdentity = nextDisplayDraftIdentity(draft);
+  const draftId = displayIdentity.draftId;
   const display: DraftDisplay = {
     kind: "metric",
     draftId,
@@ -907,7 +909,7 @@ export const addMetricDisplay = (
   const placed = insertLayoutItem(
     {
       ...draft,
-      nextDisplaySeq: draft.nextDisplaySeq + 1,
+      nextDisplaySeq: displayIdentity.nextDisplaySeq,
       displays: [...draft.displays, display],
     },
     { kind: "component", draftId },
@@ -923,7 +925,8 @@ export const addTextDisplay = (
   init: { text?: string; style?: CompositionTextStyle; label?: string } = {},
   target?: DraftInsertTarget,
 ): DraftResult & { draftId?: string } => {
-  const draftId = `disp-${draft.nextDisplaySeq}`;
+  const displayIdentity = nextDisplayDraftIdentity(draft);
+  const draftId = displayIdentity.draftId;
   const display: DraftDisplay = {
     kind: "text",
     draftId,
@@ -934,7 +937,7 @@ export const addTextDisplay = (
   const placed = insertLayoutItem(
     {
       ...draft,
-      nextDisplaySeq: draft.nextDisplaySeq + 1,
+      nextDisplaySeq: displayIdentity.nextDisplaySeq,
       displays: [...draft.displays, display],
     },
     { kind: "component", draftId },
@@ -942,6 +945,30 @@ export const addTextDisplay = (
   );
   if (!placed.ok) return placed;
   return { ok: true, draftId, draft: placed.draft };
+};
+
+const nextDisplayDraftIdentity = (
+  draft: CompositionDraft,
+): { draftId: string; nextDisplaySeq: number } => {
+  const inputComponentIds = new Set(
+    draft.layoutRows.flatMap((row) =>
+      row.items.flatMap((item) =>
+        item.kind === "parameter"
+          ? [
+            item.inputComponentId ??
+              inputComponentIdForVariable(item.parameterId),
+          ]
+          : []
+      )
+    ),
+  );
+  const usedIds = new Set([
+    ...draft.displays.map((display) => display.draftId),
+    ...inputComponentIds,
+  ]);
+  let seq = draft.nextDisplaySeq;
+  while (usedIds.has(`disp-${seq}`)) seq += 1;
+  return { draftId: `disp-${seq}`, nextDisplaySeq: seq + 1 };
 };
 
 /**
@@ -1699,9 +1726,19 @@ export const draftFromDocument = (
   const displayComponents = document.spec.components.filter((component) =>
     component.kind !== "input"
   );
+  const inputComponentIds = new Set(inputByComponentId.keys());
+  const componentDraftIds = new Map<string, string>();
+  let nextDisplaySeq = 1;
+  for (const component of displayComponents) {
+    while (inputComponentIds.has(`disp-${nextDisplaySeq}`)) {
+      nextDisplaySeq += 1;
+    }
+    componentDraftIds.set(component.id, `disp-${nextDisplaySeq}`);
+    nextDisplaySeq += 1;
+  }
   const displays: DraftDisplay[] = displayComponents.map(
-    (component, index) => {
-      const draftId = `disp-${index + 1}`;
+    (component) => {
+      const draftId = componentDraftIds.get(component.id)!;
       if (component.kind === "text") {
         if (
           (component.style !== "title" && component.style !== "heading" &&
@@ -1784,12 +1821,6 @@ export const draftFromDocument = (
       );
     },
   );
-  const componentDraftIds = new Map(
-    displayComponents.map((component, index) => [
-      component.id,
-      `disp-${index + 1}`,
-    ]),
-  );
   const variableIds = new Set(variables.map((variable) => variable.id));
   const layoutRows: DraftLayoutRow[] = document.spec.layout.rows.map((row) => ({
     id: row.id,
@@ -1828,7 +1859,7 @@ export const draftFromDocument = (
     })),
     layoutRows,
     nextSourceSeq: sources.length + 1,
-    nextDisplaySeq: displays.length + 1,
+    nextDisplaySeq,
     nextRowSeq: layoutRows.length + 1,
   };
 };

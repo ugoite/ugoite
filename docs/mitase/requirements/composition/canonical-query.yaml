@@ -128,13 +128,13 @@ requirements:
           - id: route-case
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx"
-            selector: { kind: test, name: loads and resolves only the exact revision and binds typed parameter changes }
+            selector: { kind: test, name: resolves typed Input changes against the exact revision }
             claims:
               - kind: verifies
                 criterion: REQ-COMP-004#criterion.exact-composition-revision
                 covers:
                   - FEAT-COMP-004#binding.browser-query-runtime/target.browser-exact-revision-route
-                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: loads and resolves only the exact revision and binds typed parameter changes } }
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/compositions/[composition_id]/[revision_id]/index.test.tsx", test: resolves typed Input changes against the exact revision } }
           - id: home-case
             adapter: typescript
             path: "frontend/src/routes/spaces/[space_id]/dashboard.test.tsx"

@@ -430,6 +430,20 @@ future_alias: *shared
     }
 
     #[test]
+    fn float_defaults_accept_finite_json_number_notation() {
+        for numeric_token in ["1", "1.0"] {
+            let input = format!(
+                "format: ugoite.composition\nformat_version: 1\nname: Example\nkind: dashboard\ntags: []\nspec:\n  variables:\n    - id: ratio\n      type: float\n      required: false\n      default: {numeric_token}\n  sources: []\n  components:\n    - id: marker\n      kind: text\n      content: {{kind: literal, text: marker}}\n      style: body\n  layout:\n    kind: flow\n    rows:\n      - id: main\n        items:\n          - kind: component\n            component: marker\n"
+            );
+
+            assert!(
+                parse_composition_yaml(&input).is_ok(),
+                "unexpected acceptance for float default {numeric_token}"
+            );
+        }
+    }
+
+    #[test]
     fn leaves_date_like_literals_as_strings() {
         let input = r#"
 format: ugoite.composition

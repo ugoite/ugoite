@@ -417,6 +417,8 @@ export default function CompositionRevisionRoute() {
                       definition.id,
                     )}
                     value={handle.parameters()[definition.id]}
+                    onChange={(value) =>
+                      handle.setParameter(definition.id, value)}
                     invalid={parameterMismatch(definition.id)}
                   />
                 </FieldStackRow>
@@ -446,6 +448,7 @@ export default function CompositionRevisionRoute() {
             parameterDisplayDefinitions={parameterDisplayDefinitions()}
             parameterValues={handle.parameters()}
             parameterInvalid={parameterMismatch}
+            onParameterChange={handle.setParameter}
             sources={current().sources}
             fieldNames={fieldNames}
             fieldKeys={fieldKeys}

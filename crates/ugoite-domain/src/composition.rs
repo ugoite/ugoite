@@ -1322,6 +1322,8 @@ mod tests {
         assert!(!Type::Integer.accepts_value(&json!(1.0)));
 
         assert!(Type::Float.accepts_value(&json!(1.25)));
+        assert!(Type::Float.accepts_value(&json!(1.0)));
+        assert!(Type::Float.accepts_value(&json!(1)));
         assert!(!Type::Float.accepts_value(&json!("1.25")));
 
         assert!(Type::Date.accepts_value(&json!("2024-02-29")));

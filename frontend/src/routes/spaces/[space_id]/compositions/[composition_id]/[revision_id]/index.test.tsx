@@ -109,7 +109,7 @@ describe("Composition exact-revision route", () => {
     });
   });
 
-  it("loads the exact revision and shows its declared default read-only", async () => {
+  it("resolves typed Input changes against the exact revision", async () => {
     render(() => <CompositionRevisionRoute />);
 
     expect(await screen.findByRole("heading", { name: "Monthly expenses" }))
@@ -129,17 +129,17 @@ describe("Composition exact-revision route", () => {
     );
     const input = await screen.findByLabelText("Month");
     expect(input).toHaveValue("2026-01-01");
-    expect(input).toHaveAttribute("readonly");
+    expect(input).not.toHaveAttribute("readonly");
     expect(input).toHaveAttribute("aria-required", "true");
-    fireEvent.change(input, { target: { value: "2026-02-01" } });
+    fireEvent.input(input, { target: { value: "2026-02-01" } });
     await waitFor(() =>
-      expect(compositionApi.resolve).toHaveBeenCalledTimes(1)
+      expect(compositionApi.resolve).toHaveBeenCalledTimes(2)
     );
     expect(compositionApi.resolve).toHaveBeenLastCalledWith(
       "space-1",
       "tool-1",
       "revision-2",
-      {},
+      { month_start: "2026-02-01" },
       expect.any(AbortSignal),
     );
   });
@@ -186,7 +186,7 @@ describe("Composition exact-revision route", () => {
     );
   });
 
-  it("preserves false as the read-only default for a required boolean variable", async () => {
+  it("preserves false as the default for a required boolean variable", async () => {
     vi.mocked(compositionApi.resolve).mockResolvedValue({
       ok: true,
       parameter_definitions: [{
@@ -202,7 +202,7 @@ describe("Composition exact-revision route", () => {
 
     const input = await screen.findByLabelText("Include archived");
     expect(input).toHaveValue("false");
-    expect(input).toHaveAttribute("readonly");
+    expect(input).not.toHaveAttribute("readonly");
     expect(input).toHaveAttribute("aria-required", "true");
     expect(compositionApi.resolve).toHaveBeenCalledTimes(1);
     expect(compositionApi.resolve).toHaveBeenCalledWith(
@@ -606,27 +606,27 @@ describe("Composition revision flow layout", () => {
     render(() => <CompositionRevisionRoute />);
 
     expect(await screen.findByLabelText("Region")).toBeInTheDocument();
-    expect(screen.getByLabelText("Region")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Region")).not.toHaveAttribute("readonly");
     // The placed control renders once, inside the flow only.
     expect(screen.getAllByLabelText("Month")).toHaveLength(1);
-    expect(screen.getByLabelText("Month")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Month")).not.toHaveAttribute("readonly");
     expect(screen.getAllByLabelText("Region")).toHaveLength(1);
   });
 
-  it("keeps exact-revision resolve defaults without browser-side edits", async () => {
+  it("re-resolves the exact revision when a placed Input changes", async () => {
     render(() => <CompositionRevisionRoute />);
 
     const month = await screen.findByLabelText("Month");
-    fireEvent.change(month, { target: { value: "2026-02-01" } });
+    fireEvent.input(month, { target: { value: "2026-02-01" } });
 
     await waitFor(() =>
-      expect(compositionApi.resolve).toHaveBeenCalledTimes(1)
+      expect(compositionApi.resolve).toHaveBeenCalledTimes(2)
     );
     expect(compositionApi.resolve).toHaveBeenLastCalledWith(
       "space-1",
       "tool-1",
       "revision-2",
-      {},
+      { month: "2026-02-01" },
       expect.any(AbortSignal),
     );
   });

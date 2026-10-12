@@ -430,6 +430,68 @@ describe("composition draft model", () => {
     expect(draft.sources[0].name).not.toContain("internal-revision-identity");
   });
 
+  it("keeps generated display ids clear of preserved Input ids", () => {
+    const document: CompositionStudioDocument = {
+      format: "ugoite.composition",
+      format_version: 1,
+      kind: "dashboard",
+      name: "Tools",
+      tags: [],
+      spec: {
+        variables: [{
+          id: "title",
+          type: "string",
+          required: false,
+        }],
+        sources: [],
+        components: [
+          {
+            kind: "text",
+            id: "heading",
+            content: { kind: "literal", text: "Heading" },
+            style: "heading",
+          },
+          {
+            kind: "input",
+            id: "disp-1",
+            variable: "title",
+          },
+        ],
+        layout: {
+          kind: "flow",
+          rows: [{
+            id: "main",
+            items: [
+              { kind: "component", component: "disp-1" },
+              { kind: "component", component: "heading" },
+            ],
+          }],
+        },
+      },
+    };
+
+    const draft = draftFromDocument(document, {});
+    const restored = toStudioDocument(draft);
+    expect(draft.displays[0].draftId).toBe("disp-2");
+    expect(restored.spec.components.map((component) => component.id)).toEqual([
+      "disp-2",
+      "disp-1",
+    ]);
+    expect(restored.spec.layout.rows[0].items).toEqual([
+      { kind: "component", component: "disp-1" },
+      { kind: "component", component: "disp-2" },
+    ]);
+
+    const added = addTextDisplay(draft, { text: "Note" });
+    if (!added.ok || !added.draftId) throw new Error("expected text block");
+    const afterInsert = toStudioDocument(added.draft);
+    expect(added.draftId).toBe("disp-3");
+    expect(
+      new Set(afterInsert.spec.components.map((component) => component.id)),
+    )
+      .toEqual(new Set(["disp-1", "disp-2", "disp-3"]));
+  });
+
   it("restores multi-row layout order with text and parameter placement", () => {
     // Labeled-fixture shape with semantic ids: an entry_query source with
     // parameter-bound filters, a saved_sql source with variable bindings, a
