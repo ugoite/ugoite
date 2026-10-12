@@ -1233,7 +1233,7 @@ async fn authorized_metric_scalar_rechecks_current_form_and_saved_sql_access() -
     assert!(entry_revoked.result.is_none());
     assert_eq!(
         entry_revoked.diagnostics[0].code,
-        ugoite_domain::composition::CompositionDiagnosticCode::MetricResultEmpty
+        ugoite_domain::composition::CompositionDiagnosticCode::MetricScalarExpectedOneRow
     );
 
     authorizer
