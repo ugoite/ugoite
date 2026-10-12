@@ -1,0 +1,51 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: composition
+category: Portable Composition documents, execution, and recovery
+requirements:
+  - id: REQ-COMP-007
+    title: Typed reactive Composition variables
+    description: Composition v1 pre-release grammar declares typed variables and Input components, supports direct variable-backed Text, and re-evaluates only dependent SQL Sources from a transient typed snapshot. This capability is planned; exact verification evidence is added with its implementation slices.
+    priority: high
+    status: planned
+    criteria:
+      - id: typed-variable-declarations
+        kind: behavior
+        statement: Each Composition variable has a unique stable ID, required type, required flag, optional exact-type default, and optional display metadata. The initial type set is string, boolean, integer, float, date, and timestamp; values are never inferred or implicitly coerced.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: input-component-binding
+        kind: behavior
+        statement: An Input component references one declared variable and owns no persisted value or setter expression. Multiple Inputs bound to the same variable display the same current value, and each placed Input is an ordinary Component referenced once by Layout.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: direct-text-binding
+        kind: behavior
+        statement: Text content is either a literal string or a direct reference to a declared string variable. A valid variable change updates dependent Text synchronously; Text evaluates no expressions, implicit conversions, or SQL results.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: typed-source-binding
+        kind: security
+        statement: Composition references use the variable form and bind to exact-type SQL variables declared by the pinned Saved SQL revision through the existing typed SQL parameters. SQL text is not rewritten, interpolated, or concatenated, and the stateless SQL parameters and parameter_types contract is unchanged.
+        governed_by: [POL-000#rule.foundation-precedence, POL-004#rule.governance]
+      - id: dependency-driven-execution
+        kind: behavior
+        statement: Dependency references, not component or Layout order, determine updates. A valid variable change immediately invalidates only dependent SQL Sources and their Metric/Table consumers; an unrelated variable does not issue another SQL request. Debounce, if any, affects only SQL issuing, not input, validation, Text, or stale-result invalidation.
+        governed_by: [POL-004#rule.governance]
+      - id: stale-result-and-state-safety
+        kind: security
+        statement: A SQL response is accepted only for its current Composition revision, variable-subset fingerprint, exact Saved SQL revision, and authorization/publication context. Older generations are discarded; pending or failed requests never present prior success as current. Current ACL, bounded execution, NULL/zero/zero-row/multiple-row distinctions, exact numeric handling, and SQL diagnostics remain in force.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: runtime-values-are-transient
+        kind: behavior
+        statement: Composition Entry revisions persist variable declarations and defaults, Sources, Components, and Layout. Runtime values, raw invalid input, query results, pending state, and errors are Work and are not persisted by preview, use, implicit save, URL, local storage, or server session.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: portable-variable-contract
+        kind: quality
+        statement: Rust Domain/Core define variable parsing, validation, canonicalization, dependency references, and diagnostics for Native and WASM. Composition DTOs use variables and variable_definitions; one-shot CLI Composition queries use --var; SQL APIs retain parameters and parameter_types. Native and WASM canonical output and fingerprints match.
+        governed_by: [POL-004#rule.governance]
+      - id: code-free-studio-authoring
+        kind: behavior
+        statement: Studio can declare typed variables and defaults, place Inputs, bind literal or string-variable Text, and connect exact-type Saved SQL variables without JavaScript, expressions, getters, setters, or event handlers. Saving preserves defaults and never promotes runtime input to Composition Knowledge.
+        governed_by: [POL-000#rule.foundation-precedence]
+      - id: responsive-accessible-inputs
+        kind: quality
+        statement: At 390px width, variable Inputs, labels, invalid/loading/results states, and recovery actions remain understandable and operable by keyboard and screen reader; internal variable IDs are not primary labels.
+        governed_by: [POL-UI-002#rule.governance, POL-UI-007#rule.governance, POL-UI-005#rule.governance]

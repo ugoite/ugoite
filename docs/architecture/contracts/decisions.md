@@ -537,3 +537,13 @@ Implementation is split into dependent Domain/Core/portable-operation,
 Studio/Browser, and acceptance/spec slices. Each slice gets focused validation
 and required CI before a dependent slice builds on it. SQL aggregate behavior
 is tested at the SQL layer; Metric tests prove selection and presentation only.
+
+
+## ADR-023 — Composition typed reactive variables
+
+**Status: Accepted target for pre-release Composition; implementation pending.**
+This ruling authorizes the prerelease Composition grammar and runtime defined in
+[ADR-023](adr-023-composition-reactive-variables.md), with no compatibility
+reader or migration. It inherits ADR-022's SQL-only Metric boundary and does not
+change Space, Entry, Form, Saved SQL, SQL API, ACL, or publication contracts.
+The ruling does not authorize release.

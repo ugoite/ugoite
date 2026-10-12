@@ -1,0 +1,202 @@
+# ADR-023 — Typed reactive Composition variables
+
+**Status: Accepted target for pre-release Composition; implementation pending.**
+This decision authorizes a breaking change to the unreleased Composition v1
+grammar. It does not authorize a product release. Its SQL and Metric boundary
+inherits ADR-022 and remains gated on the SQL-only Metric implementation.
+
+## Context
+
+Composition currently declares parameters separately from placed controls,
+Text is literal-only, and Browser query state is parameter-specific. That model
+cannot express reusable typed values whose controls, Text, and data sources
+stay synchronized without user-authored handlers. The intended app needs an
+explicit dependency model: Inputs write one Composition-scoped value, Text
+reads it synchronously, and only dependent Saved SQL sources re-evaluate.
+
+Composition remains user-owned Knowledge represented by one Entry revision.
+Values entered while using or previewing a Composition and query results are
+transient Work.
+
+## Decision
+
+### 1. One canonical pre-release document grammar
+
+Keep the envelope at format_version 1, but make this the sole accepted
+Composition grammar before release:
+
+- spec.variables declares unique stable variable IDs, an explicit type,
+  required flag, optional typed default, optional human label, and an optional
+  display format hint.
+- spec.sources declares EntryQuery or an exact Saved SQL revision.
+- spec.components declares Input, Text, Table, and SQL-backed Metric.
+- spec.layout places every Component exactly once. Layout order is presentation
+  only and never defines execution order.
+
+Do not add readers, migrations, aliases, dual-write, or a deprecation window
+for spec.parameters, {parameter: ...} references, kind: parameter layout
+items, fixed-string-only Text, or the previous Metric grammar. Raw inspect,
+history, export, and recovery of an old Entry revision remain available; an
+old Composition is not executable through the new grammar.
+
+This decision is limited to prerelease Composition. Existing Space, Entry,
+Form, Saved SQL, SQL API, authorization, history, and publication contracts
+remain unchanged.
+
+### 2. Variables own values; Input components are controls
+
+The initial types are string, boolean, integer, float, date, and timestamp.
+Type is mandatory. Defaults must have that exact type. Do not infer types,
+coerce values, or add nullable variables in this phase. Unset is not empty
+string, zero, or SQL NULL. A required variable without a default needs a
+placed Input in an interactive Composition.
+
+An Input contains a component ID, a reference to one declared variable, and an
+optional display label. It stores no second value, arbitrary input type,
+setter, or event expression. Multiple Inputs may reference the same variable.
+Variable IDs are stable references, not primary UI labels.
+
+Composition source values use one reference form: {variable: id}. A Saved SQL
+source maps each SQL parameter name to a Composition variable. Core checks
+exact type agreement with the pinned Saved SQL revision before mapping the
+typed value to the existing SQL parameters and parameter_types request fields.
+SQL text is never rewritten, interpolated, or concatenated.
+
+### 3. Text is literal or a direct string-variable reference
+
+Text content is a discriminated choice: a literal string or a direct reference
+to a string variable. Variable-backed Text displays that string without an
+expression language, implicit formatting, SQL-result interpolation, or
+computation. Changing a variable updates dependent Text in the same reactive
+UI update cycle.
+
+### 4. Dependencies, not layout order, control execution
+
+The dependency graph is:
+
+    Input A -> Variable minimum -> typed binding -> exact Saved SQL source
+                                      |-> Metric row count
+                                      |-> Metric total
+                                      |-> Table rows
+    Input B -> Variable heading -> Text heading
+
+Resolve variable references into a dependency index. A valid value change
+updates the single Variables Store and all bound Inputs and Text immediately.
+It also immediately marks only dependent SQL-backed components pending and
+invalidates their previous results. Re-execute only Sources whose referenced
+variable subset changed. A variable used only by Text must not issue SQL.
+Reordering components or rows must not change results.
+
+On every input event, preserve raw text and validation status. An incomplete or
+invalid value, such as a lone minus sign in an integer input, does not become a
+guessed typed value and does not issue SQL. Required unset or invalid values
+make dependent components unavailable without presenting an old success as
+current. SQL issuing may use a short debounce (about 100–150 ms) to coalesce
+calls; input, Text, validation, and stale/pending invalidation are never
+debounced.
+
+Abort older requests when possible. Independently increment a per-Source
+generation and accept a response only if its generation, Composition revision,
+variable-subset fingerprint, exact Saved SQL revision, Space/principal
+authorization context, and publication context still match. Discard late
+responses even when cancellation fails. Failed or denied requests do not fall
+back to an older successful value.
+
+### 5. Existing authorized SQL remains the only data-processing engine
+
+Saved SQL retains its exact Entry and revision, typed SQL variables, read-only
+execution, current ACL re-evaluation, Form scope, publication checkpoint,
+resource limits, and typed results. Do not add client aggregation, SQL string
+substitution, a server-side mutable Composition session, or a Metric-specific
+calculation engine. SQL parameters and parameter_types names and meanings do
+not change.
+
+A Metric remains a display component over a shared SQL source and one selected
+scalar output column. It requires exactly one result row and distinguishes
+zero rows, one-row NULL, numeric zero, multiple rows, type mismatch, and access
+denial. It never selects the first row or adds LIMIT 1. Table continues to use
+its existing paged path independently from Metric scalar probing.
+
+### 6. Persistent Knowledge and transient Work stay separate
+
+Persist variable declarations, types, required flags, defaults, Sources,
+Components, and Layout in the Composition Entry revision. Do not persist
+runtime values, raw input text, previews, SQL responses, loading state, or
+errors through implicit save, URL, local storage, or server session. Studio
+preview and use start from declared defaults plus the current request snapshot.
+Editing runtime input never creates an Entry revision or overwrites a default.
+
+### 7. Cross-surface contract
+
+- Rust Domain/Core are semantic authorities for parsing, type validation,
+  references, canonicalization, and diagnostics. Native Rust and WASM use the
+  same contract.
+- Composition resolve, preview, and Metric DTOs use variables and
+  variable_definitions. Stateless SQL DTOs retain parameters and
+  parameter_types.
+- CLI Composition queries use one-shot --var name=value arguments and do not
+  add an interactive reactive session or retain the unreleased --param alias.
+- Browser owns transient scheduling and one typed Variables Store. It does not
+  infer domain or SQL types, parse another Composition grammar, or implement
+  a second SQL engine.
+- Studio exposes declarations, Input placement, literal/variable Text choice,
+  and exact-type Saved SQL binding without requiring code. Primary labels use
+  resolved human names; internal IDs stay out of primary UI paths. Controls
+  remain keyboard and screen-reader operable at 390px.
+
+## Acceptance matrix
+
+Each ID is a required named acceptance case. Exact implementation bindings and
+test selectors are added in S1–S6; this ADR records the invariant before code
+changes.
+
+| ID | Planned test selector | Operation | Required result |
+| --- | --- | --- | --- |
+| A01 | heading_input_updates_text_synchronously_without_query | Change a string heading through Input | Text updates in the same UI cycle; SQL call count is unchanged. |
+| A02 | typed_source_dependency_invalidates_before_requery | Change an integer used by SQL | Text is immediate; dependent Metric/Table becomes pending immediately and only the newest result is shown. |
+| A03 | shared_variable_inputs_stay_synchronized | Edit one of two Inputs bound to one variable | The other Input updates immediately; one authoritative value exists. |
+| A04 | layout_order_does_not_affect_dependency_results | Reorder Input and Metric in Layout | Values and query results stay identical. |
+| A05 | sql_aggregates_preserve_null_and_empty_semantics | Aggregate [10, 20, NULL] | COUNT(*)=3, COUNT(Amount)=2, SUM(Amount)=30, AVG(Amount)=15. Test aggregate-without-WHERE separately from variable-filter behavior. |
+| A06 | shared_saved_sql_columns_bind_to_separate_metrics | One-row, two-column Saved SQL result | Two Metrics select separate columns from the same Source. |
+| A07 | multiple_sql_rows_reject_metric_but_page_in_table | Saved SQL returns two rows | Metric rejects scalar cardinality; Table still pages rows; no first-row fallback. |
+| A08 | scalar_result_distinguishes_zero_rows_null_and_zero | Compare zero rows, one-row NULL, numeric 0 | Three distinct states/results are preserved. |
+| A09 | unrelated_variable_does_not_requery_source | Change variable unused by a SQL Source | That Source is not requested again; Table paging is unchanged. |
+| A10 | rapid_input_keeps_only_latest_source_generation | Enter 1, 2, 3 rapidly; return responses out of order | Only generation for 3 is accepted. |
+| A11 | invalid_raw_input_blocks_query_and_stale_result | Enter incomplete/invalid integer such as -, empty, or 1.5 | Raw input remains visible, no SQL runs, and prior success is not current. |
+| A12 | sql_variable_binding_rejects_implicit_type_conversion | Bind string to SQL date or float to SQL integer | Exact type mismatch; no implicit conversion. |
+| A13 | invalid_variable_grammar_fails_lint_and_save | Duplicate/unknown IDs, invalid defaults, unknown references, unbound required variable | Lint/save fails deterministically. |
+| A14 | sql_source_uses_typed_parameter_binding | Bind $minimum as a typed SQL parameter | SQL text is unchanged and the value cannot become SQL syntax. |
+| A15 | composition_persists_defaults_not_runtime_values | Save, close, revisit | Declarations/defaults persist; runtime changes do not. |
+| A16 | composition_revision_change_discards_old_response | Revisit another Composition revision during a request | Exact revision/history holds; old response is discarded. |
+| A17 | revoked_source_read_denies_without_stale_data | Revoke Saved SQL or Form Read access | Output is denied without stale value or unauthorized identity/text leakage. |
+| A18 | sql_resource_limits_fail_without_partial_success | Exercise overflow, Decimal, high-cardinality, memory limits | Existing SQL errors remain; no partial success. |
+| A19 | table_paging_does_not_change_metric_or_variables | Page a SQL-backed Table | Metric and variable state do not change. |
+| A20 | composition_cli_vars_match_local_and_remote | Local and remote CLI with --var | Same typed snapshot/result; unreleased --param is rejected. |
+| A21 | native_and_wasm_variable_canonicalization_match | Native and WASM canonicalize the same YAML | Canonical bytes/fingerprint match; old Composition grammar is rejected. |
+| A22 | composition_inputs_are_accessible_at_mobile_width | Use at 390px with keyboard and screen reader | Inputs and invalid/loading/result states are operable; IDs are not primary labels. |
+| A23 | studio_preview_drops_stale_draft_and_variable_generation | Change draft and variables while Studio preview is in flight | Only matching draft fingerprint and variable generation can update preview. |
+| A24 | composition_runtime_isolation_includes_space_and_principal | Use same IDs/values in different Spaces or principals | Responses, cache identity, and authorization never cross-contaminate. |
+
+## Delivery order
+
+1. S0 — This ruling, planned Requirement, semantic Feature, and public issue.
+2. SQL-only prerequisites — Settle ADR-022 implementation and shared authorized
+   SQL preparation/resource and aggregate tests before dependent Metric work.
+3. S1 — Domain: canonical variable/Input/Text grammar, rejection of the
+   unreleased parameter grammar, fixtures, canonicalization, Native/WASM parity.
+4. S2 — Core: typed snapshots, exact SQL bindings, dependency semantics
+   independent of Layout.
+5. S3 — Service/adapters: Composition DTOs, API client, OpenAPI, CLI --var,
+   and WASM parity around the same snapshot.
+6. S4 — Browser: one transient Variables Store, synchronous Input/Text
+   updates, dependent Source invalidation, cancellation, generations, and stale
+   response protection.
+7. S5 — Studio: declaration, Input placement, Text references, and typed SQL
+   binding through the existing Saved SQL flow; preserve defaults on save.
+8. S6 — Integration: exact Mitase verification per facet, Native/WASM parity,
+   CLI local/remote checks, focused tests, and a real Browser/server/Space
+   golden journey. Run required CI and report unmet cases. Do not release.
+
+No intermediate main revision may claim both grammars as supported. Preserve
+the shared Source/result boundary: Variable -> typed authorized SQL ->
+Table/Metric, and Variable -> direct Text.
