@@ -3,8 +3,8 @@ use crate::http;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use serde::Serialize;
-use serde_json::{json, Number, Value};
-use std::collections::BTreeMap;
+use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -31,8 +31,8 @@ use ugoite_core::entry_query::EntryPage;
 use ugoite_core::sql_query::SqlQueryPage;
 use ugoite_domain::composition::{
     canonicalize_composition_yaml, parse_composition_yaml, CanonicalComposition,
-    CompositionDiagnosticCode, CompositionParameter,
-    CompositionParameterType as DomainCompositionParameterType, MAX_COMPOSITION_YAML_BYTES,
+    CompositionDiagnosticCode, CompositionVariable, CompositionVariableInputValue,
+    MAX_COMPOSITION_YAML_BYTES,
 };
 use ugoite_domain::id::{EntryId, RevisionId};
 use ugoite_iceberg::service::UgoiteService;
@@ -706,7 +706,7 @@ struct CompositionQueryPlan {
 }
 
 enum CompositionQueryResolution {
-    Plan(CompositionQueryPlan),
+    Plan(Box<CompositionQueryPlan>),
     Diagnostics(Vec<CompositionQueryDiagnostic>),
 }
 
@@ -719,7 +719,7 @@ async fn query_composition(
     let composition = read_composition(target, composition_id, requested_revision).await?;
     let parameter_values = match composition.fields.get("spec").and_then(Value::as_str) {
         Some(yaml) => match parse_composition_yaml(yaml) {
-            Ok(document) => parse_cli_parameter_values(&document.spec.parameters, raw_parameters)?,
+            Ok(document) => parse_cli_parameter_values(&document.spec.variables, raw_parameters)?,
             Err(_) => parse_cli_parameter_values(&[], raw_parameters)?,
         },
         None => parse_cli_parameter_values(&[], raw_parameters)?,
@@ -741,7 +741,7 @@ async fn query_composition(
     )
     .await?;
     let plan = match resolution {
-        CompositionQueryResolution::Plan(plan) => plan,
+        CompositionQueryResolution::Plan(plan) => *plan,
         CompositionQueryResolution::Diagnostics(diagnostics) => {
             crate::output::print_json(&CompositionQueryOutput {
                 ok: false,
@@ -824,17 +824,17 @@ async fn resolve_composition(
                 .resolve_composition_local(space_id, composition_id, revision_id, &parameters)
                 .await?;
             if let Some(plan) = resolution.plan {
-                Ok(CompositionQueryResolution::Plan(
+                Ok(CompositionQueryResolution::Plan(Box::new(
                     composition_query_plan_from_core(plan)?,
-                ))
+                )))
             } else {
                 Ok(CompositionQueryResolution::Diagnostics(
                     resolution
                         .diagnostics
                         .iter()
                         .map(|diagnostic| CompositionQueryDiagnostic {
-                            code: diagnostic.code.as_str().to_string(),
-                            parameter_id: diagnostic.parameter_id.clone(),
+                            code: composition_diagnostic_code_for_cli(diagnostic.code),
+                            parameter_id: diagnostic.variable_id.clone(),
                             source_id: None,
                             component_id: None,
                         })
@@ -857,9 +857,9 @@ async fn resolve_composition(
                 let plan = response
                     .plan
                     .context("Composition resolve succeeded without a plan")?;
-                Ok(CompositionQueryResolution::Plan(
+                Ok(CompositionQueryResolution::Plan(Box::new(
                     composition_query_plan_from_portable(plan)?,
-                ))
+                )))
             } else {
                 let diagnostics = response
                     .diagnostics
@@ -879,6 +879,15 @@ async fn resolve_composition(
                 Ok(CompositionQueryResolution::Diagnostics(diagnostics))
             }
         }
+    }
+}
+
+fn composition_diagnostic_code_for_cli(code: CompositionDiagnosticCode) -> String {
+    match code {
+        CompositionDiagnosticCode::VariableUnknown => "parameter_unknown".to_string(),
+        CompositionDiagnosticCode::VariableMissing => "parameter_missing".to_string(),
+        CompositionDiagnosticCode::VariableTypeMismatch => "parameter_type_mismatch".to_string(),
+        other => other.as_str().to_string(),
     }
 }
 
@@ -910,10 +919,11 @@ fn composition_resolve_body(revision_id: &str, parameters: BTreeMap<String, Valu
 }
 
 fn parse_cli_parameter_values(
-    definitions: &[CompositionParameter],
+    definitions: &[CompositionVariable],
     assignments: &[String],
 ) -> Result<BTreeMap<String, Value>> {
     let mut values = BTreeMap::new();
+    let mut assigned = BTreeSet::new();
     for assignment in assignments {
         let (key, raw_value) = assignment.split_once('=').ok_or_else(|| {
             crate::output::UsageError(format!("--param must be KEY=VALUE, got {assignment:?}"))
@@ -923,45 +933,29 @@ fn parse_cli_parameter_values(
                 crate::output::UsageError("--param key must not be empty".to_string()).into(),
             );
         }
-        let definition = definitions.iter().find(|definition| definition.id == key);
-        let value = definition.map_or_else(
-            || Value::String(raw_value.to_string()),
-            |definition| parse_cli_parameter_value(definition.parameter_type, raw_value),
-        );
-        if values.insert(key.to_string(), value).is_some() {
+        if !assigned.insert(key.to_string()) {
             return Err(crate::output::UsageError(format!(
                 "Composition parameter {key:?} was supplied more than once"
             ))
             .into());
         }
+        let definition = definitions.iter().find(|definition| definition.id == key);
+        let value = match definition {
+            Some(definition) => match definition.variable_type.parse_input(raw_value) {
+                CompositionVariableInputValue::Unset => continue,
+                CompositionVariableInputValue::Valid(value) => value,
+                CompositionVariableInputValue::Invalid => {
+                    return Err(crate::output::UsageError(format!(
+                        "Composition parameter {key:?} has an invalid value for its declared type"
+                    ))
+                    .into());
+                }
+            },
+            None => Value::String(raw_value.to_string()),
+        };
+        values.insert(key.to_string(), value);
     }
     Ok(values)
-}
-
-fn parse_cli_parameter_value(
-    parameter_type: DomainCompositionParameterType,
-    raw_value: &str,
-) -> Value {
-    match parameter_type {
-        DomainCompositionParameterType::String
-        | DomainCompositionParameterType::Date
-        | DomainCompositionParameterType::Timestamp => Value::String(raw_value.to_string()),
-        DomainCompositionParameterType::Boolean => raw_value
-            .parse::<bool>()
-            .map(Value::Bool)
-            .unwrap_or_else(|_| Value::String(raw_value.to_string())),
-        DomainCompositionParameterType::Integer => raw_value
-            .parse::<i64>()
-            .map(Number::from)
-            .map(Value::Number)
-            .unwrap_or_else(|_| Value::String(raw_value.to_string())),
-        DomainCompositionParameterType::Float => raw_value
-            .parse::<f64>()
-            .ok()
-            .and_then(Number::from_f64)
-            .map(Value::Number)
-            .unwrap_or_else(|| Value::String(raw_value.to_string())),
-    }
 }
 
 async fn execute_composition_source(
@@ -1386,9 +1380,8 @@ mod tests {
         composition_query_plan_from_portable, composition_resolve_body,
         composition_source_dispatch, composition_source_needs_table_page, export_composition,
         lint_file, lint_yaml_bytes, list_compositions, local_raw_revision_to_api,
-        parse_cli_parameter_value, parse_cli_parameter_values, raw_spec_output, read_composition,
-        read_composition_history, write_raw_spec_to_path, CompositionParameter,
-        CompositionQueryMetricOutput, DomainCompositionParameterType, RawSpecOutput,
+        parse_cli_parameter_values, raw_spec_output, read_composition, read_composition_history,
+        write_raw_spec_to_path, CompositionQueryMetricOutput, CompositionVariable, RawSpecOutput,
     };
     use crate::cli_config::SpaceTarget;
     use anyhow::Result;
@@ -1402,7 +1395,10 @@ mod tests {
     };
     use ugoite_core::composition::ResolvedCompositionPlan;
     use ugoite_core::error::{AppError, ErrorCode};
-    use ugoite_domain::composition::MAX_COMPOSITION_YAML_BYTES;
+    use ugoite_domain::composition::{
+        CompositionVariableType as DomainCompositionVariableType,
+        MAX_COMPOSITION_VARIABLE_STRING_BYTES, MAX_COMPOSITION_YAML_BYTES,
+    };
     use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
     use ugoite_domain::form::FormVersion;
     use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
@@ -1498,35 +1494,51 @@ mod tests {
     #[test]
     fn query_cli_parameters_follow_the_shared_domain_types() {
         let definitions = vec![
-            CompositionParameter {
+            CompositionVariable {
                 id: "enabled".to_string(),
                 label: None,
-                parameter_type: DomainCompositionParameterType::Boolean,
+                variable_type: DomainCompositionVariableType::Boolean,
                 required: true,
                 default: None,
                 format: None,
             },
-            CompositionParameter {
+            CompositionVariable {
                 id: "count".to_string(),
                 label: None,
-                parameter_type: DomainCompositionParameterType::Integer,
+                variable_type: DomainCompositionVariableType::Integer,
                 required: true,
                 default: None,
                 format: None,
             },
-            CompositionParameter {
+            CompositionVariable {
                 id: "ratio".to_string(),
                 label: None,
-                parameter_type: DomainCompositionParameterType::Float,
+                variable_type: DomainCompositionVariableType::Float,
                 required: true,
                 default: None,
                 format: None,
             },
-            CompositionParameter {
+            CompositionVariable {
                 id: "date".to_string(),
                 label: None,
-                parameter_type: DomainCompositionParameterType::Date,
+                variable_type: DomainCompositionVariableType::Date,
                 required: true,
+                default: None,
+                format: None,
+            },
+            CompositionVariable {
+                id: "timestamp".to_string(),
+                label: None,
+                variable_type: DomainCompositionVariableType::Timestamp,
+                required: true,
+                default: None,
+                format: None,
+            },
+            CompositionVariable {
+                id: "title".to_string(),
+                label: None,
+                variable_type: DomainCompositionVariableType::String,
+                required: false,
                 default: None,
                 format: None,
             },
@@ -1535,31 +1547,73 @@ mod tests {
             &definitions,
             &[
                 "enabled=true".to_string(),
-                "count=12".to_string(),
-                "ratio=1.5".to_string(),
+                "count=+00042".to_string(),
+                "ratio=.5".to_string(),
                 "date=2026-10-01".to_string(),
+                "timestamp=2026-10-13T14:59:59+09:00".to_string(),
+                "title=".to_string(),
                 "custom=value".to_string(),
             ],
         )
         .expect("typed CLI values");
 
         assert_eq!(values["enabled"], json!(true));
-        assert_eq!(values["count"], json!(12));
-        assert_eq!(values["ratio"], json!(1.5));
+        assert_eq!(values["count"], json!(42));
+        assert_eq!(values["ratio"], json!(0.5));
         assert_eq!(values["date"], json!("2026-10-01"));
+        assert_eq!(values["timestamp"], json!("2026-10-13T14:59:59+09:00"));
+        assert!(!values.contains_key("title"));
         assert_eq!(values["custom"], json!("value"));
     }
 
     #[test]
-    fn invalid_typed_cli_values_are_left_for_the_shared_resolver_diagnostic() {
-        assert_eq!(
-            parse_cli_parameter_value(DomainCompositionParameterType::Integer, "12x"),
-            json!("12x")
-        );
-        assert_eq!(
-            parse_cli_parameter_value(DomainCompositionParameterType::Boolean, "yes"),
-            json!("yes")
-        );
+    fn query_cli_values_use_the_shared_bounded_lexical_contract() {
+        let definitions = vec![
+            ("enabled", DomainCompositionVariableType::Boolean),
+            ("count", DomainCompositionVariableType::Integer),
+            ("ratio", DomainCompositionVariableType::Float),
+            ("date", DomainCompositionVariableType::Date),
+            ("timestamp", DomainCompositionVariableType::Timestamp),
+            ("title", DomainCompositionVariableType::String),
+        ]
+        .into_iter()
+        .map(|(id, variable_type)| CompositionVariable {
+            id: id.to_string(),
+            label: None,
+            variable_type,
+            required: false,
+            default: None,
+            format: None,
+        })
+        .collect::<Vec<_>>();
+        let max_float_token = format!("1{}", "0".repeat(63));
+        let invalid_assignments = [
+            "enabled=TRUE".to_string(),
+            "count=12x".to_string(),
+            "count=9007199254740992".to_string(),
+            "ratio=1.".to_string(),
+            "ratio=1e309".to_string(),
+            "ratio=1e-324".to_string(),
+            format!("ratio={}", "1".to_string() + &"0".repeat(64)),
+            "date=2025-02-29".to_string(),
+            "timestamp=2026-10-13T14:59:59".to_string(),
+            format!(
+                "title={}",
+                "x".repeat(MAX_COMPOSITION_VARIABLE_STRING_BYTES + 1)
+            ),
+        ];
+        for assignment in invalid_assignments {
+            assert!(
+                parse_cli_parameter_values(&definitions, std::slice::from_ref(&assignment))
+                    .is_err(),
+                "CLI accepted invalid typed variable assignment {assignment:?}"
+            );
+        }
+
+        let at_float_limit =
+            parse_cli_parameter_values(&definitions, &[format!("ratio={max_float_token}")])
+                .expect("64-byte finite float token is valid");
+        assert_eq!(at_float_limit["ratio"], json!(1e63));
     }
 
     #[test]

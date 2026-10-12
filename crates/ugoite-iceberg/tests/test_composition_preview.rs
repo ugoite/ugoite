@@ -12,8 +12,8 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use ugoite_domain::composition::{
     canonicalize_composition, CompositionComponent, CompositionDocument, CompositionFormat,
-    CompositionKind, CompositionParameter, CompositionParameterType, CompositionSource,
-    CompositionSpec, DashboardFlowLayout, EntryQueryProjectionTemplate, EntryQueryTemplate,
+    CompositionKind, CompositionSource, CompositionSpec, CompositionVariable,
+    CompositionVariableType, DashboardFlowLayout, EntryQueryProjectionTemplate, EntryQueryTemplate,
     FlowItem, FlowLayoutKind, FlowRow,
 };
 use ugoite_domain::form::FieldType;
@@ -67,7 +67,7 @@ async fn setup_preview_space() -> Result<(UgoiteService, String, CompositionDocu
         name: "Preview draft".to_string(),
         tags: vec!["draft".to_string()],
         spec: CompositionSpec {
-            parameters: Vec::new(),
+            variables: Vec::new(),
             sources: vec![CompositionSource::EntryQuery {
                 id: "source".to_string(),
                 form_id: form.form_id,
@@ -167,37 +167,49 @@ async fn invalid_draft_preview_reports_diagnostics_without_identity() -> Result<
 }
 
 #[tokio::test]
-async fn preview_exposes_placed_parameters_in_layout_order() -> Result<()> {
+async fn preview_exposes_variable_definitions_in_declaration_order() -> Result<()> {
     let (service, space_id, mut document) = setup_preview_space().await?;
-    // Declaration order is region-first; placement order is month-first.
-    document.spec.parameters = vec![
-        CompositionParameter {
+    // Declaration order is region-first; Input placement order is month-first.
+    document.spec.variables = vec![
+        CompositionVariable {
             id: "region".to_string(),
             label: None,
-            parameter_type: CompositionParameterType::String,
+            variable_type: CompositionVariableType::String,
             required: false,
             default: None,
             format: None,
         },
-        CompositionParameter {
+        CompositionVariable {
             id: "month".to_string(),
             label: None,
-            parameter_type: CompositionParameterType::String,
+            variable_type: CompositionVariableType::String,
             required: true,
             default: None,
             format: None,
         },
     ];
+    document.spec.components.extend([
+        CompositionComponent::Input {
+            id: "month_input".to_string(),
+            label: None,
+            variable: "month".to_string(),
+        },
+        CompositionComponent::Input {
+            id: "region_input".to_string(),
+            label: None,
+            variable: "region".to_string(),
+        },
+    ]);
     document.spec.layout.rows.insert(
         0,
         FlowRow {
             id: "controls".to_string(),
             items: vec![
-                FlowItem::Parameter {
-                    parameter: "month".to_string(),
+                FlowItem::Component {
+                    component: "month_input".to_string(),
                 },
-                FlowItem::Parameter {
-                    parameter: "region".to_string(),
+                FlowItem::Component {
+                    component: "region_input".to_string(),
                 },
             ],
         },
@@ -212,15 +224,15 @@ async fn preview_exposes_placed_parameters_in_layout_order() -> Result<()> {
             &BTreeMap::from([("month".to_string(), json!("2026-10"))]),
         )
         .await
-        .context("placed parameters should preview")?;
+        .context("placed variables should preview")?;
     assert!(preview.diagnostics.is_empty());
     let definitions = preview
         .parameter_definitions
-        .context("preview exposes semantic parameter definitions")?;
+        .context("preview exposes declared variable definitions")?;
     let placed_ids: Vec<_> = definitions
         .iter()
-        .map(|parameter| parameter.id.as_str())
+        .map(|variable| variable.id.as_str())
         .collect();
-    assert_eq!(placed_ids, ["month", "region"]);
+    assert_eq!(placed_ids, ["region", "month"]);
     Ok(())
 }

@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Stable semantic diagnostic identifiers shared across Composition surfaces.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -342,6 +342,11 @@ pub struct CompositionPreviewPlan {
     /// Stable display bindings in the resolver's layout row and item order.
     #[serde(default)]
     pub component_bindings: Vec<CompositionResolvedComponentBinding>,
+    /// Semantic variable/source edges derived by Core. Additive to the
+    /// existing portable plan so adapters can schedule reactive work without
+    /// re-parsing the Composition document.
+    #[serde(default, skip_serializing_if = "CompositionDependencyIndex::is_empty")]
+    pub dependencies: CompositionDependencyIndex,
 }
 
 /// Request to resolve one exact Composition revision against current source
@@ -410,11 +415,52 @@ pub struct CompositionResolvePlan {
     /// Stable display bindings in the resolver's layout row and item order.
     #[serde(default)]
     pub component_bindings: Vec<CompositionResolvedComponentBinding>,
+    #[serde(default, skip_serializing_if = "CompositionDependencyIndex::is_empty")]
+    pub dependencies: CompositionDependencyIndex,
+}
+
+/// Variable and source consumers derived by Core independently of layout
+/// order. The public variable input vocabulary remains unchanged in this
+/// adapter revision; the index is an additive plan capability.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionDependencyIndex {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub variable_consumers: BTreeMap<String, CompositionVariableConsumers>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub source_consumers: BTreeMap<String, CompositionSourceConsumers>,
+}
+
+impl CompositionDependencyIndex {
+    fn is_empty(&self) -> bool {
+        self.variable_consumers.is_empty() && self.source_consumers.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionVariableConsumers {
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub input_component_ids: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub text_component_ids: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub source_ids: BTreeSet<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositionSourceConsumers {
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub metric_component_ids: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub table_component_ids: BTreeSet<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompositionResolvedComponentKind {
+    Input,
     Metric,
     Table,
     Text,
@@ -458,6 +504,8 @@ pub struct CompositionResolvedComponentBinding {
     /// declaration by `component_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variable_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_property_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -9,7 +9,7 @@ use anyhow::{anyhow, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use ugoite_core::composition::{
-    bind_parameters, resolve_composition, resolve_composition_preview, CompositionDiagnostic,
+    bind_variables, resolve_composition, resolve_composition_preview, CompositionDiagnostic,
     CompositionRevisionRef, CurrentSourceDescriptor, PreviewCompositionPlan, ResolveInput,
     ResolvedCompositionPlan, SavedSqlRevisionMetadata,
 };
@@ -17,7 +17,7 @@ use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::sql_query::SavedSqlRevisionRef;
 use ugoite_domain::composition::{
     canonicalize_composition, parse_composition_yaml, CompositionDiagnosticCode,
-    CompositionDocument, CompositionParameter, CompositionSource, CompositionSpec,
+    CompositionDocument, CompositionSource, CompositionSpec, CompositionVariable,
 };
 use ugoite_domain::id::{validate_revision_id, validate_sql_id, FormId};
 use uuid::Uuid;
@@ -37,7 +37,7 @@ use crate::{iceberg_store, saved_sql};
 /// including when supplied parameter values are invalid.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompositionResolution {
-    pub parameter_definitions: Option<Vec<CompositionParameter>>,
+    pub parameter_definitions: Option<Vec<CompositionVariable>>,
     pub plan: Option<ResolvedCompositionPlan>,
     pub diagnostics: Vec<CompositionDiagnostic>,
 }
@@ -51,7 +51,7 @@ pub struct CompositionResolution {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompositionPreview {
     pub draft_fingerprint: Option<String>,
-    pub parameter_definitions: Option<Vec<CompositionParameter>>,
+    pub parameter_definitions: Option<Vec<CompositionVariable>>,
     pub plan: Option<PreviewCompositionPlan>,
     pub diagnostics: Vec<CompositionDiagnostic>,
 }
@@ -222,7 +222,7 @@ impl UgoiteService {
         };
         let parameter_definitions = Some(ordered_parameter_definitions(&document.spec));
 
-        let parameter_bindings = bind_parameters(&document.spec.parameters, parameters);
+        let parameter_bindings = bind_variables(&document.spec.variables, parameters);
         if !parameter_bindings.diagnostics.is_empty() {
             return Ok(CompositionResolution {
                 parameter_definitions,
@@ -244,7 +244,7 @@ impl UgoiteService {
                 revision_id: raw.revision.revision_id,
             },
             spec: &document.spec,
-            parameters,
+            variables: parameters,
             current_sources: &current_sources,
         });
 
@@ -444,16 +444,17 @@ fn preview_diagnostic(
     code: CompositionDiagnosticCode,
     parameter_id: Option<String>,
 ) -> CompositionDiagnostic {
-    CompositionDiagnostic { code, parameter_id }
+    CompositionDiagnostic {
+        code,
+        variable_id: parameter_id,
+    }
 }
 
 /// Expose declared parameters with layout-placed controls first in layout
 /// row and item order. An invalid placement falls back to declaration order
 /// so diagnostics responses still describe the same semantic parameters.
-fn ordered_parameter_definitions(spec: &CompositionSpec) -> Vec<CompositionParameter> {
-    spec.parameters_in_placement_order()
-        .map(|ordered| ordered.into_iter().cloned().collect())
-        .unwrap_or_else(|_| spec.parameters.clone())
+fn ordered_parameter_definitions(spec: &CompositionSpec) -> Vec<CompositionVariable> {
+    spec.variables.clone()
 }
 
 fn diagnostic_result(
@@ -463,7 +464,10 @@ fn diagnostic_result(
     CompositionResolution {
         parameter_definitions: None,
         plan: None,
-        diagnostics: vec![CompositionDiagnostic { code, parameter_id }],
+        diagnostics: vec![CompositionDiagnostic {
+            code,
+            variable_id: parameter_id,
+        }],
     }
 }
 

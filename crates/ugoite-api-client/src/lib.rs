@@ -13,10 +13,10 @@ use url::Url;
 pub mod composition;
 
 pub use composition::{
-    CompositionDiagnosticCode, CompositionEntryIntegrity, CompositionEntryMetadata,
-    CompositionHistoryPage, CompositionLintError, CompositionLintResponse, CompositionLintValue,
-    CompositionListItem, CompositionListPage, CompositionMetricPresentation,
-    CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
+    CompositionDependencyIndex, CompositionDiagnosticCode, CompositionEntryIntegrity,
+    CompositionEntryMetadata, CompositionHistoryPage, CompositionLintError,
+    CompositionLintResponse, CompositionLintValue, CompositionListItem, CompositionListPage,
+    CompositionMetricPresentation, CompositionMetricQueryDiagnostic, CompositionMetricQueryRequest,
     CompositionMetricQueryResponse, CompositionMetricQueryTarget, CompositionMetricQueryValue,
     CompositionParameterDefinition, CompositionParameterFormat, CompositionParameterType,
     CompositionPreviewPlan, CompositionPreviewRequest, CompositionPreviewResponse,
@@ -25,7 +25,8 @@ pub use composition::{
     CompositionResolvedComponentBinding, CompositionResolvedComponentKind,
     CompositionResolvedSource, CompositionRestoreRequest, CompositionRestoreResponse,
     CompositionResultFieldType, CompositionRevisionMetadata, CompositionRevisionReference,
-    CompositionSaveRequest, CompositionSaveResponse,
+    CompositionSaveRequest, CompositionSaveResponse, CompositionSourceConsumers,
+    CompositionVariableConsumers,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
