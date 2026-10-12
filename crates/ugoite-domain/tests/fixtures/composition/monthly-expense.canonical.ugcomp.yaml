@@ -4,7 +4,7 @@ kind: dashboard
 name: Monthly expenses
 tags: []
 spec:
-  parameters:
+  variables:
     - id: month_start
       type: date
       required: true
@@ -29,11 +29,11 @@ spec:
           - field_id: 100
             operator: gte
             value:
-              parameter: month_start
+              variable: month_start
           - field_id: 100
             operator: lt
             value:
-              parameter: month_end
+              variable: month_end
         sort:
           - field_id: 100
             direction: desc
@@ -53,10 +53,16 @@ spec:
           type: float
       variables:
         month_end:
-          parameter: month_end
+          variable: month_end
         month_start:
-          parameter: month_start
+          variable: month_start
   components:
+    - kind: input
+      id: month_start_input
+      variable: month_start
+    - kind: input
+      id: month_end_input
+      variable: month_end
     - kind: metric
       id: total
       source: month_total
@@ -69,10 +75,10 @@ spec:
     rows:
       - id: main
         items:
-          - kind: parameter
-            parameter: month_start
-          - kind: parameter
-            parameter: month_end
+          - kind: component
+            component: month_start_input
+          - kind: component
+            component: month_end_input
           - kind: component
             component: total
           - kind: component
