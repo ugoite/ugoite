@@ -228,6 +228,13 @@ diagnostics, canonicalization, and fingerprint behavior. Adapters do not add a
 second Composition parser or query engine. The document's tags are the same
 ordered tag list written to the owning Entry.
 
+The Metric design recorded below is historical. It was revised by
+[ADR-021](#adr-021--typed-only-composition-metrics) and superseded before Metric
+release by [ADR-022](#adr-022--composition-metrics-present-saved-sql-results).
+The restricted YAML and parser rules above remain current. The current
+pre-release Metric contract uses a direct Saved SQL `source` and `column`; no
+compatibility reader or migration is required for the earlier Metric shapes.
+
 An exact Saved SQL source carries an ordered `expected_result` descriptor with
 unique output names and portable logical types (`string`, `boolean`, `integer`,
 `float`, `decimal`, `date`, `timestamp`, or `json`). Decimal scalar values are
@@ -237,7 +244,8 @@ does not store SQL-backend type names. The resolver derives source-result
 fingerprints from exact revision identity, the normalized descriptor, and bound
 variable schema. No source-result fingerprint is stored in the document.
 
-Typed metrics add a `definition` discriminator for EntryQuery aggregates
+At the time this ADR was accepted, typed metrics were specified with a
+`definition` discriminator for EntryQuery aggregates
 (`count_rows`, `count_values`, `sum`, `avg`, `min`, `max`) and exact Saved SQL
 scalar columns, plus an optional display-only `presentation`. `count_rows` has
 no field; `count_values` counts non-NULL values, and the other field-based
@@ -247,14 +255,15 @@ fields. Numeric formatting is optional display metadata. Date and timestamp
 `min`/`max` results omit it and use type-based rendering. A typed aggregate
 field may be absent from the table projection; its
 FieldId and type are bound through the source schema and revalidated against
-the current authorized Form at execution. Aggregate results use the source's
-full matching set and do not depend on table page size, page, sort, or display
-projection. The new grammar is accepted and canonicalized by the shared domain
-parser. Core query execution for these definitions is a follow-up slice and
-remains fail-closed until it lands. The
-existing `source` plus `value_field` exact-scalar shape remains readable with
-its current meaning in the same v0.x series; removal is tracked for the next
-minor version without migration or conversion.
+the current authorized Form at execution. Aggregate results used the source's
+full matching set and did not depend on table page size, page, sort, or display
+projection. That grammar was accepted and canonicalized by the shared domain
+parser; its Core query execution remained a follow-up at the time. The same
+ruling specified that the existing `source` plus `value_field` exact-scalar
+shape would remain readable with its then-current meaning in the same v0.x
+series, with removal assigned to the next minor version without migration or
+conversion.
+ADR-022 supersedes that Metric compatibility statement before release.
 
 The parser uses `serde-saphyr` 1.3.0 with duplicate-key errors, strict typed
 deserialization, and explicit resource budgets. It rejects multiple documents,
