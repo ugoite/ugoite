@@ -382,6 +382,11 @@ extension, or a permanent `sections` compatibility layer.
 
 ## ADR-020 — Bounded Composition Metric query operation
 
+**Status: Superseded in part by ADR-022 before Metric release.** The portable
+operation boundary, exact Saved SQL revision, current authorization, bounded
+result consumption, and fail-closed scalar cardinality remain. The
+EntryQuery-aggregate and Metric-specific execution clauses below are historical.
+
 **Accepted ruling for the v0.2.2 Metric execution work.** Add one
 transport-neutral `composition.metric.query` operation instead of routing a
 Metric through `sql.query` pages or adding a caller-controlled limit mode to
@@ -418,7 +423,11 @@ are query results, not stored Composition authority.
 
 ## ADR-021 — Typed-only Composition Metrics
 
-**Accepted.** Composition Metrics use the required typed `definition` shape:
+**Status: Superseded by ADR-022 before Metric release.** This records the
+previous accepted design; its `aggregate` and `sql_scalar` union is not a
+compatibility contract and will be removed without a reader or migration.
+
+Composition Metrics use the required typed `definition` shape:
 EntryQuery aggregates bind stable `FieldId`s through the source schema, and
 Saved SQL scalar metrics bind an exact output column on an exact saved
 revision. The former `source` plus `value_field` shape is rejected; no legacy
@@ -431,3 +440,100 @@ Domain layer validates returned scalar values, not query pages. The
 This accepted next-minor contract ruling retires the earlier compatibility
 statements in ADR-017 through ADR-019. It does not authorize release or change
 unrelated Composition persistence and query contracts.
+
+## ADR-022 — Composition Metrics present Saved SQL results
+
+**Status: Accepted target for pre-release Metric work; implementation pending.**
+This ruling replaces the Metric-specific design in ADR-020 and ADR-021 before
+Metric release. It does not change Saved SQL, SQL execution, Space Knowledge,
+EntryQuery Table, or `sql.query.count` contracts, and it does not authorize a
+release.
+
+### Decision
+
+1. A Metric is a scalar-result presentation component. Its binding names one
+   Composition `saved_sql` source and one output column. The serialized Metric
+   component carries `source` and `column` directly alongside its optional
+   label and presentation settings; it has no nested definition discriminator.
+   Label, unit, and fraction digits affect presentation only. It stores no
+   aggregate operation, `FieldId`, calculation DSL, or alternate execution
+   mode. `CompositionMetricDefinition` and EntryQuery-backed Metric resolution
+   are removed; every Metric has one SQL-source shape.
+2. A `saved_sql` source pins the Saved SQL Entry and exact revision and binds
+   the existing SQL parameters. It is independent of display components and
+   may be shared by multiple Metrics and Tables. Future Text variables and
+   Charts may use the same source/result contract; they are outside this work.
+3. SQL owns every calculation. COUNT, SUM, AVG, MIN, MAX, and future
+   expressions are ordinary Saved SQL subject to the existing read-only
+   grammar, current ACL, exact revision, parameter typing, typed result schema,
+   numeric precision, and execution/resource limits. Metric adds no execution
+   engine, client-side aggregation, SQL rewrite, or implicit `LIMIT 1`.
+4. A Form-assisted flow may generate SQL for common operations, but it saves
+   that query through the normal Saved SQL contract and binds the exact
+   resulting revision as a Composition source. It stores no Metric-only
+   operation, `FieldId`, hidden query setting, or separate aggregate authority.
+5. Metric evaluation uses the common authorized SQL result path. A thin
+   `composition.metric.query` adapter may select the source and column, consume
+   at most two rows, and validate exactly one row with a displayable scalar
+   column. Zero rows, multiple rows, one-row NULL, numeric zero, denied or
+   unavailable source, and incompatible type remain distinct from one another
+   and from query failures. A successful result payload carries only component
+   identity, result type, and value; failures retain the `ok`/diagnostics
+   envelope. The adapter never selects a prefix row or changes SQL. Table
+   continues through the existing paged SQL path against the same
+   source/result contract.
+6. No compatibility reader or migration is required for pre-release Metric
+   shapes, including the former `source` + `value_field` form, `aggregate`, or
+   the `aggregate`/`sql_scalar` definition union. The Composition document
+   format remains version 1 because it has not shipped; its released v1 grammar
+   adopts the direct `source`/`column` shape, and pre-release documents are not
+   promised to remain readable. Unrelated Composition persistence/history,
+   Saved SQL, Space Knowledge, EntryQuery Table support, SQL operations, and
+   `sql.query.count` remain.
+
+### Data flow
+
+```mermaid
+flowchart LR
+  A[Form-assisted SQL authoring] -->|ordinary Saved SQL| B[Saved SQL Entry + exact revision]
+  C[Existing Saved SQL] --> B
+  B --> D[Shared Composition saved_sql source + parameters]
+  D --> E[Core resolver + current ACL]
+  E --> F[Read-only SQL planner + limits + typed result]
+  F --> G[Common SQL result]
+  G --> H[Table: paged rows and columns]
+  G --> I[Metric adapter: one row + selected scalar column]
+  G -. future .-> J[Text variables / Chart data]
+```
+
+The source/result contract is shared; components do not implement query
+semantics. Metric uses bounded row consumption while Table keeps its page
+contract. Source sharing does not imply that a Table page determines a Metric
+value or require a result cache.
+
+### Impact map and order
+
+- **Domain / YAML / Native / WASM:** remove the aggregate definition, its
+  `FieldId`/operation validation, capability request, and aggregate-only
+  fixtures. Keep the Saved SQL source/revision/parameters, scalar validation,
+  and EntryQuery Table fields and operations.
+- **Core / API / server / CLI:** bind Metric only to authorized exact-revision
+  Saved SQL results; retain `composition.metric.query` only as the scalar
+  adapter if useful. Remove aggregate operation/source-kind fields from the
+  Metric result, Metric aggregate execution, and aggregate capability paths.
+  Preserve `sql.query`, `sql.query.count`, local Core and remote meaning.
+- **Browser / Studio:** remove direct Form aggregate Metric authoring. A Form
+  helper creates an ordinary Saved SQL query; Metric and Table select its
+  source and output columns. Keep presentation-only settings and opaque-ID
+  hiding.
+- **Specs / fixtures / E2E / CI:** update the Composition contract, Mitase,
+  page specs, acceptance plan, canonical fixtures, and journeys. Cover shared
+  one-row/multi-column sources, exact revisions, ACL, parameters, NULL/zero/
+  zero-row/multi-row, precision, update and pagination independence, and
+  bounded errors. Keep SQL aggregate engine tests, EntryQuery Table tests, and
+  `entry.query.count` tests.
+
+Implementation is split into dependent Domain/Core/portable-operation,
+Studio/Browser, and acceptance/spec slices. Each slice gets focused validation
+and required CI before a dependent slice builds on it. SQL aggregate behavior
+is tested at the SQL layer; Metric tests prove selection and presentation only.
