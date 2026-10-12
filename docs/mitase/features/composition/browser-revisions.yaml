@@ -101,7 +101,7 @@ features:
       path: frontend/src/lib/composition-draft.test.ts
       selector:
         kind: test
-        name: refuses unknown future component, layout, and value-field kinds instead of approximating
+        name: refuses unknown future component, layout, and metric definition kinds instead of approximating
       claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.ordered-component-layout

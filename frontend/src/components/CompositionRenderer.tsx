@@ -92,10 +92,6 @@ const knownDiagnosticCodes = new Set([
   "source_schema_changed",
   "metric_result_not_scalar",
   "metric_result_type_mismatch",
-  "metric_result_empty",
-  "metric_result_multiple_rows",
-  "metric_result_page_incomplete",
-  "metric_field_not_projected",
   "metric_scalar_expected_one_row",
   "metric_result_column_missing",
   "metric_result_column_ambiguous",
@@ -516,11 +512,7 @@ export function CompositionMetric(props: {
       : undefined;
   };
   const needsEdit = () =>
-    [
-      "metric_scalar_expected_one_row",
-      "metric_result_empty",
-      "metric_result_multiple_rows",
-    ].includes(serverResult()?.diagnostics?.[0]?.code ?? "") &&
+    serverResult()?.diagnostics?.[0]?.code === "metric_scalar_expected_one_row" &&
     props.metricQueryContext?.onEdit !== undefined;
 
   return (

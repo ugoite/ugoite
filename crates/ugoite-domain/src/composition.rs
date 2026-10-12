@@ -521,18 +521,6 @@ pub struct CompositionParameterReference {
     pub parameter: String,
 }
 
-/// The stable identity of the scalar read by a metric component.
-///
-/// EntryQuery properties use a stable `FieldId`; Saved SQL results use the
-/// exact output column name returned by the selected query revision. The
-/// resolver validates that this variant matches the component's source.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CompositionMetricValueField {
-    EntryField { field_id: FieldId },
-    SqlColumn { name: String },
-}
-
 /// The portable operation applied to an EntryQuery matching set by an
 /// aggregate metric.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -635,17 +623,8 @@ pub enum CompositionComponent {
         /// Optional display text; component and source bindings continue to use IDs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
-        /// Existing v0.x scalar metric shape, retained so saved Compositions
-        /// remain readable until the breaking grammar retirement planned for
-        /// the next minor version.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        source: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        value_field: Option<CompositionMetricValueField>,
-        /// Typed v1 metric definition. Its aggregate and SQL scalar execution
-        /// paths are supplied by the follow-up query work.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        definition: Option<CompositionMetricDefinition>,
+        /// A source-bound aggregate or Saved SQL scalar definition.
+        definition: CompositionMetricDefinition,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         presentation: Option<CompositionMetricPresentation>,
     },
@@ -670,13 +649,7 @@ impl CompositionComponent {
     pub fn source_id(&self) -> Option<&str> {
         match self {
             Self::Text { .. } => None,
-            Self::Metric {
-                source, definition, ..
-            } => source.as_deref().or_else(|| {
-                definition
-                    .as_ref()
-                    .map(CompositionMetricDefinition::source_id)
-            }),
+            Self::Metric { definition, .. } => Some(definition.source_id()),
             Self::Table { source, .. } => Some(source),
         }
     }
@@ -689,24 +662,15 @@ impl CompositionComponent {
         }
     }
 
-    pub fn value_field(&self) -> Option<&CompositionMetricValueField> {
-        match self {
-            Self::Metric { value_field, .. } => value_field.as_ref(),
-            Self::Text { .. } | Self::Table { .. } => None,
-        }
-    }
-
     pub fn metric_definition(&self) -> Option<&CompositionMetricDefinition> {
         match self {
-            Self::Metric { definition, .. } => definition.as_ref(),
+            Self::Metric { definition, .. } => Some(definition),
             Self::Text { .. } | Self::Table { .. } => None,
         }
     }
 
     pub(crate) fn metric_shape_is_well_formed(&self) -> bool {
         let Self::Metric {
-            source,
-            value_field,
             definition,
             presentation,
             ..
@@ -715,16 +679,10 @@ impl CompositionComponent {
             return true;
         };
 
-        match (source, value_field, definition, presentation) {
-            (Some(source), Some(_), None, None) => !source.trim().is_empty(),
-            (None, None, Some(definition), presentation) => {
-                definition.is_well_formed()
-                    && presentation
-                        .as_ref()
-                        .is_none_or(CompositionMetricPresentation::is_well_formed)
-            }
-            _ => false,
-        }
+        definition.is_well_formed()
+            && presentation
+                .as_ref()
+                .is_none_or(CompositionMetricPresentation::is_well_formed)
     }
 }
 
@@ -795,15 +753,11 @@ pub enum CompositionDiagnosticCode {
     MissingField,
     FieldTypeChanged,
     SourceSchemaChanged,
-    MetricFieldNotProjected,
     MetricResultNotScalar,
     MetricResultTypeMismatch,
-    MetricResultEmpty,
-    MetricResultMultipleRows,
+    MetricScalarExpectedOneRow,
     MetricResultColumnMissing,
     MetricResultColumnAmbiguous,
-    MetricResultPageIncomplete,
-    MetricScalarExpectedOneRow,
 }
 
 impl CompositionDiagnosticCode {
@@ -818,15 +772,11 @@ impl CompositionDiagnosticCode {
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
             Self::SourceSchemaChanged => "source_schema_changed",
-            Self::MetricFieldNotProjected => "metric_field_not_projected",
             Self::MetricResultNotScalar => "metric_result_not_scalar",
             Self::MetricResultTypeMismatch => "metric_result_type_mismatch",
-            Self::MetricResultEmpty => "metric_result_empty",
-            Self::MetricResultMultipleRows => "metric_result_multiple_rows",
+            Self::MetricScalarExpectedOneRow => "metric_scalar_expected_one_row",
             Self::MetricResultColumnMissing => "metric_result_column_missing",
             Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
-            Self::MetricResultPageIncomplete => "metric_result_page_incomplete",
-            Self::MetricScalarExpectedOneRow => "metric_scalar_expected_one_row",
         }
     }
 }
@@ -834,12 +784,13 @@ impl CompositionDiagnosticCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_composition_yaml, CompositionComponent, CompositionDiagnosticCode,
-        CompositionDocument, CompositionFormat, CompositionKind, CompositionMetricValueField,
-        CompositionQueryOperator, CompositionResultFieldType, CompositionSortDirection,
-        CompositionSource, CompositionSpec, CompositionValue, DashboardFlowLayout,
-        EntryQueryProjectionTemplate, EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow,
-        TextStyle, COMPOSITION_FORMAT, COMPOSITION_FORMAT_VERSION, DEFAULT_COMPOSITION_PAGE_LIMIT,
+        parse_composition_yaml, CompositionAggregateOperation, CompositionComponent,
+        CompositionDiagnosticCode, CompositionDocument, CompositionFormat, CompositionKind,
+        CompositionMetricDefinition, CompositionQueryOperator, CompositionResultFieldType,
+        CompositionSortDirection, CompositionSource, CompositionSpec, CompositionValue,
+        DashboardFlowLayout, EntryQueryProjectionTemplate, EntryQueryTemplate, FlowItem,
+        FlowLayoutKind, FlowRow, TextStyle, COMPOSITION_FORMAT, COMPOSITION_FORMAT_VERSION,
+        DEFAULT_COMPOSITION_PAGE_LIMIT,
     };
 
     const MONTHLY_EXPENSE: &str =
@@ -1262,7 +1213,7 @@ mod tests {
                     }
                 ],
                 "components": [
-                    {"kind": "metric", "id": "total", "source": "monthly_total", "value_field": {"kind": "sql_column", "name": "total"}},
+                    {"kind": "metric", "id": "total", "definition": {"kind": "sql_scalar", "source": "monthly_total", "column": "total"}},
                     {"kind": "table", "id": "transactions", "source": "expense_rows"}
                 ],
                 "layout": {
@@ -1288,9 +1239,9 @@ mod tests {
         assert!(matches!(
             &document.spec.components[0],
             CompositionComponent::Metric {
-                value_field: Some(CompositionMetricValueField::SqlColumn { name }),
+                definition: CompositionMetricDefinition::SqlScalar { column, .. },
                 ..
-            } if name == "total"
+            } if column == "total"
         ));
     }
 
@@ -1341,12 +1292,16 @@ mod tests {
                 "source_schema_changed",
             ),
             (
-                CompositionDiagnosticCode::MetricFieldNotProjected,
-                "metric_field_not_projected",
-            ),
-            (
                 CompositionDiagnosticCode::MetricScalarExpectedOneRow,
                 "metric_scalar_expected_one_row",
+            ),
+            (
+                CompositionDiagnosticCode::MetricResultColumnMissing,
+                "metric_result_column_missing",
+            ),
+            (
+                CompositionDiagnosticCode::MetricResultColumnAmbiguous,
+                "metric_result_column_ambiguous",
             ),
         ];
 
@@ -1404,17 +1359,13 @@ mod tests {
             "missing_field",
             "field_type_changed",
             "source_schema_changed",
-            "metric_field_not_projected",
             "metric_result_not_scalar",
             "metric_result_type_mismatch",
-            "metric_result_empty",
-            "metric_result_multiple_rows",
+            "metric_scalar_expected_one_row",
             "metric_result_column_missing",
             "metric_result_column_ambiguous",
-            "metric_result_page_incomplete",
-            "metric_scalar_expected_one_row",
         ];
-        assert_eq!(frozen_codes.len(), 18);
+        assert_eq!(frozen_codes.len(), 14);
         for spelling in frozen_codes {
             let code: CompositionDiagnosticCode =
                 serde_json::from_str(&format!("\"{spelling}\"")).unwrap();
@@ -1465,20 +1416,31 @@ mod tests {
             assert_eq!(serde_json::to_string(&result_type).unwrap(), spelling);
         }
 
-        // Metric field identity: stable FieldId versus exact SQL column name.
-        let entry_field = CompositionMetricValueField::EntryField {
-            field_id: crate::id::FieldId::new(100).unwrap(),
+        // Metrics have exactly the typed aggregate and SQL scalar forms.
+        let aggregate = CompositionMetricDefinition::Aggregate {
+            source: "expense_rows".to_string(),
+            operation: CompositionAggregateOperation::CountRows,
+            field_id: None,
         };
         assert_eq!(
-            serde_json::to_value(&entry_field).unwrap()["kind"],
-            serde_json::json!("entry_field")
+            serde_json::to_value(&aggregate).unwrap(),
+            serde_json::json!({
+                "kind": "aggregate",
+                "source": "expense_rows",
+                "operation": "count_rows"
+            })
         );
-        let sql_column = CompositionMetricValueField::SqlColumn {
-            name: "total".to_string(),
+        let sql_scalar = CompositionMetricDefinition::SqlScalar {
+            source: "monthly_total".to_string(),
+            column: "total".to_string(),
         };
         assert_eq!(
-            serde_json::to_value(&sql_column).unwrap()["kind"],
-            serde_json::json!("sql_column")
+            serde_json::to_value(&sql_scalar).unwrap(),
+            serde_json::json!({
+                "kind": "sql_scalar",
+                "source": "monthly_total",
+                "column": "total"
+            })
         );
 
         // Dashboard flow layout (ADR-019 re-freeze): flow is the only layout

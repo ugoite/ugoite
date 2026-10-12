@@ -20,15 +20,11 @@ pub enum CompositionDiagnosticCode {
     MissingField,
     FieldTypeChanged,
     SourceSchemaChanged,
-    MetricFieldNotProjected,
     MetricResultNotScalar,
     MetricResultTypeMismatch,
-    MetricResultEmpty,
-    MetricResultMultipleRows,
+    MetricScalarExpectedOneRow,
     MetricResultColumnMissing,
     MetricResultColumnAmbiguous,
-    MetricResultPageIncomplete,
-    MetricScalarExpectedOneRow,
 }
 
 impl CompositionDiagnosticCode {
@@ -43,15 +39,11 @@ impl CompositionDiagnosticCode {
             Self::MissingField => "missing_field",
             Self::FieldTypeChanged => "field_type_changed",
             Self::SourceSchemaChanged => "source_schema_changed",
-            Self::MetricFieldNotProjected => "metric_field_not_projected",
             Self::MetricResultNotScalar => "metric_result_not_scalar",
             Self::MetricResultTypeMismatch => "metric_result_type_mismatch",
-            Self::MetricResultEmpty => "metric_result_empty",
-            Self::MetricResultMultipleRows => "metric_result_multiple_rows",
+            Self::MetricScalarExpectedOneRow => "metric_scalar_expected_one_row",
             Self::MetricResultColumnMissing => "metric_result_column_missing",
             Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
-            Self::MetricResultPageIncomplete => "metric_result_page_incomplete",
-            Self::MetricScalarExpectedOneRow => "metric_scalar_expected_one_row",
         }
     }
 
@@ -66,15 +58,11 @@ impl CompositionDiagnosticCode {
             "missing_field" => Some(Self::MissingField),
             "field_type_changed" => Some(Self::FieldTypeChanged),
             "source_schema_changed" => Some(Self::SourceSchemaChanged),
-            "metric_field_not_projected" => Some(Self::MetricFieldNotProjected),
             "metric_result_not_scalar" => Some(Self::MetricResultNotScalar),
             "metric_result_type_mismatch" => Some(Self::MetricResultTypeMismatch),
-            "metric_result_empty" => Some(Self::MetricResultEmpty),
-            "metric_result_multiple_rows" => Some(Self::MetricResultMultipleRows),
+            "metric_scalar_expected_one_row" => Some(Self::MetricScalarExpectedOneRow),
             "metric_result_column_missing" => Some(Self::MetricResultColumnMissing),
             "metric_result_column_ambiguous" => Some(Self::MetricResultColumnAmbiguous),
-            "metric_result_page_incomplete" => Some(Self::MetricResultPageIncomplete),
-            "metric_scalar_expected_one_row" => Some(Self::MetricScalarExpectedOneRow),
             _ => None,
         }
     }

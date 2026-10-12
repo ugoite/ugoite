@@ -132,7 +132,7 @@ pub(super) fn normalize_composition_document(
 fn typed_metric_bindings_are_well_formed(document: &CompositionDocument) -> bool {
     document.spec.components.iter().all(|component| {
         let CompositionComponent::Metric {
-            definition: Some(definition),
+            definition,
             presentation,
             ..
         } = component
@@ -322,7 +322,7 @@ mod tests {
     };
     use crate::composition::{
         CompositionDiagnosticCode, CompositionDocument, CompositionMetricDefinition,
-        CompositionMetricPresentation, CompositionMetricValueField, CompositionSource,
+        CompositionMetricPresentation, CompositionSource,
     };
     use crate::form::{FieldType, ListItemDefinition};
     use crate::id::FormId;
@@ -331,8 +331,6 @@ mod tests {
         include_str!("../../tests/fixtures/composition/monthly-expense.ugcomp.yaml");
     const MONTHLY_EXPENSE_LABELED: &str =
         include_str!("../../tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml");
-    const METRIC_VALUE_FIELDS: &str =
-        include_str!("../../tests/fixtures/composition/metric-value-fields.ugcomp.yaml");
     const TYPED_METRIC_DEFINITIONS: &str =
         include_str!("../../tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml");
     const UNKNOWN_LIST_ITEM_FIELD: &str =
@@ -423,36 +421,6 @@ mod tests {
     }
 
     #[test]
-    fn metric_value_fields_canonical_bytes_and_fingerprint_match_golden_fixtures() {
-        let result = canonicalize_composition_yaml(METRIC_VALUE_FIELDS).unwrap();
-        assert_eq!(
-            result.yaml,
-            include_str!(
-                "../../tests/fixtures/composition/metric-value-fields.canonical.ugcomp.yaml"
-            )
-        );
-        assert_eq!(
-            result.fingerprint,
-            include_str!("../../tests/fixtures/composition/metric-value-fields.fingerprint.txt")
-                .trim()
-        );
-        assert!(matches!(
-            &result.document.spec.components[0],
-            super::super::CompositionComponent::Metric {
-                value_field: Some(CompositionMetricValueField::EntryField { field_id }),
-                ..
-            } if field_id.get() == 102
-        ));
-        assert!(matches!(
-            &result.document.spec.components[1],
-            super::super::CompositionComponent::Metric {
-                value_field: Some(CompositionMetricValueField::SqlColumn { name }),
-                ..
-            } if name == "total"
-        ));
-    }
-
-    #[test]
     fn typed_metric_definitions_canonical_bytes_and_fingerprint_match_golden_fixtures() {
         let result = canonicalize_composition_yaml(TYPED_METRIC_DEFINITIONS).unwrap();
         assert_eq!(
@@ -472,11 +440,11 @@ mod tests {
         assert!(matches!(
             &result.document.spec.components[0],
             super::super::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::Aggregate {
+                definition: CompositionMetricDefinition::Aggregate {
                     operation: super::super::CompositionAggregateOperation::CountRows,
                     field_id: None,
                     ..
-                }),
+                },
                 presentation: Some(CompositionMetricPresentation::Number {
                     unit: Some(unit),
                     fraction_digits: Some(0),
@@ -487,33 +455,33 @@ mod tests {
         assert!(matches!(
             &result.document.spec.components[1],
             super::super::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::Aggregate {
+                definition: CompositionMetricDefinition::Aggregate {
                     operation: super::super::CompositionAggregateOperation::Sum,
                     field_id: Some(field_id),
                     ..
-                }),
+                },
                 ..
             } if field_id.get() == 102
         ));
         assert!(matches!(
             &result.document.spec.components[2],
             super::super::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::Aggregate {
+                definition: CompositionMetricDefinition::Aggregate {
                     operation: super::super::CompositionAggregateOperation::CountValues,
                     field_id: Some(field_id),
                     ..
-                }),
+                },
                 ..
             } if field_id.get() == 103
         ));
         assert!(matches!(
             &result.document.spec.components[3],
             super::super::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::Aggregate {
+                definition: CompositionMetricDefinition::Aggregate {
                     operation: super::super::CompositionAggregateOperation::Min,
                     field_id: Some(field_id),
                     ..
-                }),
+                },
                 presentation: None,
                 ..
             } if field_id.get() == 104
@@ -521,11 +489,11 @@ mod tests {
         assert!(matches!(
             &result.document.spec.components[4],
             super::super::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::Aggregate {
+                definition: CompositionMetricDefinition::Aggregate {
                     operation: super::super::CompositionAggregateOperation::Max,
                     field_id: Some(field_id),
                     ..
-                }),
+                },
                 presentation: None,
                 ..
             } if field_id.get() == 105
@@ -533,7 +501,7 @@ mod tests {
         assert!(matches!(
             &result.document.spec.components[5],
             super::super::CompositionComponent::Metric {
-                definition: Some(CompositionMetricDefinition::SqlScalar { column, .. }),
+                definition: CompositionMetricDefinition::SqlScalar { column, .. },
                 presentation: None,
                 ..
             } if column == "total"

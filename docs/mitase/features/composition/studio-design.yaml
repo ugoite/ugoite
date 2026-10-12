@@ -261,8 +261,6 @@ features:
         name: maps metric source, operation, field, and SQL column edits
       claims:
       - kind: evidences
-        anchor: REQ-COMP-002#criterion.typed-metric-value-field
-      - kind: evidences
         anchor: REQ-COMP-002#criterion.typed-metric-definition
     - id: browser-metric-picker-form-aggregate
       adapter: typescript

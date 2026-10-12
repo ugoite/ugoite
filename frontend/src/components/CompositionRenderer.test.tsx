@@ -581,17 +581,10 @@ describe("CompositionRenderer", () => {
     expect(onEdit).toHaveBeenCalledOnce();
   };
 
-  it("offers direct edit for an empty Saved SQL metric result", async () => {
+  it("offers direct edit when a Saved SQL metric returns a non-scalar row count", async () => {
     await expectDirectEditForScalarDiagnostic(
-      "metric_result_empty",
-      "The metric returned no value.",
-    );
-  });
-
-  it("offers direct edit for a multi-row Saved SQL metric result", async () => {
-    await expectDirectEditForScalarDiagnostic(
-      "metric_result_multiple_rows",
-      "The metric returned more than one row.",
+      "metric_scalar_expected_one_row",
+      "The metric source must return exactly one row.",
     );
   });
 

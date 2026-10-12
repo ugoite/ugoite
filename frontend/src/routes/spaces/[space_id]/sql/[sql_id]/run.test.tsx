@@ -72,7 +72,6 @@ vi.mock("~/lib/ugoite-client", () => ({
     count: countMock,
   },
   canonicalizeCompositionDocument: vi.fn(),
-  evaluateCompositionMetricPage: vi.fn(),
   protocolFetch: vi.fn(),
 }));
 
