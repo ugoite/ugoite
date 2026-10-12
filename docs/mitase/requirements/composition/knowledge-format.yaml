@@ -118,6 +118,16 @@ requirements:
             claims:
               - { kind: verifies, criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
               - { kind: verifies, criterion: REQ-COMP-004#criterion.current-authorization, covers: [FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module], runner: { runner: cargo-test-integration, arguments: { package: ugoite-iceberg, harness: test_composition_query_authorization, test: authorized_composition_metrics_recheck_current_entry_and_saved_sql_access } } }
+          - id: saved-sql-metric-resource-limit-failure
+            adapter: rust
+            path: crates/ugoite-iceberg/src/service/composition_metric_query.rs
+            selector: { kind: symbol, name: tests::authorized_saved_sql_metric_returns_no_value_when_query_exceeds_memory_limit }
+            claims:
+              - kind: verifies
+                criterion: REQ-COMP-002#criterion.saved-sql-metric-presentation
+                covers:
+                  - FEAT-COMP-002#binding.composition-metric-query-runtime/target.composition-metric-query-service-module
+                runner: { runner: cargo-test-unit, arguments: { package: ugoite-iceberg, test: service::composition_metric_query::tests::authorized_saved_sql_metric_returns_no_value_when_query_exceeds_memory_limit } }
           - id: saved-sql-metric-reload-reevaluation-and-table-paging
             adapter: typescript
             path: e2e/composition-metric-journey.test.ts

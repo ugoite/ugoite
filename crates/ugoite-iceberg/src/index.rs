@@ -1628,6 +1628,7 @@ pub(crate) async fn authorized_asset_reference_query_context(
         true,
         form_definitions,
         None,
+        None,
     )
     .await
     .map_err(map_sql_error)?;
@@ -2841,15 +2842,54 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
     Option<Vec<Vec<Option<String>>>>,
     bool,
 )> {
-    let context = datafusion_sql_context_with_form_definitions(
+    execute_sql_query_authorized_by_form_page_at_checkpoint_stateless_with_limits(
+        op,
+        ws_path,
+        sql_query_limits(SQL_MAX_OUTPUT_ROWS.saturating_add(1)),
+        sql_query,
+        relation_scopes,
+        parameters,
+        include_exact_integer_values,
+        offset,
+        limit,
+        forms,
+        checkpoint,
+    )
+    .await
+}
+
+/// Executes a stateless SQL page using explicitly supplied limits. The
+/// ordinary adapter above provides the production SQL limits; the explicit
+/// form is also used by the bounded scalar adapter so both paths share the
+/// same authorized planner and result conversion.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stateless_with_limits(
+    op: &Operator,
+    ws_path: &str,
+    query_limits: QueryLimits,
+    sql_query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    include_exact_integer_values: bool,
+    offset: usize,
+    limit: usize,
+    forms: Vec<FormDefinition>,
+    checkpoint: SpaceCheckpoint,
+) -> Result<(
+    Vec<String>,
+    Vec<SqlResultColumn>,
+    Vec<Value>,
+    Option<Vec<Vec<Option<String>>>>,
+    bool,
+)> {
+    let context = datafusion_sql_context_with_form_definitions_with_query_limits(
         op,
         ws_path,
         EntryScope::AllCurrent,
         None,
         Some(relation_scopes),
         Some(checkpoint),
-        SqlFunctionPolicy::ReadOnlyAggregateV1,
-        SQL_MAX_OUTPUT_ROWS.saturating_add(1),
+        query_limits,
         false,
         forms,
     )
@@ -2872,6 +2912,49 @@ pub(crate) async fn execute_sql_query_authorized_by_form_page_at_checkpoint_stat
         serialized_rows.exact_integer_rows,
         page.has_order,
     ))
+}
+
+fn sql_query_limits(max_rows: usize) -> QueryLimits {
+    QueryLimits {
+        max_memory_bytes: SQL_MAX_MEMORY_BYTES,
+        max_rows,
+        timeout: SQL_TIMEOUT,
+        max_concurrency: 1,
+        function_policy: SqlFunctionPolicy::ReadOnlyAggregateV1,
+    }
+}
+
+/// Executes a bounded scalar probe with explicit query limits. This is the
+/// same authorized SQL page path used by tables, capped at two rows by the
+/// scalar contract.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn execute_sql_scalar_probe_authorized_by_form_at_checkpoint_stateless_with_limits(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    forms: Vec<FormDefinition>,
+    checkpoint: SpaceCheckpoint,
+    query_limits: QueryLimits,
+) -> Result<(Vec<String>, Vec<SqlResultColumn>, Vec<Value>)> {
+    let (columns, result_schema, mut rows, _exact_integer_rows, _has_order) =
+        execute_sql_query_authorized_by_form_page_at_checkpoint_stateless_with_limits(
+            op,
+            ws_path,
+            query_limits,
+            sql_query,
+            relation_scopes,
+            parameters,
+            false,
+            0,
+            ugoite_core::sql_query::MAX_SQL_SCALAR_PROBE_ROWS,
+            forms,
+            checkpoint,
+        )
+        .await?;
+    rows.truncate(ugoite_core::sql_query::MAX_SQL_SCALAR_PROBE_ROWS);
+    Ok((columns, result_schema, rows))
 }
 
 /// Executes a bounded scalar probe against a fixed authorized publication.
@@ -3166,6 +3249,7 @@ async fn datafusion_sql_context_with_limits(
         include_payload,
         forms,
         None,
+        None,
     )
     .await
 }
@@ -3195,6 +3279,36 @@ async fn datafusion_sql_context_with_form_definitions(
         include_payload,
         forms,
         None,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn datafusion_sql_context_with_form_definitions_with_query_limits(
+    op: &Operator,
+    ws_path: &str,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+    query_limits: QueryLimits,
+    include_payload: bool,
+    forms: Vec<FormDefinition>,
+) -> Result<crate::query_context::AuthorizedQueryContext> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    datafusion_sql_context_with_form_snapshot(
+        workspace,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+        query_limits.function_policy,
+        query_limits.max_rows,
+        include_payload,
+        forms,
+        None,
+        Some(query_limits),
     )
     .await
 }
@@ -3230,6 +3344,7 @@ async fn datafusion_search_context_with_limits(
         include_payload,
         forms,
         Some(&searchable_columns),
+        None,
     )
     .await
 }
@@ -3246,6 +3361,7 @@ async fn datafusion_sql_context_with_form_snapshot(
     include_payload: bool,
     forms: Vec<FormDefinition>,
     searchable_columns: Option<&BTreeMap<FormId, BTreeSet<String>>>,
+    query_limits_override: Option<QueryLimits>,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
     let mut policy_forms = BTreeMap::new();
     for form in forms {
@@ -3307,13 +3423,13 @@ async fn datafusion_sql_context_with_form_snapshot(
         .authorized_query_context(AuthorizedQueryPolicy {
             forms: policy_forms,
             checkpoint,
-            limits: QueryLimits {
+            limits: query_limits_override.unwrap_or(QueryLimits {
                 max_memory_bytes: SQL_MAX_MEMORY_BYTES,
                 max_rows,
                 timeout: SQL_TIMEOUT,
                 max_concurrency: 1,
                 function_policy,
-            },
+            }),
         })
         .await
         .context("create DataFusion SQL context")

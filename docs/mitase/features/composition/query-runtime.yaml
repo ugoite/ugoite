@@ -378,7 +378,7 @@ features:
   - id: composition-metric-query-evidence
     role: evidence
     facet: iceberg-tests
-    responsibility: Verify multiple scalar columns from one Saved SQL source, SQL aggregate values and exact numeric representations, current data and parameters, distinct zero-row and multi-row outcomes, and current authorization.
+    responsibility: Verify multiple scalar columns from one Saved SQL source, SQL aggregate values and exact numeric representations, current data and parameters, distinct zero-row and multi-row outcomes, current authorization, and resource-limit failures without partial scalar results.
     targets:
     - id: saved-sql-metric-columns-execution
       adapter: rust
@@ -409,6 +409,15 @@ features:
       claims:
       - kind: evidences
         anchor: REQ-COMP-004#criterion.current-authorization
+      - kind: evidences
+        anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
+    - id: metric-resource-limit-failure
+      adapter: rust
+      path: crates/ugoite-iceberg/src/service/composition_metric_query.rs
+      selector:
+        kind: symbol
+        name: tests::authorized_saved_sql_metric_returns_no_value_when_query_exceeds_memory_limit
+      claims:
       - kind: evidences
         anchor: REQ-COMP-002#criterion.saved-sql-metric-presentation
     - id: metric-query-openapi-contract

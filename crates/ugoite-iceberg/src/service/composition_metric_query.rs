@@ -10,6 +10,7 @@ use ugoite_core::composition_metric::{
     CompositionMetricQueryRequest, CompositionMetricQueryResponse, CompositionMetricQueryTarget,
     CompositionMetricQueryValue,
 };
+use ugoite_core::query::QueryLimits;
 use ugoite_core::sql_query::{SqlQueryRequest, SqlScalarProbeResult};
 use ugoite_domain::composition::CompositionDiagnosticCode;
 use ugoite_domain::id::{validate_entry_id, validate_revision_id};
@@ -74,6 +75,7 @@ impl UgoiteService {
                     principal_ids: None,
                 },
                 draft_fingerprint,
+                None,
             )
             .await
         } else {
@@ -91,6 +93,39 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: &[Uuid],
         request: CompositionMetricQueryRequest,
+    ) -> Result<CompositionMetricQueryResponse> {
+        self.query_composition_metric_authorized_with_scalar_limits(
+            space_id,
+            principal_ids,
+            request,
+            None,
+        )
+        .await
+    }
+
+    #[cfg(test)]
+    async fn query_composition_metric_authorized_for_test_with_limits(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        request: CompositionMetricQueryRequest,
+        query_limits: &QueryLimits,
+    ) -> Result<CompositionMetricQueryResponse> {
+        self.query_composition_metric_authorized_with_scalar_limits(
+            space_id,
+            principal_ids,
+            request,
+            Some(query_limits),
+        )
+        .await
+    }
+
+    async fn query_composition_metric_authorized_with_scalar_limits(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        request: CompositionMetricQueryRequest,
+        query_limits_override: Option<&QueryLimits>,
     ) -> Result<CompositionMetricQueryResponse> {
         let (plan, draft_fingerprint, diagnostics, composition_id) = match &request.target {
             CompositionMetricQueryTarget::SavedRevision {
@@ -147,6 +182,7 @@ impl UgoiteService {
                     principal_ids: Some(principal_ids),
                 },
                 draft_fingerprint,
+                query_limits_override,
             )
             .await
         } else {
@@ -157,6 +193,7 @@ impl UgoiteService {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn query_composition_metric_from_plan(
         &self,
         space_id: &str,
@@ -165,6 +202,7 @@ impl UgoiteService {
         component_id: &str,
         authorization: MetricExecutionAuthorization<'_>,
         draft_fingerprint: Option<String>,
+        query_limits_override: Option<&QueryLimits>,
     ) -> Result<CompositionMetricQueryResponse> {
         let MetricExecutionAuthorization {
             composition_id,
@@ -232,14 +270,17 @@ impl UgoiteService {
                                 principal_ids,
                                 composition_id,
                                 sql_request,
+                                query_limits_override,
                             )
                             .await?
                         }
                         None => {
-                            self.probe_sql_scalar_authorized_for_principals(
+                            self.probe_sql_scalar_authorized_with_composition_access(
                                 space_id,
                                 principal_ids,
+                                None,
                                 sql_request,
+                                query_limits_override,
                             )
                             .await?
                         }
@@ -356,6 +397,7 @@ impl UgoiteService {
             principal_ids,
             None,
             request,
+            None,
         )
         .await
     }
@@ -366,12 +408,14 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         composition_id: &str,
         request: SqlQueryRequest,
+        query_limits_override: Option<&QueryLimits>,
     ) -> Result<SqlScalarProbeResult> {
         self.probe_sql_scalar_authorized_with_composition_access(
             space_id,
             principal_ids,
             Some(composition_id),
             request,
+            query_limits_override,
         )
         .await
     }
@@ -382,6 +426,7 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         composition_id: Option<&str>,
         request: SqlQueryRequest,
+        query_limits_override: Option<&QueryLimits>,
     ) -> Result<SqlScalarProbeResult> {
         validate_scalar_probe_request(&request)?;
         require_nonempty_authorized_principals(principal_ids)?;
@@ -444,7 +489,19 @@ impl UgoiteService {
         } else {
             normalized_sql
         };
-        let (columns, result_schema, rows) =
+        let (columns, result_schema, rows) = if let Some(query_limits) = query_limits_override {
+            index::execute_sql_scalar_probe_authorized_by_form_at_checkpoint_stateless_with_limits(
+                &self.operator,
+                &self.workspace_path(space_id),
+                &execution_sql,
+                &relation_scopes,
+                parameters,
+                forms,
+                checkpoint,
+                query_limits.clone(),
+            )
+            .await?
+        } else {
             index::execute_sql_scalar_probe_authorized_by_form_at_checkpoint_stateless(
                 &self.operator,
                 &self.workspace_path(space_id),
@@ -454,7 +511,8 @@ impl UgoiteService {
                 forms,
                 checkpoint,
             )
-            .await?;
+            .await?
+        };
         Ok(SqlScalarProbeResult {
             columns,
             rows,
@@ -491,5 +549,163 @@ fn metric_query_diagnostic(
                 parameter_id: None,
             },
         ],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use opendal::{services::Memory, Operator};
+    use serde_json::json;
+    use std::collections::BTreeMap;
+    use std::time::Duration;
+    use ugoite_core::query::{QueryLimits, SqlFunctionPolicy};
+    use ugoite_domain::composition::{
+        CompositionComponent, CompositionDocument, CompositionFormat, CompositionKind,
+        CompositionResultColumn, CompositionResultFieldType, CompositionSource, CompositionSpec,
+        DashboardFlowLayout, FlowItem, FlowLayoutKind, FlowRow,
+    };
+    use ugoite_domain::form::sql_column_name;
+    use ugoite_domain::id::FieldId;
+    use uuid::Uuid;
+
+    #[tokio::test]
+    async fn authorized_saved_sql_metric_returns_no_value_when_query_exceeds_memory_limit(
+    ) -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let service = UgoiteService::from_operator(
+            operator,
+            format!(
+                "memory://composition-metric-resource-limit-{}",
+                Uuid::now_v7()
+            ),
+        );
+        let owner = Uuid::from_u128(4_138_001);
+        let space_id = service
+            .create_space_for_principal("metric-resource-limit", owner, "Owner")
+            .await?
+            .to_string();
+        let form_name = "MetricResourceLimit";
+        service
+            .upsert_form_result(
+                &space_id,
+                &json!({
+                    "name": form_name,
+                    "fields": {
+                        "amount": {"id": 101, "type": "long", "required": false}
+                    }
+                }),
+            )
+            .await?;
+        let field_column = sql_column_name(FieldId::new(101)?);
+        service
+            .create_structured_entry_with_receipt(
+                &space_id,
+                "metric-resource-limit-entry",
+                form_name.to_string(),
+                Vec::new(),
+                BTreeMap::from([("amount".to_string(), json!(7))]),
+                BTreeMap::new(),
+                "owner",
+            )
+            .await?;
+
+        let saved_sql = service
+            .create_saved_sql(
+                &space_id,
+                None,
+                &crate::saved_sql::SqlPayload {
+                    name: Some("Metric resource limit".to_string()),
+                    kind: crate::saved_sql::SqlKind::UserQuery,
+                    metadata: None,
+                    sql: format!(
+                        "SELECT SUM(\"{field_column}\") AS total FROM \"{form_name}\" GROUP BY \"{field_column}\""
+                    ),
+                    variables: json!([]),
+                },
+                "owner",
+            )
+            .await?;
+        let source = CompositionSource::SavedSql {
+            id: "source".to_string(),
+            entry_id: serde_json::from_value(saved_sql["id"].clone())?,
+            revision_id: serde_json::from_value(saved_sql["revision_id"].clone())?,
+            expected_result: vec![CompositionResultColumn {
+                name: "total".to_string(),
+                result_type: CompositionResultFieldType::Integer,
+            }],
+            variables: BTreeMap::new(),
+        };
+        let document = CompositionDocument {
+            format: CompositionFormat::UgoiteComposition,
+            format_version: 1,
+            kind: CompositionKind::Dashboard,
+            name: "Metric resource limit".to_string(),
+            tags: Vec::new(),
+            spec: CompositionSpec {
+                parameters: Vec::new(),
+                sources: vec![source],
+                components: vec![CompositionComponent::Metric {
+                    id: "metric".to_string(),
+                    label: None,
+                    source: "source".to_string(),
+                    column: "total".to_string(),
+                    presentation: None,
+                }],
+                layout: DashboardFlowLayout {
+                    kind: FlowLayoutKind::Flow,
+                    rows: vec![FlowRow {
+                        id: "main".to_string(),
+                        items: vec![FlowItem::Component {
+                            component: "metric".to_string(),
+                        }],
+                    }],
+                },
+            },
+        };
+        let saved = service
+            .save_composition_authorized_for_principals(
+                &space_id,
+                crate::composition::CompositionSaveRequest {
+                    entry_id: None,
+                    base_revision_id: None,
+                    document,
+                },
+                &owner.to_string(),
+                &[owner],
+            )
+            .await?;
+
+        let query_limits = QueryLimits {
+            max_memory_bytes: 1,
+            max_rows: index::SQL_MAX_OUTPUT_ROWS.saturating_add(1),
+            timeout: Duration::from_secs(5),
+            max_concurrency: 1,
+            function_policy: SqlFunctionPolicy::ReadOnlyAggregateV1,
+        };
+        let error = service
+            .query_composition_metric_authorized_for_test_with_limits(
+                &space_id,
+                &[owner],
+                CompositionMetricQueryRequest {
+                    target: CompositionMetricQueryTarget::SavedRevision {
+                        composition_id: saved.entry_id.to_string(),
+                        revision_id: saved.revision_id.to_string(),
+                    },
+                    component_id: "metric".to_string(),
+                    parameters: BTreeMap::new(),
+                },
+                &query_limits,
+            )
+            .await
+            .expect_err("a memory-limited SQL scalar must not return a partial Metric value");
+        assert!(
+            error.chain().any(|cause| cause
+                .to_string()
+                .contains("SQL query exceeds the configured resource limit")),
+            "expected the SQL resource-limit failure, got: {error:#}"
+        );
+        Ok(())
     }
 }
