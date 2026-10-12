@@ -288,11 +288,11 @@ async function addCanvasDisplay(
     );
     await field.selectOption({ label: value!.label });
   }
-  await dialog.getByRole("button", { name: "Preview metric", exact: true })
+  await dialog.getByRole("button", { name: "Preview", exact: true })
     .click();
   await expect(dialog.locator("output.compositionMetricPreview"))
     .toBeVisible();
-  await dialog.getByRole("button", { name: "Insert", exact: true }).click();
+  await dialog.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   if (label) {
     await page.getByLabel("Label", { exact: true }).fill(label);
