@@ -544,6 +544,8 @@ is tested at the SQL layer; Metric tests prove selection and presentation only.
 **Status: Accepted target for pre-release Composition; implementation pending.**
 This ruling authorizes the prerelease Composition grammar and runtime defined in
 [ADR-023](adr-023-composition-reactive-variables.md), with no compatibility
-reader or migration. It inherits ADR-022's SQL-only Metric boundary and does not
-change Space, Entry, Form, Saved SQL, SQL API, ACL, or publication contracts.
-The ruling does not authorize release.
+reader or migration. It supersedes only ADR-019's parameter declarations,
+parameter layout controls, and fixed-Text-only rule; ADR-019's Layout AST and
+presentation rules remain. It inherits ADR-022's SQL-only Metric boundary and
+does not change Space, Entry, Form, Saved SQL, SQL API, ACL, or publication
+contracts. The ruling does not authorize release.

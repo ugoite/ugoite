@@ -7,6 +7,12 @@ This decision authorizes a breaking change to the unreleased Composition v1
 grammar. It does not authorize a product release. Its SQL and Metric boundary
 inherits ADR-022 and remains gated on the SQL-only Metric implementation.
 
+This ruling supersedes ADR-019 only where it requires parameters and parameter
+layout items, restricts Components to Text/Metric/Table, and forbids variable-
+backed Text. ADR-019 still governs the flow Layout AST, exactly-once Component
+placement, presentation order, text style enum, and Design/Data/Inspector
+separation. ADR-022 remains the sole Metric execution ruling.
+
 ## Context
 
 Composition currently declares parameters separately from placed controls,
