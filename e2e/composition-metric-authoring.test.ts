@@ -105,7 +105,7 @@ async function addMetricFromCanvas(
     expect.arrayContaining(["Amount"]),
   );
   const fieldLabels = await field.locator("option").allTextContents();
-  expect(fieldLabels.join(" ")).not.toMatch(/(?:Field \d+|#\d+)/);
+  expectNoOpaqueFieldLabels(fieldLabels);
   await field.selectOption({ label: "Amount" });
 
   await picker.getByRole("button", { name: "Preview", exact: true }).click();
@@ -174,8 +174,18 @@ async function openOwnerContext(
   return await browser.newContext({ storageState });
 }
 
+function expectNoOpaqueFieldLabels(labels: string[]) {
+  const combinedLabels = labels.join("\n");
+  expect(combinedLabels).not.toMatch(
+    /(?:\bfield[_\s-]?\d+\b|#\s*\d+\b|\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b)/i,
+  );
+  expect(labels.some((label) => /(?:\s|\()\d{2,}\)?$/.test(label))).toBe(
+    false,
+  );
+}
+
 test.describe("Composition Studio Metric authoring", () => {
-  test("authors, saves, reopens, and updates a Form SUM independently of Table pagination", async ({ browser, context, request }) => {
+  test("REQ-FE-070: saves and updates a Form SUM across pagination", async ({ browser, context, request }) => {
     test.setTimeout(180_000);
     await waitForServers(request);
     const seed = await seedForm(request);
@@ -210,7 +220,10 @@ test.describe("Composition Studio Metric authoring", () => {
       await addTableFromCanvas(page, seed.formName);
       const table = page.locator("table.result-table--entry");
       await expect(page.locator("body")).not.toContainText(
-        /(?:Field \d+|#\d+)/,
+        /(?:\bfield[_\s-]?\d+\b|#\s*\d+\b|\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b)/i,
+      );
+      expectNoOpaqueFieldLabels(
+        await table.locator("thead th").allTextContents(),
       );
       const pageWidth = await page.evaluate(() => ({
         client: document.documentElement.clientWidth,

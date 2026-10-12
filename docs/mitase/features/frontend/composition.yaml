@@ -5,7 +5,7 @@ category: Frontend Space selection and preference surfaces
 features:
   - id: FEAT-FE-014
     title: Composition Studio contract
-    summary: Connect the Composition Studio authoring contract to its declarative component specification; metric authoring is implemented, while result presentation and saved-journey verification remain planned.
+    summary: Connect the Composition Studio authoring contract to its declarative component specification; metric authoring and the Form aggregate saved lifecycle have focused browser evidence, while result presentation remains planned.
     status: planned
     bindings:
       - id: frontend

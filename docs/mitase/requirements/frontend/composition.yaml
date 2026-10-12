@@ -6,7 +6,7 @@ requirements:
   - id: REQ-FE-070
     title: Composition Studio Authoring
     description: |
-      Composition Studio combines existing Space-owned Knowledge (Saved SQL revisions, Form views, and parameters) into a reusable Tool with multiple data sources, displays, labels, tags, side-effect-free preview, and exact-revision edit. Metrics use typed Form aggregate operations or a Saved SQL scalar column. Metric authoring uses the shared Rust Domain capability through WASM and previews through the server metric query operation. Richness is a typed, reproducible combination of existing Knowledge, not free-form layout. The Browser never owns Composition semantics or aggregates fetched rows. Drafts canonicalize through the shared Rust/WASM contract. Metric authoring is verified by focused frontend tests; result presentation and the saved metric journey remain evidence gaps tracked by #4105 and #4106.
+      Composition Studio combines existing Space-owned Knowledge (Saved SQL revisions, Form views, and parameters) into a reusable Tool with multiple data sources, displays, labels, tags, side-effect-free preview, and exact-revision edit. Metrics use typed Form aggregate operations or a Saved SQL scalar column. Metric authoring uses the shared Rust Domain capability through WASM and previews through the server metric query operation. Richness is a typed, reproducible combination of existing Knowledge, not free-form layout. The Browser never owns Composition semantics or aggregates fetched rows. Drafts canonicalize through the shared Rust/WASM contract. Metric authoring and the Form aggregate saved lifecycle are verified by focused browser acceptance; result presentation remains a separate evidence gap tracked by #4105.
 
     priority: high
     status: planned
@@ -69,7 +69,7 @@ requirements:
       - id: draft-model-verification
         role: verification
         facet: verification
-        responsibility: Verify the Studio draft Work state (stable identities, blocked removes, keyboard-operable reorder, typed document assembly, and shared-contract canonicalization) through exact frontend unit tests. Metric authoring, result presentation, and the saved metric journey remain explicit verification gaps until #4104–#4106 land.
+        responsibility: Verify the Studio draft Work state (stable identities, blocked removes, keyboard-operable reorder, typed document assembly, and shared-contract canonicalization) through exact frontend unit tests.
         targets:
           - id: draft-identities
             adapter: typescript
@@ -102,6 +102,28 @@ requirements:
                 criterion: REQ-FE-070#criterion.display-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-draft-model]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/composition-draft.test.ts, test: reorders sources and displays by keyboard-operable moves } }
+      - id: metric-browser-lifecycle-verification
+        role: verification
+        facet: verification
+        responsibility: Verify Form SUM authoring, saved-definition recovery, current-value updates, Table-page independence, and narrow-layout identifier visibility through the focused browser acceptance journey.
+        targets:
+          - id: form-sum-save-reopen-update
+            adapter: typescript
+            path: e2e/composition-metric-authoring.test.ts
+            selector: { kind: test, name: "REQ-FE-070: saves and updates a Form SUM across pagination" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-metric-authoring.test.ts, test: "REQ-FE-070: saves and updates a Form SUM across pagination" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-saved-lifecycle
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-metric-authoring.test.ts, test: "REQ-FE-070: saves and updates a Form SUM across pagination" } }
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.mobile-one-column
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio-contract]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/composition-metric-authoring.test.ts, test: "REQ-FE-070: saves and updates a Form SUM across pagination" } }
       - id: preview-handle-verification
         role: verification
         facet: verification
@@ -972,10 +994,10 @@ requirements:
                 covers: [FEAT-COMP-006#binding.studio-data-evidence/target.browser-data-entry-query-field-label-collision]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionDataWorkspace.test.tsx, test: does not show generated Form field ordinals when a key is available } }
 
-      - id: metric-result-lifecycle-evidence-gap
+      - id: metric-result-presentation-evidence-gap
         role: evidence
         facet: planned-work
-        responsibility: Metric authoring has focused verification; server result presentation and saved-journey verification remain unverified until the renderer and end-to-end slices land.
+        responsibility: Server result presentation remains unverified until its renderer and focused state tests land.
         targets:
           - id: metric-result-and-lifecycle-contract
             adapter: declared
@@ -984,5 +1006,3 @@ requirements:
             claims:
               - kind: evidences
                 anchor: REQ-FE-070#criterion.metric-result-presentation
-              - kind: evidences
-                anchor: REQ-FE-070#criterion.metric-saved-lifecycle
