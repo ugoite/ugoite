@@ -346,10 +346,19 @@ export function createCompositionPreviewHandle(
     abortSources();
   };
 
+  const invalidate = () => {
+    generation += 1;
+    previewController?.abort();
+    previewController = undefined;
+    abortSources();
+    setState({ previewing: false, sources: {} });
+  };
+
   return {
     state,
     parameters,
     preview,
+    invalidate,
     setParameter,
     ensureSource,
     next,

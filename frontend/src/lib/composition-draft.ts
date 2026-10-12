@@ -884,6 +884,12 @@ export const metricDefinitionReady = (
     metricDefinitionFitsSource(source, definition, true);
 };
 
+export const draftMetricsReady = (draft: CompositionDraft): boolean =>
+  draft.displays.every((display) =>
+    display.kind !== "metric" ||
+    metricDefinitionReady(draft, display.sourceDraftId, display.definition)
+  );
+
 const numericMetricFieldTypes = new Set(["integer", "long", "float", "double"]);
 const numericMetricResultTypes = new Set([
   "integer",
@@ -1889,14 +1895,7 @@ export const draftSaveReadiness = (
       return { ready: false, reason: "refs" };
     }
   }
-  for (const display of draft.displays) {
-    if (
-      display.kind === "metric" &&
-      !metricDefinitionReady(draft, display.sourceDraftId, display.definition)
-    ) {
-      return { ready: false, reason: "metric" };
-    }
-  }
+  if (!draftMetricsReady(draft)) return { ready: false, reason: "metric" };
   const placedComponents = new Map<string, number>();
   const placedParameters = new Set<string>();
   for (const row of draft.layoutRows) {

@@ -317,7 +317,10 @@ describe("CompositionStudioSync", () => {
     sqlListMock.mockResolvedValue([]);
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
   it("switches the workspace arrangement through one Design Data Split control", () => {
     const { container } = renderStudio();
@@ -671,6 +674,33 @@ describe("CompositionStudioSync", () => {
     fireEvent.click(blockedSave);
     expect(canonicalizeMock).not.toHaveBeenCalled();
     expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it("skips canonicalization and clears preview when a Metric edit is incomplete", async () => {
+    vi.useFakeTimers();
+    previewMock.mockImplementationOnce(async () =>
+      okMetricPreview("fp-studio")
+    );
+    renderStudio(rowCountMetricDraft());
+
+    await vi.advanceTimersByTimeAsync(401);
+    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    expect(previewMock).toHaveBeenCalledTimes(1);
+    expect(queryMetricMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("128400", { selector: "output" }))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select Count" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Operation" }), {
+      target: { value: "sum" },
+    });
+
+    await vi.advanceTimersByTimeAsync(401);
+    expect(canonicalizeMock).toHaveBeenCalledTimes(1);
+    expect(previewMock).toHaveBeenCalledTimes(1);
+    expect(queryMetricMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("128400", { selector: "output" }))
+      .not.toBeInTheDocument();
   });
 
   it("disables Save when a Saved SQL Metric has no output column", () => {

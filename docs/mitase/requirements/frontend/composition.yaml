@@ -398,6 +398,15 @@ requirements:
                 criterion: REQ-FE-070#criterion.metric-authoring
                 covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: disables Save when a Metric operation requires an unselected field } }
+          - id: studio-metric-preview-readiness
+            adapter: typescript
+            path: frontend/src/components/CompositionStudioSync.test.tsx
+            selector: { kind: test, name: skips canonicalization and clears preview when a Metric edit is incomplete }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-070#criterion.metric-authoring
+                covers: [FEAT-FE-014#binding.frontend/target.composition-studio]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/CompositionStudioSync.test.tsx, test: skips canonicalization and clears preview when a Metric edit is incomplete } }
           - id: studio-saved-sql-metric-save-readiness
             adapter: typescript
             path: frontend/src/components/CompositionStudioSync.test.tsx
