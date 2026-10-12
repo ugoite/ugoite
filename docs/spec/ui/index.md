@@ -11,6 +11,8 @@ global account Security surface is specified in
 
 FormTable's Form-field columns, optional timestamps, and accessible column
 picker are described in `components/form-table.yaml`.
+The Form-owned asset reference field's human labels and hidden Asset ID boundary
+are described in `components/asset-field.yaml`.
 The shared visual and accessibility contract for source-native Entry and SQL
 result tables, including their use in Composition revisions, is in
 `components/result-table.yaml`.

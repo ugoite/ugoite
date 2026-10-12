@@ -1,0 +1,68 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: ux
+category: Asset reference identity presentation
+features:
+  - id: FEAT-UX-022
+    title: Human-Readable Asset Reference Rows
+    summary: Show file names and metadata for Form Asset references while keeping stable Asset IDs in reference values only.
+    status: implemented
+    bindings:
+      - id: asset-reference-field
+        role: implementation
+        facet: frontend
+        responsibility: Render each persisted Asset reference by file name and file-type label with locale-formatted size while retaining the stable Asset ID only in the Form value.
+        targets:
+          - id: asset-field
+            adapter: typescript
+            path: frontend/src/components/AssetField.tsx
+            selector: { kind: file }
+            claims:
+              - kind: satisfies
+                criterion: REQ-UX-ASSET-001#criterion.visible-file-identity
+              - kind: satisfies
+                criterion: REQ-UX-ASSET-001#criterion.hidden-stable-id
+      - id: asset-reference-field-verification
+        role: verification
+        facet: verification
+        responsibility: Verify visible file names and metadata, filename-based accessible actions, and the hidden stable Asset ID boundary through a focused frontend case.
+        targets:
+          - id: asset-field-label-and-identity
+            adapter: typescript
+            path: frontend/src/components/AssetField.test.tsx
+            selector:
+              kind: test
+              name: "REQ-UX-ASSET-001: shows file names and keeps stable Asset IDs out of labels"
+            claims:
+              - kind: verifies
+                criterion: REQ-UX-ASSET-001#criterion.visible-file-identity
+                covers:
+                  - FEAT-UX-022#binding.asset-reference-field/target.asset-field
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/AssetField.test.tsx
+                    test: "REQ-UX-ASSET-001: shows file names and keeps stable Asset IDs out of labels"
+              - kind: verifies
+                criterion: REQ-UX-ASSET-001#criterion.hidden-stable-id
+                covers:
+                  - FEAT-UX-022#binding.asset-reference-field/target.asset-field
+                runner:
+                  runner: frontend-vitest-file
+                  arguments:
+                    file: src/components/AssetField.test.tsx
+                    test: "REQ-UX-ASSET-001: shows file names and keeps stable Asset IDs out of labels"
+      - id: asset-reference-field-ui-contract
+        role: documentation
+        facet: documentation
+        responsibility: Specify filename-first Asset reference rows, supporting actions, preview context, and the hidden stable ID boundary.
+        targets:
+          - id: asset-field-component-contract
+            adapter: declared
+            path: docs/spec/ui/components/asset-field.yaml
+            selector: { kind: file }
+            claims:
+              - kind: documents
+                anchor: REQ-UX-ASSET-001#criterion.visible-file-identity
+              - kind: documents
+                anchor: REQ-UX-ASSET-001#criterion.hidden-stable-id

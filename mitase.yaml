@@ -98,6 +98,8 @@ inventory:
         - frontend/src/lib/sql.ts
         - frontend/src/lib/sql.test.ts
         - frontend/src/lib/asset-api.ts
+        - frontend/src/components/AssetField.tsx
+        - frontend/src/components/AssetField.test.tsx
         - frontend/src/components/AccessPolicyEditor.tsx
         - frontend/src/components/AccessPolicyEditor.test.tsx
         - frontend/src/components/SpaceSettings.tsx
@@ -338,6 +340,7 @@ inventory:
         - docs/spec/ui/components/form-table.yaml
         - docs/spec/ui/components/searchable-select.yaml
         - docs/spec/ui/components/row-reference-select.yaml
+        - docs/spec/ui/components/asset-field.yaml
         - docs/spec/ui/components/space-access-recovery.yaml
         - docs/spec/ui/pages/space-compositions.yaml
         - docs/spec/ui/pages/space-composition-revision.yaml

@@ -1,5 +1,5 @@
-version: "0.5"
-updated: "2026-10-12"
+version: "0.6"
+updated: "2026-10-13"
 page:
   id: space-entry-detail
   title: Entry Detail
@@ -77,6 +77,9 @@ components:
         - typed-form-fields
       description: Form fields only. A Form-defined Title or Name renders as a normal field with no Entry-level semantics; a Markdown field stays multiline and adds an icon-only preview dialog. Row Reference feedback uses a resolved Form name or localized unknown-Form label for wrong-Form and unavailable-target states; it never renders an unresolved stable Form UUID or stable Entry ID.
       field_controls:
+        asset_reference:
+          component: AssetField
+          reference: ../components/asset-field.yaml
         boolean: free-form-text-input
         date: native-date-input
         list: multiline-input

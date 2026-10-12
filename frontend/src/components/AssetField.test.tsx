@@ -84,7 +84,9 @@ describe("AssetField", () => {
 
     await waitFor(() => expect(value()).toEqual(first));
     expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
-    expect(screen.queryByText("first.txt")).toBeNull();
+    expect(
+      screen.getByText("first.txt", { selector: ".ui-asset-item-name" }),
+    ).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Preview first.txt" }),
     ).toBeInTheDocument();
@@ -93,6 +95,63 @@ describe("AssetField", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("Uploaded; entry not saved yet")).toBeNull();
     expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
+  });
+
+  it("REQ-UX-ASSET-001: shows file names and keeps stable Asset IDs out of labels", async () => {
+    const encoded = serializeAssetReference(first);
+    const [value] = createSignal(encoded);
+    const state = createAssetFieldState();
+
+    render(() => (
+      <AssetField
+        fieldId="document"
+        fieldName="document"
+        value={value()}
+        persistedValue={encoded}
+        multiple={false}
+        spaceId="default"
+        formName="Contracts"
+        entryId="entry-1"
+        state={state}
+        onChange={() => undefined}
+      />
+    ));
+
+    expect(
+      screen.getByText(first.name, { selector: ".ui-asset-item-name" }),
+    ).toBeVisible();
+    expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview first.txt" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download first.txt" }))
+      .toBeInTheDocument();
+    expect(value()).toContain(first.asset_id);
+    expect(document.body.textContent).not.toContain(first.asset_id);
+
+    state.setPreviewBlobs(new Map([[first.asset_id, new Blob(["cached"])]]));
+    state.setPreviewUrls(new Map([[first.asset_id, "blob:cached"]]));
+    state.setPreviewSignatures(
+      new Map([[
+        first.asset_id,
+        `${first.name}\u0000${first.media_type}\u0000text`,
+      ]]),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Preview first.txt" }));
+    expect(await screen.findByRole("dialog", { name: first.name }))
+      .toBeInTheDocument();
+    expect(assetApi.read).not.toHaveBeenCalled();
+    const identityAttributes = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        "[id], [aria-labelledby], [aria-label], [title]",
+      ),
+    ).flatMap((element) => [
+      element.id,
+      element.getAttribute("aria-labelledby"),
+      element.getAttribute("aria-label"),
+      element.getAttribute("title"),
+    ]).join(" ");
+    expect(identityAttributes).not.toContain(first.asset_id);
+    expect(document.body.textContent).not.toContain(first.asset_id);
   });
 
   it("keeps typed-list order and removes only the selected reference", () => {
@@ -318,7 +377,9 @@ describe("AssetField", () => {
       ).toBeInTheDocument()
     );
     expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
-    expect(screen.queryByText("first.txt")).toBeNull();
+    expect(
+      screen.getByText("first.txt", { selector: ".ui-asset-item-name" }),
+    ).toBeVisible();
     fireEvent.click(
       screen.getByRole("button", { name: "Preview first.txt" }),
     );
@@ -432,7 +493,9 @@ describe("AssetField", () => {
       expect(screen.getByText("SVG · 10 bytes"))
         .toBeInTheDocument()
     );
-    expect(screen.queryByText("diagram.svg")).toBeNull();
+    expect(
+      screen.getByText("diagram.svg", { selector: ".ui-asset-item-name" }),
+    ).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Download diagram.svg" }),
     ).toBeInTheDocument();
@@ -476,7 +539,9 @@ describe("AssetField", () => {
       .closest(".ui-asset-item");
     expect(row?.querySelector(".ui-asset-preview-panel")).toBeNull();
     expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
-    expect(screen.queryByText("first.txt")).toBeNull();
+    expect(
+      screen.getByText("first.txt", { selector: ".ui-asset-item-name" }),
+    ).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Download first.txt" }),
     ).toBeInTheDocument();
@@ -529,7 +594,9 @@ describe("AssetField", () => {
         .toBeInTheDocument()
     );
     expect(screen.getByText("TXT · 10 bytes")).toBeInTheDocument();
-    expect(screen.queryByText("first.txt")).toBeNull();
+    expect(
+      screen.getByText("first.txt", { selector: ".ui-asset-item-name" }),
+    ).toBeVisible();
   });
 
   it("keeps the stable accessible name with a spinner while reading", () => {

@@ -466,6 +466,9 @@ export function AssetField(props: AssetFieldProps) {
           <div class="ui-card ui-asset-item">
             <div class="ui-asset-item-header">
               <div class="ui-asset-item-info">
+                <p class="ui-asset-item-name truncate font-medium">
+                  {reference.name}
+                </p>
                 <p class="ui-asset-item-meta text-xs ui-muted">
                   {formatAssetSummary(
                     reference,
@@ -611,14 +614,14 @@ export function AssetField(props: AssetFieldProps) {
                 class="ui-dialog ui-asset-dialog"
                 role="dialog"
                 aria-modal="true"
-                aria-labelledby={`asset-preview-title-${reference().asset_id}`}
+                aria-labelledby={`${props.fieldId}-asset-preview-title`}
                 onKeyDown={handlePreviewKeyDown}
               >
                 <header class="ui-dialog-header">
                   <div class="min-w-0">
                     <h2
                       class="ui-dialog-title truncate"
-                      id={`asset-preview-title-${reference().asset_id}`}
+                      id={`${props.fieldId}-asset-preview-title`}
                       title={reference().name}
                     >
                       {reference().name}
