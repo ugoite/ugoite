@@ -576,12 +576,12 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
     let empty = service
         .query_composition_metric_local(&space_id, query("sql_empty"))
         .await
-        .context("probing an empty Saved SQL scalar should return a diagnostic")?;
+        .context("probing an empty Saved SQL scalar should return a one-row diagnostic")?;
     assert!(!empty.ok);
     assert!(empty.result.is_none());
     assert_eq!(
         empty.diagnostics[0].code,
-        ugoite_domain::composition::CompositionDiagnosticCode::MetricResultEmpty
+        ugoite_domain::composition::CompositionDiagnosticCode::MetricScalarExpectedOneRow
     );
 
     let multiple = service
