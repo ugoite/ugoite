@@ -9,8 +9,7 @@ import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 
 const METRIC_SCALAR = 40;
 const SECOND_AMOUNT = 2;
-const MULTIPLE_ROWS_DIAGNOSTIC =
-  "The metric source must return exactly one row.";
+const MULTIPLE_ROWS_DIAGNOSTIC = "The metric returned more than one row.";
 
 type SeedState = {
   spaceId: string;
