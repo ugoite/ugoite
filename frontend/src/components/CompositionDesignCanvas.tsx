@@ -5,7 +5,10 @@ import {
   flowSourceStatusOwner,
 } from "~/components/DashboardFlowRenderer";
 import { displayDefaultName } from "~/lib/composition-display-name";
-import type { CompositionFieldNames } from "~/components/CompositionRenderer";
+import type {
+  CompositionFieldNames,
+  CompositionMetricQueryContext,
+} from "~/components/CompositionRenderer";
 import { IconButton } from "~/components/IconButton";
 import { UiIcon } from "~/components/UiIcon";
 import {
@@ -55,6 +58,7 @@ export interface CompositionDesignCanvasProps {
   onRequestDisplayPicker: (target: DraftInsertTarget) => void;
   onParameterChange: (parameterId: string, value: unknown | undefined) => void;
   fieldNames?: CompositionFieldNames;
+  metricQueryContext?: CompositionMetricQueryContext;
   onNext: (sourceId: string) => void;
   onPrevious: (sourceId: string) => void;
   onRetry: (sourceId: string) => void;
@@ -456,6 +460,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
             sourceById={sourceById()}
             ownsSourceStatus={ownsSourceStatus()}
             fieldNames={props.fieldNames}
+            metricQueryContext={props.metricQueryContext}
             onNext={props.onNext}
             onPrevious={props.onPrevious}
             onRetry={props.onRetry}

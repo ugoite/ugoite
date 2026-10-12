@@ -12,6 +12,7 @@ import { BackLink } from "~/components/BackLink";
 import {
   CompositionDiagnostics,
   type CompositionFieldNames,
+  type CompositionMetricQueryContext,
 } from "~/components/CompositionRenderer";
 import {
   CompositionDesignCanvas,
@@ -823,6 +824,19 @@ export function CompositionStudio(props: CompositionStudioProps) {
       component_bindings: current.preview.plan?.component_bindings ?? [],
     };
   };
+  const metricQueryContext = (): CompositionMetricQueryContext | undefined => {
+    const current = previewState();
+    if (
+      !current.preview?.ok || !current.spaceId || !current.yaml ||
+      !current.identity
+    ) return undefined;
+    return {
+      spaceId: current.spaceId,
+      target: { kind: "draft", yaml: current.yaml },
+      draftFingerprint: current.identity.fingerprint,
+      parameters: { ...previewHandle.parameters() },
+    };
+  };
   const previewDiagnostics = () => {
     const current = previewState();
     return !current.preview?.ok && hasSources()
@@ -955,6 +969,7 @@ export function CompositionStudio(props: CompositionStudioProps) {
         <CompositionDesignCanvas
           draft={draft()}
           plan={canvasPlan()}
+          metricQueryContext={metricQueryContext()}
           parameterValues={{
             ...defaultParameterValues(draft()),
             ...previewHandle.parameters(),
