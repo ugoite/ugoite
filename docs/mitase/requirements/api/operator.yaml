@@ -75,7 +75,7 @@ requirements:
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: grouped-numeric-aggregates
         kind: security
-        statement: COUNT, SUM, AVG, MIN, and MAX return the correct values for each GROUP BY key using only rows authorized by the current query context.
+        statement: COUNT, SUM, AVG, MIN, and MAX return the correct values for each GROUP BY key using only rows authorized by the current query context; denied rows do not contribute even when they share a key with readable rows.
         governed_by: [POL-004#rule.governance, POL-008#rule.governance]
       - id: bounded-aggregate-state
         kind: security
