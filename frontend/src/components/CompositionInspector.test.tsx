@@ -68,7 +68,7 @@ const seedDraft = (): CompositionDraft => {
   const metric = addMetricDisplay(
     draft,
     "src-1",
-    { kind: "sql_scalar", column: "total" },
+    "total",
     "Total",
   );
   if (!metric.ok) throw new Error("expected metric block");
@@ -94,8 +94,6 @@ function Harness(
   props: {
     initial: CompositionDraft;
     selectedId: string | null;
-    fieldNames?: (formId: string, fieldId: number) => string | undefined;
-    fieldNamesLoading?: boolean;
   },
 ) {
   const [draft, setDraft] = createSignal(props.initial);
@@ -103,8 +101,6 @@ function Harness(
     <CompositionInspector
       draft={draft()}
       selectedId={props.selectedId}
-      fieldNames={props.fieldNames}
-      fieldNamesLoading={props.fieldNamesLoading}
       onDraftChange={(next) => {
         harnessCalls.draft.push(next);
         setDraft(next);
@@ -118,13 +114,11 @@ function Harness(
 const renderHarness = (
   selectedId: string | null,
   initial?: CompositionDraft,
-  fieldNames?: (formId: string, fieldId: number) => string | undefined,
 ) =>
   render(() => (
     <Harness
       initial={initial ?? seedDraft()}
       selectedId={selectedId}
-      fieldNames={fieldNames}
     />
   ));
 
@@ -189,93 +183,34 @@ describe("CompositionInspector", () => {
     expect(harnessCalls.remove).toEqual(["param:month"]);
   });
 
-  it("shows only resolved Form labels for metric values", async () => {
-    const added = addMetricDisplay(seedDraft(), "src-2", {
-      kind: "aggregate",
-      operation: "count_values",
-      fieldId: 1,
-    });
-    if (!added.ok || !added.draftId) throw new Error("expected metric block");
+  it("limits Metric source and column controls to Saved SQL names", () => {
+    renderHarness("disp-1");
 
-    render(() => (
-      <CompositionInspector
-        draft={added.draft}
-        selectedId={added.draftId}
-        fieldNames={(_formId, fieldId) =>
-          fieldId === 1 ? "Expense type" : undefined}
-        onDraftChange={() => {}}
-        onRemove={() => {}}
-        onDataJump={() => {}}
-      />
-    ));
+    const source = screen.getByLabelText("Source");
+    expect(Array.from(source.querySelectorAll("option")).map((option) =>
+      option.textContent
+    )).toEqual(["Monthly", "Backup"]);
+    expect(screen.queryByLabelText("Operation")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Field")).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("src-1");
+    expect(document.body).not.toHaveTextContent("sql-1");
+    expect(document.body).not.toHaveTextContent("sql-rev-1");
 
-    await screen.findByRole("option", { name: "Expense type" });
-    const fieldSelect = screen.getByLabelText("Field");
-    const options = Array.from(fieldSelect.querySelectorAll("option")).map(
-      (option) => option.textContent,
-    );
-    expect(options).toEqual(["Choose a field", "Expense type"]);
-    expect(options.join(" ")).not.toContain("1");
-    expect(options.join(" ")).not.toContain("2");
-  });
-
-  it("maps metric source, operation, field, and SQL column edits", async () => {
-    renderHarness(
-      "disp-1",
-      undefined,
-      (_formId, fieldId) =>
-        fieldId === 1 ? "Expense type" : fieldId === 2 ? "Amount" : undefined,
-    );
-
-    fireEvent.change(screen.getByLabelText("Source"), {
-      target: { value: "src-2" },
-    });
-    expect(harnessCalls.draft).toHaveLength(1);
-    expect(metricComponent(harnessCalls.draft[0], "disp-1")).toMatchObject({
-      kind: "metric",
-      definition: {
-        kind: "aggregate",
-        source: "src-2",
-        operation: "count_rows",
-      },
-    });
-    fireEvent.change(screen.getByLabelText("Operation"), {
-      target: { value: "sum" },
-    });
-    await screen.findByRole("option", { name: "Amount" });
-    fireEvent.change(screen.getByLabelText("Field"), {
-      target: { value: "2" },
-    });
-    expect(metricComponent(harnessCalls.draft.at(-1)!, "disp-1"))
-      .toMatchObject({
-        definition: {
-          kind: "aggregate",
-          source: "src-2",
-          operation: "sum",
-          field_id: 2,
-        },
-      });
-    expect(
-      Array.from(screen.getByLabelText("Field").querySelectorAll("option"))
-        .map((option) => option.textContent),
-    ).toEqual(["Choose a field", "Amount"]);
-
-    // A source change starts with the SQL scalar operation, and the column
-    // label remains the result name rather than an internal source id.
     fireEvent.change(screen.getByLabelText("Source"), {
       target: { value: "src-3" },
     });
+    expect(metricComponent(harnessCalls.draft.at(-1)!, "disp-1"))
+      .toMatchObject({ kind: "metric", source: "src-3" });
+    expect(metricComponent(harnessCalls.draft.at(-1)!, "disp-1"))
+      .toHaveProperty("column", "");
     fireEvent.change(screen.getByLabelText("Column"), {
-      target: { value: "total" },
+      target: { value: "count" },
     });
     const last = harnessCalls.draft[harnessCalls.draft.length - 1];
     expect(metricComponent(last, "disp-1")).toMatchObject({
       kind: "metric",
-      definition: {
-        kind: "sql_scalar",
-        source: "src-3",
-        column: "total",
-      },
+      source: "src-3",
+      column: "count",
     });
   });
 
@@ -290,11 +225,8 @@ describe("CompositionInspector", () => {
     const next = harnessCalls.draft[0];
     expect(metricComponent(next, "disp-1")).toMatchObject({
       kind: "metric",
-      definition: {
-        kind: "sql_scalar",
-        source: "src-1",
-        column: "count",
-      },
+      source: "src-1",
+      column: "count",
     });
   });
 
@@ -315,11 +247,8 @@ describe("CompositionInspector", () => {
     const formatted = harnessCalls.draft.at(-1)!;
     expect(metricComponent(formatted, "disp-1")).toMatchObject({
       kind: "metric",
-      definition: {
-        kind: "sql_scalar",
-        source: "src-1",
-        column: "total",
-      },
+      source: "src-1",
+      column: "total",
       presentation: {
         kind: "number",
         unit: "US dollars",
@@ -339,11 +268,14 @@ describe("CompositionInspector", () => {
   });
 
   it("hides numeric presentation controls for date Metrics", () => {
-    const added = addMetricDisplay(seedDraft(), "src-2", {
-      kind: "aggregate",
-      operation: "max",
-      fieldId: 3,
+    const dateSource = addSavedSqlSource(createEmptyDraft("Studio"), {
+      entryId: "sql-date",
+      revisionId: "sql-date-rev",
+      name: "Calendar",
+      expectedResult: [{ name: "last_day", type: "date" }],
+      variables: {},
     });
+    const added = addMetricDisplay(dateSource.draft, dateSource.draftId, "last_day");
     if (!added.ok || !added.draftId) throw new Error("expected Metric block");
 
     renderHarness(added.draftId, added.draft);

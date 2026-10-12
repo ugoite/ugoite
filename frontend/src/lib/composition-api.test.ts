@@ -240,8 +240,6 @@ describe("compositionApi", () => {
       draft_fingerprint: "draft-fingerprint",
       result: {
         component_id: "sql_total",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
         result_type: "decimal",
         value: "12345678901234567890.012300",
       },

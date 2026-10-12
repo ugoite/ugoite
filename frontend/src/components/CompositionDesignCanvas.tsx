@@ -85,7 +85,6 @@ const blockIcon = (
 const blockName = (
   draft: CompositionDraft,
   item: DraftLayoutItem,
-  fieldNames?: CompositionFieldNames,
 ): string => {
   if (item.kind === "parameter") {
     return compositionParameterDisplayName(draft.parameters, item.parameterId);
@@ -98,7 +97,7 @@ const blockName = (
   if (display.kind === "text") {
     return display.text || t("composition.studioText");
   }
-  return displayDefaultName(display, draft.sources, fieldNames);
+  return displayDefaultName(display, draft.sources);
 };
 
 /**
@@ -386,7 +385,7 @@ export function CompositionDesignCanvas(props: CompositionDesignCanvasProps) {
         : designBlockIdForComponent(item.draftId);
     const selected = () => props.selectedId === blockId();
     const highlighted = () => props.highlightedIds?.has(blockId()) ?? false;
-    const name = () => blockName(props.draft, item, props.fieldNames);
+    const name = () => blockName(props.draft, item);
     const binding = () =>
       item.kind === "component" ? bindingById().get(item.draftId) : undefined;
     const ownsSourceStatus = () => {

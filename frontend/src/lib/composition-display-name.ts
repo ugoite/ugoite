@@ -3,33 +3,10 @@ import type { DraftDisplay, DraftSource } from "~/lib/composition-draft";
 
 export const displayValueName = (
   display: DraftDisplay,
-  sources: readonly DraftSource[] = [],
-  fieldNames?: (formId: string, fieldId: number) => string | undefined,
 ): string => {
   if (display.kind === "text") return "";
   if (display.kind === "table") return "";
-  if (display.definition.kind === "sql_scalar") {
-    return display.definition.column ?? t("composition.studioValue");
-  }
-  const operation = t(
-    `composition.metricOperation.${display.definition.operation}` as
-      | "composition.metricOperation.count_rows"
-      | "composition.metricOperation.count_values"
-      | "composition.metricOperation.sum"
-      | "composition.metricOperation.avg"
-      | "composition.metricOperation.min"
-      | "composition.metricOperation.max",
-  );
-  if (display.definition.operation === "count_rows") return operation;
-  const source = sources.find((entry) =>
-    entry.draftId === display.sourceDraftId
-  );
-  if (
-    source?.kind !== "entry_query" || display.definition.fieldId === undefined
-  ) {
-    return operation;
-  }
-  return fieldNames?.(source.formId, display.definition.fieldId) ?? operation;
+  return display.column ?? t("composition.studioValue");
 };
 
 const sourceName = (
@@ -42,7 +19,6 @@ const sourceName = (
 export const displayDefaultName = (
   display: DraftDisplay,
   sources: readonly DraftSource[],
-  fieldNames?: (formId: string, fieldId: number) => string | undefined,
 ): string => {
   if (display.label) return display.label;
   if (display.kind === "text") {
@@ -50,7 +26,7 @@ export const displayDefaultName = (
   }
   const name = sourceName(sources, display.sourceDraftId);
   if (display.kind === "table") return name;
-  const value = displayValueName(display, sources, fieldNames);
+  const value = displayValueName(display);
   return value ? `${name} / ${value}` : name;
 };
 
