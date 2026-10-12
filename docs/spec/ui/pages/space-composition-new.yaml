@@ -87,7 +87,7 @@ components:
       selection: full-row-activate
       reorder: keyboard-operable-move-up-down
       remove: blocked-while-displays-reference-with-reason
-      revision_identity: advanced-disclosure-only
+      revision_identity: exact-pinned-in-draft-never-rendered
     - id: studio-data-mode-tabs
       type: tab-list
       title: Sources, Parameters, Tags

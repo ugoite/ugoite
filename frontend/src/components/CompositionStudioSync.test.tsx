@@ -377,7 +377,6 @@ describe("CompositionStudioSync", () => {
       await screen.findByText("128400", { selector: "output" }),
     ).toBeInTheDocument();
   });
-  });
 
   it("auto-selects the block source in Data and keeps text and parameter selections", async () => {
     renderStudio();

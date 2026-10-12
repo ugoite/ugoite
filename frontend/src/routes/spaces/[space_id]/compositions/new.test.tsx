@@ -86,7 +86,7 @@ vi.mock("~/lib/composition-api", () => ({
     typeof value === "string" && value.trim() ? value.trim() : "Composition",
   compositionResultTypeFromSql: (resultType: string | undefined) =>
     ["string", "boolean", "integer", "float", "date", "timestamp", "json"]
-      .includes(resultType ?? "")
+        .includes(resultType ?? "")
       ? resultType
       : "json",
 }));
@@ -384,9 +384,15 @@ describe("Composition studio shell", () => {
     showDataMode();
 
     fireEvent.click(await screen.findByRole("button", { name: "Add source" }));
-    const picker = await screen.findByRole("dialog", { name: "Choose a source" });
-    fireEvent.click(await within(picker).findByRole("button", { name: "Tasks" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const picker = await screen.findByRole("dialog", {
+      name: "Choose a source",
+    });
+    fireEvent.click(
+      await within(picker).findByRole("button", { name: "Tasks" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
 
     expect(await screen.findByRole("heading", { name: "Tasks" }))
       .toBeInTheDocument();

@@ -11,8 +11,8 @@ import {
 } from "~/lib/entry-query-composition";
 import {
   canCreateSavedSqlComposition,
-  compositionResultTypeFromSql,
   type CompositionParameterType,
+  compositionResultTypeFromSql,
 } from "~/lib/composition-api";
 import {
   type DraftEntryQuerySeed,

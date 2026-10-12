@@ -241,17 +241,8 @@ export default function CompositionRevisionRoute() {
     ) return undefined;
     return document;
   };
-<<<<<<< HEAD
-  const fieldNames: CompositionFieldNames = (
-    formId,
-    fieldId,
-  ) => {
-    return resolveCompositionFieldName(forms(), formId, fieldId);
-  };
-=======
   const fieldNames: CompositionFieldNames = (formId, fieldId) =>
     resolveCompositionFieldName(forms(), formId, fieldId);
->>>>>>> 1fb879104 (feat(composition): add typed metric authoring to Studio)
   const fieldKeys: CompositionFieldKeys = (formId, fieldId) =>
     resolveCompositionFieldKey(forms(), formId, fieldId);
   const fieldTypes: CompositionFieldTypeLookup = (_formId, fieldId, sourceId) =>

@@ -8,6 +8,17 @@ export const displayValueName = (
 ): string => {
   if (display.kind === "text") return "";
   if (display.kind === "table") return "";
+  if (display.definition.kind === "legacy_value_field") {
+    const valueField = display.definition.valueField;
+    if (valueField.kind === "sql_column") return valueField.name;
+    const source = sources.find((entry) =>
+      entry.draftId === display.sourceDraftId
+    );
+    return source?.kind === "entry_query"
+      ? fieldNames?.(source.formId, valueField.fieldId) ??
+        t("composition.studioValue")
+      : t("composition.studioValue");
+  }
   if (display.definition.kind === "sql_scalar") {
     return display.definition.column ?? t("composition.studioValue");
   }

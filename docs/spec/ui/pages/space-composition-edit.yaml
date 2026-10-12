@@ -19,7 +19,7 @@ components:
         mode: shared-composition-renderer
         rows: first-page-per-source
       async_state: explicit-loading-empty-error
-      description: Unknown versions and lint failures show a concise error with one back control to the opened revision and never open the studio. Canonical revisions may omit empty optional parameter and Saved SQL variable collections; the editor restores those as empty state.
+      description: Unknown versions and lint failures show a concise error with one back control to the opened revision and never open the studio. Canonical revisions may omit empty optional parameter and Saved SQL variable collections; the editor restores those as empty state. Existing v0.x scalar Metrics retain their source and value_field through unrelated edits and saves.
     - id: studio-header
       type: page-header
       title: Tool name
@@ -59,7 +59,7 @@ components:
       selection: full-row-activate
       reorder: keyboard-operable-move-up-down
       remove: blocked-while-displays-reference-with-reason
-      revision_identity: advanced-disclosure-only
+      revision_identity: exact-pinned-in-draft-never-rendered
     - id: studio-data-mode-tabs
       type: tab-list
       title: Sources, Parameters, Tags
