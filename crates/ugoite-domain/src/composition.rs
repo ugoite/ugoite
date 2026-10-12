@@ -247,11 +247,30 @@ pub struct CompositionVariable {
     #[serde(rename = "type")]
     pub variable_type: CompositionVariableType,
     pub required: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_variable_default"
+    )]
     pub default: Option<CompositionLiteral>,
     /// A presentation hint that never changes the value's type or parsing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<CompositionVariableFormat>,
+}
+
+fn deserialize_variable_default<'de, D>(
+    deserializer: D,
+) -> Result<Option<CompositionLiteral>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = CompositionLiteral::deserialize(deserializer)?;
+    if value.as_json_value().is_null() {
+        return Err(D::Error::custom(
+            "Composition variable defaults cannot be null",
+        ));
+    }
+    Ok(Some(value))
 }
 
 impl CompositionVariable {
@@ -1248,6 +1267,47 @@ mod tests {
         spec.variables[0].default = Some(serde_json::from_value(serde_json::json!(false)).unwrap());
         assert_eq!(
             spec.components_in_render_order(),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+    }
+
+    #[test]
+    fn explicit_null_variable_defaults_are_rejected_but_omitted_defaults_are_allowed() {
+        let yaml_with_null = MONTHLY_EXPENSE.replace(
+            "  sources:\n",
+            "    - id: amount\n      type: float\n      required: false\n      default: null\n  sources:\n",
+        );
+        assert_eq!(
+            super::canonicalize_composition_yaml(&yaml_with_null),
+            Err(CompositionDiagnosticCode::InvalidComposition)
+        );
+
+        let yaml_without_default = MONTHLY_EXPENSE.replace(
+            "  sources:\n",
+            "    - id: amount\n      type: float\n      required: false\n  sources:\n",
+        );
+        assert!(super::canonicalize_composition_yaml(&yaml_without_default).is_ok());
+
+        let json_with_null = serde_json::json!({
+            "format": "ugoite.composition",
+            "format_version": 1,
+            "kind": "dashboard",
+            "name": "Typed variables",
+            "tags": [],
+            "spec": {
+                "variables": [{
+                    "id": "amount",
+                    "type": "float",
+                    "required": false,
+                    "default": null
+                }],
+                "sources": [],
+                "components": [],
+                "layout": {"kind": "flow", "rows": []}
+            }
+        });
+        assert_eq!(
+            super::canonicalize_composition_document_value(json_with_null),
             Err(CompositionDiagnosticCode::InvalidComposition)
         );
     }

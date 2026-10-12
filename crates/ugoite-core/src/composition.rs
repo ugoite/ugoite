@@ -777,7 +777,9 @@ pub struct SourceConsumers {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompositionDependencyIndex {
+    #[serde(default)]
     pub variable_consumers: BTreeMap<String, VariableConsumers>,
+    #[serde(default)]
     pub source_consumers: BTreeMap<String, SourceConsumers>,
 }
 
@@ -830,6 +832,8 @@ pub struct ResolvedCompositionPlan {
     /// The component order is the layout row and item order, regardless of declaration order.
     #[serde(default)]
     pub component_bindings: Vec<ResolvedComponentBinding>,
+    /// Optional on the portable plan when there are no reactive dependencies.
+    #[serde(default)]
     pub dependencies: CompositionDependencyIndex,
 }
 
@@ -846,6 +850,8 @@ pub struct PreviewCompositionPlan {
     /// The component order is the layout row and item order, regardless of declaration order.
     #[serde(default)]
     pub component_bindings: Vec<ResolvedComponentBinding>,
+    /// Optional on the portable plan when there are no reactive dependencies.
+    #[serde(default)]
     pub dependencies: CompositionDependencyIndex,
 }
 
@@ -3031,7 +3037,7 @@ mod tests {
             ],
         );
         // Declaration order never determines render order; the layout mixes
-        // an Input, Text, and Table across rows.
+        // an Input, Text, and tabular component across rows.
         spec.components = vec![
             tabular_component("rows", None, "entries"),
             input_component("month-input", "month"),

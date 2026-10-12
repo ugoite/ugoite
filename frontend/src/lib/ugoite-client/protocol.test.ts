@@ -33,7 +33,7 @@ const typedCompositionDocument = {
   name: "Monthly expenses",
   tags: [],
   spec: {
-    parameters: [{
+    variables: [{
       id: "month_start",
       type: "date",
       required: true,
@@ -45,14 +45,20 @@ const typedCompositionDocument = {
       entry_id: "00000000-0000-7000-8000-000000000020",
       revision_id: "00000000-0000-7000-8000-000000000021",
       expected_result: [{ name: "amount", type: "json" }],
-      variables: { month_start: { parameter: "month_start" } },
+      variables: { month_start: { variable: "month_start" } },
     }],
-    components: [{ id: "results_table", kind: "table", source: "sql_results" }],
+    components: [
+      { id: "month_start_input", kind: "input", variable: "month_start" },
+      { id: "results_table", kind: "table", source: "sql_results" },
+    ],
     layout: {
       kind: "flow",
       rows: [{
         id: "main",
-        items: [{ kind: "component", component: "results_table" }],
+        items: [
+          { kind: "component", component: "month_start_input" },
+          { kind: "component", component: "results_table" },
+        ],
       }],
     },
   },
@@ -71,11 +77,24 @@ describe("portable Ugoite API protocol WASM", () => {
       format_version: 1,
       name: "Monthly expenses",
       spec: {
+        variables: [{ id: "month_start", type: "date" }],
         sources: [{
           kind: "saved_sql",
           entry_id: "00000000-0000-7000-8000-000000000020",
           revision_id: "00000000-0000-7000-8000-000000000021",
         }],
+        components: [
+          {
+            id: "month_start_input",
+            kind: "input",
+            variable: "month_start",
+          },
+          {
+            id: "results_table",
+            kind: "table",
+            source: "sql_results",
+          },
+        ],
       },
     });
     expect(canonical.canonical_yaml).toContain(
