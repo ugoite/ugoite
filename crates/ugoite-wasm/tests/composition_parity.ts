@@ -28,7 +28,11 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
   }
 }
 
-function assertJsonEqual(actual: unknown, expected: unknown, label: string): void {
+function assertJsonEqual(
+  actual: unknown,
+  expected: unknown,
+  label: string,
+): void {
   assertEqual(
     JSON.stringify(normalizeJson(actual)),
     JSON.stringify(normalizeJson(expected)),
@@ -66,31 +70,15 @@ function paddedCompositionYaml(yaml: string, targetBytes: number): string {
   return `${yaml}#${"x".repeat(targetBytes - currentBytes - 1)}`;
 }
 
-function compositionParametersYaml(count: number): string {
-  const lines = [
-    "format: ugoite.composition",
-    "format_version: 1",
-    "name: Example",
-    "kind: dashboard",
-    "tags: []",
-    "spec:",
-    "  parameters:",
-  ];
-  for (let index = 0; index < count; index += 1) {
-    lines.push(
-      `    - id: parameter_${index}`,
-      "      type: string",
-      "      required: true",
-    );
+function compositionTagsYaml(yaml: string, count: number): string {
+  const tags = Array.from({ length: count }, (_, index) => `tag_${index}`).join(
+    ", ",
+  );
+  const taggedYaml = yaml.replace("tags: []", `tags: [${tags}]`);
+  if (taggedYaml === yaml) {
+    throw new Error("Could not build the Composition tag-limit fixture");
   }
-  lines.push("  layout:", "    kind: flow", "    rows:", "      - id: main", "        items:");
-  for (let index = 0; index < count; index += 1) {
-    lines.push(
-      "          - kind: parameter",
-      `            parameter: parameter_${index}`,
-    );
-  }
-  return `${lines.join("\n")}\n`;
+  return taggedYaml;
 }
 
 function nestedFutureCompositionYaml(depth: number): string {
@@ -238,13 +226,18 @@ async function main(): Promise<void> {
       "      source: monthly_summary\n      column: missing",
     ),
   ];
-  if (invalidSavedSqlMetricColumnsYaml.some((yaml) => yaml === savedSqlMetricColumnsYaml)) {
+  if (
+    invalidSavedSqlMetricColumnsYaml.some((yaml) =>
+      yaml === savedSqlMetricColumnsYaml
+    )
+  ) {
     throw new Error("Could not build every invalid SQL Metric binding fixture");
   }
   const canonicalYaml = await Deno.readTextFile(canonicalPath);
   const fingerprint = (await Deno.readTextFile(fingerprintPath)).trim();
   const labeledCanonicalYaml = await Deno.readTextFile(labeledCanonicalPath);
-  const labeledFingerprint = (await Deno.readTextFile(labeledFingerprintPath)).trim();
+  const labeledFingerprint = (await Deno.readTextFile(labeledFingerprintPath))
+    .trim();
   const savedSqlMetricColumnsCanonicalYaml = await Deno.readTextFile(
     savedSqlMetricColumnsCanonicalPath,
   );
@@ -252,7 +245,9 @@ async function main(): Promise<void> {
     await Deno.readTextFile(savedSqlMetricColumnsFingerprintPath)
   ).trim();
   const invalidListItemYaml = await Deno.readTextFile(invalidListItemPath);
-  const unknownFormatVersionYaml = await Deno.readTextFile(unknownFormatVersionPath);
+  const unknownFormatVersionYaml = await Deno.readTextFile(
+    unknownFormatVersionPath,
+  );
   const unreferencedComponentYaml = yaml.replace(
     "          - kind: component\n            component: transactions\n",
     "",
@@ -291,7 +286,7 @@ async function main(): Promise<void> {
   const atCollectionLimit = await invokeWasm(
     instance.exports,
     compositionYamlResponse(
-      compositionParametersYaml(MAX_COMPOSITION_COLLECTION_ITEMS),
+      compositionTagsYaml(yaml, MAX_COMPOSITION_COLLECTION_ITEMS),
     ),
   );
   assertEqual(
@@ -302,7 +297,7 @@ async function main(): Promise<void> {
   const overCollectionLimit = await invokeWasm(
     instance.exports,
     compositionYamlResponse(
-      compositionParametersYaml(MAX_COMPOSITION_COLLECTION_ITEMS + 1),
+      compositionTagsYaml(yaml, MAX_COMPOSITION_COLLECTION_ITEMS + 1),
     ),
   );
   assertCompositionDiagnostic(
@@ -392,7 +387,11 @@ async function main(): Promise<void> {
     string,
     unknown
   >;
-  assertEqual(futureVersionTypedResponse.ok, false, "future typed document result");
+  assertEqual(
+    futureVersionTypedResponse.ok,
+    false,
+    "future typed document result",
+  );
   assertEqual(
     futureVersionTypedError.kind,
     "composition_diagnostic",
@@ -414,7 +413,11 @@ async function main(): Promise<void> {
     string,
     unknown
   >;
-  assertEqual(unknownV1FieldResponse.ok, false, "unknown v1 typed document result");
+  assertEqual(
+    unknownV1FieldResponse.ok,
+    false,
+    "unknown v1 typed document result",
+  );
   assertEqual(
     unknownV1FieldError.kind,
     "composition_diagnostic",
@@ -447,10 +450,11 @@ async function main(): Promise<void> {
     action: "domain.canonicalize_composition",
     value: { yaml: savedSqlMetricColumnsYaml },
   });
-  const savedSqlMetricColumnsResponseValue = savedSqlMetricColumnsResponse.value as Record<
-    string,
-    unknown
-  >;
+  const savedSqlMetricColumnsResponseValue = savedSqlMetricColumnsResponse
+    .value as Record<
+      string,
+      unknown
+    >;
   assertEqual(
     savedSqlMetricColumnsResponse.ok,
     true,
@@ -485,7 +489,11 @@ async function main(): Promise<void> {
     string,
     unknown
   >;
-  assertEqual(unsupportedVersionResponse.ok, false, "unsupported version result");
+  assertEqual(
+    unsupportedVersionResponse.ok,
+    false,
+    "unsupported version result",
+  );
   assertEqual(
     unsupportedVersionError.kind,
     "composition_diagnostic",
@@ -523,11 +531,17 @@ async function main(): Promise<void> {
     });
     const error = invalidResponse.error as Record<string, unknown>;
     assertEqual(invalidResponse.ok, false, "invalid SQL Metric result");
-    assertEqual(error.kind, "composition_diagnostic", "SQL Metric diagnostic kind");
-    assertEqual(error.code, "invalid_composition", "SQL Metric diagnostic code");
+    assertEqual(
+      error.kind,
+      "composition_diagnostic",
+      "SQL Metric diagnostic kind",
+    );
+    assertEqual(
+      error.code,
+      "invalid_composition",
+      "SQL Metric diagnostic code",
+    );
   }
-
-
 }
 
 if (import.meta.main) {
