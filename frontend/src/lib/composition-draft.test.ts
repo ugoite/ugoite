@@ -46,7 +46,6 @@ import {
   upsertParameter,
 } from "./composition-draft";
 import { compositionApi } from "./composition-api";
-import { displayDefaultName } from "./composition-display-name";
 
 vi.mock("./ugoite-client", () => ({
   canonicalizeCompositionDocument: vi.fn(async (document: unknown) => ({
