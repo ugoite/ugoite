@@ -438,6 +438,13 @@ async fn sql_aggregates_preserve_nulls_grouping_authorization_and_type_contracts
         )
         .await?;
     }
+    // This denied Entry shares the visible "food" group. Its values must not
+    // influence that group's count or aggregates.
+    append_aggregate(
+        &workspace,
+        aggregate_revision(&tasks, 216, 217, "food", 10_000, FieldValue::Number(99.0)),
+    )
+    .await?;
 
     let context = workspace
         .authorized_query_context(aggregate_policy(&tasks, &[206, 208, 210, 214]))
