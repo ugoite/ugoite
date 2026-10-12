@@ -1,0 +1,41 @@
+schema: mitase/authoring/v2
+kind: features
+namespace: composition
+category: Saved, portable Composition documents
+features:
+  - id: FEAT-COMP-008
+    title: Typed reactive Composition variables
+    summary: Add one typed variable authority per Composition, direct Input and Text bindings, and dependency-driven updates of authorized SQL Sources while runtime values remain transient Work.
+    status: planned
+    bindings:
+      - id: reactive-variable-contract
+        role: contract-source
+        facet: domain
+        responsibility: Define the accepted pre-release Composition variable grammar, synchronous value and Text behavior, asynchronous Source invalidation, transient Work boundary, and cross-surface acceptance without claiming implementation is complete.
+        targets:
+          - id: typed-reactive-composition-contract
+            adapter: declared
+            path: docs/architecture/contracts/adr-023-composition-reactive-variables.md
+            selector:
+              kind: file
+            claims:
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.typed-variable-declarations
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.input-component-binding
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.direct-text-binding
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.typed-source-binding
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.dependency-driven-execution
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.stale-result-and-state-safety
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.runtime-values-are-transient
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.portable-variable-contract
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.code-free-studio-authoring
+              - kind: documents
+                anchor: REQ-COMP-007#criterion.responsive-accessible-inputs
