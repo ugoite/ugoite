@@ -248,12 +248,12 @@ async function addCanvasDisplay(
   value?: string | { label: string },
   label?: string,
 ): Promise<void> {
-  // Canvas insertion path: a gap "+" opens the block palette, and the
+  // Canvas insertion path: a gap "+" opens the design palette, and the
   // palette Display entry delegates to the picker at the recorded target.
-  await page.getByRole("button", { name: "Add block", exact: true }).first()
+  await page.getByRole("button", { name: "Add to design", exact: true }).first()
     .click();
   const palette = page.getByRole("dialog", {
-    name: "Add block",
+    name: "Add to design",
     exact: true,
   });
   await expect(palette).toBeVisible();
@@ -475,10 +475,10 @@ test.describe("Composition Studio Journey", () => {
 
       // EntryQuery metric choices show the Form's human field names without
       // leaking backend field IDs or schema ordinals.
-      await page.getByRole("button", { name: "Add block", exact: true })
+      await page.getByRole("button", { name: "Add to design", exact: true })
         .first().click();
       const palette = page.getByRole("dialog", {
-        name: "Add block",
+        name: "Add to design",
         exact: true,
       });
       await palette.getByRole("button", { name: "Display", exact: true })
@@ -650,7 +650,8 @@ test.describe("Composition Studio Journey", () => {
       // The edit studio loads the exact revision asynchronously; wait for
       // the canvas before asserting the restored name.
       await expect(
-        page.getByRole("button", { name: "Add block", exact: true }).first(),
+        page.getByRole("button", { name: "Add to design", exact: true })
+          .first(),
       ).toBeVisible({ timeout: 30_000 });
       await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
         seed.toolName,
@@ -790,10 +791,10 @@ test.describe("Composition Studio Journey", () => {
 
       // The unified picker stays viewport-capped at 390px and keeps a
       // compatible source selected as the type changes.
-      await page.getByRole("button", { name: "Add block", exact: true })
+      await page.getByRole("button", { name: "Add to design", exact: true })
         .first().click();
       const palette = page.getByRole("dialog", {
-        name: "Add block",
+        name: "Add to design",
         exact: true,
       });
       await palette.getByRole("button", { name: "Display", exact: true })
