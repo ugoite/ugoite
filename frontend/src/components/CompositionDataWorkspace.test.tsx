@@ -420,7 +420,9 @@ describe("CompositionDataWorkspace", () => {
     fireEvent.click(selectedUp);
     expect(harness.onMove).toHaveBeenCalledWith("src-2", "up");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Monthly totals" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Monthly totals" }),
+    );
     const remove = await screen.findByRole("button", {
       name: "Remove Monthly totals",
     });
@@ -432,18 +434,22 @@ describe("CompositionDataWorkspace", () => {
     renderWorkspace(createEmptyDraft("Tool"));
     expect(screen.queryByText("Add data to begin.")).toBeNull();
     expect(screen.queryByRole("button", { name: "Add data" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Add source" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add source" }))
+      .toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Expenses" })).toBeNull();
   });
 
   it("keeps source actions in the navigator footer", async () => {
     const harness = renderWorkspace(twoSourceDraft());
-    const navigator = harness.container.querySelector(".dataWorkspaceNavigator");
+    const navigator = harness.container.querySelector(
+      ".dataWorkspaceNavigator",
+    );
     if (!navigator) throw new Error("expected source navigator");
     const footer = navigator.querySelector(".dataWorkspaceNavigatorFooter");
     expect(footer).toBeInTheDocument();
     expect(footer?.firstElementChild).toHaveAccessibleName("Add source");
-    expect(screen.getByRole("button", { name: "Move Source up" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move Source up" }))
+      .toBeDisabled();
     expect(screen.getByRole("button", { name: "Remove selected source" }))
       .toBeDisabled();
 
@@ -1726,7 +1732,7 @@ describe("CompositionDataWorkspace", () => {
         "src-1",
         expect.objectContaining({
           revisionId: "sql-rev-2",
-          expectedResult: [{ name: "total", type: "json" }],
+          expectedResult: [{ name: "total", type: "decimal" }],
         }),
         { month_start: "date" },
       );

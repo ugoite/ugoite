@@ -1207,7 +1207,8 @@ fn resolve_component_bindings(
         })?;
         let presentation = match component {
             CompositionComponent::Metric { presentation, .. } => presentation.clone(),
-            CompositionComponent::Text { .. } | CompositionComponent::Table { .. } => None,
+            // Non-metric components have no metric presentation metadata.
+            _ => None,
         };
         let (kind, metric_field_id, aggregate_operation, result_property_key, expected_result_type) =
             match component.metric_definition() {

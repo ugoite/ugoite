@@ -15153,7 +15153,8 @@
           "metric_result_multiple_rows",
           "metric_result_column_missing",
           "metric_result_column_ambiguous",
-          "metric_result_page_incomplete"
+          "metric_result_page_incomplete",
+          "metric_scalar_expected_one_row"
         ]
       },
       "CompositionLintRequest": {

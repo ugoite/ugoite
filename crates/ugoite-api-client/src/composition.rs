@@ -28,6 +28,7 @@ pub enum CompositionDiagnosticCode {
     MetricResultColumnMissing,
     MetricResultColumnAmbiguous,
     MetricResultPageIncomplete,
+    MetricScalarExpectedOneRow,
 }
 
 impl CompositionDiagnosticCode {
@@ -50,6 +51,7 @@ impl CompositionDiagnosticCode {
             Self::MetricResultColumnMissing => "metric_result_column_missing",
             Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
             Self::MetricResultPageIncomplete => "metric_result_page_incomplete",
+            Self::MetricScalarExpectedOneRow => "metric_scalar_expected_one_row",
         }
     }
 
@@ -72,6 +74,7 @@ impl CompositionDiagnosticCode {
             "metric_result_column_missing" => Some(Self::MetricResultColumnMissing),
             "metric_result_column_ambiguous" => Some(Self::MetricResultColumnAmbiguous),
             "metric_result_page_incomplete" => Some(Self::MetricResultPageIncomplete),
+            "metric_scalar_expected_one_row" => Some(Self::MetricScalarExpectedOneRow),
             _ => None,
         }
     }

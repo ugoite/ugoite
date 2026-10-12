@@ -16732,6 +16732,7 @@ mod authentication_regression_tests {
             DomainCode::MetricResultColumnMissing,
             DomainCode::MetricResultColumnAmbiguous,
             DomainCode::MetricResultPageIncomplete,
+            DomainCode::MetricScalarExpectedOneRow,
         ];
         for domain in domain_codes {
             let api = api_composition_diagnostic_code(domain)
@@ -16792,6 +16793,10 @@ mod authentication_regression_tests {
             (
                 ApiCompositionDiagnosticCode::MetricResultPageIncomplete,
                 "metric_result_page_incomplete",
+            ),
+            (
+                ApiCompositionDiagnosticCode::MetricScalarExpectedOneRow,
+                "metric_scalar_expected_one_row",
             ),
         ];
         for &(api, expected) in &metric_codes {

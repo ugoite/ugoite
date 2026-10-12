@@ -1482,6 +1482,7 @@ fn openapi_documents_composition_lint_request_response_and_diagnostics() {
             "metric_result_column_missing",
             "metric_result_column_ambiguous",
             "metric_result_page_incomplete",
+            "metric_scalar_expected_one_row",
         ])
     );
 }

@@ -3214,6 +3214,10 @@ mod tests {
                 CompositionDiagnosticCode::MetricResultPageIncomplete,
                 "metric_result_page_incomplete",
             ),
+            (
+                CompositionDiagnosticCode::MetricScalarExpectedOneRow,
+                "metric_scalar_expected_one_row",
+            ),
         ] {
             assert_eq!(code.as_str(), expected);
             assert_eq!(CompositionDiagnosticCode::from_code(expected), Some(code));
