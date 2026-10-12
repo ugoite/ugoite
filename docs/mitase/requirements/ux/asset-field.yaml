@@ -11,7 +11,7 @@ requirements:
     criteria:
       - id: visible-file-identity
         kind: behavior
-        statement: Persisted Asset reference rows show the file name and localized type/size metadata, and preview/download controls use a localized action name containing that file name.
+        statement: Persisted Asset reference rows show the file name and a file-type label with locale-formatted size metadata, and preview/download controls use a localized action name containing that file name.
         governed_by: [POL-UI-005#rule.governance]
       - id: hidden-stable-id
         kind: behavior

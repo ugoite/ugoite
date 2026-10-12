@@ -133,13 +133,13 @@ describe("AssetField", () => {
     state.setPreviewSignatures(
       new Map([[
         first.asset_id,
-        `${first.name}\\u0000${first.media_type}\\u0000text`,
         `${first.name}\u0000${first.media_type}\u0000text`,
       ]]),
     );
     fireEvent.click(screen.getByRole("button", { name: "Preview first.txt" }));
     expect(await screen.findByRole("dialog", { name: first.name }))
       .toBeInTheDocument();
+    expect(assetApi.read).not.toHaveBeenCalled();
     const identityAttributes = Array.from(
       document.querySelectorAll<HTMLElement>(
         "[id], [aria-labelledby], [aria-label], [title]",

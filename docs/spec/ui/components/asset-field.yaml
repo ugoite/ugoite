@@ -15,7 +15,7 @@ components:
       persistence: entry-save
     reference_rows:
       visible_primary: file-name
-      visible_metadata: localized-file-type-and-size
+      visible_metadata: file-type-label-and-locale-formatted-size
       action_names: localized-action-and-file-name
       stable_asset_id: never-in-visible-content-or-accessible-names
     preview:
