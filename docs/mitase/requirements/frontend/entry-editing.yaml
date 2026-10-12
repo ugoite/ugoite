@@ -21,7 +21,7 @@ requirements:
       - id: markdown-editor-verification
         role: verification
         facet: verification
-        responsibility: Verify safe preview rendering through the exact frontend test.
+        responsibility: Verify safe preview rendering and the Entry save shortcut through exact frontend tests.
         targets:
           - id: preview-safety
             adapter: typescript
@@ -32,6 +32,15 @@ requirements:
                 criterion: REQ-FE-005#criterion.safe-preview
                 covers: [FEAT-FE-003#binding.frontend/target.markdown-utils]
                 runner: { runner: frontend-vitest-file, arguments: { file: src/lib/markdown.test.ts, test: "escapes raw HTML while keeping simple formatting" } }
+          - id: entry-save-shortcut
+            adapter: typescript
+            path: frontend/src/components/EntryDetailPane.safety.test.tsx
+            selector: { kind: test, name: "REQ-FE-005: saves Markdown Entry content with Ctrl+S and Cmd+S" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-005#criterion.edit-preview-save
+                covers: [FEAT-FE-003#binding.frontend/target.entry-detail-pane]
+                runner: { runner: frontend-vitest-file, arguments: { file: src/components/EntryDetailPane.safety.test.tsx, test: "REQ-FE-005: saves Markdown Entry content with Ctrl+S and Cmd+S" } }
   - id: REQ-FE-005A
     title: Editor Content Graceful Handling
     description: The editor treats missing Markdown content as empty content, keeps new-entry draft content available immediately, and remains safe when previewing missing content.

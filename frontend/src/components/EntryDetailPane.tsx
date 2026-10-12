@@ -845,6 +845,27 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
   };
 
+  const handleSaveShortcut = (event: KeyboardEvent) => {
+    const matchesSaveShortcut =
+      (event.metaKey || event.ctrlKey) &&
+      !event.altKey &&
+      !event.shiftKey &&
+      event.key.toLowerCase() === "s";
+    if (!matchesSaveShortcut || event.defaultPrevented) return;
+
+    event.preventDefault();
+    if (
+      event.target instanceof Element &&
+      event.target.closest('[role="dialog"][aria-modal="true"]')
+    ) return;
+    if (saveReady()) void handleSave();
+  };
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("keydown", handleSaveShortcut);
+    onCleanup(() => document.removeEventListener("keydown", handleSaveShortcut));
+  }
+
   const openDeleteConfirm = () => {
     if (isDeleting()) return;
     setDeleteError(null);
