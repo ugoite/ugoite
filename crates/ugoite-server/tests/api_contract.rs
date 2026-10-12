@@ -1476,7 +1476,8 @@ fn openapi_documents_composition_lint_request_response_and_diagnostics() {
             "source_schema_changed",
             "metric_result_not_scalar",
             "metric_result_type_mismatch",
-            "metric_scalar_expected_one_row",
+            "metric_scalar_no_rows",
+            "metric_scalar_multiple_rows",
             "metric_result_column_missing",
             "metric_result_column_ambiguous",
         ])
@@ -1660,18 +1661,39 @@ fn openapi_documents_bounded_composition_metric_queries() {
         metric["responses"]["413"]["description"],
         "The JSON request body exceeds the 256 KiB bound"
     );
+    let metric_value = &snapshot["components"]["schemas"]["CompositionMetricQueryValue"];
+    let metric_properties = metric_value["properties"]
+        .as_object()
+        .expect("metric value properties");
     assert_eq!(
-        snapshot["components"]["schemas"]["CompositionMetricOperation"]["enum"],
-        serde_json::json!([
-            "sql_scalar",
-            "count_rows",
-            "count_values",
-            "sum",
-            "avg",
-            "min",
-            "max"
-        ])
+        metric_properties
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec!["component_id", "result_type", "value"]
     );
+    assert_eq!(
+        metric_properties["component_id"],
+        serde_json::json!({"type": "string"})
+    );
+    assert_eq!(
+        metric_properties["result_type"]["$ref"],
+        "#/components/schemas/CompositionResultFieldType"
+    );
+    assert_eq!(
+        metric_properties["value"]["$ref"],
+        "#/components/schemas/JsonValue"
+    );
+    assert_eq!(
+        metric_value["required"],
+        serde_json::json!(["component_id", "result_type", "value"])
+    );
+    assert!(snapshot["components"]["schemas"]
+        .get("CompositionMetricOperation")
+        .is_none());
+    assert!(snapshot["components"]["schemas"]
+        .get("CompositionMetricSourceKind")
+        .is_none());
     assert!(metric["description"]
         .as_str()
         .expect("bounded metric description")
@@ -1730,6 +1752,7 @@ fn openapi_documents_composition_resolve_metric_result_type() {
         binding["properties"]["presentation"]["$ref"],
         "#/components/schemas/CompositionMetricPresentation"
     );
+    assert!(binding["properties"].get("metric_field_id").is_none());
     assert!(!binding["required"]
         .as_array()
         .expect("required component fields")

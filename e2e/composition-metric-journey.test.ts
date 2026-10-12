@@ -10,7 +10,7 @@ import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 const METRIC_SCALAR = 40;
 const SECOND_AMOUNT = 2;
 const MULTIPLE_ROWS_DIAGNOSTIC =
-  "The metric source must return exactly one row.";
+  "The metric returned more than one row.";
 
 type SeedState = {
   spaceId: string;
@@ -140,10 +140,8 @@ async function seedMetricComposition(
     "  components:",
     "    - id: total",
     "      kind: metric",
-    "      definition:",
-    "        kind: sql_scalar",
-    "        source: metric_rows",
-    "        column: total",
+    "      source: metric_rows",
+    "      column: total",
     "    - id: rows",
     "      kind: table",
     "      source: metric_rows",
@@ -198,7 +196,7 @@ test.describe("Composition Metric Journey", () => {
     seed = await seedMetricComposition(request);
   });
 
-  test("Browser reopens a metric tool at its exact revision and surfaces the stable multiple-rows diagnostic without aggregation", async ({ browser, context, request }) => {
+  test("Browser reopens a Saved SQL metric at its exact revision and reports multiple matching rows", async ({ browser, context, request }) => {
     test.setTimeout(120_000);
     const storageState = await context.storageState();
     const freshContext = await openOwnerContext(browser, storageState);
@@ -245,6 +243,8 @@ test.describe("Composition Metric Journey", () => {
       await expect(page.getByRole("alert")).toContainText(
         MULTIPLE_ROWS_DIAGNOSTIC,
       );
+      await expect(page.getByRole("button", { name: "Edit", exact: true }))
+        .toBeVisible();
       await expect(page.locator("output.compositionMetric")).toHaveCount(0);
       await expect(table.locator("tbody tr")).toHaveCount(2);
     } finally {

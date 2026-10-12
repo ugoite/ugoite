@@ -89,8 +89,6 @@ describe("CompositionRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
         result_type: "integer",
         value: "9007199254740993",
       },
@@ -143,8 +141,6 @@ describe("CompositionRenderer", () => {
       draft_fingerprint: "draft-fingerprint",
       result: {
         component_id: "total",
-        operation: "sum",
-        source_kind: "entry_query",
         result_type: "integer",
         value: "42",
       },
@@ -184,8 +180,6 @@ describe("CompositionRenderer", () => {
       draft_fingerprint: "stale-fingerprint",
       result: {
         component_id: "total",
-        operation: "sum",
-        source_kind: "entry_query",
         result_type: "integer",
         value: "42",
       },
@@ -219,8 +213,6 @@ describe("CompositionRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
         result_type: "integer",
         value: "42",
       },
@@ -266,8 +258,6 @@ describe("CompositionRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
         result_type: "integer",
         value: null,
       },
@@ -305,8 +295,6 @@ describe("CompositionRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "count_rows",
-        source_kind: "entry_query",
         result_type: "integer",
         value: "0",
       },
@@ -342,8 +330,6 @@ describe("CompositionRenderer", () => {
         ok: true,
         result: {
           component_id: "total",
-          operation: "sql_scalar",
-          source_kind: "saved_sql",
           result_type: "decimal",
           value: "12.3",
         },
@@ -352,8 +338,6 @@ describe("CompositionRenderer", () => {
         ok: true,
         result: {
           component_id: "total",
-          operation: "sql_scalar",
-          source_kind: "saved_sql",
           result_type: "decimal",
           value: "12.345",
         },
@@ -402,8 +386,6 @@ describe("CompositionRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "avg",
-        source_kind: "entry_query",
         result_type: "float",
         value: 1e-7,
       },
@@ -448,8 +430,6 @@ describe("CompositionRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
         result_type: "string",
         value: "1e3",
       },
@@ -491,8 +471,6 @@ describe("CompositionRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "sql_scalar",
-        source_kind: "saved_sql",
         result_type: "integer",
         value: { internal: "not a scalar" },
       },
@@ -527,10 +505,10 @@ describe("CompositionRenderer", () => {
     expect(document.querySelector("output.compositionMetric")).toBeNull();
   });
 
-  it("sends a non-scalar Saved SQL metric directly to edit", async () => {
+  it("sends a multi-row Saved SQL metric directly to edit", async () => {
     const query = vi.spyOn(compositionApi, "queryMetric").mockResolvedValue({
       ok: false,
-      diagnostics: [{ code: "metric_scalar_expected_one_row" }],
+      diagnostics: [{ code: "metric_scalar_multiple_rows" }],
     });
     const onEdit = vi.fn();
     const metricPlan = {
@@ -558,7 +536,7 @@ describe("CompositionRenderer", () => {
     ));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The metric source must return exactly one row.",
+      "The metric returned more than one row.",
     );
     expect(query).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "Retry" })).not
@@ -605,10 +583,10 @@ describe("CompositionRenderer", () => {
     expect(onEdit).toHaveBeenCalledOnce();
   };
 
-  it("offers direct edit when a Saved SQL metric returns a non-scalar row count", async () => {
+  it("offers direct edit when a Saved SQL metric returns no rows", async () => {
     await expectDirectEditForScalarDiagnostic(
-      "metric_scalar_expected_one_row",
-      "The metric source must return exactly one row.",
+      "metric_scalar_no_rows",
+      "The metric returned no rows.",
     );
   });
 
@@ -620,8 +598,6 @@ describe("CompositionRenderer", () => {
         ok: true,
         result: {
           component_id: "total",
-          operation: "sql_scalar",
-          source_kind: "saved_sql",
           result_type: "decimal",
           value: "12.300",
         },
@@ -630,8 +606,6 @@ describe("CompositionRenderer", () => {
         ok: true,
         result: {
           component_id: "total",
-          operation: "sql_scalar",
-          source_kind: "saved_sql",
           result_type: "decimal",
           value: "15.600",
         },
@@ -730,8 +704,6 @@ describe("CompositionRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "count_rows",
-        source_kind: "entry_query",
         result_type: "integer",
         value: "2",
       },
@@ -742,8 +714,6 @@ describe("CompositionRenderer", () => {
       ok: true,
       result: {
         component_id: "total",
-        operation: "count_rows",
-        source_kind: "entry_query",
         result_type: "integer",
         value: "1",
       },

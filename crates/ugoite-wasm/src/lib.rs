@@ -221,33 +221,6 @@ fn invoke_domain(request: serde_json::Value) -> String {
             .cloned()
             .ok_or_else(|| "value is required".to_string())?;
         match action {
-            "domain.composition_aggregate_capability" => {
-                let operation: ugoite_domain::composition::CompositionAggregateOperation =
-                    serde_json::from_value(
-                        payload
-                            .get("operation")
-                            .cloned()
-                            .ok_or_else(|| "operation is required".to_string())?,
-                    )
-                    .map_err(|error| error.to_string())?;
-                let field_type: Option<ugoite_domain::form::FieldType> = payload
-                    .get("field_type")
-                    .filter(|value| !value.is_null())
-                    .cloned()
-                    .map(serde_json::from_value)
-                    .transpose()
-                    .map_err(|error| error.to_string())?;
-                match ugoite_domain::composition_metric::composition_aggregate_result_type(
-                    operation,
-                    field_type.as_ref(),
-                ) {
-                    Ok(result_type) => Ok(serde_json::json!({
-                        "supported": true,
-                        "result_type": result_type,
-                    })),
-                    Err(_) => Ok(serde_json::json!({"supported": false})),
-                }
-            }
             "domain.encode_spreadsheet_csv" => {
                 let rows: Vec<Vec<String>> =
                     serde_json::from_value(payload).map_err(|error| error.to_string())?;
@@ -606,8 +579,8 @@ mod tests {
     const MONTHLY_EXPENSE_LABELED_COMPOSITION: &str = include_str!(
         "../../ugoite-domain/tests/fixtures/composition/monthly-expense-labeled.ugcomp.yaml"
     );
-    const TYPED_METRIC_DEFINITIONS_COMPOSITION: &str = include_str!(
-        "../../ugoite-domain/tests/fixtures/composition/typed-metric-definitions.ugcomp.yaml"
+    const SAVED_SQL_METRIC_COLUMNS_COMPOSITION: &str = include_str!(
+        "../../ugoite-domain/tests/fixtures/composition/saved-sql-metric-columns.ugcomp.yaml"
     );
     const UNKNOWN_LIST_ITEM_FIELD_COMPOSITION: &str = include_str!(
         "../../ugoite-domain/tests/fixtures/composition/unknown-list-item-field.ugcomp.yaml"
@@ -624,56 +597,11 @@ mod tests {
     }
 
     #[test]
-    fn composition_aggregate_capability_matches_the_domain_contract() {
-        let cases = [
-            ("count_rows", None),
-            ("count_rows", Some("integer")),
-            ("count_values", Some("list")),
-            ("sum", Some("integer")),
-            ("sum", Some("date")),
-            ("avg", Some("long")),
-            ("min", Some("date")),
-            ("max", Some("time")),
-        ];
-
-        for (operation, field_type) in cases {
-            let mut value = serde_json::json!({"operation": operation});
-            if let Some(field_type) = field_type {
-                value["field_type"] = serde_json::json!(field_type);
-            }
-            let request = serde_json::json!({
-                "action": "domain.composition_aggregate_capability",
-                "value": value,
-            });
-            let response: Value =
-                serde_json::from_str(&super::invoke_json(&request.to_string())).unwrap();
-            let operation: ugoite_domain::composition::CompositionAggregateOperation =
-                serde_json::from_value(serde_json::json!(operation)).unwrap();
-            let field_type: Option<ugoite_domain::form::FieldType> = field_type
-                .map(|field_type| serde_json::from_value(serde_json::json!(field_type)).unwrap());
-            let expected =
-                match ugoite_domain::composition_metric::composition_aggregate_result_type(
-                    operation,
-                    field_type.as_ref(),
-                ) {
-                    Ok(result_type) => serde_json::json!({
-                        "supported": true,
-                        "result_type": result_type,
-                    }),
-                    Err(_) => serde_json::json!({"supported": false}),
-                };
-
-            assert_eq!(response["ok"], true, "{response}");
-            assert_eq!(response["value"], expected, "{operation:?} {field_type:?}");
-        }
-    }
-
-    #[test]
     fn composition_canonicalization_matches_the_native_domain_contract() {
         for yaml in [
             MONTHLY_EXPENSE_COMPOSITION,
             MONTHLY_EXPENSE_LABELED_COMPOSITION,
-            TYPED_METRIC_DEFINITIONS_COMPOSITION,
+            SAVED_SQL_METRIC_COLUMNS_COMPOSITION,
         ] {
             let native = ugoite_domain::composition::canonicalize_composition_yaml(yaml).unwrap();
             let request = serde_json::json!({
@@ -692,52 +620,33 @@ mod tests {
             assert_eq!(response["value"]["fingerprint"], native.fingerprint);
         }
 
-        let invalid_typed_metric_definitions = [
-            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace("operation: count_rows", "operation: median"),
-            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
-                "operation: count_values\n        field_id: 103",
-                "operation: count_values",
+        let invalid_metric_shapes = [
+            MONTHLY_EXPENSE_COMPOSITION.replace(
+                "      source: month_total\n      column: total",
+                "      definition:\n        kind: sql_scalar\n        source: month_total\n        column: total",
             ),
-            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
-                "operation: count_values\n        field_id: 103",
-                "operation: count_rows\n        field_id: 103",
+            MONTHLY_EXPENSE_COMPOSITION.replace(
+                "      source: month_total\n      column: total",
+                "      source: expense_rows\n      column: total",
             ),
-            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
-                "        field_id: 104\n    - id: latest_expense",
-                "        field_id: 104\n      presentation:\n        kind: number\n    - id: latest_expense",
+            MONTHLY_EXPENSE_COMPOSITION.replace(
+                "      source: month_total\n      column: total",
+                "      source: month_total\n      value_field:\n        kind: sql_column\n        name: total",
             ),
-            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
-                "operation: min\n        field_id: 104",
-                "operation: min\n        field_id: 103",
+            MONTHLY_EXPENSE_COMPOSITION.replace(
+                "      source: month_total\n      column: total",
+                "      source: month_total\n      column: total\n      operation: sum\n      field_id: 102",
             ),
-            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
-                "field_id: 104\n          field_type: date",
-                "field_id: 104\n          field_type: time",
-            ),
-            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
-                "field_id: 105\n          field_type: timestamp",
-                "field_id: 105\n          field_type: time",
-            ),
-            TYPED_METRIC_DEFINITIONS_COMPOSITION
-                .replace(
-                    "        column: total\n  layout:",
-                    "        column: total\n      presentation:\n        kind: number\n  layout:",
-                )
-                .replace("type: decimal", "type: date"),
-            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
-                "operation: sum\n        field_id: 102",
-                "operation: sum\n        field_id: 103",
-            ),
-            TYPED_METRIC_DEFINITIONS_COMPOSITION.replace(
-                "kind: sql_scalar\n        source: monthly_total",
-                "kind: sql_scalar\n        source: expense_rows",
+            MONTHLY_EXPENSE_COMPOSITION.replace(
+                "      source: month_total\n      column: total",
+                "      source: month_total\n      column: missing",
             ),
         ];
-        for yaml in invalid_typed_metric_definitions {
+        for yaml in invalid_metric_shapes {
             assert_eq!(
                 ugoite_domain::composition::canonicalize_composition_yaml(&yaml),
                 Err(ugoite_domain::composition::CompositionDiagnosticCode::InvalidComposition),
-                "native domain accepted an invalid typed metric definition: {yaml}"
+                "native domain accepted an invalid SQL Metric binding: {yaml}"
             );
             let request = serde_json::json!({
                 "action": "domain.canonicalize_composition",
@@ -752,10 +661,10 @@ mod tests {
         let native =
             ugoite_domain::composition::canonicalize_composition_yaml(MONTHLY_EXPENSE_COMPOSITION)
                 .unwrap();
-        let normalized_typed_document = serde_json::to_value(&native.document).unwrap();
-        let mut unnormalized_typed_document = normalized_typed_document.clone();
+        let normalized_document = serde_json::to_value(&native.document).unwrap();
+        let mut unnormalized_document = normalized_document.clone();
         {
-            let sources = unnormalized_typed_document["spec"]["sources"]
+            let sources = unnormalized_document["spec"]["sources"]
                 .as_array_mut()
                 .expect("the Composition fixture has a source array");
             let entry_query_source = sources
@@ -767,20 +676,20 @@ mod tests {
                 .expect("the EntryQuery fixture has a field schema");
             field_schema.reverse();
         }
-        assert_ne!(unnormalized_typed_document, normalized_typed_document);
+        assert_ne!(unnormalized_document, normalized_document);
         let native_typed = ugoite_domain::composition::canonicalize_composition_document_value(
-            unnormalized_typed_document.clone(),
+            unnormalized_document.clone(),
         )
         .unwrap();
         assert_eq!(
             serde_json::to_value(&native_typed.document).unwrap(),
-            normalized_typed_document
+            normalized_document
         );
         assert_eq!(native_typed.yaml, native.yaml);
         assert_eq!(native_typed.fingerprint, native.fingerprint);
         let typed_request = serde_json::json!({
             "action": "domain.canonicalize_composition_document",
-            "value": {"document": unnormalized_typed_document},
+            "value": {"document": unnormalized_document},
         });
         let typed_response: Value =
             serde_json::from_str(&super::invoke_json(&typed_request.to_string())).unwrap();
@@ -867,7 +776,7 @@ mod tests {
         );
         assert_ne!(unreferenced_component, MONTHLY_EXPENSE_COMPOSITION);
         let invalid_metric_value_field = MONTHLY_EXPENSE_COMPOSITION.replace(
-            "      definition:\n        kind: sql_scalar\n        source: month_total\n        column: total",
+            "      source: month_total\n      column: total",
             "      source: month_total\n      value_field:\n        kind: sql_column\n        name: total",
         );
         assert_ne!(invalid_metric_value_field, MONTHLY_EXPENSE_COMPOSITION);

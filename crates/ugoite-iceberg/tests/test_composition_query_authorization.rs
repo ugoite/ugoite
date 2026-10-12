@@ -9,12 +9,10 @@ use ugoite_core::{
     sql_query::{SavedSqlRevisionRef, SqlQueryRequest},
 };
 use ugoite_domain::composition::{
-    CompositionAggregateOperation, CompositionComponent, CompositionDocument,
-    CompositionFieldSchemaEntry, CompositionFormat, CompositionKind, CompositionMetricDefinition,
-    CompositionParameter, CompositionParameterType, CompositionQueryOperator,
-    CompositionResultColumn, CompositionResultFieldType, CompositionSortDirection,
-    CompositionSource, CompositionSpec, CompositionValue, DashboardFlowLayout,
-    EntryQueryFilterTemplate, EntryQueryProjectionTemplate, EntryQuerySortTemplate,
+    CompositionComponent, CompositionDocument, CompositionFieldSchemaEntry, CompositionFormat,
+    CompositionKind, CompositionParameter, CompositionParameterType, CompositionResultColumn,
+    CompositionResultFieldType, CompositionSortDirection, CompositionSource, CompositionSpec,
+    CompositionValue, DashboardFlowLayout, EntryQueryProjectionTemplate, EntryQuerySortTemplate,
     EntryQueryTemplate, FlowItem, FlowLayoutKind, FlowRow,
 };
 use ugoite_domain::form::FieldType;
@@ -43,7 +41,7 @@ fn resolved_entry_request(
 }
 
 #[tokio::test]
-async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe() -> Result<()> {
+async fn saved_sql_columns_resolve_to_bounded_metric_results() -> Result<()> {
     use ugoite_core::composition_metric::{
         CompositionMetricQueryRequest, CompositionMetricQueryTarget,
     };
@@ -59,7 +57,7 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
         .await?
         .to_string();
     let form_name = "metric-query-source";
-    let form = service
+    service
         .upsert_form_result(
             &space_id,
             &json!({
@@ -72,17 +70,13 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
         )
         .await?;
     let amount_field_id = ugoite_domain::id::FieldId::new(101)?;
-    let all_null_field_id = ugoite_domain::id::FieldId::new(102)?;
     let amount_column = ugoite_domain::form::sql_column_name(amount_field_id);
-    let amount_field = |amount: i64| {
-        BTreeMap::from([
-            ("amount".to_string(), json!(amount)),
-            ("all_null".to_string(), Value::Null),
-        ])
-    };
+    let all_null_column =
+        ugoite_domain::form::sql_column_name(ugoite_domain::id::FieldId::new(102)?);
     for (id, amount) in [
-        ("metric-entry-01", 9_007_199_254_740_993_i64),
-        ("metric-entry-02", 1_i64),
+        ("metric-entry-01", json!(9_007_199_254_740_993_i64)),
+        ("metric-entry-02", json!(1)),
+        ("metric-entry-null", Value::Null),
     ] {
         service
             .create_structured_entry_with_receipt(
@@ -90,98 +84,75 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
                 id,
                 form_name.to_string(),
                 Vec::new(),
-                amount_field(amount),
+                BTreeMap::from([
+                    ("amount".to_string(), amount),
+                    ("all_null".to_string(), Value::Null),
+                ]),
                 BTreeMap::new(),
                 "owner",
             )
             .await?;
     }
-    service
-        .create_structured_entry_with_receipt(
-            &space_id,
-            "metric-entry-null",
-            form_name.to_string(),
-            Vec::new(),
-            BTreeMap::from([
-                ("amount".to_string(), Value::Null),
-                ("all_null".to_string(), Value::Null),
-            ]),
-            BTreeMap::new(),
-            "owner",
-        )
-        .await?;
 
-    let saved_sql = |name: &str, sql: String| SqlPayload {
+    let saved_sql = |name: &str, sql: String, variables: Value| SqlPayload {
         name: Some(name.to_string()),
         kind: SqlKind::UserQuery,
         metadata: None,
         sql,
-        variables: json!([]),
+        variables,
     };
-    let scalar_sql = service
+    let summary_sql = service
         .create_saved_sql(
             &space_id,
             None,
             &saved_sql(
-                "Metric scalar",
+                "Metric summary",
                 format!(
-                    "SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" = 9007199254740993"
+                    "SELECT COUNT(*) AS row_count, COUNT(\"{amount_column}\") AS value_count, SUM(\"{amount_column}\") AS total, AVG(\"{amount_column}\") AS average, MIN(\"{amount_column}\") AS minimum, MAX(\"{amount_column}\") AS maximum, SUM(\"{all_null_column}\") AS null_total FROM \"{form_name}\""
                 ),
+                json!([]),
             ),
             "owner",
         )
         .await?;
-    let empty_sql = service
+    let empty_summary_sql = service
         .create_saved_sql(
             &space_id,
             None,
             &saved_sql(
-                "Metric empty",
-                format!("SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" < 0"),
+                "Metric empty summary",
+                format!(
+                    "SELECT COUNT(*) AS row_count, SUM(\"{amount_column}\") AS total FROM \"{form_name}\" WHERE \"{amount_column}\" < 0"
+                ),
+                json!([]),
             ),
             "owner",
         )
         .await?;
-    let multiple_sql = service
+    let empty_rows_sql = service
+        .create_saved_sql(
+            &space_id,
+            None,
+            &saved_sql(
+                "Metric empty rows",
+                format!(
+                    "SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" < 0"
+                ),
+                json!([]),
+            ),
+            "owner",
+        )
+        .await?;
+    let multiple_rows_sql = service
         .create_saved_sql(
             &space_id,
             None,
             &saved_sql(
                 "Metric multiple rows",
-                format!("SELECT \"{amount_column}\" AS total FROM \"{form_name}\" ORDER BY \"{amount_column}\""),
-            ),
-            "owner",
-        )
-        .await?;
-    let parameter_sql = service
-        .create_saved_sql(
-            &space_id,
-            None,
-            &SqlPayload {
-                name: Some("Metric parameter".to_string()),
-                kind: SqlKind::UserQuery,
-                metadata: None,
-                sql: format!(
-                    "SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" = {{{{minimum}}}}"
-                ),
-                variables: json!([{
-                    "name":"minimum",
-                    "type":"integer",
-                    "description":"Minimum included amount"
-                }]),
-            },
-            "owner",
-        )
-        .await?;
-    let null_sql = service
-        .create_saved_sql(
-            &space_id,
-            None,
-            &saved_sql(
-                "Metric null",
                 format!(
-                    "SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" IS NULL"
+                    "SELECT \"{amount_column}\" AS total FROM \"{form_name}\" ORDER BY \"{amount_column}\""
                 ),
+                json!([]),
             ),
             "owner",
         )
@@ -193,215 +164,118 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
             &saved_sql(
                 "Metric decimal",
                 format!(
-                    "SELECT CAST(\"{amount_column}\" AS DECIMAL(30, 4)) AS total FROM \"{form_name}\" WHERE \"{amount_column}\" = 9007199254740993"
+                    "SELECT CAST(SUM(\"{amount_column}\") AS DECIMAL(30, 4)) AS total FROM \"{form_name}\""
                 ),
+                json!([]),
+            ),
+            "owner",
+        )
+        .await?;
+    let parameter_sql = service
+        .create_saved_sql(
+            &space_id,
+            None,
+            &saved_sql(
+                "Metric parameter",
+                format!(
+                    "SELECT \"{amount_column}\" AS total FROM \"{form_name}\" WHERE \"{amount_column}\" = {{{{minimum}}}}"
+                ),
+                json!([{
+                    "name": "minimum",
+                    "type": "integer",
+                    "description": "Selected amount"
+                }]),
             ),
             "owner",
         )
         .await?;
 
-    let sql_source = |id: &str, saved_sql: &Value, result_type: CompositionResultFieldType| {
-        CompositionSource::SavedSql {
-            id: id.to_string(),
-            entry_id: serde_json::from_value(saved_sql["id"].clone()).unwrap(),
-            revision_id: serde_json::from_value(saved_sql["revision_id"].clone()).unwrap(),
-            expected_result: vec![CompositionResultColumn {
-                name: "total".to_string(),
-                result_type,
-            }],
-            variables: BTreeMap::new(),
-        }
+    let summary_result = vec![
+        ("row_count", CompositionResultFieldType::Integer),
+        ("value_count", CompositionResultFieldType::Integer),
+        ("total", CompositionResultFieldType::Integer),
+        ("average", CompositionResultFieldType::Float),
+        ("minimum", CompositionResultFieldType::Integer),
+        ("maximum", CompositionResultFieldType::Integer),
+        ("null_total", CompositionResultFieldType::Integer),
+    ]
+    .into_iter()
+    .map(|(name, result_type)| CompositionResultColumn {
+        name: name.to_string(),
+        result_type,
+    })
+    .collect::<Vec<_>>();
+    let source = |id: &str, sql: &Value, expected_result| CompositionSource::SavedSql {
+        id: id.to_string(),
+        entry_id: serde_json::from_value(sql["id"].clone()).unwrap(),
+        revision_id: serde_json::from_value(sql["revision_id"].clone()).unwrap(),
+        expected_result,
+        variables: BTreeMap::new(),
     };
-    let metric = |id: &str, definition| CompositionComponent::Metric {
+    let metric = |id: &str, source: &str, column: &str| CompositionComponent::Metric {
         id: id.to_string(),
         label: None,
-        definition,
+        source: source.to_string(),
+        column: column.to_string(),
         presentation: None,
     };
-    let entry_source_id = "entries";
-    let components = vec![
-        metric(
-            "entry_sum",
-            CompositionMetricDefinition::Aggregate {
-                source: entry_source_id.to_string(),
-                operation: CompositionAggregateOperation::Sum,
-                field_id: Some(amount_field_id),
-            },
-        ),
-        metric(
-            "sql_scalar",
-            CompositionMetricDefinition::SqlScalar {
-                source: "scalar_sql".to_string(),
-                column: "total".to_string(),
-            },
-        ),
-        metric(
-            "sql_empty",
-            CompositionMetricDefinition::SqlScalar {
-                source: "empty_sql".to_string(),
-                column: "total".to_string(),
-            },
-        ),
-        metric(
-            "sql_multiple",
-            CompositionMetricDefinition::SqlScalar {
-                source: "multiple_sql".to_string(),
-                column: "total".to_string(),
-            },
-        ),
-        metric(
-            "sql_null",
-            CompositionMetricDefinition::SqlScalar {
-                source: "null_sql".to_string(),
-                column: "total".to_string(),
-            },
-        ),
-        metric(
-            "sql_decimal",
-            CompositionMetricDefinition::SqlScalar {
-                source: "decimal_sql".to_string(),
-                column: "total".to_string(),
-            },
-        ),
-        metric(
-            "sql_parameterized",
-            CompositionMetricDefinition::SqlScalar {
-                source: "parameter_sql".to_string(),
-                column: "total".to_string(),
-            },
-        ),
-    ];
-    let metric_aggregate =
-        |id: &str, source: &str, operation: CompositionAggregateOperation, field_id| {
-            metric(
-                id,
-                CompositionMetricDefinition::Aggregate {
-                    source: source.to_string(),
-                    operation,
-                    field_id,
+    let components = [
+        ("row_count", "summary_sql", "row_count"),
+        ("value_count", "summary_sql", "value_count"),
+        ("total", "summary_sql", "total"),
+        ("average", "summary_sql", "average"),
+        ("minimum", "summary_sql", "minimum"),
+        ("maximum", "summary_sql", "maximum"),
+        ("null_total", "summary_sql", "null_total"),
+        ("empty_count", "empty_summary_sql", "row_count"),
+        ("empty_total", "empty_summary_sql", "total"),
+        ("no_rows", "empty_rows_sql", "total"),
+        ("multiple_rows", "multiple_rows_sql", "total"),
+        ("decimal_total", "decimal_sql", "total"),
+        ("parameter_value", "parameter_sql", "total"),
+    ]
+    .into_iter()
+    .map(|(id, source, column)| metric(id, source, column))
+    .collect::<Vec<_>>();
+    let source_list = vec![
+        source("summary_sql", &summary_sql, summary_result),
+        source(
+            "empty_summary_sql",
+            &empty_summary_sql,
+            vec![
+                CompositionResultColumn {
+                    name: "row_count".to_string(),
+                    result_type: CompositionResultFieldType::Integer,
                 },
-            )
-        };
-    let mut components = components;
-    components.push(metric_aggregate(
-        "entry_count_rows",
-        entry_source_id,
-        CompositionAggregateOperation::CountRows,
-        None,
-    ));
-    components.push(metric_aggregate(
-        "entry_count_values",
-        entry_source_id,
-        CompositionAggregateOperation::CountValues,
-        Some(amount_field_id),
-    ));
-    for (id, operation) in [
-        ("all_null_sum", CompositionAggregateOperation::Sum),
-        ("all_null_avg", CompositionAggregateOperation::Avg),
-        ("all_null_min", CompositionAggregateOperation::Min),
-        ("all_null_max", CompositionAggregateOperation::Max),
-    ] {
-        components.push(metric_aggregate(
-            id,
-            entry_source_id,
-            operation,
-            Some(all_null_field_id),
-        ));
-    }
-    components.push(metric_aggregate(
-        "all_null_count_values",
-        entry_source_id,
-        CompositionAggregateOperation::CountValues,
-        Some(all_null_field_id),
-    ));
-    components.push(metric_aggregate(
-        "empty_count_rows",
-        "empty_entries",
-        CompositionAggregateOperation::CountRows,
-        None,
-    ));
-    components.push(metric_aggregate(
-        "empty_count_values",
-        "empty_entries",
-        CompositionAggregateOperation::CountValues,
-        Some(amount_field_id),
-    ));
-    for (id, operation) in [
-        ("empty_sum", CompositionAggregateOperation::Sum),
-        ("empty_avg", CompositionAggregateOperation::Avg),
-        ("empty_min", CompositionAggregateOperation::Min),
-        ("empty_max", CompositionAggregateOperation::Max),
-    ] {
-        components.push(metric_aggregate(
-            id,
-            "empty_entries",
-            operation,
-            Some(amount_field_id),
-        ));
-    }
-    let mut sources = vec![CompositionSource::EntryQuery {
-        id: entry_source_id.to_string(),
-        form_id: form.form_id,
-        field_schema: [amount_field_id, all_null_field_id]
-            .into_iter()
-            .map(|field_id| CompositionFieldSchemaEntry {
-                field_id,
-                field_type: FieldType::Long,
-                reference_form: None,
-                list_item: None,
-            })
-            .collect(),
-        query: EntryQueryTemplate {
-            text: None,
-            filters: Vec::new(),
-            sort: Vec::new(),
-            page_limit: 1,
-            projection: EntryQueryProjectionTemplate::Preview,
-            display_system_fields: Vec::new(),
-        },
-    }];
-    sources.push(CompositionSource::EntryQuery {
-        id: "empty_entries".to_string(),
-        form_id: form.form_id,
-        field_schema: [amount_field_id, all_null_field_id]
-            .into_iter()
-            .map(|field_id| CompositionFieldSchemaEntry {
-                field_id,
-                field_type: FieldType::Long,
-                reference_form: None,
-                list_item: None,
-            })
-            .collect(),
-        query: EntryQueryTemplate {
-            text: None,
-            filters: vec![EntryQueryFilterTemplate {
-                field_id: amount_field_id,
-                operator: CompositionQueryOperator::Gte,
-                value: serde_json::from_value::<CompositionValue>(json!(i64::MAX))?,
+                CompositionResultColumn {
+                    name: "total".to_string(),
+                    result_type: CompositionResultFieldType::Integer,
+                },
+            ],
+        ),
+        source(
+            "empty_rows_sql",
+            &empty_rows_sql,
+            vec![CompositionResultColumn {
+                name: "total".to_string(),
+                result_type: CompositionResultFieldType::Integer,
             }],
-            sort: Vec::new(),
-            page_limit: 1,
-            projection: EntryQueryProjectionTemplate::Preview,
-            display_system_fields: Vec::new(),
-        },
-    });
-    sources.extend([
-        sql_source(
-            "scalar_sql",
-            &scalar_sql,
-            CompositionResultFieldType::Integer,
         ),
-        sql_source("empty_sql", &empty_sql, CompositionResultFieldType::Integer),
-        sql_source(
-            "multiple_sql",
-            &multiple_sql,
-            CompositionResultFieldType::Integer,
+        source(
+            "multiple_rows_sql",
+            &multiple_rows_sql,
+            vec![CompositionResultColumn {
+                name: "total".to_string(),
+                result_type: CompositionResultFieldType::Integer,
+            }],
         ),
-        sql_source("null_sql", &null_sql, CompositionResultFieldType::Integer),
-        sql_source(
+        source(
             "decimal_sql",
             &decimal_sql,
-            CompositionResultFieldType::Decimal,
+            vec![CompositionResultColumn {
+                name: "total".to_string(),
+                result_type: CompositionResultFieldType::Decimal,
+            }],
         ),
         CompositionSource::SavedSql {
             id: "parameter_sql".to_string(),
@@ -413,14 +287,14 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
             }],
             variables: BTreeMap::from([(
                 "minimum".to_string(),
-                ugoite_domain::composition::CompositionValue::Parameter(
+                CompositionValue::Parameter(
                     ugoite_domain::composition::CompositionParameterReference {
                         parameter: "minimum".to_string(),
                     },
                 ),
             )]),
         },
-    ]);
+    ];
     let component_ids = components
         .iter()
         .map(|component| component.id().to_string())
@@ -440,7 +314,7 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
                 default: None,
                 format: None,
             }],
-            sources,
+            sources: source_list,
             components,
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
@@ -471,13 +345,13 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
             &[owner],
         )
         .await?;
-    let query = |component_id: &str| CompositionMetricQueryRequest {
+    let query = |component_id: &str, minimum: i64| CompositionMetricQueryRequest {
         target: CompositionMetricQueryTarget::SavedRevision {
             composition_id: saved.entry_id.to_string(),
             revision_id: saved.revision_id.to_string(),
         },
         component_id: component_id.to_string(),
-        parameters: BTreeMap::from([("minimum".to_string(), json!(0))]),
+        parameters: BTreeMap::from([("minimum".to_string(), json!(minimum))]),
     };
 
     let resolution = service
@@ -490,151 +364,68 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
         .await?;
     assert!(
         resolution.plan.is_some(),
-        "typed metric Composition should resolve: {:?}",
+        "SQL-backed Metric Composition should resolve: {:?}",
         resolution.diagnostics
     );
 
-    let aggregate = service
-        .query_composition_metric_local(&space_id, query("entry_sum"))
-        .await
-        .context("querying the aggregate Entry metric should succeed")?;
-    let aggregate_result = aggregate
-        .result
-        .clone()
-        .context(format!("aggregate result should exist: {aggregate:?}"))?;
-    assert_eq!(
-        aggregate_result.operation,
-        ugoite_core::composition_metric::CompositionMetricOperation::Sum
-    );
-    assert_eq!(aggregate_result.value, json!("9007199254740994"));
-
     for (component_id, expected_value) in [
-        ("entry_count_rows", json!("3")),
-        ("entry_count_values", json!("2")),
-        ("all_null_sum", Value::Null),
-        ("all_null_avg", Value::Null),
-        ("all_null_min", Value::Null),
-        ("all_null_max", Value::Null),
-        ("all_null_count_values", json!("0")),
-        ("empty_count_rows", json!("0")),
-        ("empty_count_values", json!("0")),
-        ("empty_sum", Value::Null),
-        ("empty_avg", Value::Null),
-        ("empty_min", Value::Null),
-        ("empty_max", Value::Null),
+        ("row_count", json!("3")),
+        ("value_count", json!("2")),
+        ("total", json!("9007199254740994")),
+        ("average", json!(4_503_599_627_370_497_f64)),
+        ("minimum", json!("1")),
+        ("maximum", json!("9007199254740993")),
+        ("null_total", Value::Null),
+        ("empty_count", json!("0")),
+        ("empty_total", Value::Null),
     ] {
         let response = service
-            .query_composition_metric_local(&space_id, query(component_id))
+            .query_composition_metric_local(&space_id, query(component_id, 0))
             .await
-            .with_context(|| format!("querying {component_id} should succeed"))?;
+            .with_context(|| format!("querying {component_id} through Saved SQL"))?;
         assert!(response.ok, "{component_id} failed: {response:?}");
         let result = response
             .result
-            .with_context(|| format!("{component_id} should return a scalar result"))?;
+            .with_context(|| format!("{component_id} should return its selected SQL column"))?;
         assert_eq!(result.value, expected_value, "{component_id}");
     }
 
-    let sql_scalar_result = service
-        .query_composition_metric_local(&space_id, query("sql_scalar"))
-        .await
-        .context("querying a one-row Saved SQL scalar should succeed")?
+    let decimal = service
+        .query_composition_metric_local(&space_id, query("decimal_total", 0))
+        .await?
         .result
-        .context("one-row Saved SQL scalar should succeed")?;
-    assert_eq!(sql_scalar_result.value, json!("9007199254740993"));
-
-    let sql_decimal_result = service
-        .query_composition_metric_local(&space_id, query("sql_decimal"))
-        .await
-        .context("querying a Decimal Saved SQL scalar should succeed")?
-        .result
-        .context("one-row Decimal Saved SQL scalar should succeed")?;
-    assert_eq!(
-        sql_decimal_result.result_type,
-        CompositionResultFieldType::Decimal
-    );
-    assert_eq!(sql_decimal_result.value, json!("9007199254740993.0000"));
-
-    let parameter_query = CompositionMetricQueryRequest {
-        target: CompositionMetricQueryTarget::SavedRevision {
-            composition_id: saved.entry_id.to_string(),
-            revision_id: saved.revision_id.to_string(),
-        },
-        component_id: "sql_parameterized".to_string(),
-        parameters: BTreeMap::from([("minimum".to_string(), json!(9_007_199_254_740_993_i64))]),
-    };
+        .context("decimal SQL column should produce a scalar")?;
+    assert_eq!(decimal.result_type, CompositionResultFieldType::Decimal);
+    assert_eq!(decimal.value, json!("9007199254740994.0000"));
 
     let parameterized = service
-        .query_composition_metric_local(&space_id, parameter_query)
-        .await
-        .context("querying a parameterized Saved SQL scalar should succeed")?
+        .query_composition_metric_local(&space_id, query("parameter_value", 9_007_199_254_740_993))
+        .await?
         .result
-        .context("parameterized Saved SQL metric should succeed")?;
+        .context("parameterized Saved SQL metric should return the exact integer")?;
     assert_eq!(parameterized.value, json!("9007199254740993"));
+    let changed_parameter = service
+        .query_composition_metric_local(&space_id, query("parameter_value", 1))
+        .await?
+        .result
+        .context("changing a Saved SQL parameter should select a different scalar")?;
+    assert_eq!(changed_parameter.value, json!("1"));
 
-    let empty = service
-        .query_composition_metric_local(&space_id, query("sql_empty"))
-        .await
-        .context("probing an empty Saved SQL scalar should return a one-row diagnostic")?;
-    assert!(!empty.ok);
-    assert!(empty.result.is_none());
-    assert_eq!(
-        empty.diagnostics[0].code,
-        ugoite_domain::composition::CompositionDiagnosticCode::MetricScalarExpectedOneRow
-    );
-
-    let multiple = service
-        .query_composition_metric_local(&space_id, query("sql_multiple"))
-        .await
-        .context("probing multiple Saved SQL rows should return a diagnostic")?;
-    assert!(!multiple.ok);
-    assert!(
-        multiple.result.is_none(),
-        "a two-row probe must never return a prefix value"
-    );
-    assert_eq!(
-        multiple.diagnostics[0].code,
-        ugoite_domain::composition::CompositionDiagnosticCode::MetricScalarExpectedOneRow
-    );
-
-    let raw_null_probe = service
-        .probe_sql_scalar_local(
-            &space_id,
-            SqlQueryRequest {
-                sql: String::new(),
-                parameters: Map::new(),
-                parameter_types: BTreeMap::new(),
-                include_exact_integer_values: false,
-                limit: 2,
-                continuation: None,
-                saved_sql: Some(SavedSqlRevisionRef {
-                    id: null_sql["id"]
-                        .as_str()
-                        .context("NULL Saved SQL id")?
-                        .to_owned(),
-                    revision_id: null_sql["revision_id"]
-                        .as_str()
-                        .context("NULL Saved SQL revision")?
-                        .to_owned(),
-                }),
-            },
-        )
-        .await?;
-    assert_eq!(raw_null_probe.columns, ["total"]);
-    assert_eq!(raw_null_probe.rows.len(), 1);
-    assert_eq!(
-        raw_null_probe.result_schema[0].column_type,
-        ugoite_core::sql_query::SqlResultColumnType::Integer
-    );
-
-    let null = service
-        .query_composition_metric_local(&space_id, query("sql_null"))
-        .await
-        .context("querying a NULL Saved SQL scalar should succeed")?;
-    assert!(null.ok, "SQL NULL metric query should succeed: {null:?}");
-    assert_eq!(
-        null.result.context("SQL NULL is a scalar result")?.value,
-        Value::Null
-    );
+    for component_id in ["no_rows", "multiple_rows"] {
+        let response = service
+            .query_composition_metric_local(&space_id, query(component_id, 0))
+            .await?;
+        assert!(!response.ok, "{component_id} must not return a prefix row");
+        assert!(response.result.is_none());
+        assert_eq!(
+            response.diagnostics[0].code,
+            if component_id == "no_rows" {
+                ugoite_domain::composition::CompositionDiagnosticCode::MetricScalarNoRows
+            } else {
+                ugoite_domain::composition::CompositionDiagnosticCode::MetricScalarMultipleRows
+            }
+        );
+    }
 
     service
         .create_structured_entry_with_receipt(
@@ -642,50 +433,26 @@ async fn typed_metric_query_uses_full_matching_set_and_bounded_saved_sql_probe()
             "metric-entry-03",
             form_name.to_string(),
             Vec::new(),
-            amount_field(2),
+            BTreeMap::from([
+                ("amount".to_string(), json!(2)),
+                ("all_null".to_string(), Value::Null),
+            ]),
             BTreeMap::new(),
             "owner",
         )
         .await?;
-    let updated = service
-        .query_composition_metric_local(&space_id, query("entry_sum"))
-        .await
-        .context("requerying the aggregate after an Entry write should succeed")?
+    let updated_count = service
+        .query_composition_metric_local(&space_id, query("row_count", 0))
+        .await?
         .result
-        .context("revisiting the same Composition should see current data")?;
-    assert_eq!(updated.value, json!("9007199254740996"));
-
-    for (component_id, expected_value) in [
-        ("entry_count_rows", json!("4")),
-        ("entry_count_values", json!("3")),
-    ] {
-        let updated_count = service
-            .query_composition_metric_local(&space_id, query(component_id))
-            .await
-            .with_context(|| {
-                format!("requerying {component_id} after an Entry write should succeed")
-            })?
-            .result
-            .with_context(|| format!("revisiting {component_id} should return a scalar"))?;
-        assert_eq!(updated_count.value, expected_value, "{component_id}");
-    }
-
-    let changed_parameter = CompositionMetricQueryRequest {
-        target: CompositionMetricQueryTarget::SavedRevision {
-            composition_id: saved.entry_id.to_string(),
-            revision_id: saved.revision_id.to_string(),
-        },
-        component_id: "sql_parameterized".to_string(),
-        parameters: BTreeMap::from([("minimum".to_string(), json!(1))]),
-    };
-    let parameter_changed = service
-        .query_composition_metric_local(&space_id, changed_parameter)
-        .await
-        .context("querying a Saved SQL scalar after a parameter change should succeed")?
+        .context("the shared SQL result should be re-executed after Entry changes")?;
+    assert_eq!(updated_count.value, json!("4"));
+    let updated_total = service
+        .query_composition_metric_local(&space_id, query("total", 0))
+        .await?
         .result
-        .context("changing a declared parameter should change the scalar")?;
-    assert_eq!(parameter_changed.value, json!("1"));
-
+        .context("the selected SUM column should reflect the new Entry")?;
+    assert_eq!(updated_total.value, json!("9007199254740996"));
     Ok(())
 }
 
@@ -1034,7 +801,7 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
         .await?;
 
     let form_name = "metric-amount";
-    let form = service
+    service
         .upsert_form_result(
             &space_id,
             &json!({
@@ -1089,69 +856,30 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
         tags: Vec::new(),
         spec: CompositionSpec {
             parameters: Vec::new(),
-            sources: vec![
-                CompositionSource::SavedSql {
-                    id: "amount_sql".to_string(),
-                    entry_id: serde_json::from_value(saved_sql["id"].clone())?,
-                    revision_id: serde_json::from_value(saved_sql["revision_id"].clone())?,
-                    expected_result: vec![CompositionResultColumn {
-                        name: "total".to_string(),
-                        result_type: CompositionResultFieldType::Integer,
-                    }],
-                    variables: BTreeMap::new(),
-                },
-                CompositionSource::EntryQuery {
-                    id: "amount_entries".to_string(),
-                    form_id: form.form_id,
-                    field_schema: vec![CompositionFieldSchemaEntry {
-                        field_id: amount_field_id,
-                        field_type: FieldType::Long,
-                        reference_form: None,
-                        list_item: None,
-                    }],
-                    query: EntryQueryTemplate {
-                        text: None,
-                        filters: Vec::new(),
-                        sort: Vec::new(),
-                        page_limit: 1,
-                        projection: EntryQueryProjectionTemplate::Preview,
-                        display_system_fields: Vec::new(),
-                    },
-                },
-            ],
-            components: vec![
-                CompositionComponent::Metric {
-                    id: "amount_metric".to_string(),
-                    label: None,
-                    definition: CompositionMetricDefinition::SqlScalar {
-                        source: "amount_sql".to_string(),
-                        column: "total".to_string(),
-                    },
-                    presentation: None,
-                },
-                CompositionComponent::Metric {
-                    id: "entry_amount_total".to_string(),
-                    label: None,
-                    definition: CompositionMetricDefinition::Aggregate {
-                        source: "amount_entries".to_string(),
-                        operation: CompositionAggregateOperation::Sum,
-                        field_id: Some(amount_field_id),
-                    },
-                    presentation: None,
-                },
-            ],
+            sources: vec![CompositionSource::SavedSql {
+                id: "amount_sql".to_string(),
+                entry_id: serde_json::from_value(saved_sql["id"].clone())?,
+                revision_id: serde_json::from_value(saved_sql["revision_id"].clone())?,
+                expected_result: vec![CompositionResultColumn {
+                    name: "total".to_string(),
+                    result_type: CompositionResultFieldType::Integer,
+                }],
+                variables: BTreeMap::new(),
+            }],
+            components: vec![CompositionComponent::Metric {
+                id: "amount_metric".to_string(),
+                label: None,
+                source: "amount_sql".to_string(),
+                column: "total".to_string(),
+                presentation: None,
+            }],
             layout: DashboardFlowLayout {
                 kind: FlowLayoutKind::Flow,
                 rows: vec![FlowRow {
                     id: "main".to_string(),
-                    items: vec![
-                        FlowItem::Component {
-                            component: "amount_metric".to_string(),
-                        },
-                        FlowItem::Component {
-                            component: "entry_amount_total".to_string(),
-                        },
-                    ],
+                    items: vec![FlowItem::Component {
+                        component: "amount_metric".to_string(),
+                    }],
                 }],
             },
         },
@@ -1176,11 +904,6 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
         component_id: "amount_metric".to_string(),
         parameters: BTreeMap::new(),
     };
-    let aggregate_request = CompositionMetricQueryRequest {
-        target: metric_request.target.clone(),
-        component_id: "entry_amount_total".to_string(),
-        parameters: BTreeMap::new(),
-    };
 
     let visible = service
         .query_composition_metric_authorized_for_principals(
@@ -1196,24 +919,6 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
     assert_eq!(
         visible.result.context("authorized metric value")?.value,
         json!("7")
-    );
-    let visible_aggregate = service
-        .query_composition_metric_authorized_for_principals(
-            &space_id,
-            &[viewer],
-            aggregate_request.clone(),
-        )
-        .await?;
-    assert!(
-        visible_aggregate.ok,
-        "viewer should be able to read the Entry aggregate: {visible_aggregate:?}"
-    );
-    assert_eq!(
-        visible_aggregate
-            .result
-            .context("authorized Entry aggregate")?
-            .value,
-        json!("15")
     );
 
     authorizer
@@ -1290,51 +995,7 @@ async fn authorized_composition_metrics_recheck_current_entry_and_saved_sql_acce
     assert!(entry_revoked.result.is_none());
     assert_eq!(
         entry_revoked.diagnostics[0].code,
-        ugoite_domain::composition::CompositionDiagnosticCode::MetricScalarExpectedOneRow
-    );
-    let entry_aggregate_revoked = service
-        .query_composition_metric_authorized_for_principals(
-            &space_id,
-            &[viewer],
-            aggregate_request.clone(),
-        )
-        .await?;
-    assert!(entry_aggregate_revoked.ok);
-    assert_eq!(
-        entry_aggregate_revoked
-            .result
-            .context("remaining authorized Entry aggregate")?
-            .value,
-        json!("8"),
-        "the Entry denied by the current ACL must not contribute to SUM"
-    );
-
-    for (entry_id, amount) in [
-        ("metric-amount-overflow-max", i64::MAX),
-        ("metric-amount-overflow-one", 1),
-    ] {
-        service
-            .create_structured_entry_with_receipt(
-                &space_id,
-                entry_id,
-                form_name.to_string(),
-                Vec::new(),
-                BTreeMap::from([("amount".to_string(), json!(amount))]),
-                BTreeMap::new(),
-                "owner",
-            )
-            .await?;
-    }
-    let aggregate_overflow = service
-        .query_composition_metric_authorized_for_principals(&space_id, &[viewer], aggregate_request)
-        .await
-        .expect_err("aggregate overflow must not return a partial metric value");
-    let app_error = aggregate_overflow
-        .downcast_ref::<ugoite_core::error::AppError>()
-        .expect("aggregate overflow maps to a stable application error");
-    assert_eq!(
-        app_error.code(),
-        ugoite_core::error::ErrorCode::SqlAggregateOverflow
+        ugoite_domain::composition::CompositionDiagnosticCode::MetricScalarNoRows
     );
 
     authorizer

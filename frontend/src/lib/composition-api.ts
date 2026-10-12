@@ -112,7 +112,8 @@ export interface CompositionLintDocument {
         kind: "metric";
         id: string;
         label?: string;
-        definition: CompositionMetricDefinition;
+        source: string;
+        column: string;
         presentation?: CompositionMetricPresentation;
       }
       | {
@@ -275,23 +276,6 @@ export function compositionResultTypeFromSql(
   }
 }
 
-export type CompositionAggregateOperation =
-  | "count_rows"
-  | "count_values"
-  | "sum"
-  | "avg"
-  | "min"
-  | "max";
-
-export type CompositionMetricDefinition =
-  | {
-    kind: "aggregate";
-    source: string;
-    operation: CompositionAggregateOperation;
-    field_id?: number;
-  }
-  | { kind: "sql_scalar"; source: string; column: string };
-
 export type CompositionMetricPresentation = {
   kind: "number";
   unit?: string;
@@ -335,7 +319,6 @@ export type CompositionResolvedComponentBinding =
     kind: "metric";
     /** Metric and table bindings always carry their source request identity. */
     source_id: string;
-    metric_field_id?: number;
     result_property_key?: string;
     expected_result_type: CompositionResultType;
     presentation?: CompositionMetricPresentation;
@@ -390,19 +373,8 @@ export interface CompositionMetricQueryRequest {
   parameters: Record<string, unknown>;
 }
 
-export type CompositionMetricOperation =
-  | "sql_scalar"
-  | "count_rows"
-  | "count_values"
-  | "sum"
-  | "avg"
-  | "min"
-  | "max";
-
 export interface CompositionMetricQueryValue {
   component_id: string;
-  operation: CompositionMetricOperation;
-  source_kind: "entry_query" | "saved_sql";
   result_type: CompositionResultType | "decimal";
   value: unknown;
 }

@@ -12,7 +12,6 @@ import {
   type CompositionDraft,
   type DraftDisplay,
 } from "~/lib/composition-draft";
-import type { CompositionFieldNames } from "~/components/CompositionRenderer";
 import { displayDefaultName } from "~/lib/composition-display-name";
 import { compositionParameterDisplayName } from "~/lib/composition-parameter-name";
 import { t } from "~/lib/i18n";
@@ -25,8 +24,6 @@ export interface CompositionInspectorProps {
   draft: CompositionDraft;
   /** Transient canvas selection; the inspector renders one block only. */
   selectedId: string | null;
-  fieldNames?: CompositionFieldNames;
-  fieldNamesLoading?: boolean;
   /** Single draft mutation channel shared with the canvas. */
   onDraftChange: (draft: CompositionDraft) => void;
   /** Remove the selected display or unplace the selected parameter control. */
@@ -61,7 +58,7 @@ const resolveSelection = (
 
 /**
  * Inspector for the selected canvas block only. Metric edits bind label,
- * source, operation, and field; table edits bind label and source; text edits
+ * Saved SQL source, and result column; table edits bind label and source; text edits
  * bind content and fixed style; parameter controls show the owned parameter
  * ref and retarget placement without any label override. Every edit flows
  * through draft updaters into the shared debounced preview; text, label,
@@ -86,8 +83,6 @@ export function CompositionInspector(props: CompositionInspectorProps) {
             <ComponentInspector
               draft={props.draft}
               display={(entry() as { display: DraftDisplay }).display}
-              fieldNames={props.fieldNames}
-              fieldNamesLoading={props.fieldNamesLoading}
               onDraftChange={props.onDraftChange}
               onRemove={props.onRemove}
               onDataJump={props.onDataJump}
@@ -126,8 +121,6 @@ export function CompositionInspector(props: CompositionInspectorProps) {
 function ComponentInspector(props: {
   draft: CompositionDraft;
   display: DraftDisplay;
-  fieldNames?: CompositionFieldNames;
-  fieldNamesLoading?: boolean;
   onDraftChange: (draft: CompositionDraft) => void;
   onRemove: () => void;
   onDataJump: (jump: CompositionInspectorDataJump) => void;
@@ -142,7 +135,6 @@ function ComponentInspector(props: {
       name: displayDefaultName(
         display(),
         props.draft.sources,
-        props.fieldNames,
       ),
     });
   const removeAction = () => (
@@ -172,8 +164,6 @@ function ComponentInspector(props: {
           <MetricInspector
             draft={props.draft}
             display={display()}
-            fieldNames={props.fieldNames}
-            fieldNamesLoading={props.fieldNamesLoading}
             apply={apply}
             actions={removeAction()}
             onDataJump={props.onDataJump}

@@ -1,12 +1,9 @@
 //! Pure scalar Composition metric type and result validation.
 //!
 //! Source execution and authorization stay in the query paths. This module
-//! classifies typed metric descriptors and validates normalized scalar values.
+//! validates normalized scalar values selected from Saved SQL results.
 
-use crate::composition::{
-    CompositionAggregateOperation, CompositionDiagnosticCode, CompositionResultFieldType,
-};
-use crate::form::FieldType;
+use crate::composition::{CompositionDiagnosticCode, CompositionResultFieldType};
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -17,7 +14,8 @@ use serde_json::Value;
 pub enum CompositionMetricDiagnosticCode {
     MetricResultNotScalar,
     MetricResultTypeMismatch,
-    MetricScalarExpectedOneRow,
+    MetricScalarNoRows,
+    MetricScalarMultipleRows,
     MetricResultColumnMissing,
     MetricResultColumnAmbiguous,
 }
@@ -27,7 +25,8 @@ impl CompositionMetricDiagnosticCode {
         match self {
             Self::MetricResultNotScalar => "metric_result_not_scalar",
             Self::MetricResultTypeMismatch => "metric_result_type_mismatch",
-            Self::MetricScalarExpectedOneRow => "metric_scalar_expected_one_row",
+            Self::MetricScalarNoRows => "metric_scalar_no_rows",
+            Self::MetricScalarMultipleRows => "metric_scalar_multiple_rows",
             Self::MetricResultColumnMissing => "metric_result_column_missing",
             Self::MetricResultColumnAmbiguous => "metric_result_column_ambiguous",
         }
@@ -41,8 +40,9 @@ impl From<CompositionMetricDiagnosticCode> for CompositionDiagnosticCode {
             CompositionMetricDiagnosticCode::MetricResultTypeMismatch => {
                 Self::MetricResultTypeMismatch
             }
-            CompositionMetricDiagnosticCode::MetricScalarExpectedOneRow => {
-                Self::MetricScalarExpectedOneRow
+            CompositionMetricDiagnosticCode::MetricScalarNoRows => Self::MetricScalarNoRows,
+            CompositionMetricDiagnosticCode::MetricScalarMultipleRows => {
+                Self::MetricScalarMultipleRows
             }
             CompositionMetricDiagnosticCode::MetricResultColumnMissing => {
                 Self::MetricResultColumnMissing
@@ -51,76 +51,6 @@ impl From<CompositionMetricDiagnosticCode> for CompositionDiagnosticCode {
                 Self::MetricResultColumnAmbiguous
             }
         }
-    }
-}
-
-/// Map a current Form field type to its portable Composition metric type.
-pub fn composition_metric_result_type(
-    field_type: &FieldType,
-) -> Result<CompositionResultFieldType, CompositionMetricDiagnosticCode> {
-    let result_type = match field_type {
-        FieldType::String
-        | FieldType::Markdown
-        | FieldType::Sql
-        | FieldType::Time
-        | FieldType::Uuid
-        | FieldType::Binary => CompositionResultFieldType::String,
-        FieldType::Boolean => CompositionResultFieldType::Boolean,
-        FieldType::Integer | FieldType::Long => CompositionResultFieldType::Integer,
-        FieldType::Float | FieldType::Double => CompositionResultFieldType::Float,
-        FieldType::Date => CompositionResultFieldType::Date,
-        FieldType::Timestamp
-        | FieldType::TimestampTz
-        | FieldType::TimestampNs
-        | FieldType::TimestampTzNs => CompositionResultFieldType::Timestamp,
-        FieldType::RowReference
-        | FieldType::AssetReference
-        | FieldType::List
-        | FieldType::ObjectList => {
-            return Err(CompositionMetricDiagnosticCode::MetricResultNotScalar);
-        }
-    };
-
-    validate_composition_metric_result_type(result_type)?;
-    Ok(result_type)
-}
-
-/// Classify the portable result type for one typed aggregate over a Form
-/// field. Row counts have no field; other operations require one.
-pub fn composition_aggregate_result_type(
-    operation: CompositionAggregateOperation,
-    field_type: Option<&FieldType>,
-) -> Result<CompositionResultFieldType, CompositionMetricDiagnosticCode> {
-    match (operation, field_type) {
-        (CompositionAggregateOperation::CountRows, None)
-        | (CompositionAggregateOperation::CountValues, Some(_)) => {
-            Ok(CompositionResultFieldType::Integer)
-        }
-        (CompositionAggregateOperation::Sum, Some(FieldType::Integer | FieldType::Long)) => {
-            Ok(CompositionResultFieldType::Integer)
-        }
-        (CompositionAggregateOperation::Sum, Some(FieldType::Float | FieldType::Double))
-        | (CompositionAggregateOperation::Avg, Some(FieldType::Integer | FieldType::Long))
-        | (CompositionAggregateOperation::Avg, Some(FieldType::Float | FieldType::Double)) => {
-            Ok(CompositionResultFieldType::Float)
-        }
-        (
-            CompositionAggregateOperation::Min | CompositionAggregateOperation::Max,
-            Some(field_type),
-        ) => match field_type {
-            FieldType::Integer
-            | FieldType::Long
-            | FieldType::Float
-            | FieldType::Double
-            | FieldType::Date
-            | FieldType::Timestamp
-            | FieldType::TimestampTz
-            | FieldType::TimestampNs
-            | FieldType::TimestampTzNs
-            | FieldType::RowReference => composition_metric_result_type(field_type),
-            _ => Err(CompositionMetricDiagnosticCode::MetricResultNotScalar),
-        },
-        _ => Err(CompositionMetricDiagnosticCode::MetricResultTypeMismatch),
     }
 }
 
@@ -258,106 +188,11 @@ fn has_supported_fractional_precision(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        composition_aggregate_result_type, composition_metric_result_type,
         validate_composition_metric_result_type, validate_composition_metric_scalar_value,
         CompositionMetricDiagnosticCode as Code,
     };
-    use crate::composition::{
-        CompositionAggregateOperation as Operation, CompositionDiagnosticCode,
-        CompositionResultFieldType,
-    };
-    use crate::form::FieldType;
+    use crate::composition::{CompositionDiagnosticCode, CompositionResultFieldType};
     use serde_json::{json, Value};
-
-    #[test]
-    fn maps_form_scalar_types_to_portable_result_types() {
-        let cases = [
-            (FieldType::String, CompositionResultFieldType::String),
-            (FieldType::Markdown, CompositionResultFieldType::String),
-            (FieldType::Sql, CompositionResultFieldType::String),
-            (FieldType::Time, CompositionResultFieldType::String),
-            (FieldType::Uuid, CompositionResultFieldType::String),
-            (FieldType::Binary, CompositionResultFieldType::String),
-            (FieldType::Boolean, CompositionResultFieldType::Boolean),
-            (FieldType::Integer, CompositionResultFieldType::Integer),
-            (FieldType::Long, CompositionResultFieldType::Integer),
-            (FieldType::Float, CompositionResultFieldType::Float),
-            (FieldType::Double, CompositionResultFieldType::Float),
-            (FieldType::Date, CompositionResultFieldType::Date),
-            (FieldType::Timestamp, CompositionResultFieldType::Timestamp),
-            (
-                FieldType::TimestampTz,
-                CompositionResultFieldType::Timestamp,
-            ),
-            (
-                FieldType::TimestampNs,
-                CompositionResultFieldType::Timestamp,
-            ),
-            (
-                FieldType::TimestampTzNs,
-                CompositionResultFieldType::Timestamp,
-            ),
-        ];
-
-        for (field_type, expected) in cases {
-            assert_eq!(composition_metric_result_type(&field_type), Ok(expected));
-        }
-    }
-
-    #[test]
-    fn classifies_typed_aggregate_results_and_rejects_incompatible_fields() {
-        assert_eq!(
-            composition_aggregate_result_type(Operation::CountRows, None),
-            Ok(CompositionResultFieldType::Integer)
-        );
-        assert_eq!(
-            composition_aggregate_result_type(Operation::CountValues, Some(&FieldType::List)),
-            Ok(CompositionResultFieldType::Integer)
-        );
-        assert_eq!(
-            composition_aggregate_result_type(Operation::Sum, Some(&FieldType::Long)),
-            Ok(CompositionResultFieldType::Integer)
-        );
-        assert_eq!(
-            composition_aggregate_result_type(Operation::Avg, Some(&FieldType::Double)),
-            Ok(CompositionResultFieldType::Float)
-        );
-        assert_eq!(
-            composition_aggregate_result_type(Operation::Min, Some(&FieldType::Date)),
-            Ok(CompositionResultFieldType::Date)
-        );
-        assert_eq!(
-            composition_aggregate_result_type(Operation::Min, Some(&FieldType::String)),
-            Err(Code::MetricResultNotScalar)
-        );
-        assert_eq!(
-            composition_aggregate_result_type(Operation::Max, Some(&FieldType::Time)),
-            Err(Code::MetricResultNotScalar)
-        );
-        assert_eq!(
-            composition_aggregate_result_type(Operation::Sum, Some(&FieldType::String)),
-            Err(Code::MetricResultTypeMismatch)
-        );
-        assert_eq!(
-            composition_aggregate_result_type(Operation::CountRows, Some(&FieldType::String)),
-            Err(Code::MetricResultTypeMismatch)
-        );
-    }
-
-    #[test]
-    fn rejects_reference_and_collection_form_types_as_non_scalar() {
-        for field_type in [
-            FieldType::RowReference,
-            FieldType::AssetReference,
-            FieldType::List,
-            FieldType::ObjectList,
-        ] {
-            assert_eq!(
-                composition_metric_result_type(&field_type),
-                Err(Code::MetricResultNotScalar)
-            );
-        }
-    }
 
     #[test]
     fn validates_declared_sql_result_type_before_query_execution() {
@@ -574,8 +409,12 @@ mod tests {
                 CompositionDiagnosticCode::MetricResultTypeMismatch,
             ),
             (
-                Code::MetricScalarExpectedOneRow,
-                CompositionDiagnosticCode::MetricScalarExpectedOneRow,
+                Code::MetricScalarNoRows,
+                CompositionDiagnosticCode::MetricScalarNoRows,
+            ),
+            (
+                Code::MetricScalarMultipleRows,
+                CompositionDiagnosticCode::MetricScalarMultipleRows,
             ),
             (
                 Code::MetricResultColumnMissing,
@@ -602,9 +441,10 @@ mod tests {
                 Code::MetricResultTypeMismatch,
                 "metric_result_type_mismatch",
             ),
+            (Code::MetricScalarNoRows, "metric_scalar_no_rows"),
             (
-                Code::MetricScalarExpectedOneRow,
-                "metric_scalar_expected_one_row",
+                Code::MetricScalarMultipleRows,
+                "metric_scalar_multiple_rows",
             ),
             (
                 Code::MetricResultColumnMissing,

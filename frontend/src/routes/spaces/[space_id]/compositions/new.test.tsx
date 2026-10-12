@@ -673,16 +673,11 @@ describe("Composition studio shell", () => {
     });
     fireEvent.click(within(dataPicker).getByRole("tab", { name: "Metric" }));
     fireEvent.click(
-      within(dataPicker).getByRole("button", {
-        name: "Choose a Form or Saved SQL",
-      }),
+      within(dataPicker).getByRole("button", { name: "Saved SQL" }),
     );
     const sourcePicker = await screen.findByRole("dialog", {
       name: "Choose a source",
     });
-    fireEvent.click(
-      await within(sourcePicker).findByRole("tab", { name: "Saved SQL" }),
-    );
     fireEvent.click(await screen.findByRole("button", { name: "Monthly" }));
 
     const metricPicker = await screen.findByRole("dialog", {

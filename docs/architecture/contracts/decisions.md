@@ -406,8 +406,9 @@ sharing the source continues to use `sql.query` independently.
 
 The response reports one typed value or stable Composition diagnostics. A
 present JSON `null` is a successful scalar result. A Saved SQL scalar that
-returns zero rows or multiple rows produces the same
-`metric_scalar_expected_one_row` diagnostic; it never selects a prefix value.
+returns zero rows produces `metric_scalar_no_rows`; one that returns multiple
+rows produces `metric_scalar_multiple_rows`. Neither case selects a prefix
+value.
 Typed EntryQuery aggregates retain their aggregate empty-set behavior. Transport
 adapters do not expose backend SQL text, storage paths, or source identifiers
 in metric diagnostics. The
@@ -443,7 +444,7 @@ unrelated Composition persistence and query contracts.
 
 ## ADR-022 — Composition Metrics present Saved SQL results
 
-**Status: Accepted target for pre-release Metric work; implementation pending.**
+**Status: Accepted; pre-release implementation is in progress. This ADR does not authorize a release.**
 This ruling replaces the Metric-specific design in ADR-020 and ADR-021 before
 Metric release. It does not change Saved SQL, SQL execution, Space Knowledge,
 EntryQuery Table, or `sql.query.count` contracts, and it does not authorize a
@@ -509,7 +510,15 @@ flowchart LR
 The source/result contract is shared; components do not implement query
 semantics. Metric uses bounded row consumption while Table keeps its page
 contract. Source sharing does not imply that a Table page determines a Metric
-value or require a result cache.
+value or require a result cache. The common SQL execution contract owns
+read-only planning, exact-revision lookup, current authorization, typed result
+metadata, and resource bounds. Its result is the ordered output schema and
+rows produced by ordinary Saved SQL. A Metric adapter may request a bounded
+two-row probe from this same execution path to prove scalar cardinality; it
+only selects and validates the declared column. It does not introduce another
+SQL engine, aggregation semantics, or a Metric-specific source authority.
+Future Text and Chart consumers can use the same Saved SQL source and result
+contract without depending on `composition.metric.query`.
 
 ### Impact map and order
 

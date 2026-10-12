@@ -77,12 +77,8 @@ components:
         unresolved_field: localized-unavailable-name-without-ID-or-generated-ordinal
       field_identity:
         raw_field_id: query-data-only-never-rendered-in-field-filter-sort-projection-or-dialog-labels
-      metric_projection:
-        selected_metric_field: query_schema_snapshot_only
-        projection_edit: independent_of_metric_definitions
-        preview_option: available_independent_of_metric_fields
-        initial_fields: schema_order_up_to_64_projectable_fields
-        capacity: table-projection-limit-does-not-limit-metric-fields
+      projection_initialization: first-64-projectable-form-fields
+      projection_capacity: unchecked-fields-disabled-at-64-and-selected-fields-remain-removable
 
       selection: full-row-activate
       reorder: keyboard-operable-move-up-down
@@ -104,7 +100,7 @@ components:
       type: dialog
       title: Choose a source
       source: Forms through form.list and Saved SQL through sql.list
-      selection: full-row-activate; table adds immediately; metric opens operation or column setup then server preview before insertion
+      selection: full-row-activate; table adds immediately; Metric offers Saved SQL only, then column selection and server preview before insertion
 
       rendering: human-name-only rows with loading, empty, and error states
       row_name_overflow: ellipsis-with-full-name-native-title
@@ -118,16 +114,14 @@ components:
       type: dialog
       title: Add data component
       kind_selection: Table/Metric tabs inside the picker
-      sequence: kind, source, Form operation or Saved SQL column, server preview, insert
+      sequence: kind, Saved SQL source, result column, server preview, insert
       selection: table adds on source selection; Metric inserts only after successful preview
       label: omitted during insertion; optional edit in Inspector after selection
       source_selection: catalog browse preserves selected Table or Metric kind
-      entry_query_field_labels: resolved human Form labels only; no field ID or ordinal fallback
-      entry_query_metric_field: independent_of_table_projection
-      entry_query_metric_candidates: operation-specific-supported-types-with-human-Form-name-only
-      saved_sql_metric_candidates: declared-non-json-result-columns
+      metric_source_catalog: existing-or-catalog-Saved-SQL-only
+      saved_sql_metric_candidates: unique-declared-displayable-non-json-result-columns
       metric_preview: server-side-exact-value-before-insertion
-      projection_capacity: table-projection-limit-does-not-limit-metric-fields
+      preview_freshness: exact-source-and-column; stale-result-discarded-on-change
 
       internal_field_ids: never rendered
       sizing: 720px maximum width and viewport-capped vertical scrolling
