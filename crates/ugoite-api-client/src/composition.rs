@@ -330,9 +330,11 @@ pub struct CompositionMetricQueryValue {
     pub operation: CompositionMetricOperation,
     pub source_kind: CompositionMetricSourceKind,
     pub result_type: CompositionResultFieldType,
-    /// Integer results are canonical base-10 strings so Browser JSON parsing
-    /// cannot round values above JavaScript's exact integer range. Decimal
-    /// results are also strings and preserve their declared scale.
+    /// JSON encoding follows `result_type`: Integer results are canonical
+    /// base-10 strings, Decimal results are strings preserving scale, Float
+    /// results are JSON numbers, Boolean results are JSON booleans, and
+    /// String/Date/Timestamp results are JSON strings. Successful SQL NULL is
+    /// represented by a present JSON `null`.
     pub value: Value,
 }
 

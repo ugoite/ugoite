@@ -16235,7 +16235,8 @@
             "$ref": "#/components/schemas/CompositionResultFieldType"
           },
           "value": {
-            "$ref": "#/components/schemas/JsonValue"
+            "$ref": "#/components/schemas/JsonValue",
+            "description": "Encoding is determined by result_type: integer values are canonical base-10 strings that preserve exact precision; decimal values are base-10 strings that preserve scale; float values are JSON numbers; boolean values are JSON booleans; string, date, and timestamp values are JSON strings. A successful SQL NULL is JSON null."
           }
         },
         "additionalProperties": false
