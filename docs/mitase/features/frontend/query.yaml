@@ -49,13 +49,13 @@ features:
                 criterion: REQ-FE-050#criterion.typed-errors
   - id: FEAT-FE-007
     title: Saved SQL route workflows
-    summary: Connect the saved SQL list, creation, and detail routes to exact frontend and browser verification for starter-query guidance, query metadata, and supported run actions.
+    summary: Connect Saved SQL creation to its Form-based aggregate builder and ordinary save/run lifecycle, alongside exact verification for list, detail, and variable actions.
     status: implemented
     bindings:
       - id: frontend
         role: implementation
         facet: frontend
-        responsibility: Keep saved SQL list and creation actions, detail navigation, editable user-query content, read-only search-history review, stateless variable-free result navigation, and variable-input actions connected to the shipped routes.
+        responsibility: Keep Saved SQL list and creation actions, Form aggregate generation, detail navigation, editable user-query content, read-only search-history review, stateless variable-free result navigation, and variable-input actions connected to the shipped routes.
         targets:
           - id: sql-index-route
             adapter: typescript
@@ -94,6 +94,15 @@ features:
                 criterion: REQ-FE-063#criterion.starter-query
               - kind: satisfies
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
+              - kind: satisfies
+                criterion: REQ-FE-063#criterion.form-aggregate-builder
+          - id: sql-aggregate-builder
+            adapter: typescript
+            path: frontend/src/lib/sql.ts
+            selector: { kind: symbol, name: buildSqlAggregateQuery }
+            claims:
+              - kind: satisfies
+                criterion: REQ-FE-063#criterion.form-aggregate-builder
           - id: sql-run-route
             adapter: typescript
             path: frontend/src/routes/spaces/[space_id]/sql/[sql_id]/run.tsx

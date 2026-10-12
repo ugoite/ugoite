@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-09-28"
+updated: "2026-10-12"
 page:
   id: space-query-create
   title: New
@@ -37,8 +37,35 @@ components:
       type: button
       label: Generate SQL from Form
       behavior: replace editor contents with a quoted Form-name starter query
+    - id: query-aggregate-operation-select
+      type: select
+      label: Aggregate
+      options:
+        - Count rows
+        - Count values
+        - Sum
+        - Average
+        - Minimum
+        - Maximum
+    - id: query-aggregate-field-select
+      type: select
+      label: Field
+      visibility: hidden for Count rows
+      source: current Form fields compatible with the selected aggregate
+      visible_option_names: human field labels only
+    - id: query-filter-field-select
+      type: select
+      label: Filter field
+      optional_value: None
+      source: current Form fields that support Composition-compatible typed SQL equality parameters
+      visible_option_names: human field labels only
+    - id: query-aggregate-generate-action
+      type: button
+      label: Generate aggregate SQL
+      behavior: generate one-value ordinary SQL from the selected operation and fields, using a typed parameter when a filter field is selected
     - id: query-sql-editor
       type: sql-editor
+      behavior: generated SQL remains editable and uses backend-owned SQL column names
       features:
         - syntax-highlighting
         - linting
@@ -48,4 +75,5 @@ components:
       type: button
       variant: primary
       label: "Save"
+      behavior: explicitly save generated or edited content as ordinary user-query Saved SQL
       target_page: space-sql

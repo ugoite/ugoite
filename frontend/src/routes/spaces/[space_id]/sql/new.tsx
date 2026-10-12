@@ -6,10 +6,14 @@ import { ButtonSpinner } from "~/components/ButtonSpinner";
 import { SqlQueryEditor } from "~/components";
 import { formApi } from "~/lib/ugoite-client";
 import {
+  buildSqlAggregateQuery,
   buildSqlSchema,
   buildSqlStarterQuery,
   normalizeSqlVariables,
+  sqlAggregateFieldOptions,
+  sqlFilterFieldOptions,
 } from "~/lib/sql";
+import type { SqlAggregateOperation } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import type { Form } from "~/lib/types";
@@ -31,6 +35,15 @@ export default function SpaceQueryCreateRoute() {
   const [error, setError] = createSignal<string | null>(null);
   const [isSaving, setIsSaving] = createSignal(false);
   const [selectedFormId, setSelectedFormId] = createSignal("");
+  const [aggregateOperation, setAggregateOperation] =
+    createSignal<SqlAggregateOperation>("count-rows");
+  const [aggregateFieldKey, setAggregateFieldKey] = createSignal("");
+  const [filterFieldKey, setFilterFieldKey] = createSignal("");
+  const [generatedParameter, setGeneratedParameter] = createSignal<{
+    name: "filter_value";
+    type: string;
+    description: string;
+  }>();
 
   const [forms] = createResource(async () => {
     return await formApi.list(spaceId());
@@ -41,6 +54,16 @@ export default function SpaceQueryCreateRoute() {
       .filter((form) => Boolean(form.id && form.name.trim()))
   );
 
+  const selectedForm = createMemo(() =>
+    selectableForms().find((form) => form.id === selectedFormId())
+  );
+  const aggregateFields = createMemo(() =>
+    sqlAggregateFieldOptions(selectedForm(), aggregateOperation())
+  );
+  const filterFields = createMemo(() =>
+    sqlFilterFieldOptions(selectedForm())
+  );
+
   createEffect(() => {
     const available = selectableForms();
     const selected = available.find((form) => form.id === selectedFormId()) ??
@@ -48,6 +71,20 @@ export default function SpaceQueryCreateRoute() {
     if (!selected) return;
     if (selected.id !== selectedFormId()) setSelectedFormId(selected.id!);
     if (!hasUserEditedSql()) setSqlInput(buildSqlStarterQuery(selected.name));
+  });
+
+  createEffect(() => {
+    const availableAggregateFields = aggregateFields();
+    if (
+      !availableAggregateFields.some((field) =>
+        field.key === aggregateFieldKey()
+      )
+    ) {
+      setAggregateFieldKey(availableAggregateFields[0]?.key ?? "");
+    }
+    if (!filterFields().some((field) => field.key === filterFieldKey())) {
+      setFilterFieldKey("");
+    }
   });
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
@@ -72,6 +109,12 @@ export default function SpaceQueryCreateRoute() {
       return;
     }
     const normalized = normalizeSqlVariables(sql);
+    const generated = generatedParameter();
+    const variables = normalized.variables.map((variable) =>
+      generated && variable.name === generated.name
+        ? { ...variable, ...generated }
+        : variable
+    );
 
     setIsSaving(true);
     try {
@@ -80,7 +123,7 @@ export default function SpaceQueryCreateRoute() {
         kind: "user-query",
         metadata: name ? undefined : { generatedName: "untitled" },
         sql: normalized.sql,
-        variables: normalized.variables,
+        variables,
       });
       navigate(`/spaces/${encodeURIComponent(spaceId())}/sql`);
     } catch (err) {
@@ -148,6 +191,91 @@ export default function SpaceQueryCreateRoute() {
               {t("sqlPage.generateFromForm")}
             </button>
           </div>
+        </div>
+
+        <div class="ui-stack-sm">
+          <label class="ui-label" for="query-aggregate">
+            {t("sqlPage.aggregate")}
+          </label>
+          <select
+            id="query-aggregate"
+            class="ui-input"
+            value={aggregateOperation()}
+            onChange={(event) =>
+              setAggregateOperation(
+                event.currentTarget.value as SqlAggregateOperation,
+              )}
+            disabled={isSaving() || !selectedForm()}
+          >
+            <option value="count-rows">{t("sqlPage.countRows")}</option>
+            <option value="count-values">{t("sqlPage.countValues")}</option>
+            <option value="sum">{t("sqlPage.sum")}</option>
+            <option value="average">{t("sqlPage.average")}</option>
+            <option value="minimum">{t("sqlPage.minimum")}</option>
+            <option value="maximum">{t("sqlPage.maximum")}</option>
+          </select>
+
+          <Show when={aggregateOperation() !== "count-rows"}>
+            <label class="ui-label" for="query-aggregate-field">
+              {t("sqlPage.aggregateField")}
+            </label>
+            <select
+              id="query-aggregate-field"
+              class="ui-input"
+              value={aggregateFieldKey()}
+              onChange={(event) =>
+                setAggregateFieldKey(event.currentTarget.value)}
+              disabled={isSaving() || aggregateFields().length === 0}
+            >
+              <For each={aggregateFields()}>
+                {(field) => <option value={field.key}>{field.label}</option>}
+              </For>
+            </select>
+          </Show>
+
+          <label class="ui-label" for="query-filter-field">
+            {t("sqlPage.filterField")}
+          </label>
+          <select
+            id="query-filter-field"
+            class="ui-input"
+            value={filterFieldKey()}
+            onChange={(event) => setFilterFieldKey(event.currentTarget.value)}
+            disabled={isSaving() || !selectedForm()}
+          >
+            <option value="">{t("sqlPage.noFilter")}</option>
+            <For each={filterFields()}>
+              {(field) => <option value={field.key}>{field.label}</option>}
+            </For>
+          </select>
+          <button
+            type="button"
+            class="btn secondary"
+            onClick={() => {
+              const form = selectedForm();
+              if (!form) return;
+              setError(null);
+              try {
+                const query = buildSqlAggregateQuery(
+                  form,
+                  aggregateOperation(),
+                  aggregateFieldKey(),
+                  filterFieldKey(),
+                );
+                setSqlInput(query.sql);
+                setGeneratedParameter(query.parameter);
+                setHasUserEditedSql(true);
+              } catch {
+                setError(t("sqlPage.aggregateFieldUnavailable"));
+              }
+            }}
+            disabled={isSaving() || !selectedForm() || (
+              aggregateOperation() !== "count-rows" &&
+              aggregateFields().length === 0
+            )}
+          >
+            {t("sqlPage.generateAggregate")}
+          </button>
         </div>
 
         <div>

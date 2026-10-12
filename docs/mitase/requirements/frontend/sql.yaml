@@ -189,6 +189,10 @@ requirements:
         kind: behavior
         statement: An explicit save submits the normalized saved-query payload and makes the created query available through the supported detail and Entry-result run flow.
         governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
+      - id: form-aggregate-builder
+        kind: behavior
+        statement: Selecting a current Form, aggregate, and compatible field generates editable ordinary SQL with one value column. An optional equality filter uses a parameter typed from the selected field and does not interpolate a value into SQL; explicit save creates a normal user-query Saved SQL entry that remains available to the standard runner and Composition sources. Form and field choices use human names without displaying internal identifiers or SQL column names.
+        governed_by: [POL-001#rule.governance, POL-006#rule.governance, POL-009#rule.governance, POL-014#rule.governance]
     bindings:
       - id: saved-sql-create-verification
         role: verification
@@ -221,6 +225,33 @@ requirements:
                 criterion: REQ-FE-063#criterion.explicit-save-and-run
                 covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
                 runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063: new saved SQL starts with a runnable total-ordered query" } }
+          - id: aggregate-builder-ui
+            adapter: typescript
+            path: frontend/src/routes/spaces/[space_id]/sql/new.test.tsx
+            selector: { kind: test, name: "REQ-FE-063: builds a typed aggregate query from human Form fields" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.form-aggregate-builder
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/routes/spaces/[space_id]/sql/new.test.tsx", test: "REQ-FE-063: builds a typed aggregate query from human Form fields" } }
+          - id: aggregate-builder-helper
+            adapter: typescript
+            path: frontend/src/lib/sql.test.ts
+            selector: { kind: test, name: "limits aggregate and filter fields to current compatible human labels" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.form-aggregate-builder
+                covers: [FEAT-FE-007#binding.frontend/target.sql-aggregate-builder]
+                runner: { runner: frontend-vitest-file, arguments: { file: "src/lib/sql.test.ts", test: "limits aggregate and filter fields to current compatible human labels" } }
+          - id: browser-aggregate-builder
+            adapter: typescript
+            path: e2e/saved-sql-route.test.ts
+            selector: { kind: test, name: "REQ-FE-063 @smoke: aggregate builder saves a typed filter and runs through the ordinary Saved SQL route" }
+            claims:
+              - kind: verifies
+                criterion: REQ-FE-063#criterion.form-aggregate-builder
+                covers: [FEAT-FE-007#binding.frontend/target.sql-create-route]
+                runner: { runner: e2e-playwright, arguments: { file: e2e/saved-sql-route.test.ts, test: "REQ-FE-063 @smoke: aggregate builder saves a typed filter and runs through the ordinary Saved SQL route" } }
 
   - id: REQ-FE-061
     title: Saved SQL List Route Guidance

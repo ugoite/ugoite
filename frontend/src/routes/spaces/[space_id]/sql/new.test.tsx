@@ -119,7 +119,55 @@ describe("/spaces/:space_id/sql/new", () => {
         sql_relation: "form_review",
         version: 1,
         template: "# Review\n",
-        fields: {},
+        fields: {
+          Amount: {
+            id: 1,
+            type: "integer",
+            required: false,
+            label: "Amount",
+            sql_column: "column_amount",
+            query_capability: {
+              field: { kind: "property", field_id: 1 },
+              name: "Amount",
+              field_type: "integer",
+              filterable: true,
+              sortable: true,
+              projectable: true,
+              supported_operators: ["equals"],
+            },
+          },
+          Category: {
+            id: 2,
+            type: "string",
+            required: false,
+            label: "Category",
+            sql_column: "column_category",
+            query_capability: {
+              field: { kind: "property", field_id: 2 },
+              name: "Category",
+              field_type: "string",
+              filterable: true,
+              sortable: true,
+              projectable: true,
+              supported_operators: ["equals", "contains"],
+            },
+          },
+          "00000000-0000-4000-8000-000000000003": {
+            id: 3,
+            type: "string",
+            required: false,
+            sql_column: "column_hidden",
+            query_capability: {
+              field: { kind: "property", field_id: 3 },
+              name: "Field 3",
+              field_type: "string",
+              filterable: true,
+              sortable: true,
+              projectable: true,
+              supported_operators: ["equals"],
+            },
+          },
+        },
       },
     ]);
     sqlCreateMock.mockResolvedValue({ id: "query-1", revisionId: "rev-1" });
@@ -190,6 +238,68 @@ describe("/spaces/:space_id/sql/new", () => {
         sql:
           'SELECT * FROM "form_entry" WHERE Body = $title ORDER BY _ugoite_id',
         variables: [{ type: "string", name: "title", description: "" }],
+      });
+    });
+  });
+
+  it("REQ-FE-063: builds a typed aggregate query from human Form fields", async () => {
+    render(() => <SpaceQueryCreateRoute />);
+
+    const editor = await screen.findByRole("textbox", { name: "SQL" });
+    await waitFor(() => {
+      expect(editor).toHaveValue(
+        'SELECT * FROM "Entry" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
+      );
+    });
+    fireEvent.change(screen.getByLabelText("Form for this query"), {
+      target: { value: "review-form" },
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Form for this query")).toHaveValue(
+        "review-form",
+      );
+    });
+    fireEvent.change(screen.getByLabelText("Aggregate"), {
+      target: { value: "sum" },
+    });
+
+    const aggregateField = screen.getByLabelText("Field") as HTMLSelectElement;
+    await waitFor(() => {
+      expect([...aggregateField.options].map((option) => option.textContent))
+        .toEqual(["Amount"]);
+    });
+    const filterField = screen.getByLabelText(
+      "Filter field",
+    ) as HTMLSelectElement;
+    expect([...filterField.options].map((option) => option.textContent))
+      .toEqual(["None", "Amount", "Category"]);
+    expect(screen.queryByRole("option", {
+      name: "00000000-0000-4000-8000-000000000003",
+    })).not.toBeInTheDocument();
+
+    fireEvent.change(filterField, { target: { value: "Category" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Generate aggregate SQL" }),
+    );
+    await waitFor(() => {
+      expect(editor).toHaveValue(
+        'SELECT SUM("column_amount") AS "value" FROM "Review" WHERE "column_category" = {{filter_value}}',
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(sqlCreateMock).toHaveBeenCalledWith("default", {
+        name: null,
+        kind: "user-query",
+        metadata: { generatedName: "untitled" },
+        sql:
+          'SELECT SUM("column_amount") AS "value" FROM "Review" WHERE "column_category" = $filter_value',
+        variables: [{
+          type: "string",
+          name: "filter_value",
+          description: "Category",
+        }],
       });
     });
   });
