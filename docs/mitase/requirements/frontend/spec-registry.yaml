@@ -112,12 +112,12 @@ requirements:
           - id: account-security-credential-contract
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts
-            selector: { kind: test, name: "REQ-FE-040: declares account security credential identifier details" }
+            selector: { kind: test, name: "REQ-FE-040: declares account security identifier boundaries" }
             claims:
               - kind: verifies
                 criterion: REQ-FE-040#criterion.registry-shape
                 covers: [FEAT-FE-013#binding.frontend/target.account-security-contract-reference]
-                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares account security credential identifier details" } }
+                runner: { runner: frontend-vitest-file, arguments: { file: src/spec/ui-pages.test.ts, test: "REQ-FE-040: declares account security identifier boundaries" } }
           - id: device-approval-consent-contract
             adapter: typescript
             path: frontend/src/spec/ui-pages.test.ts

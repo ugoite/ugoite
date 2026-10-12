@@ -313,17 +313,6 @@ export function CredentialSettings() {
                         {t("settings.revoke")}
                       </button>
                     </div>
-                    <details class="settingsAdvanced">
-                      <summary>{t("securityPage.technicalDetails")}</summary>
-                      <dl class="ui-entry-detail-list">
-                        <div>
-                          <dt>{t("securityPage.credentialId")}</dt>
-                          <dd class="font-mono break-all">
-                            {String(credential.credential_id)}
-                          </dd>
-                        </div>
-                      </dl>
-                    </details>
                   </div>
                 )}
               </For>
@@ -373,17 +362,6 @@ export function CredentialSettings() {
                         </button>
                       </Show>
                     </div>
-                    <details class="settingsAdvanced">
-                      <summary>{t("securityPage.technicalDetails")}</summary>
-                      <dl class="ui-entry-detail-list">
-                        <div>
-                          <dt>{t("securityPage.sessionId")}</dt>
-                          <dd class="font-mono break-all">
-                            {String(session.session_id)}
-                          </dd>
-                        </div>
-                      </dl>
-                    </details>
                   </div>
                 )}
               </For>
