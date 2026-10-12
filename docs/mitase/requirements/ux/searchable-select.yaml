@@ -1,0 +1,15 @@
+schema: mitase/authoring/v2
+kind: requirements
+namespace: ux
+category: Searchable Select identity presentation
+requirements:
+  - id: REQ-UX-SEARCHABLE-001
+    title: Human-Readable Searchable Select Options
+    description: Searchable Select options use human-readable titles while stable identifiers remain internal to selection behavior.
+    priority: medium
+    status: implemented
+    criteria:
+      - id: human-readable-labels
+        kind: behavior
+        statement: Candidate and selected Searchable Select values render the option title as visible content and accessible name; the stable option ID is retained in the option and selection callback but is never rendered.
+        governed_by: [POL-UI-005#rule.governance]

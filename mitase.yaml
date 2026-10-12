@@ -141,6 +141,8 @@ inventory:
         - frontend/src/components/EntryDetailPane.tsx
         - frontend/src/components/fields/FieldInput.tsx
         - frontend/src/components/fields/FieldValue.tsx
+        - frontend/src/components/fields/SearchableSelect.tsx
+        - frontend/src/components/fields/SearchableSelect.test.tsx
         - frontend/src/components/fields/fields.test.tsx
         - frontend/src/components/EntryDetailPane.safety.test.tsx
         - frontend/src/components/SqlQueryEditor.tsx
@@ -333,6 +335,7 @@ inventory:
         - docs/mitase/features/frontend
         - docs/spec/ui/components/entry-browser.yaml
         - docs/spec/ui/components/form-table.yaml
+        - docs/spec/ui/components/searchable-select.yaml
         - docs/spec/ui/components/space-access-recovery.yaml
         - docs/spec/ui/pages/space-compositions.yaml
         - docs/spec/ui/pages/space-composition-revision.yaml

@@ -36,9 +36,9 @@ export interface SearchableSelectProps {
 /**
  * Generic searchable single-select shared by every row-reference control.
  *
- * Display/interaction only: options render deterministic labels, selection
+ * Display/interaction only: options render human-readable titles, selection
  * stores the stable option id through `onSelect`, and validity stays in
- * Rust. Keyboard: ArrowDown/ArrowUp move the highlight (wrapping),
+ * Rust. Stable IDs are never rendered. Keyboard: ArrowDown/ArrowUp move the highlight (wrapping),
  * Enter confirms the highlighted (or first) option, Escape dismisses the
  * current search text.
  */
@@ -126,7 +126,6 @@ export function SearchableSelect(props: SearchableSelectProps) {
                 <p class="truncate text-sm font-medium">
                   {selectedOption().title}
                 </p>
-                <p class="truncate text-xs ui-muted">{selectedOption().id}</p>
               </div>
               <button
                 type="button"
@@ -182,7 +181,6 @@ export function SearchableSelect(props: SearchableSelectProps) {
                   onMouseMove={() => setActiveIndex(index())}
                 >
                   <p class="text-sm font-medium">{option.title}</p>
-                  <p class="text-xs ui-muted">{option.id}</p>
                 </button>
               </li>
             )}
