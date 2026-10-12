@@ -163,6 +163,8 @@ use ugoite_storage::{
 #[path = "service/composition_metric_query.rs"]
 mod composition_metric_query;
 mod composition_resolver;
+#[path = "service/sql_execution.rs"]
+pub(super) mod sql_execution;
 pub use composition_resolver::CompositionPreview;
 pub use composition_resolver::CompositionResolution;
 
@@ -6821,15 +6823,7 @@ impl UgoiteService {
         const LOCAL_AUTHORIZATION_FINGERPRINT: &str = "local-operator";
 
         request.validate().map_err(sql_query_contract_error)?;
-        let saved_revision = self
-            .read_saved_sql_query_revision(space_id, request.saved_sql.as_ref())
-            .await?;
-        let query_sql = saved_revision
-            .as_ref()
-            .map_or(request.sql.as_str(), |revision| revision.sql.as_str());
-        let normalized_sql = index::normalize_sql_template(query_sql)?;
-        validate_saved_sql_client_sql(saved_revision.is_some(), &request.sql, &normalized_sql)?;
-        index::validate_read_only_sql(&normalized_sql)?;
+        let prepared = sql_execution::prepare_sql_request(self, space_id, &request, None).await?;
         self.validate_complete_space(space_id).await?;
         let signing_key = self.sql_query_signing_key(space_id).await?;
         let continuation = request
@@ -6839,10 +6833,7 @@ impl UgoiteService {
                 SqlContinuation::decode(value, &signing_key).map_err(sql_query_contract_error)
             })
             .transpose()?;
-        let effective_parameter_types = effective_sql_parameter_types(
-            &request.parameters,
-            &saved_sql_parameter_types(saved_revision.as_ref(), &request.parameter_types)?,
-        )?;
+        let effective_parameter_types = prepared.parameter_types.clone();
         let parameter_fingerprint = SqlQueryRequest {
             parameter_types: effective_parameter_types.clone(),
             ..request.clone()
@@ -6850,12 +6841,8 @@ impl UgoiteService {
         .parameter_fingerprint()
         .map_err(sql_query_contract_error)?;
         let sql_fingerprint = request
-            .sql_fingerprint(&normalized_sql)
+            .sql_fingerprint(&prepared.normalized_sql)
             .map_err(sql_query_contract_error)?;
-        let parameters =
-            index::datafusion_parameters(&request.parameters, &effective_parameter_types).map_err(
-                |error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()),
-            )?;
         let space_uid = self.space_uid(space_id).await?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
@@ -6872,7 +6859,8 @@ impl UgoiteService {
                     || cursor.parameter_fingerprint != parameter_fingerprint
                     || cursor.saved_sql != request.saved_sql
                     || cursor.binding_fingerprint
-                        != saved_revision
+                        != prepared
+                            .saved_revision
                             .as_ref()
                             .map(saved_sql_binding_fingerprint)
                             .transpose()?
@@ -6897,19 +6885,13 @@ impl UgoiteService {
         };
         let checkpoint = workspace.resolve_publication(&publication).await?;
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
-        let relation_scopes = forms
-            .iter()
-            .map(|form| (sql_relation_name(form.id), EntryScope::AllCurrent))
-            .collect::<BTreeMap<_, _>>();
-        let execution_sql = if let Some(revision) = &saved_revision {
-            bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
-        } else {
-            normalized_sql.clone()
-        };
+        let relation_scopes = sql_execution::all_current_relation_scopes(&forms);
+        let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
         let fetch_limit = request
             .limit
             .checked_add(1)
             .ok_or_else(|| anyhow!("SQL query page limit overflows"))?;
+        let parameters = prepared.parameters;
         let (columns, result_schema, mut rows, mut exact_integer_rows, has_order) =
             index::execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
                 &self.operator,
@@ -6949,7 +6931,8 @@ impl UgoiteService {
                 next_offset,
             )?;
             cursor.saved_sql = request.saved_sql.clone();
-            cursor.binding_fingerprint = saved_revision
+            cursor.binding_fingerprint = prepared
+                .saved_revision
                 .as_ref()
                 .map(saved_sql_binding_fingerprint)
                 .transpose()?;
@@ -7060,18 +7043,16 @@ impl UgoiteService {
                 );
             }
         }
-        if let Some(source) = request.saved_sql.as_ref() {
-            ensure_saved_sql_access(&state, principal_ids, source)?;
-        }
-        let saved_revision = self
-            .read_saved_sql_query_revision(space_id, request.saved_sql.as_ref())
-            .await?;
-        let query_sql = saved_revision
-            .as_ref()
-            .map_or(request.sql.as_str(), |revision| revision.sql.as_str());
-        let normalized_sql = index::normalize_sql_template(query_sql)?;
-        validate_saved_sql_client_sql(saved_revision.is_some(), &request.sql, &normalized_sql)?;
-        index::validate_read_only_sql(&normalized_sql)?;
+        let prepared = sql_execution::prepare_sql_request(
+            self,
+            space_id,
+            &request,
+            Some(sql_execution::SqlSourceAuthorization {
+                state: &state,
+                principal_ids,
+            }),
+        )
+        .await?;
         self.validate_complete_space(space_id).await?;
 
         let signing_key = self.sql_query_signing_key(space_id).await?;
@@ -7082,10 +7063,7 @@ impl UgoiteService {
                 SqlContinuation::decode(value, &signing_key).map_err(sql_query_contract_error)
             })
             .transpose()?;
-        let effective_parameter_types = effective_sql_parameter_types(
-            &request.parameters,
-            &saved_sql_parameter_types(saved_revision.as_ref(), &request.parameter_types)?,
-        )?;
+        let effective_parameter_types = prepared.parameter_types.clone();
         let parameter_fingerprint = SqlQueryRequest {
             parameter_types: effective_parameter_types.clone(),
             ..request.clone()
@@ -7093,13 +7071,8 @@ impl UgoiteService {
         .parameter_fingerprint()
         .map_err(sql_query_contract_error)?;
         let sql_fingerprint = request
-            .sql_fingerprint(&normalized_sql)
+            .sql_fingerprint(&prepared.normalized_sql)
             .map_err(sql_query_contract_error)?;
-        let parameters =
-            index::datafusion_parameters(&request.parameters, &effective_parameter_types).map_err(
-                |error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()),
-            )?;
-
         let authorization_fingerprint = sql_query_authorization_fingerprint(&state, principal_ids)?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
@@ -7116,7 +7089,8 @@ impl UgoiteService {
                     || cursor.parameter_fingerprint != parameter_fingerprint
                     || cursor.saved_sql != request.saved_sql
                     || cursor.binding_fingerprint
-                        != saved_revision
+                        != prepared
+                            .saved_revision
                             .as_ref()
                             .map(saved_sql_binding_fingerprint)
                             .transpose()?
@@ -7141,26 +7115,14 @@ impl UgoiteService {
         };
         let checkpoint = workspace.resolve_publication(&publication).await?;
         let forms = workspace.forms_at_checkpoint(&checkpoint).await?;
-        let named_scopes =
-            Self::authorized_form_entry_scopes_for_forms(&state, principal_ids, forms.clone())?;
-        let relation_scopes = forms
-            .iter()
-            .filter_map(|form| {
-                named_scopes
-                    .get(&form.name.to_ascii_lowercase())
-                    .cloned()
-                    .map(|scope| (sql_relation_name(form.id), scope))
-            })
-            .collect::<BTreeMap<_, _>>();
-        let execution_sql = if let Some(revision) = &saved_revision {
-            bound_sql_for_revision(revision, &forms, &relation_scopes, &normalized_sql)?
-        } else {
-            normalized_sql.clone()
-        };
+        let relation_scopes =
+            sql_execution::authorized_relation_scopes(&state, principal_ids, &forms)?;
+        let execution_sql = sql_execution::bind_sql_to_forms(&prepared, &forms, &relation_scopes)?;
         let fetch_limit = request
             .limit
             .checked_add(1)
             .ok_or_else(|| anyhow!("SQL query page limit overflows"))?;
+        let parameters = prepared.parameters;
         let (columns, result_schema, mut rows, mut exact_integer_rows, has_order) =
             index::execute_sql_query_authorized_by_form_page_at_checkpoint_stateless(
                 &self.operator,
@@ -7200,7 +7162,8 @@ impl UgoiteService {
                 next_offset,
             )?;
             cursor.saved_sql = request.saved_sql.clone();
-            cursor.binding_fingerprint = saved_revision
+            cursor.binding_fingerprint = prepared
+                .saved_revision
                 .as_ref()
                 .map(saved_sql_binding_fingerprint)
                 .transpose()?;
